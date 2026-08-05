@@ -380,9 +380,12 @@ export default function HrDocumentTemplates() {
             }
             toolbarActions={
               <>
-                <div className="d-flex align-items-center gap-2">
-                  <span className="dtm-filter-label" style={{ fontSize: 10.5, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.4, textTransform: 'uppercase' }}>Trigger</span>
-                  <div style={{ minWidth: 170 }}>
+                {/* Compact: with six role tabs the rail needs every pixel, and
+                    a 170px-wide "All" dropdown plus a roomy button pushed the
+                    last tab onto a second line inside the rail. */}
+                <div className="d-flex align-items-center gap-1">
+                  <span className="dtm-filter-label" style={{ fontSize: 10, fontWeight: 800, color: '#9ca3af', letterSpacing: 0.3, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>Trigger</span>
+                  <div style={{ minWidth: 118, maxWidth: 150 }}>
                     <MasterSelect
                       value={triggerFilter}
                       onChange={setTriggerFilter}
@@ -400,7 +403,7 @@ export default function HrDocumentTemplates() {
                 {/* Add Template sits at the right end of the toolbar — the list's
                     primary action next to the list's own controls. */}
                 <button type="button" className="dtm-add-tpl-btn flex-shrink-0" onClick={() => navigate('/hr/doc-templates/new')}
-                  style={{ padding: '8px 16px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 13.5, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
+                  style={{ padding: '7px 12px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', border: 0, borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 4px 12px rgba(99,102,241,0.3)', transition: 'transform .15s ease, box-shadow .2s ease, filter .15s ease' }}>
                   <i className="ri-add-line me-1" /> Add Template
                 </button>
               </>

@@ -25,6 +25,11 @@ use Illuminate\Support\Facades\Mail;
  */
 class ExitController extends Controller
 {
+    /** Dates are decided in IST — the app runs in UTC, so a raw now() reports
+     *  yesterday for the first 5.5h of every local day. */
+    private const DISPLAY_TZ = 'Asia/Kolkata';
+
+
     public function show(Request $request, $employee)
     {
         // Resolve withTrashed — a disabled (soft-deleted) employee still appears
@@ -49,6 +54,9 @@ class ExitController extends Controller
         $row->client_id            = $employee->client_id;
         $row->branch_id            = $employee->branch_id;
         $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
+        // Never trust a client-sent settlement mode — it follows the exit type.
+        $row->notice_settlement_mode = $this->resolveSettlementMode((string) ($row->exit_type ?? ''));
+        $this->clearBlacklistIfNotApplicable($row);
         if (!$row->exists) $row->created_by = $request->user()?->id;
         $row->save();
 
@@ -72,13 +80,28 @@ class ExitController extends Controller
         $this->guardSameTenant($request, $employee);
         $data = $this->validatePayload($request);
 
-        $row = DB::transaction(function () use ($request, $data, $employee) {
+        /* The notice-period settlement has to be closed before the case can be.
+           Money owed in either direction (recovered from the employee, or paid
+           to them in lieu) is a hard gate — the SPA greys the button, and this
+           is the server-side twin so a crafted request can't slip past it. */
+        $mode   = $this->resolveSettlementMode((string) ($data['exit_type'] ?? ''));
+        $amount = (float) ($data['notice_settlement_amount'] ?? 0);
+        $status = (string) ($data['notice_settlement_status'] ?? 'NA');
+        if ($mode !== 'served' && $amount > 0 && $status !== 'Settled') {
+            abort(422, $mode === 'recover'
+                ? 'The notice-period recovery from this employee is not settled yet — record the payment and approve it before completing the exit.'
+                : 'The notice-period payment to this employee is not settled yet — disburse the full amount before completing the exit.');
+        }
+
+        $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             $row->fill($data);
             $row->employee_id          = $employee->id;
             $row->client_id            = $employee->client_id;
             $row->branch_id            = $employee->branch_id;
             $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
+            $row->notice_settlement_mode = $mode;
+            $this->clearBlacklistIfNotApplicable($row);
             if (!$row->exists) $row->created_by = $request->user()?->id;
 
             // Lock the case closed regardless of what the client sent.
@@ -147,6 +170,260 @@ class ExitController extends Controller
         }
     }
 
+    /**
+     * Rehire an exited employee — bring them back as active staff.
+     *
+     *   POST /api/employees/{employee}/rehire
+     *   { "restart_onboarding": bool, "note": string|null }
+     *
+     * Only a STANDARD RESIGNATION can be rehired here. Someone who walked out
+     * without serving notice, or who was terminated, is not re-activated with
+     * one click: that decision needs a fresh hiring process, and a blacklisted
+     * leaver must not come back at all. The SPA greys the button for those
+     * cases; this is the server-side twin so a direct call can't bypass it.
+     *
+     * The exit row is kept and stamped `rehired_at` rather than deleted — the
+     * exit is history worth having, and every "is this person exited?" reader
+     * treats a stamped row as spent.
+     *
+     * `restart_onboarding` sends them back through onboarding so HR can refresh
+     * bank details, address and documents; otherwise the login is simply
+     * switched back on with the record as it stood.
+     */
+    public function rehire(Request $request, $employee)
+    {
+        $employee = Employee::withTrashed()->findOrFail($employee);
+        $this->guardSameTenant($request, $employee);
+
+        $data = $request->validate([
+            'restart_onboarding' => 'nullable|boolean',
+            'note'               => 'nullable|string|max:500',
+        ]);
+
+        $exit = EmployeeExit::where('employee_id', $employee->id)
+            ->whereNull('rehired_at')
+            ->orderByDesc('id')
+            ->first();
+
+        abort_if(!$exit, 422, 'This employee has no exit on record to rehire from.');
+
+        $type = (string) ($exit->exit_type ?? '');
+        if ($this->resolveSettlementMode($type) !== 'served') {
+            abort(422, $type === 'Termination'
+                ? 'A terminated employee cannot be rehired from here — this needs a fresh hiring process.'
+                : 'An employee who left without serving their notice period cannot be rehired from here — this needs a fresh hiring process.');
+        }
+        abort_if(strcasecmp((string) $exit->blacklisted, 'Yes') === 0, 422,
+            'This employee is blacklisted and cannot be rehired.');
+
+        $restart = (bool) ($data['restart_onboarding'] ?? false);
+
+        DB::transaction(function () use ($employee, $exit, $request, $restart, $data) {
+            // Undo the exit's deactivation: status back to Active, and restore
+            // the row if disabling it had soft-deleted it.
+            if ($employee->trashed()) {
+                $employee->restore();
+            }
+            $employee->status = 'Active';
+            if ($restart) {
+                // Back to the start of onboarding so the wizard reopens and HR
+                // can correct anything. Below the >= 6 gate that payroll, the
+                // manager picker and Exit Management all use for "fully
+                // onboarded", so they're held out until it's finished again.
+                $employee->onboarding_stage_completed = 0;
+            }
+            $employee->save();
+
+            // Switch the paired login back on. Tokens were revoked at exit, so
+            // they sign in fresh.
+            if ($employee->user) {
+                $employee->user->update(['status' => 'active']);
+            }
+
+            $exit->rehired_at = now();
+            $exit->rehired_by = $request->user()?->id;
+            $exit->rehire_restart_onboarding = $restart;
+            $exit->rehire_note = $data['note'] ?? null;
+            $exit->save();
+        });
+
+        return response()->json([
+            'message' => $restart
+                ? 'Employee reactivated — onboarding has been reopened so their details can be updated.'
+                : 'Employee reactivated and now shows in the active employee list.',
+            'employee' => [
+                'id'     => $employee->id,
+                'status' => $employee->fresh()->status,
+                'restart_onboarding' => $restart,
+            ],
+        ]);
+    }
+
+    /**
+     * Everything owed to, or recoverable from, this employee at exit — the
+     * inputs to the Full & Final settlement, pulled from the modules that
+     * actually hold them instead of being retyped by HR.
+     *
+     *   GET /api/employees/{employee}/exit/fnf-summary
+     *
+     * A leaver is dropped from the regular payroll run for their exit month
+     * (PayrollService::eligibleEmployees excludes anyone whose last working day
+     * falls in the cycle), so the salary they earned up to that day is one of
+     * the lines here — otherwise it would never be paid at all.
+     *
+     * Read-only. Nothing is written; the exit stage decides what to carry over.
+     */
+    public function fnfSummary(Request $request, $employee)
+    {
+        $employee = Employee::withTrashed()->findOrFail($employee);
+        $this->guardSameTenant($request, $employee);
+
+        $exit = EmployeeExit::where('employee_id', $employee->id)->first();
+        $lwd  = $exit?->last_working_day
+            ? \Carbon\Carbon::parse($exit->last_working_day)->startOfDay()
+            : \Carbon\Carbon::now(self::DISPLAY_TZ)->startOfDay();
+
+        return response()->json(['data' => [
+            'last_working_day' => $lwd->toDateString(),
+            'payroll'          => $this->fnfEarnedSalary($employee, $lwd),
+            'advances'         => $this->fnfAdvances($employee, $lwd),
+            'claims'           => $this->fnfClaims($employee),
+        ]]);
+    }
+
+    /**
+     * Salary earned in the exit month, up to and including the last working
+     * day. Pro-rated on CALENDAR days — the same basis the notice period uses,
+     * so the two never disagree.
+     */
+    private function fnfEarnedSalary(Employee $employee, \Carbon\Carbon $lwd): array
+    {
+        $annual  = (float) ($employee->annual_salary ?? 0);
+        $monthly = $annual > 0 ? round($annual / 12, 2) : 0.0;
+
+        $monthDays  = (int) $lwd->daysInMonth;
+        // Someone who joined mid-month is only owed from their joining date.
+        $start = $lwd->copy()->startOfMonth();
+        if ($employee->date_of_joining) {
+            $doj = \Carbon\Carbon::parse($employee->date_of_joining)->startOfDay();
+            if ($doj->gt($start)) $start = $doj;
+        }
+        $earnedDays = $lwd->lt($start) ? 0 : $start->diffInDays($lwd) + 1;
+
+        return [
+            'cycle'         => $lwd->format('F Y'),
+            'monthly_gross' => $monthly,
+            'month_days'    => $monthDays,
+            'earned_days'   => $earnedDays,
+            'amount'        => $monthDays > 0 ? round($monthly * $earnedDays / $monthDays, 2) : 0.0,
+            'note'          => 'Excluded from the ' . $lwd->format('F Y')
+                . ' payroll run — settle the earned salary here.',
+        ];
+    }
+
+    /**
+     * Outstanding salary/travel advances — money the company is still owed.
+     *
+     * Recovered-to-date is derived from the SAME schedule payroll recovers on
+     * (PayrollService::advanceRecovery): EMI advances recover one instalment
+     * per month from recovery_start; lumpsum recovers fully in its start month.
+     * Anything the schedule hasn't reached by the last working day is still
+     * outstanding and has to come out of the F&F.
+     */
+    private function fnfAdvances(Employee $employee, \Carbon\Carbon $lwd): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('advance_requests')) {
+            return ['total' => 0.0, 'items' => []];
+        }
+
+        // NB: advance_requests / expense_claims are hard-delete tables — no
+        // deleted_at column, so don't filter on one.
+        $rows = DB::table('advance_requests')
+            ->where('employee_id', $employee->id)
+            ->whereRaw('LOWER(hr_status) = ?', ['approved'])
+            ->get(['id', 'advance_no', 'advance_type', 'amount', 'recovery_start',
+                   'recovery_mode', 'recovery_months', 'monthly_emi']);
+
+        $items = [];
+        $total = 0.0;
+        foreach ($rows as $r) {
+            $amount = (float) $r->amount;
+            if ($amount <= 0) continue;
+
+            $recovered = 0.0;
+            if ($r->recovery_start) {
+                $start = \Carbon\Carbon::parse($r->recovery_start)->startOfDay();
+                if ($start->lte($lwd)) {
+                    if ($r->recovery_mode === 'emi') {
+                        $emi     = (float) ($r->monthly_emi ?: round($amount / max(1, (int) ($r->recovery_months ?: 1)), 2));
+                        // Instalments whose month has been reached by the LWD.
+                        $elapsed = $start->copy()->startOfMonth()->diffInMonths($lwd->copy()->startOfMonth()) + 1;
+                        $elapsed = min($elapsed, max(1, (int) ($r->recovery_months ?: 1)));
+                        $recovered = min($amount, round($emi * $elapsed, 2));
+                    } else {
+                        $recovered = $amount;   // lumpsum, start month reached
+                    }
+                }
+            }
+
+            $outstanding = round($amount - $recovered, 2);
+            if ($outstanding <= 0.005) continue;
+
+            $total += $outstanding;
+            $items[] = [
+                'id'          => $r->id,
+                'reference'   => $r->advance_no,
+                'type'        => $r->advance_type,
+                'amount'      => round($amount, 2),
+                'recovered'   => round($recovered, 2),
+                'outstanding' => $outstanding,
+            ];
+        }
+
+        return ['total' => round($total, 2), 'items' => $items];
+    }
+
+    /**
+     * Approved expense claims not yet paid out — money owed TO the employee.
+     * The sanctioned figure wins over the claimed one (HR may have trimmed it),
+     * and anything already disbursed is netted off.
+     */
+    private function fnfClaims(Employee $employee): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('expense_claims')) {
+            return ['total' => 0.0, 'items' => []];
+        }
+
+        $rows = DB::table('expense_claims')
+            ->where('employee_id', $employee->id)
+            ->whereRaw('LOWER(hr_status) = ?', ['approved'])
+            ->where(fn ($q) => $q->whereNull('settlement_status')
+                                 ->orWhereRaw('LOWER(settlement_status) <> ?', ['paid']))
+            ->get(['id', 'claim_no', 'title', 'category_name', 'amount', 'sanctioned_amount', 'total_paid']);
+
+        $items = [];
+        $total = 0.0;
+        foreach ($rows as $r) {
+            $payable = (float) ($r->sanctioned_amount ?? 0) > 0
+                ? (float) $r->sanctioned_amount
+                : (float) $r->amount;
+            $due = round($payable - (float) ($r->total_paid ?? 0), 2);
+            if ($due <= 0.005) continue;
+
+            $total += $due;
+            $items[] = [
+                'id'        => $r->id,
+                'reference' => $r->claim_no,
+                'title'     => $r->title ?: $r->category_name,
+                'amount'    => round($payable, 2),
+                'paid'      => round((float) ($r->total_paid ?? 0), 2),
+                'due'       => $due,
+            ];
+        }
+
+        return ['total' => round($total, 2), 'items' => $items];
+    }
+
     /* ── Helpers ───────────────────────────────────────────────────── */
 
     /**
@@ -161,14 +438,58 @@ class ExitController extends Controller
     {
         return match ($exitType) {
             'Termination', 'Absconding' => 'Terminated',
-            default                     => 'Resigned',   // Resignation / Retirement / End of Contract / Other / blank
+            // Resignation / Resignation without notice period / Retirement /
+            // End of Contract / Other / blank — all resignations either way.
+            default                     => 'Resigned',
+        };
+    }
+
+    /**
+     * How the notice period is settled for a given exit type. This is the
+     * single rule the whole feature turns on — the wizard's stage list, the
+     * money's direction, and the completion gate all read it:
+     *
+     *   served      → the notice was worked; nothing is recovered or paid.
+     *   recover     → the employee did not serve it and PAYS the unserved days.
+     *   pay_in_lieu → the company relieves them and PAYS the unserved days.
+     *
+     * Legacy types (Retirement / End of Contract / Other) keep the old
+     * behaviour of no settlement; Absconding recovers, matching how an
+     * unserved notice has always been treated.
+     */
+    /**
+     * The blacklist question is only asked when the notice wasn't served —
+     * a resignation without notice, or a termination. If the exit type is
+     * changed back to a standard resignation, any answer recorded under the
+     * old type has to go: leaving a stale "Yes" behind would blacklist someone
+     * on the strength of a question their exit type never poses.
+     */
+    private function clearBlacklistIfNotApplicable(EmployeeExit $row): void
+    {
+        if ($this->resolveSettlementMode((string) ($row->exit_type ?? '')) === 'served') {
+            $row->blacklisted      = null;
+            $row->blacklist_reason = null;
+        }
+    }
+
+    private function resolveSettlementMode(string $exitType): string
+    {
+        return match ($exitType) {
+            'Resignation without notice period', 'Absconding' => 'recover',
+            'Termination' => 'pay_in_lieu',
+            default       => 'served',
         };
     }
 
     private function validatePayload(Request $request): array
     {
         return $request->validate([
-            'exit_type'             => 'nullable|in:Resignation,Termination,Retirement,End of Contract,Absconding,Other',
+            // The wizard now offers exactly three types, chosen up-front in the
+            // "Initiate Exit" picker, because each one resolves to a different
+            // notice-period settlement (and therefore a different stage list).
+            // The legacy values stay accepted so exits recorded before this
+            // change still load and save instead of 422-ing on reopen.
+            'exit_type'             => 'nullable|in:Resignation,Resignation without notice period,Termination,Retirement,End of Contract,Absconding,Other',
             'initiated_by'          => 'nullable|in:Employee,HR,Manager',
             // `reason_for_exit` is a free-text field on the form (the HR
             // can describe the reason in their own words), so we don't
@@ -195,10 +516,32 @@ class ExitController extends Controller
             'profile_lock'          => 'nullable|in:Locked,Unlocked',
             'exit_case_status'      => 'nullable|in:Open,Closed',
             'hr_sign_off'           => 'nullable|in:Pending,Approved,Rejected',
+            // Blacklist decision. Only meaningful for an exit that didn't serve
+            // its notice or was a termination — the SPA hides the field
+            // otherwise and sends null, which reads as "never asked".
+            'blacklisted'           => 'nullable|in:Yes,No',
+            'blacklist_reason'      => 'nullable|string|max:500',
 
-            // Process meta — per-stage status map + current wizard step.
+            // Notice-period settlement. The mode is DERIVED from exit_type (see
+            // resolveSettlementMode) — a client-sent value is ignored, so the
+            // settlement and the exit type can never disagree.
+            'notice_days_required'     => 'nullable|integer|min:0|max:365',
+            'notice_days_served'       => 'nullable|integer|min:0|max:365',
+            'notice_days_unserved'     => 'nullable|integer|min:0|max:365',
+            'notice_settlement_basis'  => 'nullable|in:gross,basic',
+            'notice_per_day_rate'      => 'nullable|numeric|min:0|max:99999999.99',
+            'notice_settlement_amount' => 'nullable|numeric|min:0|max:99999999.99',
+            'notice_settlement_status' => 'nullable|in:NA,Pending,Settled,Rejected',
+            'notice_payment'           => 'nullable|array',
+
+            // Full & Final settlement (Termination) — lines + finance approval.
+            'fnf'                   => 'nullable|array',
+
+            // Process meta — per-stage status map + current wizard step. The
+            // stage list is dynamic (4 base stages, plus a settlement stage for
+            // two of the three exit types), so the ceiling is no longer 4.
             'stage_status'          => 'nullable|array',
-            'current_stage'         => 'nullable|integer|min:1|max:4',
+            'current_stage'         => 'nullable|integer|min:1|max:6',
         ]);
     }
 
@@ -297,6 +640,22 @@ class ExitController extends Controller
             'business_impact'       => $row?->business_impact,
             'replacement_required'  => $row?->replacement_required,
 
+            // Notice-period settlement. `mode` is always re-derived from the
+            // stored exit type so a row written before this feature (or under
+            // an older mapping) still reports the right settlement on read.
+            'notice_settlement_mode'   => $this->resolveSettlementMode((string) ($row?->exit_type ?? '')),
+            'notice_days_required'     => $row?->notice_days_required,
+            'notice_days_served'       => $row?->notice_days_served,
+            'notice_days_unserved'     => $row?->notice_days_unserved,
+            'notice_settlement_basis'  => $row?->notice_settlement_basis,
+            'notice_per_day_rate'      => $row?->notice_per_day_rate,
+            'notice_settlement_amount' => $row?->notice_settlement_amount,
+            'notice_settlement_status' => $row?->notice_settlement_status ?? 'NA',
+            'notice_payment'           => $row?->notice_payment ?? null,
+
+            // Full & Final settlement (Termination).
+            'fnf'                   => $row?->fnf ?? null,
+
             // Stage 2 — Clearance & Handover
             'clearances'            => $row?->clearances ?? [],
             'asset_returns'         => $row?->asset_returns ?? [],
@@ -308,6 +667,8 @@ class ExitController extends Controller
             'profile_lock'          => $row?->profile_lock,
             'exit_case_status'      => $row?->exit_case_status ?? 'Open',
             'hr_sign_off'           => $row?->hr_sign_off,
+            'blacklisted'           => $row?->blacklisted,
+            'blacklist_reason'      => $row?->blacklist_reason,
 
             // Process meta
             'stage_status'          => $row?->stage_status ?? null,

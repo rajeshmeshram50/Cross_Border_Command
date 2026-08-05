@@ -1849,6 +1849,13 @@ class EmployeeController extends Controller
             'status'  => 'nullable|in:Active,Inactive,On Leave,Probation,Notice Period,Resigned,Terminated',
             'onboarding_stage_completed' => 'nullable|integer|min:0|max:6',
         ], [
+            // Annual CTC — the default Laravel wording ("must be at least 0.01")
+            // reads as a rounding rule; these say what the field actually needs.
+            // Kept in sync with the inline messages in HrEmployees.tsx.
+            'annual_salary.required' => 'Annual CTC is required.',
+            'annual_salary.numeric'  => 'Annual CTC must be a valid number.',
+            'annual_salary.min'      => 'Annual CTC must be greater than 0.',
+            'annual_salary.max'      => 'Annual CTC must be ≤ 999,999,999,999.99.',
             'city.not_regex'               => 'City cannot contain < or > characters.',
             'address_line1.not_regex'      => 'Address cannot contain < or > characters.',
             'address_line2.not_regex'      => 'Address cannot contain < or > characters.',

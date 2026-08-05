@@ -4,13 +4,22 @@ namespace App\Models\Masters;
 
 use App\Models\Branch;
 use App\Models\Client;
+use App\Models\Employee;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Designations extends Model
 {
     protected $table = 'master_designations';
+
+    /** Employees holding this designation — drives the list's headcount column.
+     *  Employee uses SoftDeletes, so withCount already excludes deleted staff. */
+    public function employees(): HasMany
+    {
+        return $this->hasMany(Employee::class, 'designation_id');
+    }
 
     protected $fillable = [
         'client_id',

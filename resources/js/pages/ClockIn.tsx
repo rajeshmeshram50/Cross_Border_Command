@@ -41,8 +41,16 @@ interface TodayResp {
   record: AttendanceRecord | null;
   next_direction: 'in' | 'out';
   allowed_labels: string[];
-  /** ISO instant an open punch is auto-closed at — shift end + 1h, server-side. */
+  /** ISO instant an open punch is auto-closed at — shift end + 1h, server-side.
+   *  For an overtime-applicable employee there is no auto-logout: this is their
+   *  NEXT shift start, the deadline for punching out to keep the overtime. */
   auto_cutoff_at?: string | null;
+  /** Employee master → Leave & Attendance → "Overtime Applicable" = Yes. */
+  overtime_applicable?: boolean;
+  /** ISO instant today's shift ends — where overtime starts counting. */
+  shift_end_at?: string | null;
+  /** Overtime credited today (provisional while still clocked in). */
+  overtime_seconds?: number;
 }
 
 // Activity-label palette — matches the methodology of the original
@@ -264,6 +272,25 @@ export default function ClockIn() {
     return total;
   }, [record0, punches0, nowTick, today?.auto_cutoff_at]);
 
+  /* Live OVERTIME seconds — shown only when the employee master marks this
+     employee overtime-applicable. Overtime starts the moment the SHIFT ENDS
+     (arriving late does not delay it) and, since these employees get no
+     auto-logout, it keeps running while they stay clocked in. It only becomes
+     real once they punch out: leaving the day open until the next shift starts
+     (`auto_cutoff_at` for them) forfeits it, so the ticker zeroes there. */
+  const liveOvertimeSeconds = useMemo(() => {
+    if (!today?.overtime_applicable) return 0;
+    const shiftEndMs = today?.shift_end_at ? new Date(today.shift_end_at).getTime() : NaN;
+    if (Number.isNaN(shiftEndMs)) return today?.overtime_seconds ?? 0;
+    const openIn = punches0.length && punches0[punches0.length - 1].direction === 'in'
+      ? new Date(punches0[punches0.length - 1].punched_at).getTime()
+      : null;
+    if (openIn == null) return today?.overtime_seconds ?? 0;
+    const cutoffMs = today?.auto_cutoff_at ? new Date(today.auto_cutoff_at).getTime() : NaN;
+    if (!Number.isNaN(cutoffMs) && nowTick >= cutoffMs) return 0;
+    return Math.max(0, Math.floor((nowTick - Math.max(shiftEndMs, openIn)) / 1000));
+  }, [punches0, nowTick, today?.overtime_applicable, today?.shift_end_at, today?.overtime_seconds, today?.auto_cutoff_at]);
+
   // Quick-pick label set — simplified to just Check In / Check Out.
   const quickLabels = useMemo<string[]>(() => {
     return nextDir0 === 'in' ? ['Check In'] : ['Check Out'];
@@ -342,10 +369,21 @@ export default function ClockIn() {
                     <h6 className="mb-0">
                       Ready to <strong>{isClockedIn ? 'Clock OUT' : 'Clock IN'}</strong>
                     </h6>
-                    <span className="badge bg-light text-muted">
-                      <i className="ri-time-line me-1" />
-                      {fmtHM(liveWorkedSeconds)} worked today
-                    </span>
+                    <div className="d-flex align-items-center gap-2 flex-wrap">
+                      <span className="badge bg-light text-muted">
+                        <i className="ri-time-line me-1" />
+                        {fmtHM(liveWorkedSeconds)} worked today
+                      </span>
+                      {today?.overtime_applicable && liveOvertimeSeconds > 0 && (
+                        <span
+                          className="badge bg-warning-subtle text-warning"
+                          title="Overtime runs from your shift end. It counts only once you clock out — before your next shift starts."
+                        >
+                          <i className="ri-timer-flash-line me-1" />
+                          {fmtHM(liveOvertimeSeconds)} overtime
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* Activity label picker — quick chips + free text. */}

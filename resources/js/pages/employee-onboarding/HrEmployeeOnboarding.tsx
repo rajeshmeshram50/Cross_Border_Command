@@ -36,7 +36,19 @@ const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 
 /* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
    Master (/holiday-groups) and Shift by the branch's configured Shift Details
    (/branch-shifts). Never hardcode either list. */
-const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
+/* Weekly-off patterns. These four strings are the CONTRACT with the backend —
+   App\Support\WeekOff::normalise() maps each one to a rule, so changing the
+   wording here silently changes which days are off. Keep them in step.
+   "Week Off Policy" and a bare "Rotational" used to sit in this list: neither
+   names any day, so the backend parser fell through to its Sunday default and
+   every employee ran on Sunday-only regardless of what was picked.
+   Sunday is off in ALL four; only the Saturday rule differs. */
+const ONB_WEEKLY_OFF   = OPT(
+  'Sunday Only',
+  'Saturday & Sunday',
+  'Rotational — 1st & 3rd Saturday',
+  'Rotational — 2nd & 4th Saturday',
+);
 
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
 const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
@@ -3283,7 +3295,11 @@ function InitiateOnboardingModal({
           api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } }),
         ]);
         if (cancelled) return;
-        const tpls: any[] = Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [];
+        // Same list Stage5Policies renders — it drops leave/attendance
+        // templates, and counting a document here that the stage never shows
+        // made the sidebar % disagree with the rows on screen.
+        const tpls: any[] = (Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [])
+          .filter((t: any) => !/\b(leave|attendance)\b/i.test(t.name || ''));
         const runs: any[] = Array.isArray(runRes.data) ? runRes.data : [];
         // Latest run per template_id (highest id wins) — a 'Completed' run = signed.
         const latest = new Map<number, any>();
@@ -3294,6 +3310,16 @@ function InitiateOnboardingModal({
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
+
+  /* Live override for the snapshot above. The effect only re-runs when the
+     modal opens, so signing a document mid-session left the sidebar at 0%
+     even though Stage 5 already showed the row as "Signed". Stage5Policies
+     refetches its runs after every send/sign, so let it drive these counts
+     while it's mounted. Stable identity — it's an onProgress dependency. */
+  const handleStage5Progress = useCallback((p: { signed: number; total: number }) => {
+    setStage5Signed(p.signed);
+    setStage5Total(p.total);
+  }, []);
 
   // The employee's SAVED salary structure (the exact components HR entered in
   // the employee form). The salary breakup prefers these real figures and only
@@ -3496,18 +3522,33 @@ function InitiateOnboardingModal({
   // Same shimmer treatment as mastersLoading — a saved asset FK must not
   // flash as a raw id while the available-assets fetch is in flight.
   const [assetsLoading, setAssetsLoading] = useState(true);
+  /* Re-runnable: the free-asset list goes stale the moment ANOTHER user (or
+     another tab) claims a device, and this was fetched once when the modal
+     opened. A taken asset then still showed in the picker — it couldn't
+     actually be saved (the server rejects a double-booking), but offering it
+     and failing on save is a bad way to find out. The pickers call this on
+     open so the list is current at the moment of choosing.
+     `isStale` lets the mount-time effect abort a superseded fetch. */
+  const reloadAssets = useCallback((isStale: () => boolean = () => false) => {
+    if (!emp?.dbId) return Promise.resolve();
+    setAssetsLoading(true);
+    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
+    const put = (setter: (o: AssetOpt[]) => void) => (r: any) => {
+      if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name })));
+    };
+    return Promise.allSettled([
+      api.get(url('laptop')).then(put(setLaptopAssets)),
+      api.get(url('mobile')).then(put(setMobileAssets)),
+      api.get(url('other')).then(put(setOtherAssets)),
+    ]).then(() => { if (!isStale()) setAssetsLoading(false); });
+  }, [emp?.dbId]);
+
   useEffect(() => {
     if (!isOpen || !emp?.dbId) return;
     let cancelled = false;
-    setAssetsLoading(true);
-    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
-    Promise.allSettled([
-      api.get(url('laptop')).then(r => { if (!cancelled) setLaptopAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-      api.get(url('mobile')).then(r => { if (!cancelled) setMobileAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-      api.get(url('other')) .then(r => { if (!cancelled) setOtherAssets ((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-    ]).then(() => { if (!cancelled) setAssetsLoading(false); });
+    reloadAssets(() => cancelled);
     return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, reloadAssets]);
 
   // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
@@ -4911,6 +4952,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 mobileAssets={mobileAssets}
                 otherAssets={otherAssets}
                 assetsLoading={assetsLoading}
+                onAssetsOpen={() => reloadAssets()}
               />
             )}
             {activeStage === 4 && (
@@ -4925,7 +4967,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 pfApplicable={stage4PfApplicable}
               />
             )}
-            {activeStage === 5 && <Stage5Policies emp={emp} />}
+            {activeStage === 5 && (
+              <Stage5Policies
+                emp={emp}
+                onProgress={handleStage5Progress}
+              />
+            )}
             {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
 
             {activeStage === 1 && (
@@ -5251,6 +5298,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Laptop Device</label>
                       <MasterSelect
                         options={laptopAssets}
+                        onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                         value={s1.laptop_master_asset_id}
@@ -5278,6 +5326,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Mobile Device</label>
                       <MasterSelect
                         options={mobileAssets}
+                        onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                         value={s1.mobile_master_asset_id}
@@ -5295,6 +5344,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <label className="onb-init-label">Other Assets</label>
                     <MasterMultiSelect
                       options={otherAssets}
+                      onOpen={() => reloadAssets()}
                       placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more (optional)'}
                       value={s1.other_master_asset_ids}
                       onChange={(vs) => setS1(p => ({ ...p, other_master_asset_ids: vs }))}
@@ -7328,7 +7378,7 @@ Stage2Documents.displayName = 'Stage2Documents';
  *  are the only persisted FK columns). Saving Stage 3 reuses
  *  `saveStage1(false)` from the modal scope. */
 function Stage3Provisioning({
-  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets, assetsLoading,
+  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets, assetsLoading, onAssetsOpen,
 }: {
   emp: OnboardRow;
   s1: any;
@@ -7341,6 +7391,9 @@ function Stage3Provisioning({
   /* True while the available-assets fetch is in flight — the pickers shimmer
    * instead of flashing a saved FK as a raw id. */
   assetsLoading?: boolean;
+  /* Re-fetch the free-asset lists when a picker opens — another user may
+     have claimed a device since this stage was mounted. */
+  onAssetsOpen?: () => void;
 }) {
   // Cosmetic progress meter — counts each provisioning area that has
   // at least one filled value. Keeps the banner moving as the admin
@@ -7358,11 +7411,11 @@ function Stage3Provisioning({
     );
   const pct = Math.round((tasksDone / tasksTotal) * 100);
 
-  const autoLabel = (
-    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
-  );
-  // Employee Code is system-generated from the number series — it is NOT
-  // editable, so it gets an "Auto Generated" badge instead of "EDITABLE".
+  /* The "EDITABLE" badge was removed: it sat on eight fields that are all
+     plainly editable inputs, so it stated the obvious and added chip noise to
+     every label. "AUTO GENERATED" stays — that one tells the user something
+     they can't see from the control itself (Employee Code comes from the
+     number series and cannot be typed). */
   const autoGenLabel = (
     <span className="auto" style={{ background: '#ede9fe', color: '#5b3fd1' }}>AUTO GENERATED</span>
   );
@@ -7449,7 +7502,7 @@ function Stage3Provisioning({
           <p className="onb-prov-subgroup"><i className="ri-computer-line" /> Assets &amp; Security</p>
           <Row className="g-3">
             <Col md={4}>
-              <label className="onb-init-label">Laptop Assigned {autoLabel}</label>
+              <label className="onb-init-label">Laptop Assigned</label>
               <MasterSelect
                 options={ONB_YES_NO}
                 value={s1.laptop_assigned || 'No'}
@@ -7462,9 +7515,10 @@ function Stage3Provisioning({
             </Col>
             {s1.laptop_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Laptop Device {autoLabel}</label>
+                <label className="onb-init-label">Laptop Device</label>
                 <MasterSelect
                   options={laptopAssets}
+                  onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                   value={s1.laptop_master_asset_id}
@@ -7474,7 +7528,7 @@ function Stage3Provisioning({
               </Col>
             )}
             <Col md={4}>
-              <label className="onb-init-label">Mobile Assigned {autoLabel}</label>
+              <label className="onb-init-label">Mobile Assigned</label>
               <MasterSelect
                 options={ONB_YES_NO}
                 value={s1.mobile_assigned || 'No'}
@@ -7487,9 +7541,10 @@ function Stage3Provisioning({
             </Col>
             {s1.mobile_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Mobile Device {autoLabel}</label>
+                <label className="onb-init-label">Mobile Device</label>
                 <MasterSelect
                   options={mobileAssets}
+                  onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                   value={s1.mobile_master_asset_id}
@@ -7500,11 +7555,12 @@ function Stage3Provisioning({
             )}
             <Col md={12}>
               <label className="onb-init-label">
-                Other Assets {autoLabel}
+                Other Assets
                 <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span>
               </label>
               <MasterMultiSelect
                 options={otherAssets}
+                onOpen={onAssetsOpen}
                 placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more'}
                 value={s1.other_master_asset_ids}
                 onChange={(vs) => setS1((p: any) => ({ ...p, other_master_asset_ids: vs }))}
@@ -7525,7 +7581,7 @@ function Stage3Provisioning({
         <div className="onb-prov-section-body">
           <Row className="g-3">
             <Col md={4}>
-              <label className="onb-init-label">Biometric Status {autoLabel}</label>
+              <label className="onb-init-label">Biometric Status</label>
               <MasterSelect
                 options={[
                   { value: 'Not Registered', label: 'Not Registered' },
@@ -7539,7 +7595,7 @@ function Stage3Provisioning({
               />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">Desk / Workstation No {autoLabel}</label>
+              <label className="onb-init-label">Desk / Workstation No</label>
               <input
                 className="onb-init-input"
                 placeholder="e.g. WS-204, Floor 3 / Bay B"
@@ -7548,7 +7604,7 @@ function Stage3Provisioning({
               />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">ID Card Status {autoLabel}</label>
+              <label className="onb-init-label">ID Card Status</label>
               <MasterSelect
                 options={[
                   { value: 'Not Printed', label: 'Not Printed' },
@@ -7886,7 +7942,12 @@ function Stage4Payroll({
 }
 
 // ── Stage 5 — Policies & Agreements ────────────────────────────────────────
-function Stage5Policies({ emp }: { emp: OnboardRow }) {
+function Stage5Policies({ emp, onProgress }: {
+  emp: OnboardRow;
+  /* Fires whenever the signed/total counts change, so the wizard sidebar can
+     show live Stage 5 progress instead of a stale snapshot taken on open. */
+  onProgress?: (p: { signed: number; total: number }) => void;
+}) {
   type Tpl = {
     id: number;
     code: string;
@@ -8075,6 +8136,16 @@ function Stage5Policies({ emp }: { emp: OnboardRow }) {
   }, [runs]);
 
   const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
+
+  /* Report the LIVE counts up to the modal so the sidebar percentage tracks
+     them. The parent used to fetch its own copy of exactly this, once, keyed
+     on [isOpen, employee] — so signing a document while the wizard was open
+     left Stage 5 reading "0%" next to a row already showing "Signed". Two
+     sources of the same truth; now there is one, and this component already
+     refetches after every send / sign action. */
+  useEffect(() => {
+    onProgress?.({ signed: signedCount, total: templates.length });
+  }, [signedCount, templates.length, onProgress]);
 
   // Open the rich send modal; the actual POST happens in confirmSend.
   const handleSend = (tpl: Tpl) => { setSendForTpl(tpl); };

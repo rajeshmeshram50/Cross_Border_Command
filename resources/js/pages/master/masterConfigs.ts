@@ -135,6 +135,24 @@ const P_AD_CODE         = "^[0-9]{14}$";                              // AD code
 const M_AD_CODE         = "AD Code must be exactly 14 digits (numbers only).";
 const P_ALNUM_CODE      = "^[A-Za-z0-9]+$";                           // alphanumeric code
 const M_ALNUM_CODE      = "Only letters and numbers are allowed (no spaces or special characters).";
+// Indian PIN: exactly 6 digits, and no PIN code starts with 0 — so "@#SDCS",
+// "0411045" and a 5-digit typo are all rejected.
+const P_PINCODE         = "^[1-9][0-9]{5}$";
+const M_PINCODE         = "PIN Code must be exactly 6 digits and cannot start with 0.";
+// Phone: 7-15 digits. The range covers short landlines through the longest
+// international numbers (ITU E.164 caps at 15). Digits ONLY — letters, "+",
+// spaces and dashes are all rejected, so the stored value is always dialable.
+const P_PHONE_7_15      = "^[0-9]{7,15}$";
+const M_PHONE_7_15      = "Phone must be 7 to 15 digits (numbers only — no spaces, +, or other symbols).";
+// GST state code: exactly two digits, 01-38. Kept as TEXT, never a number field
+// — the leading zero in "07" / "01" is part of the code and would be lost.
+const P_STATE_CODE      = "^[0-9]{2}$";
+const M_STATE_CODE      = "State Code must be exactly 2 digits, e.g. 07 or 27 (numbers only).";
+/* SWIFT / BIC (ISO 9362): 4-letter bank + 2-letter country + 2 alphanumeric
+ * location, then an OPTIONAL 3-character branch — so 8 or 11 characters, never
+ * 9, 10 or anything with a symbol. "SBININBB104" = SBIN·IN·BB·104. */
+const P_SWIFT_CODE      = "^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$";
+const M_SWIFT_CODE      = "Swift Code must be 8 or 11 letters/numbers, e.g. HDFCINBB or SBININBB104 (no spaces or special characters).";
 
 const C: Record<string, MasterConfig> = {
   // ---------- IDENTITY & ENTITY ----------
@@ -208,7 +226,7 @@ const C: Record<string, MasterConfig> = {
       { n: 'branch_name', l: 'Branch Name', t: 'text', p: 'Branch name' },
       { n: 'city', l: 'City', t: 'text', p: 'City' },
       { sec: 'Export Banking', n: '', l: '', t: 'text' },
-      { n: 'swift_code', l: 'Swift Code', t: 'text', r: true, p: 'SBININBB104' },
+      { n: 'swift_code', l: 'Swift Code', t: 'text', r: true, p: 'SBININBB104', maxLen: 11, pattern: P_SWIFT_CODE, patternMessage: M_SWIFT_CODE },
       { n: 'ad_code', l: 'AD Code', t: 'text', r: true, p: 'Authorized Dealer code', pattern: P_AD_CODE, patternMessage: M_AD_CODE },
       { n: 'is_primary', l: 'Primary Account', t: 'select', opts: ['No', 'Yes'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -453,7 +471,12 @@ const C: Record<string, MasterConfig> = {
     cat: 'Geography & Location',
     fields: [
       { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
-      { n: 'name', l: 'State Name', t: 'text', r: true, p: 'e.g. Maharashtra' },
+      // A state name is a place name — digits and symbols have no business in
+      // it. P_NAME_NO_DIGITS still allows the hyphens / apostrophes / full stops
+      // that real names use ("Jammu and Kashmir", "N'Djamena", "St. Gallen"):
+      // of the 1,797 seeded states, those cover every one but a single
+      // digit-bearing outlier.
+      { n: 'name', l: 'State Name', t: 'text', r: true, p: 'e.g. Maharashtra', pattern: P_NAME_NO_DIGITS, patternMessage: M_NAME_NO_DIGITS },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['name', 'country_id', 'status'],
@@ -483,7 +506,7 @@ const C: Record<string, MasterConfig> = {
     cat: 'Geography & Location',
     fields: [
       { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name' },
-      { n: 'state_code', l: 'State Code', t: 'text', r: true, p: 'e.g. 27 for Maharashtra' },
+      { n: 'state_code', l: 'State Code', t: 'text', r: true, p: 'e.g. 27 for Maharashtra', maxLen: 2, pattern: P_STATE_CODE, patternMessage: M_STATE_CODE },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
     cols: ['state_id', 'state_code', 'status'],
@@ -1022,7 +1045,12 @@ const C: Record<string, MasterConfig> = {
     desc: 'Risk severity tags for vendor & shipment screening',
     cat: 'Legal & Compliance',
     fields: [
-      { n: 'name', l: 'Risk Level', t: 'select', r: true, opts: ['Low', 'Medium', 'High', 'Critical'] },
+      // noneLabel prepends a blank option, which makes it options[0] — so the
+      // "required select defaults to its first option" rule in renderField
+      // lands on the blank instead of pre-selecting "Low". Risk severity must
+      // be a deliberate choice, and a silent default is the one value nobody
+      // reviews. Still required: an empty submit is rejected on save.
+      { n: 'name', l: 'Risk Level', t: 'select', r: true, noneLabel: '— Select Risk Level —', opts: ['Low', 'Medium', 'High', 'Critical'] },
       { n: 'description', l: 'Description', t: 'text', p: 'Risk criteria' },
       { n: 'action_required', l: 'Action Required', t: 'text', p: 'e.g. Escalate' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
@@ -1558,11 +1586,19 @@ const C: Record<string, MasterConfig> = {
       { n: 'wh_id', l: 'Warehouse ID', t: 'text', r: true, p: 'e.g. WH-001' },
       { n: 'wh_name', l: 'Warehouse Name', t: 'text', r: true, p: 'e.g. Pune Main' },
       { n: 'wh_type', l: 'Warehouse Type', t: 'select', r: true, opts: ['Own Warehouse', 'Third Party Warehouse'] },
+      // Address hierarchy, widest first: Country → State → City → PIN. State is
+      // cascaded off Country so it can only ever offer that country's states —
+      // it used to be free text, which allowed a State that belonged nowhere.
+      { n: 'country_id', l: 'Country', t: 'select', r: true, ref: 'countries', refL: 'name' },
+      { n: 'state_id', l: 'State', t: 'select', r: true, ref: 'states', refL: 'name', cascadeFrom: 'country_id' },
       { n: 'city', l: 'City', t: 'text', r: true, p: 'e.g. Pune' },
-      { n: 'state', l: 'State', t: 'text', p: 'e.g. Maharashtra' },
-      { n: 'pincode', l: 'PIN Code', t: 'text', p: 'e.g. 411045' },
+      // maxLen caps entry at 6 while typing; the pattern is what actually
+      // rejects letters / symbols on save.
+      { n: 'pincode', l: 'PIN Code', t: 'text', r: true, p: 'e.g. 411045', maxLen: 6, pattern: P_PINCODE, patternMessage: M_PINCODE },
       { n: 'contact_person', l: 'Contact Person', t: 'text', p: 'e.g. Rajesh Kumar' },
-      { n: 'contact_phone', l: 'Contact Phone', t: 'text', p: 'e.g. +91 98000 00000' },
+      // Placeholder shows a bare number on purpose — the old "+91 98000 00000"
+      // demonstrated a format the pattern now rejects.
+      { n: 'contact_phone', l: 'Contact Phone', t: 'text', p: 'e.g. 9876543210', maxLen: 15, pattern: P_PHONE_7_15, patternMessage: M_PHONE_7_15 },
       { n: 'area_sqft', l: 'Area (sq. ft.)', t: 'number', p: 'e.g. 25000' },
       { n: 'address', l: 'Full Address', t: 'textarea', p: 'Full warehouse address', full: true },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },

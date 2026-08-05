@@ -302,7 +302,76 @@ class AttendanceRegularizationController extends Controller
                 && ($isAdminScope || $this->isReportingManager($user, $row));
         });
 
+        $this->attachOriginalPunches($rows);
+
         return response()->json(['data' => $rows]);
+    }
+
+    /**
+     * Give every row the "before" side of its correction.
+     *
+     * An APPROVED row already carries the frozen snapshot taken the moment its
+     * punches were replaced. A PENDING one has none yet — and that is exactly
+     * when the approver needs it, because the list otherwise shows only the
+     * times being asked for, with nothing to compare them against. So for
+     * pending rows we read the day's punches live.
+     *
+     * One query for the whole page rather than one per row.
+     */
+    private function attachOriginalPunches($rows): void
+    {
+        $pending = $rows->filter(fn ($r) => empty($r->original_punches));
+        if ($pending->isEmpty()) {
+            $rows->each(fn ($r) => $r->original_display = $r->original_summary);
+            return;
+        }
+
+        // (employee_id, date) pairs still needing a live read.
+        $empIds = $pending->pluck('employee_id')->unique()->values()->all();
+        $dates  = $pending->map(fn ($r) => Carbon::parse((string) $r->regularization_date)->toDateString())
+            ->unique()->values()->all();
+
+        $punchesByKey = [];
+        AttendancePunch::query()
+            ->join('attendances', 'attendances.id', '=', 'attendance_punches.attendance_id')
+            ->whereIn('attendances.employee_id', $empIds ?: [0])
+            ->whereIn('attendances.attendance_date', $dates ?: ['1970-01-01'])
+            ->whereNull('attendance_punches.deleted_at')
+            ->orderBy('attendance_punches.punched_at')
+            ->get([
+                'attendances.employee_id',
+                'attendances.attendance_date',
+                'attendance_punches.punched_at',
+                'attendance_punches.direction',
+                'attendance_punches.label',
+                'attendance_punches.method',
+            ])
+            ->each(function ($p) use (&$punchesByKey) {
+                $key = $p->employee_id . '|' . Carbon::parse($p->attendance_date)->toDateString();
+                $punchesByKey[$key][] = [
+                    'time'      => Carbon::parse($p->punched_at, 'UTC')
+                                        ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
+                    'direction' => $p->direction,
+                    'label'     => $p->label,
+                    'method'    => $p->method,
+                ];
+            });
+
+        $rows->each(function (AttendanceRegularization $row) use ($punchesByKey) {
+            if (!empty($row->original_punches)) {
+                $row->original_display = $row->original_summary;
+                return;
+            }
+            $key  = $row->employee_id . '|' . Carbon::parse((string) $row->regularization_date)->toDateString();
+            $live = $punchesByKey[$key] ?? [];
+            $row->original_punches_live = $live;
+
+            $firstIn = collect($live)->firstWhere('direction', 'in')['time'] ?? null;
+            $lastOut = collect($live)->where('direction', 'out')->last()['time'] ?? null;
+            $row->original_display = $live
+                ? (($firstIn ?? '—') . ' – ' . ($lastOut ?? '—'))
+                : 'No punches (absent)';
+        });
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -456,6 +525,40 @@ class AttendanceRegularizationController extends Controller
                         'attendance_date' => $dateStr,
                         'status'          => 'Present',
                     ]);
+                }
+
+                /* Snapshot the day BEFORE it is overwritten.
+                 *
+                 * The delete below is what makes the original biometric log
+                 * disappear from the timeline ("pichla time log nikal jata
+                 * hai"). The rows survive as soft-deletes, but nothing reads
+                 * them back, so the corrected day looks like it was always
+                 * punched that way. Capturing the originals on the REQUEST
+                 * keeps the correction auditable — and lets the approver see
+                 * what they are actually changing.
+                 *
+                 * Only captured once: re-approving (or a retry) must not
+                 * overwrite the true original with an already-corrected set. */
+                if (empty($row->original_punches)) {
+                    $existing = AttendancePunch::where('attendance_id', $attendance->id)
+                        ->orderBy('punched_at')->get();
+                    $snapshot = $existing->map(fn ($p) => [
+                        'time'      => Carbon::parse($p->punched_at, 'UTC')
+                                            ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
+                        'direction' => $p->direction,
+                        'label'     => $p->label,
+                        'method'    => $p->method,
+                    ])->values()->all();
+
+                    $firstInT = collect($snapshot)->firstWhere('direction', 'in')['time'] ?? null;
+                    $lastOutT = collect($snapshot)->where('direction', 'out')->last()['time'] ?? null;
+
+                    $row->forceFill([
+                        'original_punches' => $snapshot,
+                        'original_summary' => $snapshot
+                            ? trim(($firstInT ?? '—') . ' – ' . ($lastOutT ?? '—'))
+                            : 'No punches (absent)',
+                    ])->save();
                 }
 
                 // Replace the day's punches with the approved corrected set.

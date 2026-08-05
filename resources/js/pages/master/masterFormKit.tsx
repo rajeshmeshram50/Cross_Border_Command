@@ -55,6 +55,7 @@ export function MasterMultiSelect({
   disabledValues,
   disabledHint,
   renderBadges,
+  onOpen,
 }: {
   name?: string;
   value: string[];
@@ -81,6 +82,10 @@ export function MasterMultiSelect({
   /* Short reason appended to a disabled option's tooltip, e.g. "no document
      rule defined yet". */
   disabledHint?: string;
+  /* Fired when the dropdown OPENS. Use it to re-fetch options that can go
+     stale while the form sits open — e.g. the free-asset list, where another
+     user may have claimed a device since this form was mounted. */
+  onOpen?: () => void;
 }) {
   const lockedSet = new Set(lockedValues ?? []);
   const disabledSet = new Set(disabledValues ?? []);
@@ -153,7 +158,15 @@ export function MasterMultiSelect({
       <style>{CHIPSTRIP_CSS}</style>
       <Dropdown
         isOpen={open && !disabled}
-        toggle={() => { if (!disabled) setOpen(v => !v); }}
+        toggle={() => {
+          if (disabled) return;
+          setOpen(v => {
+            // Fire onOpen on the OPENING edge only, so callers can refresh a
+            // list that may have gone stale since the form was mounted.
+            if (!v) onOpen?.();
+            return !v;
+          });
+        }}
         direction={dropDir}
         className={`master-select-wrap${invalid ? ' invalid' : ''}${disabled ? ' disabled' : ''}`}
       >

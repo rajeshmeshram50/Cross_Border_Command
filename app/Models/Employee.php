@@ -201,6 +201,27 @@ class Employee extends Model
         return [null, null];
     }
 
+    /**
+     * Is overtime applicable to this employee?
+     *
+     * The employee form models this as a Yes/No toggle that, when Yes, forces
+     * the pick of an Overtime Rate from Master › Overtime (OT) — so the single
+     * `overtime` column carries BOTH facts: a rate name means applicable, blank
+     * (or the legacy "Not Applicable" / "No" sentinels the field held before the
+     * OT Master existed) means not.
+     *
+     * Everything overtime-related keys off this: attendance skips the shift-end
+     * auto-checkout for these employees so their post-shift time keeps
+     * accruing, and payroll only detects OT hours for them.
+     */
+    public function overtimeApplicable(): bool
+    {
+        $v = trim((string) ($this->overtime ?? ''));
+        return $v !== ''
+            && strcasecmp($v, 'Not Applicable') !== 0
+            && strcasecmp($v, 'No') !== 0;
+    }
+
     /** First "HH:MM" found in $v, else null. Tolerates "9:30", "09:30:00", "09:30 AM". */
     private function hhmm($v): ?string
     {

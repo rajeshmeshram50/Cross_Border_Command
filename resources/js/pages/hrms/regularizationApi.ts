@@ -27,6 +27,12 @@ export interface ApiRegularization {
   approver_comment: string | null;
   // Whether the logged-in user may Approve/Reject this row right now. Server-computed.
   can_act_now?: boolean;
+  /** The day BEFORE this correction, as "09:26 – 18:40". Server-built: the
+   *  frozen pre-approval snapshot once acted on, or a live read of the day's
+   *  punches while still pending. */
+  original_display?: string | null;
+  original_punches?: { time: string; direction: string; label?: string | null; method?: string | null }[] | null;
+  original_summary?: string | null;
   // Only present on the create() response — the ACTUAL approver the request was
   // routed to (or auto_approved when there's no one to act). Used for a truthful
   // success toast instead of guessing from the org chart (bug #29).

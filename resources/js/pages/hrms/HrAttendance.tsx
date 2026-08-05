@@ -63,6 +63,12 @@ interface AttendanceEmployee {
   workedCompletedSeconds?: number;
   openInAt?: string | null;
   autoCutoffAt?: string | null;
+  /** Employee master → Leave & Attendance → "Overtime Applicable" = Yes. */
+  overtimeApplicable?: boolean;
+  /** ISO instant this day's shift ends — where overtime starts counting. */
+  shiftEndAt?: string | null;
+  /** Overtime credited for the day (provisional while still clocked in). */
+  overtimeSeconds?: number;
   expectedMinutes: number;
   lateByMinutes: number;
   punches: PunchEvent[];
@@ -259,6 +265,18 @@ export default function HrAttendance() {
   const [regDate, setRegDate]     = useState<string>('');
   const [regPunches, setRegPunches] = useState<RegPrefillPunch[] | null>(null);
 
+  /* Two refresh counters, because this page holds two sibling views of the same
+     data that used to be blind to each other — the only way to see a new or
+     approved request was a manual F5.
+       attVersion — refetches the day/month attendance. Bumped on submit (so the
+                    row shows as pending) and on approve/reject (so the corrected
+                    times actually appear).
+       regVersion — reloads the Regularization Requests list. Bumped on submit
+                    only; after an approve that list reloads itself, and bumping
+                    here too would just fetch it twice. */
+  const [attVersion, setAttVersion] = useState(0);
+  const [regVersion, setRegVersion] = useState(0);
+
   /* Clock format is fixed at 12-hour. The "24 hour format" toggle was removed
      from the Logs & Requests header, so this is a constant rather than stored
      state — the old localStorage preference is deliberately NOT read back: a
@@ -277,7 +295,8 @@ export default function HrAttendance() {
     setCalMonth((prev) => (prev === wantedMonth ? prev : wantedMonth));
   }, [viewDate]);
 
-  // Fetch real attendance for the inspected date; refires on viewDate change.
+  // Fetch real attendance for the inspected date; refires on viewDate change,
+  // and on attVersion so a regularization submit/approve reflects immediately.
   useEffect(() => {
     let cancelled = false;
     setEmployeesLoading(true);
@@ -305,7 +324,7 @@ export default function HrAttendance() {
       })
       .finally(() => { if (!cancelled) setEmployeesLoading(false); });
     return () => { cancelled = true; };
-  }, [viewDate]);
+  }, [viewDate, attVersion]);
 
   const counts = useMemo(() => ({
     all:     employees.length,
@@ -355,6 +374,12 @@ export default function HrAttendance() {
       setEmployees(prev => prev.map(e => e.id === selected.id ? { ...e, correction: newReq } : e));
     }
     setRegOpen(false);
+    // The optimistic `correction` above is instant feedback for the row that was
+    // just raised; these pull the real thing. Without them the request sat only
+    // in local state — the Regularization Requests list below never learnt it
+    // existed until the page was reloaded by hand.
+    setRegVersion(v => v + 1);
+    setAttVersion(v => v + 1);
   };
 
   /* Open the regularization modal for a SPECIFIC log row. It used to just flip
@@ -667,7 +692,13 @@ export default function HrAttendance() {
               />
             </div>
 
-            <RegularizationApprovals />
+            {/* onActed refetches the attendance above: approving a correction
+                rewrites that day's punches, and the timeline was still showing
+                the pre-approval times until the page was manually refreshed. */}
+            <RegularizationApprovals
+              refreshKey={regVersion}
+              onActed={() => setAttVersion(v => v + 1)}
+            />
         </Col>
       </Row>
 
@@ -727,6 +758,22 @@ function TodayRecordCard({
       : (typeof employee.workedSeconds === 'number' ? employee.workedSeconds : employee.workedMinutes * 60);
     const boundary = cutoffMs != null ? Math.min(nowMs, cutoffMs) : nowMs;
     return base + Math.max(0, Math.floor((boundary - openInMs) / 1000));
+  })();
+
+  /* Live OVERTIME — only for employees the employee master marks overtime-
+     applicable. It starts the instant the SHIFT ENDS (arriving late does not
+     push it out) and, because these employees get no auto-logout, keeps
+     ticking while they stay on the clock. Not punching out before the next
+     shift starts (= autoCutoffAt for them) forfeits the whole day's overtime,
+     which is why the ticker drops to zero there instead of freezing. Closed /
+     past days just show the server figure. */
+  const otApplicable = !!employee.overtimeApplicable;
+  const shiftEndMs   = employee.shiftEndAt ? new Date(employee.shiftEndAt).getTime() : null;
+  const liveOvertimeSecs = (() => {
+    if (!otApplicable) return 0;
+    if (openInMs == null || shiftEndMs == null) return employee.overtimeSeconds ?? 0;
+    if (cutoffMs != null && nowMs >= cutoffMs) return 0;
+    return Math.max(0, Math.floor((nowMs - Math.max(shiftEndMs, openInMs)) / 1000));
   })();
 
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
@@ -799,7 +846,7 @@ function TodayRecordCard({
           </div>
         </div>
 
-        <div className="att-today-stats">
+        <div className={`att-today-stats${otApplicable ? ' att-today-stats--4' : ''}`}>
           <div className="att-stat">
             <div className="att-stat-num" style={{ color: '#7c5cfc' }}>{employee.punches.filter(p => p.type !== 'missing').length}</div>
             <div className="att-stat-label">PUNCHES</div>
@@ -812,6 +859,12 @@ function TodayRecordCard({
             <div className="att-stat-num" style={{ color: '#6b7280' }}>{fmtMinutes(employee.expectedMinutes)}</div>
             <div className="att-stat-label">EXPECTED</div>
           </div>
+          {otApplicable && (
+            <div className="att-stat" title={`Overtime runs from the ${employee.shiftEnd} shift end. It only counts once the employee punches out — before their next shift starts.`}>
+              <div className="att-stat-num" style={{ color: '#f59e0b' }}>{fmtMinutes(Math.floor(liveOvertimeSecs / 60))}</div>
+              <div className="att-stat-label">OVERTIME</div>
+            </div>
+          )}
         </div>
 
       </CardBody>

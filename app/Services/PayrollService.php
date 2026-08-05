@@ -376,7 +376,32 @@ class PayrollService
         ];
     }
 
-    /** Working days = calendar days minus Sundays (a sane default; HR can edit). */
+    /**
+     * Working days for ONE employee — calendar days minus that employee's own
+     * weekly offs.
+     *
+     * The period-level default below counts every non-Sunday, which is only
+     * right for a Sunday-only employee. Someone on "Saturday & Sunday" or a
+     * rotational Saturday pattern has fewer working days, and using the company
+     * number for them inflates the denominator: their per-day salary comes out
+     * too low and their LOP too high. Holidays are NOT deducted here — they are
+     * paid days handled separately by holidayAggregates().
+     */
+    private function employeeWorkingDays(Employee $employee, Carbon $start, Carbon $end): int
+    {
+        $label = (string) ($employee->weekly_off ?? '');
+        $days = 0;
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            if (!\App\Support\WeekOff::isOff($label, $d)) {
+                $days++;
+            }
+        }
+        return $days;
+    }
+
+    /** Working days = calendar days minus Sundays (a sane default; HR can edit).
+     *  Company/branch level — stored on the payroll period. Per-EMPLOYEE counts
+     *  come from employeeWorkingDays() above, which honours their weekly off. */
     private function defaultWorkingDays(Carbon $start, Carbon $end): int
     {
         $days = 0;
@@ -400,8 +425,15 @@ class PayrollService
 
     /**
      * Rule 7 — employees that belong in REGULAR payroll for this period.
-     * Excludes Inactive / Resigned / Terminated and anyone whose last working
-     * day fell before the period starts (those go to F&F, not regular pay).
+     *
+     * Excludes Inactive / Resigned / Terminated, and anyone whose LAST WORKING
+     * DAY falls on or before the period end. A leaver is settled through Full &
+     * Final, not regular payroll: someone who left on 10 August is not in the
+     * 1–31 August run at all, and their earned salary for those ten days is one
+     * of the F&F lines instead. Paying them here AND in F&F would pay twice.
+     *
+     * Only the exit CYCLE is excluded — an employee whose last working day is
+     * in a LATER month worked this one in full and is paid normally.
      */
     public function eligibleEmployees(PayrollPeriod $period): Collection
     {
@@ -427,13 +459,14 @@ class PayrollService
 
         $employees = $q->get();
 
-        // Drop anyone whose exit last-working-day is before this period starts,
-        // and anyone who left within 15 days of joining — an early exit is not
-        // put through payroll at all (ProbationGuard::EARLY_EXIT_DAYS).
+        // Drop anyone whose exit last-working-day lands on or before this
+        // period's end — they are settled through F&F, not regular payroll —
+        // and anyone who left within 15 days of joining (an early exit is not
+        // put through payroll at all, ProbationGuard::EARLY_EXIT_DAYS).
         $exits = $this->exitMap($employees->pluck('id')->all());
         return $employees->reject(function (Employee $e) use ($exits, $period) {
             $lwd = $exits[$e->id] ?? null;
-            if ($lwd && Carbon::parse($lwd)->lt($period->period_start)) {
+            if ($lwd && Carbon::parse($lwd)->lte($period->period_end)) {
                 return true;
             }
             return ProbationGuard::isEarlyExit($e, $lwd);
@@ -442,10 +475,15 @@ class PayrollService
 
     /**
      * Employees held OUT of this period's payroll and why — so HR can see that
-     * someone was skipped deliberately rather than lost. Currently the
-     * early-exit rule (left within 15 days of joining); the pre-period-exit
-     * drop is not reported because those people simply belong to an earlier
-     * cycle.
+     * someone was skipped deliberately rather than lost. Two reasons:
+     *
+     *   · Exited in this cycle — settled through F&F instead of regular pay.
+     *     Reported because a mid-month leaver vanishing from the run is exactly
+     *     the kind of thing that reads as a bug unless it's spelled out.
+     *   · Left within 15 days of joining — payroll not processed at all.
+     *
+     * Someone whose last working day precedes this period entirely is NOT
+     * reported: they belong to an earlier cycle and were never expected here.
      */
     public function payrollExclusions(PayrollPeriod $period): array
     {
@@ -462,19 +500,34 @@ class PayrollService
 
         foreach ($employees as $e) {
             $lwd = $exits[$e->id] ?? null;
-            if (!ProbationGuard::isEarlyExit($e, $lwd)) {
+
+            $earlyExit = ProbationGuard::isEarlyExit($e, $lwd);
+            // Exited inside THIS cycle (not before it — that's an earlier
+            // period's business).
+            $exitedInCycle = $lwd
+                && Carbon::parse($lwd)->lte($period->period_end)
+                && Carbon::parse($lwd)->gte($period->period_start);
+
+            if (!$earlyExit && !$exitedInCycle) {
                 continue;
             }
-            $tenure = ProbationGuard::tenureDays($e, $lwd);
+
+            $tenure  = ProbationGuard::tenureDays($e, $lwd);
+            $lwdDate = Carbon::parse($lwd);
             $out[] = [
                 'employee_id'      => $e->id,
                 'employee_code'    => $e->emp_code,
                 'employee_name'    => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
-                'date_of_joining'  => Carbon::parse($e->date_of_joining)->toDateString(),
-                'last_working_day' => Carbon::parse($lwd)->toDateString(),
+                'date_of_joining'  => $e->date_of_joining ? Carbon::parse($e->date_of_joining)->toDateString() : null,
+                'last_working_day' => $lwdDate->toDateString(),
                 'tenure_days'      => $tenure,
-                'reason'           => "Exited within " . ProbationGuard::EARLY_EXIT_DAYS
-                    . " days of joining ({$tenure} day(s)) — payroll not processed.",
+                // Early exit is the stronger statement (no payroll at all), so
+                // it wins when both apply.
+                'reason'           => $earlyExit
+                    ? 'Exited within ' . ProbationGuard::EARLY_EXIT_DAYS
+                        . " days of joining ({$tenure} day(s)) — payroll not processed."
+                    : 'Left on ' . $lwdDate->format('j M Y')
+                        . ' — excluded from this cycle; salary and dues are settled in the Full & Final settlement.',
             ];
         }
 
@@ -620,7 +673,13 @@ class PayrollService
             'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: $employee->display_name,
             'department'    => $deptName,
             'designation'   => $desigName,
-            'working_days'  => $period->working_days,
+            // Per-employee, not the period's company-wide figure — the payslip's
+            // "Total Days" has to match the denominator the pay is divided by.
+            'working_days'  => $this->employeeWorkingDays(
+                $employee,
+                Carbon::parse($period->period_start),
+                Carbon::parse($period->period_end),
+            ),
             'present_days'  => 0,
             'paid_days'     => 0,
             'lop_days'      => 0,
@@ -685,8 +744,19 @@ class PayrollService
                 'Mid-cycle join/exit — salary pro-rated to ' . round($proration * 100) . '% of the month.');
         }
 
-        // Effective payable working days within the active window.
-        $effectiveWorkingDays = round($period->working_days * $proration, 2);
+        /* Effective payable working days within the active window.
+         *
+         * Counted from THIS employee's weekly-off pattern rather than the
+         * period's company-wide figure. The period number is calendar-minus-
+         * Sundays, so a Saturday-off employee was being measured against a
+         * denominator that included days they never work — deflating per-day
+         * salary and inflating LOP. */
+        $empWorkingDays       = $this->employeeWorkingDays(
+            $employee,
+            $period->period_start->copy(),
+            $period->period_end->copy(),
+        );
+        $effectiveWorkingDays = round($empWorkingDays * $proration, 2);
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
         $att = $this->attendanceAggregates(
@@ -1112,7 +1182,11 @@ class PayrollService
             }
 
             if ($d->lt($start) || $d->gt($end)) continue;
-            if ($d->dayOfWeek === Carbon::SUNDAY) continue; // not a working day
+            // A holiday landing on this employee's OWN weekly off is already a
+            // non-working day — crediting it again would pay the same day twice.
+            // Was hardcoded to Sunday, which double-counted for anyone whose
+            // Saturday is off.
+            if (\App\Support\WeekOff::isOff((string) ($employee->weekly_off ?? ''), $d)) continue;
 
             $dates[$d->toDateString()] = true; // dedupe same-day entries
         }
@@ -1201,6 +1275,10 @@ class PayrollService
             return ['paid' => 0, 'unpaid' => 0];
         }
 
+        // The employee's own weekly-off pattern decides which days inside a
+        // leave span are chargeable — same rule LeaveRequestController uses.
+        $weeklyOffLabel = (string) (Employee::where('id', $employeeId)->value('weekly_off') ?? '');
+
         $rows = DB::table('leave_requests')
             ->where('employee_id', $employeeId)
             ->where('status', 'Approved')
@@ -1223,12 +1301,13 @@ class PayrollService
             if ($to->lt($from)) {
                 continue;
             }
-            // Count only WORKING days (exclude Sundays) in the clipped window so
-            // a leave that straddles a weekend doesn't over-credit paid days
-            // (Rule 3 precision).
+            // Count only WORKING days in the clipped window so a leave that
+            // straddles a weekend doesn't over-credit paid days (Rule 3
+            // precision). Was hardcoded to Sundays — a Saturday-off employee
+            // therefore had every Saturday inside a leave counted as payable.
             $span = 0;
             for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
-                if ($d->dayOfWeek !== Carbon::SUNDAY) {
+                if (!\App\Support\WeekOff::isOff($weeklyOffLabel, $d)) {
                     $span++;
                 }
             }
@@ -1545,8 +1624,13 @@ class PayrollService
         // end belongs to the NEXT calendar day (e.g. 22:00 → 06:00).
         $overnight  = $this->minutesBetween($shiftStart, $shiftEnd) <= 0;
 
-        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd, 'detail' => []];
-        if (!Schema::hasTable('attendances')) {
+        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd,
+                  'applicable' => $employee->overtimeApplicable(), 'detail' => []];
+        // Overtime is a per-employee setting (employee form → Leave &
+        // Attendance → "Overtime Applicable"). Staying past the shift end
+        // earns nothing for an employee it isn't applicable to, so detection
+        // never runs for them.
+        if (!$employee->overtimeApplicable() || !Schema::hasTable('attendances')) {
             return $blank;
         }
 
@@ -1585,6 +1669,14 @@ class PayrollService
             if ($mins <= 0) {
                 continue; // left at or before shift end — no overtime
             }
+            // The punch-out has to land before the employee's NEXT shift
+            // starts. Past that the day was never properly closed, so its
+            // overtime doesn't count at all (it is not carried, capped or
+            // pro-rated — it's dropped). Mirrors Attendance::overtimeSecondsForDay().
+            $nextShiftStart = Carbon::parse($date . ' ' . $shiftStart, self::DISPLAY_TZ)->addDay();
+            if ($out->greaterThanOrEqualTo($nextShiftStart)) {
+                continue;
+            }
             if ($mins > self::MAX_OT_MINUTES_PER_DAY) {
                 $mins = self::MAX_OT_MINUTES_PER_DAY;
                 $capped++;
@@ -1610,6 +1702,7 @@ class PayrollService
             'days'        => $days,
             'capped_days' => $capped,
             'shift_end'   => $shiftEnd,
+            'applicable'  => true,
             'detail'      => $detail,
         ];
     }
@@ -1631,6 +1724,10 @@ class PayrollService
             'month'          => $month,
             'year'           => $year,
             'shift_end'      => $detected['shift_end'],
+            // False when the employee master says overtime isn't applicable —
+            // detected_hours is then always 0, and the UI can say WHY instead
+            // of implying nobody stayed late.
+            'applicable'     => $detected['applicable'],
             'detected_hours' => $detected['hours'],
             'days'           => $detected['days'],
             'capped_days'    => $detected['capped_days'],

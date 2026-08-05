@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Assigned Holiday Calendar — surfaces the holidays from the employee's
@@ -86,11 +87,62 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
   const isoFor = (d: number) => `${year}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   const monthHolidays = holidays.filter(h => Number(h.date.slice(5, 7)) === calMonth + 1);
 
+  /* List columns for the shared DataTable. Sr No comes from `serial`, and
+     paging / sorting / the footer are the component's own — the calendar
+     view stays hand-rolled because it's a month grid, not a list. */
+  const holidayColumns: DataTableColumn<Holiday>[] = useMemo(() => [
+    {
+      header: 'Holiday Name',
+      accessorKey: 'name',
+      meta: { width: '46%', wrap: true },
+      cell: info => {
+        const h = info.row.original;
+        return (
+          <>
+            <span className="hcp-name">{h.name}</span>
+            {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
+            {/* Clamp + break mid-word: an unbroken description (a pasted
+                "wwww…" run) would otherwise widen the Date / Type columns. */}
+            {h.description && (
+              <div
+                title={h.description}
+                style={{
+                  fontSize: 11.5, color: '#94a3b8', marginTop: 2,
+                  overflowWrap: 'anywhere',
+                  display: '-webkit-box', WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}
+              >
+                {h.description}
+              </div>
+            )}
+          </>
+        );
+      },
+    },
+    {
+      header: 'Date',
+      accessorKey: 'date',
+      meta: { width: '24%' },
+      cell: info => <span style={{ fontWeight: 600 }}>{fmtDate(String(info.getValue() ?? ''))}</span>,
+    },
+    {
+      header: 'Type',
+      accessorKey: 'type',
+      meta: { width: '18%' },
+      cell: info => {
+        const t = String(info.getValue() ?? '');
+        const c = typeColor(t);
+        return <span className="hcp-badge" style={{ background: c.bg, color: c.fg, borderColor: c.bd }}><span className="dot" />{t}</span>;
+      },
+    },
+  ], []);
+
   const css = `
     .hcp-wrap { padding: 2px; }
     .hcp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
     .hcp-grp { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: #475569; }
-    .hcp-grp-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: linear-gradient(135deg,#ec4899,#f472b6); color: #fff; font-weight: 700; font-size: 12px; box-shadow: 0 2px 8px rgba(236,72,153,.3); }
+    .hcp-grp-pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: linear-gradient(135deg,#7c3aed,#8b5cf6); color: #fff; font-weight: 700; font-size: 12px; box-shadow: 0 2px 8px rgba(124,58,237,.3); }
     .hcp-controls { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .hcp-year { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #e2e8f0; border-radius: 9px; padding: 3px; }
     .hcp-year button { width: 28px; height: 28px; border: 0; border-radius: 7px; background: #f1f5f9; color: #334155; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
@@ -101,12 +153,11 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     .hcp-toggle button.on { background: #fff; color: #4338ca; box-shadow: 0 1px 4px rgba(15,23,42,.12); }
     .hcp-count { font-size: 12px; color: #64748b; font-weight: 600; }
 
-    .hcp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .hcp-table thead th { text-align: left; padding: 10px 12px; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: #64748b; font-weight: 700; border-bottom: 1.5px solid #e2e8f0; background: #f8fafc; }
-    .hcp-table tbody td { padding: 11px 12px; border-bottom: 1px solid #f1f5f9; color: #1f2937; vertical-align: middle; }
-    .hcp-table tbody tr:hover { background: #fcfdff; }
-    .hcp-sr { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: #f1f5f9; color: #475569; font-size: 11px; font-weight: 800; }
-    .hcp-name { font-weight: 700; color: #0f172a; }
+    /* The list is the shared DataTable now — header band, row styling, Sr No
+       and the footer pager all come from it, so this file only styles what
+       goes INSIDE the cells. A pasted, space-less name must break rather than
+       stretch the row past the Date / Type columns. */
+    .hcp-name { font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
     .hcp-recur { margin-left: 7px; font-size: 9.5px; font-weight: 800; color: #7c3aed; background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
     .hcp-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid; }
     .hcp-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -118,7 +169,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     .hcp-cal-layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
     @media (max-width: 820px) { .hcp-cal-layout { grid-template-columns: 1fr; } }
     .hcp-cal { border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; background: #fff; }
-    .hcp-cal-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: linear-gradient(135deg,#ec4899,#f472b6); color: #fff; }
+    .hcp-cal-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: linear-gradient(135deg,#7c3aed,#8b5cf6); color: #fff; }
     .hcp-cal-head .m { font-weight: 800; font-size: 14px; }
     .hcp-cal-head button { width: 28px; height: 28px; border: 0; border-radius: 7px; background: rgba(255,255,255,.2); color: #fff; cursor: pointer; }
     .hcp-cal-head button:disabled { opacity: .4; cursor: default; }
@@ -127,16 +178,16 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     .hcp-cell { min-height: 56px; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; padding: 5px 6px; position: relative; }
     .hcp-cell:nth-child(7n) { border-right: 0; }
     .hcp-cell .d { font-size: 11.5px; font-weight: 700; color: #475569; }
-    .hcp-cell.hol { background: #fdf2f8; }
-    .hcp-cell.hol .d { color: #be185d; }
-    .hcp-cell .hn { margin-top: 3px; font-size: 9.5px; line-height: 1.2; font-weight: 700; color: #9d174d; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .hcp-cell.hol { background: #f5f3ff; }
+    .hcp-cell.hol .d { color: #6d28d9; }
+    .hcp-cell .hn { margin-top: 3px; font-size: 9.5px; line-height: 1.2; font-weight: 700; color: #5b21b6; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
     .hcp-cell.empty { background: #fafbfc; }
 
     .hcp-side { border: 1px solid #e2e8f0; border-radius: 12px; background: #fff; overflow: hidden; }
     .hcp-side-h { padding: 10px 14px; font-size: 12px; font-weight: 800; color: #0f172a; border-bottom: 1px solid #f1f5f9; background: #f8fafc; }
     .hcp-side-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #f8fafc; }
     .hcp-side-date { flex-shrink: 0; text-align: center; width: 38px; }
-    .hcp-side-date .dd { font-size: 16px; font-weight: 800; color: #be185d; line-height: 1; }
+    .hcp-side-date .dd { font-size: 16px; font-weight: 800; color: #6d28d9; line-height: 1; }
     .hcp-side-date .wd { font-size: 9px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
     .hcp-side-empty { padding: 24px 14px; text-align: center; color: #94a3b8; font-size: 12.5px; }
 
@@ -155,10 +206,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
        dark mode (the old card-bg fill blended with the inactive button). */
     [data-bs-theme="dark"] .hcp-toggle button.on { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(124,58,237,.5); }
 
-    [data-bs-theme="dark"] .hcp-table thead th { background: rgba(255,255,255,.04); color: #cbd5e1; border-color: rgba(255,255,255,.1); }
-    [data-bs-theme="dark"] .hcp-table tbody td { color: #e2e8f0; border-color: rgba(255,255,255,.06); }
-    [data-bs-theme="dark"] .hcp-table tbody tr:hover { background: rgba(255,255,255,.03); }
-    [data-bs-theme="dark"] .hcp-sr { background: rgba(255,255,255,.08); color: #cbd5e1; }
+    /* Table chrome in dark mode is DataTable's own; only cell content here. */
     [data-bs-theme="dark"] .hcp-name { color: #f1f5f9; }
     [data-bs-theme="dark"] .hcp-recur { background: rgba(139,92,246,.2); color: #c4b5fd; border-color: rgba(139,92,246,.4); }
 
@@ -171,11 +219,11 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
     [data-bs-theme="dark"] .hcp-cell { border-color: rgba(255,255,255,.06); }
     [data-bs-theme="dark"] .hcp-cell .d { color: #94a3b8; }
     [data-bs-theme="dark"] .hcp-cell.empty { background: rgba(255,255,255,.02); }
-    [data-bs-theme="dark"] .hcp-cell.hol { background: rgba(236,72,153,.15); }
-    [data-bs-theme="dark"] .hcp-cell.hol .d, [data-bs-theme="dark"] .hcp-cell .hn { color: #f9a8d4; }
+    [data-bs-theme="dark"] .hcp-cell.hol { background: rgba(139,92,246,.15); }
+    [data-bs-theme="dark"] .hcp-cell.hol .d, [data-bs-theme="dark"] .hcp-cell .hn { color: #c4b5fd; }
     [data-bs-theme="dark"] .hcp-side-h { background: rgba(255,255,255,.04); color: #f1f5f9; border-color: rgba(255,255,255,.06); }
     [data-bs-theme="dark"] .hcp-side-item { border-color: rgba(255,255,255,.05); }
-    [data-bs-theme="dark"] .hcp-side-date .dd { color: #f9a8d4; }
+    [data-bs-theme="dark"] .hcp-side-date .dd { color: #c4b5fd; }
     [data-bs-theme="dark"] .hcp-side-empty { color: #64748b; }
     [data-bs-theme="dark"] .hcp-skel { background: linear-gradient(90deg, rgba(255,255,255,.04) 25%, rgba(255,255,255,.09) 37%, rgba(255,255,255,.04) 63%); background-size: 400% 100%; }
   `;
@@ -186,7 +234,7 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
 
       <div className="hcp-toolbar">
         <div className="hcp-grp">
-          <i className="ri-calendar-event-line" style={{ fontSize: 17, color: '#ec4899' }} />
+          <i className="ri-calendar-event-line" style={{ fontSize: 17, color: '#7c3aed' }} />
           {hasGroup ? (
             <>
               <span>Assigned calendar:</span>
@@ -234,37 +282,20 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
         </div>
       )}
 
-      {/* List view */}
+      {/* List view — the shared DataTable used across the HRMS modules, so the
+          header band, Sr No column, sortable headers and the
+          "Showing X–Y of Z / Rows per page" footer all match Attendance,
+          Leave History and the rest instead of being hand-rolled here. */}
       {!loading && hasGroup && holidays.length > 0 && view === 'list' && (
-        <div style={{ border: '1px solid var(--vz-border-color, #e2e8f0)', borderRadius: 12, overflow: 'hidden' }}>
-          <table className="hcp-table">
-            <thead>
-              <tr>
-                <th style={{ width: 60 }}>Sr No</th>
-                <th>Holiday Name</th>
-                <th style={{ width: 220 }}>Date</th>
-                <th style={{ width: 150 }}>Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {holidays.map((h, i) => {
-                const c = typeColor(h.type);
-                return (
-                  <tr key={`${h.id}-${h.date}`}>
-                    <td><span className="hcp-sr">{i + 1}</span></td>
-                    <td>
-                      <span className="hcp-name">{h.name}</span>
-                      {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
-                      {h.description && <div style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>{h.description}</div>}
-                    </td>
-                    <td style={{ fontWeight: 600 }}>{fmtDate(h.date)}</td>
-                    <td><span className="hcp-badge" style={{ background: c.bg, color: c.fg, borderColor: c.bd }}><span className="dot" />{h.type}</span></td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          data={holidays}
+          columns={holidayColumns}
+          serial
+          accent="violet"
+          pageSize={10}
+          minWidth={720}
+          emptyMessage={`No holidays in ${year}`}
+        />
       )}
 
       {/* Calendar view */}

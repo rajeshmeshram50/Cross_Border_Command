@@ -39,10 +39,19 @@ const fmtDate = (iso: string) => {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
+interface Props {
+  /** Bumped by the parent when a NEW request is raised elsewhere on the page,
+   *  so this list picks it up instead of waiting for a manual page refresh. */
+  refreshKey?: number;
+  /** Fired after a successful approve/reject so the parent can refetch the
+   *  attendance timeline — approving rewrites that day's punches. */
+  onActed?: () => void;
+}
+
 /** RM / HR approval queue for attendance regularizations. Embedded in the HR
  *  Attendance review screen. Approve / Reject are only enabled on rows the
  *  signed-in user can act on right now (server-computed `can_act_now`). */
-export default function RegularizationApprovals() {
+export default function RegularizationApprovals({ refreshKey = 0, onActed }: Props) {
   const toast = useToast();
   const [rows, setRows]       = useState<ApiRegularization[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +74,9 @@ export default function RegularizationApprovals() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // `load` is a stable useCallback([]), so refreshKey is what actually re-runs
+  // this — the parent bumps it when a request is raised from the day panel.
+  useEffect(() => { load(); }, [load, refreshKey]);
   // Reset to the first page whenever the status filter changes.
   useEffect(() => { setPage(1); }, [status]);
 
@@ -105,6 +116,10 @@ export default function RegularizationApprovals() {
       else                        await regularizationApi.reject(row.id, comment);
       toast.success('Done', `Request ${decision === 'approve' ? 'approved' : 'rejected'}.`);
       load();
+      // Approving replaced the day's punches — tell the parent so the timeline
+      // above reloads too. Only this list used to refresh, which is why the
+      // times up top stayed stale until a manual page reload.
+      onActed?.();
     } catch (err: any) {
       toast.error('Action failed', err?.response?.data?.message || err?.message || 'Could not update request');
     } finally {
@@ -183,6 +198,12 @@ export default function RegularizationApprovals() {
                     <th>Employee</th>
                     <th>Date</th>
                     <th>Type</th>
+                    {/* The approver used to see only the times being ASKED for,
+                        with nothing to compare them against — approving blind.
+                        "Original" is the day as it stands (live for a pending
+                        request, the frozen pre-approval snapshot once acted on),
+                        so the correction reads as before → after. */}
+                    <th>Original Punches</th>
                     <th>Requested Punches</th>
                     <th>Reason</th>
                     <th>Status</th>
@@ -192,7 +213,7 @@ export default function RegularizationApprovals() {
                 <tbody>
                   {paged.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center text-muted ep-fs-13 py-4">
+                      <td colSpan={8} className="text-center text-muted ep-fs-13 py-4">
                         No {status === 'All' ? '' : status.toLowerCase()} regularization requests.
                       </td>
                     </tr>
@@ -207,7 +228,12 @@ export default function RegularizationApprovals() {
                           <span className="text-muted ep-fs-12">{r.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}</span>
                           {r.type && <div className="ep-fs-11 text-muted">{r.type}</div>}
                         </td>
-                        <td className="font-monospace ep-fs-12">{r.mode === 'exempt' ? '—' : (punches || '—')}</td>
+                        <td className="font-monospace ep-fs-12 text-muted" style={{ whiteSpace: 'nowrap' }}>
+                          {r.mode === 'exempt' ? '—' : (r.original_display || '—')}
+                        </td>
+                        <td className="font-monospace ep-fs-12" style={{ whiteSpace: 'nowrap' }}>
+                          {r.mode === 'exempt' ? '—' : (punches || '—')}
+                        </td>
                         <td className="ep-fs-12" style={{ maxWidth: 220 }}>{r.reason || '—'}</td>
                         <td>
                           <span

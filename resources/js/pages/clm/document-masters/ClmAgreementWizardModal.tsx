@@ -392,6 +392,24 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
         const { data } = await api.post('/clm/docx-to-html', fd, cfg);
         html = data?.html;
       }
+      /* Second gate: the CONVERTED LENGTH, not the file's bytes.
+       *
+       * A .docx is a ZIP, so a 300-page agreement compresses to a few hundred
+       * KB and sails past the 1 MB file check — then lands in the editor as
+       * 1.3 million characters, over the 1,000,000-char render cap, and its
+       * PDF / Word download is silently dead from that moment on. Refusing it
+       * here means the user finds out at UPLOAD time, when they still have the
+       * original file in hand, instead of at download time.
+       *
+       * The editor is deliberately left untouched on rejection — seeding it and
+       * then complaining would leave unusable content the user has to undo. */
+      if (html && html.length > RENDER_MAX_CHARS) {
+        toast.error(
+          'Document too long',
+          `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+        );
+        return;
+      }
       if (html) {
         // setHTML re-seeds the TipTap document AND updates `content`.
         agr.setHTML(html);
@@ -510,15 +528,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // selection, the other side's checkboxes are disabled.
   const hasBuyerParty    = useMemo(() => PARTY_BUYER_CONSIGNEE.some(p => parties.has(p.value)), [parties]);
   const hasSupplierParty = useMemo(() => PARTY_SUPPLIER.some(p => parties.has(p.value)), [parties]);
-  const activePartyGroup = hasSupplierParty ? PARTY_SUPPLIER : PARTY_BUYER_CONSIGNEE;
-  const allPartiesSelected = useMemo(
-    () => parties.size === activePartyGroup.length && activePartyGroup.every(p => parties.has(p.value)),
-    [parties, activePartyGroup],
-  );
-  const toggleAllParties = () => {
-    setParties(allPartiesSelected ? new Set() : new Set(activePartyGroup.map(p => p.value)));
-    setErrors(p => ({ ...p, party: '' }));
-  };
+  // (The "ALL" shortcut was removed — parties are ticked individually. Its
+  // activePartyGroup / allPartiesSelected / toggleAllParties helpers went with
+  // it; hasBuyerParty / hasSupplierParty stay, they drive the mutual-exclusion
+  // disabling below.)
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
@@ -855,10 +868,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                     </span>
                     Applicable Party <span className="agw-req">*</span>
                   </div>
-                  <label className={`agw-checkbox agw-checkbox-all ${allPartiesSelected ? 'is-on' : ''}`}>
-                    <input type="checkbox" checked={allPartiesSelected} onChange={toggleAllParties} />
-                    <span className="agw-checkbox-label">ALL</span>
-                  </label>
                 </div>
 
                 <div className="agw-party-row">

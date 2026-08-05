@@ -41,7 +41,16 @@ const NOTICE_PERIOD_OPTIONS = [
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
 
-const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
+/* Weekly-off patterns — must match App\Support\WeekOff's canonical labels and
+   HrEmployeeOnboarding's ONB_WEEKLY_OFF exactly; the backend resolves the rule
+   from this string. "Week Off Policy" / bare "Rotational" were dropped: they
+   name no day, so the parser fell back to Sunday for everyone who picked them. */
+const WEEKLY_OFF_OPTIONS    = [
+  'Sunday Only',
+  'Saturday & Sunday',
+  'Rotational — 1st & 3rd Saturday',
+  'Rotational — 2nd & 4th Saturday',
+].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 // Overtime rate options now come from the Overtime (OT) Master (fetched at
@@ -763,6 +772,9 @@ export default function HrEmployees() {
   const [aMobileAssigned, setAMobileAssigned]           = useState('No');
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
+  // Per-field errors for the Assign Assets modal, keyed 'laptop' | 'mobile'.
+  // Set when Save is pressed with Assigned = Yes but no device chosen.
+  const [aErrors, setAErrors] = useState<Record<string, string>>({});
   const [aSaving, setASaving] = useState(false);
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
@@ -778,26 +790,36 @@ export default function HrEmployees() {
     setAOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
       ? raw.other_master_asset_ids.map((n: any) => String(n))
       : []);
+    setAErrors({});
     setAssignOpen(true);
   };
 
-  useEffect(() => {
-    if (!assignOpen) return;
+  /* Re-runnable so the pickers can refresh on open: the free-asset list goes
+     stale as soon as another user claims a device, and fetching it once when
+     the modal opened meant a taken asset kept showing. The server rejects a
+     double-booking on save, but offering it and failing afterwards is a poor
+     way to find out. */
+  const reloadAssignAssets = useCallback((isStale: () => boolean = () => false) => {
     const dbId = (assignEmp as any)?._dbId as number | undefined;
-    if (!dbId) return;
-    let cancelled = false;
+    if (!dbId) return Promise.resolve();
     const exclude = `&exclude_employee_id=${dbId}`;
     const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
       api.get(`/employees/available-assets?category=${cat}${exclude}`)
-        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
-        .catch(() => { if (!cancelled) setter([]); });
-    Promise.allSettled([
+        .then(r => { if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .catch(() => { if (!isStale()) setter([]); });
+    return Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
       fetchCat('other',  setAOtherOpts),
     ]);
+  }, [assignEmp]);
+
+  useEffect(() => {
+    if (!assignOpen) return;
+    let cancelled = false;
+    reloadAssignAssets(() => cancelled);
     return () => { cancelled = true; };
-  }, [assignOpen, assignEmp]);
+  }, [assignOpen, reloadAssignAssets]);
 
   const handleSaveAssign = async () => {
     if (!assignEmp) return;
@@ -806,6 +828,32 @@ export default function HrEmployees() {
       toast.error('Cannot save', 'Employee record not found.');
       return;
     }
+
+    /* "Assigned = Yes" with no device picked used to save silently: the empty
+       string parsed to NaN → null, so the record ended up with the toggle on
+       and nothing attached. Require the device. */
+    const missing: Record<string, string> = {};
+    if (aLaptopAssigned === 'Yes' && !aLaptopMasterAssetId) {
+      missing.laptop = aLaptopOpts.length === 0
+        ? 'No laptops are available in this branch — add one in Master › Assets, or set Assigned to No.'
+        : 'Please select a device.';
+    }
+    if (aMobileAssigned === 'Yes' && !aMobileMasterAssetId) {
+      missing.mobile = aMobileOpts.length === 0
+        ? 'No mobiles are available in this branch — add one in Master › Assets, or set Assigned to No.'
+        : 'Please select a device.';
+    }
+    if (Object.keys(missing).length) {
+      setAErrors(missing);
+      const which = Object.keys(missing).map(k => (k === 'laptop' ? 'Laptop' : 'Mobile'));
+      toast.error(
+        `${which.join(' and ')} device required`,
+        Object.values(missing)[0],
+      );
+      return;
+    }
+    setAErrors({});
+
     setASaving(true);
     const intOrNull = (s: string) => {
       const n = parseInt(s, 10);
@@ -832,6 +880,7 @@ export default function HrEmployees() {
   const closeAssign = () => {
     setAssignOpen(false);
     setAssignEmp(null);
+    setAErrors({});   // don't carry a stale "select a device" into the next employee
   };
 
   const navigate = useNavigate();
@@ -1729,11 +1778,19 @@ export default function HrEmployees() {
   const validateStep4 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eEnablePayroll) return e;
+    // Distinct messages per failure — "required" was previously also shown for
+    // a typed 0, which reads as wrong ("I did enter something"). Blank, zero /
+    // negative, and over-cap are three different mistakes and each gets told
+    // what to do about it.
     const amt = Number(eAnnualSalary);
-    if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
-      e.annual_salary = 'Salary amount is required';
+    if (eAnnualSalary.trim() === '') {
+      e.annual_salary = 'Annual CTC is required';
+    } else if (!Number.isFinite(amt)) {
+      e.annual_salary = 'Annual CTC must be a valid number';
+    } else if (amt <= 0) {
+      e.annual_salary = 'Annual CTC must be greater than 0';
     } else if (amt > 999999999999.99) {
-      e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
+      e.annual_salary = 'Annual CTC must be ≤ 999,999,999,999.99';
     }
     // Frequency picker was removed — salary is always entered "Per annum",
     // so it's never user-editable and must not block the form. (Defaulted to
@@ -2364,18 +2421,28 @@ export default function HrEmployees() {
     {
       header: 'Profile %',
       accessorKey: 'profile',
-      // wrap: the meter is a fixed 120px block with a badge floating above the
-      // bar, so the cell must not clip it.
-      meta: { width: '7%', wrap: true },
+      // wrap: the badge floats ABOVE the bar, so the cell must not clip it
+      // vertically. 9% (was 7%) gives the meter enough room that it no longer
+      // has to overflow sideways into the Onboarding column.
+      meta: { width: '9%', wrap: true },
       cell: info => {
         const p = info.row.original.profile;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
                   : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
                   : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
                   :           { dark: '#f06548', light: '#fda192' };
-        const badgeLeft = Math.max(11, Math.min(89, p));
+        /* Keep the floating badge clear of BOTH edges. The circle is 26px and
+           centred on this percentage, so at 100% it used to sit half-outside
+           the meter and, with the block being a fixed 110px inside a narrower
+           column, bled into the Onboarding cell. */
+        const badgeLeft = Math.max(14, Math.min(86, p));
         return (
-          <div style={{ position: 'relative', width: 110, paddingTop: 30 }} title={`Profile ${p}% complete`}>
+          /* Fluid, not a fixed 110px: the column is a percentage, so a fixed
+             block wider than the cell overflowed into the next column — and by
+             a different amount per row, since the overflow depended on the
+             badge position. maxWidth caps it on wide screens so the meter
+             doesn't stretch oddly. */
+          <div style={{ position: 'relative', width: '100%', maxWidth: 120, minWidth: 72, paddingTop: 30 }} title={`Profile ${p}% complete`}>
             <div style={{ position: 'absolute', top: 0, left: `${badgeLeft}%`, transform: 'translateX(-50%)', textAlign: 'center' }}>
               <div
                 className="d-flex align-items-center justify-content-center fw-bold"
@@ -4024,23 +4091,38 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>
-                      <input
-                        className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                        type="number"
-                        placeholder="Enter annual amount"
-                        value={eAnnualSalary}
-                        max={999999999999.99}
-                        step="0.01"
-                        inputMode="decimal"
-                        onChange={e => {
-                          const raw = e.target.value;
-                          if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                          if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
-                          setEAnnualSalary(raw);
-                          clearEErr('annual_salary');
-                        }}
-                        style={{ width: '100%' }}
-                      />
+                      {/* ₹ prefix — the amount is always INR here (the payroll
+                          breakup rows below already show it), so the symbol sits
+                          inside the field rather than in the label. Absolutely
+                          positioned + extra left padding on the input so it
+                          can't overlap the typed value. */}
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            position: 'absolute', left: 11, fontSize: 13,
+                            color: 'var(--vz-secondary-color)', pointerEvents: 'none', lineHeight: 1,
+                          }}
+                        >
+                          ₹
+                        </span>
+                        <input
+                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                          type="number"
+                          placeholder="Enter annual amount"
+                          value={eAnnualSalary}
+                          max={999999999999.99}
+                          step="0.01"
+                          inputMode="decimal"
+                          onChange={e => {
+                            const raw = e.target.value;
+                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                            setEAnnualSalary(raw);
+                            clearEErr('annual_salary');
+                          }}
+                          style={{ width: '100%', paddingLeft: 25 }}
+                        />
+                      </div>
                       {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                     </Col>
                     <Col md={6}>
@@ -4417,20 +4499,24 @@ export default function HrEmployees() {
                   onChange={(v) => {
                     setALaptopAssigned(v);
                     if (v !== 'Yes') setALaptopMasterAssetId('');
+                    setAErrors(p => ({ ...p, laptop: '' }));
                   }}
                   options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                 />
               </Col>
               {aLaptopAssigned === 'Yes' && (
                 <Col md={4}>
-                  <label>Laptop Device</label>
+                  <label>Laptop Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aLaptopMasterAssetId}
-                    onChange={setALaptopMasterAssetId}
+                    onChange={(v) => { setALaptopMasterAssetId(v); setAErrors(p => ({ ...p, laptop: '' })); }}
                     options={aLaptopOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aLaptopOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                     disabled={aLaptopOpts.length === 0}
+                    invalid={!!aErrors.laptop}
                   />
+                  {aErrors.laptop && <small style={{ color: '#dc2626', fontSize: 11.5 }}>{aErrors.laptop}</small>}
                 </Col>
               )}
 
@@ -4441,20 +4527,24 @@ export default function HrEmployees() {
                   onChange={(v) => {
                     setAMobileAssigned(v);
                     if (v !== 'Yes') setAMobileMasterAssetId('');
+                    setAErrors(p => ({ ...p, mobile: '' }));
                   }}
                   options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                 />
               </Col>
               {aMobileAssigned === 'Yes' && (
                 <Col md={4}>
-                  <label>Mobile Device</label>
+                  <label>Mobile Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aMobileMasterAssetId}
-                    onChange={setAMobileMasterAssetId}
+                    onChange={(v) => { setAMobileMasterAssetId(v); setAErrors(p => ({ ...p, mobile: '' })); }}
                     options={aMobileOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aMobileOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                     disabled={aMobileOpts.length === 0}
+                    invalid={!!aErrors.mobile}
                   />
+                  {aErrors.mobile && <small style={{ color: '#dc2626', fontSize: 11.5 }}>{aErrors.mobile}</small>}
                 </Col>
               )}
 
@@ -4464,6 +4554,7 @@ export default function HrEmployees() {
                   value={aOtherMasterAssetIds}
                   onChange={setAOtherMasterAssetIds}
                   options={aOtherOpts}
+                  onOpen={() => reloadAssignAssets()}
                   placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
                   disabled={aOtherOpts.length === 0}
                 />

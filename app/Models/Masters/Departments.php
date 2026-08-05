@@ -5,8 +5,10 @@ namespace App\Models\Masters;
 use App\Models\Branch;
 use App\Models\Client;
 use App\Models\User;
+use App\Models\Employee;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Departments extends Model
 {
@@ -24,6 +26,14 @@ class Departments extends Model
         'status',
         'created_by',
     ];
+
+    /** Employees posted to this department — drives the list's headcount column.
+     *  Employee uses SoftDeletes, so withCount('employees') already excludes
+     *  deleted staff without any extra condition here. */
+    public function employees(): HasMany
+    {
+        return $this->hasMany(Employee::class, 'department_id');
+    }
 
     public function client(): BelongsTo
     {

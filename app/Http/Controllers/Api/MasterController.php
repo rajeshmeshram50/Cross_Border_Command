@@ -271,6 +271,14 @@ class MasterController extends Controller
         // returns the state name inline (master_states has tens of thousands
         // of subdivisions — downloading the whole table just to translate an
         // id on the frontend was prohibitively slow).
+        /* Real headcount for the two masters whose list shows an "Employees"
+         * column. withCount names the attribute `employees_count`, which is
+         * exactly what the frontend column reads — it previously fell back to a
+         * hash-of-the-id mock, so Departments reported numbers (19, 18, 17 …)
+         * larger than the entire employee table. */
+        if (in_array($slug, ['departments', 'designations'], true)) {
+            $q->withCount('employees');
+        }
         if ($slug === 'state_codes') {
             // Country id rides along so the frontend can cascade State
             // off the chosen Country (e.g. vendor address form filters
@@ -624,6 +632,25 @@ class MasterController extends Controller
         $arr['branch_name']       = $row->branch?->name;
         $arr['creator_name']      = $row->creator?->name;
         $arr['creator_user_type'] = $row->creator?->user_type;
+
+        /* Absolute URL for every stored file path.
+         *
+         * The frontend used to build these itself as `{origin}/storage/{path}`.
+         * That is only correct while the app runs on the LOCAL disk — the Azure
+         * deployment serves the same file from
+         * idimsbucket.blob.core.windows.net/cbc-saas/…, so every master
+         * attachment link (Asset Invoice / Warranty Card) opened a 404 there
+         * while working perfectly on a developer's machine.
+         *
+         * file_url() resolves against the CONFIGURED disk, so the one value is
+         * right in both environments. Keys are snapshotted before the loop
+         * because we add to the same array inside it. */
+        foreach (array_keys($arr) as $k) {
+            if (!is_string($k) || !str_ends_with($k, '_path')) continue;
+            $v = $arr[$k];
+            if (!is_string($v) || trim($v) === '') continue;
+            $arr[$k . '_url'] = file_url($v);
+        }
 
         // GST rates referenced by any product or HSN code are "in use" — the
         // frontend disables their Delete button + shows a tooltip, mirroring the

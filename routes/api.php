@@ -695,9 +695,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
   
     Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
+    // Outstanding advances / claims / earned salary feeding the F&F stage.
+    Route::get('/employees/{employee}/exit/fnf-summary', [ExitController::class, 'fnfSummary']);
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
     
     Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);
+    // Bring an exited employee back (standard resignations only).
+    Route::post('/employees/{employee}/rehire', [ExitController::class, 'rehire']);
 
 
     Route::get   ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'index']);
