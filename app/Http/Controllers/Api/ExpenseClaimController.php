@@ -99,6 +99,7 @@ class ExpenseClaimController extends Controller
                 'category:id,name,code',
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
+                'reimbursedAdvance:id,advance_no,settle_reimbursement_claim_id',
             ])
             ->orderByDesc('id');
 
@@ -337,7 +338,7 @@ class ExpenseClaimController extends Controller
             $reimbAdvance->save();
         }
 
-        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser']);
+        $row->load(['employee.department', 'manager', 'category', 'creator', 'hrUser', 'reimbursedAdvance:id,advance_no,settle_reimbursement_claim_id']);
         return response()->json($this->serialize($row), 201);
     }
 
@@ -1011,6 +1012,10 @@ class ExpenseClaimController extends Controller
             'manager_name'    => $managerName,
             'category_id'     => $row->category_id,
             'category_name'   => $row->category?->name ?? $row->category_name,
+            // If this claim reimburses a company advance, link back to it.
+            'reimbursement_for' => $row->reimbursedAdvance
+                ? ['id' => $row->reimbursedAdvance->id, 'advance_no' => $row->reimbursedAdvance->advance_no]
+                : null,
             'currency'        => $row->currency,
             'project'         => $row->project,
             'payment_method'  => $row->payment_method,

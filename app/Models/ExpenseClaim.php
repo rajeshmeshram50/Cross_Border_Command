@@ -6,6 +6,7 @@ use App\Models\Masters\ExpenseCategories;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class ExpenseClaim extends Model
 {
@@ -61,6 +62,13 @@ class ExpenseClaim extends Model
     public function category(): BelongsTo
     {
         return $this->belongsTo(ExpenseCategories::class, 'category_id');
+    }
+
+    /** The company advance this claim reimburses, if any (reverse of
+     *  advance_requests.settle_reimbursement_claim_id). */
+    public function reimbursedAdvance(): HasOne
+    {
+        return $this->hasOne(AdvanceRequest::class, 'settle_reimbursement_claim_id');
     }
 
     public function creator(): BelongsTo

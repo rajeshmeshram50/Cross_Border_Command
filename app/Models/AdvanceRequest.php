@@ -34,6 +34,10 @@ class AdvanceRequest extends Model
         'settle_proof_path', 'settle_proof_name', 'settle_items',
         'settle_declared_type', 'settle_target_amount',
         'settle_reimbursement_claim_id', 'settle_reimbursed_at',
+        'settle_returned_at', 'settle_return_method', 'settle_return_proof_path', 'settle_return_proof_name',
+        'settle_return_payments',
+        'settle_return_recovery_start', 'settle_return_recovery_mode', 'settle_return_recovery_months',
+        'settle_return_monthly', 'settle_return_scheduled_at',
     ];
 
     protected $casts = [
@@ -60,6 +64,12 @@ class AdvanceRequest extends Model
         'settle_items'         => 'array',
         'settle_target_amount' => 'decimal:2',
         'settle_reimbursed_at' => 'datetime',
+        'settle_returned_at'   => 'datetime',
+        'settle_return_payments' => 'array',
+        'settle_return_recovery_start'  => 'date',
+        'settle_return_recovery_months' => 'integer',
+        'settle_return_monthly'         => 'decimal:2',
+        'settle_return_scheduled_at'    => 'datetime',
     ];
 
     public function payments(): HasMany

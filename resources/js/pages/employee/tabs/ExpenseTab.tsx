@@ -465,6 +465,7 @@ export default function ExpenseTab() {
                   onViewPayments={(a) => { setViewAdvSettle(false); setViewAdvId(a.id); }}
                   onReview={(a) => setReviewAdvId(a.id)}
                   onSettle={(a) => { setViewAdvSettle(true); setViewAdvId(a.id); }}
+                  onRaiseReimbursement={(a) => openReimbursement({ advanceId: a.id, balance: a.settle_balance ?? 0, advanceNo: a.advance_no || `ADV-${a.id}` })}
                 />
               ) : (
                 <ExpenseClaimsTable
