@@ -3510,18 +3510,33 @@ function InitiateOnboardingModal({
   // Same shimmer treatment as mastersLoading — a saved asset FK must not
   // flash as a raw id while the available-assets fetch is in flight.
   const [assetsLoading, setAssetsLoading] = useState(true);
+  /* Re-runnable: the free-asset list goes stale the moment ANOTHER user (or
+     another tab) claims a device, and this was fetched once when the modal
+     opened. A taken asset then still showed in the picker — it couldn't
+     actually be saved (the server rejects a double-booking), but offering it
+     and failing on save is a bad way to find out. The pickers call this on
+     open so the list is current at the moment of choosing.
+     `isStale` lets the mount-time effect abort a superseded fetch. */
+  const reloadAssets = useCallback((isStale: () => boolean = () => false) => {
+    if (!emp?.dbId) return Promise.resolve();
+    setAssetsLoading(true);
+    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
+    const put = (setter: (o: AssetOpt[]) => void) => (r: any) => {
+      if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name })));
+    };
+    return Promise.allSettled([
+      api.get(url('laptop')).then(put(setLaptopAssets)),
+      api.get(url('mobile')).then(put(setMobileAssets)),
+      api.get(url('other')).then(put(setOtherAssets)),
+    ]).then(() => { if (!isStale()) setAssetsLoading(false); });
+  }, [emp?.dbId]);
+
   useEffect(() => {
     if (!isOpen || !emp?.dbId) return;
     let cancelled = false;
-    setAssetsLoading(true);
-    const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
-    Promise.allSettled([
-      api.get(url('laptop')).then(r => { if (!cancelled) setLaptopAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-      api.get(url('mobile')).then(r => { if (!cancelled) setMobileAssets((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-      api.get(url('other')) .then(r => { if (!cancelled) setOtherAssets ((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); }),
-    ]).then(() => { if (!cancelled) setAssetsLoading(false); });
+    reloadAssets(() => cancelled);
     return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, reloadAssets]);
 
   // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
@@ -4925,6 +4940,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 mobileAssets={mobileAssets}
                 otherAssets={otherAssets}
                 assetsLoading={assetsLoading}
+                onAssetsOpen={() => reloadAssets()}
               />
             )}
             {activeStage === 4 && (
@@ -5270,6 +5286,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Laptop Device</label>
                       <MasterSelect
                         options={laptopAssets}
+                        onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                         value={s1.laptop_master_asset_id}
@@ -5297,6 +5314,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <label className="onb-init-label">Mobile Device</label>
                       <MasterSelect
                         options={mobileAssets}
+                        onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                         value={s1.mobile_master_asset_id}
@@ -5314,6 +5332,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <label className="onb-init-label">Other Assets</label>
                     <MasterMultiSelect
                       options={otherAssets}
+                      onOpen={() => reloadAssets()}
                       placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more (optional)'}
                       value={s1.other_master_asset_ids}
                       onChange={(vs) => setS1(p => ({ ...p, other_master_asset_ids: vs }))}
@@ -7347,7 +7366,7 @@ Stage2Documents.displayName = 'Stage2Documents';
  *  are the only persisted FK columns). Saving Stage 3 reuses
  *  `saveStage1(false)` from the modal scope. */
 function Stage3Provisioning({
-  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets, assetsLoading,
+  emp, s1, setS1, s1Errors, setS1Errors, laptopAssets, mobileAssets, otherAssets, assetsLoading, onAssetsOpen,
 }: {
   emp: OnboardRow;
   s1: any;
@@ -7360,6 +7379,9 @@ function Stage3Provisioning({
   /* True while the available-assets fetch is in flight — the pickers shimmer
    * instead of flashing a saved FK as a raw id. */
   assetsLoading?: boolean;
+  /* Re-fetch the free-asset lists when a picker opens — another user may
+     have claimed a device since this stage was mounted. */
+  onAssetsOpen?: () => void;
 }) {
   // Cosmetic progress meter — counts each provisioning area that has
   // at least one filled value. Keeps the banner moving as the admin
@@ -7377,11 +7399,11 @@ function Stage3Provisioning({
     );
   const pct = Math.round((tasksDone / tasksTotal) * 100);
 
-  const autoLabel = (
-    <span className="auto" style={{ background: '#d6f4e3', color: '#108548' }}>EDITABLE</span>
-  );
-  // Employee Code is system-generated from the number series — it is NOT
-  // editable, so it gets an "Auto Generated" badge instead of "EDITABLE".
+  /* The "EDITABLE" badge was removed: it sat on eight fields that are all
+     plainly editable inputs, so it stated the obvious and added chip noise to
+     every label. "AUTO GENERATED" stays — that one tells the user something
+     they can't see from the control itself (Employee Code comes from the
+     number series and cannot be typed). */
   const autoGenLabel = (
     <span className="auto" style={{ background: '#ede9fe', color: '#5b3fd1' }}>AUTO GENERATED</span>
   );
@@ -7468,7 +7490,7 @@ function Stage3Provisioning({
           <p className="onb-prov-subgroup"><i className="ri-computer-line" /> Assets &amp; Security</p>
           <Row className="g-3">
             <Col md={4}>
-              <label className="onb-init-label">Laptop Assigned {autoLabel}</label>
+              <label className="onb-init-label">Laptop Assigned</label>
               <MasterSelect
                 options={ONB_YES_NO}
                 value={s1.laptop_assigned || 'No'}
@@ -7481,9 +7503,10 @@ function Stage3Provisioning({
             </Col>
             {s1.laptop_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Laptop Device {autoLabel}</label>
+                <label className="onb-init-label">Laptop Device</label>
                 <MasterSelect
                   options={laptopAssets}
+                  onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                   value={s1.laptop_master_asset_id}
@@ -7493,7 +7516,7 @@ function Stage3Provisioning({
               </Col>
             )}
             <Col md={4}>
-              <label className="onb-init-label">Mobile Assigned {autoLabel}</label>
+              <label className="onb-init-label">Mobile Assigned</label>
               <MasterSelect
                 options={ONB_YES_NO}
                 value={s1.mobile_assigned || 'No'}
@@ -7506,9 +7529,10 @@ function Stage3Provisioning({
             </Col>
             {s1.mobile_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Mobile Device {autoLabel}</label>
+                <label className="onb-init-label">Mobile Device</label>
                 <MasterSelect
                   options={mobileAssets}
+                  onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                   value={s1.mobile_master_asset_id}
@@ -7519,11 +7543,12 @@ function Stage3Provisioning({
             )}
             <Col md={12}>
               <label className="onb-init-label">
-                Other Assets {autoLabel}
+                Other Assets
                 <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span>
               </label>
               <MasterMultiSelect
                 options={otherAssets}
+                onOpen={onAssetsOpen}
                 placeholder={otherAssets.length === 0 ? 'No other assets available' : 'Pick one or more'}
                 value={s1.other_master_asset_ids}
                 onChange={(vs) => setS1((p: any) => ({ ...p, other_master_asset_ids: vs }))}
@@ -7544,7 +7569,7 @@ function Stage3Provisioning({
         <div className="onb-prov-section-body">
           <Row className="g-3">
             <Col md={4}>
-              <label className="onb-init-label">Biometric Status {autoLabel}</label>
+              <label className="onb-init-label">Biometric Status</label>
               <MasterSelect
                 options={[
                   { value: 'Not Registered', label: 'Not Registered' },
@@ -7558,7 +7583,7 @@ function Stage3Provisioning({
               />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">Desk / Workstation No {autoLabel}</label>
+              <label className="onb-init-label">Desk / Workstation No</label>
               <input
                 className="onb-init-input"
                 placeholder="e.g. WS-204, Floor 3 / Bay B"
@@ -7567,7 +7592,7 @@ function Stage3Provisioning({
               />
             </Col>
             <Col md={4}>
-              <label className="onb-init-label">ID Card Status {autoLabel}</label>
+              <label className="onb-init-label">ID Card Status</label>
               <MasterSelect
                 options={[
                   { value: 'Not Printed', label: 'Not Printed' },

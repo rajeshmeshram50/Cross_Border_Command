@@ -167,17 +167,30 @@ export default function HrHoliday() {
       meta: { width: '29%', wrap: true },
       cell: info => {
         const r = info.row.original;
+        /* Truncation is done in CSS, not by slicing the string. A 50-char cut
+           still overflowed when the text had no spaces to break on (e.g. a
+           pasted "wwwww…" run): `fit-content` then sized the div past the
+           column and the text painted over the Group cell. `textOverflow`
+           handles any content, and `overflowWrap` lets an unbroken NAME wrap
+           instead of pushing the row wide. Full text stays on hover. */
         return (
           <>
-            <div className="fw-bold fs-13">{r.name}</div>
+            <div className="fw-bold fs-13" style={{ overflowWrap: 'anywhere' }}>{r.name}</div>
             {r.description && (
-              r.description.length > 50 ? (
-                <Tooltip label={r.description}>
-                  <div className="text-muted" style={{ fontSize: 11.5, width: 'fit-content' }}>{r.description.slice(0, 50)}…</div>
-                </Tooltip>
-              ) : (
-                <div className="text-muted" style={{ fontSize: 11.5 }}>{r.description}</div>
-              )
+              <Tooltip label={r.description}>
+                <div
+                  className="text-muted"
+                  style={{
+                    fontSize: 11.5,
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {r.description}
+                </div>
+              </Tooltip>
             )}
           </>
         );
@@ -861,8 +874,29 @@ function ManageGroupsModal({
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
                     <td>
-                      <div className="fw-bold fs-13">{g.name}</div>
-                      {g.description && <div className="text-muted" style={{ fontSize: 11.5 }}>{g.description}</div>}
+                      {/* Same overflow guard as the holiday list, but this
+                          table is hand-rolled (table-layout: auto), where
+                          nowrap+ellipsis would just widen the column instead
+                          of truncating. Wrap mid-word and clamp to 2 lines —
+                          that holds regardless of layout mode. */}
+                      <div className="fw-bold fs-13" style={{ overflowWrap: 'anywhere' }}>{g.name}</div>
+                      {g.description && (
+                        <Tooltip label={g.description}>
+                          <div
+                            className="text-muted"
+                            style={{
+                              fontSize: 11.5,
+                              overflowWrap: 'anywhere',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                            }}
+                          >
+                            {g.description}
+                          </div>
+                        </Tooltip>
+                      )}
                     </td>
                     <td className="fs-13">{g.holidays_count ?? 0}</td>
                     <td className="text-center">

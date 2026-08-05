@@ -785,23 +785,32 @@ export default function HrEmployees() {
     setAssignOpen(true);
   };
 
-  useEffect(() => {
-    if (!assignOpen) return;
+  /* Re-runnable so the pickers can refresh on open: the free-asset list goes
+     stale as soon as another user claims a device, and fetching it once when
+     the modal opened meant a taken asset kept showing. The server rejects a
+     double-booking on save, but offering it and failing afterwards is a poor
+     way to find out. */
+  const reloadAssignAssets = useCallback((isStale: () => boolean = () => false) => {
     const dbId = (assignEmp as any)?._dbId as number | undefined;
-    if (!dbId) return;
-    let cancelled = false;
+    if (!dbId) return Promise.resolve();
     const exclude = `&exclude_employee_id=${dbId}`;
     const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
       api.get(`/employees/available-assets?category=${cat}${exclude}`)
-        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
-        .catch(() => { if (!cancelled) setter([]); });
-    Promise.allSettled([
+        .then(r => { if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .catch(() => { if (!isStale()) setter([]); });
+    return Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
       fetchCat('other',  setAOtherOpts),
     ]);
+  }, [assignEmp]);
+
+  useEffect(() => {
+    if (!assignOpen) return;
+    let cancelled = false;
+    reloadAssignAssets(() => cancelled);
     return () => { cancelled = true; };
-  }, [assignOpen, assignEmp]);
+  }, [assignOpen, reloadAssignAssets]);
 
   const handleSaveAssign = async () => {
     if (!assignEmp) return;
@@ -2395,18 +2404,28 @@ export default function HrEmployees() {
     {
       header: 'Profile %',
       accessorKey: 'profile',
-      // wrap: the meter is a fixed 120px block with a badge floating above the
-      // bar, so the cell must not clip it.
-      meta: { width: '7%', wrap: true },
+      // wrap: the badge floats ABOVE the bar, so the cell must not clip it
+      // vertically. 9% (was 7%) gives the meter enough room that it no longer
+      // has to overflow sideways into the Onboarding column.
+      meta: { width: '9%', wrap: true },
       cell: info => {
         const p = info.row.original.profile;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
                   : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
                   : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
                   :           { dark: '#f06548', light: '#fda192' };
-        const badgeLeft = Math.max(11, Math.min(89, p));
+        /* Keep the floating badge clear of BOTH edges. The circle is 26px and
+           centred on this percentage, so at 100% it used to sit half-outside
+           the meter and, with the block being a fixed 110px inside a narrower
+           column, bled into the Onboarding cell. */
+        const badgeLeft = Math.max(14, Math.min(86, p));
         return (
-          <div style={{ position: 'relative', width: 110, paddingTop: 30 }} title={`Profile ${p}% complete`}>
+          /* Fluid, not a fixed 110px: the column is a percentage, so a fixed
+             block wider than the cell overflowed into the next column — and by
+             a different amount per row, since the overflow depended on the
+             badge position. maxWidth caps it on wide screens so the meter
+             doesn't stretch oddly. */
+          <div style={{ position: 'relative', width: '100%', maxWidth: 120, minWidth: 72, paddingTop: 30 }} title={`Profile ${p}% complete`}>
             <div style={{ position: 'absolute', top: 0, left: `${badgeLeft}%`, transform: 'translateX(-50%)', textAlign: 'center' }}>
               <div
                 className="d-flex align-items-center justify-content-center fw-bold"
@@ -4460,6 +4479,7 @@ export default function HrEmployees() {
                     value={aLaptopMasterAssetId}
                     onChange={(v) => { setALaptopMasterAssetId(v); setAErrors(p => ({ ...p, laptop: '' })); }}
                     options={aLaptopOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aLaptopOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                     disabled={aLaptopOpts.length === 0}
                     invalid={!!aErrors.laptop}
@@ -4487,6 +4507,7 @@ export default function HrEmployees() {
                     value={aMobileMasterAssetId}
                     onChange={(v) => { setAMobileMasterAssetId(v); setAErrors(p => ({ ...p, mobile: '' })); }}
                     options={aMobileOpts}
+                    onOpen={() => reloadAssignAssets()}
                     placeholder={aMobileOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                     disabled={aMobileOpts.length === 0}
                     invalid={!!aErrors.mobile}
@@ -4501,6 +4522,7 @@ export default function HrEmployees() {
                   value={aOtherMasterAssetIds}
                   onChange={setAOtherMasterAssetIds}
                   options={aOtherOpts}
+                  onOpen={() => reloadAssignAssets()}
                   placeholder={aOtherOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
                   disabled={aOtherOpts.length === 0}
                 />

@@ -1,24 +1,13 @@
-import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row } from 'reactstrap';
-import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
-import WorklistPager from '../../../components/ui/WorklistPager';
+import { Shimmer } from '../../../components/ui/Shimmer';
+import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function HiringTab() {
   const { hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, authUser, teamSize } = useEmployeeProfile();
 
-  // Pagination — mirrors the Employee Onboarding footer (WorklistPager with a
-  // rows-per-page dropdown, default 10). Keeps the table consistent with the
-  // other modules that already show a standard footer.
-  const [page, setPage] = useState(1);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
-  const pageCount = Math.max(1, Math.ceil(hiringRequests.length / rowsPerPage));
-  const safePage  = Math.min(Math.max(1, page), pageCount);
-  const sliceFrom = (safePage - 1) * rowsPerPage;
-  const visibleRequests = hiringRequests.slice(sliceFrom, sliceFrom + rowsPerPage);
-  // Snap back to page 1 when the page size changes or the list shrinks below
-  // the current page so the footer never points at an empty slice.
-  useEffect(() => { setPage(1); }, [rowsPerPage, hiringRequests.length]);
+  // Paging, sorting and the footer all come from the shared DataTable now —
+  // no local page / rows-per-page state to keep in sync.
 
         const stats = {
           total:     hiringRequests.length,
@@ -49,6 +38,109 @@ export default function HiringTab() {
             default:          return { bg: 'rgba(99,102,241,0.14)',  fg: '#4338ca' };
           }
         };
+
+        /* Column defs for the shared DataTable. Cell markup is lifted verbatim
+           from the old hand-rolled <table>, so the chips/buttons look exactly
+           as before — only the surrounding chrome is now the shared one. */
+        const hiringColumns: DataTableColumn<any>[] = [
+          {
+            header: 'Code',
+            accessorKey: 'code',
+            meta: { width: '12%' },
+            cell: info => {
+              const r = info.row.original;
+              return <span className="ht-code-chip">{r.code || `HR-${r.id}`}</span>;
+            },
+          },
+          {
+            header: 'Position',
+            id: 'position',
+            accessorFn: (r: any) => r.position || r.job_role || r.role_name || '',
+            meta: { width: '20%', wrap: true },
+            cell: info => <span className="ep-fs-125">{String(info.getValue() || '—')}</span>,
+          },
+          {
+            header: 'Department',
+            id: 'department',
+            accessorFn: (r: any) => r.department?.name || r.department_name || '',
+            meta: { width: '16%' },
+            cell: info => <span className="ht-cell-muted">{String(info.getValue() || '—')}</span>,
+          },
+          {
+            header: 'Urgency',
+            accessorKey: 'urgency',
+            meta: { width: '11%' },
+            cell: info => {
+              const u = String(info.getValue() || '');
+              const t = urgencyTone(u);
+              return <span className="ht-tone-chip" style={{ ['--ht-bg' as any]: t.bg, ['--ht-fg' as any]: t.fg }}>{u || '—'}</span>;
+            },
+          },
+          {
+            header: 'Status',
+            id: 'status',
+            // Sort/filter on what's DISPLAYED — a row with a recruitment shows
+            // "Recruitment Created", not its raw status.
+            accessorFn: (r: any) => (r._hasRecruitment ? 'Recruitment Created' : (r.status || '')),
+            meta: { width: '16%' },
+            cell: info => {
+              const r = info.row.original;
+              const label = r._hasRecruitment ? 'Recruitment Created' : (r.status || '—');
+              const t = r._hasRecruitment
+                ? { bg: 'rgba(16,185,129,0.16)', fg: '#047857' }
+                : statusTone(r.status);
+              return (
+                <span className="ht-status-chip" style={{ ['--ht-bg' as any]: t.bg, ['--ht-fg' as any]: t.fg }}>
+                  {r._hasRecruitment && <i className="ri-checkbox-circle-fill ep-fs-11" />}
+                  {label}
+                </span>
+              );
+            },
+          },
+          {
+            header: 'Submitted',
+            id: 'submitted',
+            accessorFn: (r: any) => r.submittedAt || r.created_at || '',
+            meta: { width: '14%' },
+            cell: info => <span className="ht-cell-date">{fmtDate(info.getValue())}</span>,
+          },
+          {
+            header: 'Actions',
+            id: 'actions',
+            enableSorting: false,
+            meta: { width: '11%', align: 'center' },
+            cell: info => {
+              const r = info.row.original;
+              /* Every request can be viewed (read-only). Draft rows can
+                 additionally be reopened + edited before submitting to HR. */
+              return (
+                <div className="d-inline-flex align-items-center justify-content-center gap-1">
+                  <button
+                    type="button"
+                    className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                    data-tooltip="View"
+                    aria-label="View hiring request"
+                    onClick={() => setHiringViewing(r)}
+                  >
+                    <i className="ri-eye-line" />
+                  </button>
+                  {r.status === 'Draft' && !r._hasRecruitment && (
+                    <button
+                      type="button"
+                      className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
+                      data-tooltip="Edit Draft"
+                      aria-label="Edit Draft"
+                      onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
+                    >
+                      <i className="ri-pencil-line" />
+                    </button>
+                  )}
+                </div>
+              );
+            },
+          },
+        ];
+
         return (
           <div className="ep-tab-fill">
           <Card className="mb-3 border-0 ht-card h-100">
@@ -128,102 +220,24 @@ export default function HiringTab() {
                 }
               `}</style>
 
-              {/* Inline list — compact 5-row preview of recent requests.
-                  Full filtering / pagination lives behind View All Requests. */}
-              <div className="table-responsive border rounded">
-                <table className="table align-middle table-nowrap mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th className="ps-3">Code</th>
-                      <th>Position</th>
-                      <th>Department</th>
-                      <th>Urgency</th>
-                      <th>Status</th>
-                      <th>Submitted</th>
-                      <th className="text-center">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hiringLoading ? (
-                      <ShimmerTableRows rows={4} cols={7} keyPrefix="hr-req-shim" />
-                    ) : hiringRequests.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="text-center py-4 text-muted ep-fs-125">
-                          <i className="ri-inbox-line ht-empty-icon" />
-                          You haven't raised any hiring requests yet.
-                        </td>
-                      </tr>
-                    ) : visibleRequests.map((r: any) => {
-                      const uTone = urgencyTone(r.urgency);
-                    
-                      const displayStatus = r._hasRecruitment ? 'Recruitment Created' : (r.status || '—');
-                      const sTone = r._hasRecruitment
-                        ? { bg: 'rgba(16,185,129,0.16)', fg: '#047857' }
-                        : statusTone(r.status);
-                      return (
-                        <tr key={r.id}>
-                          <td className="ps-3 fw-semibold ep-fs-12">
-                            <span className="ht-code-chip">{r.code || `HR-${r.id}`}</span>
-                          </td>
-                          <td className="ep-fs-125">{r.position || r.job_role || r.role_name || '—'}</td>
-                          <td className="ht-cell-muted">{r.department?.name || r.department_name || '—'}</td>
-                          <td>
-                            <span className="ht-tone-chip" style={{ ['--ht-bg' as any]: uTone.bg, ['--ht-fg' as any]: uTone.fg }}>{r.urgency || '—'}</span>
-                          </td>
-                          <td>
-                            <span className="ht-status-chip" style={{ ['--ht-bg' as any]: sTone.bg, ['--ht-fg' as any]: sTone.fg }}>
-                              {r._hasRecruitment && <i className="ri-checkbox-circle-fill ep-fs-11" />}
-                              {displayStatus}
-                            </span>
-                          </td>
-                          <td className="ht-cell-date">
-                            {fmtDate(r.submittedAt || r.created_at)}
-                          </td>
-                          <td className="text-center">
-                            {/* Every request can be viewed (read-only). Draft
-                                rows can additionally be reopened + edited before
-                                submitting to HR. */}
-                            <div className="d-inline-flex align-items-center justify-content-center gap-1">
-                              <button
-                                type="button"
-                                className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                                data-tooltip="View"
-                                aria-label="View hiring request"
-                                onClick={() => setHiringViewing(r)}
-                              >
-                                <i className="ri-eye-line" />
-                              </button>
-                              {r.status === 'Draft' && !r._hasRecruitment && (
-                                <button
-                                  type="button"
-                                  className="btn btn-sm d-inline-flex align-items-center justify-content-center ht-edit-btn"
-                                  data-tooltip="Edit Draft"
-                                  aria-label="Edit Draft"
-                                  onClick={() => { setHiringEditing({ ...r, _raw: r }); setRaiseHiringOpen(true); }}
-                                >
-                                  <i className="ri-pencil-line" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {!hiringLoading && hiringRequests.length > 0 && (
-                <WorklistPager
-                  className="mt-2"
-                  total={hiringRequests.length}
-                  page={safePage}
-                  pageSize={rowsPerPage}
-                  onPage={p => setPage(Math.min(Math.max(1, p), pageCount))}
-                  onPageSize={setRowsPerPage}
-                  pageSizeOptions={[5, 10, 25, 50, 100]}
-                />
-              )}
+              {/* Shared DataTable — same component as Leave, Holidays and the
+                  rest of HRMS, so the header band, sortable columns and the
+                  "Showing X–Y of Z / Rows per page" footer are identical
+                  everywhere instead of being rebuilt per tab. */}
+              <DataTable
+                data={hiringRequests}
+                columns={hiringColumns}
+                loading={hiringLoading}
+                accent="violet"
+                pageSize={10}
+                minWidth={880}
+                emptyMessage={
+                  <>
+                    <i className="ri-inbox-line ht-empty-icon" />
+                    You haven't raised any hiring requests yet.
+                  </>
+                }
+              />
             </CardBody>
           </Card>
           </div>

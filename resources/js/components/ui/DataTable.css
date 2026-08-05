@@ -85,6 +85,7 @@
 /* ── Toolbar band: tabs + filter + search ─────────────────────────────────── */
 .dt-toolbar {
   display: flex; align-items: center; gap: 10px 12px;
+  /* Wrapping is the SMALL-SCREEN fallback only — see the nowrap rule below. */
   flex-wrap: wrap;
   padding: 12px 14px;
   background: linear-gradient(110deg, var(--dt-a-50) 0%, var(--dt-a-100) 35%, var(--dt-a-150) 70%, var(--dt-a-200) 100%);
@@ -92,6 +93,18 @@
   position: relative;
   z-index: 1;
   flex-shrink: 0;
+}
+/* One row on any normal desktop width.
+   With `flex-wrap: wrap`, flexbox moves an item that doesn't fit onto a NEW
+   LINE rather than shrinking its siblings — so on a wide tab rail (Document
+   Template Management has six role tabs, ~1100px) the Trigger filter and
+   Add Template dropped to a second row even though the search was capped and
+   the rail was shrinkable. Forcing nowrap makes the line over-full instead,
+   which is what actually triggers shrinking: the tab rail gives up width and
+   wraps its own tabs INSIDE the rail, the search shrinks to its min, and the
+   actions (flex-shrink: 0) stay whole and hard-right. */
+@media (min-width: 1200px) {
+  .dt-toolbar { flex-wrap: nowrap; }
 }
 /* Pinned right and never squeezed — the filters + primary action keep their
    size, and the search field (the only elastic item) gives up width instead.
@@ -124,8 +137,10 @@
   flex-wrap: wrap;
 }
 .dt-tab {
-  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  padding: 0 14px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
+     difference between the last tab fitting the row and wrapping under it. */
+  padding: 0 11px; height: 34px;
   border: 0; border-radius: 8px;
   background: transparent;
   font-family: inherit;
@@ -239,9 +254,17 @@
    a second line even when there was room for everything. */
 .dt-search {
   position: relative;
-  /* Elastic across the whole range: it absorbs every pixel the tabs and actions
-     don't need, down to 150px before the toolbar starts stacking. */
-  flex: 1 1 240px; min-width: 150px; max-width: 100%;
+  /* Elastic, but CAPPED. It used to be `flex: 1 1 240px` with no upper bound,
+     so it swallowed every spare pixel in the toolbar — on a wide table with
+     six tabs (Document Template Management) that left no room for the Trigger
+     filter + Add Template, and the whole actions group wrapped onto a second
+     row. A search field gains nothing past ~320px, and the spare width is
+     better given to `margin-left: auto` on the actions, which keeps them
+     right-aligned on the SAME row. */
+  /* Shrink factor 8 (vs the tab rail's 1): when the toolbar line is over-full
+     the search gives up its width FIRST, so the tab rail keeps its tabs on a
+     single line instead of wrapping one onto a second row inside the rail. */
+  flex: 1 8 200px; min-width: 140px; max-width: 260px;
   height: 42px;
   display: flex; align-items: center;
   padding: 0 8px 0 38px;
