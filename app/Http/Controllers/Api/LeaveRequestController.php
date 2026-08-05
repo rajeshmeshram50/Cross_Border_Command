@@ -1190,33 +1190,24 @@ class LeaveRequestController extends Controller
     {
         if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
 
-        $woSet = $this->parseWeeklyOffSet((string) ($employee->weekly_off ?? ''));
+        $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
         $holidaySet = $employee->holiday_group_id
             ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $from, $to)
             : [];
 
         $total = 0.0;
         foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $d) {
-            $off = isset($woSet[$d->dayOfWeek]) || isset($holidaySet[$d->toDateString()]);
+            $off = \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+                || isset($holidaySet[$d->toDateString()]);
             if (!$off) $total += 1.0;
         }
         return $total;
     }
 
-    /** Weekly-off day-of-week set from the employee's weekly_off label. Mirrors
-     *  AttendanceController::parseWeeklyOff (Sunday fallback) so leave, attendance
-     *  and payroll agree on what an off day is. */
-    private function parseWeeklyOffSet(string $label): array
-    {
-        $map = ['sun' => 0, 'mon' => 1, 'tue' => 2, 'wed' => 3, 'thu' => 4, 'fri' => 5, 'sat' => 6];
-        $set = [];
-        foreach (preg_split('/[\s,]+/', strtolower($label)) as $tok) {
-            $key = substr($tok, 0, 3);
-            if (isset($map[$key])) $set[$map[$key]] = true;
-        }
-        if (empty($set)) $set[0] = true; // unparseable → Sunday off (matches attendance)
-        return $set;
-    }
+    /* parseWeeklyOffSet() lived here — a duplicate of the one in
+     * AttendanceController. Both are gone: App\Support\WeekOff::isOff() is now
+     * the single answer to "is this date an off day?", and it understands the
+     * nth-Saturday patterns a day-of-week set never could. */
 
     /** Holiday dates (Y-m-d => true) for a group within [start, end], re-anchoring
      *  recurring holidays to the window's year. */

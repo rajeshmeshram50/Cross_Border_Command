@@ -36,7 +36,19 @@ const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 
 /* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
    Master (/holiday-groups) and Shift by the branch's configured Shift Details
    (/branch-shifts). Never hardcode either list. */
-const ONB_WEEKLY_OFF   = OPT('Week Off Policy', 'Saturday & Sunday', 'Sunday Only', 'Rotational');
+/* Weekly-off patterns. These four strings are the CONTRACT with the backend —
+   App\Support\WeekOff::normalise() maps each one to a rule, so changing the
+   wording here silently changes which days are off. Keep them in step.
+   "Week Off Policy" and a bare "Rotational" used to sit in this list: neither
+   names any day, so the backend parser fell through to its Sunday default and
+   every employee ran on Sunday-only regardless of what was picked.
+   Sunday is off in ALL four; only the Saturday rule differs. */
+const ONB_WEEKLY_OFF   = OPT(
+  'Sunday Only',
+  'Saturday & Sunday',
+  'Rotational — 1st & 3rd Saturday',
+  'Rotational — 2nd & 4th Saturday',
+);
 
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
 const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');

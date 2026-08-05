@@ -41,7 +41,16 @@ const NOTICE_PERIOD_OPTIONS = [
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
 
-const WEEKLY_OFF_OPTIONS    = ['Week Off Policy','Saturday & Sunday','Sunday Only','Rotational'].map(v => ({ value: v, label: v }));
+/* Weekly-off patterns — must match App\Support\WeekOff's canonical labels and
+   HrEmployeeOnboarding's ONB_WEEKLY_OFF exactly; the backend resolves the rule
+   from this string. "Week Off Policy" / bare "Rotational" were dropped: they
+   name no day, so the parser fell back to Sunday for everyone who picked them. */
+const WEEKLY_OFF_OPTIONS    = [
+  'Sunday Only',
+  'Saturday & Sunday',
+  'Rotational — 1st & 3rd Saturday',
+  'Rotational — 2nd & 4th Saturday',
+].map(v => ({ value: v, label: v }));
 const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
 const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
 // Overtime rate options now come from the Overtime (OT) Master (fetched at

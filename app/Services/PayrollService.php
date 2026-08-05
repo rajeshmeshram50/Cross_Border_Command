@@ -371,7 +371,32 @@ class PayrollService
         ];
     }
 
-    /** Working days = calendar days minus Sundays (a sane default; HR can edit). */
+    /**
+     * Working days for ONE employee — calendar days minus that employee's own
+     * weekly offs.
+     *
+     * The period-level default below counts every non-Sunday, which is only
+     * right for a Sunday-only employee. Someone on "Saturday & Sunday" or a
+     * rotational Saturday pattern has fewer working days, and using the company
+     * number for them inflates the denominator: their per-day salary comes out
+     * too low and their LOP too high. Holidays are NOT deducted here — they are
+     * paid days handled separately by holidayAggregates().
+     */
+    private function employeeWorkingDays(Employee $employee, Carbon $start, Carbon $end): int
+    {
+        $label = (string) ($employee->weekly_off ?? '');
+        $days = 0;
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            if (!\App\Support\WeekOff::isOff($label, $d)) {
+                $days++;
+            }
+        }
+        return $days;
+    }
+
+    /** Working days = calendar days minus Sundays (a sane default; HR can edit).
+     *  Company/branch level — stored on the payroll period. Per-EMPLOYEE counts
+     *  come from employeeWorkingDays() above, which honours their weekly off. */
     private function defaultWorkingDays(Carbon $start, Carbon $end): int
     {
         $days = 0;
@@ -611,7 +636,13 @@ class PayrollService
             'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: $employee->display_name,
             'department'    => $deptName,
             'designation'   => $desigName,
-            'working_days'  => $period->working_days,
+            // Per-employee, not the period's company-wide figure — the payslip's
+            // "Total Days" has to match the denominator the pay is divided by.
+            'working_days'  => $this->employeeWorkingDays(
+                $employee,
+                Carbon::parse($period->period_start),
+                Carbon::parse($period->period_end),
+            ),
             'present_days'  => 0,
             'paid_days'     => 0,
             'lop_days'      => 0,
@@ -676,8 +707,19 @@ class PayrollService
                 'Mid-cycle join/exit — salary pro-rated to ' . round($proration * 100) . '% of the month.');
         }
 
-        // Effective payable working days within the active window.
-        $effectiveWorkingDays = round($period->working_days * $proration, 2);
+        /* Effective payable working days within the active window.
+         *
+         * Counted from THIS employee's weekly-off pattern rather than the
+         * period's company-wide figure. The period number is calendar-minus-
+         * Sundays, so a Saturday-off employee was being measured against a
+         * denominator that included days they never work — deflating per-day
+         * salary and inflating LOP. */
+        $empWorkingDays       = $this->employeeWorkingDays(
+            $employee,
+            $period->period_start->copy(),
+            $period->period_end->copy(),
+        );
+        $effectiveWorkingDays = round($empWorkingDays * $proration, 2);
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
         $att = $this->attendanceAggregates(
@@ -1077,7 +1119,11 @@ class PayrollService
             }
 
             if ($d->lt($start) || $d->gt($end)) continue;
-            if ($d->dayOfWeek === Carbon::SUNDAY) continue; // not a working day
+            // A holiday landing on this employee's OWN weekly off is already a
+            // non-working day — crediting it again would pay the same day twice.
+            // Was hardcoded to Sunday, which double-counted for anyone whose
+            // Saturday is off.
+            if (\App\Support\WeekOff::isOff((string) ($employee->weekly_off ?? ''), $d)) continue;
 
             $dates[$d->toDateString()] = true; // dedupe same-day entries
         }
@@ -1166,6 +1212,10 @@ class PayrollService
             return ['paid' => 0, 'unpaid' => 0];
         }
 
+        // The employee's own weekly-off pattern decides which days inside a
+        // leave span are chargeable — same rule LeaveRequestController uses.
+        $weeklyOffLabel = (string) (Employee::where('id', $employeeId)->value('weekly_off') ?? '');
+
         $rows = DB::table('leave_requests')
             ->where('employee_id', $employeeId)
             ->where('status', 'Approved')
@@ -1188,12 +1238,13 @@ class PayrollService
             if ($to->lt($from)) {
                 continue;
             }
-            // Count only WORKING days (exclude Sundays) in the clipped window so
-            // a leave that straddles a weekend doesn't over-credit paid days
-            // (Rule 3 precision).
+            // Count only WORKING days in the clipped window so a leave that
+            // straddles a weekend doesn't over-credit paid days (Rule 3
+            // precision). Was hardcoded to Sundays — a Saturday-off employee
+            // therefore had every Saturday inside a leave counted as payable.
             $span = 0;
             for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
-                if ($d->dayOfWeek !== Carbon::SUNDAY) {
+                if (!\App\Support\WeekOff::isOff($weeklyOffLabel, $d)) {
                     $span++;
                 }
             }
