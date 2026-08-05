@@ -24,6 +24,10 @@ class AttendanceRegularization extends Model
         'type',
         'work_locations',
         'punches',
+        // Snapshot of the day's punches as they stood BEFORE approval replaced
+        // them — the "before" half of the correction's audit trail.
+        'original_punches',
+        'original_summary',
         'reason',
         'status',
         'approval_chain',
@@ -38,6 +42,7 @@ class AttendanceRegularization extends Model
         'regularization_date'    => 'date',
         'work_locations'         => 'array',
         'punches'                => 'array',
+        'original_punches'       => 'array',
         'approval_chain'         => 'array',
         'current_approval_level' => 'integer',
         'approved_at'            => 'datetime',

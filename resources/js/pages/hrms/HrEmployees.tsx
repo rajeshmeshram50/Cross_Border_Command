@@ -1778,11 +1778,19 @@ export default function HrEmployees() {
   const validateStep4 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eEnablePayroll) return e;
+    // Distinct messages per failure — "required" was previously also shown for
+    // a typed 0, which reads as wrong ("I did enter something"). Blank, zero /
+    // negative, and over-cap are three different mistakes and each gets told
+    // what to do about it.
     const amt = Number(eAnnualSalary);
-    if (eAnnualSalary === '' || !Number.isFinite(amt) || amt <= 0) {
-      e.annual_salary = 'Salary amount is required';
+    if (eAnnualSalary.trim() === '') {
+      e.annual_salary = 'Annual CTC is required';
+    } else if (!Number.isFinite(amt)) {
+      e.annual_salary = 'Annual CTC must be a valid number';
+    } else if (amt <= 0) {
+      e.annual_salary = 'Annual CTC must be greater than 0';
     } else if (amt > 999999999999.99) {
-      e.annual_salary = 'Salary amount must be ≤ 999,999,999,999.99';
+      e.annual_salary = 'Annual CTC must be ≤ 999,999,999,999.99';
     }
     // Frequency picker was removed — salary is always entered "Per annum",
     // so it's never user-editable and must not block the form. (Defaulted to
@@ -4083,23 +4091,38 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={6}>
                       <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>
-                      <input
-                        className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                        type="number"
-                        placeholder="Enter annual amount"
-                        value={eAnnualSalary}
-                        max={999999999999.99}
-                        step="0.01"
-                        inputMode="decimal"
-                        onChange={e => {
-                          const raw = e.target.value;
-                          if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                          if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
-                          setEAnnualSalary(raw);
-                          clearEErr('annual_salary');
-                        }}
-                        style={{ width: '100%' }}
-                      />
+                      {/* ₹ prefix — the amount is always INR here (the payroll
+                          breakup rows below already show it), so the symbol sits
+                          inside the field rather than in the label. Absolutely
+                          positioned + extra left padding on the input so it
+                          can't overlap the typed value. */}
+                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            position: 'absolute', left: 11, fontSize: 13,
+                            color: 'var(--vz-secondary-color)', pointerEvents: 'none', lineHeight: 1,
+                          }}
+                        >
+                          ₹
+                        </span>
+                        <input
+                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                          type="number"
+                          placeholder="Enter annual amount"
+                          value={eAnnualSalary}
+                          max={999999999999.99}
+                          step="0.01"
+                          inputMode="decimal"
+                          onChange={e => {
+                            const raw = e.target.value;
+                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
+                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                            setEAnnualSalary(raw);
+                            clearEErr('annual_salary');
+                          }}
+                          style={{ width: '100%', paddingLeft: 25 }}
+                        />
+                      </div>
                       {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                     </Col>
                     <Col md={6}>
