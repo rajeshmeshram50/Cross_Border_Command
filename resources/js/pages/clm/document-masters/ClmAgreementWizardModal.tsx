@@ -528,15 +528,10 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // selection, the other side's checkboxes are disabled.
   const hasBuyerParty    = useMemo(() => PARTY_BUYER_CONSIGNEE.some(p => parties.has(p.value)), [parties]);
   const hasSupplierParty = useMemo(() => PARTY_SUPPLIER.some(p => parties.has(p.value)), [parties]);
-  const activePartyGroup = hasSupplierParty ? PARTY_SUPPLIER : PARTY_BUYER_CONSIGNEE;
-  const allPartiesSelected = useMemo(
-    () => parties.size === activePartyGroup.length && activePartyGroup.every(p => parties.has(p.value)),
-    [parties, activePartyGroup],
-  );
-  const toggleAllParties = () => {
-    setParties(allPartiesSelected ? new Set() : new Set(activePartyGroup.map(p => p.value)));
-    setErrors(p => ({ ...p, party: '' }));
-  };
+  // (The "ALL" shortcut was removed — parties are ticked individually. Its
+  // activePartyGroup / allPartiesSelected / toggleAllParties helpers went with
+  // it; hasBuyerParty / hasSupplierParty stay, they drive the mutual-exclusion
+  // disabling below.)
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
@@ -873,10 +868,6 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                     </span>
                     Applicable Party <span className="agw-req">*</span>
                   </div>
-                  <label className={`agw-checkbox agw-checkbox-all ${allPartiesSelected ? 'is-on' : ''}`}>
-                    <input type="checkbox" checked={allPartiesSelected} onChange={toggleAllParties} />
-                    <span className="agw-checkbox-label">ALL</span>
-                  </label>
                 </div>
 
                 <div className="agw-party-row">

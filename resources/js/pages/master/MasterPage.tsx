@@ -1459,25 +1459,22 @@ function MasterPageInner({
         },
       });
     }
-    // Department-master Employees column. Two-line cell ("18" / "employees").
-    // Prefers row.employees_count; falls back to a deterministic mock derived
-    // from the row id so the table reads naturally before the backend wires up
-    // a real join with the employees table.
+    /* Department-master Employees column. Two-line cell ("18" / "employees").
+     *
+     * Reads the REAL count: MasterController::list withCount('employees') on the
+     * departments slug. It used to fall back to a hash-of-the-row-id mock (4-25)
+     * when the field was absent — which it always was, so every figure on screen
+     * was invented, and the totals happily exceeded the entire employee table.
+     * No fallback now: a department with no staff must read 0, not a number. */
     if (cfg.slug === 'departments') {
-      const mockCountFor = (row: any): number => {
-        const seed = String(row?.id ?? row?.code ?? row?.name ?? '');
-        let h = 0;
-        for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-        return 4 + Math.abs(h) % 22; // 4..25
-      };
       cols.push({
         header: () => <div className="text-center">Employees</div>,
         id: '__employees',
         meta: { align: 'center' },
-        accessorFn: (row: any) => Number(row.employees_count ?? mockCountFor(row)),
+        accessorFn: (row: any) => Number(row.employees_count ?? 0),
         cell: (info: any) => {
           const row = info.row.original;
-          const n = Number(row?.employees_count ?? mockCountFor(row));
+          const n = Number(row?.employees_count ?? 0);
           return (
             <div className="text-center" style={{ lineHeight: 1.1 }}>
               <div style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--vz-heading-color, var(--vz-body-color))', fontVariantNumeric: 'tabular-nums' }}>
@@ -3855,7 +3852,16 @@ export function renderField(
     const existingPath: string | null = editing
       ? (editing[`${f.n}_path`] || editing[f.n] || null)
       : null;
-    const existingUrl = existingPath ? resolveFileUrl(existingPath) : '';
+    /* Prefer the URL the SERVER resolved (MasterController::withOwnership adds
+     * `<column>_url` for every *_path). Building it here from the raw path
+     * assumes files sit under {origin}/storage/, which is only true on the
+     * local disk — on the Azure deployment they live on the blob host, so the
+     * client-built link 404'd there. resolveFileUrl stays as the fallback for
+     * responses that predate the `_url` field. */
+    const serverUrl: string | null = editing
+      ? (editing[`${f.n}_path_url`] || editing[`${f.n}_url`] || null)
+      : null;
+    const existingUrl = serverUrl || (existingPath ? resolveFileUrl(existingPath) : '');
     const existingName = existingPath ? String(existingPath).split('/').pop() : '';
     input = (
       <>

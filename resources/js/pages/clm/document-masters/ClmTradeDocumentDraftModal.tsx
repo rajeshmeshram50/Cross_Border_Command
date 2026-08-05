@@ -491,17 +491,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // selection, the other side's checkboxes are disabled.
   const hasBuyerParty    = useMemo(() => PARTY_BUYER_CONSIGNEE.some(p => parties.has(p.value)), [parties]);
   const hasSupplierParty = useMemo(() => PARTY_SUPPLIER.some(p => parties.has(p.value)), [parties]);
-  // "ALL" acts within the ACTIVE side (supplier side once a supplier is picked,
-  // else the buyer side) so it never mixes the two groups.
-  const activePartyGroup = hasSupplierParty ? PARTY_SUPPLIER : PARTY_BUYER_CONSIGNEE;
-  const allPartiesSelected = useMemo(
-    () => parties.size === activePartyGroup.length && activePartyGroup.every(p => parties.has(p.value)),
-    [parties, activePartyGroup],
-  );
-  const toggleAllParties = () => {
-    setParties(allPartiesSelected ? new Set() : new Set(activePartyGroup.map(p => p.value)));
-    setErrors(p => ({ ...p, party: '' }));
-  };
+  // (The "ALL" shortcut was removed — parties are ticked individually. Its
+  // activePartyGroup / allPartiesSelected / toggleAllParties helpers went with
+  // it; hasBuyerParty / hasSupplierParty stay, they drive the mutual-exclusion
+  // disabling below.)
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
@@ -838,10 +831,6 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </span>
                     Applicable Party <span className="tdw-req">*</span>
                   </div>
-                  <label className={`tdw-checkbox tdw-checkbox-all ${allPartiesSelected ? 'is-on' : ''}`}>
-                    <input type="checkbox" checked={allPartiesSelected} onChange={toggleAllParties} />
-                    <span className="tdw-checkbox-label">ALL</span>
-                  </label>
                 </div>
                 <div className="tdw-party-row">
                   <div className="tdw-party-label">CUSTOMER & CONSIGNEE</div>
