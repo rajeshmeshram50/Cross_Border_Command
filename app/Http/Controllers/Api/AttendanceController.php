@@ -35,6 +35,11 @@ class AttendanceController extends Controller
             ->where('employee_id', $employee->id)
             ->whereDate('attendance_date', self::todayLocal())
             ->first();
+        // Hand the row its employee so the shift / overtime helpers resolve
+        // without re-querying (and so they see the SAME employee instance the
+        // response is built from).
+        if ($row) $row->setRelation('employee', $employee);
+        $cutoffRow = $row ?: (new Attendance(['attendance_date' => self::todayLocal()]))->setRelation('employee', $employee);
         return response()->json([
             'date'     => self::todayLocal(),
             'employee' => [
@@ -50,12 +55,22 @@ class AttendanceController extends Controller
             /* Instant an open punch is auto-closed at: the employee's shift end
                + 1h (21:00 when no shift resolves). Sent down so the Clock-In
                timer stops at the same boundary the server counts to, instead of
-               hardcoding its own cut-off and drifting from the stored total. */
+               hardcoding its own cut-off and drifting from the stored total.
+               For an OVERTIME-APPLICABLE employee there is no auto-logout —
+               this is their NEXT shift start, the point at which an unclosed
+               day forfeits its overtime. */
             'auto_cutoff_at' => \Carbon\Carbon::createFromTimestamp(
-                ($row ?: (new Attendance(['attendance_date' => self::todayLocal()]))->setRelation('employee', $employee))
-                    ->autoCheckoutCutoffTs(self::todayLocal()),
-                self::DISPLAY_TZ
+                $cutoffRow->autoCheckoutCutoffTs(self::todayLocal()), self::DISPLAY_TZ
             )->toIso8601String(),
+            // Overtime starts the instant the shift ENDS (a late arrival does
+            // not push it out) and only for employees the employee master marks
+            // overtime-applicable. `overtime_seconds` is live/provisional while
+            // still clocked in — it is forfeited if the day is never closed.
+            'overtime_applicable' => $employee->overtimeApplicable(),
+            'shift_end_at'        => \Carbon\Carbon::createFromTimestamp(
+                $cutoffRow->shiftEndTs(self::todayLocal()), self::DISPLAY_TZ
+            )->toIso8601String(),
+            'overtime_seconds'    => $row ? $row->overtimeSecondsForDay() : 0,
         ]);
     }
 
@@ -63,7 +78,10 @@ class AttendanceController extends Controller
     public function my(Request $request)
     {
         $employee = $this->callerEmployee($request);
-        $q = Attendance::with('punches')
+        // `employee.branch:id,shifts` — total_worked_seconds resolves the shift
+        // window and overtime flag off the employee, so eager-load it (with the
+        // branch that holds the shift timings) instead of paying an N+1 per page.
+        $q = Attendance::with(['punches', 'employee.branch:id,shifts'])
             ->where('employee_id', $employee->id)
             ->orderByDesc('attendance_date');
         if ($from = $request->query('from')) $q->whereDate('attendance_date', '>=', $from);
@@ -667,6 +685,17 @@ class AttendanceController extends Controller
             $autoCutoffAt = \Carbon\Carbon::createFromTimestamp(
                 $cutoffRow->autoCheckoutCutoffTs($date), self::DISPLAY_TZ
             )->toIso8601String();
+            /* Overtime — only for employees the employee master marks
+               overtime-applicable, counted from the SHIFT END regardless of a
+               late arrival. While the employee is still clocked in the figure
+               is provisional: not punching out before the next shift starts
+               (which is what autoCutoffAt now is for these employees, since
+               they get no auto-logout) drops the day's overtime to zero. */
+            $otApplicable = $emp->overtimeApplicable();
+            $shiftEndAt   = \Carbon\Carbon::createFromTimestamp(
+                $cutoffRow->shiftEndTs($date), self::DISPLAY_TZ
+            )->toIso8601String();
+            $overtimeSecs = $today ? $today->overtimeSecondsForDay() : 0;
             $lastPunch = $todayPunches->last();
             if ($lastPunch && $lastPunch->direction === 'in' && $lastPunch->punched_at) {
                 $openInAt = $lastPunch->punched_at->toIso8601String();
@@ -768,6 +797,9 @@ class AttendanceController extends Controller
                 'workedCompletedSeconds' => $workedCompletedSecs,
                 'openInAt'          => $openInAt,
                 'autoCutoffAt'      => $autoCutoffAt,
+                'overtimeApplicable'=> $otApplicable,
+                'shiftEndAt'        => $shiftEndAt,
+                'overtimeSeconds'   => $overtimeSecs,
                 'expectedMinutes'   => $expectedMinutes,
                 'lateByMinutes'     => $lateByMinutes,
                 'punches'           => $this->renderPunches($todayPunches),
@@ -977,6 +1009,11 @@ class AttendanceController extends Controller
         $byIso = [];
         foreach ($rows as $r) {
             $iso = \Carbon\Carbon::parse($r->attendance_date)->toDateString();
+            // Hand each row its employee up-front: total_worked_seconds resolves
+            // the shift window and the overtime flag through it, and without
+            // this every one of the 90 history rows lazy-loads the same
+            // employee (and its branch) again.
+            $r->setRelation('employee', $emp);
             $byIso[$iso] = $r;
         }
 

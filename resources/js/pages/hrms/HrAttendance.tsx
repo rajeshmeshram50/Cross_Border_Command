@@ -63,6 +63,12 @@ interface AttendanceEmployee {
   workedCompletedSeconds?: number;
   openInAt?: string | null;
   autoCutoffAt?: string | null;
+  /** Employee master → Leave & Attendance → "Overtime Applicable" = Yes. */
+  overtimeApplicable?: boolean;
+  /** ISO instant this day's shift ends — where overtime starts counting. */
+  shiftEndAt?: string | null;
+  /** Overtime credited for the day (provisional while still clocked in). */
+  overtimeSeconds?: number;
   expectedMinutes: number;
   lateByMinutes: number;
   punches: PunchEvent[];
@@ -729,6 +735,22 @@ function TodayRecordCard({
     return base + Math.max(0, Math.floor((boundary - openInMs) / 1000));
   })();
 
+  /* Live OVERTIME — only for employees the employee master marks overtime-
+     applicable. It starts the instant the SHIFT ENDS (arriving late does not
+     push it out) and, because these employees get no auto-logout, keeps
+     ticking while they stay on the clock. Not punching out before the next
+     shift starts (= autoCutoffAt for them) forfeits the whole day's overtime,
+     which is why the ticker drops to zero there instead of freezing. Closed /
+     past days just show the server figure. */
+  const otApplicable = !!employee.overtimeApplicable;
+  const shiftEndMs   = employee.shiftEndAt ? new Date(employee.shiftEndAt).getTime() : null;
+  const liveOvertimeSecs = (() => {
+    if (!otApplicable) return 0;
+    if (openInMs == null || shiftEndMs == null) return employee.overtimeSeconds ?? 0;
+    if (cutoffMs != null && nowMs >= cutoffMs) return 0;
+    return Math.max(0, Math.floor((nowMs - Math.max(shiftEndMs, openInMs)) / 1000));
+  })();
+
   const dateLabel = `${WEEK_LABELS[parseISO(viewDate).getDay()].slice(0,3)}, ${parseISO(viewDate).getDate()}-${monthOf(viewDate)}-${yearOf(viewDate)}`;
 
   return (
@@ -799,7 +821,7 @@ function TodayRecordCard({
           </div>
         </div>
 
-        <div className="att-today-stats">
+        <div className={`att-today-stats${otApplicable ? ' att-today-stats--4' : ''}`}>
           <div className="att-stat">
             <div className="att-stat-num" style={{ color: '#7c5cfc' }}>{employee.punches.filter(p => p.type !== 'missing').length}</div>
             <div className="att-stat-label">PUNCHES</div>
@@ -812,6 +834,12 @@ function TodayRecordCard({
             <div className="att-stat-num" style={{ color: '#6b7280' }}>{fmtMinutes(employee.expectedMinutes)}</div>
             <div className="att-stat-label">EXPECTED</div>
           </div>
+          {otApplicable && (
+            <div className="att-stat" title={`Overtime runs from the ${employee.shiftEnd} shift end. It only counts once the employee punches out — before their next shift starts.`}>
+              <div className="att-stat-num" style={{ color: '#f59e0b' }}>{fmtMinutes(Math.floor(liveOvertimeSecs / 60))}</div>
+              <div className="att-stat-label">OVERTIME</div>
+            </div>
+          )}
         </div>
 
       </CardBody>

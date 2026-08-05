@@ -87,6 +87,11 @@ class PayrollAdjustmentController extends Controller
 
         if ($data['type'] === 'overtime' && ($data['from_attendance'] ?? false) && empty($data['hours'])) {
             $preview = $this->payroll->overtimePreview($employee, (int) $data['month'], (int) $data['year']);
+            // Overtime off in the employee master is a different failure from
+            // "worked no extra hours" — say which, so HR knows whether to fix
+            // the setting or the attendance.
+            abort_if(!$preview['applicable'], 422,
+                'Overtime is not applicable to this employee — set "Overtime Applicable" to Yes and pick an Overtime Rate in their Leave & Attendance step first.');
             abort_if($preview['detected_hours'] <= 0, 422,
                 'No overtime found in attendance for this cycle — nobody worked past the ' . $preview['shift_end'] . ' shift end.');
             $data['hours'] = $preview['detected_hours'];

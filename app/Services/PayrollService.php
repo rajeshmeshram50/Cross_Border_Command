@@ -1398,8 +1398,13 @@ class PayrollService
         // end belongs to the NEXT calendar day (e.g. 22:00 → 06:00).
         $overnight  = $this->minutesBetween($shiftStart, $shiftEnd) <= 0;
 
-        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd, 'detail' => []];
-        if (!Schema::hasTable('attendances')) {
+        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd,
+                  'applicable' => $employee->overtimeApplicable(), 'detail' => []];
+        // Overtime is a per-employee setting (employee form → Leave &
+        // Attendance → "Overtime Applicable"). Staying past the shift end
+        // earns nothing for an employee it isn't applicable to, so detection
+        // never runs for them.
+        if (!$employee->overtimeApplicable() || !Schema::hasTable('attendances')) {
             return $blank;
         }
 
@@ -1438,6 +1443,14 @@ class PayrollService
             if ($mins <= 0) {
                 continue; // left at or before shift end — no overtime
             }
+            // The punch-out has to land before the employee's NEXT shift
+            // starts. Past that the day was never properly closed, so its
+            // overtime doesn't count at all (it is not carried, capped or
+            // pro-rated — it's dropped). Mirrors Attendance::overtimeSecondsForDay().
+            $nextShiftStart = Carbon::parse($date . ' ' . $shiftStart, self::DISPLAY_TZ)->addDay();
+            if ($out->greaterThanOrEqualTo($nextShiftStart)) {
+                continue;
+            }
             if ($mins > self::MAX_OT_MINUTES_PER_DAY) {
                 $mins = self::MAX_OT_MINUTES_PER_DAY;
                 $capped++;
@@ -1463,6 +1476,7 @@ class PayrollService
             'days'        => $days,
             'capped_days' => $capped,
             'shift_end'   => $shiftEnd,
+            'applicable'  => true,
             'detail'      => $detail,
         ];
     }
@@ -1484,6 +1498,10 @@ class PayrollService
             'month'          => $month,
             'year'           => $year,
             'shift_end'      => $detected['shift_end'],
+            // False when the employee master says overtime isn't applicable —
+            // detected_hours is then always 0, and the UI can say WHY instead
+            // of implying nobody stayed late.
+            'applicable'     => $detected['applicable'],
             'detected_hours' => $detected['hours'],
             'days'           => $detected['days'],
             'capped_days'    => $detected['capped_days'],
