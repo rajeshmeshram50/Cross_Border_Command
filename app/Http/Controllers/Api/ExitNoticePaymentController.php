@@ -71,13 +71,12 @@ class ExitNoticePaymentController extends Controller
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
             'bank_name'         => ['required', 'string', 'max:120'],
-            'utr_cheque_number' => ['required', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'],
+            'utr_cheque_number' => ['required', 'string', 'max:40'],
             'payment_date'      => ['required', 'date', 'before_or_equal:' . Carbon::now(self::DISPLAY_TZ)->toDateString()],
             'employee_note'     => ['nullable', 'string', 'max:500'],
             'attachment'        => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:5120'],
         ], [
-            'utr_cheque_number.regex' => 'The UTR / cheque number must be 6–22 letters or digits.',
-            'attachment.required'     => 'Upload a screenshot or receipt of the payment.',
+            'attachment.required' => 'Upload a screenshot or receipt of the payment.',
         ]);
 
         // A reference can only be claimed once per employee — the same transfer
@@ -142,11 +141,11 @@ class ExitNoticePaymentController extends Controller
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
             'bank_name'         => ['required', 'string', 'max:120'],
-            'utr_cheque_number' => ['required', 'string', 'regex:/^[A-Za-z0-9]{6,22}$/'],
+            'utr_cheque_number' => ['required', 'string', 'max:40'],
             'payment_date'      => ['required', 'date'],
             'remarks'           => ['nullable', 'string', 'max:500'],
             'verdict'           => ['required', 'in:Approved,Rejected'],
-        ], ['utr_cheque_number.regex' => 'The UTR / cheque number must be 6–22 letters or digits.']);
+        ]);
 
         if ($data['verdict'] === 'Approved' && (float) $data['amount'] + 0.005 < $due['amount']) {
             abort(422, 'The amount received (' . number_format((float) $data['amount'], 2)

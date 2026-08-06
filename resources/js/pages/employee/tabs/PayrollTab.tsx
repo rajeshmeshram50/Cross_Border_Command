@@ -10,6 +10,9 @@ import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 
+/** The only two ways a notice-period recovery may be paid. */
+const PAYMENT_MODES = ['UPI', 'Cheque'] as const;
+
 export default function PayrollTab() {
   const {
     employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
@@ -33,7 +36,7 @@ export default function PayrollTab() {
   const [np, setNp] = useState<any>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [paying, setPaying] = useState(false);
-  const emptyPay = { amount: '', payment_mode: 'NEFT', bank_name: '', utr_cheque_number: '', payment_date: '', employee_note: '' };
+  const emptyPay = { amount: '', payment_mode: 'UPI', bank_name: '', utr_cheque_number: '', payment_date: '', employee_note: '' };
   const [payForm, setPayForm] = useState<Record<string, string>>(emptyPay);
   const [payFile, setPayFile] = useState<File | null>(null);
 
@@ -64,10 +67,6 @@ export default function PayrollTab() {
     if (!payFile)                missing.push('Payment Screenshot');
     if (missing.length) {
       toast.warning('Complete the form', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
-      return;
-    }
-    if (!/^[A-Za-z0-9]{6,22}$/.test(payForm.utr_cheque_number.trim())) {
-      toast.error('Invalid reference', 'The UTR / cheque number must be 6–22 letters or digits.');
       return;
     }
     setPaying(true);
@@ -654,7 +653,7 @@ export default function PayrollTab() {
                   <div className="min-w-0">
                     <h5 className="mb-0 fw-bold ep-bd-head-title">Notice Period Payment</h5>
                     <small className="ep-bd-head-sub">
-                      Pay the amount below to the company account, then record the transfer here
+                      Record the transfer you made for the unserved notice period
                     </small>
                   </div>
                 </div>
@@ -679,22 +678,6 @@ export default function PayrollTab() {
                   )}
                 </div>
 
-                {/* Where to send it. */}
-                {(np?.company_accounts || []).length > 0 && (
-                  <>
-                    <div className="npay-sec">Pay To — Company Account</div>
-                    {np.company_accounts.slice(0, 1).map((a: any) => (
-                      <div className="npay-acct" key={a.id}>
-                        <div><span>Bank</span><strong>{a.bank_name}</strong></div>
-                        <div><span>Account Holder</span><strong>{a.account_holder}</strong></div>
-                        <div><span>Account Number</span><strong className="npay-mono">{a.account_number}</strong></div>
-                        <div><span>IFSC</span><strong className="npay-mono">{a.ifsc_code}</strong></div>
-                        <div><span>Branch</span><strong>{a.branch_name || '—'}{a.city ? `, ${a.city}` : ''}</strong></div>
-                      </div>
-                    ))}
-                  </>
-                )}
-
                 <div className="npay-sec">Payment Details</div>
                 <Row className="g-3">
                   <Col md={4}>
@@ -710,7 +693,7 @@ export default function PayrollTab() {
                       <MasterSelect
                         value={payForm.payment_mode}
                         onChange={v => setPayField('payment_mode', v)}
-                        options={['NEFT', 'IMPS', 'RTGS', 'UPI', 'Cheque', 'Cash'].map(m => ({ value: m, label: m }))}
+                        options={PAYMENT_MODES.map(m => ({ value: m, label: m }))}
                         placeholder="Select mode"
                       />
                     </FormGroup>
@@ -737,9 +720,11 @@ export default function PayrollTab() {
                     <FormGroup className="mb-0">
                       <Label className="ep-field-label">UTR / Cheque Number <span className="text-danger">*</span></Label>
                       <Input value={payForm.utr_cheque_number} maxLength={22}
-                        placeholder="e.g. HDFCR52026123456789012"
+                        placeholder="UPI ref or cheque number"
                         onChange={e => setPayField('utr_cheque_number', e.target.value)} />
-                      <small className="text-muted">6–22 letters or digits.</small>
+                      {/* No format rule — a UPI reference isn't a UTR and can
+                          carry any shape, so only presence is enforced. */}
+                      <small className="text-muted">UPI reference or cheque number.</small>
                     </FormGroup>
                   </Col>
                   <Col xs={12}>

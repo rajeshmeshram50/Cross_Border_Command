@@ -2672,16 +2672,6 @@
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
   color: var(--vz-secondary-color); margin: 4px 0 8px;
 }
-.npay-acct {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;
-  background: var(--vz-secondary-bg); border: 1px dashed var(--vz-border-color);
-  border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
-}
-.npay-acct span {
-  display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--vz-secondary-color);
-}
-.npay-acct strong { font-size: 12.5px; }
 
 /* Upload drop-zone — a raw <input type="file"> rendered as an unstyled grey
    "Choose file" button that clashed with every other field. */

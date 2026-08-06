@@ -888,7 +888,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [settleStatus, setSettleStatus]   = useState('NA');
   // Recovery side: what the employee paid + HR's verdict on it.
   const [noticePayment, setNoticePayment] = useState<any>(null);
-  const [rcv, setRcv] = useState({ amount: '', date: '', mode: 'NEFT', bank: '', ref: '', remarks: '' });
+  const [rcv, setRcv] = useState({ amount: '', date: '', mode: 'UPI', bank: '', ref: '', remarks: '' });
   // Payment-in-lieu side lives inside the FnF stage.
   const [fnf, setFnf] = useState<any>(null);
   const [fnfLines, setFnfLines] = useState({ basic: '', leaveEncash: '', bonus: '', loan: '' });
@@ -1872,10 +1872,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.warning('Complete the payment details', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
       return;
     }
-    if (ref && !/^[A-Za-z0-9]{6,22}$/.test(ref)) {
-      toast.warning('Check the reference', 'UTR / cheque number must be 6–22 letters or digits.');
-      return;
-    }
     if (verdict === 'approved' && got + 0.005 < settle.amount) {
       toast.warning('Amount is short',
         `${fmtMoney(got)} received against ${fmtMoney(settle.amount)} due — collect the balance, or reject this payment.`);
@@ -1906,7 +1902,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.success(verdict === 'approved' ? 'Payment approved' : 'Payment rejected',
         data?.message || '');
       if (verdict === 'approved') markStageCompleted('notice_payment');
-      setRcv({ amount: '', date: '', mode: 'NEFT', bank: '', ref: '', remarks: '' });
+      setRcv({ amount: '', date: '', mode: 'UPI', bank: '', ref: '', remarks: '' });
       loadEmployeePayments();
     } catch (err: any) {
       const e = err?.response?.data;
@@ -2341,7 +2337,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         <Col md={4}>
                           <EpField label="Payment Mode" required>
                             <EpSelect value={rcv.mode} onChange={v => setRcv(s => ({ ...s, mode: v }))}
-                              options={['NEFT', 'IMPS', 'RTGS', 'UPI', 'Cheque', 'Cash', 'Adjusted against F&F dues']} />
+                              options={['UPI', 'Cheque', 'Adjusted against F&F dues']} />
                           </EpField>
                         </Col>
                         <Col md={6}>
@@ -2351,9 +2347,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         </Col>
                         <Col md={6}>
                           <EpField label="UTR / Cheque Number" required>
-                            <EpInput value={rcv.ref} onChange={v => setRcv(s => ({ ...s, ref: v }))} placeholder="e.g. HDFCR52026123456789012" maxLength={22} />
+                            <EpInput value={rcv.ref} onChange={v => setRcv(s => ({ ...s, ref: v }))} placeholder="UPI ref or cheque number" maxLength={22} />
                             <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                              Letters &amp; digits only · Cheque 6 · IMPS/UPI 12 · NEFT 16 · RTGS 22 chars
+                              UPI reference or cheque number.
                             </div>
                           </EpField>
                         </Col>
