@@ -697,6 +697,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
     // Outstanding advances / claims / earned salary feeding the F&F stage.
     Route::get('/employees/{employee}/exit/fnf-summary', [ExitController::class, 'fnfSummary']);
+    // Mandatory F&F document — required before the settlement can be paid.
+    Route::post('/employees/{employee}/exit/fnf-attachment', [ExitController::class, 'uploadFnfAttachment']);
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
     
     Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);

@@ -2638,14 +2638,25 @@
 }
 .npay-btn:hover { filter: brightness(1.06); transform: translateY(-1px); }
 
-.npay-tblwrap { overflow-x: auto; }
-.npay-tbl { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 860px; }
-.npay-tbl th {
-  background: var(--vz-secondary-bg); text-align: left; padding: 8px 12px;
-  font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--vz-secondary-color); border-bottom: 1px solid var(--vz-border-color); white-space: nowrap;
+/* Matches the app's standard list table (DataTable): gradient indigo header,
+   white uppercase labels, zebra body — instead of the bare grey strip this
+   started as. */
+.npay-tblwrap {
+  overflow-x: auto; margin: 12px 14px 14px;
+  border: 1px solid var(--vz-border-color); border-radius: 10px;
 }
-.npay-tbl td { padding: 9px 12px; border-bottom: 1px solid var(--vz-border-color); vertical-align: top; }
+.npay-tbl { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 900px; }
+.npay-tbl thead tr {
+  background: linear-gradient(110deg, #6d5ae6 0%, #5b4bd6 55%, #4c3cc4 100%);
+}
+.npay-tbl th {
+  text-align: left; padding: 10px 12px; color: #fff;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .07em;
+  text-transform: uppercase; white-space: nowrap; border: 0;
+}
+.npay-tbl tbody tr:nth-child(even) { background: var(--vz-secondary-bg); }
+.npay-tbl tbody tr:hover { background: rgba(109,90,230,0.06); }
+.npay-tbl td { padding: 10px 12px; border-bottom: 1px solid var(--vz-border-color); vertical-align: middle; }
 .npay-tbl tr:last-child td { border-bottom: 0; }
 .npay-num { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .npay-mono { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; }
@@ -2672,16 +2683,6 @@
   font-size: 10.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
   color: var(--vz-secondary-color); margin: 4px 0 8px;
 }
-.npay-acct {
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;
-  background: var(--vz-secondary-bg); border: 1px dashed var(--vz-border-color);
-  border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
-}
-.npay-acct span {
-  display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; color: var(--vz-secondary-color);
-}
-.npay-acct strong { font-size: 12.5px; }
 
 /* Upload drop-zone — a raw <input type="file"> rendered as an unstyled grey
    "Choose file" button that clashed with every other field. */
