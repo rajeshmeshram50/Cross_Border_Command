@@ -1057,6 +1057,16 @@ class AdvanceRequestController extends Controller
                     return response()->json(['message' => 'Enter a monthly deduction amount.', 'errors' => ['monthly' => ['A monthly amount is required.']]], 422);
                 }
                 $months = (int) max(1, ceil($remaining / $monthly));
+                // ≤120-instalment guard (mirrors the Advance Request cap). Too
+                // low a monthly amount stretches recovery past 120 cycles.
+                if ($months > 120) {
+                    $unit = $recType === 'bimonthly' ? 'cycles' : 'months';
+                    $minMonthly = ceil($remaining / 120);
+                    return response()->json([
+                        'message' => 'This return would take ' . $months . ' ' . $unit . ' — over the 120 limit. Increase the monthly amount (at least ₹' . number_format($minMonthly, 2) . ') or return it directly.',
+                        'errors'  => ['monthly' => ['Increase the monthly amount — recovery can’t exceed 120 ' . $unit . ' (min ₹' . number_format($minMonthly, 2) . ').']],
+                    ], 422);
+                }
             }
             $row->settle_return_recovery_start  = $rec['recovery_start'];
             $row->settle_return_recovery_mode   = $recType;

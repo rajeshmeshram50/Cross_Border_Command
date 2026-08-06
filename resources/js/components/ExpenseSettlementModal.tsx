@@ -647,6 +647,15 @@ export default function ExpenseSettlementModal({
   // (70% of salary − the employee's other ongoing advance EMIs).
   const returnEmiCap = summary?.emi_available != null ? Math.floor(summary.emi_available) : 0;
   const returnPerCycleOver = returnEmiCap > 0 && recMonthlyNum > returnEmiCap;
+  // ≤120-cycle tenure guard (mirrors the Advance Request form). If the monthly
+  // amount is so low the return needs >120 cycles, block and tell them to raise
+  // it; if even the full EMI headroom can't clear it within 120 cycles, it
+  // can't be scheduled via payroll at all (return it directly instead).
+  const RET_MAX_MONTHS = 120;
+  const returnMinMonthly = returnRemaining > 0 ? Math.ceil(returnRemaining / RET_MAX_MONTHS) : 0;
+  const returnCannotSchedule = returnEmiCap > 0 && returnMinMonthly > returnEmiCap;
+  const returnTenureExceeds = (returnRecType === 'emi' || returnRecType === 'bimonthly')
+    && recMonthlyNum > 0 && recMonths > RET_MAX_MONTHS;
   // Row 2 (monthly / months / end date) stays locked until start + type are set.
   const returnRow2Locked = !returnRecStart || (returnRecType !== 'emi' && returnRecType !== 'bimonthly');
   const toastRow2Locked = () => toast.warning('Complete step 1 first', !returnRecType ? 'Select the recovery start and recovery type first.' : !returnRecStart ? 'Select the recovery start month first.' : 'Select the recovery start and recovery type first.');
@@ -672,6 +681,14 @@ export default function ExpenseSettlementModal({
       if (returnRecType !== 'lumpsum' && !(recMonthlyNum > 0)) { setReturnErr(true); return; }
       if (returnRecType !== 'lumpsum' && returnPerCycleOver) {
         toast.warning('Over the EMI headroom', `Available EMI headroom is ${inr(returnEmiCap)} (70% of salary − ongoing EMIs).`);
+        return;
+      }
+      if (returnRecType !== 'lumpsum' && returnCannotSchedule) {
+        toast.warning('Can’t schedule via payroll', `${inr(returnRemaining)} can’t be recovered within ${RET_MAX_MONTHS} ${returnRecType === 'bimonthly' ? 'cycles' : 'months'} at the EMI headroom (${inr(returnEmiCap)}). Return it directly instead.`);
+        return;
+      }
+      if (returnRecType !== 'lumpsum' && returnTenureExceeds) {
+        toast.warning('Too many instalments', `At ${inr(recMonthlyNum)}/${returnRecType === 'bimonthly' ? 'cycle' : 'month'} this needs ${recMonths} — over the ${RET_MAX_MONTHS} limit. Increase the monthly amount (min ${inr(returnMinMonthly)}).`);
         return;
       }
     }
@@ -2038,6 +2055,8 @@ export default function ExpenseSettlementModal({
                         </div>
                         {returnErr && !returnRow2Locked && !(recMonthlyNum > 0) && <span className="esm-err">Enter an amount.</span>}
                         {!returnRow2Locked && returnPerCycleOver && <span className="esm-err">Max {inr(returnEmiCap)} (EMI headroom).</span>}
+                        {!returnRow2Locked && !returnPerCycleOver && returnCannotSchedule && <span className="esm-err">Balance too large for payroll — can’t clear in {RET_MAX_MONTHS} within the EMI headroom. Return directly.</span>}
+                        {!returnRow2Locked && !returnPerCycleOver && !returnCannotSchedule && returnTenureExceeds && <span className="esm-err">Over {RET_MAX_MONTHS} {returnRecType === 'bimonthly' ? 'cycles' : 'months'} — raise the monthly amount (min {inr(returnMinMonthly)}).</span>}
                       </div>
                       <div className={`esm-fld s4 ${returnRow2Locked ? 'is-locked' : ''} ${returnErr && !returnRow2Locked && !(recMonths > 0) ? 'esm-fld--err' : ''}`} onMouseDownCapture={returnRow2Locked ? (e) => { e.preventDefault(); toastRow2Locked(); } : undefined}>
                         <label>NO. OF {returnRecType === 'bimonthly' ? 'CYCLES' : 'MONTHS'} <span className="esm-req">*</span></label>
@@ -2067,7 +2086,7 @@ export default function ExpenseSettlementModal({
                 ) : (
                   <>
                     <button type="button" className="esm-btn-ghost" onClick={() => setReturnStep('mode')} disabled={returnSaving}>Back</button>
-                    <button type="button" className="esm-btn-primary" disabled={returnSaving || (returnMode === 'payroll' && returnRecType === 'lumpsum' && !singleLumpOk)} onClick={submitReturn}>{returnSaving ? 'Saving…' : returnMode === 'payroll' ? 'Schedule payroll recovery' : 'Record payment'}</button>
+                    <button type="button" className="esm-btn-primary" disabled={returnSaving || (returnMode === 'payroll' && ((returnRecType === 'lumpsum' && !singleLumpOk) || (returnRecType !== 'lumpsum' && (returnPerCycleOver || returnCannotSchedule || returnTenureExceeds))))} onClick={submitReturn}>{returnSaving ? 'Saving…' : returnMode === 'payroll' ? 'Schedule payroll recovery' : 'Record payment'}</button>
                   </>
                 )}
               </div>
