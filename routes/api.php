@@ -743,6 +743,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // peer-isolates employees to globals + client-level + own rows). Declared
     // before the {id} route so "categories" isn't captured as an id.
     Route::get   ('/expense-claims/categories',               [ExpenseClaimController::class, 'categories']);
+    // Consolidated (batch) payment — static paths BEFORE the {id} route.
+    Route::get   ('/expense-claims/batch-payable',            [ExpenseClaimController::class, 'batchPayable']);
+    Route::get   ('/expense-claims/batch-payments',           [ExpenseClaimController::class, 'batchPayments']);
+    Route::get   ('/expense-claims/batch-payments/{batchId}/proof', [ExpenseClaimController::class, 'batchPaymentProof']);
+    Route::post  ('/expense-claims/batch-payments/{batchId}/sync-zoho', [ExpenseClaimController::class, 'syncBatchPaymentToZoho']);
+    Route::post  ('/expense-claims/batch-pay',                [ExpenseClaimController::class, 'batchPay']);
     Route::post  ('/expense-claims',                          [ExpenseClaimController::class, 'store']);
     Route::get   ('/expense-claims/{id}',                     [ExpenseClaimController::class, 'show']);
     Route::post  ('/expense-claims/{id}/manager-approve',     [ExpenseClaimController::class, 'managerApprove']);
@@ -770,6 +776,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/set-deductions',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'setDeductions']);
     Route::post  ('/advance-requests/{id}/settle',              [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settle']);
     Route::post  ('/advance-requests/{id}/employee-settle',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'employeeSettle']);
+    Route::post  ('/advance-requests/{id}/settle-approve',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleApprove']);
+    Route::post  ('/advance-requests/{id}/settle-reject',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleReject']);
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
     Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
 

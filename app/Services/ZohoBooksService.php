@@ -1026,10 +1026,17 @@ class ZohoBooksService
         $this->delete('expenses/' . rawurlencode($expenseId));
     }
 
-    /** Attach a receipt (raw bytes) to a Zoho expense. */
+    /**
+     * Attach a file (raw bytes) to a Zoho expense.
+     *
+     * Uses the /attachment endpoint, NOT /receipt: the receipt endpoint stores a
+     * single receipt and REPLACES it on every call (so only the last file
+     * survives), whereas /attachment ACCUMULATES — verified against the org, it
+     * lets a batch expense carry every claim's proof plus the payment proof.
+     */
     public function attachExpenseReceipt(string $expenseId, string $fileBytes, string $filename): void
     {
-        $this->upload('expenses/' . rawurlencode($expenseId) . '/receipt', $fileBytes, $filename, 'receipt');
+        $this->upload('expenses/' . rawurlencode($expenseId) . '/attachment', $fileBytes, $filename, 'attachment');
     }
 
     /**

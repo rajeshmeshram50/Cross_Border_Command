@@ -1049,13 +1049,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         errs.recovery_mode = 'Amount exceeds EMI headroom';
         summary.push('Single lump ₹' + advAmountNum.toLocaleString('en-IN') + ' exceeds the EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' (70% of salary − ongoing EMIs). Use EMI / Bi-Monthly.');
       }
-      if ((advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && advEmiCap > 0) {
+      if (advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') {
         const perCycle = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
-        if (advTenureExceeds) {
+        if (advAmountNum > 0 && perCycle > advAmountNum) {
+          // A single instalment can't be bigger than the advance itself.
+          errs.months = 'Instalment exceeds the advance amount';
+          summary.push('Each instalment can’t exceed the advance amount ₹' + advAmountNum.toLocaleString('en-IN') + ' — it can be equal, but not more.');
+        } else if (advEmiCap > 0 && advTenureExceeds) {
           // Even at the max 120 instalments the EMI would exceed the headroom.
           errs.recovery_mode = 'Advance can’t be granted';
           summary.push('This advance can’t be granted — at your available EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' it would take ' + advInstalmentsNeeded + ' instalments (over the ' + ADV_MAX_INSTALMENTS + ' limit). Clear your existing advances first.');
-        } else if (perCycle > advEmiCap) {
+        } else if (advEmiCap > 0 && perCycle > advEmiCap) {
           errs.months = 'Instalment exceeds EMI headroom';
           summary.push('Each instalment must stay within the EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' (70% of salary − ongoing EMIs)');
         }
@@ -1201,6 +1205,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const ADV_MAX_INSTALMENTS = 120;
   const advInstalmentsNeeded = advEmiCap > 0 && advAmountNum > 0 ? Math.ceil(advAmountNum / advEmiCap) : 0;
   const advTenureExceeds = advEmiCap > 0 && advAmountNum > 0 && advInstalmentsNeeded > ADV_MAX_INSTALMENTS;
+  // A single instalment can never exceed the advance itself — it can be EQUAL
+  // (a 1-month recovery) but not more. The effective per-cycle ceiling is the
+  // smaller of the EMI headroom and the total amount.
+  const advPerCycleNum = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
+  const advEmiOverAmount = advAmountNum > 0 && advPerCycleNum > advAmountNum;
+  const advEmiOverHeadroom = advEmiCap > 0 && advPerCycleNum > advEmiCap;
+  const advEmiInvalid = advEmiOverAmount || advEmiOverHeadroom;
+  const advPerCycleCap = advAmountNum > 0
+    ? (advEmiCap > 0 ? Math.min(advEmiCap, advAmountNum) : advAmountNum)
+    : advEmiCap;
   const setAdvMonthsSync = (v: string) => {
     setAdvMonths(v); clearAdvErr('months');
     const m = Number(v);
@@ -3236,18 +3250,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {(advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && (
                   <Row className="g-3 mb-3">
                     <Col md={4}>
-                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advEmiCap > 0 ? <span className="ep-claim-muted"> (max ₹{advEmiCap.toLocaleString('en-IN')} · EMI headroom)</span> : null}</div>
+                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advPerCycleCap > 0 ? <span className="ep-claim-muted"> (max ₹{advPerCycleCap.toLocaleString('en-IN')} · {advEmiCap > 0 && advEmiCap < advAmountNum ? 'EMI headroom' : 'advance amount'})</span> : null}</div>
                       <div className="position-relative">
                         <span className="ep-claim-amount-prefix">₹</span>
                         <input
-                          className={`ep-claim-input ep-pl-28${advEmiCap > 0 && Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) > advEmiCap ? ' is-invalid' : ''}`}
+                          className={`ep-claim-input ep-pl-28${advEmiInvalid ? ' is-invalid' : ''}`}
                           placeholder="0.00"
                           value={advMonthlyEmi}
                           onChange={(e) => setAdvMonthlySync(e.target.value)}
                         />
                       </div>
-                      {advEmiCap > 0 && Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) > advEmiCap && (
-                        <div className="ep-claim-err"><i className="ri-error-warning-line" />Max ₹{advEmiCap.toLocaleString('en-IN')} (EMI headroom)</div>
+                      {advEmiInvalid && (
+                        <div className="ep-claim-err"><i className="ri-error-warning-line" />{advEmiOverAmount ? `Can’t exceed the advance ₹${advAmountNum.toLocaleString('en-IN')} (equal is fine)` : `Max ₹${advEmiCap.toLocaleString('en-IN')} (EMI headroom)`}</div>
                       )}
                     </Col>
                     <Col md={4}>
