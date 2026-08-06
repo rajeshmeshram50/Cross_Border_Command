@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, Row,
 } from 'reactstrap';
+import { MasterSelect } from '../../../components/ui/MasterSelect';
+import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
@@ -638,21 +640,31 @@ export default function PayrollTab() {
             zIndex={2100}
             modalClassName="ep-npay-modal"
             backdropClassName="ep-npay-backdrop"
+            contentClassName="ep-bd-content"
           >
-            <ModalBody className="p-0">
-              <div className="npay-modal-head">
-                <span className="npay-modal-ico"><i className="ri-bank-card-line" /></span>
-                <div className="min-w-0">
-                  <div className="npay-modal-title">Notice Period Payment</div>
-                  <div className="npay-modal-sub">
-                    Pay the amount below to the company account, then record the transfer here.
+            {/* Reuses the bank modal's chrome (.ep-bd-*) so this form reads as
+                part of the same system: gradient header, ep-field-label fields,
+                ghost Cancel + gradient primary. The dropdown and calendar use
+                the app's MasterSelect / MasterDatePicker rather than native
+                controls, which looked foreign next to every other form. */}
+            <div className="ep-bd-head">
+              <div className="d-flex align-items-center justify-content-between gap-3">
+                <div className="d-flex align-items-center gap-3 min-w-0">
+                  <span className="ep-bd-head-icon"><i className="ri-bank-card-line" /></span>
+                  <div className="min-w-0">
+                    <h5 className="mb-0 fw-bold ep-bd-head-title">Notice Period Payment</h5>
+                    <small className="ep-bd-head-sub">
+                      Pay the amount below to the company account, then record the transfer here
+                    </small>
                   </div>
                 </div>
-                <button type="button" className="npay-modal-x" onClick={() => !paying && setPayOpen(false)} aria-label="Close">
+                <button type="button" className="ep-bd-head-close" onClick={() => !paying && setPayOpen(false)}
+                  disabled={paying} aria-label="Close">
                   <i className="ri-close-line" />
                 </button>
               </div>
-
+            </div>
+            <ModalBody className="p-0">
               <div className="p-3">
                 <div className="npay-due">
                   <div>
@@ -684,41 +696,46 @@ export default function PayrollTab() {
                 )}
 
                 <div className="npay-sec">Payment Details</div>
-                <Row className="g-2">
+                <Row className="g-3">
                   <Col md={4}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Amount Paid <span className="text-danger">*</span></Label>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Amount Paid <span className="text-danger">*</span></Label>
                       <Input type="number" min={0} value={payForm.amount}
                         onChange={e => setPayField('amount', e.target.value)} />
                     </FormGroup>
                   </Col>
                   <Col md={4}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Payment Mode <span className="text-danger">*</span></Label>
-                      <Input type="select" value={payForm.payment_mode}
-                        onChange={e => setPayField('payment_mode', e.target.value)}>
-                        {['NEFT', 'IMPS', 'RTGS', 'UPI', 'Cheque', 'Cash'].map(m => <option key={m}>{m}</option>)}
-                      </Input>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Payment Mode <span className="text-danger">*</span></Label>
+                      <MasterSelect
+                        value={payForm.payment_mode}
+                        onChange={v => setPayField('payment_mode', v)}
+                        options={['NEFT', 'IMPS', 'RTGS', 'UPI', 'Cheque', 'Cash'].map(m => ({ value: m, label: m }))}
+                        placeholder="Select mode"
+                      />
                     </FormGroup>
                   </Col>
                   <Col md={4}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Payment Date <span className="text-danger">*</span></Label>
-                      <Input type="date" value={payForm.payment_date}
-                        max={new Date().toISOString().slice(0, 10)}
-                        onChange={e => setPayField('payment_date', e.target.value)} />
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Payment Date <span className="text-danger">*</span></Label>
+                      <MasterDatePicker
+                        value={payForm.payment_date}
+                        onChange={v => setPayField('payment_date', v)}
+                        maxDate={new Date().toISOString().slice(0, 10)}
+                        placeholder="dd-mm-yyyy"
+                      />
                     </FormGroup>
                   </Col>
                   <Col md={6}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Your Bank Name <span className="text-danger">*</span></Label>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Your Bank Name <span className="text-danger">*</span></Label>
                       <Input value={payForm.bank_name} placeholder="Bank you paid from"
                         onChange={e => setPayField('bank_name', e.target.value)} />
                     </FormGroup>
                   </Col>
                   <Col md={6}>
-                    <FormGroup>
-                      <Label className="npay-lbl">UTR / Cheque Number <span className="text-danger">*</span></Label>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">UTR / Cheque Number <span className="text-danger">*</span></Label>
                       <Input value={payForm.utr_cheque_number} maxLength={22}
                         placeholder="e.g. HDFCR52026123456789012"
                         onChange={e => setPayField('utr_cheque_number', e.target.value)} />
@@ -726,16 +743,28 @@ export default function PayrollTab() {
                     </FormGroup>
                   </Col>
                   <Col xs={12}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Payment Screenshot / Receipt <span className="text-danger">*</span></Label>
-                      <Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
-                        onChange={e => setPayFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
-                      <small className="text-muted">PDF, JPG, PNG or WEBP · up to 5 MB.</small>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Payment Screenshot / Receipt <span className="text-danger">*</span></Label>
+                      {/* Styled drop-zone rather than a raw file input, which
+                          rendered as an unstyled grey "Choose file" button. */}
+                      <label className={`npay-drop${payFile ? ' has-file' : ''}`}>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden
+                          onChange={e => setPayFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
+                        <span className="npay-drop-ico">
+                          <i className={payFile ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
+                        </span>
+                        <span className="npay-drop-txt">
+                          <span className="npay-drop-t1">{payFile ? payFile.name : 'Click to upload your payment proof'}</span>
+                          <span className="npay-drop-t2">
+                            {payFile ? 'Click again to replace' : 'PDF, JPG, PNG or WEBP · up to 5 MB'}
+                          </span>
+                        </span>
+                      </label>
                     </FormGroup>
                   </Col>
                   <Col xs={12}>
-                    <FormGroup>
-                      <Label className="npay-lbl">Note (optional)</Label>
+                    <FormGroup className="mb-0">
+                      <Label className="ep-field-label">Note (optional)</Label>
                       <Input type="textarea" rows={2} maxLength={500} value={payForm.employee_note}
                         placeholder="Anything HR should know about this payment"
                         onChange={e => setPayField('employee_note', e.target.value)} />
@@ -744,9 +773,12 @@ export default function PayrollTab() {
                 </Row>
               </div>
             </ModalBody>
-            <ModalFooter>
-              <button type="button" className="btn btn-light" disabled={paying} onClick={() => setPayOpen(false)}>Cancel</button>
-              <button type="button" className="btn btn-success" disabled={paying} onClick={submitPayment}>
+            <ModalFooter className="ep-bd-foot">
+              <button type="button" className="ep-bd-btn-cancel" disabled={paying} onClick={() => setPayOpen(false)}>
+                Cancel
+              </button>
+              <button type="button" className="ep-bd-btn-save" disabled={paying} onClick={submitPayment}>
+                <i className={paying ? 'ri-loader-4-line' : 'ri-check-line'} />
                 {paying ? 'Submitting…' : 'Submit Payment'}
               </button>
             </ModalFooter>
@@ -768,57 +800,6 @@ export default function PayrollTab() {
                 violet → purple), rounded corners, white close button and
                 gradient primary action used by the Leave modals, so this form
                 matches the rest of the app. */}
-            <style>{`
-              .ep-bd-content {
-                border-radius: 16px !important;
-                overflow: hidden;
-                border: 0;
-                box-shadow: 0 25px 60px rgba(15,23,42,0.25);
-              }
-              .ep-bd-head {
-                padding: 18px 22px;
-                background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
-              }
-              .ep-bd-head-title { color: #fff !important; letter-spacing: 0.01em; font-size: 16px; }
-              .ep-bd-head-sub   { color: rgba(255,255,255,0.85) !important; font-size: 12px; }
-              .ep-bd-head-icon {
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
-                background: rgba(255,255,255,0.20); color: #fff;
-                box-shadow: inset 0 1px 0 rgba(255,255,255,0.18);
-              }
-              .ep-bd-head-icon i { font-size: 18px; line-height: 1; }
-              .ep-bd-head-close {
-                width: 30px; height: 30px; border-radius: 8px; border: 0;
-                background: rgba(255,255,255,0.18); color: #fff; cursor: pointer;
-                flex-shrink: 0; display: inline-flex; align-items: center;
-                justify-content: center; transition: background 0.15s ease;
-              }
-              .ep-bd-head-close:hover:not(:disabled) { background: rgba(255,255,255,0.30); }
-              .ep-bd-head-close:disabled { opacity: 0.6; cursor: default; }
-              .ep-bd-head-close i { font-size: 16px; line-height: 1; }
-              .ep-bd-foot { border-top: 1px solid var(--vz-border-color); }
-              /* Footer buttons — ghost Cancel + gradient primary, matching the
-                 header so the action colour reads as one system. */
-              .ep-bd-btn-cancel {
-                border: 1px solid var(--vz-border-color);
-                background: transparent; color: var(--vz-secondary-color);
-                font-weight: 600; font-size: 13px;
-                padding: 8px 18px; border-radius: 8px; cursor: pointer;
-                transition: background 0.15s ease, border-color 0.15s ease;
-              }
-              .ep-bd-btn-cancel:hover:not(:disabled) { background: var(--vz-light); }
-              .ep-bd-btn-save {
-                border: 0; color: #fff; font-weight: 700; font-size: 13px;
-                padding: 8px 20px; border-radius: 8px; cursor: pointer;
-                display: inline-flex; align-items: center; gap: 6px;
-                background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
-                box-shadow: 0 8px 18px rgba(124,92,252,0.30);
-                transition: transform 0.15s ease, box-shadow 0.15s ease;
-              }
-              .ep-bd-btn-save:hover:not(:disabled) { transform: translateY(-1px); }
-              .ep-bd-btn-cancel:disabled, .ep-bd-btn-save:disabled { opacity: 0.65; cursor: default; }
-            `}</style>
             <div className="ep-bd-head">
               <div className="d-flex align-items-center justify-content-between gap-3">
                 <div className="d-flex align-items-center gap-3 min-w-0">
