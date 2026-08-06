@@ -13,6 +13,18 @@ import api from '../../../api';
 /** The only two ways a notice-period recovery may be paid. */
 const PAYMENT_MODES = ['UPI', 'Cheque'] as const;
 
+/** Remixicon glyph for an uploaded file, by extension. NB: this build has no
+ *  `ri-file-check-line` (or any rupee icon) — using one renders an empty box,
+ *  which is what the upload zone was showing. */
+function fileIcon(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'ri-file-pdf-line';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'ri-image-line';
+  if (['doc', 'docx'].includes(ext)) return 'ri-file-word-2-line';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'ri-file-excel-2-line';
+  return 'ri-file-3-line';
+}
+
 export default function PayrollTab() {
   const {
     employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
@@ -405,7 +417,7 @@ export default function PayrollTab() {
               {np?.applicable && (
                 <div className="ep-section-card-flat ep-section-card mb-3 npay-card">
                   <div className="npay-head">
-                    <span className="npay-ico"><i className="ri-money-rupee-circle-line" /></span>
+                    <span className="npay-ico"><i className="ri-wallet-3-line" /></span>
                     <div className="min-w-0">
                       <div className="npay-title">Notice Period Payment</div>
                       <div className="npay-sub">
@@ -434,7 +446,7 @@ export default function PayrollTab() {
                     <table className="npay-tbl">
                       <thead>
                         <tr>
-                          <th>#</th><th>Amount Paid</th><th>Mode</th><th>Bank</th>
+                          <th>Sr No</th><th>Amount Paid</th><th>Mode</th><th>Bank</th>
                           <th>UTR / Cheque No.</th><th>Payment Date</th><th>Proof</th>
                           <th>Status</th><th>Verified</th>
                         </tr>
@@ -736,7 +748,7 @@ export default function PayrollTab() {
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden
                           onChange={e => setPayFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
                         <span className="npay-drop-ico">
-                          <i className={payFile ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
+                          <i className={payFile ? fileIcon(payFile.name) : 'ri-upload-cloud-2-line'} />
                         </span>
                         <span className="npay-drop-txt">
                           <span className="npay-drop-t1">{payFile ? payFile.name : 'Click to upload your payment proof'}</span>

@@ -749,7 +749,7 @@ type StageKey = 'initiation' | 'notice_payment' | 'fnf' | 'clearance' | 'documen
 
 const STAGE_DEFS: Record<StageKey, { title: string; short: string; sub: string; icon: string }> = {
   initiation:     { title: 'Exit Initiation & Approval',   short: 'Exit Initiation & Approval',   sub: 'Record exit details, reason, dates, and collect approvals.',              icon: 'ri-clipboard-line' },
-  notice_payment: { title: 'Notice Period Payment',        short: 'Notice Period Payment',        sub: 'Record the notice-period recovery from the employee, verify it and approve.', icon: 'ri-money-rupee-circle-line' },
+  notice_payment: { title: 'Notice Period Payment',        short: 'Notice Period Payment',        sub: 'Record the notice-period recovery from the employee, verify it and approve.', icon: 'ri-wallet-3-line' },
   fnf:            { title: 'Full & Final Settlement (FnF)', short: 'Full & Final Settlement',     sub: 'Calculate the final settlement amount, deductions, and process payment.', icon: 'ri-wallet-3-line' },
   clearance:      { title: 'Clearance & Handover',         short: 'Clearance & Handover',         sub: 'Confirm asset handover then collect every departmental clearance.',       icon: 'ri-checkbox-line' },
   documents:      { title: 'Exit Documents Management',    short: 'Exit Documents Management',    sub: 'Generate each document, then track the signing workflow per stakeholder.', icon: 'ri-file-text-line' },
@@ -817,6 +817,17 @@ const EXIT_TYPE_CHOICES: { value: string; label: string; desc: string; icon: str
    fixed stage list. Re-key them so a case created before this change reopens
    with its progress intact instead of showing every stage as Pending. */
 /* Styling + wording for an action held back by the document-release gate. */
+/** Remixicon glyph by file extension. This build has no `ri-file-check-line`,
+ *  so using it rendered an empty box in the upload zone. */
+function fnfFileIcon(name: string): string {
+  const ext = String(name).split('.').pop()?.toLowerCase() ?? '';
+  if (ext === 'pdf') return 'ri-file-pdf-line';
+  if (['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext)) return 'ri-image-line';
+  if (['doc', 'docx'].includes(ext)) return 'ri-file-word-2-line';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'ri-file-excel-2-line';
+  return 'ri-file-3-line';
+}
+
 const OFF_STYLE: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.5)' };
 const releaseHint = 'Switch on “release this employee’s documents” above to enable this.';
 
@@ -2536,7 +2547,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       disabled={fnfDocUploading}
                       onChange={e => uploadFnfDoc((e.target as HTMLInputElement).files?.[0] ?? null)} />
                     <span className="ep-fnf-drop-ico">
-                      <i className={fnfDocUploading ? 'ri-loader-4-line ri-spin' : fnfDoc ? 'ri-file-check-line' : 'ri-upload-cloud-2-line'} />
+                      <i className={fnfDocUploading ? 'ri-loader-4-line ri-spin' : fnfDoc ? fnfFileIcon(fnfDoc.name) : 'ri-upload-cloud-2-line'} />
                     </span>
                     <span className="ep-fnf-drop-txt">
                       <span className="ep-fnf-drop-t1">
@@ -2556,7 +2567,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     <button type="button" className="ep-btn ep-btn--complete"
                       disabled={settleSaving}
                       onClick={markFnfPaid}>
-                      <i className="ri-money-rupee-circle-line" />
+                      <i className="ri-wallet-3-line" />
                       {settlement === 'pay_in_lieu' && settle.amount > 0
                         ? 'Mark F&F Paid & Notice Settled'
                         : 'Mark F&F Paid'}
