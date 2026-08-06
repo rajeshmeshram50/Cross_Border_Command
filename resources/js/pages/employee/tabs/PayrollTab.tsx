@@ -1,6 +1,6 @@
 // Payroll tab — compensation summary, salary-revision timeline and payslip
 // access. Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Card, Col, FormGroup, Input, Label, Modal, ModalBody, ModalFooter, Row,
 } from 'reactstrap';
@@ -23,6 +23,70 @@ export default function PayrollTab() {
   const [bankOpen, setBankOpen] = useState(false);
   const [savingBank, setSavingBank] = useState(false);
   const [bankForm, setBankForm] = useState<Record<string, string>>({});
+
+  /* ── Notice-period recovery ────────────────────────────────────────────
+     Only surfaces for an employee who resigned WITHOUT serving notice: they
+     owe the unserved days, pay the company directly, and submit the proof
+     here for HR to verify on the exit wizard. */
+  const [np, setNp] = useState<any>(null);
+  const [payOpen, setPayOpen] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const emptyPay = { amount: '', payment_mode: 'NEFT', bank_name: '', utr_cheque_number: '', payment_date: '', employee_note: '' };
+  const [payForm, setPayForm] = useState<Record<string, string>>(emptyPay);
+  const [payFile, setPayFile] = useState<File | null>(null);
+
+  const loadNoticePayment = useCallback(() => {
+    if (!empDetail?.id) return;
+    api.get(`/employees/${empDetail.id}/notice-payment`)
+      .then(r => setNp(r.data?.data ?? null))
+      .catch(() => setNp(null));
+  }, [empDetail?.id]);
+
+  useEffect(() => { loadNoticePayment(); }, [loadNoticePayment]);
+
+  const openPayModal = () => {
+    setPayForm({ ...emptyPay, amount: String(np?.outstanding ?? np?.amount_due ?? '') });
+    setPayFile(null);
+    setPayOpen(true);
+  };
+  const setPayField = (k: string, v: string) => setPayForm(p => ({ ...p, [k]: v }));
+
+  const submitPayment = async () => {
+    if (!empDetail?.id || paying) return;
+    const missing: string[] = [];
+    if (!Number(payForm.amount)) missing.push('Amount Paid');
+    if (!payForm.payment_mode)   missing.push('Payment Mode');
+    if (!payForm.bank_name.trim()) missing.push('Bank Name');
+    if (!payForm.utr_cheque_number.trim()) missing.push('UTR / Cheque Number');
+    if (!payForm.payment_date)   missing.push('Payment Date');
+    if (!payFile)                missing.push('Payment Screenshot');
+    if (missing.length) {
+      toast.warning('Complete the form', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
+      return;
+    }
+    if (!/^[A-Za-z0-9]{6,22}$/.test(payForm.utr_cheque_number.trim())) {
+      toast.error('Invalid reference', 'The UTR / cheque number must be 6–22 letters or digits.');
+      return;
+    }
+    setPaying(true);
+    try {
+      const fd = new FormData();
+      Object.entries(payForm).forEach(([k, v]) => { if (v) fd.append(k, v); });
+      if (payFile) fd.append('attachment', payFile);
+      const { data } = await api.post(`/employees/${empDetail.id}/notice-payment`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Payment submitted', data?.message || 'HR will verify it and confirm.');
+      setPayOpen(false);
+      loadNoticePayment();
+    } catch (err: any) {
+      const e = err?.response?.data;
+      const first = e?.errors ? (Object.values(e.errors)[0] as string[])?.[0] : null;
+      toast.error('Could not submit', first || e?.message || 'Please try again.');
+    } finally {
+      setPaying(false);
+    }
+  };
 
   const openBankModal = () => {
     setBankForm({
@@ -334,6 +398,84 @@ export default function PayrollTab() {
 
           {payrollTab === 'details' && (
             <div className="ep-tab-pane">
+              {/* Notice-period recovery — only for an employee who resigned
+                  WITHOUT serving notice, and only while something is still
+                  owed. Everyone else never sees this block. */}
+              {np?.applicable && (
+                <div className="ep-section-card-flat ep-section-card mb-3 npay-card">
+                  <div className="npay-head">
+                    <span className="npay-ico"><i className="ri-money-rupee-circle-line" /></span>
+                    <div className="min-w-0">
+                      <div className="npay-title">Notice Period Payment</div>
+                      <div className="npay-sub">
+                        You resigned without serving your notice period, so the unserved days are payable to the company.
+                      </div>
+                    </div>
+                    <div className="npay-amt-box">
+                      <div className="npay-amt-lbl">{np.outstanding > 0 ? 'Amount payable' : 'Settled'}</div>
+                      <div className="npay-amt">₹{fmtRupee(np.outstanding > 0 ? np.outstanding : np.amount_due)}</div>
+                      {np.breakdown && (
+                        <div className="npay-amt-sub">
+                          {np.breakdown.notice_days_unserved} unserved day(s) × ₹{fmtRupee(np.breakdown.per_day_rate)}
+                        </div>
+                      )}
+                    </div>
+                    {np.outstanding > 0 && (
+                      <button type="button" className="npay-btn" onClick={openPayModal}>
+                        <i className="ri-bank-card-line" />Do Payment
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Every submission, newest first — a rejected one has to be
+                      resubmittable, so this is a history, not a single row. */}
+                  <div className="npay-tblwrap">
+                    <table className="npay-tbl">
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Amount Paid</th><th>Mode</th><th>Bank</th>
+                          <th>UTR / Cheque No.</th><th>Payment Date</th><th>Proof</th>
+                          <th>Status</th><th>Verified</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(np.payments || []).length === 0 ? (
+                          <tr><td colSpan={9} className="npay-empty">No payment submitted yet.</td></tr>
+                        ) : np.payments.map((p: any, i: number) => (
+                          <tr key={p.id}>
+                            <td>{i + 1}</td>
+                            <td className="npay-num">₹{fmtRupee(p.amount)}</td>
+                            <td>{p.payment_mode || '—'}</td>
+                            <td>{p.bank_name || '—'}</td>
+                            <td className="npay-mono">{p.utr_cheque_number || '—'}</td>
+                            <td>{p.payment_date ? fmtDate(p.payment_date) : '—'}</td>
+                            <td>
+                              {p.attachment_url
+                                ? <a href={p.attachment_url} target="_blank" rel="noreferrer" className="npay-link">
+                                    <i className="ri-attachment-2" />{p.attachment_name || 'View'}
+                                  </a>
+                                : '—'}
+                            </td>
+                            <td>
+                              <span className={`npay-pill npay-pill--${String(p.status).toLowerCase()}`}>{p.status}</span>
+                            </td>
+                            <td className="npay-verified">
+                              {p.status === 'Pending'
+                                ? <span className="text-muted">Awaiting HR</span>
+                                : <>
+                                    {p.verified_by_name || 'HR'}
+                                    {p.verified_at ? <div className="npay-verified-at">{fmtDate(p.verified_at)}</div> : null}
+                                    {p.verification_remarks ? <div className="npay-remark">{p.verification_remarks}</div> : null}
+                                  </>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
               <Row className="g-3 mb-3 align-items-stretch">
                 <Col xl={5}>
                   <div
@@ -480,6 +622,135 @@ export default function PayrollTab() {
               </div>
             </div>
           )}
+
+          {/* Notice-period payment — the employee records a transfer they have
+              already made to the company, with proof, for HR to verify. */}
+          {/* zIndex + lifted classes: the profile is a full-screen overlay at
+              z-index 1080, and a Bootstrap modal defaults to 1055 — without
+              this the popup renders correctly but sits BEHIND the profile
+              shell, so the button looks like it does nothing. Same treatment
+              as the bank-details modal below. */}
+          <Modal
+            isOpen={payOpen}
+            toggle={() => !paying && setPayOpen(false)}
+            centered
+            size="lg"
+            zIndex={2100}
+            modalClassName="ep-npay-modal"
+            backdropClassName="ep-npay-backdrop"
+          >
+            <ModalBody className="p-0">
+              <div className="npay-modal-head">
+                <span className="npay-modal-ico"><i className="ri-bank-card-line" /></span>
+                <div className="min-w-0">
+                  <div className="npay-modal-title">Notice Period Payment</div>
+                  <div className="npay-modal-sub">
+                    Pay the amount below to the company account, then record the transfer here.
+                  </div>
+                </div>
+                <button type="button" className="npay-modal-x" onClick={() => !paying && setPayOpen(false)} aria-label="Close">
+                  <i className="ri-close-line" />
+                </button>
+              </div>
+
+              <div className="p-3">
+                <div className="npay-due">
+                  <div>
+                    <div className="npay-due-lbl">Amount Payable</div>
+                    <div className="npay-due-amt">₹{fmtRupee(np?.outstanding ?? 0)}</div>
+                  </div>
+                  {np?.breakdown && (
+                    <div className="npay-due-break">
+                      {np.breakdown.notice_days_unserved} unserved of {np.breakdown.notice_days_required} notice day(s)
+                      <br />× ₹{fmtRupee(np.breakdown.per_day_rate)} per day ({np.breakdown.basis})
+                    </div>
+                  )}
+                </div>
+
+                {/* Where to send it. */}
+                {(np?.company_accounts || []).length > 0 && (
+                  <>
+                    <div className="npay-sec">Pay To — Company Account</div>
+                    {np.company_accounts.slice(0, 1).map((a: any) => (
+                      <div className="npay-acct" key={a.id}>
+                        <div><span>Bank</span><strong>{a.bank_name}</strong></div>
+                        <div><span>Account Holder</span><strong>{a.account_holder}</strong></div>
+                        <div><span>Account Number</span><strong className="npay-mono">{a.account_number}</strong></div>
+                        <div><span>IFSC</span><strong className="npay-mono">{a.ifsc_code}</strong></div>
+                        <div><span>Branch</span><strong>{a.branch_name || '—'}{a.city ? `, ${a.city}` : ''}</strong></div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                <div className="npay-sec">Payment Details</div>
+                <Row className="g-2">
+                  <Col md={4}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Amount Paid <span className="text-danger">*</span></Label>
+                      <Input type="number" min={0} value={payForm.amount}
+                        onChange={e => setPayField('amount', e.target.value)} />
+                    </FormGroup>
+                  </Col>
+                  <Col md={4}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Payment Mode <span className="text-danger">*</span></Label>
+                      <Input type="select" value={payForm.payment_mode}
+                        onChange={e => setPayField('payment_mode', e.target.value)}>
+                        {['NEFT', 'IMPS', 'RTGS', 'UPI', 'Cheque', 'Cash'].map(m => <option key={m}>{m}</option>)}
+                      </Input>
+                    </FormGroup>
+                  </Col>
+                  <Col md={4}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Payment Date <span className="text-danger">*</span></Label>
+                      <Input type="date" value={payForm.payment_date}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={e => setPayField('payment_date', e.target.value)} />
+                    </FormGroup>
+                  </Col>
+                  <Col md={6}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Your Bank Name <span className="text-danger">*</span></Label>
+                      <Input value={payForm.bank_name} placeholder="Bank you paid from"
+                        onChange={e => setPayField('bank_name', e.target.value)} />
+                    </FormGroup>
+                  </Col>
+                  <Col md={6}>
+                    <FormGroup>
+                      <Label className="npay-lbl">UTR / Cheque Number <span className="text-danger">*</span></Label>
+                      <Input value={payForm.utr_cheque_number} maxLength={22}
+                        placeholder="e.g. HDFCR52026123456789012"
+                        onChange={e => setPayField('utr_cheque_number', e.target.value)} />
+                      <small className="text-muted">6–22 letters or digits.</small>
+                    </FormGroup>
+                  </Col>
+                  <Col xs={12}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Payment Screenshot / Receipt <span className="text-danger">*</span></Label>
+                      <Input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp"
+                        onChange={e => setPayFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
+                      <small className="text-muted">PDF, JPG, PNG or WEBP · up to 5 MB.</small>
+                    </FormGroup>
+                  </Col>
+                  <Col xs={12}>
+                    <FormGroup>
+                      <Label className="npay-lbl">Note (optional)</Label>
+                      <Input type="textarea" rows={2} maxLength={500} value={payForm.employee_note}
+                        placeholder="Anything HR should know about this payment"
+                        onChange={e => setPayField('employee_note', e.target.value)} />
+                    </FormGroup>
+                  </Col>
+                </Row>
+              </div>
+            </ModalBody>
+            <ModalFooter>
+              <button type="button" className="btn btn-light" disabled={paying} onClick={() => setPayOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-success" disabled={paying} onClick={submitPayment}>
+                {paying ? 'Submitting…' : 'Submit Payment'}
+              </button>
+            </ModalFooter>
+          </Modal>
 
           {/* Bank / payment-details editor — fixes #35 (details were write-once
               at onboarding). Saves via PUT /employees/{id}/bank-details. */}

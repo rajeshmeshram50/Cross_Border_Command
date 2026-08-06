@@ -50,8 +50,8 @@ interface EmployeeRow {
   // auto-derive the Notice Period End Date in the exit form.
   noticePeriodDays: number | null;
   noticePeriodLabel: string;
-  /** Monthly gross (annual ÷ 12) when the list payload carries it — a prefill
-   *  for the notice-period settlement, which HR can override. */
+  /** Monthly BASIC (annual ÷ 12 × 50%) when the list payload carries it — the
+   *  basis the notice-period settlement is priced on. HR can override it. */
   monthlySalary: number | null;
   // Probation end date. While it's in the future the notice period does NOT
   // apply — the exit is immediate (see ProbationGuard on the backend).
@@ -881,7 +881,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the salary basis; only the basis, the monthly figure and the payment
      record are actually entered. `settleStatus` is the gate Final
      Deactivation & Closure reads. */
-  const [noticeBasis, setNoticeBasis]     = useState<'gross' | 'basic'>('gross');
+  /* Always monthly BASIC — the recovery is priced on basic ÷ 30. A gross/basic
+     choice only invited two different figures for the same settlement. */
+  const noticeBasis = 'basic' as const;
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [settleStatus, setSettleStatus]   = useState('NA');
   // Recovery side: what the employee paid + HR's verdict on it.
@@ -896,6 +898,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      exit month (payroll skipped it), outstanding advances, unpaid claims. */
   const [fnfDues, setFnfDues] = useState<any>(null);
   const [duesLoading, setDuesLoading] = useState(false);
+  /* Payments the EMPLOYEE submitted themselves (profile → Payroll Details →
+     Do Payment). HR verifies these rather than retyping them. */
+  const [empPayments, setEmpPayments] = useState<any[]>([]);
+  const [empPayLoading, setEmpPayLoading] = useState(false);
 
   const settlement = settlementOf(exitType);
   /* Blacklist is only asked when the notice wasn't served — "Resignation
@@ -1381,8 +1387,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         const savedStage = Number(data.current_stage);
         if (savedStage >= 1 && savedStage <= 6) setStage(savedStage);
 
-        // Notice-period settlement + FnF.
-        setNoticeBasis(String(data.notice_settlement_basis ?? 'gross') === 'basic' ? 'basic' : 'gross');
+        // Notice-period settlement + FnF. The basis is no longer loaded — it's
+        // always monthly basic now, so a stored 'gross' must not resurrect.
         setSettleStatus(String(data.notice_settlement_status ?? 'NA'));
         setNoticePayment(data.notice_payment && typeof data.notice_payment === 'object' ? data.notice_payment : null);
         const savedFnf = data.fnf && typeof data.fnf === 'object' ? data.fnf : null;
@@ -1471,6 +1477,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfMeta.payStatus, blacklistApplies, blacklisted, blacklistReason]);
+
+  /* Payments the EMPLOYEE submitted from their own Payroll Details tab, loaded
+     when the recovery stage is opened. MUST stay above the early return below —
+     a hook after it is called conditionally, which breaks the hook order the
+     moment `employee` goes from null to set. */
+  const loadEmployeePayments = useCallback(() => {
+    if (!employee) return;
+    setEmpPayLoading(true);
+    api.get(`/employees/${employee.id}/notice-payment`)
+      .then(({ data }) => setEmpPayments(data?.data?.payments ?? []))
+      .catch(() => setEmpPayments([]))
+      .finally(() => setEmpPayLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+
+  useEffect(() => {
+    if (currentKey === 'notice_payment') loadEmployeePayments();
+  }, [currentKey, loadEmployeePayments]);
 
   if (!employee) return null;
 
@@ -1798,6 +1822,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const current = stages[stage - 1] ?? stages[0];
   const isLastStage = stage === stageCount;
 
+  /* HR's verdict on a payment the employee submitted. The endpoint also
+     mirrors the decision onto the exit case, so the completion gate updates
+     without a second save from here. */
+  const decideEmployeePayment = async (id: number, verdict: 'approve' | 'reject') => {
+    if (settleSaving) return;
+    setSettleSaving(true);
+    try {
+      const { data } = await api.post(`/notice-payments/${id}/${verdict}`, {});
+      toast.success(verdict === 'approve' ? 'Payment approved' : 'Payment rejected',
+        data?.message || '');
+      setSettleStatus(verdict === 'approve' ? 'Settled' : 'Rejected');
+      if (verdict === 'approve') markStageCompleted('notice_payment');
+      loadEmployeePayments();
+    } catch (err: any) {
+      toast.error('Could not record the decision', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSettleSaving(false);
+    }
+  };
+
   /* ── Settlement actions ────────────────────────────────────────────────
      Recovery side: HR verifies what the employee paid, then approves it.
      Approving under the amount due is refused — a part payment doesn't
@@ -1826,30 +1870,36 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return;
     }
 
-    const payload = {
-      amount: got, date: rcv.date, mode: rcv.mode, bank: rcv.bank.trim(),
-      ref, remarks: rcv.remarks.trim(), verdict,
-      verified_at: new Date().toISOString(),
-    };
-    const status = verdict === 'approved' ? 'Settled' : 'Rejected';
-    setNoticePayment(payload);
-    setSettleStatus(status);
     setSettleSaving(true);
     try {
-      await api.put(`/employees/${employee.id}/exit`, {
-        ...buildExitPayload(),
-        notice_payment: payload,
-        notice_settlement_status: status,
+      /* Goes through the payments endpoint rather than straight onto the exit
+         JSON, so an HR-recorded payment writes the SAME row an employee
+         submission would — otherwise it never appears in the employee's own
+         Payment Details tab and they'd see "nothing submitted" against a
+         settlement HR had already closed. */
+      const { data } = await api.post(`/employees/${employee.id}/notice-payment/record`, {
+        amount: got,
+        payment_mode: rcv.mode,
+        bank_name: rcv.bank.trim(),
+        utr_cheque_number: ref,
+        payment_date: rcv.date,
+        remarks: rcv.remarks.trim() || null,
+        verdict: verdict === 'approved' ? 'Approved' : 'Rejected',
       });
-      toast.success(
-        verdict === 'approved' ? 'Payment approved' : 'Payment rejected',
-        verdict === 'approved'
-          ? `${fmtMoney(got)} recorded against this exit — the settlement is settled.`
-          : 'The settlement stays outstanding. Record a fresh payment and approve it.',
-      );
+      setSettleStatus(verdict === 'approved' ? 'Settled' : 'Rejected');
+      setNoticePayment({
+        amount: got, date: rcv.date, mode: rcv.mode, bank: rcv.bank.trim(),
+        ref, remarks: rcv.remarks.trim(), verdict,
+      });
+      toast.success(verdict === 'approved' ? 'Payment approved' : 'Payment rejected',
+        data?.message || '');
       if (verdict === 'approved') markStageCompleted('notice_payment');
+      setRcv({ amount: '', date: '', mode: 'NEFT', bank: '', ref: '', remarks: '' });
+      loadEmployeePayments();
     } catch (err: any) {
-      toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+      const e = err?.response?.data;
+      const first = e?.errors ? (Object.values(e.errors)[0] as string[])?.[0] : null;
+      toast.error('Could not save', first || e?.message || 'Please try again.');
     } finally {
       setSettleSaving(false);
     }
@@ -2142,7 +2192,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-section-label">Notice Period Recovery</div>
                 <SettlementSummary
                   settle={settle} settlement={settlement} status={effSettleStatus}
-                  basis={noticeBasis} onBasis={setNoticeBasis}
                   monthly={monthlyAmount} onMonthly={setMonthlyAmount}
                   fmtMoney={fmtMoney}
                 />
@@ -2158,7 +2207,76 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </div>
                 ) : (
                   <>
-                    <div className="ep-section-label" style={{ marginTop: 14 }}>Payment Received — HR Verification</div>
+                    {/* What the EMPLOYEE submitted from their Payroll Details
+                        tab, with their proof of transfer. HR verifies against
+                        this rather than retyping it from an email. */}
+                    <div className="ep-section-label" style={{ marginTop: 14 }}>Submitted by the Employee</div>
+                    {empPayLoading ? (
+                      <div className="ep-settle-note"><i className="ri-loader-4-line ri-spin" /><span>Loading submissions…</span></div>
+                    ) : (empPayments.length === 0 ? (
+                      <div className="ep-settle-note is-no">
+                        <i className="ri-time-line" />
+                        <span>
+                          <strong>Nothing submitted yet.</strong><br />
+                          The employee records this payment themselves from their profile → Payroll Details →
+                          <em> Do Payment</em>. Once they do, it appears here for you to verify. You can still
+                          record a payment manually below if it came in another way.
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="ep-submitted">
+                        {empPayments.map((p: any) => (
+                          <div key={p.id} className={`ep-sub-card is-${String(p.status).toLowerCase()}`}>
+                            <div className="ep-sub-head">
+                              <span className="ep-sub-amt">{fmtMoney(p.amount)}</span>
+                              <span className={`ep-sub-pill is-${String(p.status).toLowerCase()}`}>{p.status}</span>
+                              <span className="ep-sub-when">
+                                submitted {p.submitted_at ? fmtDateShort(String(p.submitted_at).slice(0, 10)) : '—'}
+                              </span>
+                            </div>
+                            <div className="ep-sub-grid">
+                              <div><span>Amount Due Then</span><strong>{fmtMoney(p.amount_due)}</strong></div>
+                              <div><span>Mode</span><strong>{p.payment_mode || '—'}</strong></div>
+                              <div><span>Bank</span><strong>{p.bank_name || '—'}</strong></div>
+                              <div><span>UTR / Cheque</span><strong>{p.utr_cheque_number || '—'}</strong></div>
+                              <div><span>Payment Date</span><strong>{p.payment_date ? fmtDateShort(p.payment_date) : '—'}</strong></div>
+                              <div>
+                                <span>Proof</span>
+                                <strong>
+                                  {p.attachment_url
+                                    ? <a href={p.attachment_url} target="_blank" rel="noreferrer">
+                                        <i className="ri-attachment-2" /> {p.attachment_name || 'View'}
+                                      </a>
+                                    : '—'}
+                                </strong>
+                              </div>
+                            </div>
+                            {p.employee_note && <div className="ep-sub-note"><strong>Employee note:</strong> {p.employee_note}</div>}
+                            {p.status === 'Pending' ? (
+                              <div className="ep-settle-actions">
+                                <button type="button" className="ep-btn ep-btn--complete"
+                                  disabled={settleSaving}
+                                  onClick={() => decideEmployeePayment(p.id, 'approve')}>
+                                  <i className="ri-check-double-line" />Verify &amp; Approve
+                                </button>
+                                <button type="button" className="ep-btn ep-btn--reject"
+                                  disabled={settleSaving}
+                                  onClick={() => decideEmployeePayment(p.id, 'reject')}>
+                                  <i className="ri-close-circle-line" />Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="ep-sub-note">
+                                {p.status} by {p.verified_by_name || 'HR'}
+                                {p.verification_remarks ? ` — ${p.verification_remarks}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    <div className="ep-section-label" style={{ marginTop: 14 }}>Record a Payment Manually</div>
                     <div className="ep-approval-card ep-details-card mb-2">
                       <Row className="g-2">
                         <Col md={4}>
@@ -2246,14 +2364,37 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </span>
                 </div>
 
-                {settlement !== 'served' && (
+                {/* A RECOVERY is owned by the Notice Period Payment stage — it's
+                    collected and approved there, so repeating the whole panel
+                    here only invited HR to edit the same figure in two places.
+                    Just its outcome is echoed. A PAY-IN-LIEU is different: this
+                    stage is where that money actually goes out, so it keeps the
+                    full editable summary. */}
+                {settlement === 'recover' && (
                   <>
-                    <div className="ep-section-label">
-                      {settlement === 'pay_in_lieu' ? 'Notice Period — Payment in Lieu' : 'Notice Period — Recovery'}
+                    <div className="ep-section-label">Notice Period — Recovery</div>
+                    <div className={`ep-echo ${effSettleStatus === 'Settled' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
+                      <i className={effSettleStatus === 'Settled' ? 'ri-check-double-line'
+                        : effSettleStatus === 'Rejected' ? 'ri-close-circle-line' : 'ri-time-line'} />
+                      <span className="ep-echo-txt">
+                        <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
+                        {effSettleStatus === 'Settled' ? 'collected and approved.'
+                          : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
+                          : 'not settled yet.'}
+                        <em> Handled in Stage {stages.find(s => s.key === 'notice_payment')?.num ?? 2} — Notice Period Payment.</em>
+                      </span>
+                      <span className="ep-echo-pill">
+                        {effSettleStatus === 'Settled' ? 'Settled' : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
+                      </span>
                     </div>
+                  </>
+                )}
+
+                {settlement === 'pay_in_lieu' && (
+                  <>
+                    <div className="ep-section-label">Notice Period — Payment in Lieu</div>
                     <SettlementSummary
                       settle={settle} settlement={settlement} status={effSettleStatus}
-                      basis={noticeBasis} onBasis={setNoticeBasis}
                       monthly={monthlyAmount} onMonthly={setMonthlyAmount}
                       fmtMoney={fmtMoney}
                     />
@@ -3320,13 +3461,11 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
    stages. Everything except the salary basis is derived from Stage 1, so this
    is a summary with two inputs rather than a form. */
 function SettlementSummary({
-  settle, settlement, status, basis, onBasis, monthly, onMonthly, fmtMoney,
+  settle, settlement, status, monthly, onMonthly, fmtMoney,
 }: {
   settle: { required: number; served: number; unserved: number; perDay: number; amount: number };
   settlement: Settlement;
   status: string;
-  basis: 'gross' | 'basic';
-  onBasis: (v: 'gross' | 'basic') => void;
   monthly: string;
   onMonthly: (v: string) => void;
   fmtMoney: (n: number) => string;
@@ -3355,15 +3494,11 @@ function SettlementSummary({
         <div><span>Notice days {settlement === 'pay_in_lieu' ? 'payable' : 'required'}</span><strong>{settle.required}</strong></div>
         <div><span>Days served</span><strong>{settle.served}</strong></div>
         <div><span>{settlement === 'pay_in_lieu' ? 'Days to pay' : 'Days unserved'}</span><strong>{settle.unserved}</strong></div>
+        {/* Fixed, not a choice: the notice recovery is always priced on monthly
+            BASIC ÷ 30, so offering "gross" only invited an inconsistent figure. */}
+        <div><span>Salary basis</span><strong>Monthly Basic</strong></div>
         <div>
-          <span>Salary basis</span>
-          <select className="ep-settle-sel" value={basis} onChange={e => onBasis(e.target.value as 'gross' | 'basic')}>
-            <option value="gross">Monthly Gross</option>
-            <option value="basic">Monthly Basic</option>
-          </select>
-        </div>
-        <div>
-          <span>Monthly amount</span>
+          <span>Monthly basic</span>
           <input className="ep-settle-in" type="number" min={0} value={monthly}
             onChange={e => onMonthly(e.target.value)} placeholder="0.00" />
         </div>
@@ -3932,9 +4067,12 @@ function apiToExitRow(e: any): EmployeeRow {
     // Only a PREFILL for the notice-period settlement — HR confirms/overrides
     // the figure there, so a payload without salary just means an empty field
     // rather than a broken stage.
+    /* Monthly BASIC — what the notice-period settlement is priced on. Mirrors
+       PayrollService::resolveCompensation()'s fallback split (basic = 50% of
+       monthly gross) so the exit and payroll agree on the same figure. */
     monthlySalary: (() => {
       const a = Number(e.annual_salary);
-      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 100) / 100 : null;
+      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 0.5 * 100) / 100 : null;
     })(),
     probationEndIso: e.probation_end_date ? String(e.probation_end_date).slice(0, 10) : null,
     laptopAsset: e.laptop_asset ? {

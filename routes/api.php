@@ -703,6 +703,17 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Bring an exited employee back (standard resignations only).
     Route::post('/employees/{employee}/rehire', [ExitController::class, 'rehire']);
 
+    /* Notice-period recovery paid BY the employee (resignation without notice).
+       The employee raises it from their Payroll Details tab; HR verifies it on
+       the exit wizard's Notice Period Payment stage. */
+    Route::get ('/employees/{employee}/notice-payment', [\App\Http\Controllers\Api\ExitNoticePaymentController::class, 'summary']);
+    Route::post('/employees/{employee}/notice-payment', [\App\Http\Controllers\Api\ExitNoticePaymentController::class, 'store']);
+    // HR records a payment that arrived another way — same row shape, so it
+    // also shows in the employee's own Payment Details tab.
+    Route::post('/employees/{employee}/notice-payment/record', [\App\Http\Controllers\Api\ExitNoticePaymentController::class, 'record']);
+    Route::post('/notice-payments/{id}/approve', [\App\Http\Controllers\Api\ExitNoticePaymentController::class, 'approve'])->whereNumber('id');
+    Route::post('/notice-payments/{id}/reject',  [\App\Http\Controllers\Api\ExitNoticePaymentController::class, 'reject'])->whereNumber('id');
+
 
     Route::get   ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'index']);
     Route::post  ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'store']);
