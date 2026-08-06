@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Button, Input, Dropdown, DropdownToggle, DropdownMenu, DropdownItem, Spinner } from 'reactstrap';
 import * as XLSX from 'xlsx';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
-import PayrollRunModal, { type PayrollRunIssue } from '../../components/PayrollRunModal';
+import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem } from '../../components/PayrollRunModal';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
@@ -420,6 +420,51 @@ export default function HrPayroll() {
     () => cycleMonths.find(c => c.key === cycleKey) ?? cycleMonths[0],
     [cycleKey, cycleMonths],
   );
+
+  /* Sandwich Leave Policy review for the open cycle — the list HR acts on
+     inside the run modal. Loaded only while that modal is open: it is a
+     per-employee, per-leave computation and there is no reason to pay for it
+     on every page render. */
+  const [sandwichItems, setSandwichItems] = useState<PayrollSandwichItem[]>([]);
+  const [sandwichBusyId, setSandwichBusyId] = useState<number | null>(null);
+
+  const loadSandwichReview = useCallback(async () => {
+    if (!cycle) return;
+    try {
+      const res = await api.get('/payroll/sandwich-review', {
+        params: { month: cycle.month, year: cycle.year },
+      });
+      setSandwichItems(Array.isArray(res.data?.data) ? res.data.data : []);
+    } catch {
+      // Non-fatal: the review list is an aid, not a gate. A failure here must
+      // not stop HR from running payroll.
+      setSandwichItems([]);
+    }
+  }, [cycle]);
+
+  useEffect(() => { if (runOpen) loadSandwichReview(); }, [runOpen, loadSandwichReview]);
+
+  /* Waive / re-apply for one leave. Goes through the LEAVE endpoint, not a
+     payroll-local one, so the same call re-sizes leave_requests.days — the
+     number the employee's leave balance reads. A payroll-only override would
+     pay 2 days while the balance stayed down 4. */
+  const toggleSandwich = useCallback(async (
+    item: PayrollSandwichItem, waived: boolean, reason?: string,
+  ) => {
+    setSandwichBusyId(item.leave_id);
+    try {
+      await api.post(`/leave-requests/${item.leave_id}/sandwich-waiver`, { waived, reason });
+      await loadSandwichReview();
+      toast.success(
+        waived ? 'Sandwich waived' : 'Policy re-applied',
+        `${item.emp_name} — re-run payroll to pick up the new day count.`,
+      );
+    } catch (err: any) {
+      toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      setSandwichBusyId(null);
+    }
+  }, [loadSandwichReview, toast]);
 
   // Bug #22 — a cycle whose month hasn't started yet (e.g. July while it's June)
   // has no attendance to process; payroll for it must not be generated. Backend
@@ -1781,6 +1826,9 @@ export default function HrPayroll() {
         blockedAmountLabel={fmtINRShort(blockedAmount)}
         atRiskAmountLabel={fmtINRShort(atRiskAmount)}
         issues={runIssues}
+        sandwichItems={sandwichItems}
+        onToggleSandwich={toggleSandwich}
+        sandwichBusyId={sandwichBusyId}
         onAction={handleIssueAction}
         onExportPayslips={downloadAllPayslips}
         exporting={downloading === 'zip'}

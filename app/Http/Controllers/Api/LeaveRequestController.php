@@ -525,9 +525,46 @@ class LeaveRequestController extends Controller
             'coverPerson:id,first_name,last_name,display_name,emp_code',
             'approver:id,name',
             'creator:id,name',
+            'sandwichWaiver:id,name',
         ])->findOrFail($id);
 
-        return response()->json(['data' => $row]);
+        /* Sandwich context for the approver.
+         *
+         * `days` alone cannot be read: a 4-day Fri–Mon leave and a genuine
+         * 4-working-day leave look identical on screen, so an approver has no
+         * way to see that two of those days came from a policy rather than
+         * from the dates the employee asked for. These two fields make the
+         * policy's contribution explicit, and are what the waiver control
+         * keys off — no point offering a waiver on a leave the rule never
+         * touched. */
+        /* Loaded fresh, NOT reused from the eager-loaded `employee` relation
+         * above. That relation selects a trimmed column list for the UI
+         * payload, and branch_id / weekly_off / holiday_group_id are not in it
+         * — all three arrive as null, so the branch switch reads as off and the
+         * off-day detection silently falls back to Sundays. One extra query
+         * that cannot be broken by someone tuning the relation's select list. */
+        $employee = Employee::find($row->employee_id);
+        $applies  = $employee && \App\Support\SandwichPolicy::appliesTo($employee);
+
+        $sandwichDays = 0.0;
+        if ($applies) {
+            $from = Carbon::parse($row->from_date);
+            $to   = Carbon::parse($row->to_date);
+            $type = (string) ($row->day_type ?: 'full');
+            // The gap between sizing the leave with the rule and without it —
+            // derived rather than stored, so it can never drift out of date
+            // when a neighbouring leave is added, approved or cancelled.
+            $sandwichDays = $this->computeLeaveDays($from, $to, $type, $employee, $row->id, false)
+                          - $this->computeLeaveDays($from, $to, $type, $employee, $row->id, true);
+        }
+
+        return response()->json([
+            'data' => $row,
+            'meta' => [
+                'sandwich_applicable' => $applies,
+                'sandwich_days'       => round($sandwichDays, 2),
+            ],
+        ]);
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -727,6 +764,76 @@ class LeaveRequestController extends Controller
         }
 
         return response()->json(['data' => $row]);
+    }
+
+    /**
+     * Set or clear the Sandwich Leave Policy waiver on a single leave, and
+     * re-size `days` to match.
+     *
+     * Recomputing here is the whole point. `days` is the one number both the
+     * leave balance and the payslip read, so a waiver that only changed a flag
+     * would leave the employee's balance down 4 while payroll paid 2, with
+     * nothing to reconcile the two. Flipping the flag and re-deriving `days` in
+     * the same transaction keeps them a single fact.
+     *
+     * Reachable from the leave approval screen and from the payroll run screen;
+     * both write here rather than each keeping their own idea of the waiver.
+     */
+    public function sandwichWaiver(Request $request, int $id)
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        // Discretionary reversal of a company policy — restricted to the tiers
+        // that own payroll and HR, not the requester.
+        if (!in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
+            abort(403, 'Only HR or an administrator can waive the sandwich policy.');
+        }
+
+        $data = $request->validate([
+            'waived' => 'required|boolean',
+            'reason' => 'nullable|string|max:255',
+        ]);
+
+        $row = $this->findScopedOrFail($id, $user);
+        $employee = Employee::find($row->employee_id);
+        if (!$employee) abort(422, 'Leave has no employee on file.');
+
+        if (!\App\Support\SandwichPolicy::appliesTo($employee)) {
+            abort(422, "This employee's branch does not run the sandwich leave policy.");
+        }
+
+        $waived = (bool) $data['waived'];
+
+        return DB::transaction(function () use ($row, $employee, $waived, $data, $user) {
+            $before = (float) $row->days;
+
+            $row->days = $this->computeLeaveDays(
+                Carbon::parse($row->from_date),
+                Carbon::parse($row->to_date),
+                (string) ($row->day_type ?: 'full'),
+                $employee,
+                // Exclude this very leave from the "other approved leave"
+                // lookup; its own dates are added back by computeLeaveDays.
+                $row->id,
+                $waived,
+            );
+
+            $row->sandwich_waived         = $waived;
+            $row->sandwich_waived_by      = $waived ? $user->id : null;
+            $row->sandwich_waived_at      = $waived ? now() : null;
+            $row->sandwich_waiver_reason  = $waived ? ($data['reason'] ?? null) : null;
+            $row->save();
+
+            return response()->json([
+                'data'         => $row->fresh(),
+                'days_before'  => $before,
+                'days_after'   => (float) $row->days,
+                'message'      => $waived
+                    ? 'Sandwich policy waived — leave re-sized to ' . (float) $row->days . ' day(s).'
+                    : 'Sandwich policy re-applied — leave re-sized to ' . (float) $row->days . ' day(s).',
+            ]);
+        });
     }
 
     public function cancel(Request $request, int $id)
@@ -1218,25 +1325,70 @@ class LeaveRequestController extends Controller
 
     /**
      * Chargeable leave days for [from, to]. A single half-day is 0.5; otherwise
-     * each working day in the range counts 1. Weekly-offs and holidays inside
-     * the range are never charged. (The Sandwich Policy was removed, so off-days
-     * are always excluded.)
+     * each working day in the range counts 1, and weekly-offs / holidays inside
+     * the range are free.
+     *
+     * Unless the employee's BRANCH runs the Sandwich Leave Policy, in which case
+     * an off-day flanked by leave on both sides is charged as well — see
+     * App\Support\SandwichPolicy. The extra days can fall outside [from, to]:
+     * when Friday and Monday were applied for separately, the Monday request is
+     * the one that pays for the weekend between them.
      */
-    private function computeLeaveDays(Carbon $from, Carbon $to, string $dayType, Employee $employee): float
-    {
+    private function computeLeaveDays(
+        Carbon $from,
+        Carbon $to,
+        string $dayType,
+        Employee $employee,
+        ?int $ignoreRequestId = null,
+        bool $sandwichWaived = false,
+    ): float {
         if ($dayType !== 'full' && $from->isSameDay($to)) return 0.5;
 
         $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
+
+        // Holidays are fetched for a PADDED window. The sandwich scan steps
+        // outside the request on both sides, and a holiday just beyond the
+        // edge is part of the run it is testing — loading only [from, to]
+        // would make that day look like a working day and silently break the
+        // flanking test.
+        $pad     = \App\Support\SandwichPolicy::LOOKAROUND_DAYS;
+        $padFrom = $from->copy()->subDays($pad);
+        $padTo   = $to->copy()->addDays($pad);
+
         $holidaySet = $employee->holiday_group_id
-            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $from, $to)
+            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $padFrom, $padTo)
             : [];
+
+        $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+            || isset($holidaySet[$d->toDateString()]);
 
         $total = 0.0;
         foreach (CarbonPeriod::create($from->copy()->startOfDay(), $to->copy()->startOfDay()) as $d) {
-            $off = \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
-                || isset($holidaySet[$d->toDateString()]);
-            if (!$off) $total += 1.0;
+            if (!$isOff($d)) $total += 1.0;
         }
+
+        // A waiver spares THIS leave only. The employee was still absent on
+        // those days, so the leave keeps counting as leave for any neighbouring
+        // request's own sandwich test — waiving one leave must not quietly
+        // un-sandwich another.
+        if (!$sandwichWaived && \App\Support\SandwichPolicy::appliesTo($employee)) {
+            $approved = \App\Support\SandwichPolicy::approvedLeaveDates(
+                (int) $employee->id, $padFrom, $padTo, $ignoreRequestId,
+            );
+            $rangeStart = $from->copy()->startOfDay();
+            $rangeEnd   = $to->copy()->startOfDay();
+            // "On leave" means this request's own days OR any other approved
+            // leave — the two halves of a sandwich are routinely filed apart.
+            $isLeave = function (Carbon $d) use ($approved, $rangeStart, $rangeEnd): bool {
+                $day = $d->copy()->startOfDay();
+                if ($day->gte($rangeStart) && $day->lte($rangeEnd)) return true;
+                return isset($approved[$day->toDateString()]);
+            };
+            $total += count(
+                \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
+            );
+        }
+
         return $total;
     }
 

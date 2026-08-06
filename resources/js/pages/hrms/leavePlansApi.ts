@@ -196,6 +196,13 @@ export interface ApiLeaveRequest {
   // Whether the logged-in user may Approve/Reject this row right now (it's
   // pending AND they're the approver for the current level). Server-computed.
   can_act_now?: boolean;
+  /* Sandwich Leave Policy override for this one leave. When true, `days`
+     excludes the off-days the branch policy would otherwise have charged. */
+  sandwich_waived?: boolean;
+  sandwich_waived_by?: number | null;
+  sandwich_waived_at?: string | null;
+  sandwich_waiver_reason?: string | null;
+  sandwich_waiver?: { id: number; name: string } | null;
   created_at: string;
   updated_at: string;
   leave_type?: { id: number; name: string; short_code: string; type: string | null; paid_unpaid?: 'Paid' | 'Unpaid' | null };
@@ -249,12 +256,36 @@ export interface ApiLeaveApprover {
   is_current: boolean;
 }
 
+/** Server-derived sandwich context for one leave. `sandwich_days` is the gap
+ *  between sizing the leave with the policy and without it — derived per
+ *  request, never stored, so it stays right when a neighbouring leave changes. */
+export interface ApiSandwichMeta {
+  sandwich_applicable: boolean;
+  sandwich_days: number;
+}
+
 export const leaveRequestsApi = {
   list: (params: { employee_id?: number; status?: 'Pending' | 'Approved' | 'Rejected' | 'Cancelled' } = {}) =>
     api.get<{ data: ApiLeaveRequest[] }>('/leave-requests', { params }).then(r => r.data.data),
 
   show: (id: number) =>
     api.get<{ data: ApiLeaveRequest }>(`/leave-requests/${id}`).then(r => r.data.data),
+
+  /** show() plus the sandwich context an approver needs — how many of `days`
+   *  the branch policy contributed, and whether it applies here at all. */
+  showWithMeta: (id: number) =>
+    api.get<{ data: ApiLeaveRequest; meta?: ApiSandwichMeta }>(`/leave-requests/${id}`)
+      .then(r => ({
+        data: r.data.data,
+        meta: r.data.meta ?? { sandwich_applicable: false, sandwich_days: 0 },
+      })),
+
+  /** Set / clear the waiver. The server re-sizes `days` in the same call, so
+   *  the caller must use the row it returns rather than patching locally. */
+  sandwichWaiver: (id: number, waived: boolean, reason?: string) =>
+    api.post<{ data: ApiLeaveRequest; days_before: number; days_after: number; message: string }>(
+      `/leave-requests/${id}/sandwich-waiver`, { waived, reason },
+    ).then(r => r.data),
 
   create: (payload: ApiLeaveRequestPayload) =>
     api.post<{ data: ApiLeaveRequest }>('/leave-requests', payload).then(r => r.data.data),

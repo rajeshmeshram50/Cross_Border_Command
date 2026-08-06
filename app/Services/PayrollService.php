@@ -1165,6 +1165,41 @@ class PayrollService
             return 0.0;
         }
 
+        $count = 0;
+        $label = (string) ($employee->weekly_off ?? '');
+        foreach (array_keys($this->holidayDateSet($employee, $start, $end)) as $ds) {
+            // A holiday landing on this employee's OWN weekly off is already a
+            // non-working day — crediting it again would pay the same day twice.
+            // Was hardcoded to Sunday, which double-counted for anyone whose
+            // Saturday is off.
+            if (\App\Support\WeekOff::isOff($label, Carbon::parse($ds))) continue;
+            $count++;
+        }
+
+        return (float) $count;
+    }
+
+    /**
+     * Holiday dates for this employee's group within [start, end], as a
+     * Y-m-d => true lookup, with recurring entries re-anchored to the window.
+     *
+     * Extracted so leave sizing can ask the same question. It used to be inline
+     * in holidayAggregates(), which meant leaveAggregates() had no way to know
+     * about holidays at all and counted them as ordinary working days — the
+     * opposite of what LeaveRequestController does with the same leave.
+     *
+     * @return array<string,true>
+     */
+    private function holidayDateSet($employee, Carbon $start, Carbon $end): array
+    {
+        if (!Schema::hasTable('holidays')) {
+            return [];
+        }
+        $groupId = $employee->holiday_group_id ?? null;
+        if (!$groupId) {
+            return [];
+        }
+
         $rows = DB::table('holidays')
             ->where('holiday_group_id', $groupId)
             ->whereNull('deleted_at')
@@ -1175,23 +1210,25 @@ class PayrollService
             if (!$r->date) continue;
             $d = Carbon::parse($r->date);
 
-            // A recurring holiday repeats every year — re-anchor it to the
-            // window's year (use the window start's year) before comparing.
             if ($r->is_recurring) {
-                $d = Carbon::create($start->year, $d->month, $d->day);
+                // Anchor to EVERY year the window touches, not just the start
+                // year: padding a December window pushes it into January, and
+                // anchoring only to the start year would drop a New Year
+                // holiday that genuinely falls inside it.
+                foreach (range($start->year, $end->year) as $year) {
+                    $anchored = Carbon::create($year, $d->month, $d->day);
+                    if ($anchored->gte($start) && $anchored->lte($end)) {
+                        $dates[$anchored->toDateString()] = true;
+                    }
+                }
+                continue;
             }
 
             if ($d->lt($start) || $d->gt($end)) continue;
-            // A holiday landing on this employee's OWN weekly off is already a
-            // non-working day — crediting it again would pay the same day twice.
-            // Was hardcoded to Sunday, which double-counted for anyone whose
-            // Saturday is off.
-            if (\App\Support\WeekOff::isOff((string) ($employee->weekly_off ?? ''), $d)) continue;
-
             $dates[$d->toDateString()] = true; // dedupe same-day entries
         }
 
-        return (float) count($dates);
+        return $dates;
     }
 
     private function attendanceAggregates(int $employeeId, Carbon $start, Carbon $end, ?string $shiftStart = null): array
@@ -1266,6 +1303,45 @@ class PayrollService
     }
 
     /**
+     * How many of a leave's days exist only because of the Sandwich Leave
+     * Policy — i.e. what waiving it would give back.
+     *
+     * Public because the payroll screen's review list needs the same figure the
+     * leave screen shows. Both call this rather than each deriving it, so a
+     * "+2 days" on one screen is never a "+1 day" on the other.
+     */
+    public function sandwichDaysFor(Employee $employee, $leave): float
+    {
+        if (!\App\Support\SandwichPolicy::appliesTo($employee)) {
+            return 0.0;
+        }
+
+        $from = Carbon::parse($leave->from_date);
+        $to   = Carbon::parse($leave->to_date);
+
+        // Padded: the scan steps outside the leave on both sides, and an
+        // off-run adjacent to it can sit wholly beyond the dates.
+        $pad     = \App\Support\SandwichPolicy::LOOKAROUND_DAYS;
+        $padFrom = $from->copy()->subDays($pad);
+        $padTo   = $to->copy()->addDays($pad);
+
+        $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
+        $holidaySet     = $this->holidayDateSet($employee, $padFrom, $padTo);
+
+        $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+            || isset($holidaySet[$d->toDateString()]);
+
+        // This leave is itself Approved, so it is already inside the set — no
+        // need to add its own range back the way the request path has to.
+        $approved = \App\Support\SandwichPolicy::approvedLeaveDates((int) $employee->id, $padFrom, $padTo);
+        $isLeave  = fn (Carbon $d): bool => isset($approved[$d->copy()->startOfDay()->toDateString()]);
+
+        return (float) count(
+            \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
+        );
+    }
+
+    /**
      * Approved leave in the window split into paid vs unpaid by the leave
      * type's paid_unpaid flag (Rule 3). Days clipped to the active window.
      */
@@ -1277,20 +1353,50 @@ class PayrollService
 
         // The employee's own weekly-off pattern decides which days inside a
         // leave span are chargeable — same rule LeaveRequestController uses.
-        $weeklyOffLabel = (string) (Employee::where('id', $employeeId)->value('weekly_off') ?? '');
+        $employee = Employee::find($employeeId);
+        $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
 
         $rows = DB::table('leave_requests')
             ->where('employee_id', $employeeId)
             ->where('status', 'Approved')
             ->whereDate('from_date', '<=', $end->toDateString())
             ->whereDate('to_date', '>=', $start->toDateString())
-            ->get(['leave_type_id', 'from_date', 'to_date', 'days', 'day_type']);
+            ->get(['leave_type_id', 'from_date', 'to_date', 'days', 'day_type', 'sandwich_waived']);
 
         if ($rows->isEmpty()) {
             return ['paid' => 0, 'unpaid' => 0];
         }
 
         $paidMap = $this->leaveTypePaidMap($rows->pluck('leave_type_id')->unique()->all());
+
+        /* One "is this an off day?" predicate, shared by the span count below
+         * and by the sandwich scan, so the two can never disagree with each
+         * other — or with LeaveRequestController, which sizes the very same
+         * leave when it is raised.
+         *
+         * Holidays now count as off days here. They always did on the request
+         * side; payroll only looked at weekly-offs, so a holiday inside a leave
+         * was silently credited as a payable leave day. Leaving that in place
+         * would also have double-charged under the sandwich rule — once as a
+         * "working" day in the span, once as a sandwiched off-day. */
+        $pad      = \App\Support\SandwichPolicy::LOOKAROUND_DAYS;
+        $padStart = $start->copy()->subDays($pad);
+        $padEnd   = $end->copy()->addDays($pad);
+        $holidaySet = $employee ? $this->holidayDateSet($employee, $padStart, $padEnd) : [];
+
+        $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+            || isset($holidaySet[$d->toDateString()]);
+
+        $sandwichOn = \App\Support\SandwichPolicy::appliesTo($employee);
+        // Every approved leave in the padded window, so a sandwich whose two
+        // halves were filed as separate requests is still seen.
+        $approvedDates = $sandwichOn
+            ? \App\Support\SandwichPolicy::approvedLeaveDates($employeeId, $padStart, $padEnd)
+            : [];
+        $isLeave = fn (Carbon $d): bool => isset($approvedDates[$d->copy()->startOfDay()->toDateString()]);
+
+        $windowStart = $start->toDateString();
+        $windowEnd   = $end->toDateString();
 
         $paid = 0.0;
         $unpaid = 0.0;
@@ -1307,10 +1413,27 @@ class PayrollService
             // therefore had every Saturday inside a leave counted as payable.
             $span = 0;
             for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
-                if (!\App\Support\WeekOff::isOff($weeklyOffLabel, $d)) {
+                if (!$isOff($d)) {
                     $span++;
                 }
             }
+
+            /* Sandwiched off-days are DELIBERATELY NOT added to this span.
+             *
+             * This figure answers exactly one question: how many WORKING days
+             * did the leave cover? It is compared against effectiveWorkingDays
+             * to size paid days and loss-of-pay — and weekly-offs and holidays
+             * are not in that denominator. Counting a sandwiched Saturday as a
+             * paid leave day credits the employee for a day they were never due
+             * to work. Measured on this data it cut LOP from 19 days to 16 and
+             * made the sandwich policy PAY MORE, the exact opposite of what it
+             * exists to do.
+             *
+             * The sandwich lives in leave_requests.days instead — the leave
+             * BALANCE. That is what the policy really costs: 4 days of
+             * entitlement burnt for a 2-working-day absence. Salary follows only
+             * once that balance is exhausted and further leave must be unpaid. */
+
             // Half-day flag on a single-day request.
             if ($r->day_type !== 'full' && $from->isSameDay($to)) {
                 $span = 0.5;

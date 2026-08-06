@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Col, Row, Modal, ModalBody } from 'reactstrap';
-import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from './leavePlansApi';
+import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from './leavePlansApi';
 import { useTheme } from '../../contexts/ThemeContext';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
@@ -56,6 +56,11 @@ export default function HrLeaveApprovals() {
   const [chain, setChain] = useState<ApiLeaveApprover[]>([]);
   const [comment, setComment] = useState('');
   const [acting, setActing] = useState<'approve' | 'reject' | null>(null);
+  // Sandwich context for the open leave — how many of its `days` the branch
+  // policy contributed, and whether the policy runs for this employee at all.
+  const [sandwich, setSandwich] = useState<ApiSandwichMeta | null>(null);
+  const [waiverReason, setWaiverReason] = useState('');
+  const [waiving, setWaiving] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -84,17 +89,43 @@ export default function HrLeaveApprovals() {
     setOpenId(id);
     setComment('');
     setChain([]);
+    setSandwich(null);
+    setWaiverReason('');
     try {
       const [d, c] = await Promise.all([
-        leaveRequestsApi.show(id),
+        leaveRequestsApi.showWithMeta(id),
         leaveRequestsApi.approvers(id),
       ]);
-      setDetail(d);
+      setDetail(d.data);
+      setSandwich(d.meta);
+      setWaiverReason(d.data.sandwich_waiver_reason || '');
       setChain(c);
     } catch (err) {
       console.warn('[HrLeaveApprovals] show failed', err);
       setDetail(null);
       setChain([]);
+    }
+  };
+
+  /* Toggle the sandwich waiver. The server re-sizes `days` and returns the
+     updated row, so the response replaces `detail` wholesale — recomputing the
+     new day count on the client would be a second implementation of the rule,
+     and the two would drift. The list behind the modal is refetched because the
+     day count it shows has just changed. */
+  const toggleWaiver = async (next: boolean) => {
+    if (!detail) return;
+    setWaiving(true);
+    try {
+      const res = await leaveRequestsApi.sandwichWaiver(detail.id, next, waiverReason.trim() || undefined);
+      setDetail(res.data);
+      // Re-derive the "+N days" figure; waiving changes it to 0 and back.
+      const meta = await leaveRequestsApi.showWithMeta(detail.id);
+      setSandwich(meta.meta);
+      await refetch();
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Could not update the waiver');
+    } finally {
+      setWaiving(false);
     }
   };
 
@@ -442,6 +473,85 @@ export default function HrLeaveApprovals() {
                         <strong>Comment:</strong> {detail.approver_comment}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Sandwich Leave Policy panel.
+                    Shown for ANY status, not just Pending: the emergency case
+                    usually surfaces at payroll time, long after approval, and
+                    that is precisely when someone needs to reverse the charge.
+                    Hidden entirely when the branch does not run the policy, or
+                    when this leave's dates never triggered it — a waiver
+                    control on a leave the rule never touched is noise. */}
+                {sandwich?.sandwich_applicable
+                  && (sandwich.sandwich_days > 0 || detail.sandwich_waived) && (
+                  <div
+                    className="mb-3"
+                    style={{
+                      border: `1px solid ${detail.sandwich_waived ? 'rgba(10,179,156,0.35)' : 'var(--vz-border-color)'}`,
+                      background: detail.sandwich_waived ? 'rgba(10,179,156,0.06)' : 'var(--vz-secondary-bg)',
+                      borderRadius: 10, padding: '12px 14px',
+                    }}
+                  >
+                    <div className="d-flex align-items-start gap-2 mb-2">
+                      <i
+                        className="ri-calendar-check-line"
+                        style={{ fontSize: 16, color: detail.sandwich_waived ? '#0ab39c' : '#7c5cfc', marginTop: 1 }}
+                      />
+                      <div className="flex-grow-1 min-w-0">
+                        <div className="fw-semibold" style={{ fontSize: 12.5 }}>Sandwich Leave Policy</div>
+                        <div className="text-muted" style={{ fontSize: 11, marginTop: 1 }}>
+                          {detail.sandwich_waived
+                            ? `Waived — ${sandwich.sandwich_days} off-day(s) between the leave dates are NOT being charged.`
+                            : `${sandwich.sandwich_days} week-off / holiday day(s) between the leave dates are included in the ${Number(detail.days)}-day total.`}
+                        </div>
+                      </div>
+                      <span
+                        className="fw-semibold flex-shrink-0"
+                        style={{
+                          fontSize: 11, padding: '3px 9px', borderRadius: 20,
+                          background: detail.sandwich_waived ? 'rgba(10,179,156,0.16)' : 'rgba(124,92,252,0.14)',
+                          color: detail.sandwich_waived ? '#0ab39c' : '#7c5cfc',
+                        }}
+                      >
+                        {detail.sandwich_waived ? 'Waived' : `+${sandwich.sandwich_days} day(s)`}
+                      </span>
+                    </div>
+
+                    {!detail.sandwich_waived && (
+                      <input
+                        className="form-control mb-2"
+                        style={{ fontSize: 12 }}
+                        placeholder="Reason (optional) — e.g. hospital admission, bereavement"
+                        value={waiverReason}
+                        maxLength={255}
+                        onChange={e => setWaiverReason(e.target.value)}
+                        disabled={waiving}
+                      />
+                    )}
+
+                    {detail.sandwich_waived && (
+                      <div className="text-muted mb-2" style={{ fontSize: 11 }}>
+                        Waived
+                        {detail.sandwich_waiver?.name && <> by <strong>{detail.sandwich_waiver.name}</strong></>}
+                        {detail.sandwich_waived_at && <> on {fmtDate(detail.sandwich_waived_at)}</>}
+                        {detail.sandwich_waiver_reason && <> — “{detail.sandwich_waiver_reason}”</>}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="rec-btn-ghost"
+                      style={{ fontSize: 12, padding: '5px 12px' }}
+                      disabled={waiving}
+                      onClick={() => toggleWaiver(!detail.sandwich_waived)}
+                    >
+                      {waiving
+                        ? <>Saving… <i className="ri-loader-4-line ri-spin" /></>
+                        : detail.sandwich_waived
+                          ? <><i className="ri-arrow-go-back-line" /> Re-apply policy</>
+                          : <><i className="ri-shield-cross-line" /> Waive for this leave</>}
+                    </button>
                   </div>
                 )}
 

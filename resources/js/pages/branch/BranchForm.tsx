@@ -25,6 +25,13 @@ interface Props {
 const empty = {
   name: '', code: '', email: '', phone: '', website: '',
   contact_person: '', branch_type: '', industry: '', description: '',
+  /* Sandwich Leave Policy — 'yes' | 'no'. Pre-selected to 'no' by choice: the
+     policy is the exception rather than the norm, so a new branch starts where
+     most branches land and an admin only touches it when their office actually
+     runs the rule. The field stays required server-side; the '' state the
+     validator still guards against is now unreachable from this form.
+     Converted to 1/0 at submit. */
+  sandwich_policy: 'no',
   gst_number: '', pan_number: '', registration_number: '',
   // Letterhead / export-house compliance fields — all optional, surface
   // on the Quotation/PI PDF letterhead block when populated.
@@ -73,6 +80,7 @@ const BRANCH_BANK_FIELD: FieldDef = {
 // Human-readable field labels used for error summaries / toasts
 const FIELD_LABELS: Record<string, string> = {
   name: 'Branch Name',
+  sandwich_policy: 'Sandwich Leave Policy',
   email: 'Branch Email',
   phone: 'Branch Phone',
   website: 'Website',
@@ -159,6 +167,14 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
     e.name = 'Branch name must be at least 2 characters';
   } else if (form.name.trim().length > 100) {
     e.name = 'Branch name cannot exceed 100 characters';
+  }
+
+  // ── Sandwich leave policy ──
+  // Mandatory here and server-side (`required|boolean`). Neither answer is a
+  // safe default to assume: switching it on retrospectively changes what every
+  // past leave in this branch cost, so an admin has to say which it is.
+  if (form.sandwich_policy !== 'yes' && form.sandwich_policy !== 'no') {
+    e.sandwich_policy = 'Choose whether this branch follows the sandwich leave policy';
   }
 
   // ── Branch email ──
@@ -635,6 +651,11 @@ export default function BranchForm({ onBack, editId }: Props) {
         name: b.name || '', code: b.code || '', email: b.email || '',
         phone: b.phone || '', website: b.website || '',
         contact_person: b.contact_person || '', branch_type: b.branch_type || '',
+        // Existing branches predate the column and come back false; that is a
+        // real answer ("does not apply"), so it maps to 'no' rather than back
+        // to the unanswered '' state — an edit must not be blocked by a field
+        // the branch was created before.
+        sandwich_policy: b.sandwich_policy ? 'yes' : 'no',
         industry: b.industry || '', description: b.description || '',
         gst_number: b.gst_number || '', pan_number: b.pan_number || '',
         registration_number: b.registration_number || '',
@@ -736,6 +757,15 @@ export default function BranchForm({ onBack, editId }: Props) {
       }
       Object.keys(payload).forEach(k => { if (payload[k] === '') payload[k] = null; });
       payload.max_users = parseInt(form.max_users) || 0;
+      /* 1/0, not 'yes'/'no' and not a JS boolean. The same payload is sent two
+         ways: as JSON, and as FormData when there are file uploads. FormData
+         stringifies everything, so a real `false` would arrive as the string
+         "false" — which is truthy to PHP. 1/0 survives both paths and satisfies
+         Laravel's `boolean` rule. The line above has already turned '' into
+         null, and null is what makes `required` fire when nothing was picked. */
+      if (form.sandwich_policy === 'yes' || form.sandwich_policy === 'no') {
+        payload.sandwich_policy = form.sandwich_policy === 'yes' ? 1 : 0;
+      }
       // Work shifts (repeater) — drop blank rows, trim names. Sent as a JSON
       // string on multipart (FormData stringifies arrays badly) and as a real
       // array on the JSON path.
@@ -1661,6 +1691,107 @@ export default function BranchForm({ onBack, editId }: Props) {
                 </div>
               ))}
             </div>
+
+            {/* Sandwich Leave Policy.
+                Placed under Shift Details because both describe how this
+                office's working CALENDAR behaves — it does not belong among
+                Branch Type / Industry, which are identity fields.
+
+                Presented as a worked EXAMPLE plus two explicit choices rather
+                than a switch or a Yes/No select. "Sandwich leave" is jargon:
+                an admin who has not met the term cannot answer a bare toggle,
+                and a switch answers "no" on their behalf the moment the form
+                opens. The four-day strip below shows the actual arithmetic and
+                RECOLOURS as the choice is made, so the consequence is visible
+                before Save rather than discovered in a payslip. */}
+            {(() => {
+              const val     = form.sandwich_policy;
+              const invalid = fieldInvalid('sandwich_policy');
+
+              const choice = (value: 'yes' | 'no', title: string) => {
+                const on = val === value;
+                return (
+                  <div
+                    role="radio"
+                    aria-checked={on}
+                    tabIndex={0}
+                    onClick={() => { set('sandwich_policy', value); touch('sandwich_policy'); }}
+                    onKeyDown={ev => {
+                      if (ev.key === ' ' || ev.key === 'Enter') {
+                        ev.preventDefault();
+                        set('sandwich_policy', value);
+                        touch('sandwich_policy');
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 9,
+                      border: `1.5px solid ${on ? '#4F46E5' : 'var(--vz-border-color)'}`,
+                      background: on ? 'rgba(79,70,229,0.06)' : 'var(--vz-card-bg)',
+                      borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+                      transition: 'border-color .15s ease, background .15s ease',
+                      height: '100%',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 15, height: 15, borderRadius: '50%', marginTop: 1, flexShrink: 0,
+                        border: `1.5px solid ${on ? '#4F46E5' : 'var(--vz-border-color)'}`,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {on && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4F46E5' }} />}
+                    </span>
+                    <span className="fw-semibold min-w-0" style={{ fontSize: 12.5 }}>{title}</span>
+                  </div>
+                );
+              };
+
+              return (
+                <div
+                  className="mb-3"
+                  style={{
+                    border: `1px solid ${invalid ? '#f06548' : 'var(--vz-border-color)'}`,
+                    borderRadius: 12, padding: '14px 16px',
+                    background: 'var(--vz-light, rgba(0,0,0,0.015))',
+                  }}
+                >
+                  <div className="d-flex align-items-start gap-3">
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                      style={{
+                        width: 34, height: 34, borderRadius: 9,
+                        background: 'rgba(79,70,229,0.10)', color: '#4F46E5', fontSize: 17,
+                      }}
+                    >
+                      <i className="ri-calendar-check-line" />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="fw-semibold" style={{ fontSize: 13 }}>
+                        Sandwich Leave Policy <span style={{ color: '#f06548' }}>*</span>
+                      </div>
+                      {/* One line only. The term is jargon, so it needs SOME
+                          gloss — but the worked four-day example that used to
+                          sit here was teaching material on a form that is
+                          filled once. */}
+                      <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                        Deducts a week-off or holiday that falls between two leave days.
+                      </div>
+                    </div>
+                  </div>
+
+                  <Row className="g-2" style={{ marginTop: 2, marginLeft: 29 }}>
+                    <Col md={6}>{choice('yes', 'Applicable')}</Col>
+                    <Col md={6}>{choice('no', 'Not Applicable')}</Col>
+                  </Row>
+
+                  {invalid && (
+                    <div style={{ fontSize: 10.5, color: '#f06548', marginTop: 6, marginLeft: 45 }}>
+                      {fieldError('sandwich_policy')}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ══ C: Limits ══ */}
             <SectionHeader icon="ri-group-line" title="Limits" badge="C" />

@@ -20,6 +20,9 @@ class Branch extends Model
         'website',
         'contact_person',
         'branch_type',
+        // Sandwich Leave Policy master switch. Branch-level on purpose: it
+        // governs every employee posted here, including future joiners.
+        'sandwich_policy',
         'industry',
         'description',
         'gst_number',
@@ -60,6 +63,10 @@ class Branch extends Model
     {
         return [
             'max_users' => 'integer',
+            // Cast so the API always emits a real JSON true/false. Without it
+            // Postgres hands back "t"/"f" and the form's Yes/No select would
+            // silently fall through to "not chosen" on edit.
+            'sandwich_policy' => 'boolean',
             'established_at' => 'date',
             'shifts' => 'array',
             'bank_accounts' => 'array',

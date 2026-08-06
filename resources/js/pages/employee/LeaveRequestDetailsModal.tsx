@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
-import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover } from '../hrms/leavePlansApi';
+import { leaveRequestsApi, ApiLeaveRequest, ApiLeaveApprover, ApiSandwichMeta } from '../hrms/leavePlansApi';
+import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 
 /* Status pill / banner colours, theme-aware so the modal reads correctly in
@@ -62,20 +63,56 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
   const [detail, setDetail] = useState<ApiLeaveRequest | null>(null);
   const [chain, setChain] = useState<ApiLeaveApprover[]>([]);
   const [loading, setLoading] = useState(true);
+  // Sandwich context — how many of `days` the branch policy contributed.
+  const [sandwich, setSandwich] = useState<ApiSandwichMeta | null>(null);
+  const [waiverReason, setWaiverReason] = useState('');
+  const [waiving, setWaiving] = useState(false);
+
+  /* The waiver reverses a company policy, so only the HR / admin tiers get the
+     control — the same list the server enforces in sandwichWaiver(). An
+     employee opening their own leave still SEES that the policy added days;
+     they just cannot undo it. */
+  const { user } = useAuth();
+  const canWaive = ['super_admin', 'client_admin', 'branch_user'].includes(String((user as any)?.user_type));
 
   useEffect(() => {
     if (!isOpen || !requestId) return;
     setLoading(true);
     setDetail(null);
     setChain([]);
+    setSandwich(null);
+    setWaiverReason('');
     Promise.all([
-      leaveRequestsApi.show(requestId),
+      leaveRequestsApi.showWithMeta(requestId),
       leaveRequestsApi.approvers(requestId),
     ])
-      .then(([d, c]) => { setDetail(d); setChain(c); })
+      .then(([d, c]) => {
+        setDetail(d.data);
+        setSandwich(d.meta);
+        setWaiverReason(d.data.sandwich_waiver_reason || '');
+        setChain(c);
+      })
       .catch(err => console.warn('[LeaveRequestDetailsModal] load failed', err))
       .finally(() => setLoading(false));
   }, [isOpen, requestId]);
+
+  /* Server re-sizes `days` and hands back the updated row — it is used as-is
+     rather than patched locally, so this modal can never disagree with the
+     approvals screen about what the leave now costs. */
+  const toggleWaiver = async (next: boolean) => {
+    if (!detail) return;
+    setWaiving(true);
+    try {
+      const res = await leaveRequestsApi.sandwichWaiver(detail.id, next, waiverReason.trim() || undefined);
+      setDetail(res.data);
+      const fresh = await leaveRequestsApi.showWithMeta(detail.id);
+      setSandwich(fresh.meta);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || err?.message || 'Could not update the waiver');
+    } finally {
+      setWaiving(false);
+    }
+  };
 
   const requester = detail?.employee
     ? (detail.employee.display_name?.trim() || `${detail.employee.first_name} ${detail.employee.last_name ?? ''}`.trim())
@@ -202,6 +239,92 @@ export default function LeaveRequestDetailsModal({ isOpen, requestId, onClose }:
                 {detail.approved_at && <> on {fmtDateTime(detail.approved_at)}</>}
                 {detail.approver_comment && (
                   <div className="mt-1 fst-italic" style={{ fontSize: 12 }}>"{detail.approver_comment}"</div>
+                )}
+              </div>
+            )}
+
+            {/* Sandwich Leave Policy.
+                Repeated here, not only on the approvals screen, because this is
+                the modal people actually reach — from the employee profile's
+                Leave tab and from the leave lists. Hunting for a second screen
+                to understand why a 2-day leave cost 4 is exactly the friction
+                this panel exists to remove.
+
+                Hidden when the branch does not run the policy or when this
+                leave's dates never triggered it. */}
+            {sandwich?.sandwich_applicable
+              && (sandwich.sandwich_days > 0 || detail.sandwich_waived) && (
+              <div
+                className="mb-3"
+                style={{
+                  border: `1px solid ${detail.sandwich_waived ? 'rgba(10,179,156,.35)' : borderCol}`,
+                  background: detail.sandwich_waived
+                    ? 'rgba(10,179,156,.07)'
+                    : (dark ? 'rgba(255,255,255,.03)' : '#f8f9fb'),
+                  borderRadius: 10, padding: '12px 14px',
+                }}
+              >
+                <div className="d-flex align-items-start gap-2">
+                  <i
+                    className="ri-calendar-check-line"
+                    style={{ fontSize: 16, marginTop: 1, color: detail.sandwich_waived ? '#0ab39c' : '#7c5cfc' }}
+                  />
+                  <div className="flex-grow-1 min-w-0">
+                    <div className="fw-bold" style={{ fontSize: 13 }}>Sandwich Leave Policy</div>
+                    <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                      {detail.sandwich_waived
+                        ? `Waived — ${sandwich.sandwich_days} off-day(s) between the leave dates are not being charged.`
+                        : `${sandwich.sandwich_days} week-off / holiday day(s) between the leave dates are included in the ${Number(detail.days)}-day total.`}
+                    </div>
+                  </div>
+                  <span
+                    className="fw-semibold flex-shrink-0"
+                    style={{
+                      fontSize: 11, padding: '3px 9px', borderRadius: 20,
+                      background: detail.sandwich_waived ? 'rgba(10,179,156,.16)' : 'rgba(124,92,252,.14)',
+                      color: detail.sandwich_waived ? '#0ab39c' : '#7c5cfc',
+                    }}
+                  >
+                    {detail.sandwich_waived ? 'Waived' : `+${sandwich.sandwich_days} day(s)`}
+                  </span>
+                </div>
+
+                {detail.sandwich_waived && (
+                  <div className="text-muted mt-2" style={{ fontSize: 11 }}>
+                    Waived
+                    {detail.sandwich_waiver?.name && <> by <strong>{detail.sandwich_waiver.name}</strong></>}
+                    {detail.sandwich_waived_at && <> on {fmtDateTime(detail.sandwich_waived_at)}</>}
+                    {detail.sandwich_waiver_reason && <> — "{detail.sandwich_waiver_reason}"</>}
+                  </div>
+                )}
+
+                {canWaive && (
+                  <div className="mt-2">
+                    {!detail.sandwich_waived && (
+                      <input
+                        className="form-control mb-2"
+                        style={{ fontSize: 12 }}
+                        placeholder="Reason (optional) — e.g. hospital admission, bereavement"
+                        value={waiverReason}
+                        maxLength={255}
+                        disabled={waiving}
+                        onChange={e => setWaiverReason(e.target.value)}
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-light"
+                      style={{ fontSize: 12 }}
+                      disabled={waiving}
+                      onClick={() => toggleWaiver(!detail.sandwich_waived)}
+                    >
+                      {waiving
+                        ? <>Saving… <i className="ri-loader-4-line ri-spin" /></>
+                        : detail.sandwich_waived
+                          ? <><i className="ri-arrow-go-back-line me-1" />Re-apply policy</>
+                          : <><i className="ri-shield-cross-line me-1" />Waive for this leave</>}
+                    </button>
+                  </div>
                 )}
               </div>
             )}

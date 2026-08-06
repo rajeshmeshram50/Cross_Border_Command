@@ -123,6 +123,12 @@ class BranchController extends Controller
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
             'branch_type' => 'nullable|string|max:50',
+            // Mandatory: an admin must state the branch's sandwich stance
+            // rather than inherit a silent default, because the answer changes
+            // how every leave in this office is counted. `required` still
+            // accepts a literal false — it only rejects null / "" / absent,
+            // which is exactly the "never chosen" case we want to block.
+            'sandwich_policy' => 'required|boolean',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             'gst_number' => [
@@ -212,6 +218,7 @@ class BranchController extends Controller
                 'website' => $request->website,
                 'contact_person' => $request->contact_person,
                 'branch_type' => $request->branch_type,
+                'sandwich_policy' => $request->boolean('sandwich_policy'),
                 'industry' => $request->industry,
                 'description' => $request->description,
                 'gst_number' => $request->gst_number,
@@ -427,6 +434,12 @@ class BranchController extends Controller
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
             'branch_type' => 'nullable|string|max:50',
+            // Mandatory: an admin must state the branch's sandwich stance
+            // rather than inherit a silent default, because the answer changes
+            // how every leave in this office is counted. `required` still
+            // accepts a literal false — it only rejects null / "" / absent,
+            // which is exactly the "never chosen" case we want to block.
+            'sandwich_policy' => 'required|boolean',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             'gst_number' => [
@@ -519,6 +532,16 @@ class BranchController extends Controller
                 'max_users', 'established_at', 'status', 'notes',
                 'primary_color', 'secondary_color',
             ]));
+
+            // Deliberately NOT in the ->only() list above. Branch edits post as
+            // multipart (logo / signature uploads), so a false arrives as the
+            // STRING "false" or "0" — and Eloquent's boolean cast is a plain
+            // (bool), which reads any non-empty string as true. A branch could
+            // therefore never be switched back off. $request->boolean()
+            // interprets "0"/"false"/"off"/"" correctly.
+            if ($request->has('sandwich_policy')) {
+                $branch->update(['sandwich_policy' => $request->boolean('sandwich_policy')]);
+            }
 
             // Shifts / bank accounts handled separately — the array cast would
             // double-encode the JSON string that arrives on multipart uploads.

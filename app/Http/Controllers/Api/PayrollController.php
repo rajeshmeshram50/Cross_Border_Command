@@ -379,6 +379,70 @@ class PayrollController extends Controller
     }
 
     /** Pre-flight: compute issues without persisting (drives the run modal). */
+    /**
+     * Leaves inside the selected cycle whose day count the branch's Sandwich
+     * Leave Policy has inflated — the review list the payroll screen shows so a
+     * genuine emergency can be excused before the run is finalised.
+     *
+     * The policy fires on the shape of the calendar and cannot tell a
+     * bereavement from a stretched long weekend. Payroll is the last point at
+     * which a human sees the consequence in money terms, so the exemption has
+     * to be reachable from here — not only from the leave approval screen the
+     * approver saw weeks earlier.
+     *
+     * Read-only. Toggling the waiver itself goes through
+     * LeaveRequestController::sandwichWaiver(), which also re-sizes the leave,
+     * so payroll never gets its own private idea of what a leave costs.
+     */
+    public function sandwichReview(Request $request)
+    {
+        [$month, $year] = $this->resolveMonthYear($request);
+        $ctx    = $this->ctx($request);
+        $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
+
+        $start = Carbon::parse($period->period_start)->startOfDay();
+        $end   = Carbon::parse($period->period_end)->endOfDay();
+
+        $items = [];
+        // Only employees this cycle actually pays — a leave belonging to someone
+        // payroll skips (half-onboarded, exited) is not reviewable here.
+        foreach ($this->payroll->eligibleEmployees($period) as $employee) {
+            if (!\App\Support\SandwichPolicy::appliesTo($employee)) continue;
+
+            $leaves = \App\Models\LeaveRequest::query()
+                ->where('employee_id', $employee->id)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $end->toDateString())
+                ->whereDate('to_date', '>=', $start->toDateString())
+                ->orderBy('from_date')
+                ->get();
+
+            foreach ($leaves as $leave) {
+                // How many days the policy contributed — the difference between
+                // sizing the leave with the rule and without it. Derived, never
+                // stored, so it stays true as neighbouring leaves change.
+                $extra = $this->payroll->sandwichDaysFor($employee, $leave);
+                if ($extra <= 0 && !$leave->sandwich_waived) continue;
+
+                $items[] = [
+                    'leave_id'       => $leave->id,
+                    'employee_id'    => $employee->id,
+                    'emp_code'       => $employee->emp_code,
+                    'emp_name'       => trim(($employee->display_name ?: ($employee->first_name . ' ' . $employee->last_name))),
+                    'department'     => $employee->department?->name ?? '—',
+                    'from_date'      => Carbon::parse($leave->from_date)->toDateString(),
+                    'to_date'        => Carbon::parse($leave->to_date)->toDateString(),
+                    'days'           => (float) $leave->days,
+                    'sandwich_days'  => $extra,
+                    'waived'         => (bool) $leave->sandwich_waived,
+                    'waiver_reason'  => $leave->sandwich_waiver_reason,
+                ];
+            }
+        }
+
+        return response()->json(['data' => $items]);
+    }
+
     public function preflight(Request $request)
     {
         [$month, $year] = $this->resolveMonthYear($request);

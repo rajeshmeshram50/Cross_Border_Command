@@ -766,6 +766,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
     Route::get ('/payroll/history',             [\App\Http\Controllers\Api\PayrollController::class, 'history']);
     Route::get ('/payroll/preflight',           [\App\Http\Controllers\Api\PayrollController::class, 'preflight']);
+    // Leaves in the cycle inflated by the Sandwich Leave Policy — the payroll
+    // screen's review list. Waiving still goes through the leave endpoint.
+    Route::get ('/payroll/sandwich-review',     [\App\Http\Controllers\Api\PayrollController::class, 'sandwichReview']);
     Route::get ('/payroll/export',              [\App\Http\Controllers\Api\PayrollController::class, 'export']);
     Route::get ('/payroll/payslips/bulk',       [\App\Http\Controllers\Api\PayrollController::class, 'payslipsBulk']);
     Route::post('/payroll/payslips/email',      [\App\Http\Controllers\Api\PayrollController::class, 'emailPayslipsBulk']);
@@ -907,6 +910,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/leave-requests/{id}/reject',                 [LeaveRequestController::class, 'reject']);
     Route::post  ('/leave-requests/{id}/cancel',                 [LeaveRequestController::class, 'cancel']);
     Route::post  ('/leave-requests/{id}/hr-view',                [LeaveRequestController::class, 'hrView']);
+    // Sandwich Leave Policy waiver for one leave (emergency / genuine case).
+    // Written from BOTH the leave approval screen and the payroll run screen —
+    // one endpoint so the two can never hold different answers.
+    Route::post  ('/leave-requests/{id}/sandwich-waiver',        [LeaveRequestController::class, 'sandwichWaiver']);
 
     // Attendance regularization (correct a past day) — mirrors leave-requests.
     Route::get   ('/regularizations',                            [AttendanceRegularizationController::class, 'index']);

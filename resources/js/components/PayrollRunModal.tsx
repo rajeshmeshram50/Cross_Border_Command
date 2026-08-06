@@ -28,6 +28,23 @@ export interface PayrollRunIssue {
   actions: PayrollRunActionChip[];
 }
 
+/** One leave in this cycle whose day count the Sandwich Leave Policy inflated. */
+export interface PayrollSandwichItem {
+  leave_id: number;
+  employee_id: number;
+  emp_code: string;
+  emp_name: string;
+  department: string;
+  from_date: string;
+  to_date: string;
+  /** Total days charged, sandwich included. */
+  days: number;
+  /** How many of `days` the policy added — what waiving gives back. */
+  sandwich_days: number;
+  waived: boolean;
+  waiver_reason?: string | null;
+}
+
 export interface PayrollRunModalProps {
   open: boolean;
   onClose: () => void;
@@ -49,6 +66,15 @@ export interface PayrollRunModalProps {
   /** Pay flagged but still payable (display string). */
   atRiskAmountLabel: string;
   issues: PayrollRunIssue[];
+  /* Sandwich Leave Policy review list. Surfaced HERE, at the run, because this
+     is the last moment a human sees the policy's cost in money terms — and the
+     only place an emergency that the blanket rule cannot recognise gets caught
+     before the cycle is paid. */
+  sandwichItems?: PayrollSandwichItem[];
+  /** Toggle the waiver on one leave. Parent owns the API call + refresh. */
+  onToggleSandwich?: (item: PayrollSandwichItem, waived: boolean, reason?: string) => Promise<void> | void;
+  /** leave_id currently being saved — drives the row's spinner. */
+  sandwichBusyId?: number | null;
   /** Fired when an issue action chip (Go to Attendance / Open Employee /
    *  Upload Proof) is clicked — parent handles navigation. */
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
@@ -59,6 +85,18 @@ export interface PayrollRunModalProps {
   /** True while the parent's payslip export is in flight — drives the button's
    *  spinner + disabled state. */
   exporting?: boolean;
+}
+
+/** "07–10 Aug" / "28 Jul – 02 Aug" — the range has to fit on one line beside
+ *  the waive button, so the month is printed once when it doesn't change. */
+function shortRange(from: string, to: string): string {
+  const f = new Date(from);
+  const t = new Date(to);
+  if (isNaN(f.getTime()) || isNaN(t.getTime())) return `${from} – ${to}`;
+  const mon = (d: Date) => d.toLocaleDateString('en-IN', { month: 'short' });
+  return f.getMonth() === t.getMonth() && f.getFullYear() === t.getFullYear()
+    ? `${f.getDate()}–${t.getDate()} ${mon(t)}`
+    : `${f.getDate()} ${mon(f)} – ${t.getDate()} ${mon(t)}`;
 }
 
 const ACTION_TONES: Record<PayrollRunActionChip['tone'], { bg: string; fg: string; border: string }> = {
@@ -86,10 +124,30 @@ export default function PayrollRunModal({
   blockedAmountLabel,
   atRiskAmountLabel,
   issues,
+  sandwichItems = [],
+  onToggleSandwich,
+  sandwichBusyId = null,
   onAction,
   onExportPayslips,
   exporting = false,
 }: PayrollRunModalProps) {
+  /* Sandwich rows indexed by employee code, so each IssueCard can render only
+     its own. Grouping here (not in the card) keeps the lookup O(1) per card
+     instead of re-filtering the whole list for every employee. */
+  const sandwichByEmp = useMemo(() => {
+    const map: Record<string, PayrollSandwichItem[]> = {};
+    sandwichItems.forEach(s => { (map[s.emp_code] ||= []).push(s); });
+    return map;
+  }, [sandwichItems]);
+
+  /* Employees with sandwich leave but NO blocking/warning card to attach to —
+     nothing is wrong with their payroll, so they never appear above. They still
+     need to be reachable, otherwise a clean employee's sandwich could never be
+     waived from this screen. */
+  const orphanSandwich = useMemo(() => {
+    const carded = new Set(issues.map(i => i.empCode));
+    return sandwichItems.filter(s => !carded.has(s.emp_code));
+  }, [issues, sandwichItems]);
   const [phase, setPhase] = useState<'preflight' | 'success'>('preflight');
   const [resolvedIds, setResolvedIds] = useState<Set<string>>(new Set());
   const [reRunError, setReRunError] = useState<string>('');
@@ -293,6 +351,9 @@ export default function PayrollRunModal({
                     resolved={resolvedIds.has(i.id)}
                     onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
+                    sandwich={sandwichByEmp[i.empCode] ?? []}
+                    onToggleSandwich={onToggleSandwich}
+                    sandwichBusyId={sandwichBusyId}
                   />
                 ))}
               </>
@@ -316,8 +377,81 @@ export default function PayrollRunModal({
                     resolved={resolvedIds.has(i.id)}
                     onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
+                    sandwich={sandwichByEmp[i.empCode] ?? []}
+                    onToggleSandwich={onToggleSandwich}
+                    sandwichBusyId={sandwichBusyId}
                   />
                 ))}
+              </>
+            )}
+
+            {/* Same block, for employees with NO issue card of their own —
+                everyone else's rows sit inside their card above, so nobody is
+                listed twice. Carries the employee name, which the in-card
+                version does not need. */}
+            {orphanSandwich.length > 0 && (
+              <>
+                <div className="prm-section-head mt-3">
+                  <span className="d-inline-flex align-items-center gap-2">
+                    <span className="d" style={{ background: '#7c5cfc' }} />
+                    <span className="fw-bold" style={{ color: '#5a3fd1', fontSize: 11, letterSpacing: '0.10em', textTransform: 'uppercase' }}>Sandwich Leave</span>
+                    <span className="text-muted" style={{ fontSize: 11.5 }}>— waive if the absence was genuine</span>
+                  </span>
+                  <span className="prm-count-chip prm-count-chip--amber">{orphanSandwich.length}</span>
+                </div>
+                {orphanSandwich.map(s => {
+                  const busy = sandwichBusyId === s.leave_id;
+                  return (
+                    <div
+                      key={s.leave_id}
+                      className="d-flex align-items-center mt-2"
+                      style={{
+                        gap: 8, fontSize: 11.5, padding: '7px 10px', borderRadius: 8,
+                        border: `1px solid ${s.waived ? 'rgba(10,179,156,.22)' : 'rgba(124,92,252,.20)'}`,
+                        background: s.waived ? 'rgba(10,179,156,.05)' : 'rgba(124,92,252,.05)',
+                      }}
+                    >
+                      <span className="fw-bold" style={{ fontSize: 12 }}>{s.emp_name}</span>
+                      <span className="prm-emp-pill">{s.emp_code}</span>
+                      <span className="fw-semibold flex-shrink-0">{shortRange(s.from_date, s.to_date)}</span>
+                      <span
+                        className="fw-semibold flex-shrink-0"
+                        style={{
+                          fontSize: 10.5, padding: '1px 7px', borderRadius: 20,
+                          background: s.waived ? 'rgba(10,179,156,.16)' : 'rgba(124,92,252,.16)',
+                          color: s.waived ? '#0ab39c' : '#5a3fd1',
+                        }}
+                      >
+                        {s.waived ? `${s.sandwich_days} waived` : `+${s.sandwich_days} day`}
+                      </span>
+                      <span className="text-muted" style={{ fontSize: 11 }}>of {s.days}</span>
+                      {s.waived ? (
+                        <span
+                          className="ms-auto flex-shrink-0 fw-semibold"
+                          style={{ fontSize: 10.5, color: '#0ab39c' }}
+                        >
+                          <i className="ri-check-line me-1" />Not cut
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="prm-action-chip ms-auto flex-shrink-0"
+                          data-tone="purple"
+                          disabled={busy || !onToggleSandwich}
+                          onClick={() => onToggleSandwich?.(s, true)}
+                          style={{
+                            background: ACTION_TONES.purple.bg,
+                            color: ACTION_TONES.purple.fg,
+                            borderColor: ACTION_TONES.purple.border,
+                            cursor: busy ? 'wait' : 'pointer', fontSize: 10.5, padding: '2px 9px',
+                          }}
+                        >
+                          {busy ? 'Saving…' : "Don't cut"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
               </>
             )}
 
@@ -488,11 +622,18 @@ function IssueCard({
   resolved,
   onMarkResolved,
   onAction,
+  sandwich = [],
+  onToggleSandwich,
+  sandwichBusyId = null,
 }: {
   issue: PayrollRunIssue;
   resolved: boolean;
   onMarkResolved: () => void;
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
+  /** Sandwich-inflated leaves belonging to THIS employee. */
+  sandwich?: PayrollSandwichItem[];
+  onToggleSandwich?: (item: PayrollSandwichItem, waived: boolean, reason?: string) => Promise<void> | void;
+  sandwichBusyId?: number | null;
 }) {
   const isBlocking = issue.type === 'blocking';
   const tone = isBlocking
@@ -545,6 +686,85 @@ function IssueCard({
               ))}
             </ul>
           )}
+          {/* Sandwich leave for THIS employee.
+              Boxed rather than left as loose lines under the reason: bare text
+              in the middle of a card reads as leftover debug output, and these
+              rows are actionable. The tint and the small caps label mark them
+              as a distinct group without spending a whole section on them.
+              Dates sit in a fixed-width column so multiple leaves line up. */}
+          {sandwich.length > 0 && (
+            <div
+              className="mt-2"
+              style={{
+                border: '1px solid rgba(124,92,252,.20)',
+                background: 'rgba(124,92,252,.05)',
+                borderRadius: 8, padding: '6px 9px 7px',
+              }}
+            >
+              <div
+                className="fw-bold"
+                style={{ fontSize: 9.5, letterSpacing: '.09em', textTransform: 'uppercase', color: '#7c5cfc' }}
+              >
+                Sandwich leave
+              </div>
+              {sandwich.map(s => {
+                const busy = sandwichBusyId === s.leave_id;
+                return (
+                  <div
+                    key={s.leave_id}
+                    className="d-flex align-items-center"
+                    style={{ gap: 8, fontSize: 11.5, marginTop: 3 }}
+                  >
+                    <span className="fw-semibold flex-shrink-0" style={{ minWidth: 74 }}>
+                      {shortRange(s.from_date, s.to_date)}
+                    </span>
+                    <span
+                      className="fw-semibold flex-shrink-0"
+                      style={{
+                        fontSize: 10.5, padding: '1px 7px', borderRadius: 20,
+                        background: s.waived ? 'rgba(10,179,156,.16)' : 'rgba(124,92,252,.16)',
+                        color: s.waived ? '#0ab39c' : '#5a3fd1',
+                      }}
+                    >
+                      {s.waived ? `${s.sandwich_days} waived` : `+${s.sandwich_days} day`}
+                    </span>
+                    <span className="text-muted" style={{ fontSize: 11 }}>of {s.days}</span>
+                    {/* Only ever offers "Don't cut". Undoing a waiver is a
+                        second, opposite decision and it does not belong on a
+                        screen whose job is to get the cycle paid — a stray
+                        click here would quietly put days back into a payslip.
+                        Once waived the row states the outcome and stops; the
+                        reversal lives on the leave itself. */}
+                    {s.waived ? (
+                      <span
+                        className="ms-auto flex-shrink-0 fw-semibold"
+                        style={{ fontSize: 10.5, color: '#0ab39c' }}
+                      >
+                        <i className="ri-check-line me-1" />Not cut
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="prm-action-chip ms-auto flex-shrink-0"
+                        data-tone="purple"
+                        disabled={busy || !onToggleSandwich}
+                        onClick={() => onToggleSandwich?.(s, true)}
+                        style={{
+                          background: ACTION_TONES.purple.bg,
+                          color: ACTION_TONES.purple.fg,
+                          borderColor: ACTION_TONES.purple.border,
+                          cursor: busy ? 'wait' : 'pointer', fontSize: 10.5, padding: '2px 9px',
+                        }}
+                      >
+                        {busy ? 'Saving…' : "Don't cut"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {issue.actions.length > 0 && (
             <div className="d-flex gap-2 mt-2 flex-wrap">
               {issue.actions.map(a => {
