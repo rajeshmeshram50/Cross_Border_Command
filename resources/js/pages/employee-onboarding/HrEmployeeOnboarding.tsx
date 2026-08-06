@@ -1288,6 +1288,25 @@ export function VaultModal({
     }
   };
 
+  /**
+   * Audit-trail timestamp — "04-AUG-2026, 03:57 PM".
+   *
+   * These used to render with a bare `toLocaleString()`, which follows the
+   * BROWSER's locale: the same signature read "8/4/2026" on one machine and
+   * "4/8/2026" on another. On a signed-document trail that ambiguity is not
+   * cosmetic — 8 April and 4 August are both plausible readings of the same
+   * row. A spelled-out month cannot be misread whatever the viewer's locale.
+   */
+  const fmtAuditStamp = (raw?: string | null): string => {
+    if (!raw) return '—';
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return String(raw);
+    const day   = String(d.getDate()).padStart(2, '0');
+    const month = d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
+    const time  = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${day}-${month}-${d.getFullYear()}, ${time}`;
+  };
+
   // ── Signature runs (signing workflow runtime) ────────────────────────────
   type SignerState = {
     index: number; role_name: string; action: string; days: number;
@@ -2768,7 +2787,7 @@ export function VaultModal({
                               {s.acted_at && (
                                 <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 4 }}>
                                   <i className="ri-calendar-line" style={{ marginRight: 4 }} />
-                                  {new Date(s.acted_at).toLocaleString()}
+                                  {fmtAuditStamp(s.acted_at)}
                                 </div>
                               )}
                               {s.note && (
@@ -2818,7 +2837,12 @@ export function VaultModal({
                         Activity Log
                       </div>
                       <div style={{ borderLeft: `2px solid ${vaultDark ? 'rgba(124,92,252,0.40)' : '#ede9fe'}`, paddingLeft: 14, marginLeft: 8 }}>
-                        {auditRun.audit_log.slice().reverse().map((ev, i) => (
+                        {/* Oldest first. The list was reversed, so the trail
+                            opened with the signature and ended with the send —
+                            the document appearing to be signed before it was
+                            ever sent out. An audit trail is read as a sequence
+                            of events; it has to run in the order they happened. */}
+                        {auditRun.audit_log.map((ev, i) => (
                           <div key={i} style={{ position: 'relative', marginBottom: 10 }}>
                             <span style={{
                               position: 'absolute',
@@ -2838,7 +2862,7 @@ export function VaultModal({
                               {ev.message}
                             </div>
                             <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>
-                              {new Date(ev.at).toLocaleString()} · {ev.actor_name}
+                              {fmtAuditStamp(ev.at)} · {ev.actor_name}
                               <code style={{ fontSize: 10, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>
                                 {ev.action}
                               </code>

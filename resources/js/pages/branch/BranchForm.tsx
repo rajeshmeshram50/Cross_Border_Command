@@ -375,6 +375,17 @@ export default function BranchForm({ onBack, editId }: Props) {
   // and simply dropped on save.
   type ShiftErr = { name?: boolean; start?: boolean; end?: boolean };
   const [shiftErrors, setShiftErrors] = useState<Record<number, ShiftErr>>({});
+  /* shift name -> employees currently on it, from GET /branches/{id}.
+     Deleting an in-use shift orphans those employees (employees.shift stores
+     the NAME, so nothing cascades), which is why the row's delete is locked
+     rather than merely warned about. */
+  const [shiftUsage, setShiftUsage] = useState<Record<string, number>>({});
+  const usageFor = (name: string) => {
+    const key = (name || '').trim().toLowerCase();
+    if (!key) return 0;
+    const hit = Object.entries(shiftUsage).find(([n]) => n.trim().toLowerCase() === key);
+    return hit ? hit[1] : 0;
+  };
   const addShift    = () => setShifts(s => [...s, blankShift()]);
   const dropShiftRow = (i: number) => setShifts(s => {
     const next = s.filter((_, j) => j !== i);
@@ -383,6 +394,22 @@ export default function BranchForm({ onBack, editId }: Props) {
   const removeShift = async (i: number) => {
     const sh = shifts[i];
     const named = sh?.name.trim();
+
+    // Second line of defence — the button is already disabled for in-use
+    // shifts, but a stale count (someone assigned an employee while this form
+    // was open) must not slip through to a bounced save.
+    const used = usageFor(named || '');
+    if (used > 0) {
+      await confirm({
+        title: 'Shift is in use',
+        message: `"${named}" is assigned to ${used} employee${used === 1 ? '' : 's'} in this branch. Move them to another shift before removing it.`,
+        tone: 'danger',
+        confirmLabel: 'OK',
+        cancelLabel: '',
+      });
+      return;
+    }
+
     const ok = await confirm({
       title: 'Remove shift?',
       message: named
@@ -646,6 +673,7 @@ export default function BranchForm({ onBack, editId }: Props) {
     setLoadingData(true);
     api.get(`/branches/${editId}`).then(res => {
       const b = res.data.branch;
+      setShiftUsage(res.data.shift_usage || {});
       const u = res.data.branch_user;
       setForm({
         name: b.name || '', code: b.code || '', email: b.email || '',
@@ -1678,10 +1706,33 @@ export default function BranchForm({ onBack, editId }: Props) {
                       invalid={!!shiftErrors[i]?.end}
                       onChange={v => updateShift(i, 'end', v)} />
                   </div>
-                  <button type="button" onClick={() => removeShift(i)} title="Remove shift"
-                    style={{ width: 38, height: 38, borderRadius: 10, border: '1px solid rgba(220,38,38,0.3)', background: 'rgba(220,38,38,0.06)', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 16 }}>
-                    <i className="ri-delete-bin-line" />
-                  </button>
+                  {(() => {
+                    // Locked while employees are on this shift — same rule the
+                    // server enforces, surfaced before the click rather than
+                    // after a failed save.
+                    const used = usageFor(sh.name);
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => removeShift(i)}
+                        disabled={used > 0}
+                        title={used > 0
+                          ? `In use by ${used} employee${used === 1 ? '' : 's'} — reassign them before removing this shift`
+                          : 'Remove shift'}
+                        style={{
+                          width: 38, height: 38, borderRadius: 10, flexShrink: 0, fontSize: 16,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: `1px solid ${used > 0 ? 'var(--vz-border-color)' : 'rgba(220,38,38,0.3)'}`,
+                          background: used > 0 ? 'transparent' : 'rgba(220,38,38,0.06)',
+                          color: used > 0 ? 'var(--vz-secondary-color)' : '#dc2626',
+                          cursor: used > 0 ? 'not-allowed' : 'pointer',
+                          opacity: used > 0 ? 0.55 : 1,
+                        }}
+                      >
+                        <i className={used > 0 ? 'ri-lock-line' : 'ri-delete-bin-line'} />
+                      </button>
+                    );
+                  })()}
                   {i === shifts.length - 1 && (
                     <button type="button" onClick={addShift} title="Add shift"
                       style={{ height: 38, padding: '0 14px', borderRadius: 10, border: '1px dashed rgba(79,70,229,0.55)', background: 'rgba(79,70,229,0.06)', color: '#4F46E5', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap', flexShrink: 0 }}>
