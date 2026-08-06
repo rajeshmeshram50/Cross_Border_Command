@@ -984,19 +984,32 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // already saved on this exit (revisiting an in-progress case shouldn't flag a
   // historical date the user never touched).
   const noticeDateInvalid = !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < todayIso;
-  // Last working day must be in the future (not today) AND on/after the notice
-  // period END date (notice start + notice period). When no notice period is
-  // set, fall back to "strictly after the notice start date". Same carve-out:
-  // an already-saved value is accepted as-is.
-  // On probation the exit is immediate: the earliest last working day is the
-  // notice start itself (today, in practice) rather than notice-end / +1 day.
-  const lwdMin = onProbation
-    ? (noticeDate || todayIso)
-    : (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso));
-  // The "must be a future date" rule is part of serving notice, so it is
-  // waived too — a probationer can be exited with today as the last day.
+  /* Last working day bounds — these follow the EXIT TYPE, because the whole
+     point of the non-standard types is that the notice period is NOT served:
+
+       Resignation            the notice IS served, so the last working day is
+                              on/after the notice period end and must be a
+                              future date.
+       Resignation w/o notice the employee is leaving early — that's exactly
+                              what is recovered from them — so the notice-end
+                              floor doesn't apply and TODAY is a valid last day.
+       Termination            relieving can be immediate, so the floor is the
+                              termination date itself and today is valid.
+       On probation           no notice period at all; immediate exit (existing
+                              carve-out, unchanged).
+
+     Applying the served-notice rule to every type was a bug: it pinned a
+     "Resignation without notice period" exit to the notice-end date, making
+     the type impossible to actually express. An already-saved value is still
+     accepted as-is so reopening a case never invalidates it. */
+  const noticeServed = !onProbation && settlement === 'served';
+  const lwdMin = noticeServed
+    ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
+    : (noticeDate || todayIso);
+  // "Must be a future date" is part of serving notice, so it is waived for the
+  // types that don't serve one — they can be relieved today.
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && (onProbation ? lwd < lwdMin : (lwd <= todayIso || lwd < lwdMin));
+    && (noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1681,11 +1694,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (noticeDateInvalid || lwdInvalid) {
       toast.error(
         'Fix the highlighted dates',
-        noticeDateInvalid && lwdInvalid
-          ? 'Notice start date cannot be in the past, and the last working day must be a future date on/after it.'
-          : noticeDateInvalid
-            ? 'Notice start date cannot be in the past.'
-            : 'Last working day must be a future date on/after the notice start date.',
+        (() => {
+          // The last-working-day rule depends on whether a notice is served,
+          // so the message has to say the right thing for each exit type.
+          const lwdMsg = noticeServed
+            ? 'the last working day must be a future date on/after the notice period end date'
+            : settlement === 'pay_in_lieu'
+              ? 'the last working day cannot be before the termination date'
+              : 'the last working day cannot be before the notice start date';
+          if (noticeDateInvalid && lwdInvalid) return `Notice start date cannot be in the past, and ${lwdMsg}.`;
+          if (noticeDateInvalid) return 'Notice start date cannot be in the past.';
+          return `${lwdMsg.charAt(0).toUpperCase()}${lwdMsg.slice(1)}.`;
+        })(),
       );
       return false;
     }
@@ -1982,11 +2002,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         onChange={(v) => {
                           setLwd(v); clearS1Err('lwd');
                           if (v && v !== loadedLwdRef.current) {
-                            if (onProbation) {
-                              // Notice period waived — only "not before the
-                              // notice start" still applies.
+                            if (!noticeServed) {
+                              // No notice is being served (probation, or an
+                              // exit type that pays/recovers it instead), so
+                              // today is fine — only "not before the start".
                               if (v < lwdMin) {
-                                toast.warning('Invalid last working day', 'Last working day cannot be before the notice start date.');
+                                toast.warning('Invalid last working day',
+                                  settlement === 'pay_in_lieu'
+                                    ? 'Last working day cannot be before the termination date.'
+                                    : 'Last working day cannot be before the notice start date.');
                               }
                             } else if (v <= todayIso) {
                               toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
@@ -1994,7 +2018,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               toast.warning(
                                 'Invalid last working day',
                                 noticePeriodEnd
-                                  ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                  ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}). To release the employee earlier, change the exit type to “Resignation without notice period”.`
                                   : 'Last working day must be after the notice start date.',
                               );
                             }
@@ -2007,8 +2031,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
                           {lwdInvalid
-                            ? (onProbation
-                                ? 'Last working day cannot be before the notice start date.'
+                            ? (!noticeServed
+                                ? (settlement === 'pay_in_lieu'
+                                    ? 'Last working day cannot be before the termination date.'
+                                    : 'Last working day cannot be before the notice start date.')
                                 : (lwd <= todayIso
                                     ? 'Last working day cannot be today or a past date.'
                                     : (noticePeriodEnd
