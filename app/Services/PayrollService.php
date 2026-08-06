@@ -55,6 +55,11 @@ class PayrollService
     // the day and flag it, so one stray punch can't inflate a payslip.
     private const MAX_OT_MINUTES_PER_DAY = 720; // 12h
 
+    /** Per-advance recovery split from the most recent advanceRecovery() call
+     *  — [ ['advance_request_id','due','recovered','carried'], … ]. generate()
+     *  reads this straight after computeForEmployee() to write the ledger. */
+    private array $lastRecoveryBreakdown = [];
+
     /** Resolve the period for a month/year, creating it open+unfinalized.
      *  Race-safe: the unique (client,branch,month,year) index means a
      *  concurrent create throws; we swallow that and re-select. */
@@ -420,8 +425,15 @@ class PayrollService
 
     /**
      * Rule 7 — employees that belong in REGULAR payroll for this period.
-     * Excludes Inactive / Resigned / Terminated and anyone whose last working
-     * day fell before the period starts (those go to F&F, not regular pay).
+     *
+     * Excludes Inactive / Resigned / Terminated, and anyone whose LAST WORKING
+     * DAY falls on or before the period end. A leaver is settled through Full &
+     * Final, not regular payroll: someone who left on 10 August is not in the
+     * 1–31 August run at all, and their earned salary for those ten days is one
+     * of the F&F lines instead. Paying them here AND in F&F would pay twice.
+     *
+     * Only the exit CYCLE is excluded — an employee whose last working day is
+     * in a LATER month worked this one in full and is paid normally.
      */
     public function eligibleEmployees(PayrollPeriod $period): Collection
     {
@@ -447,13 +459,14 @@ class PayrollService
 
         $employees = $q->get();
 
-        // Drop anyone whose exit last-working-day is before this period starts,
-        // and anyone who left within 15 days of joining — an early exit is not
-        // put through payroll at all (ProbationGuard::EARLY_EXIT_DAYS).
+        // Drop anyone whose exit last-working-day lands on or before this
+        // period's end — they are settled through F&F, not regular payroll —
+        // and anyone who left within 15 days of joining (an early exit is not
+        // put through payroll at all, ProbationGuard::EARLY_EXIT_DAYS).
         $exits = $this->exitMap($employees->pluck('id')->all());
         return $employees->reject(function (Employee $e) use ($exits, $period) {
             $lwd = $exits[$e->id] ?? null;
-            if ($lwd && Carbon::parse($lwd)->lt($period->period_start)) {
+            if ($lwd && Carbon::parse($lwd)->lte($period->period_end)) {
                 return true;
             }
             return ProbationGuard::isEarlyExit($e, $lwd);
@@ -462,10 +475,15 @@ class PayrollService
 
     /**
      * Employees held OUT of this period's payroll and why — so HR can see that
-     * someone was skipped deliberately rather than lost. Currently the
-     * early-exit rule (left within 15 days of joining); the pre-period-exit
-     * drop is not reported because those people simply belong to an earlier
-     * cycle.
+     * someone was skipped deliberately rather than lost. Two reasons:
+     *
+     *   · Exited in this cycle — settled through F&F instead of regular pay.
+     *     Reported because a mid-month leaver vanishing from the run is exactly
+     *     the kind of thing that reads as a bug unless it's spelled out.
+     *   · Left within 15 days of joining — payroll not processed at all.
+     *
+     * Someone whose last working day precedes this period entirely is NOT
+     * reported: they belong to an earlier cycle and were never expected here.
      */
     public function payrollExclusions(PayrollPeriod $period): array
     {
@@ -482,19 +500,34 @@ class PayrollService
 
         foreach ($employees as $e) {
             $lwd = $exits[$e->id] ?? null;
-            if (!ProbationGuard::isEarlyExit($e, $lwd)) {
+
+            $earlyExit = ProbationGuard::isEarlyExit($e, $lwd);
+            // Exited inside THIS cycle (not before it — that's an earlier
+            // period's business).
+            $exitedInCycle = $lwd
+                && Carbon::parse($lwd)->lte($period->period_end)
+                && Carbon::parse($lwd)->gte($period->period_start);
+
+            if (!$earlyExit && !$exitedInCycle) {
                 continue;
             }
-            $tenure = ProbationGuard::tenureDays($e, $lwd);
+
+            $tenure  = ProbationGuard::tenureDays($e, $lwd);
+            $lwdDate = Carbon::parse($lwd);
             $out[] = [
                 'employee_id'      => $e->id,
                 'employee_code'    => $e->emp_code,
                 'employee_name'    => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
-                'date_of_joining'  => Carbon::parse($e->date_of_joining)->toDateString(),
-                'last_working_day' => Carbon::parse($lwd)->toDateString(),
+                'date_of_joining'  => $e->date_of_joining ? Carbon::parse($e->date_of_joining)->toDateString() : null,
+                'last_working_day' => $lwdDate->toDateString(),
                 'tenure_days'      => $tenure,
-                'reason'           => "Exited within " . ProbationGuard::EARLY_EXIT_DAYS
-                    . " days of joining ({$tenure} day(s)) — payroll not processed.",
+                // Early exit is the stronger statement (no payroll at all), so
+                // it wins when both apply.
+                'reason'           => $earlyExit
+                    ? 'Exited within ' . ProbationGuard::EARLY_EXIT_DAYS
+                        . " days of joining ({$tenure} day(s)) — payroll not processed."
+                    : 'Left on ' . $lwdDate->format('j M Y')
+                        . ' — excluded from this cycle; salary and dues are settled in the Full & Final settlement.',
             ];
         }
 
@@ -597,6 +630,10 @@ class PayrollService
                 $data['created_by']        = $ctx['user_id'] ?? null;
 
                 Payslip::create($data);
+                // Record what each advance actually recovered this cycle (and
+                // what carried) — read straight off the compute above. Written
+                // here, once, so previews/FNF never pollute the ledger.
+                $this->recordRecoveryLedger($period, $employee->id, $this->lastRecoveryBreakdown);
 
                 $totGross += $data['gross_earnings'];
                 $totDed   += $data['total_deductions'];
@@ -896,14 +933,20 @@ class PayrollService
         $other += $adjDeductions;
 
         // ── Rule 11 — advance / loan recovery ──────────────────────────────
-        $advanceRec = $this->advanceRecovery($employee->id, $period);
-        // EMI must not exceed net before recovery (Rule 11 validation). Net
-        // before recovery is earned pay minus the non-LOP deductions.
+        // Net before recovery = earned pay minus the non-LOP deductions. The
+        // FOI ceiling caps TOTAL advance recovery at 70% of it (the same
+        // headroom enforced when advances are raised). We pass that cap INTO the
+        // allocator so, when two EMIs won't both fit in a lean month, the oldest
+        // advance is recovered first and the remainder of the newer one carries
+        // to its next cycle instead of being silently dropped.
         $netBeforeRecovery = $earnedGross - ($pf + $esi + $pt + $tds + $other);
-        if ($advanceRec > max(0, $netBeforeRecovery)) {
-            $advanceRec = round(max(0, $netBeforeRecovery), 2);
+        $foiCap = round(max(0, $netBeforeRecovery) * 0.70, 2);
+        $advanceRec = $this->advanceRecovery($employee->id, $period, $foiCap);
+        $carried = round(array_sum(array_column($this->lastRecoveryBreakdown, 'carried')), 2);
+        if ($carried > 0.01) {
             $exceptions = $this->withException($exceptions, 'warning',
-                'Advance EMI exceeded net salary — capped to available net this cycle.');
+                'Advance recovery exceeded the 70% FOI headroom this cycle — ₹'
+                . number_format($carried, 2) . ' carried to the next cycle.');
         }
 
         // Overtime (Rule 4) + bonus/incentive (Rule 10) — only APPROVED
@@ -939,7 +982,27 @@ class PayrollService
         if ($esi > 0)         $deductions[] = ['code' => 'esi', 'label' => 'ESI', 'amount' => $esi];
         if ($tds > 0)         $deductions[] = ['code' => 'tds', 'label' => 'Income Tax (TDS)', 'amount' => $tds];
         if ($lopAmount > 0)   $deductions[] = ['code' => 'lop', 'label' => 'Loss of Pay', 'amount' => $lopAmount];
-        if ($advanceRec > 0)  $deductions[] = ['code' => 'advance', 'label' => 'Advance Recovery', 'amount' => $advanceRec];
+        // Advance recovery — ONE line per advance (its own EMI), not a lump sum,
+        // so the payslip shows exactly which advance each rupee went to. Falls
+        // back to a single "Advance Recovery" line if the split is unavailable.
+        if ($advanceRec > 0) {
+            $advLines = array_values(array_filter(
+                $this->lastRecoveryBreakdown,
+                fn ($b) => ($b['recovered'] ?? 0) > 0
+            ));
+            if (!empty($advLines)) {
+                foreach ($advLines as $b) {
+                    $deductions[] = [
+                        'code'       => 'advance',
+                        'label'      => $b['label'] ?? 'Advance Recovery',
+                        'amount'     => round((float) $b['recovered'], 2),
+                        'advance_no' => $b['advance_no'] ?? null,
+                    ];
+                }
+            } else {
+                $deductions[] = ['code' => 'advance', 'label' => 'Advance Recovery', 'amount' => $advanceRec];
+            }
+        }
         // Structure "other" portion (excludes the adjustment deductions, which
         // are listed as their own labelled lines below to avoid double-display).
         $structOther = round($other - $adjDeductions, 2);
@@ -1307,8 +1370,31 @@ class PayrollService
      * advance_requests (hr_status approved) whose recovery schedule covers the
      * cycle. Returns 0 if the table is absent.
      */
-    private function advanceRecovery(int $employeeId, PayrollPeriod $period): float
+    /**
+     * Advance / loan recovery for the cycle, allocated across the employee's
+     * running advances under a hard ceiling ($cap — the 70% FOI headroom).
+     *
+     * Each advance's NORMAL due this cycle is stateless: an EMI / bi-monthly
+     * advance owes its monthly_emi while the cycle sits inside its schedule
+     * window; a lump-sum owes the whole amount in its start month only. On top
+     * of that we ADD any arrears the ledger says were carried from a prior lean
+     * month. So with NO ledger the engine behaves exactly like a plain monthly
+     * schedule (no double-counting); the ledger only ever *adds* a real,
+     * previously-recorded shortfall.
+     *
+     * When the combined dues won't fit under the cap, the OLDEST advance is
+     * recovered first (by recovery_start, then id); whatever doesn't fit on a
+     * newer advance is CARRIED to its next cycle. `carried` in the ledger is the
+     * running outstanding arrears, so taking the latest prior row already folds
+     * in everything deferred to date. Recovery is also capped at the advance's
+     * outstanding balance so it can never over-collect.
+     *
+     * READ-ONLY — it never writes the ledger (generate() does, once, at persist
+     * time). The per-advance split is exposed via $this->lastRecoveryBreakdown.
+     */
+    private function advanceRecovery(int $employeeId, PayrollPeriod $period, float $cap = INF): float
     {
+        $this->lastRecoveryBreakdown = [];
         if (!Schema::hasTable('advance_requests')) {
             return 0;
         }
@@ -1317,27 +1403,116 @@ class PayrollService
             ->where('hr_status', 'approved')
             ->whereNotNull('recovery_start')
             ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
-            ->get(['amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi']);
+            // Oldest advance takes priority when the cap can't cover everything.
+            ->orderBy('recovery_start')
+            ->orderBy('id')
+            ->get(['id', 'amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+                   'advance_no', 'advance_type', 'advance_type_other']);
 
+        $hasLedger = Schema::hasTable('advance_recovery_ledger');
+        $room  = max(0.0, $cap);
         $total = 0.0;
+
         foreach ($rows as $r) {
-            $startCarbon = Carbon::parse($r->recovery_start);
-            if ($r->recovery_mode === 'emi') {
-                $months = (int) ($r->recovery_months ?: 1);
-                $endCarbon = $startCarbon->copy()->addMonthsNoOverflow(max(0, $months - 1))->endOfMonth();
-                // EMI due only while the cycle falls inside the schedule.
-                if ($period->period_end->lt($startCarbon->copy()->startOfMonth()) || $period->period_start->gt($endCarbon)) {
-                    continue;
-                }
-                $total += (float) ($r->monthly_emi ?: round(((float) $r->amount) / max(1, $months), 2));
-            } else {
-                // Lumpsum / one-off — recover fully in the start month only.
-                if ($startCarbon->year === (int) $period->year && $startCarbon->month === (int) $period->month) {
-                    $total += (float) $r->amount;
-                }
+            $amount = (float) $r->amount;
+            $start  = Carbon::parse($r->recovery_start)->startOfMonth();
+            if ($period->period_end->lt($start)) {
+                continue; // recovery hasn't started yet
             }
+
+            // NORMAL amount owed for THIS cycle (stateless — no ledger needed).
+            $hasEmi = in_array($r->recovery_mode, ['emi', 'bimonthly'], true)
+                && ($r->monthly_emi || $r->recovery_months);
+            if ($hasEmi) {
+                $months = max(1, (int) ($r->recovery_months ?: 1));
+                $emi    = (float) ($r->monthly_emi ?: round($amount / $months, 2));
+                $endMonth = $start->copy()->addMonthsNoOverflow($months - 1)->endOfMonth();
+                // Owed only while the cycle falls inside [start month … end month].
+                $inWindow = $period->period_end->gte($start) && $period->period_start->lte($endMonth);
+                $normalDue = $inWindow ? $emi : 0.0;
+            } else {
+                // Lump-sum — owed once, in its start month.
+                $normalDue = ($start->year === (int) $period->year && $start->month === (int) $period->month)
+                    ? $amount : 0.0;
+            }
+
+            // Arrears carried in from prior lean months + total already recovered
+            // (both read from the ledger; both zero when there's no ledger yet).
+            $arrears = 0.0; $recoveredBefore = 0.0;
+            if ($hasLedger) {
+                $priorScope = function ($q) use ($period) {
+                    $q->where('year', '<', (int) $period->year)
+                      ->orWhere(function ($q2) use ($period) {
+                          $q2->where('year', (int) $period->year)
+                             ->where('month', '<', (int) $period->month);
+                      });
+                };
+                $prior = DB::table('advance_recovery_ledger')
+                    ->where('advance_request_id', $r->id)->where($priorScope)
+                    ->orderByDesc('year')->orderByDesc('month')->first();
+                $arrears = $prior ? (float) $prior->carried : 0.0;
+                $recoveredBefore = (float) DB::table('advance_recovery_ledger')
+                    ->where('advance_request_id', $r->id)->where($priorScope)->sum('amount');
+            }
+
+            // Due = this month's EMI + carried arrears, never beyond the balance.
+            $outstanding = round($amount - $recoveredBefore, 2);
+            $due = round(min($normalDue + $arrears, max(0.0, $outstanding)), 2);
+            if ($due <= 0.0) {
+                continue;
+            }
+
+            // Recover as much as the remaining headroom allows; the rest carries.
+            $take = round(min($due, $room), 2);
+            $room  = round($room - $take, 2);
+            $total = round($total + $take, 2);
+            // Human label for the payslip line — "<Type> (<ADV-no>)".
+            $type = trim((string) ($r->advance_type === 'Other'
+                ? ($r->advance_type_other ?: 'Advance') : ($r->advance_type ?: 'Advance')));
+            $label = 'Advance Recovery – ' . $type
+                . ($r->advance_no ? ' (' . $r->advance_no . ')' : '');
+
+            $this->lastRecoveryBreakdown[] = [
+                'advance_request_id' => (int) $r->id,
+                'advance_no'         => $r->advance_no,
+                'label'              => $label,
+                'due'                => $due,
+                'recovered'          => $take,
+                'carried'            => round($due - $take, 2),
+            ];
         }
         return round($total, 2);
+    }
+
+    /**
+     * Persist the per-advance recovery split for a cycle (called once, from
+     * generate(), after the payslip is saved). One row per advance/month,
+     * overwritten on regenerate so re-processing a month stays idempotent.
+     */
+    private function recordRecoveryLedger(PayrollPeriod $period, int $employeeId, array $breakdown): void
+    {
+        if (empty($breakdown) || !Schema::hasTable('advance_recovery_ledger')) {
+            return;
+        }
+        foreach ($breakdown as $b) {
+            DB::table('advance_recovery_ledger')->updateOrInsert(
+                [
+                    'advance_request_id' => $b['advance_request_id'],
+                    'year'               => (int) $period->year,
+                    'month'              => (int) $period->month,
+                ],
+                [
+                    'employee_id' => $employeeId,
+                    'client_id'   => $period->client_id,
+                    'branch_id'   => $period->branch_id,
+                    'due'         => $b['due'],
+                    'amount'      => $b['recovered'],
+                    'carried'     => $b['carried'],
+                    'updated_at'  => now(),
+                    'created_at'  => now(),
+                ]
+            );
+        }
     }
 
     

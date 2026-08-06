@@ -695,9 +695,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
   
     Route::get('/employees/{employee}/exit', [ExitController::class, 'show']);
+    // Outstanding advances / claims / earned salary feeding the F&F stage.
+    Route::get('/employees/{employee}/exit/fnf-summary', [ExitController::class, 'fnfSummary']);
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
     
     Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);
+    // Bring an exited employee back (standard resignations only).
+    Route::post('/employees/{employee}/rehire', [ExitController::class, 'rehire']);
 
 
     Route::get   ('/employees/{employee}/previous-employments', [PreviousEmploymentController::class, 'index']);
@@ -742,6 +746,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/expense-claims/{id}/email-reimbursement',  [ExpenseClaimController::class, 'emailReimbursement']);
 
 
+    Route::get   ('/advance-requests/emi-info',                 [\App\Http\Controllers\Api\AdvanceRequestController::class, 'emiInfo']);
     Route::get   ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'index']);
     Route::post  ('/advance-requests',                          [\App\Http\Controllers\Api\AdvanceRequestController::class, 'store']);
     Route::get   ('/advance-requests/{id}',                     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'show']);
@@ -755,6 +760,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/settle',              [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settle']);
     Route::post  ('/advance-requests/{id}/employee-settle',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'employeeSettle']);
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
+    Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
 
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
@@ -996,6 +1002,8 @@ Route::get('/advance-requests/payments/{paymentId}/proof', [\App\Http\Controller
     ->name('advance-requests.payment-proof');
 Route::get('/advance-requests/{id}/settle-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleProof'])
     ->name('advance-requests.settle-proof');
+Route::get('/advance-requests/{id}/return-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'returnProof'])
+    ->name('advance-requests.return-proof');
 
 // SECURITY: the public unauthenticated `dummy-items` CRUD scaffold was removed
 // (it exposed read/create/update/delete with no auth or tenant scope). It is not

@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect } from './ui/MasterSelect';
+import { MasterDatePicker } from './ui/MasterDatePicker';
 
 /**
  * Record Payment (settlement) for an APPROVED expense claim — styled like the
@@ -54,6 +55,11 @@ type Summary = {
     zoho_status: string | null; zoho_expense_url: string | null;
     paid_by_name: string | null; paid_at: string | null;
   }[];
+  // Salary-recovery schedule (self advance).
+  recovery_start?: string | null;
+  recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | string | null;
+  recovery_months?: number | null;
+  monthly_emi?: number | null;
   // Advance-only settle context (company advances).
   employee_id?: number | null;
   used_for?: 'self' | 'company' | string;
@@ -65,7 +71,20 @@ type Summary = {
   settle_target_amount?: number | null;
   settle_items?: { amount: number; reason: string; method?: string | null; proof_name: string | null; proof_url: string | null }[];
   settle_reimbursed_at?: string | null;
-  settle_reimbursement?: { id: number; claim_no: string; status: string } | null;
+  settle_reimbursement?: { id: number; claim_no: string; status: string; amount?: number; category?: string | null; currency?: string | null; proof_name?: string | null; proof_url?: string | null } | null;
+  settle_returned_at?: string | null;
+  settle_return_method?: string | null;
+  settle_return_proof_url?: string | null;
+  settle_return_payments?: { amount: number; method: string; mode: string; note?: string | null; paid_at: string | null; proof_name: string | null; proof_url: string | null }[];
+  settle_return_remaining?: number;
+  settle_return_scheduled_at?: string | null;
+  settle_return_recovery_start?: string | null;
+  settle_return_recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | null;
+  settle_return_recovery_months?: number | null;
+  settle_return_monthly?: number | null;
+  employee_monthly_salary?: number | null;
+  emi_ongoing?: number;
+  emi_available?: number | null;
 };
 
 type Cat = { id: number; name: string; code?: string | null };
@@ -168,6 +187,7 @@ export default function ExpenseSettlementModal({
   const [settleErr, setSettleErr] = useState(false);
   const [settleSaving, setSettleSaving] = useState(false);
   const [settleOpen, setSettleOpen] = useState(true);
+  const [recoveryOpen, setRecoveryOpen] = useState(false);
   // Settle flow: 'idle' → "Add Settle Payment" button; 'choose' → type popup
   // (Equal / Minimum / Maximum, locked once picked); 'form' → itemised rows.
   const [settleMode, setSettleMode] = useState<'idle' | 'choose' | 'form'>('idle');
@@ -177,6 +197,21 @@ export default function ExpenseSettlementModal({
   const [settleTargetTmp, setSettleTargetTmp] = useState(''); // in the choose popup
   const [settleFinalizeAsk, setSettleFinalizeAsk] = useState(false);
   const [raising, setRaising] = useState(false);
+  // "Make Payment" (return) — mode choice (direct/payroll) + instalment form.
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [returnMode, setReturnMode] = useState<'' | 'direct' | 'payroll'>('');
+  const [returnAmount, setReturnAmount] = useState('');
+  const [returnMethod, setReturnMethod] = useState('');
+  const [returnProof, setReturnProof] = useState<File | null>(null);
+  const [returnSaving, setReturnSaving] = useState(false);
+  const [returnErr, setReturnErr] = useState(false);
+  // Payroll recovery schedule (when returning via payroll).
+  const [returnStep, setReturnStep] = useState<'mode' | 'form'>('mode');
+  const [returnRecStart, setReturnRecStart] = useState('');   // YYYY-MM
+  const [returnRecType, setReturnRecType] = useState<'' | 'emi' | 'lumpsum' | 'bimonthly'>('');
+  const [returnRecMonthly, setReturnRecMonthly] = useState('');
+  const [returnRecMonths, setReturnRecMonths] = useState('');
+  const [returnNote, setReturnNote] = useState('');
   // Payment row currently being synced to Zoho Books.
   const [syncingId, setSyncingId] = useState<number | null>(null);
   // Review mode: confirmation dialog ('approve' | 'reject') + reject reason.
@@ -208,6 +243,18 @@ export default function ExpenseSettlementModal({
     setSettleTarget('');
     setSettleTargetTmp('');
     setSettleFinalizeAsk(false);
+    setReturnOpen(false);
+    setReturnMode('');
+    setReturnAmount('');
+    setReturnMethod('');
+    setReturnProof(null);
+    setReturnErr(false);
+    setReturnStep('mode');
+    setReturnRecStart('');
+    setReturnRecType('');
+    setReturnRecMonthly('');
+    setReturnRecMonths('');
+    setReturnNote('');
     setLoading(true);
     Promise.all([
       api.get<Summary>(`${basePath}/${claimId}/settlement`).then(r => r.data),
@@ -558,6 +605,106 @@ export default function ExpenseSettlementModal({
     }
   };
 
+  // Remaining still to be returned (balance − ledger total).
+  const returnRemaining = summary?.settle_return_remaining ?? (summary?.settle_balance ?? 0);
+  // Payroll schedule helpers (min = next month; type math for months + end date).
+  const nextMonthDay = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1); return d.toISOString().slice(0, 10); })();
+  const recStep = returnRecType === 'bimonthly' ? 2 : 1;
+  const recMonthlyNum = Number(returnRecMonthly) || 0;
+  const recMonths = returnRecType === 'lumpsum' ? 1 : (Number(returnRecMonths) || 0);
+  // Bidirectional helpers — editing monthly recomputes months and vice-versa.
+  const setMonthlyFromInput = (raw: string) => {
+    let v = raw; if ((Number(v) || 0) > returnRemaining) v = String(returnRemaining);
+    setReturnRecMonthly(v);
+    const n = Number(v) || 0;
+    setReturnRecMonths(n > 0 ? String(Math.max(1, Math.ceil(returnRemaining / n))) : '');
+    const cap = summary?.emi_available != null ? Math.floor(summary.emi_available) : 0;
+    if (cap > 0 && n > cap) toast.warning('Over the EMI headroom', `Available EMI headroom is ${inr(cap)} (70% of salary − ongoing EMIs). Add more cycles.`);
+  };
+  const setMonthsFromInput = (raw: string) => {
+    const m = Math.max(0, Math.floor(Number(raw) || 0));
+    setReturnRecMonths(raw === '' ? '' : String(m));
+    const per = m > 0 ? Math.ceil((returnRemaining / m) * 100) / 100 : 0;
+    setReturnRecMonthly(per ? String(per) : '');
+    const cap = summary?.emi_available != null ? Math.floor(summary.emi_available) : 0;
+    if (cap > 0 && per > cap) toast.warning('Over the EMI headroom', `Available EMI headroom is ${inr(cap)} (70% of salary − ongoing EMIs) — increase the cycles.`);
+  };
+  const recEndLabel = (() => {
+    if (!returnRecStart || recMonths < 1) return '—';
+    const [y, m] = returnRecStart.split('-').map(Number);
+    const d = new Date(y, (m - 1) + (recMonths - 1) * recStep, 1);
+    return d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  })();
+  const empSalary = summary?.employee_monthly_salary ?? null;
+  const singleLumpOk = empSalary == null || empSalary >= returnRemaining - 0.005;
+  // Per-cycle payroll deduction is capped by the remaining EMI headroom
+  // (70% of salary − the employee's other ongoing advance EMIs).
+  const returnEmiCap = summary?.emi_available != null ? Math.floor(summary.emi_available) : 0;
+  const returnPerCycleOver = returnEmiCap > 0 && recMonthlyNum > returnEmiCap;
+  // Row 2 (monthly / months / end date) stays locked until start + type are set.
+  const returnRow2Locked = !returnRecStart || (returnRecType !== 'emi' && returnRecType !== 'bimonthly');
+  const toastRow2Locked = () => toast.warning('Complete step 1 first', !returnRecType ? 'Select the recovery start and recovery type first.' : !returnRecStart ? 'Select the recovery start month first.' : 'Select the recovery start and recovery type first.');
+
+  // Record one return payment — direct (amount + method + proof, partial ok) or
+  // payroll (clears the whole remaining in one entry).
+  const submitReturn = async () => {
+    if (claimId == null || !returnMode) return;
+    if (returnMode === 'direct') {
+      const amt = Number(returnAmount) || 0;
+      if (!returnMethod || !(amt > 0)) { setReturnErr(true); return; }
+      if (amt > returnRemaining + 0.005) {
+        toast.warning('Over the remaining', `Amount can't exceed the remaining ${inr(returnRemaining)}.`);
+        return;
+      }
+    } else {
+      // payroll — validate the recovery schedule
+      if (!returnRecStart || !returnRecType) { setReturnErr(true); return; }
+      if (returnRecType === 'lumpsum' && !singleLumpOk) {
+        toast.warning('Salary too low', `Single lump needs a monthly salary of at least ${inr(returnRemaining)}. Choose EMI or Bi-monthly.`);
+        return;
+      }
+      if (returnRecType !== 'lumpsum' && !(recMonthlyNum > 0)) { setReturnErr(true); return; }
+      if (returnRecType !== 'lumpsum' && returnPerCycleOver) {
+        toast.warning('Over the EMI headroom', `Available EMI headroom is ${inr(returnEmiCap)} (70% of salary − ongoing EMIs).`);
+        return;
+      }
+    }
+    setReturnErr(false);
+    setReturnSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('mode', returnMode);
+      if (returnMode === 'direct') {
+        fd.append('amount', String(Number(returnAmount)));
+        fd.append('method', returnMethod);
+        if (returnProof) fd.append('proof', returnProof);
+      } else {
+        fd.append('recovery_start', returnRecStart);
+        fd.append('recovery_type', returnRecType);
+        if (returnRecType !== 'lumpsum') fd.append('monthly', String(recMonthlyNum));
+      }
+      if (returnNote.trim()) fd.append('note', returnNote.trim());
+      const { data: r } = await api.post(`${basePath}/${claimId}/record-return`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Return recorded', r?.message ?? 'The return has been recorded.');
+      setReturnOpen(false);
+      setReturnMode('');
+      setReturnAmount('');
+      setReturnMethod('');
+      setReturnProof(null);
+      setReturnRecStart('');
+      setReturnRecType('');
+      setReturnRecMonthly('');
+      setReturnNote('');
+      onDone();
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
+      setSummary(s);
+    } catch (e: any) {
+      toast.error('Could not record return', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setReturnSaving(false); }
+  };
+
   if (!open) return null;
 
   return createPortal(
@@ -587,6 +734,30 @@ export default function ExpenseSettlementModal({
               <div className="esm-hp"><label>CATEGORY</label><div>{summary.category_name || '—'}</div></div>
               <div className="esm-hp"><label>RAISED DATE</label><div>{fmtDate(summary.expense_date)}</div></div>
               <div className="esm-hp"><label>CURRENCY</label><div>{summary.currency || 'INR'}</div></div>
+              {/* Salary-recovery schedule keys (self advance). */}
+              {isAdvance && (summary.used_for ?? 'self') !== 'company' && summary.recovery_mode && (() => {
+                const rmode = summary.recovery_mode;
+                const rlbl = rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Single Lump Sum';
+                const rstep = rmode === 'bimonthly' ? 2 : 1;
+                const rmonths = summary.recovery_months ?? 0;
+                const rEnd = (() => {
+                  if (!summary.recovery_start) return '—';
+                  const d = new Date(summary.recovery_start);
+                  const cyc = rmode === 'lumpsum' ? 1 : (rmonths || 1);
+                  return new Date(d.getFullYear(), d.getMonth() + (cyc - 1) * rstep, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                })();
+                return (
+                  <>
+                    <div className="esm-hp"><label>RECOVERY MODE</label><div>{rlbl}</div></div>
+                    <div className="esm-hp"><label>RECOVERY START</label><div>{fmtDate(summary.recovery_start)}</div></div>
+                    {rmode !== 'lumpsum' && <>
+                      <div className="esm-hp"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div>{rmonths || '—'}</div></div>
+                      <div className="esm-hp"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div>{summary.monthly_emi != null ? inr(summary.monthly_emi) : '—'}</div></div>
+                      <div className="esm-hp"><label>END DATE</label><div>{rEnd}</div></div>
+                    </>}
+                  </>
+                );
+              })()}
               <div className="esm-hp esm-hp-proof">
                 <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
                 {summary.attachments.length === 0 ? (
@@ -707,6 +878,30 @@ export default function ExpenseSettlementModal({
                     <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm">{summary.purpose || '—'}</div></div>
                     {!isAdvance && <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
                     {!isAdvance && <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>}
+                    {/* Salary-recovery schedule — self advance only. */}
+                    {isAdvance && (summary.used_for ?? 'self') !== 'company' && summary.recovery_mode && (() => {
+                      const rmode = summary.recovery_mode;
+                      const rlbl = rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Single Lump Sum';
+                      const rstep = rmode === 'bimonthly' ? 2 : 1;
+                      const rmonths = summary.recovery_months ?? 0;
+                      const rEnd = (() => {
+                        if (!summary.recovery_start) return '—';
+                        const d = new Date(summary.recovery_start);
+                        const cyc = rmode === 'lumpsum' ? 1 : (rmonths || 1);
+                        return new Date(d.getFullYear(), d.getMonth() + (cyc - 1) * rstep, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                      })();
+                      return (
+                        <>
+                          <div className="esm-ro c3"><label>RECOVERY MODE</label><div className="esm-ro-v esm-ro-sm">{rlbl}</div></div>
+                          <div className="esm-ro c3"><label>RECOVERY START</label><div className="esm-ro-v esm-ro-sm">{fmtDate(summary.recovery_start)}</div></div>
+                          {rmode !== 'lumpsum' && <>
+                            <div className="esm-ro c3"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div className="esm-ro-v esm-ro-sm">{rmonths || '—'}</div></div>
+                            <div className="esm-ro c3"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div className="esm-ro-v esm-ro-sm">{summary.monthly_emi != null ? inr(summary.monthly_emi) : '—'}</div></div>
+                            <div className="esm-ro c3"><label>END DATE</label><div className="esm-ro-v esm-ro-sm">{rEnd}</div></div>
+                          </>}
+                        </>
+                      );
+                    })()}
                     <div className="esm-ro c12">
                       <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
                       {summary.attachments.length === 0 ? (
@@ -970,6 +1165,83 @@ export default function ExpenseSettlementModal({
               </div>
               )}
 
+              {/* ── Recovery Schedule (self advance) — collapsible; below Advance Paid.
+                  Header shows only the pending amount + next EMI; the full plan +
+                  installments live in the body. ── */}
+              {!managerReview && isAdvance && (summary.used_for ?? 'self') !== 'company' && summary?.recovery_mode && (() => {
+                const rmode = summary.recovery_mode;
+                const rlbl = rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Single Lump Sum';
+                const rstep = rmode === 'bimonthly' ? 2 : 1;
+                const rmonths = summary.recovery_months ?? 0;
+                const emi = summary.monthly_emi ?? 0;
+                const total = summary.claimed_amount ?? 0;
+                const n = rmode === 'lumpsum' ? 1 : (rmonths || 1);
+                const startStr = summary.recovery_start || '';
+                const nextAmt = rmode === 'lumpsum' ? total : emi;
+                const nextDate = startStr ? new Date(startStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                const rEnd = (() => {
+                  if (!startStr) return '—';
+                  const d = new Date(startStr);
+                  return new Date(d.getFullYear(), d.getMonth() + (n - 1) * rstep, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                })();
+                const pill = (t: string, bg: string, fg: string) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, background: bg, color: fg, fontWeight: 700, fontSize: 10.5 }}>{t}</span>;
+                return (
+                  <div className="esm-sec">
+                    <div className="esm-sec-hd">
+                      <div className="esm-sec-l">
+                        <span className="esm-sec-ico"><i className="ri-calendar-todo-line" /></span>
+                        <div className="esm-sec-tt">
+                          <div className="esm-sec-title-row">
+                            <span className="esm-sec-tag">Settlement</span>
+                            <span className="esm-sec-div">|</span>
+                            <span className="esm-sec-title">Recovery Schedule</span>
+                          </div>
+                          <div className="esm-sec-sub">How this advance is recovered from salary</div>
+                        </div>
+                      </div>
+                      <div className="esm-sec-hd-actions">
+                        <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(total)}<span className="esm-recap-dot">•</span><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</span>
+                        <button type="button" className={`esm-sec-chev ${recoveryOpen ? '' : 'is-collapsed'}`} onClick={() => setRecoveryOpen(o => !o)} aria-label={recoveryOpen ? 'Collapse' : 'Expand'}>
+                          <i className="ri-arrow-down-s-line" />
+                        </button>
+                      </div>
+                    </div>
+                    {recoveryOpen && (
+                    <div className="esm-sec-body">
+                      {advancePaidFully && startStr ? (
+                        <>
+                          <div className="esm-tblwrap">
+                            <table className="esm-tbl">
+                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>{rmode === 'bimonthly' ? 'CYCLE' : 'MONTH'}</th><th>STATUS</th></tr></thead>
+                              <tbody>
+                                {Array.from({ length: n }, (_, k) => {
+                                  const isLast = k === n - 1;
+                                  const amt = rmode === 'lumpsum' ? total : (isLast ? +(total - emi * (n - 1)).toFixed(2) : emi);
+                                  const [y, m] = startStr.split('-').map(Number);
+                                  const d = new Date(y, (m - 1) + k * rstep, 1);
+                                  return (
+                                    <tr key={k}>
+                                      <td>{k + 1}</td>
+                                      <td className="esm-tbl-amt">{inr(amt)}</td>
+                                      <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{k === 0 ? <span className="esm-muted"> · next</span> : null}</td>
+                                      <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <span className="esm-muted" style={{ marginTop: 6, display: 'inline-block' }}>Deducted from payroll each cycle — status updates when payroll runs.</span>
+                        </>
+                      ) : (
+                        <div className="esm-hint">Recovery instalments appear once the advance is paid out.</div>
+                      )}
+                    </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* ── Settlement (employee, company advance) ── */}
               {showSettleSection && (
               <div className="esm-sec">
@@ -1022,19 +1294,6 @@ export default function ExpenseSettlementModal({
                           <span>{inr(summary?.settle_balance ?? 0)}</span>
                         </div>
                       )}
-                      {/* Reimburse follow-through — raise an expense for the extra. */}
-                      {alreadySettled && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
-                        summary?.settle_reimbursement ? (
-                          <div className="esm-reimb-done">
-                            <i className="ri-checkbox-circle-fill" />
-                            <span>Reimbursement raised — <strong>{summary.settle_reimbursement.claim_no}</strong> ({inr(summary?.settle_balance ?? 0)})</span>
-                          </div>
-                        ) : (
-                          <button type="button" className="esm-settle-addmore esm-settle-addmore--reimb" onClick={raiseOrOpenReimbursement} disabled={raising}>
-                            <i className="ri-file-add-line" /> {raising ? 'Raising…' : `Raise Expense to reimburse ${inr(summary?.settle_balance ?? 0)}`}
-                          </button>
-                        )
-                      )}
                     </>
                   ) : allowSettle ? (
                     <div className="esm-settle-start">
@@ -1051,6 +1310,150 @@ export default function ExpenseSettlementModal({
                   )}
                 </div>
                 )}
+              </div>
+              )}
+
+              {/* ── Settlement payout — return only (make payment). Reimburse is
+                  handled in the Settle Advance / finalise flow, not here. ── */}
+              {showSettleSection && alreadySettled && summary?.settle_type === 'return' && (summary?.settle_balance ?? 0) > 0 && (
+              <div className="esm-sec">
+                <div className="esm-sec-hd">
+                  <div className="esm-sec-l">
+                    <span className="esm-sec-ico"><i className="ri-arrow-go-back-line" /></span>
+                    <div className="esm-sec-tt">
+                      <div className="esm-sec-title-row">
+                        <span className="esm-sec-tag">Settlement</span>
+                        <span className="esm-sec-div">|</span>
+                        <span className="esm-sec-title">Return to Company</span>
+                      </div>
+                      <div className="esm-sec-sub">Used less than the advance — employee returns the balance to close it</div>
+                    </div>
+                  </div>
+                  <div className="esm-sec-hd-actions">
+                    {summary?.settle_return_recovery_mode
+                      ? <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#eef2ff', color: '#3730a3', borderColor: '#c7d2fe' }}><i className="ri-calendar-todo-line" /> Payroll scheduled</span>
+                      : summary?.settle_returned_at
+                        ? <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#d6f4e3', color: '#108548', borderColor: '#a7e3c2' }}><i className="ri-checkbox-circle-line" /> Returned</span>
+                        : <span className="esm-payout-amt" style={{ color: '#a4661c' }}>{inr(returnRemaining)} left</span>}
+                  </div>
+                </div>
+                <div className="esm-sec-body">
+                  {(() => {
+                    const directPays = (summary?.settle_return_payments ?? []).filter(p => p.mode !== 'payroll');
+                    const rm = summary?.settle_return_recovery_mode;
+                    const months = summary?.settle_return_recovery_months ?? 1;
+                    const perCycle = summary?.settle_return_monthly ?? summary?.settle_balance ?? 0;
+                    const methodLbl = rm === 'emi' ? 'EMI' : rm === 'bimonthly' ? 'Bi-monthly' : 'Single lump';
+                    const startStr = summary?.settle_return_recovery_start || '';
+                    const nextEmi = startStr ? new Date(startStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                    const pill = (txt: string, bg: string, fg: string) => <span style={{ display: 'inline-block', padding: '2px 9px', borderRadius: 999, background: bg, color: fg, fontWeight: 700, fontSize: 10.5 }}>{txt}</span>;
+                    // Expand the payroll schedule into one row per instalment.
+                    const step = rm === 'bimonthly' ? 2 : 1;
+                    const total = summary?.settle_balance ?? 0;
+                    const nCycles = rm ? (rm === 'lumpsum' ? 1 : months) : 0;
+                    const installments = rm && startStr ? Array.from({ length: nCycles }, (_, k) => {
+                      const [y, m] = startStr.split('-').map(Number);
+                      const isLast = k === nCycles - 1;
+                      const amt = rm === 'lumpsum' ? total : (isLast ? +(total - perCycle * (nCycles - 1)).toFixed(2) : perCycle);
+                      const d = new Date(y, (m - 1) + k * step, 1);
+                      return { amt, dateLbl: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), n: k + 1 };
+                    }) : [];
+                    const hasRows = directPays.length > 0 || !!rm;
+                    return (
+                      <>
+                        {hasRows && (
+                          <div className="esm-tblwrap" style={{ marginBottom: 10 }}>
+                            <table className="esm-tbl">
+                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>TYPE</th><th>METHOD</th><th>NOTE</th><th>DATE / NEXT</th><th>STATUS</th><th>PROOF</th></tr></thead>
+                              <tbody>
+                                {directPays.map((p, i) => (
+                                  <tr key={i}>
+                                    <td>{i + 1}</td>
+                                    <td className="esm-tbl-amt">{inr(p.amount)}</td>
+                                    <td>{pill('Company Pay', '#cffafe', '#0e7490')}</td>
+                                    <td>{p.method || '—'}</td>
+                                    <td title={p.note || ''}>{p.note || '—'}</td>
+                                    <td>{fmtDate(p.paid_at)}</td>
+                                    <td>{pill('Paid', '#d6f4e3', '#108548')}</td>
+                                    <td>{p.proof_url ? <a className="esm-tbl-link" href={tokenUrl(p.proof_url)} target="_blank" rel="noreferrer"><i className="ri-attachment-2" /> View</a> : '—'}</td>
+                                  </tr>
+                                ))}
+                                {installments.map((it, k) => (
+                                  <tr key={`pr-${k}`}>
+                                    <td>{directPays.length + k + 1}</td>
+                                    <td className="esm-tbl-amt">{inr(it.amt)}</td>
+                                    <td>{pill('Payroll', '#eef2ff', '#3730a3')}</td>
+                                    <td>{methodLbl}</td>
+                                    <td>{rm === 'lumpsum' ? 'One-time' : `Instalment ${it.n} of ${nCycles}`}</td>
+                                    <td>{it.dateLbl}</td>
+                                    <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                    <td>—</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {rm ? (
+                          <div className="esm-reimb-done" style={{ background: '#eef2ff', borderColor: '#c7d2fe', color: '#3730a3' }}><i className="ri-calendar-todo-line" /> <span>Recovery of {inr(summary?.settle_balance ?? 0)} scheduled from payroll — {methodLbl}, next deduction {nextEmi}.</span></div>
+                        ) : summary?.settle_returned_at ? (
+                          <div className="esm-reimb-done"><i className="ri-checkbox-circle-fill" /> <span>Balance of {inr(summary?.settle_balance ?? 0)} returned to the company in full.</span></div>
+                        ) : (
+                          <div className="esm-payout-row">
+                            <span className="esm-payout-note">Employee returns <strong>{inr(returnRemaining)}</strong> to the company. Pay directly (instalments allowed) or cut it from payroll.</span>
+                            <button type="button" className="esm-btn-primary esm-payout-btn" onClick={() => { setReturnStep('mode'); setReturnMode(''); setReturnAmount(String(returnRemaining)); setReturnMethod(''); setReturnProof(null); setReturnErr(false); setReturnOpen(true); }}><i className="ri-bank-card-line" /> Make Payment</button>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+              )}
+
+              {/* ── Raised Expense (reimburse follow-through) ── */}
+              {showSettleSection && alreadySettled && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
+              <div className="esm-sec">
+                <div className="esm-sec-hd">
+                  <div className="esm-sec-l">
+                    <span className="esm-sec-ico"><i className="ri-refund-2-line" /></span>
+                    <div className="esm-sec-tt">
+                      <div className="esm-sec-title-row">
+                        <span className="esm-sec-tag">Settlement</span>
+                        <span className="esm-sec-div">|</span>
+                        <span className="esm-sec-title">Raised Expense</span>
+                      </div>
+                      <div className="esm-sec-sub">Used more than the advance — reimbursement claim for the extra</div>
+                    </div>
+                  </div>
+                  <div className="esm-sec-hd-actions">
+                    {summary?.settle_reimbursement
+                      ? <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#d6f4e3', color: '#108548', borderColor: '#a7e3c2' }}><i className="ri-checkbox-circle-line" /> Raised</span>
+                      : <span className="esm-payout-amt" style={{ color: '#0e7490' }}>{inr(summary?.settle_balance ?? 0)}</span>}
+                  </div>
+                </div>
+                <div className="esm-sec-body">
+                  {summary?.settle_reimbursement ? (
+                    <div className="esm-tblwrap">
+                      <table className="esm-tbl">
+                        <thead><tr><th>EXPENSE ID</th><th>AMOUNT</th><th>CATEGORY</th><th>CURRENCY</th><th>STATUS</th><th>PROOF</th></tr></thead>
+                        <tbody><tr>
+                          <td className="esm-tbl-amt" style={{ fontWeight: 700 }}>{summary.settle_reimbursement.claim_no}</td>
+                          <td className="esm-tbl-amt">{inr(summary.settle_reimbursement.amount ?? summary.settle_balance ?? 0)}</td>
+                          <td>{summary.settle_reimbursement.category || '—'}</td>
+                          <td>{summary.settle_reimbursement.currency || 'INR'}</td>
+                          <td><span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: 11, textTransform: 'capitalize' }}>{summary.settle_reimbursement.status}</span></td>
+                          <td>{summary.settle_reimbursement.proof_url ? <a className="esm-tbl-link" href={tokenUrl(summary.settle_reimbursement.proof_url)} target="_blank" rel="noreferrer" title={summary.settle_reimbursement.proof_name || 'Proof'}><i className="ri-attachment-2" /> {summary.settle_reimbursement.proof_name || 'View'}</a> : '—'}</td>
+                        </tr></tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="esm-payout-row">
+                      <span className="esm-payout-note">Raise a reimbursement expense of <strong>{inr(summary?.settle_balance ?? 0)}</strong> for the amount spent over the advance.</span>
+                      <button type="button" className="esm-btn-primary esm-payout-btn" onClick={raiseOrOpenReimbursement} disabled={raising}><i className="ri-file-add-line" /> {raising ? 'Raising…' : 'Raise Expense'}</button>
+                    </div>
+                  )}
+                </div>
               </div>
               )}
             </>
@@ -1454,6 +1857,188 @@ export default function ExpenseSettlementModal({
         </div>
       )}
 
+      {/* ── Make Payment (return) — wide modal: mode → form (like Record Payment) ── */}
+      {returnOpen && summary && (
+        <div className="esm-sub-backdrop" onMouseDown={() => { if (!returnSaving) setReturnOpen(false); }}>
+          <div className="esm-sub-modal esm-sub-modal--settle" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <div className="esm-sub-head">
+              <div className="esm-sub-head-l">
+                <span className="esm-sub-head-ico"><i className="ri-arrow-go-back-line" /></span>
+                <div>
+                  <div className="esm-sub-title">Return to Company</div>
+                  <div className="esm-sub-hsub">
+                    <span className="esm-sub-chip">{summary.claim_no || `#${summary.id}`}</span>
+                    <span className="esm-sub-dot">•</span>
+                    <span>{summary.employee_name || '—'}</span>
+                  </div>
+                </div>
+              </div>
+              <button type="button" className="esm-sub-x" onClick={() => setReturnOpen(false)} disabled={returnSaving} aria-label="Close">✕</button>
+            </div>
+            <div className="esm-sub-body">
+              {/* Pending-return strip (mirrors the Record Payment balance strip) */}
+              <div className="esm-bal">
+                <span className="esm-bal-ico"><IcoWallet /></span>
+                <div className="esm-bal-txt">
+                  <div className="esm-bal-lab">PENDING RETURN (TO COMPANY)</div>
+                  <div className="esm-bal-val">{inr(returnRemaining)}</div>
+                </div>
+                <div className="esm-bal-chips">
+                  <span className="esm-bal-chip">Balance {inr(summary?.settle_balance ?? 0)}</span>
+                  {(summary?.settle_return_payments?.length ?? 0) > 0 && <span className="esm-bal-chip">Returned {inr((summary?.settle_balance ?? 0) - returnRemaining)}</span>}
+                  {empSalary != null && <span className="esm-bal-chip is-net">Monthly salary {inr(empSalary)}</span>}
+                </div>
+              </div>
+
+              {/* Stepper — boxed wizard style (icon badge + number badge) */}
+              <div className="esm-wstepper">
+                {[
+                  { n: 1, title: 'Return method', sub: 'How to return the balance', icon: 'ri-arrow-go-back-line' },
+                  { n: 2, title: 'Payment details', sub: returnMode === 'payroll' ? 'Recovery schedule' : returnMode === 'direct' ? 'Amount & proof' : 'Enter the details', icon: 'ri-bank-card-line' },
+                ].map((s, i, arr) => {
+                  const isActive = (returnStep === 'mode' && s.n === 1) || (returnStep === 'form' && s.n === 2);
+                  const isDone = returnStep === 'form' && s.n === 1;
+                  const cls = isActive ? 'esm-wstep-active' : isDone ? 'esm-wstep-done' : 'esm-wstep-pending';
+                  return (
+                    <Fragment key={s.n}>
+                      <div className={`esm-wstep ${cls}`} onClick={() => { if (s.n === 1) setReturnStep('mode'); else if (returnMode) setReturnStep('form'); }}>
+                        <div className="esm-wstep-badge-wrap">
+                          <div className="esm-wstep-badge">{isDone ? <i className="ri-check-line" /> : <i className={s.icon} />}</div>
+                          <div className="esm-wstep-num">{isDone ? <i className="ri-check-line" /> : s.n}</div>
+                        </div>
+                        <div className="esm-wstep-text">
+                          <div className="esm-wstep-title">{s.title}</div>
+                          <div className="esm-wstep-sub">{s.sub}</div>
+                        </div>
+                      </div>
+                      {i < arr.length - 1 && (
+                        <div className="esm-wstep-connector"><div className="esm-wconnector-line" data-done={isDone ? '1' : '0'} /></div>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </div>
+
+              {returnStep === 'mode' ? (
+                <div className="esm-return-modes">
+                  <button type="button" className={`esm-return-mode ${returnMode === 'direct' ? 'is-on' : ''}`} onClick={() => setReturnMode('direct')}>
+                    <i className="ri-bank-card-line" />
+                    <div><div className="esm-return-mode-t">Pay to Company now</div><div className="esm-return-mode-s">Record a payment (instalments allowed)</div></div>
+                  </button>
+                  <button type="button" className={`esm-return-mode ${returnMode === 'payroll' ? 'is-on' : ''}`} onClick={() => setReturnMode('payroll')}>
+                    <i className="ri-wallet-3-line" />
+                    <div><div className="esm-return-mode-t">Cut from Payroll</div><div className="esm-return-mode-s">Deduct {inr(returnRemaining)} from salary</div></div>
+                  </button>
+                </div>
+              ) : returnMode === 'direct' ? (
+                <div className="esm-fgrid">
+                  <div className={`esm-fld s4 ${returnErr && !(Number(returnAmount) > 0) ? 'esm-fld--err' : ''}`}>
+                    <label>AMOUNT <span className="esm-req">*</span> <span className="esm-muted">(max {inr(returnRemaining)})</span></label>
+                    <div className="esm-money"><span className="esm-cur">₹</span>
+                      <input className="esm-in" type="number" min={0} placeholder="0.00" value={returnAmount} onChange={e => { let v = e.target.value; if ((Number(v) || 0) > returnRemaining) v = String(returnRemaining); setReturnAmount(v); }} />
+                    </div>
+                    {returnErr && !(Number(returnAmount) > 0) && <span className="esm-err">Enter an amount.</span>}
+                  </div>
+                  <div className={`esm-fld s4 ${returnErr && !returnMethod ? 'esm-fld--err' : ''}`}>
+                    <label>PAYMENT METHOD <span className="esm-req">*</span></label>
+                    <MasterSelect value={returnMethod} onChange={(v) => setReturnMethod(v)} options={['UPI', 'PhonePe', 'Cheque', 'Bank Transfer', 'Cash'].map(v => ({ value: v, label: v }))} placeholder="How was it returned?" />
+                    {returnErr && !returnMethod && <span className="esm-err">Select a payment method.</span>}
+                  </div>
+                  <div className="esm-fld s4">
+                    <label>PROOF <span className="esm-muted">(optional)</span></label>
+                    {!returnProof ? (
+                      <label className="esm-file" style={{ height: 41 }}>
+                        <i className="ri-attachment-2" /> <span>Attach proof</span>
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setReturnProof(e.target.files?.[0] ?? null)} />
+                      </label>
+                    ) : (
+                      <div className="esm-file-chip" title={returnProof.name}>
+                        <i className="ri-file-text-line esm-file-ic" />
+                        <span className="esm-file-name">{returnProof.name}</span>
+                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setReturnProof(e.target.files?.[0] ?? null)} /></label>
+                      </div>
+                    )}
+                  </div>
+                  <div className="esm-fld s12">
+                    <label>NOTE <span className="esm-muted">(optional)</span></label>
+                    <textarea className="esm-in" rows={2} maxLength={500} placeholder="e.g. UPI ref no., who received it…" value={returnNote} onChange={e => setReturnNote(e.target.value)} />
+                  </div>
+                </div>
+              ) : (
+                <div className="esm-fgrid">
+                  <div className={`esm-fld s6 ${returnErr && !returnRecStart ? 'esm-fld--err' : ''}`}>
+                    <label>RECOVERY START <span className="esm-req">*</span> <span className="esm-muted">(next month onward)</span></label>
+                    <MasterDatePicker value={returnRecStart} onChange={(v) => setReturnRecStart(v)} minDate={nextMonthDay} placeholder="Select start month" />
+                    {returnErr && !returnRecStart && <span className="esm-err">Pick a recovery start month.</span>}
+                  </div>
+                  <div className={`esm-fld s6 ${returnErr && !returnRecType ? 'esm-fld--err' : ''}`}>
+                    <label>RECOVERY TYPE <span className="esm-req">*</span></label>
+                    <MasterSelect
+                      value={returnRecType}
+                      onChange={(v) => { setReturnRecType(v as any); if (v === 'lumpsum' && empSalary != null && empSalary < returnRemaining - 0.005) toast.warning('Salary too low', `Single lump needs a monthly salary of at least ${inr(returnRemaining)}.`); }}
+                      options={[
+                        { value: 'emi', label: 'EMI — equal monthly instalments' },
+                        { value: 'bimonthly', label: 'Bi-Monthly — every alternate month' },
+                        { value: 'lumpsum', label: 'Single Lump Sum — one month' + (singleLumpOk ? '' : ' (salary too low)') },
+                      ]}
+                      placeholder="How to recover from payroll?"
+                    />
+                    {returnErr && !returnRecType && <span className="esm-err">Select a recovery type.</span>}
+                  </div>
+                  {returnRecType === 'lumpsum' ? (
+                    <div className="esm-fld s12">
+                      <div className="esm-choose-note">
+                        <i className="ri-information-line" />
+                        <span>The full <strong>{inr(returnRemaining)}</strong> will be deducted in <strong>{returnRecStart ? new Date(returnRecStart).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'the start month'}</strong>.{empSalary != null ? ` Monthly salary ${inr(empSalary)}.` : ''}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={`esm-fld s4 ${returnRow2Locked ? 'is-locked' : ''} ${(returnErr && !returnRow2Locked && !(recMonthlyNum > 0)) || (!returnRow2Locked && returnPerCycleOver) ? 'esm-fld--err' : ''}`} onMouseDownCapture={returnRow2Locked ? (e) => { e.preventDefault(); toastRow2Locked(); } : undefined}>
+                        <label>{returnRecType === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY AMOUNT'} <span className="esm-req">*</span> <span className="esm-muted">(max {inr(returnEmiCap > 0 ? Math.min(returnEmiCap, returnRemaining) : returnRemaining)}{returnEmiCap > 0 ? ' · EMI headroom' : ''})</span></label>
+                        <div className="esm-money"><span className="esm-cur">₹</span>
+                          <input className="esm-in" type="number" min={0} placeholder="0.00" value={returnRecMonthly} disabled={returnRow2Locked} onChange={e => setMonthlyFromInput(e.target.value)} />
+                        </div>
+                        {returnErr && !returnRow2Locked && !(recMonthlyNum > 0) && <span className="esm-err">Enter an amount.</span>}
+                        {!returnRow2Locked && returnPerCycleOver && <span className="esm-err">Max {inr(returnEmiCap)} (EMI headroom).</span>}
+                      </div>
+                      <div className={`esm-fld s4 ${returnRow2Locked ? 'is-locked' : ''} ${returnErr && !returnRow2Locked && !(recMonths > 0) ? 'esm-fld--err' : ''}`} onMouseDownCapture={returnRow2Locked ? (e) => { e.preventDefault(); toastRow2Locked(); } : undefined}>
+                        <label>NO. OF {returnRecType === 'bimonthly' ? 'CYCLES' : 'MONTHS'} <span className="esm-req">*</span></label>
+                        <input className="esm-in" type="number" min={1} placeholder="e.g. 6" value={returnRecMonths} disabled={returnRow2Locked} onChange={e => setMonthsFromInput(e.target.value)} />
+                        {returnErr && !returnRow2Locked && !(recMonths > 0) && <span className="esm-err">Enter a count.</span>}
+                      </div>
+                      <div className={`esm-fld s4 ${returnRow2Locked ? 'is-locked' : ''}`} onMouseDownCapture={returnRow2Locked ? (e) => { e.preventDefault(); toastRow2Locked(); } : undefined}>
+                        <label>END DATE <span className="esm-muted">(auto)</span></label>
+                        <input className="esm-in" value={!returnRow2Locked && recMonths > 0 && returnRecStart ? recEndLabel : ''} placeholder="—" readOnly disabled={returnRow2Locked} />
+                        {!returnRow2Locked && recMonthlyNum > 0 && recMonths > 0 && recMonthlyNum * recMonths > returnRemaining + 0.005 && (
+                          <span className="esm-muted" style={{ marginTop: 4, display: 'inline-block' }}>Last {returnRecType === 'bimonthly' ? 'cycle' : 'month'}: {inr(returnRemaining - recMonthlyNum * (recMonths - 1))}</span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="esm-sub-foot">
+              <div className="esm-foot-hint"><i className="ri-information-line" /> {returnStep === 'mode' ? 'Pay directly (instalments) or cut it from payroll.' : returnMode === 'payroll' ? 'Recovered from salary per the schedule; the payroll engine will deduct it.' : `Up to ${inr(returnRemaining)} can be returned.`}</div>
+              <div className="esm-foot-r">
+                {returnStep === 'mode' ? (
+                  <>
+                    <button type="button" className="esm-btn-ghost" onClick={() => setReturnOpen(false)}>Cancel</button>
+                    <button type="button" className="esm-btn-primary" disabled={!returnMode} onClick={() => setReturnStep('form')}>Continue</button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="esm-btn-ghost" onClick={() => setReturnStep('mode')} disabled={returnSaving}>Back</button>
+                    <button type="button" className="esm-btn-primary" disabled={returnSaving || (returnMode === 'payroll' && returnRecType === 'lumpsum' && !singleLumpOk)} onClick={submitReturn}>{returnSaving ? 'Saving…' : returnMode === 'payroll' ? 'Schedule payroll recovery' : 'Record payment'}</button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Approve / Reject confirmation ── */}
       {confirmKind && summary && (
         <div className="esm-sub-backdrop" onMouseDown={() => { if (!saving) setConfirmKind(null); }}>
@@ -1554,9 +2139,10 @@ const CSS = `
 /* Add-Payment form — 12-col grid: row1 4·4·4, row2 4·8, row3 12 */
 .esm-fgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px 18px;}
 .esm-fgrid .s4{grid-column:span 4;}
+.esm-fgrid .s6{grid-column:span 6;}
 .esm-fgrid .s8{grid-column:span 8;}
 .esm-fgrid .s12{grid-column:span 12;}
-@media (max-width:760px){.esm-fgrid .s4,.esm-fgrid .s8{grid-column:span 12;}}
+@media (max-width:760px){.esm-fgrid .s4,.esm-fgrid .s6,.esm-fgrid .s8{grid-column:span 12;}}
 /* Inline field errors — red mark on the offending field (no toast). */
 .esm-err{font-size:11px;font-weight:600;color:#ef4444;}
 .esm-fld--err .esm-in,.esm-fld--err .esm-money .esm-in{border-color:#ef4444;background:#fff7f7;}
@@ -1746,6 +2332,11 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-reimb-done{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}
 .esm-sec-btn:disabled{opacity:.5;cursor:not-allowed;box-shadow:none;}
 /* Collapse chevron */
+.esm-recap{font-size:11.5px;font-weight:700;color:#0e7490;background:#ecfeff;border:1px solid #a5e9f3;border-radius:999px;padding:5px 12px;white-space:nowrap;}
+.esm-recap-k{color:#64748b;font-weight:600;}
+.esm-recap-dot{margin:0 7px;color:#94a3b8;}
+[data-bs-theme="dark"] .esm-recap{background:#0b2029;border-color:#173947;color:#67e8f9;}
+@media (max-width:640px){.esm-recap{display:none;}}
 .esm-sec-chev{width:28px;height:28px;border-radius:50%;border:1px solid #cffafe;background:#fff;color:#0e7490;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:17px;box-shadow:0 1px 3px rgba(6,182,212,.18);flex-shrink:0;}
 .esm-sec-chev:hover{background:#ecfeff;}
 .esm-sec-chev i{transition:transform .2s ease;}
@@ -1857,11 +2448,13 @@ textarea.esm-in{resize:vertical;}
 .esm-payrow .is-pos,.esm-payrow .is-neg{flex-shrink:0;white-space:nowrap;}
 /* Payment history table */
 /* History table — exact styling from the PO "Payment Summary" table (pop-tbl). */
-.esm-tblwrap{overflow-x:auto;overflow-y:hidden;border-radius:12px;border:1px solid #dbeef4;box-shadow:0 2px 8px rgba(15,23,42,.05);}
+/* Cap every table at ~4 rows — the rest scrolls vertically with a sticky header. */
+.esm-tblwrap{overflow-x:auto;overflow-y:auto;max-height:224px;border-radius:12px;border:1px solid #dbeef4;box-shadow:0 2px 8px rgba(15,23,42,.05);}
 [data-bs-theme="dark"] .esm-tblwrap{border-color:#173947;box-shadow:none;}
 .esm-tbl{width:100%;border-collapse:collapse;font-size:12px;background:transparent;}
 .esm-tbl thead tr{background:linear-gradient(90deg,#0e7490 0%,#0891b2 45%,#22d3ee 100%);}
-.esm-tbl thead th{text-align:left;vertical-align:middle;background:transparent;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;line-height:1.25;padding:11px 12px;white-space:nowrap;}
+.esm-tbl thead th{text-align:left;vertical-align:middle;background:#0e8aa6;color:#fff;font-size:9.5px;font-weight:700;letter-spacing:.04em;line-height:1.25;padding:11px 12px;white-space:nowrap;position:sticky;top:0;z-index:1;}
+[data-bs-theme="dark"] .esm-tbl thead th{background:#0b6f85;}
 [data-bs-theme="dark"] .esm-tbl thead tr{background:linear-gradient(90deg,#0e5566,#0b6f85 55%,#0e7f97);}
 .esm-tbl tbody tr,.esm-tbl tbody td{background:#fff;}
 .esm-tbl tbody td{padding:11px 12px;border-bottom:1px solid #eef2f7;color:#334155;font-weight:500;white-space:nowrap;vertical-align:middle;}
@@ -1959,6 +2552,65 @@ textarea.esm-in{resize:vertical;}
 .esm-srow{display:grid;grid-template-columns:minmax(110px,2.2fr) minmax(0,4fr) minmax(120px,1.7fr) 150px 40px;gap:10px;align-items:center;}
 .esm-srow-method{min-width:0;}
 .esm-srow-add{align-self:flex-end;width:auto;padding:7px 18px;font-size:12px;}
+.esm-payout-amt{font-size:18px;font-weight:800;}
+.esm-payout-row{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+.esm-payout-note{font-size:12.5px;color:#475569;line-height:1.5;flex:1;min-width:200px;}
+[data-bs-theme="dark"] .esm-payout-note{color:#94a3b8;}
+.esm-payout-btn{white-space:nowrap;padding:10px 18px;}
+.esm-return-modes{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.esm-return-mode{display:flex;align-items:center;gap:10px;text-align:left;border:1.5px solid #e2e8f0;background:#fff;border-radius:10px;padding:12px;cursor:pointer;}
+.esm-return-mode i{font-size:22px;color:#0891b2;flex:0 0 auto;}
+.esm-return-mode.is-on{border-color:#0891b2;background:#f0fbff;box-shadow:0 0 0 2px rgba(8,145,178,.15);}
+.esm-return-mode-t{font-size:13px;font-weight:800;color:#0f172a;}
+.esm-return-mode-s{font-size:11px;color:#64748b;margin-top:1px;}
+[data-bs-theme="dark"] .esm-return-mode{background:#0d1b2a;border-color:#28405a;}
+[data-bs-theme="dark"] .esm-return-mode.is-on{background:rgba(8,145,178,.14);}
+[data-bs-theme="dark"] .esm-return-mode-t{color:#e2e8f0;}
+@media (max-width:560px){.esm-return-modes{grid-template-columns:1fr;}}
+.esm-return-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+@media (max-width:560px){.esm-return-grid2{grid-template-columns:1fr;}}
+/* Return modal stepper — boxed wizard (icon badge + number badge), teal theme */
+.esm-wstepper{display:flex;align-items:center;gap:0;}
+.esm-wstep-connector{flex:0 0 28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.esm-wconnector-line{width:100%;height:3px;background:#e2e8f0;border-radius:3px;position:relative;overflow:hidden;}
+.esm-wconnector-line::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,#22c55e,#16a34a);border-radius:3px;transform:scaleX(0);transform-origin:left;transition:transform .5s cubic-bezier(.4,0,.2,1);}
+.esm-wconnector-line[data-done="1"]::after{transform:scaleX(1);}
+.esm-wstep{flex:1;padding:11px 14px;border-radius:14px;display:flex;align-items:center;gap:12px;position:relative;overflow:hidden;transition:all .25s;cursor:pointer;min-width:0;}
+.esm-wstep-badge-wrap{position:relative;flex-shrink:0;width:40px;height:40px;}
+.esm-wstep-badge{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;transition:all .25s;}
+.esm-wstep-num{position:absolute;bottom:-4px;right:-4px;width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;border:2px solid #fff;line-height:1;box-shadow:0 1px 3px rgba(0,0,0,.15);}
+.esm-wstep-text{min-width:0;flex:1;}
+.esm-wstep-title{font-size:12px;font-weight:800;letter-spacing:-.2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.esm-wstep-sub{font-size:9.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Active — teal */
+.esm-wstep-active{background:linear-gradient(135deg,#e0f7fb 0%,#cbeef6 100%);border:2px solid #22d3ee;box-shadow:0 6px 20px rgba(8,145,178,.18),0 1px 0 rgba(255,255,255,.85) inset;}
+.esm-wstep-active .esm-wstep-badge{background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;box-shadow:0 5px 14px rgba(14,116,144,.48);}
+.esm-wstep-active .esm-wstep-num{background:linear-gradient(135deg,#0e7490,#155e75);color:#fff;}
+.esm-wstep-active .esm-wstep-title{color:#083344;}
+.esm-wstep-active .esm-wstep-sub{color:#0e7490;}
+/* Done — green */
+.esm-wstep-done{background:linear-gradient(135deg,#ecfdf5 0%,#d1fae5 100%);border:2px solid #34d399;box-shadow:0 6px 20px rgba(16,185,129,.18),0 1px 0 rgba(255,255,255,.85) inset;}
+.esm-wstep-done .esm-wstep-badge{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;box-shadow:0 5px 12px rgba(22,163,74,.42);}
+.esm-wstep-done .esm-wstep-num{background:#fff;color:#16a34a;box-shadow:0 1px 3px rgba(22,163,74,.30);}
+.esm-wstep-done .esm-wstep-title{color:#065f46;}
+.esm-wstep-done .esm-wstep-sub{color:#059669;}
+/* Pending — neutral */
+.esm-wstep-pending{background:#f8fafc;border:1.5px solid #e2e8f0;opacity:.85;}
+.esm-wstep-pending .esm-wstep-badge{background:linear-gradient(135deg,#f1f5f9,#e2e8f0);color:#94a3b8;}
+.esm-wstep-pending .esm-wstep-num{background:#e2e8f0;color:#94a3b8;}
+.esm-wstep-pending .esm-wstep-title{color:#94a3b8;}
+.esm-wstep-pending .esm-wstep-sub{color:#cbd5e1;}
+[data-bs-theme="dark"] .esm-wstep-active{background:linear-gradient(135deg,rgba(14,116,144,.42),rgba(8,145,178,.28));border-color:#22d3ee;}
+[data-bs-theme="dark"] .esm-wstep-active .esm-wstep-title{color:#e0f7fb;}
+[data-bs-theme="dark"] .esm-wstep-done{background:linear-gradient(135deg,rgba(6,95,70,.45),rgba(16,185,129,.20));border-color:#34d399;}
+[data-bs-theme="dark"] .esm-wstep-done .esm-wstep-title{color:#d1fae5;}
+[data-bs-theme="dark"] .esm-wstep-pending{background:rgba(40,52,70,.6);border-color:rgba(148,163,184,.25);}
+[data-bs-theme="dark"] .esm-wstep-pending .esm-wstep-title{color:#cbd5e1;}
+@media (max-width:640px){.esm-wstep-sub{display:none;}.esm-wstep-connector{flex-basis:16px;}}
+/* Locked field (row 2 before step 1 done) */
+.esm-fld.is-locked{opacity:.55;}
+.esm-fld.is-locked .esm-in,.esm-fld.is-locked .esm-money{background:#f1f5f9;cursor:not-allowed;}
+[data-bs-theme="dark"] .esm-fld.is-locked .esm-in,[data-bs-theme="dark"] .esm-fld.is-locked .esm-money{background:#0d2730;}
 .esm-settle-donenote{display:flex;align-items:flex-start;gap:8px;background:#d6f4e3;border:1px solid #a7e3c2;color:#108548;border-radius:9px;padding:10px 14px;font-size:12.5px;font-weight:600;line-height:1.45;}
 .esm-settle-donenote i{font-size:16px;flex:0 0 auto;margin-top:1px;}
 [data-bs-theme="dark"] .esm-settle-donenote{background:rgba(16,133,72,.18);border-color:rgba(16,133,72,.5);color:#6ee7b7;}

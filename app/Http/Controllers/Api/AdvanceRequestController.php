@@ -168,8 +168,8 @@ class AdvanceRequestController extends Controller
         ]);
 
         $isCompany = ($data['used_for'] ?? 'self') === 'company';
-        if (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi' && empty($data['recovery_months'])) {
-            abort(422, 'Number of months is required when recovery mode is EMI.');
+        if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true) && empty($data['recovery_months'])) {
+            abort(422, 'Number of instalments is required for EMI / Bi-Monthly recovery.');
         }
         if ($data['advance_type'] === 'Other' && empty($data['advance_type_other'])) {
             abort(422, 'Please specify the advance type when "Other" is selected.');
@@ -220,8 +220,8 @@ class AdvanceRequestController extends Controller
                 'recovery_start'    => $isCompany ? null : ($data['recovery_start'] ?? null),
                 'expected_use_date' => null,
                 'recovery_mode'     => $isCompany ? null : ($data['recovery_mode'] ?? null),
-                'recovery_months'   => (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi') ? ($data['recovery_months'] ?? null) : null,
-                'monthly_emi'       => (!$isCompany && ($data['recovery_mode'] ?? null) === 'emi') ? ($data['monthly_emi'] ?? null) : null,
+                'recovery_months'   => (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)) ? ($data['recovery_months'] ?? null) : null,
+                'monthly_emi'       => (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)) ? ($data['monthly_emi'] ?? null) : null,
                 'reason'            => $data['reason'],
                 'attachments'       => $attachments ?: null,
                 'status'            => 'pending',
@@ -658,6 +658,15 @@ class AdvanceRequestController extends Controller
             'settle_balance'       => (float) $row->settle_balance,
             'settle_declared_type' => $row->settle_declared_type, // equal | minimum | maximum
             'settle_target_amount' => $row->settle_target_amount !== null ? (float) $row->settle_target_amount : null,
+            // Follow-through status so the list can show the right action button.
+            'settle_returned_at'         => optional($row->settle_returned_at)->toIso8601String(),
+            'settle_return_scheduled_at' => optional($row->settle_return_scheduled_at)->toIso8601String(),
+            'settle_reimbursed'          => (bool) $row->settle_reimbursement_claim_id,
+            'settle_return_remaining'    => (function () use ($row) {
+                $bal  = round((float) $row->settle_balance, 2);
+                $paid = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $row->settle_return_payments ?? [])), 2);
+                return max(0, round($bal - $paid, 2));
+            })(),
             'settle_items'         => collect($row->settle_items ?? [])->values()->map(fn ($it, $i) => [
                 'amount'    => (float) ($it['amount'] ?? 0),
                 'reason'    => (string) ($it['reason'] ?? ''),
@@ -967,6 +976,161 @@ class AdvanceRequestController extends Controller
         return 'EXP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
     }
 
+    /**
+     * POST /advance-requests/{id}/record-return
+     * A finalised COMPANY advance that settled as "return" (used less than the
+     * advance) owes the company the unused balance. This records that the
+     * employee has returned it (method + optional proof), closing the advance.
+     */
+    public function recordReturn(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        $myEmployeeId = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $row->employee_id !== $myEmployeeId) {
+            $this->guardHrPermission($user, 'can_approve');
+        }
+        if (!$row->employee_settled_at || $row->settle_type !== 'return') {
+            abort(409, 'A return can only be recorded for a finalised, under-spent (return) advance.');
+        }
+        $balance = round((float) $row->settle_balance, 2);
+        if ($balance <= 0) {
+            abort(409, 'There is nothing to return.');
+        }
+        if ($row->settle_returned_at) {
+            abort(409, 'The return has already been fully recorded.');
+        }
+
+        // Return can be paid directly (in one or more instalments) or cut from
+        // payroll (single, closes the whole remaining at once).
+        $data = $request->validate([
+            'mode'   => ['required', 'in:direct,payroll'],
+            'amount' => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            'method' => ['nullable', 'string', 'max:40'],
+            'proof'  => ['nullable', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            'note'   => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $ledger    = array_values($row->settle_return_payments ?? []);
+        $paidSoFar = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $ledger)), 2);
+        $remaining = round($balance - $paidSoFar, 2);
+        if ($remaining <= 0) {
+            abort(409, 'The return has already been fully recorded.');
+        }
+        // Once payroll recovery is scheduled it covers the whole remaining, so
+        // no further payment of ANY kind can be added.
+        if ($row->settle_return_scheduled_at) {
+            abort(409, 'Payroll recovery is already scheduled — no further payments can be added.');
+        }
+
+        if ($data['mode'] === 'payroll') {
+            // Payroll deduction — capture the recovery SCHEDULE (start / type /
+            // monthly / months). Recorded on our side now; the payroll engine
+            // will consume these fields later. Clears the whole remaining.
+            $nextMonth = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
+            $rec = $request->validate([
+                'recovery_start' => ['required', 'date', 'after_or_equal:' . $nextMonth],
+                'recovery_type'  => ['required', 'in:emi,lumpsum,bimonthly'],
+                'monthly'        => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            ], [
+                'recovery_start.after_or_equal' => 'Recovery must start next month or later (this month’s payroll may be done).',
+            ]);
+            $recType = $rec['recovery_type'];
+            if ($recType === 'lumpsum') {
+                $monthly = $remaining;
+                $months  = 1;
+            } else {
+                $monthly = round((float) ($rec['monthly'] ?? 0), 2);
+                if ($monthly <= 0) {
+                    return response()->json(['message' => 'Enter a monthly deduction amount.', 'errors' => ['monthly' => ['A monthly amount is required.']]], 422);
+                }
+                $months = (int) max(1, ceil($remaining / $monthly));
+            }
+            $row->settle_return_recovery_start  = $rec['recovery_start'];
+            $row->settle_return_recovery_mode   = $recType;
+            $row->settle_return_recovery_months = $months;
+            $row->settle_return_monthly         = $monthly;
+            $row->settle_return_scheduled_at    = now();
+
+            $amount = $remaining;
+            $method = 'Payroll deduction (' . ($recType === 'emi' ? 'EMI' : ($recType === 'bimonthly' ? 'Bi-monthly' : 'Single lump')) . ')';
+            $path = $name = null;
+        } else {
+            if (empty($data['method'])) {
+                return response()->json(['message' => 'Select a payment method.', 'errors' => ['method' => ['A payment method is required.']]], 422);
+            }
+            $amount = $data['amount'] !== null ? round((float) $data['amount'], 2) : $remaining;
+            if ($amount > $remaining + 0.005) {
+                return response()->json([
+                    'message' => 'Amount ₹' . number_format($amount, 2) . ' exceeds the remaining ₹' . number_format($remaining, 2) . '.',
+                    'errors'  => ['amount' => ['Cannot exceed the remaining ₹' . number_format($remaining, 2) . '.']],
+                ], 422);
+            }
+            $method = $data['method'];
+            $path = $name = null;
+            if ($request->hasFile('proof')) {
+                $f = $request->file('proof');
+                $path = $f->store('advance_settlements/' . $row->id, 'public');
+                $name = $f->getClientOriginalName();
+            }
+        }
+
+        $ledger[] = [
+            'amount'     => $amount,
+            'method'     => $method,
+            'mode'       => $data['mode'],
+            'note'       => $data['note'] ?? null,
+            'proof_path' => $path,
+            'proof_name' => $name,
+            'paid_at'    => now()->toIso8601String(),
+        ];
+        $row->settle_return_payments = $ledger;
+        $newPaid = round($paidSoFar + $amount, 2);
+        if ($newPaid >= $balance - 0.005) {
+            $row->settle_returned_at = now();
+        }
+        if ($request->filled('note')) {
+            $row->employee_settle_note = trim(($row->employee_settle_note ? $row->employee_settle_note . "\n" : '') . $data['note']);
+        }
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        $left = round($balance - $newPaid, 2);
+        if ($data['mode'] === 'payroll') {
+            $msg = 'Payroll recovery scheduled for ₹' . number_format($amount, 2) . '.';
+        } else {
+            $msg = $left <= 0.005
+                ? 'Return complete — ₹' . number_format($balance, 2) . ' returned.'
+                : 'Return of ₹' . number_format($amount, 2) . ' recorded · ₹' . number_format($left, 2) . ' remaining.';
+        }
+        return response()->json([
+            'status'  => true,
+            'message' => $msg,
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Stream a return-payment proof (by ledger index). Token-authed.
+     */
+    public function returnProof(Request $request, $id, $index)
+    {
+        $this->authenticateFromQueryToken($request);
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $request->user());
+        $entry = ($row->settle_return_payments ?? [])[(int) $index] ?? null;
+        if (!$entry || empty($entry['proof_path'])) {
+            abort(404, 'No return proof was attached for this payment.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($entry['proof_path'])) {
+            abort(404, 'Return proof file is missing on the server.');
+        }
+        return $disk->response($entry['proof_path'], $entry['proof_name'] ?: basename($entry['proof_path']));
+    }
+
     /* ============================================================ */
     /*  SETTLEMENT — post-approval payout (partial payments)         */
     /*  Mirrors ExpenseClaimController; no category / expense-type /  */
@@ -1004,6 +1168,11 @@ class AdvanceRequestController extends Controller
             'project'           => null,
             'category_id'       => null,
             'category_name'     => $row->advance_type,
+            // Salary-recovery schedule (self advance) — shown in the review modal.
+            'recovery_start'    => optional($row->recovery_start)->format('Y-m-d'),
+            'recovery_mode'     => $row->recovery_mode,
+            'recovery_months'   => $row->recovery_months,
+            'monthly_emi'       => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
             'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
             'deduction_amount'  => (float) $row->deduction_amount,
             'deduction_reason'  => $row->deduction_reason,
@@ -1065,10 +1234,150 @@ class AdvanceRequestController extends Controller
             'settle_reimbursed_at' => optional($row->settle_reimbursed_at)->toIso8601String(),
             'settle_reimbursement' => $row->settle_reimbursement_claim_id
                 ? (function () use ($row) {
-                    $c = \App\Models\ExpenseClaim::find($row->settle_reimbursement_claim_id);
-                    return $c ? ['id' => $c->id, 'claim_no' => $c->claim_no, 'status' => $c->status] : null;
+                    $c = \App\Models\ExpenseClaim::with('category')->find($row->settle_reimbursement_claim_id);
+                    if (!$c) return null;
+                    $att = collect($c->attachments ?? [])->first();
+                    return [
+                        'id'         => $c->id,
+                        'claim_no'   => $c->claim_no,
+                        'status'     => $c->status,
+                        'amount'     => (float) $c->amount,
+                        'category'   => $c->category?->name ?? $c->category_name ?? null,
+                        'currency'   => $c->currency ?: 'INR',
+                        'proof_name' => $att['name'] ?? null,
+                        'proof_url'  => $att ? url("/api/expense-claims/{$c->id}/attachments/0") : null,
+                    ];
                 })()
                 : null,
+            'settle_returned_at'   => optional($row->settle_returned_at)->toIso8601String(),
+            'settle_return_payments' => collect($row->settle_return_payments ?? [])->values()->map(fn ($p, $i) => [
+                'amount'    => (float) ($p['amount'] ?? 0),
+                'method'    => (string) ($p['method'] ?? ''),
+                'mode'      => (string) ($p['mode'] ?? 'direct'),
+                'note'      => $p['note'] ?? null,
+                'paid_at'   => $p['paid_at'] ?? null,
+                'proof_name'=> $p['proof_name'] ?? null,
+                'proof_url' => !empty($p['proof_path']) ? url("/api/advance-requests/{$row->id}/return-proof/{$i}") : null,
+            ])->all(),
+            'settle_return_remaining' => (function () use ($row) {
+                $bal  = round((float) $row->settle_balance, 2);
+                $paid = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $row->settle_return_payments ?? [])), 2);
+                return max(0, round($bal - $paid, 2));
+            })(),
+            // Payroll-recovery plan (when the return is cut from payroll).
+            'settle_return_scheduled_at'    => optional($row->settle_return_scheduled_at)->toIso8601String(),
+            'settle_return_recovery_start'  => optional($row->settle_return_recovery_start)->format('Y-m-d'),
+            'settle_return_recovery_mode'   => $row->settle_return_recovery_mode,
+            'settle_return_recovery_months' => $row->settle_return_recovery_months,
+            'settle_return_monthly'         => $row->settle_return_monthly !== null ? (float) $row->settle_return_monthly : null,
+            // Employee monthly salary — used to gate the "Single Lump" payroll
+            // option (net take-home when a payslip exists, else structure gross,
+            // else annual/12). Read-only; no payroll-engine change.
+            'employee_monthly_salary'       => $this->employeeMonthlySalary($row->employee_id),
+            // Total-EMI headroom (70% of salary − ongoing EMIs, excluding this row).
+            'emi_ongoing'   => $this->ongoingEmiTotal($row->employee_id, $row->id),
+            'emi_available' => (function () use ($row) {
+                $net = $this->employeeMonthlySalary($row->employee_id);
+                if ($net === null) return null;
+                return max(0, round($net * self::EMI_HEADROOM_PCT - $this->ongoingEmiTotal($row->employee_id, $row->id), 2));
+            })(),
+        ]);
+    }
+
+    /**
+     * Best-available monthly take-home for an employee: latest payslip net_pay,
+     * else active salary-structure monthly_gross, else annual_salary / 12.
+     * Returns null when nothing is on file (single-lump check then allowed).
+     */
+    private function employeeMonthlySalary($employeeId): ?float
+    {
+        if (!$employeeId) return null;
+        $net = \Illuminate\Support\Facades\DB::table('payslips')
+            ->where('employee_id', $employeeId)
+            ->orderByDesc('id')
+            ->value('net_pay');
+        if ($net !== null && (float) $net > 0) return (float) $net;
+        $gross = \Illuminate\Support\Facades\DB::table('salary_structures')
+            ->where('employee_id', $employeeId)
+            ->where('status', 'Active')
+            ->orderByDesc('id')
+            ->value('monthly_gross');
+        if ($gross !== null && (float) $gross > 0) return (float) $gross;
+        $annual = \App\Models\Employee::whereKey($employeeId)->value('annual_salary');
+        return $annual !== null && (float) $annual > 0 ? round((float) $annual / 12, 2) : null;
+    }
+
+    /** Percentage of salary that total advance EMIs may occupy (FOI ceiling). */
+    private const EMI_HEADROOM_PCT = 0.70;
+
+    /**
+     * Sum of an employee's ONGOING advance EMIs (per-month), across both
+     * self-advance salary recovery and company-advance return-via-payroll
+     * schedules. "Ongoing" = a recurring EMI/bi-monthly plan whose last cycle
+     * hasn't passed. Optionally excludes one advance (the one being edited).
+     */
+    private function ongoingEmiTotal($employeeId, $excludeId = null): float
+    {
+        if (!$employeeId) return 0.0;
+        $nowMonth = now()->startOfMonth();
+        $total = 0.0;
+
+        $endMonth = function (?string $start, string $mode, $months): ?\Illuminate\Support\Carbon {
+            if (!$start) return null;
+            $step = $mode === 'bimonthly' ? 2 : 1;
+            $n = (int) ($months ?: 1);
+            return \Illuminate\Support\Carbon::parse($start)->addMonthsNoOverflow(($n - 1) * $step)->startOfMonth();
+        };
+
+        // Self advances still recovering from salary.
+        $self = AdvanceRequest::where('employee_id', $employeeId)
+            ->where('status', 'approved')
+            ->whereIn('recovery_mode', ['emi', 'bimonthly'])
+            ->whereNotNull('monthly_emi')
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+            ->get(['id', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi']);
+        foreach ($self as $a) {
+            $end = $endMonth($a->recovery_start ? \Illuminate\Support\Carbon::parse($a->recovery_start)->toDateString() : null, $a->recovery_mode, $a->recovery_months);
+            if (!$end || $end->gte($nowMonth)) $total += (float) $a->monthly_emi;
+        }
+
+        // Company advances returned via payroll, still recovering.
+        $ret = AdvanceRequest::where('employee_id', $employeeId)
+            ->whereIn('settle_return_recovery_mode', ['emi', 'bimonthly'])
+            ->whereNotNull('settle_return_monthly')
+            ->when($excludeId, fn ($q) => $q->where('id', '!=', $excludeId))
+            ->get(['id', 'settle_return_recovery_start', 'settle_return_recovery_mode', 'settle_return_recovery_months', 'settle_return_monthly']);
+        foreach ($ret as $a) {
+            $end = $endMonth($a->settle_return_recovery_start ? \Illuminate\Support\Carbon::parse($a->settle_return_recovery_start)->toDateString() : null, $a->settle_return_recovery_mode, $a->settle_return_recovery_months);
+            if (!$end || $end->gte($nowMonth)) $total += (float) $a->settle_return_monthly;
+        }
+
+        return round($total, 2);
+    }
+
+    /**
+     * GET /advance-requests/emi-info
+     * EMI headroom for an employee: net salary, ongoing EMIs, 70% cap and the
+     * amount still available for a new advance's per-cycle EMI.
+     */
+    public function emiInfo(Request $request)
+    {
+        $user = $request->user();
+        $employeeId = $this->resolveEmployeeId(
+            $request->query('employee_id'),
+            $request->query('employee_code'),
+            $user
+        ) ?: $this->currentEmployeeId($user);
+        $net = $this->employeeMonthlySalary($employeeId);
+        $ongoing = $this->ongoingEmiTotal($employeeId, $request->integer('exclude_id') ?: null);
+        $cap = $net !== null ? round($net * self::EMI_HEADROOM_PCT, 2) : null;
+        $available = $cap !== null ? max(0, round($cap - $ongoing, 2)) : null;
+        return response()->json([
+            'net_salary'  => $net,
+            'ongoing_emi' => $ongoing,
+            'cap'         => $cap,
+            'available'   => $available,
+            'pct'         => (int) round(self::EMI_HEADROOM_PCT * 100),
         ]);
     }
 

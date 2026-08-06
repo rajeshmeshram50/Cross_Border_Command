@@ -45,6 +45,13 @@ export type AdvanceRequestRow = {
   remaining_amount?: number | null;
   // Employee "Settle" — set on a fully-paid Company advance by the employee.
   employee_settled_at?: string | null;
+  // Follow-through status (drives the action button when settlement is done).
+  settle_type?: 'equal' | 'return' | 'reimburse' | null;
+  settle_balance?: number;
+  settle_returned_at?: string | null;
+  settle_return_scheduled_at?: string | null;
+  settle_reimbursed?: boolean;
+  settle_return_remaining?: number;
 };
 
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
@@ -71,6 +78,8 @@ type Props = {
   onReview?: (row: AdvanceRequestRow) => void;
   /** Employee: mark a fully-paid Company advance as settled. */
   onSettle?: (row: AdvanceRequestRow) => void;
+  /** Open the reimbursement claim form directly for an over-spent settled advance. */
+  onRaiseReimbursement?: (row: AdvanceRequestRow) => void;
 };
 
 /* Payout status pill — only meaningful once an advance is approved. */
@@ -155,7 +164,7 @@ function withAuthToken(url: string): string {
 export function advanceRequestColumns({
   accent = '#6366f1', fallbackName, fallbackInitials,
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self', onAct,
-  onRecordPayment, onViewPayments, onReview, onSettle,
+  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<AdvanceRequestRow>[] {
   return [
     {
@@ -283,7 +292,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Attachments</div>,
       id: '__attachments',
       enableSorting: false,
-      meta: { align: 'center', width: '7%' },
+      meta: { align: 'center', width: '11%' },
       /* First receipt inline; extras collapse into a "+N more" popover so
          multiple uploads never expand the row height. */
       cell: info => (
@@ -343,32 +352,32 @@ export function advanceRequestColumns({
       cell: info => {
         const r = info.row.original;
         const isCompany = (r.used_for || 'self') === 'company';
-        const paid = r.status === 'approved' && (r.settlement_status ?? 'unpaid') === 'paid';
-        // Settle only applies to a fully-paid Company advance.
-        if (!isCompany || !paid) return <span className="text-muted">—</span>;
-        // Completed once the employee has settled it.
-        if (r.employee_settled_at) {
-          return (
-            <span className="d-inline-flex align-items-center gap-1 fw-semibold"
-              style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: '#d6f4e3', color: '#108548' }}>
-              <i className="ri-checkbox-circle-line" /> Completed
-            </span>
-          );
-        }
-        // Not settled = Pending (the Settle Payment action lives in the Action column).
-        return (
-          <span className="d-inline-flex align-items-center gap-1 fw-semibold"
-            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: '#fde8c4', color: '#a4661c' }}>
-            <i className="ri-time-line" /> Pending
+        const pillEl = (icon: string, label: string, bg: string, fg: string) => (
+          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
+            <i className={icon} /> {label}
           </span>
         );
+        if (isCompany) {
+          const paid = r.status === 'approved' && (r.settlement_status ?? 'unpaid') === 'paid';
+          if (!paid) return <span className="text-muted">—</span>;
+          // Company: settled by the employee (accounted the company-paid amount).
+          return r.employee_settled_at
+            ? pillEl('ri-checkbox-circle-line', 'Completed', '#d6f4e3', '#108548')
+            : pillEl('ri-time-line', 'Pending', '#fde8c4', '#a4661c');
+        }
+        // Self: recovered from salary per the EMI schedule. Until payroll finishes
+        // recovering it, it's "Recovering"; flips to Completed once fully recovered.
+        if (r.status === 'approved' && r.recovery_mode) {
+          return pillEl('ri-calendar-schedule-line', 'Recovering', '#eef2ff', '#3730a3');
+        }
+        return <span className="text-muted">—</span>;
       },
     },
     {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '13%', wrap: true },
+      meta: { align: 'center', width: '16%', wrap: true },
       cell: info => (
         <AdvanceActionCell
           row={info.row.original}
@@ -380,6 +389,7 @@ export function advanceRequestColumns({
           onViewPayments={onViewPayments}
           onReview={onReview}
           onSettle={onSettle}
+          onRaiseReimbursement={onRaiseReimbursement}
         />
       ),
     },
@@ -390,11 +400,11 @@ export default function AdvanceRequestsTable({
   rows, loading,
   fallbackName, fallbackInitials, accent = '#6366f1',
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self',
-  onAct, onRecordPayment, onViewPayments, onReview, onSettle,
+  onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
 }: Props) {
   const columns = useMemo(
-    () => advanceRequestColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle }),
-    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle],
+    () => advanceRequestColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement }),
+    [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement],
   );
   return (
     <>
@@ -425,7 +435,7 @@ export default function AdvanceRequestsTable({
  *  so it has to be a component: one instance per row. */
 function AdvanceActionCell({
   row: r, mode, currentEmployeeId, canHrApprove, onAct,
-  onRecordPayment, onViewPayments, onReview, onSettle,
+  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
 }: {
   row: AdvanceRequestRow;
   mode: 'mine' | 'team' | 'hr';
@@ -436,6 +446,7 @@ function AdvanceActionCell({
   onViewPayments?: Props['onViewPayments'];
   onReview?: Props['onReview'];
   onSettle?: Props['onSettle'];
+  onRaiseReimbursement?: Props['onRaiseReimbursement'];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
@@ -466,6 +477,11 @@ function AdvanceActionCell({
   const fullyPaid = r.status === 'approved' && (r.settlement_status ?? 'unpaid') === 'paid';
   const isOwner = mode === 'mine' || (currentEmployeeId != null && r.employee_id === currentEmployeeId);
   const needsSettle = isCompany && fullyPaid && !r.employee_settled_at && isOwner && !!onSettle;
+  // Follow-through pending after the employee has settled: return not yet paid /
+  // scheduled, or reimbursement not yet raised. Shows a labelled button (not the eye).
+  const settledDone = isCompany && !!r.employee_settled_at;
+  const returnPending = settledDone && r.settle_type === 'return' && !r.settle_returned_at && !r.settle_return_scheduled_at;
+  const reimbursePending = settledDone && r.settle_type === 'reimburse' && !r.settle_reimbursed;
 
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
     <button
@@ -487,7 +503,7 @@ function AdvanceActionCell({
 
   return (
     <>
-      <div className="d-inline-flex align-items-center gap-1 flex-wrap justify-content-center">
+      <div className="d-inline-flex align-items-center gap-1 justify-content-center flex-nowrap">
         {/* Manager / HR act via the same Review & Approve popup as expense claims. */}
         {(canManagerAct || canHrAct) && onReview ? (
           <button
@@ -527,17 +543,50 @@ function AdvanceActionCell({
             <i className="ri-check-double-line" /> Settle Payment
           </button>
         )}
-        {/* Owner / non-HR: read-only view of the payout history once approved. */}
+        {/* Owner / non-HR: pending follow-through gets a labelled button; else the eye. */}
         {!canSettle && !needsSettle && onViewPayments && r.status === 'approved' && (r.settlement_status ?? 'unpaid') !== 'unpaid' && (
-          <button
-            type="button"
-            onClick={() => onViewPayments(r)}
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-            title="View payout history"
-            style={{ width: 28, height: 28, padding: 0, color: '#0e7490', border: '1px solid #a5e9f3', background: '#ecfeff' }}
-          >
-            <i className="ri-eye-line" />
-          </button>
+          returnPending ? (
+            <button
+              type="button"
+              onClick={() => onViewPayments(r)}
+              className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
+              title="Employee return pending — record it"
+              style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#d97706,#f59e0b)', whiteSpace: 'nowrap' }}
+            >
+              <i className="ri-arrow-go-back-line" /> Return Pending
+            </button>
+          ) : reimbursePending ? (
+            <>
+              <button
+                type="button"
+                onClick={() => (onRaiseReimbursement ? onRaiseReimbursement(r) : onViewPayments(r))}
+                className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
+                title="Reimbursement pending — raise the expense"
+                style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0e7490,#0891b2)', whiteSpace: 'nowrap' }}
+              >
+                <i className="ri-file-add-line" /> Raise Expense
+              </button>
+              <button
+                type="button"
+                onClick={() => onViewPayments(r)}
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                title="View details"
+                style={{ width: 28, height: 28, padding: 0, color: '#0e7490', border: '1px solid #a5e9f3', background: '#ecfeff' }}
+              >
+                <i className="ri-eye-line" />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => onViewPayments(r)}
+              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+              title="View payout history"
+              style={{ width: 28, height: 28, padding: 0, color: '#0e7490', border: '1px solid #a5e9f3', background: '#ecfeff' }}
+            >
+              <i className="ri-eye-line" />
+            </button>
+          )
         )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} />
       </div>

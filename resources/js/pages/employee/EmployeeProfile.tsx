@@ -1038,11 +1038,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // Recovery mode / EMI only apply to a self (salary-recovered) advance.
     if (!advIsCompany) {
       if (!advRecoveryMode)      { errs.recovery_mode = 'Recovery mode is required'; summary.push('Recovery mode is required'); }
-      if (advRecoveryMode === 'emi') {
+      if (advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') {
         const months = Number(advMonths);
         if (!advMonths || !Number.isFinite(months) || months <= 0) {
-          errs.months = 'Months must be greater than 0';
-          summary.push('Months must be greater than 0');
+          errs.months = 'Enter the number of ' + (advRecoveryMode === 'bimonthly' ? 'cycles' : 'months');
+          summary.push('Number of instalments is required');
+        }
+      }
+      if (advRecoveryMode === 'lumpsum' && !advSingleLumpOk) {
+        errs.recovery_mode = 'Amount exceeds EMI headroom';
+        summary.push('Single lump ₹' + advAmountNum.toLocaleString('en-IN') + ' exceeds the EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' (70% of salary − ongoing EMIs). Use EMI / Bi-Monthly.');
+      }
+      if ((advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && advEmiCap > 0) {
+        const perCycle = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
+        if (advTenureExceeds) {
+          // Even at the max 120 instalments the EMI would exceed the headroom.
+          errs.recovery_mode = 'Advance can’t be granted';
+          summary.push('This advance can’t be granted — at your available EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' it would take ' + advInstalmentsNeeded + ' instalments (over the ' + ADV_MAX_INSTALMENTS + ' limit). Clear your existing advances first.');
+        } else if (perCycle > advEmiCap) {
+          errs.months = 'Instalment exceeds EMI headroom';
+          summary.push('Each instalment must stay within the EMI headroom ₹' + advEmiCap.toLocaleString('en-IN') + ' (70% of salary − ongoing EMIs)');
         }
       }
     }
@@ -1065,7 +1080,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (!advIsCompany) {
         fd.append('recovery_start', advRecoveryStart);
         fd.append('recovery_mode', advRecoveryMode);
-        if (advRecoveryMode === 'emi') {
+        if (advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') {
           fd.append('recovery_months', String(Number(advMonths)));
           if (advMonthlyEmi) {
             const emi = Number(String(advMonthlyEmi).replace(/[^\d.]/g, ''));
@@ -1149,6 +1164,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // the auto-fill from overwriting their manual override.
   const [advMonthlyEmi, setAdvMonthlyEmi] = useState('');
   const [advEmiTouched, setAdvEmiTouched] = useState(false);
+  // EMI headroom (70% of salary − ongoing advance EMIs) fetched per employee.
+  const [advEmiInfo, setAdvEmiInfo] = useState<{ net_salary: number | null; ongoing_emi: number; cap: number | null; available: number | null; pct: number } | null>(null);
+  useEffect(() => {
+    if (!claimOpen || claimMode !== 'advance') return;
+    const params: Record<string, string> = {};
+    if (/^\d+$/.test(String(employeeId))) params.employee_id = String(employeeId);
+    else if (employeeId) params.employee_code = String(employeeId);
+    api.get('/advance-requests/emi-info', { params }).then((r: any) => setAdvEmiInfo(r?.data ?? null)).catch(() => setAdvEmiInfo(null));
+  }, [claimOpen, claimMode, employeeId]);
   useEffect(() => {
     if (advEmiTouched) return;
     const a = Number(String(advAmount).replace(/[^\d.]/g, ''));
@@ -1164,6 +1188,49 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   useEffect(() => {
     if (claimOpen) setAdvEmiTouched(false);
   }, [claimOpen]);
+  // Bidirectional recovery schedule (EMI / Bi-Monthly): edit months → per-cycle
+  // amount recomputes, and vice-versa. End date derives from start + cycles.
+  const advAmountNum = Number(String(advAmount).replace(/[^\d.]/g, '')) || 0;
+  const advStep = advRecoveryMode === 'bimonthly' ? 2 : 1;
+  // Per-cycle deduction is capped by the remaining EMI headroom (70% of salary
+  // − the employee's other ongoing advance EMIs), fetched from the backend.
+  const advNetSalary = advEmiInfo?.net_salary ?? (realMonthlyGross > 0 ? Math.round(realMonthlyGross * 0.88) : 0);
+  const advEmiCap = advEmiInfo?.available != null ? Math.floor(advEmiInfo.available) : 0;
+  // Max recovery tenure = 120 instalments. If the amount can't be cleared within
+  // 120 instalments at the available headroom, it can't be granted.
+  const ADV_MAX_INSTALMENTS = 120;
+  const advInstalmentsNeeded = advEmiCap > 0 && advAmountNum > 0 ? Math.ceil(advAmountNum / advEmiCap) : 0;
+  const advTenureExceeds = advEmiCap > 0 && advAmountNum > 0 && advInstalmentsNeeded > ADV_MAX_INSTALMENTS;
+  const setAdvMonthsSync = (v: string) => {
+    setAdvMonths(v); clearAdvErr('months');
+    const m = Number(v);
+    const perCycle = m > 0 && advAmountNum > 0 ? Math.round(advAmountNum / m) : 0;
+    setAdvMonthlyEmi(perCycle ? String(perCycle) : '');
+    setAdvEmiTouched(true);
+    if (advEmiCap > 0 && perCycle > advEmiCap) {
+      toast.warning('Over the EMI headroom', `Available EMI headroom is ₹${advEmiCap.toLocaleString('en-IN')} (70% of salary − ongoing EMIs) — increase the number of instalments.`);
+    }
+  };
+  const setAdvMonthlySync = (v: string) => {
+    const val = v.replace(/[^\d.]/g, '');
+    setAdvMonthlyEmi(val); setAdvEmiTouched(true); clearAdvErr('months');
+    const mo = Number(val);
+    setAdvMonths(mo > 0 && advAmountNum > 0 ? String(Math.ceil(advAmountNum / mo)) : '');
+    if (advEmiCap > 0 && mo > advEmiCap) {
+      toast.warning('Over the EMI headroom', `Available EMI headroom is ₹${advEmiCap.toLocaleString('en-IN')} (70% of salary − ongoing EMIs).`);
+    }
+  };
+  const advEndLabel = (() => {
+    const m = Number(advMonths) || 0;
+    if (!advRecoveryStart || m < 1) return '';
+    const d = new Date(advRecoveryStart);
+    return new Date(d.getFullYear(), d.getMonth() + (m - 1) * advStep, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+  })();
+  // Single Lump = full amount deducted in ONE payroll month, so it needs the
+  // monthly take-home to cover it (net ≈ gross × 0.88, matching the profile).
+  const advMonthlySalary = advNetSalary;
+  // Single lump hits one payroll month → it must fit the remaining EMI headroom.
+  const advSingleLumpOk = advEmiCap === 0 || advAmountNum === 0 || advAmountNum <= advEmiCap;
   // Expense receipts now live per-draft (`draft.files`) so each claim
   // owns its own attachments. The `claimFiles` / `setClaimFiles`
   // aliases below preserve the existing JSX bindings while reading and
@@ -2839,7 +2906,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <Row className="g-3 mb-3">
                   <Col md={6}>
-                    <div className="ep-claim-label">Amount ({claimCurrencySymbol}) <span className="ep-claim-req">*</span>{reimburseCtx && <span style={{ fontWeight: 500, color: '#0e7490' }}> · max ₹{reimburseCtx.balance.toLocaleString('en-IN')} (reimbursement)</span>}</div>
+                    <div className="ep-claim-label">Amount ({claimCurrencySymbol}) <span className="ep-claim-req">*</span>{reimburseCtx && <span style={{ fontWeight: 500, color: '#0e7490' }}> · fixed ₹{reimburseCtx.balance.toLocaleString('en-IN')} (from advance — not editable)</span>}</div>
                     <div className="position-relative">
                       <span className="ep-claim-amount-prefix">{claimCurrencySymbol}</span>
                       <input
@@ -2847,6 +2914,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         placeholder="0.00"
                         value={claimAmount}
                         inputMode="decimal"
+                        readOnly={!!reimburseCtx}
                         onChange={e => {
                           // Sanitise the input as the user types — only digits +
                           // one dot, cap the whole part at 12 digits and fraction
@@ -3153,45 +3221,70 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     placeholder="Select mode..."
                     options={[
                       { value: 'emi', label: 'EMI' },
-                      { value: 'lumpsum', label: 'Single Lump Sum' },
+                      { value: 'lumpsum', label: 'Single Lump Sum' + (advSingleLumpOk ? '' : ' (over headroom)') },
                       { value: 'bimonthly', label: 'Bi-Monthly' },
                     ]}
-                    onChange={(v) => { setAdvRecoveryMode(v); clearAdvErr('recovery_mode'); }}
+                    onChange={(v) => { setAdvRecoveryMode(v); clearAdvErr('recovery_mode'); if (v === 'lumpsum' && !advSingleLumpOk) toast.warning('Over the EMI headroom', `Single lump ₹${advAmountNum.toLocaleString('en-IN')} exceeds the headroom ₹${advEmiCap.toLocaleString('en-IN')} (70% of salary − ongoing EMIs). Choose EMI or Bi-Monthly.`); }}
                     invalid={!!advErrors.recovery_mode}
                   />
                   {advErrors.recovery_mode && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_mode}</div>}
                 </div>
                 )}
-                {/* Months + computed EMI only make sense for EMI mode — hide
-                    them for lump sum / bi-monthly so the form stays tight. */}
-                {advRecoveryMode === 'emi' && (
+                {/* EMI / Bi-Monthly show a recovery schedule: per-cycle amount ↔
+                    no. of cycles (bidirectional) + auto end date. Single Lump
+                    hides them (recovered in one deduction on the start date). */}
+                {(advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && (
                   <Row className="g-3 mb-3">
-                    <Col md={6}>
-                      <div className="ep-claim-label">No. of Months <span className="ep-claim-req">*</span></div>
+                    <Col md={4}>
+                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advEmiCap > 0 ? <span className="ep-claim-muted"> (max ₹{advEmiCap.toLocaleString('en-IN')} · EMI headroom)</span> : null}</div>
+                      <div className="position-relative">
+                        <span className="ep-claim-amount-prefix">₹</span>
+                        <input
+                          className={`ep-claim-input ep-pl-28${advEmiCap > 0 && Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) > advEmiCap ? ' is-invalid' : ''}`}
+                          placeholder="0.00"
+                          value={advMonthlyEmi}
+                          onChange={(e) => setAdvMonthlySync(e.target.value)}
+                        />
+                      </div>
+                      {advEmiCap > 0 && Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) > advEmiCap && (
+                        <div className="ep-claim-err"><i className="ri-error-warning-line" />Max ₹{advEmiCap.toLocaleString('en-IN')} (EMI headroom)</div>
+                      )}
+                    </Col>
+                    <Col md={4}>
+                      <div className="ep-claim-label">No. of {advRecoveryMode === 'bimonthly' ? 'Cycles' : 'Months'} <span className="ep-claim-req">*</span></div>
                       <input
                         className={`ep-claim-input${advErrors.months ? ' is-invalid' : ''}`}
                         placeholder="e.g. 6"
                         value={advMonths}
-                        onChange={e => { setAdvMonths(e.target.value); clearAdvErr('months'); }}
+                        onChange={e => setAdvMonthsSync(e.target.value)}
                       />
                       {advErrors.months && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.months}</div>}
                     </Col>
-                    <Col md={6}>
-                      <div className="ep-claim-label">Monthly EMI</div>
-                      <div className="position-relative">
-                        <span className="ep-claim-amount-prefix">₹</span>
-                        <input
-                          className="ep-claim-input ep-pl-28"
-                          placeholder="Auto from amount ÷ months"
-                          value={advMonthlyEmi}
-                          onChange={(e) => {
-                            setAdvMonthlyEmi(e.target.value.replace(/[^\d.]/g, ''));
-                            setAdvEmiTouched(true);
-                          }}
-                        />
-                      </div>
+                    <Col md={4}>
+                      <div className="ep-claim-label">End Date <span className="ep-claim-muted">(auto)</span></div>
+                      <input className="ep-claim-input" value={advTenureExceeds ? '—' : advEndLabel} placeholder="—" readOnly />
                     </Col>
+                    {advTenureExceeds && (
+                      <Col md={12}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                          <i className="ri-error-warning-line" style={{ fontSize: 16, marginTop: 1 }} />
+                          <span>This advance <strong>can’t be granted</strong> — at your available EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong> it would take <strong>{advInstalmentsNeeded} instalments</strong> (over the {ADV_MAX_INSTALMENTS} limit). Reduce the amount, or <strong>clear your existing advances</strong> first.</span>
+                        </div>
+                      </Col>
+                    )}
                   </Row>
+                )}
+                {/* Single Lump = one payroll deduction — needs salary to cover it. */}
+                {advUsedFor !== 'company' && advRecoveryMode === 'lumpsum' && (
+                  <div className="mb-3" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: advSingleLumpOk ? '#f0fbff' : '#fff7ed', border: `1px solid ${advSingleLumpOk ? '#cdeef6' : '#fed7aa'}`, color: advSingleLumpOk ? '#0e7490' : '#9a3412', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
+                    <i className={advSingleLumpOk ? 'ri-information-line' : 'ri-error-warning-line'} style={{ fontSize: 16, marginTop: 1 }} />
+                    <span>
+                      {advEmiCap > 0 ? <>EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong>{advEmiInfo && advEmiInfo.ongoing_emi > 0 ? <> (70% of ₹{advMonthlySalary.toLocaleString('en-IN')} − ₹{advEmiInfo.ongoing_emi.toLocaleString('en-IN')} ongoing)</> : ''}. </> : null}
+                      {advSingleLumpOk
+                        ? <>The full <strong>₹{advAmountNum.toLocaleString('en-IN')}</strong> will be deducted in one payroll month{advRecoveryStart ? <> ({new Date(advRecoveryStart).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })})</> : ''}.</>
+                        : <>Single lump can’t be used — <strong>₹{advAmountNum.toLocaleString('en-IN')}</strong> exceeds the EMI headroom <strong>₹{advEmiCap.toLocaleString('en-IN')}</strong>. Choose <strong>EMI</strong> or <strong>Bi-Monthly</strong>.</>}
+                    </span>
+                  </div>
                 )}
                 <div className="mb-0">
                   <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>

@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\LeaveRequest;
+use App\Models\Masters\LeaveTypes;
 use App\Models\User;
 use App\Notifications\LeaveRequestNotification;
+use App\Support\NoticePeriodGuard;
 use App\Support\OnboardingGuard;
 use App\Support\ProbationGuard;
 use Carbon\CarbonPeriod;
@@ -147,6 +149,16 @@ class LeaveRequestController extends Controller
         // who has no quota to grant against. Keyed on the TARGET employee, so
         // an admin filing on their behalf is blocked too.
         ProbationGuard::assertCanRaiseLeave($employee, $isSelf);
+
+        // Notice-period gate — an employee serving notice cannot take PAID
+        // leave (the notice has to be served, not drawn as salary for days off).
+        // Unpaid leave is allowed and, once approved, pushes the last working
+        // day out by its length (applied in setStatus below).
+        NoticePeriodGuard::assertLeaveAllowed(
+            $employee,
+            LeaveTypes::find($data['leave_type_id']),
+            $isSelf,
+        );
 
         // Date guards. "Today" is resolved in the display timezone (IST): the
         // app runs in UTC, so now()->toDateString() reports YESTERDAY for the
@@ -733,6 +745,13 @@ class LeaveRequestController extends Controller
         $row->status = 'Cancelled';
         $row->save();
 
+        // Give back any last-working-day extension this leave caused, so an
+        // approve→cancel cycle can't ratchet the exit date further out. A
+        // Pending request never had one, but this is the single cancellation
+        // path — guarding here keeps it correct if approved leave ever becomes
+        // cancellable.
+        NoticePeriodGuard::revertExtension($row, Employee::find($row->employee_id));
+
         // Let the current-level approver know they can drop it from the queue.
         $this->notifyForCancellation($row);
 
@@ -824,6 +843,15 @@ class LeaveRequestController extends Controller
         }
         $row->save();
 
+        /* Notice-period rule 2 — a FINALLY approved unpaid leave taken while
+           serving notice pushes the last working day out by its length, so the
+           notice period is still served in full. Runs only on the terminal
+           Approved state, never on an intermediate chain level. */
+        $noticeDays = 0;
+        if ($row->status === 'Approved') {
+            $noticeDays = NoticePeriodGuard::applyExtension($row, Employee::find($row->employee_id));
+        }
+
         // Fire notifications based on the new state. Logged-only on failure.
         $this->notifyForDecision($row, $data['comment'] ?? null);
 
@@ -833,7 +861,15 @@ class LeaveRequestController extends Controller
             $this->propagateToPayroll($row->employee_id);
         }
 
-        return response()->json(['data' => $row->fresh(['leaveType:id,name,short_code'])]);
+        return response()->json([
+            'data' => $row->fresh(['leaveType:id,name,short_code']),
+            // Surfaced so the approver is told the exit date moved rather than
+            // discovering it later on the exit screen.
+            'notice_extension' => $noticeDays > 0 ? [
+                'days'             => $noticeDays,
+                'last_working_day' => NoticePeriodGuard::lastWorkingDayLabel(Employee::find($row->employee_id)),
+            ] : null,
+        ]);
     }
 
     /** Recompute the employee's draft/generated payslips so a leave change

@@ -38,6 +38,8 @@ export type ExpenseClaimRow = {
   manager_name: string | null;
   category_id: number | null;
   category_name: string | null;
+  /** Set when this claim is a reimbursement raised against a company advance. */
+  reimbursement_for?: { id: number; advance_no: string | null } | null;
   currency: string | null;
   project: string | null;
   payment_method: string | null;
@@ -248,8 +250,21 @@ export function expenseClaimColumns({
     {
       header: 'Description',
       accessorKey: 'title',
-      meta: { width: '16%' },
+      meta: { width: '15%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
+    },
+    {
+      /* Company-advance link — only reimbursement claims carry it. */
+      header: () => <div className="text-center">Linked Advance</div>,
+      id: '__linked_advance',
+      accessorFn: (c: ExpenseClaimRow) => c.reimbursement_for?.advance_no ?? '',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const adv = info.row.original.reimbursement_for;
+        return adv?.advance_no
+          ? <span className="badge rounded-pill" style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 700, padding: '4px 10px' }}><i className="ri-links-line me-1" />{adv.advance_no}</span>
+          : <span className="text-muted">—</span>;
+      },
     },
     {
       /* Sorts on the real date, not the dd-Mon-yyyy label — the formatted
