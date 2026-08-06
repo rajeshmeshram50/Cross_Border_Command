@@ -5952,6 +5952,62 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ep-type-value.is-empty { color: var(--vz-secondary-color); font-weight: 400; }
+/* Compact echo of a settlement owned by ANOTHER stage — status only, so the
+   same figure isn't editable in two places. */
+.ep-echo {
+  display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
+  border: 1.5px solid var(--vz-border-color); border-radius: 10px;
+  padding: 11px 14px; font-size: 12.5px; background: var(--vz-secondary-bg);
+}
+.ep-echo i { font-size: 17px; flex: none; }
+.ep-echo-txt { min-width: 0; }
+.ep-echo-txt em { font-style: normal; opacity: .8; }
+.ep-echo-pill {
+  margin-left: auto; flex: none; border-radius: 999px; padding: 3px 12px;
+  font-size: 11px; font-weight: 800; background: var(--vz-card-bg); border: 1.5px solid;
+}
+.ep-echo.is-due { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ep-echo.is-due .ep-echo-pill { border-color: #fde68a; color: #b45309; }
+.ep-echo.is-ok  { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ep-echo.is-ok .ep-echo-pill  { border-color: #a7f3d0; color: #0d9488; }
+.ep-echo.is-no  { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.ep-echo.is-no .ep-echo-pill  { border-color: #fecaca; color: #b91c1c; }
+[data-bs-theme="dark"] .ep-echo.is-due { background: rgba(245,158,11,0.10); color: #fcd34d; }
+[data-bs-theme="dark"] .ep-echo.is-ok  { background: rgba(16,185,129,0.10); color: #6ee7b7; }
+[data-bs-theme="dark"] .ep-echo.is-no  { background: rgba(239,68,68,0.10); color: #fca5a5; }
+
+/* ══ Employee-submitted notice payment (HR verification view) ══════════ */
+.ep-submitted { display: flex; flex-direction: column; gap: 10px; }
+.ep-sub-card {
+  border: 1.5px solid var(--vz-border-color); border-radius: 12px;
+  padding: 12px 14px; background: var(--vz-card-bg);
+}
+.ep-sub-card.is-pending  { border-color: #fde68a; background: #fffbeb; }
+.ep-sub-card.is-approved { border-color: #a7f3d0; background: #ecfdf5; }
+.ep-sub-card.is-rejected { border-color: #fecaca; background: #fef2f2; }
+.ep-sub-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.ep-sub-amt { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ep-sub-pill { border-radius: 999px; padding: 2px 11px; font-size: 10.5px; font-weight: 800; border: 1px solid; }
+.ep-sub-pill.is-pending  { background: #fff; border-color: #fde68a; color: #b45309; }
+.ep-sub-pill.is-approved { background: #fff; border-color: #a7f3d0; color: #0d9488; }
+.ep-sub-pill.is-rejected { background: #fff; border-color: #fecaca; color: #b91c1c; }
+.ep-sub-when { margin-left: auto; font-size: 11px; color: var(--vz-secondary-color); }
+.ep-sub-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 9px;
+}
+.ep-sub-grid span {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--vz-secondary-color);
+}
+.ep-sub-grid strong { font-size: 12.5px; }
+.ep-sub-grid a { color: #4338ca; text-decoration: none; }
+.ep-sub-grid a:hover { text-decoration: underline; }
+.ep-sub-note { margin-top: 9px; font-size: 11.5px; color: #4b5563; }
+[data-bs-theme="dark"] .ep-sub-card.is-pending  { background: rgba(245,158,11,0.10); }
+[data-bs-theme="dark"] .ep-sub-card.is-approved { background: rgba(16,185,129,0.10); }
+[data-bs-theme="dark"] .ep-sub-card.is-rejected { background: rgba(239,68,68,0.10); }
+[data-bs-theme="dark"] .ep-sub-note { color: var(--vz-secondary-color); }
+
 /* ══ Exit-document release gate ════════════════════════════════════════
    Banner + switch above the document list. Amber while closed, green once
    released, so the state reads at a glance. */
