@@ -152,15 +152,28 @@ class ExpenseClaimController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        // Resolve the target employee from one of three inputs (in order):
-        //   1. numeric `employee_id` from the request
-        //   2. string `employee_code` (EMP-001 style — what the SPA URL carries)
-        //   3. the current user's linked Employee row
-        $employeeId = $this->resolveEmployeeId(
-            $request->input('employee_id'),
-            $request->input('employee_code'),
-            $user
-        ) ?: $this->currentEmployeeId($user);
+        // A non-super-admin can ONLY file for their own Employee record (the
+        // ownership guard below enforces it). So derive the target straight from
+        // the authenticated user — do NOT trust a request-supplied employee_id /
+        // employee_code. The SPA posts a numeric employee_id, and resolveEmployeeId
+        // returns any numeric id verbatim (no tenant/ownership check); a stale or
+        // wrong value there resolves to someone else's row and trips the guard
+        // with a confusing "not your record" 403 even for a legitimate self-file.
+        // Super-admins may legitimately target any employee via the request.
+        if ($user && $user->user_type === 'super_admin') {
+            $employeeId = $this->resolveEmployeeId(
+                $request->input('employee_id'),
+                $request->input('employee_code'),
+                $user
+            ) ?: $this->currentEmployeeId($user);
+        } else {
+            $employeeId = $this->currentEmployeeId($user)
+                ?: $this->resolveEmployeeId(
+                    $request->input('employee_id'),
+                    $request->input('employee_code'),
+                    $user
+                );
+        }
 
         if (!$employeeId) {
             abort(422, 'No linked Employee record found for the current user.');

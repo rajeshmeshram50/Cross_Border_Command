@@ -92,11 +92,25 @@ class AdvanceRequestController extends Controller
     public function store(Request $request)
     {
         $user = $request->user();
-        $employeeId = $this->resolveEmployeeId(
-            $request->input('employee_id'),
-            $request->input('employee_code'),
-            $user
-        ) ?: $this->currentEmployeeId($user);
+        // Non-super-admins can only file for their OWN employee record (guarded
+        // below). Derive it from the authenticated user, not from a request
+        // employee_id/employee_code — the SPA posts a numeric employee_id and
+        // resolveEmployeeId returns any numeric id verbatim, so a stale/wrong
+        // value would resolve to another row and trip a confusing 403.
+        if ($user && $user->user_type === 'super_admin') {
+            $employeeId = $this->resolveEmployeeId(
+                $request->input('employee_id'),
+                $request->input('employee_code'),
+                $user
+            ) ?: $this->currentEmployeeId($user);
+        } else {
+            $employeeId = $this->currentEmployeeId($user)
+                ?: $this->resolveEmployeeId(
+                    $request->input('employee_id'),
+                    $request->input('employee_code'),
+                    $user
+                );
+        }
 
         if (!$employeeId) {
             abort(422, 'No linked Employee record found for the current user.');
