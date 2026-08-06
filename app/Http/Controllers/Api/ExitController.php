@@ -60,7 +60,6 @@ class ExitController extends Controller
         $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
         // Never trust a client-sent settlement mode — it follows the exit type.
         $row->notice_settlement_mode = $this->resolveSettlementMode((string) ($row->exit_type ?? ''));
-        $this->clearBlacklistIfNotApplicable($row);
         if (!$row->exists) $row->created_by = $request->user()?->id;
         $row->save();
 
@@ -107,7 +106,6 @@ class ExitController extends Controller
             $row->branch_id            = $employee->branch_id;
             $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
             $row->notice_settlement_mode = $mode;
-            $this->clearBlacklistIfNotApplicable($row);
             if (!$row->exists) $row->created_by = $request->user()?->id;
 
             // Lock the case closed regardless of what the client sent.
@@ -174,6 +172,47 @@ class ExitController extends Controller
                 ['employee_id' => $employee->id],
             );
         }
+    }
+
+    /**
+     * Upload the Full & Final settlement document (signed F&F sheet, payment
+     * advice, bank proof). Mandatory before the settlement can be marked paid —
+     * an F&F closed with no paperwork is exactly the thing an audit asks for.
+     *
+     *   POST /api/employees/{employee}/exit/fnf-attachment   (multipart)
+     */
+    public function uploadFnfAttachment(Request $request, $employee)
+    {
+        $employee = Employee::withTrashed()->findOrFail($employee);
+        $this->guardSameTenant($request, $employee);
+
+        $request->validate([
+            'attachment' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx', 'max:10240'],
+        ], ['attachment.required' => 'Select the Full & Final document to upload.']);
+
+        $file = $request->file('attachment');
+        $path = $file->store('exit-fnf/' . $employee->id, 'public');
+
+        $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+        $row->employee_id = $employee->id;
+        $row->client_id   = $row->client_id ?: $employee->client_id;
+        $row->branch_id   = $row->branch_id ?: $employee->branch_id;
+        // Merge into the wizard-owned fnf blob rather than replacing it, so an
+        // upload never wipes the lines/meta HR has already entered.
+        $fnf = is_array($row->fnf) ? $row->fnf : [];
+        $fnf['attachment'] = [
+            'path' => $path,
+            'name' => $file->getClientOriginalName(),
+            'url'  => \Illuminate\Support\Facades\Storage::url($path),
+            'uploaded_at' => now()->toIso8601String(),
+        ];
+        $row->fnf = $fnf;
+        $row->save();
+
+        return response()->json([
+            'message'    => 'Full & Final document uploaded.',
+            'attachment' => $fnf['attachment'],
+        ]);
     }
 
     /**
@@ -531,21 +570,6 @@ class ExitController extends Controller
             return;
         }
         abort(422, "The exit type cannot be changed once the exit has started (this case is a \"{$locked}\"). Cancel this exit and start a new one if the type is wrong.");
-    }
-
-    /**
-     * The blacklist question is only asked when the notice wasn't served —
-     * a resignation without notice, or a termination. If the exit type is
-     * changed back to a standard resignation, any answer recorded under the
-     * old type has to go: leaving a stale "Yes" behind would blacklist someone
-     * on the strength of a question their exit type never poses.
-     */
-    private function clearBlacklistIfNotApplicable(EmployeeExit $row): void
-    {
-        if ($this->resolveSettlementMode((string) ($row->exit_type ?? '')) === 'served') {
-            $row->blacklisted      = null;
-            $row->blacklist_reason = null;
-        }
     }
 
     private function resolveSettlementMode(string $exitType): string

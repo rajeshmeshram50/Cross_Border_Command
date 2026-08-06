@@ -5880,8 +5880,6 @@
 .etp-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .etp-title { font-weight: 700; font-size: 13.5px; }
 .etp-desc { font-size: 11.5px; color: var(--vz-secondary-color); line-height: 1.45; }
-.etp-stages { font-size: 11px; font-weight: 600; color: var(--etp-accent, #7c3aed); }
-.etp-stages em { font-style: normal; opacity: 0.85; }
 .etp-go { margin-left: auto; align-self: center; font-size: 20px; color: var(--vz-secondary-color); flex: none; }
 
 /* ── Tile variant — the three exit types as square boxes on one row. ──── */
@@ -5907,8 +5905,6 @@
 .etp-grid--tiles .etp-body { align-items: center; gap: 5px; flex: 1; min-height: 0; }
 .etp-grid--tiles .etp-title { font-size: 13px; line-height: 1.3; }
 .etp-grid--tiles .etp-desc  { font-size: 11px; line-height: 1.45; }
-.etp-grid--tiles .etp-stages { font-size: 10.5px; margin-top: auto; }
-.etp-grid--tiles .etp-stages em { display: block; }
 /* The chevron only appears as the busy spinner in tile mode — no row affordance
    to point at, so it must not reserve space on the left. */
 .etp-grid--tiles .etp-go { position: absolute; top: 10px; right: 10px; margin: 0; font-size: 15px; }
@@ -5919,15 +5915,27 @@
   .etp-grid--tiles { grid-auto-flow: row; grid-auto-columns: auto; }
   .etp-grid--tiles .etp-card { min-height: 0; flex-direction: row; text-align: left; }
   .etp-grid--tiles .etp-body { align-items: flex-start; }
-  .etp-grid--tiles .etp-stages { margin-top: 0; }
 }
+/* Note on its own full-width row as the LAST line, under the buttons —
+   squeezed beside them it read as incidental grey text, which is wrong for a
+   warning about a choice that can't be undone. */
 .etp-foot {
-  display: flex; align-items: flex-start; gap: 14px; margin-top: 12px;
+  display: flex; align-items: center; gap: 12px; margin-top: 14px;
 }
+.etp-foot .etp-actions { margin-left: auto; flex: none; }
 .etp-note {
-  display: flex; gap: 8px; align-items: flex-start; flex: 1; min-width: 0;
-  font-size: 11.5px; color: var(--vz-secondary-color); line-height: 1.5;
+  display: flex; gap: 9px; align-items: flex-start; flex: 1; min-width: 0;
+  font-size: 12px; line-height: 1.55;
+  background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+  padding: 11px 14px; color: #92400e;
 }
+.etp-note i { font-size: 15px; flex: none; margin-top: 1px; color: #b45309; }
+.etp-note strong { color: #7c2d12; }
+[data-bs-theme="dark"] .etp-note {
+  background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.35); color: #fcd34d;
+}
+[data-bs-theme="dark"] .etp-note i { color: #fbbf24; }
+[data-bs-theme="dark"] .etp-note strong { color: #fde68a; }
 .etp-cancel {
   flex: none; align-self: center;
   background: var(--vz-card-bg); color: var(--vz-secondary-color);
@@ -5938,9 +5946,23 @@
 .etp-cancel:hover:not(:disabled) { background: var(--vz-secondary-bg); color: var(--vz-body-color); }
 .etp-cancel:disabled { opacity: .5; cursor: not-allowed; }
 
+.etp-actions { display: flex; align-items: center; gap: 8px; }
+.etp-continue {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%);
+  color: #fff; border: 0; border-radius: 8px;
+  padding: 9px 20px; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 8px 18px rgba(124,92,252,0.30);
+  transition: transform .15s ease, filter .15s ease;
+}
+.etp-continue:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+/* Disabled until a tile is picked — the choice is irreversible, so Continue
+   must not be clickable with nothing selected. */
+.etp-continue:disabled { opacity: .45; cursor: not-allowed; box-shadow: none; }
+
 @media (max-width: 575px) {
-  .etp-foot { flex-direction: column; align-items: stretch; }
-  .etp-cancel { align-self: stretch; }
+  /* .etp-foot already stacks; just let the two buttons share the width. */
+  .etp-cancel, .etp-continue { flex: 1; justify-content: center; }
 }
 
 /* Exit Type shown read-only in Stage 1 (it's set from the picker). */
@@ -5975,6 +5997,31 @@
 [data-bs-theme="dark"] .ep-echo.is-due { background: rgba(245,158,11,0.10); color: #fcd34d; }
 [data-bs-theme="dark"] .ep-echo.is-ok  { background: rgba(16,185,129,0.10); color: #6ee7b7; }
 [data-bs-theme="dark"] .ep-echo.is-no  { background: rgba(239,68,68,0.10); color: #fca5a5; }
+
+/* Mandatory Full & Final document upload. */
+.ep-fnf-drop {
+  display: flex; align-items: center; gap: 12px; width: 100%; cursor: pointer;
+  border: 1.5px dashed var(--vz-border-color); border-radius: 10px;
+  padding: 12px 14px; background: var(--vz-secondary-bg); transition: all .15s ease;
+}
+.ep-fnf-drop:hover { border-color: #7c3aed; background: rgba(124,58,237,0.05); }
+.ep-fnf-drop.has-file { border-style: solid; border-color: #a7f3d0; background: #ecfdf5; }
+.ep-fnf-drop-ico {
+  flex: none; width: 38px; height: 38px; border-radius: 10px; font-size: 19px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--vz-card-bg); border: 1px solid var(--vz-border-color); color: var(--vz-secondary-color);
+}
+.ep-fnf-drop.has-file .ep-fnf-drop-ico { border-color: #a7f3d0; color: #059669; }
+.ep-fnf-drop-txt { display: flex; flex-direction: column; min-width: 0; }
+.ep-fnf-drop-t1 { font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ep-fnf-drop-t2 { font-size: 11px; color: var(--vz-secondary-color); }
+.ep-fnf-drop-view {
+  margin-left: auto; flex: none; font-size: 11.5px; font-weight: 700;
+  color: #4338ca; text-decoration: none; padding: 4px 10px;
+  border: 1px solid var(--vz-border-color); border-radius: 7px; background: var(--vz-card-bg);
+}
+.ep-fnf-drop-view:hover { text-decoration: underline; }
+[data-bs-theme="dark"] .ep-fnf-drop.has-file { background: rgba(16,185,129,0.10); }
 
 /* ══ Employee-submitted notice payment (HR verification view) ══════════ */
 .ep-submitted { display: flex; flex-direction: column; gap: 10px; }
