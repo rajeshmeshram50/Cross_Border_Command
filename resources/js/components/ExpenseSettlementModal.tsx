@@ -2148,7 +2148,11 @@ const CSS = `
 /* Review mode fits its content instead of forcing the tall min-height, with
    even spacing around the content on all four sides. */
 .esm-modal--fit{min-height:0;}
-.esm-modal--fit .esm-body{flex:0 0 auto;padding:22px;}
+/* Fit mode still fits SHORT content, but a tall body (e.g. Review & Approve with
+   several adjustment rows) must scroll inside the 94vh cap instead of being
+   clipped by the modal's overflow:hidden — otherwise the footer (Approve/Reject)
+   is unreachable. flex:1 1 auto + min-height:0 lets the body shrink and scroll. */
+.esm-modal--fit .esm-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:22px;}
 .esm-modal--fit .esm-hero{padding-bottom:0;}
 /* Manager review is just the Claim Details card — sit it tight under the header,
    with a divider line at the bottom of the header (no read-only panel here). */
@@ -2222,7 +2226,7 @@ const CSS = `
 [data-bs-theme="dark"] .esm-radio.is-on{color:#67e8f9;}
 [data-bs-theme="dark"] .esm-radio{background:#0b2029;border-color:#173947;color:#cbd5e1;}
 [data-bs-theme="dark"] .esm-radio.is-on{background:#0e2730;border-color:#0891b2;color:#67e8f9;}
-.esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;}
+.esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;flex-shrink:0;}
 .esm-hero-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
 .esm-hero-l{display:flex;align-items:center;gap:14px;min-width:0;}
 /* Embedded claim summary panel. Left edge indented past the hero icon so it
@@ -2534,7 +2538,7 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-tbl-amt{color:#e2e8f0;}
 .esm-tbl-link{display:inline-flex;align-items:center;gap:5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;color:#0891b2;text-decoration:none;font-weight:600;}
 .esm-tbl-link:hover{text-decoration:underline;}
-.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;}
+.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;flex-shrink:0;}
 [data-bs-theme="dark"] .esm-foot{background:#0b1a22;border-color:#173947;}
 .esm-foot-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:#64748b;min-width:0;}
 .esm-foot-hint i{color:#0891b2;font-size:15px;flex-shrink:0;}
