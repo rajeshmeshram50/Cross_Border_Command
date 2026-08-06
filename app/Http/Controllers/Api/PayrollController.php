@@ -1013,6 +1013,29 @@ class PayrollController extends Controller
         if ($full) {
             $row['earningsBreakup']   = $p->earnings ?: [];
             $row['deductionsBreakup'] = $p->deductions ?: [];
+
+            /* Overtime — surfaced only for employees the employee master marks
+               overtime-applicable, so the payslip doesn't grow an OT card and
+               an OT allowance line for staff the policy doesn't cover.
+               The rate here is the DERIVED per-hour figure
+               (gross ÷ working days ÷ shift hours × multiplier), which is what
+               the amount was actually priced at — see PayrollService::overtimeRate(). */
+            $emp = $p->relationLoaded('employee') ? $p->employee : $p->employee()->first();
+            $otApplicable = (bool) $emp?->overtimeApplicable();
+            $row['overtimeApplicable'] = $otApplicable;
+            $row['overtimeHours']      = (float) ($p->overtime_hours ?? 0);
+            $row['overtimeAmount']     = (float) ($p->overtime_amount ?? 0);
+            if ($otApplicable) {
+                $rate = app(\App\Services\PayrollService::class)->overtimeRate(
+                    $emp,
+                    (float) $p->gross_earnings,
+                    (float) ($p->working_days ?: 0),
+                );
+                $row['overtimeRateName']  = $rate['rate_name'];
+                $row['overtimeMultiplier'] = (float) $rate['multiplier'];
+                $row['overtimeHourly']     = (float) $rate['hourly'];
+                $row['overtimeRate']       = (float) $rate['effective_rate'];
+            }
             $row['exceptions']        = $p->exceptions ?: [];
             $row['paidDays']          = (float) $p->paid_days;
             $row['lopDays']           = (float) $p->lop_days;

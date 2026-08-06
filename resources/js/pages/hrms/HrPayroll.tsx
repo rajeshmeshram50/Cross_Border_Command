@@ -284,6 +284,13 @@ export default function HrPayroll() {
   // period the modal was first opened on.
   const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
   const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number } | null>(null);
+  /* Overtime for the open payslip. Only populated for employees the employee
+     master marks overtime-applicable — drives the OT Hours KPI and the
+     Overtime Allowance earnings line. */
+  const [payslipOt, setPayslipOt] = useState<{
+    applicable: boolean; hours: number; amount: number;
+    multiplier?: number; rate?: number; rateName?: string | null;
+  } | null>(null);
 
   const loadPayslipDetail = (payslipId?: number) => {
     if (!payslipId) return;
@@ -304,6 +311,14 @@ export default function HrPayroll() {
           paidDays: typeof d.paidDays === 'number' ? d.paidDays : undefined,
           workingDays: typeof d.workingDays === 'number' ? d.workingDays : undefined,
         });
+        setPayslipOt(d.overtimeApplicable ? {
+          applicable: true,
+          hours:      Number(d.overtimeHours) || 0,
+          amount:     Number(d.overtimeAmount) || 0,
+          multiplier: typeof d.overtimeMultiplier === 'number' ? d.overtimeMultiplier : undefined,
+          rate:       typeof d.overtimeRate === 'number' ? d.overtimeRate : undefined,
+          rateName:   d.overtimeRateName ?? null,
+        } : null);
         setPayslipFinal(typeof d.is_final === 'boolean' ? d.is_final : undefined);
         if (d.company) {
           setPayslipCompany({
@@ -324,6 +339,7 @@ export default function HrPayroll() {
     setPayslipCompany(null);
     setActivePayslipId(row.payslip_id);
     setPayslipDays(null);
+    setPayslipOt(null);
     setPayslipRecent(row.payslip_id ? [{ label: cycle.label, now: true, payslipId: row.payslip_id, status: row.status }] : []);
     loadPayslipDetail(row.payslip_id);
     if (row.employee_id) {
@@ -1831,6 +1847,12 @@ export default function HrPayroll() {
             daysPresent={payslipDays?.present ?? r.present}
             lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? 0}
             paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
+            overtimeApplicable={!!payslipOt?.applicable}
+            overtimeHours={payslipOt?.hours ?? 0}
+            overtimeAmount={payslipOt?.amount ?? 0}
+            overtimeMultiplier={payslipOt?.multiplier}
+            overtimeRate={payslipOt?.rate}
+            overtimeRateName={payslipOt?.rateName}
             isFinal={payslipFinal}
             onSelectRecent={selectRecent}
             recentMonths={payslipRecent}

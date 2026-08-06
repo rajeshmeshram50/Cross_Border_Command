@@ -33,6 +33,19 @@ export interface PayslipViewerModalProps {
   daysPresent?: number;
   lossOfPay?: number;
   paidDays?: number;
+  /** Overtime — only rendered when the employee master marks this employee
+   *  overtime-applicable. The OT Hours KPI and the "Overtime Allowance"
+   *  earnings line both key off this, so staff the policy doesn't cover see
+   *  neither. */
+  overtimeApplicable?: boolean;
+  overtimeHours?: number;
+  /** Payable OT, already priced as hourly × multiplier × hours upstream. */
+  overtimeAmount?: number;
+  /** OT rate multiplier from the employee's Overtime (OT) policy, e.g. 1.5. */
+  overtimeMultiplier?: number;
+  /** Effective per-hour OT rate (hourly × multiplier) — shown as the workings. */
+  overtimeRate?: number;
+  overtimeRateName?: string | null;
   recentMonths?: PayslipRecentEntry[];
   companyName?: string;
   companyMeta?: string;
@@ -75,6 +88,12 @@ export default function PayslipViewerModal({
   daysPresent = 31,
   lossOfPay = 0,
   paidDays = 31,
+  overtimeApplicable = false,
+  overtimeHours = 0,
+  overtimeAmount = 0,
+  overtimeMultiplier,
+  overtimeRate,
+  overtimeRateName,
   recentMonths = [],
   companyName = '',
   companyMeta = '',
@@ -205,7 +224,26 @@ export default function PayslipViewerModal({
     }
   };
 
-  const totalEarnings   = earnings.reduce((s, r) => s + r.amount, 0);
+  /* Overtime. The payroll engine already folds an approved OT payout into the
+     earnings breakup, so appending our own line would double it — only add one
+     when the breakup doesn't already carry it. */
+  const hasOtLine = earnings.some(r => /overtime/i.test(r.label));
+  const showOt    = overtimeApplicable && !hasOtLine && overtimeAmount > 0;
+  const otHoursLabel = Number.isInteger(overtimeHours)
+    ? String(overtimeHours)
+    : overtimeHours.toFixed(2).replace(/\.?0+$/, '');
+  // Spell the pricing out next to the line so the figure is checkable by hand.
+  const otWorkings = [
+    overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
+    overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
+    `${otHoursLabel} hr`,
+  ].filter(Boolean).join(' · ');
+
+  const shownEarnings = showOt
+    ? [...earnings, { label: 'Overtime Allowance', amount: overtimeAmount }]
+    : earnings;
+
+  const totalEarnings   = shownEarnings.reduce((s, r) => s + r.amount, 0);
   const totalDeductions = deductions.reduce((s, r) => s + r.amount, 0);
   const netPay          = totalEarnings - totalDeductions;
 
@@ -354,13 +392,17 @@ export default function PayslipViewerModal({
                 </div>
               </div>
 
-              {/* 4 KPI strip */}
+              {/* KPI strip — 4 normally, 5 when overtime applies to this
+                  employee (OT Hours sits after Paid Days). */}
               <div className="ep-pay-kpis">
                 {[
                   { label: 'Total Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
                   { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
                   { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
                   { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
+                  ...(overtimeApplicable
+                    ? [{ label: 'OT Hours', value: otHoursLabel, tint: 'rgba(124,92,252,0.10)', fg: '#6d28d9' }]
+                    : []),
                 ].map(k => (
                   <div className="ep-pay-kpi" key={k.label} style={{ background: k.tint }}>
                     <div className="ep-pay-kpi-label">{k.label}</div>
@@ -382,12 +424,22 @@ export default function PayslipViewerModal({
                         <tr><th>Component</th><th className="text-end">Monthly</th></tr>
                       </thead>
                       <tbody>
-                        {earnings.map(r => (
-                          <tr key={r.label}>
-                            <td>{r.label}</td>
-                            <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
-                          </tr>
-                        ))}
+                        {shownEarnings.map(r => {
+                          const isOt = r.label === 'Overtime Allowance';
+                          return (
+                            <tr key={r.label}>
+                              <td>
+                                {r.label}
+                                {isOt && otWorkings && (
+                                  <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
+                                    {otWorkings}
+                                  </div>
+                                )}
+                              </td>
+                              <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
