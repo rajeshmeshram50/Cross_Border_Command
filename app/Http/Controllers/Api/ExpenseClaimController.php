@@ -223,7 +223,10 @@ class ExpenseClaimController extends Controller
             'category_id'    => ['nullable', 'integer'],
             'currency'       => ['nullable', 'string', 'max:8'],
             'project'        => ['nullable', 'string', 'max:64'],
-            'payment_method' => ['nullable', 'string', 'max:64'],
+            // Payment method is mandatory — finance reconciles the payout
+            // against how the employee actually paid. Enforced server-side too
+            // so a direct API call can't file a claim without it.
+            'payment_method' => ['required', 'string', 'max:64'],
             'title'          => ['required', 'string', 'max:255'],
             // Cap at 9,999,999,999,999.99 — well inside the decimal(18,2)
             // column on `expense_claims.amount` so a paste of "9999..."

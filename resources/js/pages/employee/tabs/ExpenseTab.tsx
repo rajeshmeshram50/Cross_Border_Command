@@ -200,6 +200,67 @@ export default function ExpenseTab() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap">
+                {/* My / Team sub-tabs — only render when the current user is
+                    viewing their own profile AND has a team (i.e. is someone's
+                    reporting manager). For everyone else the table behaves as
+                    a single-list view (the user's own claims/advances). The
+                    labels, counts and active-state mirror whichever module
+                    (Expense Claims vs Advance Requests) is currently open.
+                    Visible whenever the user is a manager in *either* module —
+                    approved/rejected rows stay in teamClaims/teamAdvances
+                    (backend returns every row where manager_id = current user
+                    regardless of status), so this toggle keeps the historic
+                    track visible after the manager has acted.
+                    Lives in the header action row (beside Search / Export /
+                    Raise New Claim) so it reads as part of the section
+                    controls instead of floating above the table. */}
+                {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
+                  <div className="d-flex gap-1 ext-subtab-wrap">
+                    {(expenseModuleTab === 'advance'
+                      ? [
+                          { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
+                          { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
+                        ]
+                      : [
+                          { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
+                          { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
+                        ]
+                    ).map(t => {
+                      const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
+                      const on = currentSub === t.key;
+                      const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
+                      const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
+                      return (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => {
+                            if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
+                            else                                setExpenseSubTab(t.key);
+                          }}
+                          className="d-inline-flex align-items-center gap-2 fw-semibold ext-subtab"
+                          style={{
+                            ['--ext-subtab-bg' as any]: on ? 'var(--vz-card-bg)' : 'transparent',
+                            ['--ext-subtab-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
+                            ['--ext-subtab-shadow' as any]: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
+                          }}
+                        >
+                          <i className={t.icon} />
+                          {t.label}
+                          <span
+                            className="d-inline-flex align-items-center justify-content-center rounded-pill ext-subtab-count"
+                            style={{
+                              ['--ext-subtab-count-bg' as any]: on ? activeWash : 'var(--vz-secondary-bg)',
+                              ['--ext-subtab-count-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
+                            }}
+                          >
+                            {t.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
                 <div className="search-box ep-exp-search ext-search">
                   <input
                     type="text"
@@ -266,103 +327,6 @@ export default function ExpenseTab() {
               </div>
             </div>
             <div className="px-3 pb-3 pt-2">
-              {/* My / Team sub-tabs — only render when the current user is
-                  viewing their own profile AND has a team (i.e. is someone's
-                  reporting manager). For everyone else the table behaves as
-                  a single-list view (the user's own claims/advances). The
-                  labels, counts and active-state mirror whichever module
-                  (Expense Claims vs Advance Requests) is currently open. */}
-              {/* Visible whenever the user is a manager in *either* module —
-                  approved/rejected rows stay in teamClaims/teamAdvances
-                  (backend returns every row where manager_id = current user
-                  regardless of status), so this toggle keeps the historic
-                  track visible after the manager has acted. */}
-              {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
-                <div className="d-flex gap-1 mb-3 ext-subtab-wrap">
-                  {(expenseModuleTab === 'advance'
-                    ? [
-                        { key: 'mine' as const, label: 'My Advances',   icon: 'ri-user-line', count: apiAdvances.length },
-                        { key: 'team' as const, label: 'Team Advances', icon: 'ri-team-line', count: teamAdvances.length },
-                      ]
-                    : [
-                        { key: 'mine' as const, label: 'My Expenses',   icon: 'ri-user-line', count: apiClaims.length },
-                        { key: 'team' as const, label: 'Team Expenses', icon: 'ri-team-line', count: teamClaims.length },
-                      ]
-                  ).map(t => {
-                    const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
-                    const on = currentSub === t.key;
-                    const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
-                    const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
-                    return (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => {
-                          if (expenseModuleTab === 'advance') setAdvanceSubTab(t.key);
-                          else                                setExpenseSubTab(t.key);
-                        }}
-                        className="d-inline-flex align-items-center gap-2 fw-semibold ext-subtab"
-                        style={{
-                          ['--ext-subtab-bg' as any]: on ? 'var(--vz-card-bg)' : 'transparent',
-                          ['--ext-subtab-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
-                          ['--ext-subtab-shadow' as any]: on ? '0 2px 6px rgba(0,0,0,0.06)' : 'none',
-                        }}
-                      >
-                        <i className={t.icon} />
-                        {t.label}
-                        <span
-                          className="d-inline-flex align-items-center justify-content-center rounded-pill ext-subtab-count"
-                          style={{
-                            ['--ext-subtab-count-bg' as any]: on ? activeWash : 'var(--vz-secondary-bg)',
-                            ['--ext-subtab-count-color' as any]: on ? activeAccent : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {t.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {/* Used-For tabs — Advance Requests only. Narrows the list by
-                  used_for (Self used / Company used) before the status pills. */}
-              {expenseModuleTab === 'advance' && (
-                <div className="d-flex gap-2 flex-wrap mb-3">
-                  {[
-                    { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' },
-                    { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6', shadow: 'rgba(139,92,246,0.32)' },
-                  ].map(f => {
-                    const on = advUsedForTab === f.key;
-                    return (
-                      <button
-                        key={f.key}
-                        type="button"
-                        onClick={() => { setAdvUsedForTab(f.key); setExpenseFilter('all'); }}
-                        className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold ext-filter-pill"
-                        style={{
-                          ['--ext-pill-bg' as any]: on ? f.active : 'var(--vz-card-bg)',
-                          ['--ext-pill-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                          ['--ext-pill-border' as any]: on ? f.active : 'var(--vz-border-color)',
-                          ['--ext-pill-shadow' as any]: on ? `0 4px 10px ${f.shadow}` : 'none',
-                        }}
-                      >
-                        {f.label}
-                        <span
-                          className="d-inline-flex align-items-center justify-content-center rounded-pill ext-filter-count"
-                          style={{
-                            ['--ext-pill-count-bg' as any]: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                            ['--ext-pill-count-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                          }}
-                        >
-                          {f.count}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
               {/* Filter pills — active = solid filled with colored shadow for
                   strong visibility; inactive = subtle white with border. When
                   the Advance Requests module is active the same pills drive
@@ -370,7 +334,48 @@ export default function ExpenseTab() {
                   The Drafts pill is appended only when a saved-draft exists
                   in localStorage for the active module — clicking it swaps
                   the table area for a list of resumable drafts. */}
-              <div className="d-flex gap-2 flex-wrap mb-3">
+              <div className="d-flex gap-2 flex-wrap align-items-center mb-3">
+                {/* Used-For tabs — Advance Requests only. Narrows the list by
+                    used_for (Self used / Company used) before the status
+                    pills. They share this row (with a divider) rather than
+                    sitting on a line of their own, which read as a stray,
+                    disconnected control. */}
+                {expenseModuleTab === 'advance' && (
+                  <>
+                    {[
+                      { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' },
+                      { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6', shadow: 'rgba(139,92,246,0.32)' },
+                    ].map(f => {
+                      const on = advUsedForTab === f.key;
+                      return (
+                        <button
+                          key={f.key}
+                          type="button"
+                          onClick={() => { setAdvUsedForTab(f.key); setExpenseFilter('all'); }}
+                          className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold ext-filter-pill"
+                          style={{
+                            ['--ext-pill-bg' as any]: on ? f.active : 'var(--vz-card-bg)',
+                            ['--ext-pill-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
+                            ['--ext-pill-border' as any]: on ? f.active : 'var(--vz-border-color)',
+                            ['--ext-pill-shadow' as any]: on ? `0 4px 10px ${f.shadow}` : 'none',
+                          }}
+                        >
+                          {f.label}
+                          <span
+                            className="d-inline-flex align-items-center justify-content-center rounded-pill ext-filter-count"
+                            style={{
+                              ['--ext-pill-count-bg' as any]: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
+                              ['--ext-pill-count-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
+                            }}
+                          >
+                            {f.count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <span className="ext-pill-divider" />
+                  </>
+                )}
                 {(() => {
                   const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
                   const draftCount = expenseModuleTab === 'advance'

@@ -2009,6 +2009,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             </div>
             <div className="ep-head-right">
               <div className="ep-head-chips">
+                {/* Exit type chip — the type drives the whole flow (which
+                    stages exist, the settlement direction, the LWD bounds), so
+                    it belongs in the header next to Status instead of only in
+                    the Stage-1 form. The long "without notice period" wording
+                    is shortened here and kept in full in the title. */}
+                {!!exitType.trim() && (
+                  <span className="ep-head-chip" title={exitType}>
+                    <i className="ri-logout-box-r-line" />
+                    {exitType === 'Resignation without notice period' ? 'Resignation (no notice)' : exitType}
+                  </span>
+                )}
                 <span className="ep-head-chip"><i className="ri-time-line" />Status: {statusOf(currentKey)}</span>
                 <span className="ep-head-chip ep-head-chip--profile">
                   <MiniProgressRing value={progressPct} />

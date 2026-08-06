@@ -902,10 +902,39 @@ export default function HrExpenseManagement() {
             in its toolbar. Advances and Claims are two different row shapes, so
             each gets its own instance with its own column set. */}
         {module === 'advance' ? (
-          <>
+          <DataTable<AdvanceRequestRow>
+            data={filteredAdvances}
+            columns={advanceColumns}
+            accent="violet"
+            /* Same sizing as My Workplace: autoFitRows picks the rows-per-page
+               from the space available, fitToViewport pins the card to the fold
+               so the footer sits at the bottom instead of floating up under a
+               short result set. */
+            autoFitRows
+            fitToViewport
+            minWidth={1500}
+            loading={advanceLoading}
+            searchValue={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search employee, advance no, type, reason…"
+            tabs={statusTabs}
+            activeTab={filter}
+            onTabChange={k => setFilter(k as StatusFilter)}
+            toolbarActions={expenseToolbarActions}
+            emptyMessage={
+              <>
+                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+                No advance requests to show.
+              </>
+            }
+          >
           {/* Used-For tabs — Self used / Company used. Narrows by used_for before
-              the status tabs; Company drops the recovery columns (matches form). */}
-          <div className="d-flex gap-2 flex-wrap mb-3">
+              the status tabs; Company drops the recovery columns (matches form).
+              Rendered as the table's own children (between its toolbar and the
+              rows) rather than as a free-floating row above the card, where it
+              read as a stray control with no visible tie to the list or to the
+              Spend Analytics panel above it. */}
+          <div className="d-flex gap-2 flex-wrap px-3 pb-2">
             {[
               { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
               { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
@@ -940,33 +969,7 @@ export default function HrExpenseManagement() {
               );
             })}
           </div>
-          <DataTable<AdvanceRequestRow>
-            data={filteredAdvances}
-            columns={advanceColumns}
-            accent="violet"
-            /* Same sizing as My Workplace: autoFitRows picks the rows-per-page
-               from the space available, fitToViewport pins the card to the fold
-               so the footer sits at the bottom instead of floating up under a
-               short result set. */
-            autoFitRows
-            fitToViewport
-            minWidth={1500}
-            loading={advanceLoading}
-            searchValue={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search employee, advance no, type, reason…"
-            tabs={statusTabs}
-            activeTab={filter}
-            onTabChange={k => setFilter(k as StatusFilter)}
-            toolbarActions={expenseToolbarActions}
-            emptyMessage={
-              <>
-                <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
-                No advance requests to show.
-              </>
-            }
-          />
-          </>
+          </DataTable>
         ) : (
           <DataTable<ExpenseClaimRow>
             data={filtered}

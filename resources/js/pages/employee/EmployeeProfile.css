@@ -3086,6 +3086,15 @@
   font-size: 10px;
   font-weight: 700;
 }
+/* Divider between the Self/Company Used pills and the status pills — they
+   share one row, so a hairline keeps the two groups readable. */
+.ext-pill-divider {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--vz-border-color);
+  flex-shrink: 0;
+}
 .ext-filter-pill {
   font-size: 11.5px;
   padding: 4px 12px;

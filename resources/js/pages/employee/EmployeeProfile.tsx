@@ -1763,6 +1763,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         draftErrs.purpose = 'Business purpose is required';
         errors.push(`${label}: Business purpose is required`);
       }
+      // Payment method is mandatory — finance reconciles the reimbursement
+      // against how the employee actually paid, so a blank one stalls the
+      // claim at settlement.
+      if (!d.payment) {
+        draftErrs.payment = 'Payment method is required';
+        errors.push(`${label}: Payment method is required`);
+      }
       // Proof & receipt is mandatory — every claim must carry at least one
       // supporting document before it can be submitted for approval. Drafts
       // parked via "Save Draft" lose their File objects on resume (File can't
@@ -2881,13 +2888,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     />
                   </Col>
                   <Col md={6}>
-                    <div className="ep-claim-label">Payment Method</div>
+                    <div className="ep-claim-label">Payment Method <span className="ep-claim-req">*</span></div>
                     <MasterSelect
                       value={claimPayment}
                       placeholder="Select payment method"
                       options={['UPI','PhonePe','Cash','Cheque','Bank Transfer'].map(o => ({ value: o, label: o }))}
-                      onChange={setClaimPayment}
+                      onChange={(v) => { setClaimPayment(v); clearClaimErr('payment'); }}
+                      invalid={!!claimErrors.payment}
                     />
+                    {claimErrors.payment && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.payment}</div>}
                   </Col>
                 </Row>
 

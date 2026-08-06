@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
@@ -179,6 +179,18 @@ export default function ExpenseSettlementModal({
   const [expenseType, setExpenseType] = useState('');
   const [note, setNote] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
+  // The proof download is a local blob save, so it finishes instantly and gave
+  // no feedback at all — the button now holds a spinner for a moment and locks
+  // out repeat clicks so one tap can't queue several saves.
+  const [proofDownloading, setProofDownloading] = useState(false);
+  const proofDlTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (proofDlTimer.current) window.clearTimeout(proofDlTimer.current); }, []);
+  const downloadProof = (f: File) => {
+    if (proofDownloading) return;
+    setProofDownloading(true);
+    downloadFile(f);
+    proofDlTimer.current = window.setTimeout(() => { proofDlTimer.current = null; setProofDownloading(false); }, 800);
+  };
   // Turns on inline field-level errors once a save is attempted.
   const [showErrors, setShowErrors] = useState(false);
   // Collapsible Adjustments (deductions/additions) section.
@@ -1636,8 +1648,10 @@ export default function ExpenseSettlementModal({
                       <i className="ri-file-text-line esm-file-ic" />
                       <span className="esm-file-name" title={proofFile.name}>{proofFile.name}</span>
                       <button type="button" className="esm-file-btn" onClick={() => viewFile(proofFile)}><i className="ri-eye-line" /> View</button>
-                      <button type="button" className="esm-file-btn" onClick={() => downloadFile(proofFile)}><i className="ri-download-2-line" /> Download</button>
-                      <label className="esm-file-btn" title="Replace file"><i className="ri-refresh-line" /> Reupload
+                      <button type="button" className="esm-file-btn" onClick={() => downloadProof(proofFile)} disabled={proofDownloading}>
+                        <i className={proofDownloading ? 'ri-loader-4-line ri-spin' : 'ri-download-2-line'} /> Download
+                      </button>
+                      <label className="esm-file-btn" title="Replace file"><i className="ri-refresh-line" /><span>Reupload</span>
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setProofFile(e.target.files?.[0] ?? proofFile)} />
                       </label>
                     </div>
@@ -2317,7 +2331,7 @@ textarea.esm-in{resize:vertical;}
 .esm-ro-static{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:14px;font-weight:800;color:#0891b2;background:#f0fdff;}
 [data-bs-theme="dark"] .esm-ro-static{background:#0b2029;border-color:#173947;color:#67e8f9;}
 /* Proof-of-payment file picker */
-.esm-file{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px dashed #b6d9e2;border-radius:10px;padding:0 12px;font-size:12.5px;font-weight:600;color:#0891b2;background:#f8feff;cursor:pointer;}
+.esm-file{display:flex;align-items:center;gap:8px;min-height:41px;margin:0;box-sizing:border-box;border:1.5px dashed #b6d9e2;border-radius:10px;padding:0 12px;font-size:12.5px;font-weight:600;color:#0891b2;background:#f8feff;cursor:pointer;}
 .esm-file:hover{background:#ecfeff;border-color:#22d3ee;}
 .esm-file i{font-size:15px;}
 .esm-file input{display:none;}
@@ -2325,17 +2339,21 @@ textarea.esm-in{resize:vertical;}
 .esm-file-chip{display:flex;align-items:center;gap:8px;min-height:41px;border:1.5px solid #dbe7ec;border-radius:10px;padding:0 6px 0 12px;font-size:12.5px;font-weight:600;color:#0c4a6e;background:#f8fafc;}
 .esm-file-ic{color:#0891b2;flex-shrink:0;}
 .esm-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.esm-file-act{width:30px;height:30px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:15px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s;}
+.esm-file-act{width:30px;height:30px;flex-shrink:0;margin:0;box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:15px;line-height:1;cursor:pointer;transition:background .15s,border-color .15s;}
 .esm-file-act:hover{background:#ecfeff;border-color:#22d3ee;}
 .esm-file-act input{display:none;}
 [data-bs-theme="dark"] .esm-file-act{background:#0b2029;border-color:#173947;color:#67e8f9;}
 .esm-file-act--danger{border-color:#fecdd3;background:#fff1f2;color:#e11d48;}
 .esm-file-act--danger:hover{background:#ffe4e6;border-color:#fda4af;}
 [data-bs-theme="dark"] .esm-file-act--danger{background:#2a0f16;border-color:#5b2130;color:#fca5a5;}
-/* Labeled file actions — View / Download / Reupload */
-.esm-file-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;height:30px;line-height:1;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:12px;font-weight:700;padding:0 11px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}
+/* Labeled file actions — View / Download / Reupload.
+ * margin:0 is required: Reupload is a <label> and the global Velzon reboot puts
+ * margin-bottom on every label, which pushed it up out of line with the two
+ * <button> siblings in this centered flex row. */
+.esm-file-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex-shrink:0;height:30px;line-height:1;margin:0;box-sizing:border-box;border:1.5px solid #cbeef4;border-radius:8px;background:#fff;color:#0891b2;font-size:12px;font-weight:700;padding:0 11px;cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;}
 .esm-file-btn i{font-size:14px;line-height:1;}
 .esm-file-btn:hover{background:#ecfeff;border-color:#22d3ee;}
+.esm-file-btn:disabled{opacity:.6;cursor:default;background:#fff;border-color:#cbeef4;}
 .esm-file-btn input{display:none;}
 [data-bs-theme="dark"] .esm-file-btn{background:#0b2029;border-color:#173947;color:#67e8f9;}
 .esm-file-x{width:28px;height:28px;flex-shrink:0;border:1.5px solid #fecdd3;border-radius:8px;background:#fff1f2;color:#e11d48;font-size:11px;cursor:pointer;}

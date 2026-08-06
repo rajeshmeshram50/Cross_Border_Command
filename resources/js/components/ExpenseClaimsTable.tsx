@@ -338,7 +338,10 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '10%', wrap: true },
+      // HR sees the wide "Review & Approve" CTA, so the column reserves room
+      // for it — otherwise the fixed table layout squeezed the button and the
+      // action group wrapped on some rows but not others.
+      meta: { align: 'center', width: mode === 'hr' ? 240 : '10%', wrap: true },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}
@@ -473,7 +476,16 @@ function ExpenseActionCell({
 
   return (
     <>
-      <div className="d-inline-flex align-items-center gap-1">
+      {/* Fixed-width, end-justified action group. Rows carry different button
+          sets (wide "Review & Approve" on pending, icon-only elsewhere), so a
+          free-width centered group left every row's buttons at a different x
+          and the column read as ragged. Reserving the widest case and pushing
+          the buttons to its right edge keeps the trailing kebab — and every
+          icon before it — in a straight line down the table. */}
+      <div
+        className="d-inline-flex align-items-center justify-content-end gap-1"
+        style={{ minWidth: mode === 'hr' ? 216 : undefined }}
+      >
         {(canManagerAct || canHrAct) && onReview ? (
           <button
             type="button"
