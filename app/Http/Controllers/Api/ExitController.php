@@ -49,7 +49,9 @@ class ExitController extends Controller
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+        $lockedType = $this->lockedExitType($row);
         $row->fill($data);
+        $this->assertExitTypeUnchanged($lockedType, $row);
         $row->employee_id          = $employee->id;
         $row->client_id            = $employee->client_id;
         $row->branch_id            = $employee->branch_id;
@@ -95,7 +97,9 @@ class ExitController extends Controller
 
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+            $lockedType = $this->lockedExitType($row);
             $row->fill($data);
+            $this->assertExitTypeUnchanged($lockedType, $row);
             $row->employee_id          = $employee->id;
             $row->client_id            = $employee->client_id;
             $row->branch_id            = $employee->branch_id;
@@ -457,6 +461,36 @@ class ExitController extends Controller
      * behaviour of no settlement; Absconding recovers, matching how an
      * unserved notice has always been treated.
      */
+    /** The exit type already on file for a saved case, or null for a new one. */
+    private function lockedExitType(EmployeeExit $row): ?string
+    {
+        $existing = trim((string) ($row->exists ? $row->exit_type : ''));
+        return $existing !== '' ? $existing : null;
+    }
+
+    /**
+     * The exit type is IMMUTABLE once the case exists.
+     *
+     * It decides the stage list, the notice settlement, whether the blacklist
+     * question is asked and whether the employee can ever be rehired — so
+     * changing it mid-process would strand everything already recorded against
+     * the old one (a verified notice recovery, an F&F priced on a pay-in-lieu).
+     * The SPA shows it locked; this is the server-side twin so a direct call
+     * can't do what the UI won't.
+     */
+    private function assertExitTypeUnchanged(?string $locked, EmployeeExit $row): void
+    {
+        if ($locked === null) {
+            return;   // first save — anything goes
+        }
+        $incoming = trim((string) ($row->exit_type ?? ''));
+        if ($incoming === '' || $incoming === $locked) {
+            $row->exit_type = $locked;   // absent or unchanged → keep it
+            return;
+        }
+        abort(422, "The exit type cannot be changed once the exit has started (this case is a \"{$locked}\"). Cancel this exit and start a new one if the type is wrong.");
+    }
+
     /**
      * The blacklist question is only asked when the notice wasn't served —
      * a resignation without notice, or a termination. If the exit type is

@@ -797,11 +797,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<string, StageStatus>>({});
 
+  /* Set once by the Initiate-Exit picker before this wizard mounts, then
+     read-only for the life of the case — it decides the stage list and the
+     notice settlement, so it can't move underneath work already recorded. */
   const [exitType, setExitType]           = useState('');
-  /* The Initiate-Exit type picker. Opens by itself the first time an exit is
-     started (no type on file yet) because the type drives the whole stage
-     list — there is no sensible wizard to render until it's answered. */
-  const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
@@ -1273,7 +1272,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (employee) {
       setStage(1);
       setStageStatus({ initiation: 'In Progress' });
-      setTypePickerOpen(false);
     }
   }, [employee?.id]);
 
@@ -1837,21 +1835,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
-  /* Choosing the type is what shapes the wizard, so it's asked first and saved
-     immediately — a half-started exit that's abandoned still reopens on the
-     right stage list instead of re-prompting. */
-  const chooseExitType = async (value: string) => {
-    setExitType(value);
-    setTypePickerOpen(false);
-    setStage(1);
-    if (!employee) return;
-    try {
-      await api.put(`/employees/${employee.id}/exit`, { exit_type: value });
-    } catch {
-      // Non-fatal — Stage 1's own Save/Next will persist it again.
-    }
-  };
-
   return (
     <>
     <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ep-modal">
@@ -1922,17 +1905,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <Row className="g-2">
                   <Col md={6}>
                     <EpField label="Exit Type" required invalid={s1Errors.has('exitType')}>
-                      {/* Chosen in the Initiate-Exit picker and shown read-only
-                          here: it decides the stage list, so it can't be a
-                          quiet dropdown change mid-process. "Change" reopens
-                          the picker, which explains what each type implies. */}
+                      {/* Locked once chosen in the Initiate-Exit picker. The
+                          type decides the stage list and the whole notice
+                          settlement, so changing it mid-process would strand
+                          anything already recorded against the old one — it is
+                          fixed for the life of the case (enforced server-side
+                          in ExitController too). */}
                       <div className="ep-type-lock">
                         <span className={`ep-type-value${exitType ? '' : ' is-empty'}`}>
                           {exitType || 'Not selected'}
                         </span>
-                        <button type="button" className="ep-type-change" onClick={() => setTypePickerOpen(true)}>
-                          <i className="ri-repeat-line" />Change
-                        </button>
+                        <i className="ri-lock-line ep-type-locked" title="The exit type cannot be changed once the exit has started." />
                       </div>
                       {s1Errors.has('exitType') && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2828,17 +2811,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       </ModalBody>
     </Modal>
 
-    {/* Reopened from Stage 1 to correct a mis-pick. The FIRST pick doesn't
-        happen here — it happens before this modal exists (see the list's
-        Initiate Exit button), so the wizard is never shown behind the picker. */}
-    <ExitTypePickerModal
-      employee={employee}
-      current={exitType}
-      onClose={() => setTypePickerOpen(false)}
-      onPick={chooseExitType}
-      open={typePickerOpen}
-    />
-
     <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered contentClassName="border-0" backdrop="static">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
@@ -3204,7 +3176,9 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
         </div>
         <div style={{ padding: 18, background: 'var(--vz-secondary-bg)' }}>
           <div className="ep-section-label" style={{ marginBottom: 10 }}>Exit Type</div>
-          <div className="etp-grid">
+          {/* --tiles: three square boxes side by side. The Rehire picker reuses
+              .etp-grid without this modifier and stays as stacked rows. */}
+          <div className="etp-grid etp-grid--tiles">
             {EXIT_TYPE_CHOICES.map(c => (
               <button
                 key={c.value}
@@ -3223,15 +3197,15 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                     {settlementOf(c.value) === 'recover' && <em> · Notice Period Payment</em>}
                   </span>
                 </span>
-                <i className={`${busy ? 'ri-loader-4-line ri-spin' : 'ri-arrow-right-s-line'} etp-go`} />
+                {busy && <i className="ri-loader-4-line ri-spin etp-go" />}
               </button>
             ))}
           </div>
           <div className="etp-foot">
             <div className="etp-note">
-              <i className="ri-information-line" />
-              The type sets how the notice period is settled. You can change it later from Stage&nbsp;1 —
-              doing so reshapes the stages and clears anything already recorded against the old settlement.
+              <i className="ri-alert-line" />
+              The type sets how the notice period is settled and which stages the exit runs through.
+              <strong> It cannot be changed once the exit has started</strong> — pick carefully.
             </div>
             <button type="button" className="etp-cancel" onClick={onClose} disabled={busy}>
               Cancel
