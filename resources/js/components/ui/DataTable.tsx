@@ -166,6 +166,72 @@ export default function DataTable<T extends object>({
 
   const isSearchControlled = onSearchChange !== undefined;
   const [ownQuery, setOwnQuery] = useState('');
+  /* Sticky header vs. the scrollbar.
+   *
+   * The header lives inside .dt-scroll, so the vertical scrollbar spans it and
+   * the thumb reads as if it were inside the purple band. CSS cannot move it:
+   * ::-webkit-scrollbar-track margins are not honoured by Blink, and setting
+   * scrollbar-width makes Chrome drop the webkit rules entirely.
+   *
+   * The only real fix is to take the header OUT of the scrolling box — the
+   * same thing AG Grid and MUI DataGrid do. A clone of the header row is
+   * rendered ABOVE .dt-scroll, and the real one is flattened to zero height so
+   * it still resolves the column widths but paints nothing. The clone copies
+   * those measured widths, and follows scrollLeft so horizontal scrolling stays
+   * in step.
+   *
+   * If widths cannot be measured (no rows yet, hidden tab), `cloneCols` stays
+   * empty and the component falls back to the plain sticky header — the
+   * previous behaviour, never a broken one. */
+  const theadRef  = useRef<HTMLTableSectionElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const cloneRef  = useRef<HTMLDivElement>(null);
+  const [cloneCols, setCloneCols] = useState<number[]>([]);
+  /* Width of .dt-scroll's vertical scrollbar. The clone sits OUTSIDE that box,
+   * so without reserving the same gutter it is wider than the body's content
+   * box: the columns drift out of line and, at the far right, the clone runs
+   * out of scrollLeft before the body does — the header appears to stop
+   * following the horizontal scroll. */
+  const [scrollGutter, setScrollGutter] = useState(0);
+
+  useEffect(() => {
+    const head = theadRef.current;
+    const box  = scrollRef.current;
+    if (!head || !box) return;
+
+    const syncX = () => {
+      if (cloneRef.current) cloneRef.current.scrollLeft = box.scrollLeft;
+    };
+
+    const measure = () => {
+      setScrollGutter(prev => {
+        const g = Math.round(box.offsetWidth - box.clientWidth);
+        return Math.abs(prev - g) < 1 ? prev : g;
+      });
+      const cells = head.rows[0]?.cells;
+      if (!cells?.length) return;
+      const next = Array.from(cells, c => c.getBoundingClientRect().width);
+      // Bail out while the table is laid out at zero (hidden tab, first paint):
+      // publishing zeros would collapse the clone.
+      if (next.some(w => w <= 0)) return;
+      setCloneCols(prev =>
+        prev.length === next.length && prev.every((w, i) => Math.abs(w - next[i]) < 0.5)
+          ? prev
+          : next);
+    };
+
+    measure();
+    // Re-assert on every render, not only on scroll: the clone mounts (and
+    // remounts on a column-count change) at scrollLeft 0, which would leave the
+    // header parked at the left while the body stayed scrolled.
+    syncX();
+    box.addEventListener('scroll', syncX, { passive: true });
+    const ro = new ResizeObserver(measure);
+    ro.observe(head);
+    ro.observe(box);
+    return () => { box.removeEventListener('scroll', syncX); ro.disconnect(); };
+  });
+
   const [draftQuery, setDraftQuery] = useState(searchValue ?? '');
   useEffect(() => {
     // Keep the input in step when the parent resets/overwrites the value.
@@ -394,12 +460,67 @@ export default function DataTable<T extends object>({
       {children}
 
       <div className="dt-table-wrap">
-        <div className="dt-scroll">
+        {/* Clone header — sits OUTSIDE .dt-scroll, so the scrollbar below it
+            starts at the first row. Widths are the real header's measured
+            widths; scrollLeft is mirrored from the body. */}
+        {cloneCols.length > 0 && (
+          <div
+            className="dt-head-clone"
+            ref={cloneRef}
+            aria-hidden="true"
+            style={scrollGutter > 0 ? { width: `calc(100% - ${scrollGutter}px)` } : undefined}
+          >
+            <table className="dt-table" style={{ tableLayout: 'fixed', width: cloneCols.reduce((a, b) => a + b, 0) }}>
+              <colgroup>
+                {cloneCols.map((w, i) => <col key={i} style={{ width: w }} />)}
+              </colgroup>
+              <thead>
+                {table.getHeaderGroups().map(hg => (
+                  <tr key={hg.id}>
+                    {hg.headers.map(header => {
+                      const meta = header.column.columnDef.meta as DataTableColumnMeta | undefined;
+                      const textAlign = alignToCss(meta?.align);
+                      const canSort = header.column.getCanSort();
+                      const dir = header.column.getIsSorted();
+                      return (
+                        <th
+                          key={header.id}
+                          style={{ textAlign }}
+                          className={canSort ? 'dt-sortable' : undefined}
+                          onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
+                          aria-sort={dir === 'asc' ? 'ascending' : dir === 'desc' ? 'descending' : undefined}
+                          title={canSort ? 'Click to sort' : undefined}
+                        >
+                          <span
+                            className="dt-th-inner"
+                            style={{ justifyContent: textAlign === 'center' ? 'center' : textAlign === 'right' ? 'flex-end' : 'flex-start' }}
+                          >
+                            {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
+                            {canSort && (
+                              <i
+                                className={`dt-sort ${
+                                  dir === 'asc' ? 'ri-arrow-up-s-fill on'
+                                    : dir === 'desc' ? 'ri-arrow-down-s-fill on'
+                                      : 'ri-arrow-up-down-line'
+                                }`}
+                              />
+                            )}
+                          </span>
+                        </th>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </thead>
+            </table>
+          </div>
+        )}
+        <div className={`dt-scroll${cloneCols.length > 0 ? ' has-clone-head' : ''}`} ref={scrollRef}>
           <table
             className={`dt-table ${isEmpty ? 'dt-table-empty' : ''}`}
             style={{ minWidth, tableLayout: anyWidth ? 'fixed' : 'auto' }}
           >
-            <thead>
+            <thead ref={theadRef}>
               {table.getHeaderGroups().map(hg => (
                 <tr key={hg.id}>
                   {hg.headers.map(header => {

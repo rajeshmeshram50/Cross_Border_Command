@@ -655,11 +655,31 @@ function AuditLogTrigger({
       setPos({ top, left });
     };
     recompute();
-    window.addEventListener('scroll', recompute, true);
+    // Pinned to fixed coords: a scroll behind it strands the popover, so close
+    // instead — unless the scroll is inside the popover's own body (CBC #53).
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.ep-audit-popover')) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', recompute);
     return () => {
-      window.removeEventListener('scroll', recompute, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', recompute);
+    };
+  }, [open, setOpen]);
+
+  // Lock the page behind the popover; the log itself still scrolls (CBC #73).
+  useEffect(() => {
+    if (!open) return;
+    const body = document.body.style.overflow;
+    const html = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = body;
+      document.documentElement.style.overflow = html;
     };
   }, [open]);
 
@@ -709,6 +729,8 @@ function AuditLogTrigger({
             boxShadow: '0 18px 44px rgba(15,23,42,0.45)',
             padding: 14,
             zIndex: 6500,
+            maxHeight: 'min(70vh, 420px)',
+            overflowY: 'auto',
           }}
         >
           <AuditLogPopover row={row} />

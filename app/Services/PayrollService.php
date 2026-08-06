@@ -841,35 +841,61 @@ class PayrollService
                 'amount' => round(((float) ($c['amount'] ?? 0)) * $proration, 2),
             ];
         }
-        // Rule 4 — approved overtime, priced as
-        //   (gross ÷ working days ÷ shift hours) × OT multiplier × approved hours.
-        // Computed off the FULL monthly gross + the period's working days, so
-        // the hourly rate doesn't move with a mid-month join or with absence.
+        /* Overtime, priced as
+             (gross ÷ working days ÷ shift hours) × OT multiplier × hours.
+           Computed off the FULL monthly gross + the period's working days, so
+           the hourly rate doesn't move with a mid-month join or with absence.
+
+           Overtime is NO LONGER approval-gated: hours the attendance shows past
+           the shift end are paid directly. An explicitly recorded adjustment
+           still WINS when one exists, so HR can override the detected figure
+           (a negotiated number, or OT that never made it onto a punch); the
+           detected hours are the fallback when they haven't. */
         $ot = $this->overtimeForCycle($employee, $period, $gross, (float) $period->working_days);
         foreach ($ot['exceptions'] as $otEx) {
             $exceptions = $this->withException($exceptions, $otEx['type'], $otEx['reason']);
         }
 
-        // Overtime the ATTENDANCE shows (time worked past the shift end from
-        // the branch's Shift Details) vs what was actually approved. Reported,
-        // never auto-paid — Rule 4 keeps payment approval-gated. 'info' does
-        // not change the payslip status, so a few minutes of late sitting
-        // can't push everyone to Pending Review.
         $otDetected = $this->overtimeHoursFromAttendance($employee, $winStart, $winEnd);
-        if ($otDetected['hours'] > 0) {
+
+        if ($ot['hours'] <= 0 && $ot['amount'] <= 0 && $otDetected['hours'] > 0) {
+            $rate   = $this->overtimeRate($employee, $gross, (float) $period->working_days);
+            $hours  = (float) $otDetected['hours'];
+            $amount = round($hours * $rate['effective_rate_exact'], 2);
+            $ot = [
+                'hours'  => $hours,
+                'amount' => $amount,
+                'lines'  => [['code' => 'overtime', 'label' => 'Overtime Allowance', 'amount' => $amount]],
+                'exceptions' => [],
+            ];
+            // Spell the arithmetic out so the figure is checkable by hand.
             $exceptions = $this->withException($exceptions, 'info', sprintf(
-                'Attendance shows %s OT hr past the %s shift end across %d day(s); %s hr approved and paid.',
+                'Overtime: %s hr past the %s shift end across %d day(s) × ₹%s/hr (%s%s) = ₹%s — paid from attendance.',
+                $this->trimNum($hours),
+                $otDetected['shift_end'],
+                $otDetected['days'],
+                number_format($rate['effective_rate'], 2),
+                $this->trimNum($rate['multiplier']),
+                $rate['rate_found'] ? ' ' . $rate['rate_name'] : '× (no active OT rate — 1× hourly)',
+                number_format($amount, 2),
+            ));
+        } elseif ($otDetected['hours'] > 0) {
+            // An adjustment overrode the detected hours — say so, so a figure
+            // that doesn't match the attendance isn't mistaken for a bug.
+            $exceptions = $this->withException($exceptions, 'info', sprintf(
+                'Attendance shows %s OT hr past the %s shift end across %d day(s); %s hr recorded and paid.',
                 $this->trimNum($otDetected['hours']),
                 $otDetected['shift_end'],
                 $otDetected['days'],
                 $this->trimNum($ot['hours']),
             ));
-            if ($otDetected['capped_days'] > 0) {
-                $exceptions = $this->withException($exceptions, 'warning', sprintf(
-                    '%d day(s) show more than 12 hr past the shift end — likely a missed punch-out. Verify attendance before approving overtime.',
-                    $otDetected['capped_days'],
-                ));
-            }
+        }
+
+        if ($otDetected['capped_days'] > 0) {
+            $exceptions = $this->withException($exceptions, 'warning', sprintf(
+                '%d day(s) show more than 12 hr past the shift end — likely a missed punch-out. Verify the attendance; the overtime is capped at 12 hr for those days.',
+                $otDetected['capped_days'],
+            ));
         }
 
         // Approved overtime / bonus / incentive show as separate earning lines.
@@ -949,9 +975,10 @@ class PayrollService
                 . number_format($carried, 2) . ' carried to the next cycle.');
         }
 
-        // Overtime (Rule 4) + bonus/incentive (Rule 10) — only APPROVED
-        // adjustments count (pending/rejected are ignored by the query).
-        // Overtime was priced above (it feeds the earnings lines).
+        // Overtime + bonus/incentive (Rule 10). Overtime was priced above:
+        // a recorded adjustment when one exists, otherwise the hours the
+        // attendance shows past the shift end. Bonus still counts only
+        // APPROVED adjustments.
         $overtimeAmount = $ot['amount'];
         $overtimeHours  = $ot['hours'];
         $bonusAmount    = $this->approvedBonusAmount($employee->id, $period);
@@ -1811,9 +1838,9 @@ class PayrollService
      * parseable timing falls back to the 18:30 office default. Punches are
      * stored UTC and compared in local time, same as the late-mark heuristic.
      *
-     * Detection is NOT payment — Rule 4 still pays only APPROVED hours. This
-     * feeds the preview HR approves from, and the informational line on the
-     * payslip that says how much overtime went unclaimed.
+     * These hours are PAID directly when no overtime adjustment has been
+     * recorded for the cycle — the approval gate was removed. An explicit
+     * adjustment still overrides them.
      */
     public function overtimeHoursFromAttendance(Employee $employee, Carbon $start, Carbon $end): array
     {
@@ -1969,7 +1996,9 @@ class PayrollService
     }
 
     /**
-     * Rule 4 — approved overtime for the cycle, priced by the OT-rate formula.
+     * Explicitly RECORDED overtime for the cycle, priced by the OT-rate formula.
+     * Returns zero hours when none exists, in which case the caller falls back
+     * to the hours detected from attendance.
      * Returns the total hours, the payable amount, the payslip earning lines
      * and any exceptions to surface to HR.
      *

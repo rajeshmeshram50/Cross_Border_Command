@@ -895,7 +895,7 @@ function Router() {
 }
 
 /**
- * Resets the window scroll on every forward navigation.
+ * Scrolls back to the top on every forward navigation.
  *
  * Without this, a route change kept the OUTGOING page's scroll offset: leave
  * /hr/employees scrolled halfway down, pick Employee Onboarding from the menu,
@@ -903,6 +903,17 @@ function Router() {
  * viewport, reading as a broken page. React Router does not reset scroll on its
  * own, and <ScrollRestoration /> is not an option here: it only works under a
  * data router (createBrowserRouter), while this app uses <BrowserRouter>.
+ *
+ * ── What actually scrolls ────────────────────────────────────────────────
+ * Not the window. The Velzon shell pins #layout-wrapper to height:100dvh with
+ * overflow:hidden and lets `.main-content` scroll inside it, deliberately, so
+ * the app shows exactly one scrollbar. The document therefore never moves and
+ * window.scrollTo() is a silent no-op for every signed-in page — which is why
+ * the first version of this component appeared to do nothing.
+ *
+ * Both are reset: `.main-content` for the shell, and the window for the routes
+ * that render outside it (login, forgot-password, public onboarding), which do
+ * scroll the document normally.
  *
  * Two deliberate exemptions:
  *  - POP (browser Back/Forward) is left alone — going back should return you to
@@ -918,8 +929,14 @@ function ScrollToTop() {
 
   useEffect(() => {
     if (navType === 'POP' || hash) return;
-    // 'instant' is explicit: a page-level `scroll-behavior: smooth` would
-    // otherwise animate this and make every navigation feel sluggish.
+
+    // scrollTop rather than scrollTo({behavior:'instant'}): assignment is
+    // always immediate, and it cannot be animated by a stray
+    // `scroll-behavior: smooth` further up the tree.
+    document.querySelectorAll<HTMLElement>('.main-content')
+      .forEach(el => { el.scrollTop = 0; });
+
+    // Routes outside the shell still scroll the document.
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
   }, [pathname, hash, navType]);
 

@@ -304,7 +304,18 @@ export default function ProfileTab() {
                       if (!best) return p;
                       return new Date(p.start_date) > new Date(best.start_date) ? p : best;
                     }, null) || prev[0] || null;
+                    /* "Not Provided" vs "NA" say different things and the card
+                       used to say the wrong one. A fresher HAS no previous
+                       employer, so the field is not applicable — "Not Provided"
+                       reads as a gap in the record and invites HR to chase
+                       paperwork that will never exist. "Not Provided" is kept
+                       for someone marked EXPERIENCED whose employer really is
+                       missing, which is a genuine gap. */
                     const notProvided = <span className="text-muted fst-italic">Not Provided</span>;
+                    const notApplicable = <span className="text-muted">NA</span>;
+                    const priorField = (value?: string | null) =>
+                      !hasExp ? notApplicable : (value || notProvided);
+
                     return (
                       <Row className="g-3">
                         <Col xs={6} md={3} xl>
@@ -317,11 +328,11 @@ export default function ProfileTab() {
                         </Col>
                         <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Last Company</div>
-                          <div className="ep-field-value">{last?.company_name || notProvided}</div>
+                          <div className="ep-field-value">{priorField(last?.company_name)}</div>
                         </Col>
                         <Col xs={6} md={3} xl>
                           <div className="ep-field-label">Last Designation</div>
-                          <div className="ep-field-value">{last?.job_title || notProvided}</div>
+                          <div className="ep-field-value">{priorField(last?.job_title)}</div>
                         </Col>
                       </Row>
                     );
@@ -402,7 +413,11 @@ export default function ProfileTab() {
                     </Col>
                     <Col xs={6}>
                       <div className="px-3 py-2 h-100 pft-mini-indigo">
-                        <div className="ep-field-label pft-mini-label-indigo">Emp Type</div>
+                        {/* "Work Type" — the label the Employee form uses for
+                            this very field (Job Details → Work Type). It was
+                            "Emp Type" here, which reads as a different
+                            attribute even though it renders the same value. */}
+                        <div className="ep-field-label pft-mini-label-indigo">Work Type</div>
                         <div className="ep-field-value pft-mini-value-indigo">{empDetail?.worker_type || empDetail?.work_type || empDetail?.time_type || '—'}</div>
                       </div>
                     </Col>

@@ -392,9 +392,30 @@ class BranchController extends Controller
             }
         }
 
+        /* How many employees sit on each of this branch's shifts.
+         *
+         * Sent so the form can disable a delete it knows will be refused,
+         * instead of letting HR click it, fill in the rest of the page and
+         * discover on Save that the whole submission bounced. The server still
+         * enforces the rule — this is only the earlier, kinder half of it. */
+        $shiftUsage = [];
+        foreach ((array) ($branch->shifts ?? []) as $shift) {
+            $name = trim((string) ($shift['name'] ?? ''));
+            if ($name === '') continue;
+            $shiftUsage[$name] = Employee::withTrashed()
+                ->where('branch_id', $branch->id)
+                ->where(function ($w) {
+                    $w->whereNull('status')
+                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                })
+                ->whereRaw('LOWER(TRIM(shift)) = ?', [mb_strtolower($name)])
+                ->count();
+        }
+
         return response()->json([
             'branch' => $branch,
             'branch_user' => $userPayload,
+            'shift_usage' => $shiftUsage,
         ]);
     }
 
@@ -546,7 +567,36 @@ class BranchController extends Controller
             // Shifts / bank accounts handled separately — the array cast would
             // double-encode the JSON string that arrives on multipart uploads.
             if ($request->has('shifts')) {
-                $branch->update(['shifts' => $this->normalizeShifts($request->input('shifts'))]);
+                $incoming = $this->normalizeShifts($request->input('shifts'));
+
+                /* Refuse to drop a shift that people are actually working.
+                 *
+                 * employees.shift stores the shift NAME, not an id, so deleting
+                 * the row here does not cascade — it orphans. The employee keeps
+                 * a name that no longer resolves to any start/end time, and
+                 * everything downstream that reads a shift (attendance's
+                 * late-mark heuristic, payroll's shift-start) silently loses its
+                 * reference. This branch's data already shows the damage:
+                 * employees sit on "General Shift" / "Morning Shift" while the
+                 * branch only defines "General".
+                 *
+                 * Renaming counts as deleting for the same reason — the old name
+                 * stops resolving.
+                 */
+                $inUse = $this->shiftsInUse($branch, $incoming);
+                if (!empty($inUse)) {
+                    $parts = [];
+                    foreach ($inUse as $name => $count) {
+                        $parts[] = "\"{$name}\" ({$count} employee" . ($count === 1 ? '' : 's') . ')';
+                    }
+                    return response()->json([
+                        'message' => 'Cannot remove ' . implode(', ', $parts)
+                            . ' — reassign those employees to another shift first.',
+                        'errors'  => ['shifts' => ['This shift is assigned to employees in this branch.']],
+                    ], 422);
+                }
+
+                $branch->update(['shifts' => $incoming]);
             }
             if ($request->has('bank_accounts')) {
                 $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
@@ -741,6 +791,54 @@ class BranchController extends Controller
      * an already-decoded array (JSON requests), or null. Blank-named rows
      * are dropped so empty repeater rows never persist.
      */
+    /**
+     * Shift names being removed from this branch that employees still sit on.
+     *
+     * @param  array  $incoming  the shift rows the request wants to keep
+     * @return array<string,int> shift name => employee count (empty = safe to save)
+     */
+    private function shiftsInUse(Branch $branch, array $incoming): array
+    {
+        $names = fn (array $rows) => collect($rows)
+            ->pluck('name')
+            ->filter(fn ($n) => trim((string) $n) !== '')
+            ->map(fn ($n) => trim((string) $n))
+            ->values();
+
+        $keptLower = $names($incoming)->map(fn ($n) => mb_strtolower($n))->all();
+        $dropped   = $names((array) ($branch->shifts ?? []))
+            ->reject(fn ($n) => in_array(mb_strtolower($n), $keptLower, true))
+            ->values();
+
+        if ($dropped->isEmpty()) {
+            return [];
+        }
+
+        $inUse = [];
+        foreach ($dropped as $name) {
+            // Case-insensitive on purpose: Postgres compares strings exactly, so
+            // "general shift" would slip past a plain WHERE and the guard would
+            // pass while the employee's shift still breaks.
+            $count = Employee::withTrashed()
+                ->where('branch_id', $branch->id)
+                // Someone who has exited is not "using" the shift any more; a
+                // merely DISABLED employee still is — they can be switched back
+                // on and would come back to a shift that no longer exists.
+                ->where(function ($w) {
+                    $w->whereNull('status')
+                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                })
+                ->whereRaw('LOWER(TRIM(shift)) = ?', [mb_strtolower($name)])
+                ->count();
+
+            if ($count > 0) {
+                $inUse[$name] = $count;
+            }
+        }
+
+        return $inUse;
+    }
+
     private function normalizeShifts($raw): array
     {
         if (is_string($raw)) {

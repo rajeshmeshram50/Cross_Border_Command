@@ -72,6 +72,11 @@ export interface EmployeeProfileCtx {
   setExpenseSubTab: (v: 'mine' | 'team') => void;
   advanceSubTab: 'mine' | 'team';
   setAdvanceSubTab: (v: 'mine' | 'team') => void;
+  /* Advance Requests only — narrows the list by used_for before the status
+     pills. Supplied by the provider all along; the type was missing them. */
+  advUsedForTab: 'self' | 'company';
+  setAdvUsedForTab: (v: 'self' | 'company') => void;
+  advUsedForCounts: { self: number; company: number };
   expenseFilter: 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
   setExpenseFilter: (v: 'all' | 'approved' | 'rejected' | 'pending' | 'draft') => void;
   expenseSearch: string;

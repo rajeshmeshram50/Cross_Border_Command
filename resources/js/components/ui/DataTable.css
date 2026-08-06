@@ -264,24 +264,38 @@
   /* Shrink factor 8 (vs the tab rail's 1): when the toolbar line is over-full
      the search gives up its width FIRST, so the tab rail keeps its tabs on a
      single line instead of wrapping one onto a second row inside the rail. */
-  flex: 1 8 200px; min-width: 140px; max-width: 260px;
-  height: 42px;
+  flex: 0 8 320px; min-width: 140px; max-width: 320px;
+  /* 38px, down from 42. The field sat taller than the tab pills beside it,
+     which made the toolbar read as two mismatched rows of controls rather than
+     one strip. */
+  height: 38px;
   display: flex; align-items: center;
-  padding: 0 8px 0 38px;
+  padding: 0 8px 0 36px;
   background: rgba(255, 255, 255, .80);
   border: 1.5px solid rgba(var(--dt-a-rgb), .28);
-  border-radius: 11px;
+  border-radius: 10px;
   box-shadow: 0 1px 0 rgba(255, 255, 255, .95) inset;
   transition: border-color .16s, box-shadow .16s;
+}
+/* Toolbars with NO right-hand actions group — Employee, Leave, Attendance.
+   `.dt-toolbar-actions` is what normally claims the right edge via
+   margin-left:auto; with no actions present nothing did, so the search sat
+   glued to the tabs with a wide dead band after it. The search takes that role
+   instead: pinned right, at a fixed width rather than stretched, because a
+   search field gains nothing from being 600px wide. */
+.dt-toolbar:not(:has(.dt-toolbar-actions)) .dt-search {
+  margin-left: auto;
 }
 .dt-search:focus-within {
   border-color: var(--dt-a-400);
   box-shadow: 0 0 0 3px rgba(var(--dt-a-rgb), .18);
 }
 .dt-search-icon {
-  position: absolute; left: 14px;
+  /* 13px to match the 36px left padding above — the icon was set against the
+     old 38px inset and drifted right of centre when the field was tightened. */
+  position: absolute; left: 13px;
   color: var(--vz-secondary-color);
-  font-size: 16px;
+  font-size: 15px;
 }
 .dt-search input {
   flex: 1; border: 0; outline: 0; background: transparent;
@@ -353,6 +367,32 @@
 .dt-scroll::-webkit-scrollbar-track { background: transparent; }
 .dt-scroll::-webkit-scrollbar-thumb { background: var(--dt-a-200); border-radius: 8px; }
 .dt-scroll::-webkit-scrollbar-thumb:hover { background: var(--dt-a-300); }
+
+/* Clone header — the real one flattened out of the scroll box.
+   overflow:hidden (not auto) because its horizontal position is driven from
+   .dt-scroll's scrollLeft; giving it a scrollbar of its own would show a second
+   horizontal bar directly above the real one. */
+.dt-head-clone {
+  overflow: hidden;
+  flex-shrink: 0;
+}
+/* With the clone painting the header, the real thead only has to resolve
+   column widths — so it is flattened to nothing. Kept in the DOM (rather than
+   display:none) precisely BECAUSE it still participates in table layout: its
+   cells are what get measured for the clone's colgroup. */
+.dt-scroll.has-clone-head .dt-table > thead > tr > th {
+  padding: 0;
+  height: 0;
+  line-height: 0;
+  font-size: 0;
+  border: 0;
+  overflow: hidden;
+  color: transparent;
+  background: transparent;
+  position: static;
+  text-shadow: none;
+}
+.dt-scroll.has-clone-head .dt-table > thead > tr > th * { display: none; }
 
 .dt-table {
   width: 100%;
