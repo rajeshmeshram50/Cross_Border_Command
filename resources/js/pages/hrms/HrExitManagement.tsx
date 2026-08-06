@@ -766,6 +766,15 @@ function settlementOf(exitType: string): Settlement {
   return 'served';
 }
 
+/** Badge tint per exit type — same palette as the Exit Type column in the list
+ *  so a case reads identically in the table and inside the stage modal. */
+function exitTypeTone(exitType: string): { bg: string; fg: string; bd: string } {
+  const t = String(exitType || '').trim();
+  if (t === 'Termination') return { bg: '#f5f3ff', fg: '#6d28d9', bd: '#ddd6fe' };
+  if (t === 'Resignation')  return { bg: '#ecfdf5', fg: '#0d9488', bd: '#a7f3d0' };
+  return { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
+}
+
 type Stage = { key: StageKey; num: number; title: string; short: string; sub: string; icon: string };
 
 /**
@@ -2078,9 +2087,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           fixed for the life of the case (enforced server-side
                           in ExitController too). */}
                       <div className="ep-type-lock">
-                        <span className={`ep-type-value${exitType ? '' : ' is-empty'}`}>
-                          {exitType || 'Not selected'}
-                        </span>
+                        {exitType ? (
+                          // Shown as a tinted badge (same palette as the Exit
+                          // Type column) rather than plain text — the type is
+                          // the one field on this form that can never change,
+                          // so it reads as a state, not an editable value.
+                          <span
+                            className="ep-type-value ep-type-badge"
+                            style={{
+                              background: exitTypeTone(exitType).bg,
+                              color: exitTypeTone(exitType).fg,
+                              border: `1px solid ${exitTypeTone(exitType).bd}`,
+                            }}
+                          >
+                            {exitType}
+                          </span>
+                        ) : (
+                          <span className="ep-type-value is-empty">Not selected</span>
+                        )}
                         <i className="ri-lock-line ep-type-locked" title="The exit type cannot be changed once the exit has started." />
                       </div>
                       {s1Errors.has('exitType') && (

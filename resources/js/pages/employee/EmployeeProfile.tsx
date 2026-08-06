@@ -91,6 +91,18 @@ type TabKey = 'profile' | 'job' | 'attendance' | 'vault' | 'payroll' | 'expense'
  *  passes the raw API row instead of a flattened name. */
 const asName = (v: unknown): string =>
   v && typeof v === 'object' ? String((v as any).name ?? (v as any).title ?? '') : (v == null ? '' : String(v));
+/** First day of the month AFTER the given ISO date (defaults to today).
+ *  Salary recovery on an advance can only begin in the month following the
+ *  request — the current month's payroll is already in flight (CBC #93). */
+const nextMonthFirst = (iso?: string | null): string => {
+  const base = /^(\d{4})-(\d{2})/.exec(String(iso || ''));
+  const now = new Date();
+  const y = base ? Number(base[1]) : now.getFullYear();
+  const m = base ? Number(base[2]) : now.getMonth() + 1;   // 1-based
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return `${ny}-${String(nm).padStart(2, '0')}-01`;
+};
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -1025,15 +1037,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       errs.requested = 'Requested date must be today (the request creation date)';
       summary.push('Requested date must be today (the request creation date)');
     }
-    if (!advIsCompany && advRecoveryStart && advRecoveryStart < todayIso) {
-      errs.recovery_start = 'Recovery start cannot be in the past';
-      summary.push('Recovery start cannot be in the past');
-    }
-    // Server enforces after_or_equal:requested_date too, but catch it
-    // client-side so the user gets immediate feedback instead of a 422.
-    if (!advIsCompany && advRequestedDate && advRecoveryStart && advRecoveryStart < advRequestedDate) {
-      errs.recovery_start = 'Recovery start must be on or after requested date';
-      summary.push('Recovery start must be on or after requested date');
+    // Recovery can only start in the month AFTER the request — the requested
+    // month's payroll is already running, so no deduction can be applied to it
+    // (CBC #93). This subsumes the old "not in the past / on or after the
+    // requested date" checks.
+    if (!advIsCompany && advRecoveryStart) {
+      const minStart = nextMonthFirst(advRequestedDate || todayIso);
+      if (advRecoveryStart < minStart) {
+        errs.recovery_start = 'Recovery must start in the month after the requested date';
+        summary.push('Recovery must start in the month after the requested date');
+      }
     }
     // Recovery mode / EMI only apply to a self (salary-recovered) advance.
     if (!advIsCompany) {
@@ -2061,7 +2074,28 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const runProfileExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
     setExportOpen(false);
     const isAdvance = expenseModuleTab === 'advance';
-    const stamp = new Date().toISOString().slice(0, 10);
+    /* Dates in the file must read exactly as they do on screen (CBC #94-96).
+     * Calendar dates ("2026-07-26") are split textually — handing them to
+     * `new Date()` treats them as UTC midnight, which renders a day early west
+     * of Greenwich — while true instants are converted to local time. Dumping
+     * the raw API values made every export look a day behind the table. */
+    const XM = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    const xDate = (v: any): string => {
+      if (!v) return '';
+      const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+      if (m) return `${m[3]}-${XM[Number(m[2]) - 1]}-${m[1]}`;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? String(v) : `${p2(d.getDate())}-${XM[d.getMonth()]}-${d.getFullYear()}`;
+    };
+    const xStamp = (v: any): string => {
+      if (!v) return '';
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return String(v);
+      return `${p2(d.getDate())}-${XM[d.getMonth()]}-${d.getFullYear()} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+    };
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${p2(now.getMonth() + 1)}-${p2(now.getDate())}`;
     const baseName = `${isAdvance ? 'advance-requests' : 'expense-claims'}-${profileEmpCode || 'employee'}-${stamp}`;
     const label = isAdvance ? 'Advance Requests' : 'Expense Claims';
 
@@ -2072,14 +2106,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       rows = filteredAdvances.map(a => [
         a.advance_no, a.employee_name, a.employee_code,
         a.advance_type === 'Other' && a.advance_type_other ? `Other · ${a.advance_type_other}` : a.advance_type,
-        a.amount, a.requested_date, a.recovery_start, a.recovery_mode, a.recovery_months, a.monthly_emi,
-        a.reason, a.status, a.manager_status, a.hr_status, a.created_at,
+        a.amount, xDate(a.requested_date), xDate(a.recovery_start), a.recovery_mode, a.recovery_months, a.monthly_emi,
+        a.reason, a.status, a.manager_status, a.hr_status, xStamp(a.created_at),
       ]);
     } else {
       header = ['Claim No', 'Employee', 'Emp Code', 'Category', 'Description', 'Expense Date', 'Amount', 'Currency', 'Supplier', 'Project', 'Payment Method', 'Status', 'Manager Status', 'HR Status', 'Created At'];
       rows = filteredExpenses.map(c => [
-        c.claim_no, c.employee_name, c.employee_code, c.category_name, c.title, c.expense_date,
-        c.amount, c.currency, c.vendor, c.project, c.payment_method, c.status, c.manager_status, c.hr_status, c.created_at,
+        c.claim_no, c.employee_name, c.employee_code, c.category_name, c.title, xDate(c.expense_date),
+        c.amount, c.currency, c.vendor, c.project, c.payment_method, c.status, c.manager_status, c.hr_status, xStamp(c.created_at),
       ]);
     }
     if (rows.length === 0) {
@@ -2969,13 +3003,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 </div>
                 <div className="mb-0">
                   <div className="ep-claim-label">Business Purpose <span className="ep-claim-req">*</span></div>
+                  {/* Capped at 500 like the advance Reason: an unbounded purpose
+                      was rendered in full on the approval screen and pushed that
+                      layout apart (CBC #57). `slice` as well as maxLength — the
+                      attribute doesn't stop a paste on every browser. */}
                   <textarea
                     className={`ep-claim-input${claimErrors.purpose ? ' is-invalid' : ''}`}
                     rows={3}
+                    maxLength={500}
                     placeholder="Explain the business purpose..."
                     value={claimPurpose}
-                    onChange={e => { setClaimPurpose(e.target.value); clearClaimErr('purpose'); }}
+                    onChange={e => { setClaimPurpose(e.target.value.slice(0, 500)); clearClaimErr('purpose'); }}
                   />
+                  <div style={{ textAlign: 'right', fontSize: 11, color: claimPurpose.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{claimPurpose.length}/500</div>
                   {claimErrors.purpose && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.purpose}</div>}
                 </div>
               </Col>
@@ -3209,12 +3249,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       advance has no recovery and no expected-use date. */}
                   {advUsedFor !== 'company' && (
                   <Col md={6}>
-                    <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span></div>
+                    <div className="ep-claim-label">Recovery Start <span className="ep-claim-req">*</span> <span className="ep-claim-muted">(from next month)</span></div>
                     <MasterDatePicker
                       value={advRecoveryStart}
                       onChange={(v) => { setAdvRecoveryStart(v); clearAdvErr('recovery_start'); }}
                       invalid={!!advErrors.recovery_start}
-                      minDate={advRequestedDate || new Date().toISOString().slice(0, 10)}
+                      // Earliest is the 1st of the month after the request —
+                      // the requested month's payroll has already run (CBC #93).
+                      minDate={nextMonthFirst(advRequestedDate)}
                     />
                     {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>

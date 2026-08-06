@@ -804,8 +804,10 @@ function AuditLogTrigger({
   const popRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Recompute the popover position whenever it opens (and on scroll/resize
-  // while open) so it stays anchored to the trigger button.
+  // Position the popover when it opens. It is pinned to fixed coords taken
+  // from the trigger, so a scroll strands it away from its row — close it
+  // instead (same rule as the customers segment popover), except when the
+  // scroll happens INSIDE the popover's own body. A resize just re-anchors.
   useEffect(() => {
     if (!open) { setPos(null); return; }
     const recompute = () => {
@@ -827,11 +829,31 @@ function AuditLogTrigger({
       setPos({ top, left });
     };
     recompute();
-    window.addEventListener('scroll', recompute, true);
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.ep-audit-popover')) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', recompute);
     return () => {
-      window.removeEventListener('scroll', recompute, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', recompute);
+    };
+  }, [open, setOpen]);
+
+  // Lock the page behind the popover. It is pinned to fixed coords, so letting
+  // the page scroll underneath drags it away from its row; the popover's own
+  // body still scrolls (CBC #73).
+  useEffect(() => {
+    if (!open) return;
+    const body = document.body.style.overflow;
+    const html = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = body;
+      document.documentElement.style.overflow = html;
     };
   }, [open]);
 
@@ -890,6 +912,10 @@ function AuditLogTrigger({
             boxShadow: '0 18px 44px rgba(15,23,42,0.45)',
             padding: 14,
             zIndex: 6500,
+            // The page behind is locked while this is open, so a long log
+            // scrolls HERE rather than taking the page with it.
+            maxHeight: 'min(70vh, 420px)',
+            overflowY: 'auto',
           }}
         >
           <AuditLogPopover claim={claim} />

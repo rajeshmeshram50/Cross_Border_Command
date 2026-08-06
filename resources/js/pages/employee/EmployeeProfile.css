@@ -3041,24 +3041,43 @@
 }
 .ext-section-title { font-size: 12px; }
 .ext-section-sub { font-size: 11px; }
-.ext-search { min-width: 200px; }
-.ext-search-input { font-size: 12px; height: 30px; }
-.ext-search-icon { font-size: 12px; }
+/* Toolbar controls — Search / Export / Raise New Claim sit on the filter-pill
+   line, sized and shaped like the shared DataTable toolbar (the document
+   templates list) so the two screens read as the same component. */
+.ext-toolbar-actions { row-gap: 8px; }
+.ext-search { min-width: 180px; max-width: 320px; flex: 0 1 260px; }
+.ext-search-input {
+  font-size: 13px; height: 34px; border-radius: 10px;
+  border: 1.5px solid var(--vz-border-color);
+  padding-left: 34px;
+}
+.ext-search-input:focus {
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139,92,246,0.18);
+}
+.ext-search-icon { font-size: 14px; left: 11px; }
 .ext-export-toggle {
   background: var(--vz-card-bg);
   color: var(--vz-body-color);
-  border: 1px solid var(--vz-border-color);
-  font-size: 11.5px;
-  padding: 4px 12px;
+  border: 1.5px solid var(--vz-border-color);
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  height: 34px;
+  padding: 0 12px;
 }
 .ext-new-claim {
-  background: linear-gradient(135deg,#f97316,#fb923c);
+  background: linear-gradient(135deg,#6366f1,#8b5cf6);
   color: #fff;
   border: none;
-  box-shadow: 0 4px 10px rgba(249,115,22,0.28);
-  font-size: 11.5px;
-  padding: 4px 12px;
-  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.3);
+  font-size: 12.5px;
+  font-weight: 700;
+  height: 34px;
+  padding: 0 14px;
+  white-space: nowrap;
+  transition: transform .15s ease, box-shadow .2s ease, filter .15s ease;
 }
 .ext-subtab-wrap {
   background: var(--vz-secondary-bg);
@@ -3086,33 +3105,19 @@
   font-size: 10px;
   font-weight: 700;
 }
-/* Divider between the Self/Company Used pills and the status pills — they
-   share one row, so a hairline keeps the two groups readable. */
+/* Divider between the Self/Company Used rail and the status rail — they share
+   one row, so a hairline keeps the two groups readable. Sized to the rail
+   (42px) rather than to a bare pill. */
 .ext-pill-divider {
   width: 1px;
-  height: 18px;
+  height: 26px;
   margin: 0 4px;
   background: var(--vz-border-color);
   flex-shrink: 0;
 }
-.ext-filter-pill {
-  font-size: 11.5px;
-  padding: 4px 12px;
-  background: var(--ext-pill-bg);
-  color: var(--ext-pill-color);
-  border: 1px solid var(--ext-pill-border);
-  box-shadow: var(--ext-pill-shadow);
-  transition: all .15s ease;
-}
-.ext-filter-count {
-  min-width: 20px;
-  height: 16px;
-  padding: 0 6px;
-  background: var(--ext-pill-count-bg);
-  color: var(--ext-pill-count-color);
-  font-size: 10px;
-  font-weight: 700;
-}
+/* The status / used-for filters now render as the shared DataTable tab rail
+   (.dt-tabrail > .dt-tabs > .dt-tab), the same strip as Employee Onboarding —
+   the old .ext-filter-pill / .ext-filter-count rules were dropped with it. */
 .ext-status-dot { width: 6px; height: 6px; border-radius: 50%; background: #10b981; }
 
 /* AttendanceTab (was AttendanceTab.css) */

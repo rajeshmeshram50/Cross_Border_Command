@@ -49,6 +49,20 @@ export default function ExpenseTab() {
   const [viewAdvSettle, setViewAdvSettle] = useState(false);
   useEffect(() => { setPage(1); }, [expenseModuleTab, expenseSubTab, advanceSubTab, advUsedForTab, expenseFilter, expenseSearch]);
 
+  // The Export menu is absolutely positioned against its toggle, so a scroll
+  // leaves it floating over the page detached from the button. Close it on any
+  // scroll outside the menu itself (CBC #53).
+  useEffect(() => {
+    if (!exportOpen) return;
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.dropdown-menu')) return;
+      setExportOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => window.removeEventListener('scroll', onScroll, true);
+  }, [exportOpen, setExportOpen]);
+
   const isAdvance   = expenseModuleTab === 'advance';
   const pagedTotal  = isAdvance ? filteredAdvances.length : filteredExpenses.length;
   const totalPages  = Math.max(1, Math.ceil(pagedTotal / pageSize));
@@ -211,9 +225,11 @@ export default function ExpenseTab() {
                     (backend returns every row where manager_id = current user
                     regardless of status), so this toggle keeps the historic
                     track visible after the manager has acted.
-                    Lives in the header action row (beside Search / Export /
-                    Raise New Claim) so it reads as part of the section
-                    controls instead of floating above the table. */}
+                    Lives in the header row so it reads as part of the section
+                    controls instead of floating above the table; Search /
+                    Export / Raise New Claim moved down to the filter row (see
+                    below), the way the document-templates list puts its search
+                    and primary action on the tab line. */}
                 {isOwnProfile && (teamClaims.length > 0 || teamAdvances.length > 0) && (
                   <div className="d-flex gap-1 ext-subtab-wrap">
                     {(expenseModuleTab === 'advance'
@@ -261,69 +277,6 @@ export default function ExpenseTab() {
                     })}
                   </div>
                 )}
-                <div className="search-box ep-exp-search ext-search">
-                  <input
-                    type="text"
-                    className="form-control form-control-sm ext-search-input"
-                    placeholder="Search…"
-                    value={expenseSearch}
-                    onChange={e => setExpenseSearch(e.target.value)}
-                  />
-                  <i className="ri-search-line search-icon ext-search-icon" />
-                </div>
-                {/* Export — opens a format picker (Excel / PDF / CSV) and
-                    exports the active module's filtered rows. Was previously
-                    a dead button with no handler. */}
-                <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)}>
-                  <DropdownToggle
-                    tag="button"
-                    type="button"
-                    caret={false}
-                    className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1 ext-export-toggle"
-                  >
-                    <i className="ri-download-2-line" /> Export
-                    <i className="ri-arrow-down-s-line" />
-                  </DropdownToggle>
-                  <DropdownMenu end>
-                    <DropdownItem header>Download as</DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('xlsx')}>
-                      <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
-                    </DropdownItem>
-                    <DropdownItem onClick={() => runProfileExport('csv')}>
-                      <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
-                    </DropdownItem>
-                  </DropdownMenu>
-                </Dropdown>
-                {/* Raise New Claim — inline styles can't carry :hover, so
-                    we drive the brightening + lift via mouse handlers.
-                    Hidden until the employee's own onboarding is complete
-                    (CBC #85); the server rejects the POST either way. */}
-                {canRaiseHrRequest && (
-                <button
-                  type="button"
-                  className="btn btn-sm rounded-pill fw-semibold d-inline-flex align-items-center gap-1 ext-new-claim"
-                  onMouseEnter={e => {
-                    const t = e.currentTarget;
-                    t.style.transform = 'translateY(-1px)';
-                    t.style.boxShadow = '0 6px 14px rgba(249,115,22,0.45)';
-                    t.style.filter = 'brightness(1.06)';
-                  }}
-                  onMouseLeave={e => {
-                    const t = e.currentTarget;
-                    t.style.transform = 'translateY(0)';
-                    t.style.boxShadow = '0 4px 10px rgba(249,115,22,0.28)';
-                    t.style.filter = 'none';
-                  }}
-                  onClick={() => {
-                    // Open the unified modal in the right mode based on
-                    // which list is currently visible.
-                    setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
-                    setClaimOpen(true);
-                  }}
-                >
-                  <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
-                </button>
-                )}
               </div>
             </div>
             <div className="px-3 pb-3 pt-2">
@@ -342,83 +295,141 @@ export default function ExpenseTab() {
                     disconnected control. */}
                 {expenseModuleTab === 'advance' && (
                   <>
-                    {[
-                      { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' },
-                      { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6', shadow: 'rgba(139,92,246,0.32)' },
-                    ].map(f => {
-                      const on = advUsedForTab === f.key;
+                    <div className="dt-tabrail flex-shrink-0" data-accent="blue">
+                      <div className="dt-tabs" role="tablist">
+                        {[
+                          { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self },
+                          { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company },
+                        ].map(f => {
+                          const on = advUsedForTab === f.key;
+                          return (
+                            <button
+                              key={f.key}
+                              type="button"
+                              role="tab"
+                              aria-selected={on}
+                              onClick={() => { setAdvUsedForTab(f.key); setExpenseFilter('all'); }}
+                              className={`dt-tab ${on ? 'on' : 'off'}`}
+                            >
+                              {f.label}
+                              <span className="dt-tab-count">{f.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <span className="ext-pill-divider" />
+                  </>
+                )}
+                {/* Status tabs — the shared .dt-tabrail / .dt-tabs / .dt-tab
+                    markup from components/ui/DataTable.css, i.e. the same rail
+                    the Employee Onboarding and Document Template lists use, so
+                    the strips are identical by construction. */}
+                <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+                  <div className="dt-tabs" role="tablist">
+                    {(() => {
+                      const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                      const draftCount = expenseModuleTab === 'advance'
+                        ? advanceDrafts.length
+                        : expenseDrafts.length;
+                      // Drafts is a permanent tab (CBC #68) — it used to appear
+                      // only once a draft existed, so there was no way to tell
+                      // the feature was there. With none saved it opens on the
+                      // list's own "no drafts yet" empty state.
+                      return [
+                        { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all },
+                        { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved },
+                        { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected },
+                        { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending },
+                        { key: 'draft'    as ExpenseFilter, label: 'Drafts',   count: draftCount },
+                      ];
+                    })().map(f => {
+                      const on = expenseFilter === f.key;
                       return (
                         <button
                           key={f.key}
                           type="button"
-                          onClick={() => { setAdvUsedForTab(f.key); setExpenseFilter('all'); }}
-                          className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold ext-filter-pill"
-                          style={{
-                            ['--ext-pill-bg' as any]: on ? f.active : 'var(--vz-card-bg)',
-                            ['--ext-pill-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                            ['--ext-pill-border' as any]: on ? f.active : 'var(--vz-border-color)',
-                            ['--ext-pill-shadow' as any]: on ? `0 4px 10px ${f.shadow}` : 'none',
-                          }}
+                          role="tab"
+                          aria-selected={on}
+                          onClick={() => setExpenseFilter(f.key)}
+                          className={`dt-tab ${on ? 'on' : 'off'}`}
                         >
                           {f.label}
-                          <span
-                            className="d-inline-flex align-items-center justify-content-center rounded-pill ext-filter-count"
-                            style={{
-                              ['--ext-pill-count-bg' as any]: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                              ['--ext-pill-count-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                            }}
-                          >
-                            {f.count}
-                          </span>
+                          <span className="dt-tab-count">{f.count}</span>
                         </button>
                       );
                     })}
-                    <span className="ext-pill-divider" />
-                  </>
-                )}
-                {(() => {
-                  const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
-                  const draftCount = expenseModuleTab === 'advance'
-                    ? advanceDrafts.length
-                    : expenseDrafts.length;
-                  const base = [
-                    { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all,      active: '#6366f1', shadow: 'rgba(99,102,241,0.32)' },
-                    { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved, active: '#10b981', shadow: 'rgba(16,185,129,0.32)' },
-                    { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected, active: '#ef4444', shadow: 'rgba(239,68,68,0.32)'  },
-                    { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending,  active: '#f59e0b', shadow: 'rgba(245,158,11,0.32)' },
-                  ];
-                  if (draftCount > 0) {
-                    base.push({ key: 'draft' as ExpenseFilter, label: 'Drafts', count: draftCount, active: '#0ea5e9', shadow: 'rgba(14,165,233,0.32)' });
-                  }
-                  return base;
-                })().map(f => {
-                  const on = expenseFilter === f.key;
-                  return (
-                    <button
-                      key={f.key}
+                  </div>
+                </div>
+                {/* Search / Export / Raise New Claim ride at the right end of
+                    this row — same shape as the document-templates list, where
+                    the tab rail, the search box and the primary action share a
+                    single toolbar line above the table. */}
+                <div className="d-flex align-items-center gap-2 flex-nowrap ms-auto ext-toolbar-actions">
+                  <div className="search-box ep-exp-search ext-search">
+                    <input
+                      type="text"
+                      className="form-control form-control-sm ext-search-input"
+                      placeholder="Search…"
+                      value={expenseSearch}
+                      onChange={e => setExpenseSearch(e.target.value)}
+                    />
+                    <i className="ri-search-line search-icon ext-search-icon" />
+                  </div>
+                  {/* Export — opens a format picker (Excel / PDF / CSV) and
+                      exports the active module's filtered rows. Was previously
+                      a dead button with no handler. */}
+                  <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)} className="flex-shrink-0">
+                    <DropdownToggle
+                      tag="button"
                       type="button"
-                      onClick={() => setExpenseFilter(f.key)}
-                      className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold ext-filter-pill"
-                      style={{
-                        ['--ext-pill-bg' as any]: on ? f.active : 'var(--vz-card-bg)',
-                        ['--ext-pill-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        ['--ext-pill-border' as any]: on ? f.active : 'var(--vz-border-color)',
-                        ['--ext-pill-shadow' as any]: on ? `0 4px 10px ${f.shadow}` : 'none',
-                      }}
+                      caret={false}
+                      className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 ext-export-toggle"
                     >
-                      {f.label}
-                      <span
-                        className="d-inline-flex align-items-center justify-content-center rounded-pill ext-filter-count"
-                        style={{
-                          ['--ext-pill-count-bg' as any]: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                          ['--ext-pill-count-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
-                        }}
-                      >
-                        {f.count}
-                      </span>
-                    </button>
-                  );
-                })}
+                      <i className="ri-download-2-line" /> Export
+                      <i className="ri-arrow-down-s-line" />
+                    </DropdownToggle>
+                    <DropdownMenu end>
+                      <DropdownItem header>Download as</DropdownItem>
+                      <DropdownItem onClick={() => runProfileExport('xlsx')}>
+                        <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                      </DropdownItem>
+                      <DropdownItem onClick={() => runProfileExport('csv')}>
+                        <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
+                      </DropdownItem>
+                    </DropdownMenu>
+                  </Dropdown>
+                  {/* Raise New Claim — inline styles can't carry :hover, so
+                      we drive the brightening + lift via mouse handlers.
+                      Hidden until the employee's own onboarding is complete
+                      (CBC #85); the server rejects the POST either way. */}
+                  {canRaiseHrRequest && (
+                  <button
+                    type="button"
+                    className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 ext-new-claim"
+                    onMouseEnter={e => {
+                      const t = e.currentTarget;
+                      t.style.transform = 'translateY(-1px)';
+                      t.style.boxShadow = '0 6px 16px rgba(99,102,241,0.42)';
+                      t.style.filter = 'brightness(1.06)';
+                    }}
+                    onMouseLeave={e => {
+                      const t = e.currentTarget;
+                      t.style.transform = 'translateY(0)';
+                      t.style.boxShadow = '0 4px 12px rgba(99,102,241,0.3)';
+                      t.style.filter = 'none';
+                    }}
+                    onClick={() => {
+                      // Open the unified modal in the right mode based on
+                      // which list is currently visible.
+                      setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                      setClaimOpen(true);
+                    }}
+                  >
+                    <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
+                  </button>
+                  )}
+                </div>
               </div>
               {expenseFilter === 'draft' ? (
                 <DraftListView

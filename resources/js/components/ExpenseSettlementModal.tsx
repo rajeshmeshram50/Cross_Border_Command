@@ -113,6 +113,15 @@ const downloadFile = (f: File) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+/* Proof of payment accepts a receipt document or a photo of one — nothing
+ * else. Spreadsheets and Word files used to be allowed here, which let a
+ * .xlsx through as "proof" (CBC #77). The `accept` attribute is only a file-
+ * picker hint (a user can switch it to "All files"), so every input pairs it
+ * with the runtime check below; the same list is enforced server-side in
+ * ExpenseClaimController::settle. */
+const PROOF_ACCEPT = '.pdf,.jpg,.jpeg,.png';
+const PROOF_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
+
 // Open a just-selected proof file in a new tab (preview).
 const viewFile = (f: File) => {
   const url = URL.createObjectURL(f);
@@ -190,6 +199,20 @@ export default function ExpenseSettlementModal({
     setProofDownloading(true);
     downloadFile(f);
     proofDlTimer.current = window.setTimeout(() => { proofDlTimer.current = null; setProofDownloading(false); }, 800);
+  };
+  /* Gate every proof-of-payment picker: returns the file only when it is one of
+   * PROOF_EXTS, else warns and returns null so the caller keeps what it had. */
+  const acceptProof = (f: File | null | undefined): File | null => {
+    if (!f) return null;
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!PROOF_EXTS.includes(ext)) {
+      toast.error(
+        'Unsupported file type',
+        `“${f.name}” can’t be used as proof of payment. Attach a PDF, JPG, JPEG or PNG.`,
+      );
+      return null;
+    }
+    return f;
   };
   // Turns on inline field-level errors once a save is attempted.
   const [showErrors, setShowErrors] = useState(false);
@@ -908,9 +931,9 @@ export default function ExpenseSettlementModal({
                     <div className="esm-ro c3"><label>CURRENCY</label><div className="esm-ro-v esm-ro-sm">{summary.currency || 'INR'}</div></div>
                     <div className="esm-ro c3"><label>CATEGORY</label><div className="esm-ro-v esm-ro-sm">{summary.category_name || '—'}</div></div>
                     <div className="esm-ro c3"><label>CLAIMED AMOUNT</label><div className="esm-ro-v">{inr(claimed)}</div></div>
-                    <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm">{summary.title || '—'}</div></div>
+                    <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.title || ''}>{summary.title || '—'}</div></div>
                     {/* Vendor / Project are expense-only; an advance has neither. */}
-                    <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm">{summary.purpose || '—'}</div></div>
+                    <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.purpose || ''}>{summary.purpose || '—'}</div></div>
                     {!isAdvance && <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
                     {!isAdvance && <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>}
                     {/* Salary-recovery schedule — self advance only. */}
@@ -1641,7 +1664,7 @@ export default function ExpenseSettlementModal({
                     <label className="esm-file">
                       <i className="ri-attachment-2" />
                       <span>Attach receipt / transfer proof</span>
-                      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setProofFile(e.target.files?.[0] ?? null)} />
+                      <input type="file" accept={PROOF_ACCEPT} onChange={e => setProofFile(acceptProof(e.target.files?.[0]))} />
                     </label>
                   ) : (
                     <div className="esm-file-chip">
@@ -1652,7 +1675,7 @@ export default function ExpenseSettlementModal({
                         <i className={proofDownloading ? 'ri-loader-4-line ri-spin' : 'ri-download-2-line'} /> Download
                       </button>
                       <label className="esm-file-btn" title="Replace file"><i className="ri-refresh-line" /><span>Reupload</span>
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setProofFile(e.target.files?.[0] ?? proofFile)} />
+                        <input type="file" accept={PROOF_ACCEPT} onChange={e => setProofFile(acceptProof(e.target.files?.[0]) ?? proofFile)} />
                       </label>
                     </div>
                   )}
@@ -1823,13 +1846,13 @@ export default function ExpenseSettlementModal({
                     {!r.proof ? (
                       <label className="esm-file esm-srow-file">
                         <i className="ri-attachment-2" /> <span>Proof</span>
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setSettleRow(i, { proof: e.target.files?.[0] ?? null })} />
+                        <input type="file" accept={PROOF_ACCEPT} onChange={e => setSettleRow(i, { proof: acceptProof(e.target.files?.[0]) })} />
                       </label>
                     ) : (
                       <div className="esm-file-chip esm-srow-file" title={r.proof.name}>
                         <i className="ri-file-text-line esm-file-ic" />
                         <span className="esm-file-name">{r.proof.name}</span>
-                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setSettleRow(i, { proof: e.target.files?.[0] ?? null })} /></label>
+                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept={PROOF_ACCEPT} onChange={e => setSettleRow(i, { proof: acceptProof(e.target.files?.[0]) })} /></label>
                       </div>
                     )}
                     <button type="button" className="esm-srow-x" onClick={() => removeSettleRow(i)} disabled={settleRows.length === 1} aria-label="Remove row"><i className="ri-delete-bin-6-line" /></button>
@@ -2017,13 +2040,13 @@ export default function ExpenseSettlementModal({
                     {!returnProof ? (
                       <label className="esm-file" style={{ height: 41 }}>
                         <i className="ri-attachment-2" /> <span>Attach proof</span>
-                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setReturnProof(e.target.files?.[0] ?? null)} />
+                        <input type="file" accept={PROOF_ACCEPT} onChange={e => setReturnProof(acceptProof(e.target.files?.[0]))} />
                       </label>
                     ) : (
                       <div className="esm-file-chip" title={returnProof.name}>
                         <i className="ri-file-text-line esm-file-ic" />
                         <span className="esm-file-name">{returnProof.name}</span>
-                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setReturnProof(e.target.files?.[0] ?? null)} /></label>
+                        <label className="esm-file-btn" title="Replace"><i className="ri-refresh-line" /><input type="file" hidden accept={PROOF_ACCEPT} onChange={e => setReturnProof(acceptProof(e.target.files?.[0]))} /></label>
                       </div>
                     )}
                   </div>
@@ -2315,6 +2338,11 @@ const CSS = `
 .esm-ro-v.is-neg,.is-neg{color:#e11d48;}
 .esm-ro-v.is-pos,.is-pos{color:#059669;}
 .esm-ro-v.is-warn{color:#b45309;}
+/* Free-text values (purpose / description). New claims are capped at 500 chars,
+   but rows filed before that cap can be arbitrarily long — clamp them to a few
+   lines with their own scrollbar, and break unspaced strings, so one verbose
+   claim can't stretch this grid apart (CBC #57). */
+.esm-ro-v--text{max-height:76px;overflow-y:auto;overflow-wrap:anywhere;font-weight:600;line-height:1.45;}
 .esm-in{width:100%;border:1.5px solid #dbe7ec;border-radius:10px;padding:9px 12px;font-size:13px;font-family:inherit;color:#0f172a;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s;}
 .esm-in:focus{border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.14);}
 [data-bs-theme="dark"] .esm-in{background:#0b2029;border-color:#173947;color:#e2e8f0;}

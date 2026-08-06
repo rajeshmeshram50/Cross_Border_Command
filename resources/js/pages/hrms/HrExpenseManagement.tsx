@@ -443,16 +443,50 @@ export default function HrExpenseManagement() {
     'Created By', 'Created At',
   ];
 
+  /* Export date formatting (CBC #94/#95/#96).
+   *
+   * The raw API values went straight into the file: `expense_date` as the
+   * plain "2026-07-26" and the action stamps as UTC ISO8601. Read back in IST
+   * those timestamps land on the previous evening, so every export looked a
+   * day behind the Expense Date shown in the table. Both now render exactly
+   * what the UI renders.
+   *
+   * `expense_date` is a calendar date, NOT an instant — it is split textually
+   * rather than fed to `new Date()`, which would treat it as UTC midnight and
+   * shift it a day for anyone west of Greenwich. */
+  const EXPORT_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const fmtExportDate = (v: string | null | undefined): string => {
+    if (!v) return '';
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
+    if (m) return `${m[3]}-${EXPORT_MONTHS[Number(m[2]) - 1]}-${m[1]}`;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? String(v)
+      : `${pad2(d.getDate())}-${EXPORT_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+  };
+  // Instants — converted to the viewer's local time, same as every on-screen stamp.
+  const fmtExportDateTime = (v: string | null | undefined): string => {
+    if (!v) return '';
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return String(v);
+    return `${pad2(d.getDate())}-${EXPORT_MONTHS[d.getMonth()]}-${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  };
+
   const exportRow = (r: ExpenseClaimRow): (string | number | null)[] => [
     r.claim_no, r.employee_name, r.employee_code, r.category_name,
-    r.title, r.expense_date, r.amount, r.currency,
+    r.title, fmtExportDate(r.expense_date), r.amount, r.currency,
     r.vendor, r.project, r.payment_method,
-    r.status, r.manager_status, r.manager_acted_at, r.manager_comment,
-    r.hr_status, r.hr_user_name, r.hr_acted_at, r.hr_comment,
-    r.creator_name, r.created_at,
+    r.status, r.manager_status, fmtExportDateTime(r.manager_acted_at), r.manager_comment,
+    r.hr_status, r.hr_user_name, fmtExportDateTime(r.hr_acted_at), r.hr_comment,
+    r.creator_name, fmtExportDateTime(r.created_at),
   ];
 
-  const exportStamp = () => new Date().toISOString().slice(0, 10);
+  // Local, not toISOString(): after ~05:30 IST the UTC date is still yesterday,
+  // which stamped exports (and their filenames) with the wrong day.
+  const exportStamp = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  };
   const exportBaseName = () => `expense-claims-${dateFilter}-${exportStamp()}`;
 
   const hasExportRows = (): boolean => {
