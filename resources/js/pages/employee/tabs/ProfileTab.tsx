@@ -247,17 +247,63 @@ export default function ProfileTab() {
                   {(() => {
                     const prev: any[] = Array.isArray(empDetail?.previous_employments) ? empDetail.previous_employments : [];
                     const hasExp = empDetail?.has_prior_experience === true || prev.length > 0;
-                    let months = 0;
+
+                    /* Total experience is measured in DAYS, not by subtracting
+                       calendar months. The old math was
+                         (yearDiff * 12) + monthDiff
+                       which reported 0 for any stint inside a single calendar
+                       month — so a real 01-May → 28-May job fell into the
+                       `months > 0 ? … : '—'` branch and rendered as a dash.
+                       That is the "experience is not calculated" bug: the rows
+                       were saved and returned fine, the arithmetic threw them
+                       away. The same formula also called 31-May → 01-Jun a
+                       full month, and counted two concurrently-held jobs twice. */
+                    const DAY = 86_400_000;
+                    const spans: [number, number][] = [];
                     prev.forEach((p) => {
                       if (!p?.start_date) return;
-                      const s = new Date(p.start_date);
-                      const e = p.end_date ? new Date(p.end_date) : new Date();
-                      if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && e >= s) {
-                        months += (e.getFullYear() - s.getFullYear()) * 12 + (e.getMonth() - s.getMonth());
-                      }
+                      const s = new Date(p.start_date).getTime();
+                      // No end_date means the row is open-ended — measure to today.
+                      const e = (p.end_date ? new Date(p.end_date) : new Date()).getTime();
+                      if (Number.isNaN(s) || Number.isNaN(e) || e < s) return;
+                      // +1 day because the last working day itself counts.
+                      spans.push([s, e + DAY]);
                     });
-                    const totalExp = months > 0 ? `${Math.floor(months / 12)} yrs ${months % 12} mos` : (hasExp ? '—' : 'Fresher');
-                    const last = prev[0] || null;
+                    // Merge overlaps so two jobs held at the same time are not
+                    // added together into more experience than time elapsed.
+                    spans.sort((a, b) => a[0] - b[0]);
+                    const merged: [number, number][] = [];
+                    spans.forEach(([s, e]) => {
+                      const tail = merged[merged.length - 1];
+                      if (tail && s <= tail[1]) tail[1] = Math.max(tail[1], e);
+                      else merged.push([s, e]);
+                    });
+
+                    const totalDays = Math.round(merged.reduce((sum, [s, e]) => sum + (e - s), 0) / DAY);
+                    const expYears  = Math.floor(totalDays / 365);
+                    const expMonths = Math.floor((totalDays - expYears * 365) / 30);
+                    const expDays   = totalDays - expYears * 365 - expMonths * 30;
+                    const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+
+                    const totalExp = !hasExp
+                      ? 'Fresher'
+                      // Flagged as experienced but every row is missing or has an
+                      // unusable date range — say nothing rather than "0 days".
+                      : totalDays <= 0 ? '—'
+                      : expYears  > 0  ? `${plural(expYears, 'yr')} ${plural(expMonths, 'mo')}`
+                      : expMonths > 0  ? `${plural(expMonths, 'mo')}${expDays ? ` ${plural(expDays, 'day')}` : ''}`
+                      : plural(totalDays, 'day');
+
+                    /* Most recent employer by start_date. This used to be prev[0]
+                       on the assumption the API sorted newest-first; the relation
+                       had no ordering at all, so it was really "whichever row was
+                       inserted first". Derived here so the card is right even
+                       against an older API build. */
+                    const last = prev.reduce((best: any, p: any) => {
+                      if (!p?.start_date) return best;
+                      if (!best) return p;
+                      return new Date(p.start_date) > new Date(best.start_date) ? p : best;
+                    }, null) || prev[0] || null;
                     const notProvided = <span className="text-muted fst-italic">Not Provided</span>;
                     return (
                       <Row className="g-3">

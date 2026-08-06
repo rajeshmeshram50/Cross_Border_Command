@@ -690,10 +690,19 @@ class EmployeeController extends Controller
         if ($u && ($u->user_type ?? null) === 'branch_user' && $u->branch_id) {
             $branchId = (int) $u->branch_id;   // pinned — every branch is an isolated peer
         }
+        // STRICT branch match — deliberately not the usual
+        // `branch_id IS NULL OR branch_id = mine` shape used by every other
+        // master.
+        //
+        // That NULL escape hatch means "client-level row, visible to all
+        // branches", which is right for a LOOKUP (a Department or a Currency is
+        // genuinely shared). An asset is not a lookup: it is one physical
+        // device sitting in one office. A laptop with no branch belongs to no
+        // office, so it must not be offered for assignment in every office —
+        // which is exactly what QA saw, since the seeded demo assets all carry
+        // branch_id NULL and were therefore listed by every branch at once.
         if ($branchId) {
-            $assetQ->where(function ($w) use ($branchId) {
-                $w->whereNull('branch_id')->orWhere('branch_id', $branchId);
-            });
+            $assetQ->where('branch_id', $branchId);
         }
 
         if ($category === 'laptop') {
@@ -728,9 +737,22 @@ class EmployeeController extends Controller
             // otherwise the picker shows "No other assets available" forever
             // even though the holder has left. Soft-deleted rows are excluded
             // for the same reason.
-            $bookingQ = Employee::query()
-                ->whereNull('deleted_at')
-                ->whereNotIn('status', ['Resigned', 'Terminated'])
+            $bookingQ = Employee::withTrashed()
+                // A DISABLED employee is not an exited one. Soft-delete here is
+                // the "Disabled Employees" toggle — the person is still on the
+                // roster and can be switched back on, and nobody collected their
+                // laptop when the toggle flipped. Skipping them handed their
+                // still-held devices to the next hire. Release is now driven by
+                // exit STATUS alone (below), which is the event that actually
+                // means "hardware returned".
+                ->where(function ($w) {
+                    // NULL-safe on purpose. `status NOT IN ('Resigned', ...)`
+                    // evaluates to NULL — not true — when status is NULL, so
+                    // SQL drops the row from this scan entirely and every asset
+                    // that employee holds silently reads as free.
+                    $w->whereNull('status')
+                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                })
                 // Only this tenant's roster can hold this tenant's assets —
                 // scanning every client's employees was pure waste.
                 ->when($u && !$u->isSuperAdmin() && $u->client_id,

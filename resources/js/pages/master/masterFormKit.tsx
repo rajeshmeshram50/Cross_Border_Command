@@ -302,7 +302,11 @@ export function MasterMultiSelect({
               />
             </div>
           )}
-          <div className="master-select-list" style={{ maxHeight: 200 }}>
+          {/* 203 = 5.5 rows at 37px each. Deliberately a half row: the sliced
+              option is the cue that the list continues below. The old 200
+              landed at 5.48 rows, so the peek row was a near-invisible sliver
+              and the list read as if it simply ended. */}
+          <div className="master-select-list" style={{ maxHeight: 203 }}>
             {filtered.length === 0 ? (
               <div className="master-select-empty">
                 {options.length === 0 ? 'No options' : 'No results'}

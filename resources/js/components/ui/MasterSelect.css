@@ -172,6 +172,26 @@
        horizontal scrollbar and left hover/active highlighting only half-painted.
        Labels now ellipsis instead; nothing should ever scroll sideways here. */
     overflow-x: hidden;
+
+    /* Keep the wheel INSIDE the list. Without this, reaching the last option
+       hands the remaining scroll to whatever is behind the menu — inside the
+       Employee wizard that is the modal body, so the entire form lurched
+       upward mid-pick. That hand-off is what read as "scroll not working". */
+    overscroll-behavior: contain;
+    /* Reserve the scrollbar's width even when it isn't showing. Typing in the
+       search box filters the list down past the scroll threshold, the bar
+       disappears, and every row shifted ~6px sideways on each keystroke. */
+    scrollbar-gutter: stable;
+    /* Applies to keyboard/programmatic scrolls (arrow keys walking the list);
+       wheel and drag stay native so they never feel laggy. */
+    scroll-behavior: smooth;
+    /* Momentum scrolling on touch/trackpad surfaces. */
+    -webkit-overflow-scrolling: touch;
+    /* Firefox ignores ::-webkit-scrollbar entirely and was drawing the OS
+       default — a chunky grey bar next to the slim one every other browser
+       showed here. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--vz-border-color) transparent;
   }
   .master-select-list::-webkit-scrollbar { width: 6px; }
   .master-select-list::-webkit-scrollbar-track { background: transparent; }
@@ -194,6 +214,11 @@
     padding: 8px 12px !important;
     border-radius: 6px !important;
     font-size: 13px !important;
+    /* Pinned so a row is an exact 37px (8 + 20 + 8 + 1 margin). Inherited
+       line-height put it at 19.5px, giving fractional row heights — every
+       option then landed on a half-pixel boundary and the text shimmered
+       while the list scrolled. */
+    line-height: 20px !important;
     color: var(--vz-body-color) !important;
     transition: background .15s ease, color .15s ease;
     margin-bottom: 1px;

@@ -500,9 +500,15 @@ class Employee extends Model
         return $this->hasMany(\App\Models\Attendance::class, 'employee_id');
     }
 
+    /** Newest employer first. EmployeeController's eager load has always
+     *  documented this ordering ("so the frontend's [0] is the most recent
+     *  employer"), but the column-select string syntax it uses cannot carry an
+     *  orderBy — so the rows actually came back in insertion order and the
+     *  profile card's "Last Company" could show the oldest job. */
     public function previousEmployments(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(\App\Models\PreviousEmployment::class, 'employee_id');
+        return $this->hasMany(\App\Models\PreviousEmployment::class, 'employee_id')
+            ->orderByDesc('start_date');
     }
 
     public function leaveRequests(): \Illuminate\Database\Eloquent\Relations\HasMany

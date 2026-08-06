@@ -1454,6 +1454,24 @@ export default function HrEmployees() {
     }));
   };
 
+  /* Reset the wizard body to the top on every step change.
+   *
+   * Each step used to inherit the OUTGOING step's scroll offset: fill in the
+   * permanent-address block at the bottom of Step 1, hit Next, and Step 2
+   * opened already scrolled — its first fields sitting above the viewport, so
+   * the step looked like it started midway through.
+   *
+   * The page-level ScrollToTop in App.tsx can't help here: this modal body is
+   * its own scroll container (maxHeight + overflowY on the div empScrollRef
+   * points at), and the window itself never moves while the modal is open.
+   *
+   * No conflict with scrollToFirstError() — a failed validation leaves empStep
+   * unchanged, so this only fires on a step that actually switched. */
+  useEffect(() => {
+    const el = empScrollRef.current;
+    if (el) el.scrollTop = 0;
+  }, [empStep]);
+
 
   const proceedFresh = async () => {
     try {

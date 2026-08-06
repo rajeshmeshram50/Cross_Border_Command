@@ -1,6 +1,6 @@
 import { useState, useEffect, createContext, useContext, lazy, Suspense } from 'react';
 import api from '../api';
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useParams, useNavigationType } from 'react-router-dom';
 import { Provider as ReduxProvider } from 'react-redux';
 import velzonStore from '../velzon/store';
 import { ThemeProvider } from '../contexts/ThemeContext';
@@ -894,6 +894,38 @@ function Router() {
   return <DashboardRoutes key={user.id} user={user} />;
 }
 
+/**
+ * Resets the window scroll on every forward navigation.
+ *
+ * Without this, a route change kept the OUTGOING page's scroll offset: leave
+ * /hr/employees scrolled halfway down, pick Employee Onboarding from the menu,
+ * and it opened halfway down too — its header and KPI strip cut off above the
+ * viewport, reading as a broken page. React Router does not reset scroll on its
+ * own, and <ScrollRestoration /> is not an option here: it only works under a
+ * data router (createBrowserRouter), while this app uses <BrowserRouter>.
+ *
+ * Two deliberate exemptions:
+ *  - POP (browser Back/Forward) is left alone — going back should return you to
+ *    where you were, not dump you at the top.
+ *  - A #hash target is left alone so in-page anchors still land on their section.
+ *
+ * Keyed on pathname only, so query-string changes (?tab=…, filters, paging)
+ * don't yank the page upward while the user is working in place.
+ */
+function ScrollToTop() {
+  const { pathname, hash } = useLocation();
+  const navType = useNavigationType();
+
+  useEffect(() => {
+    if (navType === 'POP' || hash) return;
+    // 'instant' is explicit: a page-level `scroll-behavior: smooth` would
+    // otherwise animate this and make every navigation feel sluggish.
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' as ScrollBehavior });
+  }, [pathname, hash, navType]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <ReduxProvider store={velzonStore}>
@@ -910,6 +942,10 @@ export default function App() {
                   default theme colors as live dependencies. */}
               <SettingsProvider>
                 <BrowserRouter>
+                  {/* Must sit INSIDE BrowserRouter — it reads the router's
+                      location. Placed above <Router /> so it covers every
+                      route: dashboard, auth and public onboarding alike. */}
+                  <ScrollToTop />
                   <Router />
                 </BrowserRouter>
                 {/* CookieBanner reads privacy.cookie + the user's prior
