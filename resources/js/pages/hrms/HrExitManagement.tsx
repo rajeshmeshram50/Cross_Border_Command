@@ -233,6 +233,35 @@ export default function HrExitManagement() {
         );
       },
     },
+    /* Exit Type — only meaningful once an exit exists, so it's shown on the
+       "Exit In Progress" and "Exited" tabs and omitted from Active Employees
+       (where every cell would be a dash). */
+    ...(tab === 'active' ? [] : [{
+      header: 'Exit Type',
+      accessorKey: 'exitType',
+      meta: { width: '10%', wrap: true },
+      cell: (info: any) => {
+        const t = String(info.getValue() || '').trim();
+        if (!t) return <span className="text-muted">—</span>;
+        const tone = t === 'Termination'
+          ? { bg: '#f5f3ff', fg: '#6d28d9', bd: '#ddd6fe' }
+          : t === 'Resignation'
+            ? { bg: '#ecfdf5', fg: '#0d9488', bd: '#a7f3d0' }
+            : { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
+        // The without-notice label is long — shorten it in the cell and keep
+        // the full wording in the tooltip.
+        const label = t === 'Resignation without notice period' ? 'Resignation (no notice)' : t;
+        return (
+          <Tooltip label={t} position="bottom" themed>
+            <span style={{
+              display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+              background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`,
+              fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>{label}</span>
+          </Tooltip>
+        );
+      },
+    }]),
     {
       /* wrap: the meter is a fixed-width block with a badge floating above the
          bar, so the cell must not clip it. */
@@ -375,7 +404,10 @@ export default function HrExitManagement() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+    // `tab` drives whether the Exit Type column is present, so it must be a
+    // dependency — with [] the column list froze on the first tab rendered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [tab]);
 
 
   const KPI_CARDS = [
@@ -742,15 +774,17 @@ type Stage = { key: StageKey; num: number; title: string; short: string; sub: st
  * excludes anyone whose last working day falls in the cycle), so the salary
  * they earned up to that day is settled here or nowhere.
  *
- * F&F sits LATE in the flow, after clearance and documents: it can only be
- * totalled once asset recovery and departmental clearances are known. The
- * notice-recovery stage stays early — that money is collected while the
- * employee is still serving, not at the end.
+ * F&F sits after Clearance (it can only be totalled once asset recovery and
+ * departmental clearances are known) but BEFORE Exit Documents: the relieving
+ * letter and experience certificate are only released once the employee has
+ * actually been paid, so the money has to move first. The notice-recovery
+ * stage stays early — that's collected while the employee is still serving,
+ * not at the end.
  */
 function stagesFor(exitType: string): Stage[] {
   const keys: StageKey[] = ['initiation'];
   if (settlementOf(exitType) === 'recover') keys.push('notice_payment');
-  keys.push('clearance', 'documents', 'fnf', 'closure');
+  keys.push('clearance', 'fnf', 'documents', 'closure');
   return keys.map((key, i) => ({ key, num: i + 1, ...STAGE_DEFS[key] }));
 }
 
@@ -782,6 +816,10 @@ const EXIT_TYPE_CHOICES: { value: string; label: string; desc: string; icon: str
 /* Old rows persisted stage_status keyed by the numbers 1-4 of the original
    fixed stage list. Re-key them so a case created before this change reopens
    with its progress intact instead of showing every stage as Pending. */
+/* Styling + wording for an action held back by the document-release gate. */
+const OFF_STYLE: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.5)' };
+const releaseHint = 'Switch on “release this employee’s documents” above to enable this.';
+
 const LEGACY_STAGE_KEYS: Record<string, StageKey> = { 1: 'initiation', 2: 'clearance', 3: 'documents', 4: 'closure' };
 function normaliseStageStatus(raw: any): Record<string, StageStatus> {
   const out: Record<string, StageStatus> = {};
@@ -947,6 +985,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
   const duesClaims   = Number(fnfDues?.claims?.total ?? 0);
+
+  /* Has the Full & Final settlement actually been paid? This gates the
+     document release: the relieving letter and experience certificate go out
+     only after the employee has their money, which is why F&F now sits BEFORE
+     Exit Documents in the stage order. Mirrored server-side in ExitController. */
+  const fnfPaid = fnfMeta.payStatus === 'Paid';
+  const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfNet = useMemo(() => {
     const earn = fnfNum(fnfLines.basic) + fnfNum(fnfLines.leaveEncash)
                + fnfNum(fnfLines.bonus) + fnfNum(fnfLines.gratuity)
@@ -1028,6 +1073,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     { checked: false, status: 'Pending' },
   ]);
   const [handoverNotes, setHandoverNotes] = useState('');
+  /* Exit-document release gate. Defaults to OFF — a sent document can't be
+     un-sent, so the safe default is closed. It can only be switched ON once
+     the Full & Final settlement has actually been PAID (see fnfPaid below):
+     the relieving letter follows the money, never precedes it. */
+  const [docsReleased, setDocsReleased] = useState(false);
+  // Reopening F&F (back to unpaid) after a release must not leave the
+  // documents open behind it — pull the gate shut again.
+  useEffect(() => {
+    if (!fnfPaid && docsReleased) setDocsReleased(false);
+  }, [fnfPaid, docsReleased]);
   const [assetReturns, setAssetReturns]   = useState<Record<number, { checked: boolean; status: string }>>({});
 
 
@@ -1306,6 +1361,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           setAssetReturns(data.asset_returns as Record<number, { checked: boolean; status: string }>);
         }
         setHandoverNotes(String(data.handover_notes ?? ''));
+        setDocsReleased(!!data.documents_released);
 
         if (Array.isArray(data.validation) && data.validation.length) {
           setValidation(data.validation.map((v: any) => !!v));
@@ -1542,6 +1598,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     clearances,
     asset_returns:         assetReturns,
     handover_notes:        handoverNotes.trim() || null,
+    documents_released:    docsReleased,
     validation,
     final_employee_status: empStatus || null,
     profile_lock:          profileLock || null,
@@ -2440,6 +2497,42 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     ))}
                   </div>
 
+                  {/* Release gate — nothing on this stage can be opened or sent
+                      until HR confirms the employee is cleared to receive their
+                      paperwork. A sent document can't be un-sent, so the switch
+                      defaults to OFF. */}
+                  <div className={`ep-release${docsReleased ? ' is-on' : ''}${fnfPaid ? '' : ' is-blocked'}`}>
+                    <span className="ep-release-ico">
+                      <i className={docsReleased ? 'ri-lock-unlock-line' : 'ri-lock-line'} />
+                    </span>
+                    <div className="ep-release-text">
+                      <div className="ep-release-title">Do you want to release this employee's documents?</div>
+                      <div className="ep-release-sub">
+                        {!fnfPaid
+                          ? 'Blocked — the Full & Final settlement has not been paid yet. Documents are released only after the employee has been paid.'
+                          : docsReleased
+                            ? 'Released — the exit documents below can be viewed and sent for signature.'
+                            : 'Not released — viewing and sending are disabled until you switch this on.'}
+                      </div>
+                    </div>
+                    <label className={`ep-switch${fnfPaid ? '' : ' is-off'}`}
+                           title={fnfPaid ? 'Release exit documents' : fnfBlockHint}>
+                      <input
+                        type="checkbox"
+                        checked={docsReleased}
+                        disabled={!fnfPaid}
+                        onChange={e => {
+                          // Belt and braces — the input is disabled, but a
+                          // programmatic change must not slip past the rule.
+                          if (!fnfPaid) return;
+                          setDocsReleased(e.target.checked);
+                        }}
+                      />
+                      <span className="ep-switch-track"><span className="ep-switch-thumb" /></span>
+                      <span className="ep-switch-label">{docsReleased ? 'Yes' : 'No'}</span>
+                    </label>
+                  </div>
+
                   <div className="ep-section-label">Exit Documents</div>
 
                   {exitMatchMeta && (
@@ -2529,8 +2622,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               <span className={`ep-doc-tag ${tpl.status === 'Active' ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
                                 {tpl.status || 'Draft'}
                               </span>
-                              <Tooltip label="Preview with this employee's data" position="bottom" themed>
-                                <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
+                              <Tooltip label={docsReleased ? "Preview with this employee's data" : releaseHint} position="bottom" themed>
+                                <button type="button" className="ep-doc-btn ep-doc-btn--ghost"
+                                  disabled={!docsReleased}
+                                  style={!docsReleased ? OFF_STYLE : undefined}
+                                  onClick={() => handleView(tpl)}>
                                   <i className="ri-eye-line" />View
                                 </button>
                               </Tooltip>
@@ -2553,12 +2649,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 );
                               })()}
                               {canSend && (
-                                <Tooltip label="Preview the document (fills custom fields if any) then send for signing" position="bottom" themed>
+                                <Tooltip label={docsReleased ? 'Preview the document (fills custom fields if any) then send for signing' : releaseHint} position="bottom" themed>
                                   <button
                                     type="button"
                                     className="ep-doc-btn"
+                                    disabled={!docsReleased}
                                     onClick={() => setGenTpl(tpl)}
-                                    style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }}
+                                    style={docsReleased
+                                      ? { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }
+                                      : { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, ...OFF_STYLE }}
                                   >
                                     <i className="ri-send-plane-line" />Send for Signature
                                   </button>
