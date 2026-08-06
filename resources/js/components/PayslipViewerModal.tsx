@@ -234,21 +234,23 @@ export default function PayslipViewerModal({
      when the breakup doesn't already carry it. */
   const hasOtLine = earnings.some(r => /overtime/i.test(r.label));
   /* The KPI shows the hours the ATTENDANCE recorded — that's what "OT Hours"
-     means to anyone reading a payslip. The allowance shows what's actually
-     PAYABLE, which is only the approved hours (Rule 4). When the two disagree
-     the line says so rather than silently reading zero. */
-  const otKpiHours   = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
-  const otUnapproved = overtimeApplicable && overtimeAmount <= 0 && overtimeDetectedHours > 0;
-  const showOt       = overtimeApplicable && !hasOtLine && (overtimeAmount > 0 || otUnapproved);
+     means to anyone reading a payslip. Overtime is no longer approval-gated:
+     detected hours are paid directly, so the allowance normally matches. The
+     zero-state only survives for a slip generated BEFORE that change, or one
+     whose run is locked and can't recompute. */
+  const otKpiHours = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
+  const otUnpaid   = overtimeApplicable && overtimeAmount <= 0 && overtimeDetectedHours > 0;
+  const showOt     = overtimeApplicable && !hasOtLine && (overtimeAmount > 0 || otUnpaid);
   const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
   const otHoursLabel = num(otKpiHours);
   // Spell the pricing out next to the line so the figure is checkable by hand.
-  const otWorkings = otUnapproved
-    ? `${num(overtimeDetectedHours)} hr detected in attendance · not yet approved, so nothing is payable. Approve it in Payroll → Adjustments.`
+  const otWorkings = otUnpaid
+    // Stale slip: regenerate the run to pick the overtime up.
+    ? `${num(overtimeDetectedHours)} hr detected in attendance · regenerate this payroll run to include it.`
     : [
         overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
         overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
-        `${num(overtimeHours)} hr approved`,
+        `${num(overtimeHours)} hr`,
       ].filter(Boolean).join(' · ');
 
   const shownEarnings = showOt
