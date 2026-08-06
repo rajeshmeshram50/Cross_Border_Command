@@ -50,8 +50,8 @@ interface EmployeeRow {
   // auto-derive the Notice Period End Date in the exit form.
   noticePeriodDays: number | null;
   noticePeriodLabel: string;
-  /** Monthly gross (annual ÷ 12) when the list payload carries it — a prefill
-   *  for the notice-period settlement, which HR can override. */
+  /** Monthly BASIC (annual ÷ 12 × 50%) when the list payload carries it — the
+   *  basis the notice-period settlement is priced on. HR can override it. */
   monthlySalary: number | null;
   // Probation end date. While it's in the future the notice period does NOT
   // apply — the exit is immediate (see ProbationGuard on the backend).
@@ -233,6 +233,35 @@ export default function HrExitManagement() {
         );
       },
     },
+    /* Exit Type — only meaningful once an exit exists, so it's shown on the
+       "Exit In Progress" and "Exited" tabs and omitted from Active Employees
+       (where every cell would be a dash). */
+    ...(tab === 'active' ? [] : [{
+      header: 'Exit Type',
+      accessorKey: 'exitType',
+      meta: { width: '10%', wrap: true },
+      cell: (info: any) => {
+        const t = String(info.getValue() || '').trim();
+        if (!t) return <span className="text-muted">—</span>;
+        const tone = t === 'Termination'
+          ? { bg: '#f5f3ff', fg: '#6d28d9', bd: '#ddd6fe' }
+          : t === 'Resignation'
+            ? { bg: '#ecfdf5', fg: '#0d9488', bd: '#a7f3d0' }
+            : { bg: '#fef2f2', fg: '#b91c1c', bd: '#fecaca' };
+        // The without-notice label is long — shorten it in the cell and keep
+        // the full wording in the tooltip.
+        const label = t === 'Resignation without notice period' ? 'Resignation (no notice)' : t;
+        return (
+          <Tooltip label={t} position="bottom" themed>
+            <span style={{
+              display: 'inline-block', padding: '3px 10px', borderRadius: 999,
+              background: tone.bg, color: tone.fg, border: `1px solid ${tone.bd}`,
+              fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+            }}>{label}</span>
+          </Tooltip>
+        );
+      },
+    }]),
     {
       /* wrap: the meter is a fixed-width block with a badge floating above the
          bar, so the cell must not clip it. */
@@ -375,7 +404,10 @@ export default function HrExitManagement() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+    // `tab` drives whether the Exit Type column is present, so it must be a
+    // dependency — with [] the column list froze on the first tab rendered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [tab]);
 
 
   const KPI_CARDS = [
@@ -742,15 +774,17 @@ type Stage = { key: StageKey; num: number; title: string; short: string; sub: st
  * excludes anyone whose last working day falls in the cycle), so the salary
  * they earned up to that day is settled here or nowhere.
  *
- * F&F sits LATE in the flow, after clearance and documents: it can only be
- * totalled once asset recovery and departmental clearances are known. The
- * notice-recovery stage stays early — that money is collected while the
- * employee is still serving, not at the end.
+ * F&F sits after Clearance (it can only be totalled once asset recovery and
+ * departmental clearances are known) but BEFORE Exit Documents: the relieving
+ * letter and experience certificate are only released once the employee has
+ * actually been paid, so the money has to move first. The notice-recovery
+ * stage stays early — that's collected while the employee is still serving,
+ * not at the end.
  */
 function stagesFor(exitType: string): Stage[] {
   const keys: StageKey[] = ['initiation'];
   if (settlementOf(exitType) === 'recover') keys.push('notice_payment');
-  keys.push('clearance', 'documents', 'fnf', 'closure');
+  keys.push('clearance', 'fnf', 'documents', 'closure');
   return keys.map((key, i) => ({ key, num: i + 1, ...STAGE_DEFS[key] }));
 }
 
@@ -782,6 +816,10 @@ const EXIT_TYPE_CHOICES: { value: string; label: string; desc: string; icon: str
 /* Old rows persisted stage_status keyed by the numbers 1-4 of the original
    fixed stage list. Re-key them so a case created before this change reopens
    with its progress intact instead of showing every stage as Pending. */
+/* Styling + wording for an action held back by the document-release gate. */
+const OFF_STYLE: React.CSSProperties = { opacity: 0.45, cursor: 'not-allowed', filter: 'grayscale(0.5)' };
+const releaseHint = 'Switch on “release this employee’s documents” above to enable this.';
+
 const LEGACY_STAGE_KEYS: Record<string, StageKey> = { 1: 'initiation', 2: 'clearance', 3: 'documents', 4: 'closure' };
 function normaliseStageStatus(raw: any): Record<string, StageStatus> {
   const out: Record<string, StageStatus> = {};
@@ -797,11 +835,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<string, StageStatus>>({});
 
+  /* Set once by the Initiate-Exit picker before this wizard mounts, then
+     read-only for the life of the case — it decides the stage list and the
+     notice settlement, so it can't move underneath work already recorded. */
   const [exitType, setExitType]           = useState('');
-  /* The Initiate-Exit type picker. Opens by itself the first time an exit is
-     started (no type on file yet) because the type drives the whole stage
-     list — there is no sensible wizard to render until it's answered. */
-  const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
@@ -844,7 +881,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the salary basis; only the basis, the monthly figure and the payment
      record are actually entered. `settleStatus` is the gate Final
      Deactivation & Closure reads. */
-  const [noticeBasis, setNoticeBasis]     = useState<'gross' | 'basic'>('gross');
+  /* Always monthly BASIC — the recovery is priced on basic ÷ 30. A gross/basic
+     choice only invited two different figures for the same settlement. */
+  const noticeBasis = 'basic' as const;
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [settleStatus, setSettleStatus]   = useState('NA');
   // Recovery side: what the employee paid + HR's verdict on it.
@@ -859,6 +898,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      exit month (payroll skipped it), outstanding advances, unpaid claims. */
   const [fnfDues, setFnfDues] = useState<any>(null);
   const [duesLoading, setDuesLoading] = useState(false);
+  /* Payments the EMPLOYEE submitted themselves (profile → Payroll Details →
+     Do Payment). HR verifies these rather than retyping them. */
+  const [empPayments, setEmpPayments] = useState<any[]>([]);
+  const [empPayLoading, setEmpPayLoading] = useState(false);
 
   const settlement = settlementOf(exitType);
   /* Blacklist is only asked when the notice wasn't served — "Resignation
@@ -948,6 +991,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
   const duesClaims   = Number(fnfDues?.claims?.total ?? 0);
+
+  /* Has the Full & Final settlement actually been paid? This gates the
+     document release: the relieving letter and experience certificate go out
+     only after the employee has their money, which is why F&F now sits BEFORE
+     Exit Documents in the stage order. Mirrored server-side in ExitController. */
+  const fnfPaid = fnfMeta.payStatus === 'Paid';
+  const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfNet = useMemo(() => {
     const earn = fnfNum(fnfLines.basic) + fnfNum(fnfLines.leaveEncash)
                + fnfNum(fnfLines.bonus) + fnfNum(fnfLines.gratuity)
@@ -1029,6 +1079,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     { checked: false, status: 'Pending' },
   ]);
   const [handoverNotes, setHandoverNotes] = useState('');
+  /* Exit-document release gate. Defaults to OFF — a sent document can't be
+     un-sent, so the safe default is closed. It can only be switched ON once
+     the Full & Final settlement has actually been PAID (see fnfPaid below):
+     the relieving letter follows the money, never precedes it. */
+  const [docsReleased, setDocsReleased] = useState(false);
+  // Reopening F&F (back to unpaid) after a release must not leave the
+  // documents open behind it — pull the gate shut again.
+  useEffect(() => {
+    if (!fnfPaid && docsReleased) setDocsReleased(false);
+  }, [fnfPaid, docsReleased]);
   const [assetReturns, setAssetReturns]   = useState<Record<number, { checked: boolean; status: string }>>({});
 
 
@@ -1273,7 +1333,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (employee) {
       setStage(1);
       setStageStatus({ initiation: 'In Progress' });
-      setTypePickerOpen(false);
     }
   }, [employee?.id]);
 
@@ -1308,6 +1367,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           setAssetReturns(data.asset_returns as Record<number, { checked: boolean; status: string }>);
         }
         setHandoverNotes(String(data.handover_notes ?? ''));
+        setDocsReleased(!!data.documents_released);
 
         if (Array.isArray(data.validation) && data.validation.length) {
           setValidation(data.validation.map((v: any) => !!v));
@@ -1327,8 +1387,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         const savedStage = Number(data.current_stage);
         if (savedStage >= 1 && savedStage <= 6) setStage(savedStage);
 
-        // Notice-period settlement + FnF.
-        setNoticeBasis(String(data.notice_settlement_basis ?? 'gross') === 'basic' ? 'basic' : 'gross');
+        // Notice-period settlement + FnF. The basis is no longer loaded — it's
+        // always monthly basic now, so a stored 'gross' must not resurrect.
         setSettleStatus(String(data.notice_settlement_status ?? 'NA'));
         setNoticePayment(data.notice_payment && typeof data.notice_payment === 'object' ? data.notice_payment : null);
         const savedFnf = data.fnf && typeof data.fnf === 'object' ? data.fnf : null;
@@ -1417,6 +1477,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfMeta.payStatus, blacklistApplies, blacklisted, blacklistReason]);
+
+  /* Payments the EMPLOYEE submitted from their own Payroll Details tab, loaded
+     when the recovery stage is opened. MUST stay above the early return below —
+     a hook after it is called conditionally, which breaks the hook order the
+     moment `employee` goes from null to set. */
+  const loadEmployeePayments = useCallback(() => {
+    if (!employee) return;
+    setEmpPayLoading(true);
+    api.get(`/employees/${employee.id}/notice-payment`)
+      .then(({ data }) => setEmpPayments(data?.data?.payments ?? []))
+      .catch(() => setEmpPayments([]))
+      .finally(() => setEmpPayLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+
+  useEffect(() => {
+    if (currentKey === 'notice_payment') loadEmployeePayments();
+  }, [currentKey, loadEmployeePayments]);
 
   if (!employee) return null;
 
@@ -1544,6 +1622,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     clearances,
     asset_returns:         assetReturns,
     handover_notes:        handoverNotes.trim() || null,
+    documents_released:    docsReleased,
     validation,
     final_employee_status: empStatus || null,
     profile_lock:          profileLock || null,
@@ -1743,6 +1822,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const current = stages[stage - 1] ?? stages[0];
   const isLastStage = stage === stageCount;
 
+  /* HR's verdict on a payment the employee submitted. The endpoint also
+     mirrors the decision onto the exit case, so the completion gate updates
+     without a second save from here. */
+  const decideEmployeePayment = async (id: number, verdict: 'approve' | 'reject') => {
+    if (settleSaving) return;
+    setSettleSaving(true);
+    try {
+      const { data } = await api.post(`/notice-payments/${id}/${verdict}`, {});
+      toast.success(verdict === 'approve' ? 'Payment approved' : 'Payment rejected',
+        data?.message || '');
+      setSettleStatus(verdict === 'approve' ? 'Settled' : 'Rejected');
+      if (verdict === 'approve') markStageCompleted('notice_payment');
+      loadEmployeePayments();
+    } catch (err: any) {
+      toast.error('Could not record the decision', err?.response?.data?.message || 'Please try again.');
+    } finally {
+      setSettleSaving(false);
+    }
+  };
+
   /* ── Settlement actions ────────────────────────────────────────────────
      Recovery side: HR verifies what the employee paid, then approves it.
      Approving under the amount due is refused — a part payment doesn't
@@ -1771,30 +1870,36 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return;
     }
 
-    const payload = {
-      amount: got, date: rcv.date, mode: rcv.mode, bank: rcv.bank.trim(),
-      ref, remarks: rcv.remarks.trim(), verdict,
-      verified_at: new Date().toISOString(),
-    };
-    const status = verdict === 'approved' ? 'Settled' : 'Rejected';
-    setNoticePayment(payload);
-    setSettleStatus(status);
     setSettleSaving(true);
     try {
-      await api.put(`/employees/${employee.id}/exit`, {
-        ...buildExitPayload(),
-        notice_payment: payload,
-        notice_settlement_status: status,
+      /* Goes through the payments endpoint rather than straight onto the exit
+         JSON, so an HR-recorded payment writes the SAME row an employee
+         submission would — otherwise it never appears in the employee's own
+         Payment Details tab and they'd see "nothing submitted" against a
+         settlement HR had already closed. */
+      const { data } = await api.post(`/employees/${employee.id}/notice-payment/record`, {
+        amount: got,
+        payment_mode: rcv.mode,
+        bank_name: rcv.bank.trim(),
+        utr_cheque_number: ref,
+        payment_date: rcv.date,
+        remarks: rcv.remarks.trim() || null,
+        verdict: verdict === 'approved' ? 'Approved' : 'Rejected',
       });
-      toast.success(
-        verdict === 'approved' ? 'Payment approved' : 'Payment rejected',
-        verdict === 'approved'
-          ? `${fmtMoney(got)} recorded against this exit — the settlement is settled.`
-          : 'The settlement stays outstanding. Record a fresh payment and approve it.',
-      );
+      setSettleStatus(verdict === 'approved' ? 'Settled' : 'Rejected');
+      setNoticePayment({
+        amount: got, date: rcv.date, mode: rcv.mode, bank: rcv.bank.trim(),
+        ref, remarks: rcv.remarks.trim(), verdict,
+      });
+      toast.success(verdict === 'approved' ? 'Payment approved' : 'Payment rejected',
+        data?.message || '');
       if (verdict === 'approved') markStageCompleted('notice_payment');
+      setRcv({ amount: '', date: '', mode: 'NEFT', bank: '', ref: '', remarks: '' });
+      loadEmployeePayments();
     } catch (err: any) {
-      toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
+      const e = err?.response?.data;
+      const first = e?.errors ? (Object.values(e.errors)[0] as string[])?.[0] : null;
+      toast.error('Could not save', first || e?.message || 'Please try again.');
     } finally {
       setSettleSaving(false);
     }
@@ -1834,21 +1939,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.error('Could not save', err?.response?.data?.message || 'Please try again.');
     } finally {
       setSettleSaving(false);
-    }
-  };
-
-  /* Choosing the type is what shapes the wizard, so it's asked first and saved
-     immediately — a half-started exit that's abandoned still reopens on the
-     right stage list instead of re-prompting. */
-  const chooseExitType = async (value: string) => {
-    setExitType(value);
-    setTypePickerOpen(false);
-    setStage(1);
-    if (!employee) return;
-    try {
-      await api.put(`/employees/${employee.id}/exit`, { exit_type: value });
-    } catch {
-      // Non-fatal — Stage 1's own Save/Next will persist it again.
     }
   };
 
@@ -1922,17 +2012,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <Row className="g-2">
                   <Col md={6}>
                     <EpField label="Exit Type" required invalid={s1Errors.has('exitType')}>
-                      {/* Chosen in the Initiate-Exit picker and shown read-only
-                          here: it decides the stage list, so it can't be a
-                          quiet dropdown change mid-process. "Change" reopens
-                          the picker, which explains what each type implies. */}
+                      {/* Locked once chosen in the Initiate-Exit picker. The
+                          type decides the stage list and the whole notice
+                          settlement, so changing it mid-process would strand
+                          anything already recorded against the old one — it is
+                          fixed for the life of the case (enforced server-side
+                          in ExitController too). */}
                       <div className="ep-type-lock">
                         <span className={`ep-type-value${exitType ? '' : ' is-empty'}`}>
                           {exitType || 'Not selected'}
                         </span>
-                        <button type="button" className="ep-type-change" onClick={() => setTypePickerOpen(true)}>
-                          <i className="ri-repeat-line" />Change
-                        </button>
+                        <i className="ri-lock-line ep-type-locked" title="The exit type cannot be changed once the exit has started." />
                       </div>
                       {s1Errors.has('exitType') && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -2102,7 +2192,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-section-label">Notice Period Recovery</div>
                 <SettlementSummary
                   settle={settle} settlement={settlement} status={effSettleStatus}
-                  basis={noticeBasis} onBasis={setNoticeBasis}
                   monthly={monthlyAmount} onMonthly={setMonthlyAmount}
                   fmtMoney={fmtMoney}
                 />
@@ -2118,7 +2207,76 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </div>
                 ) : (
                   <>
-                    <div className="ep-section-label" style={{ marginTop: 14 }}>Payment Received — HR Verification</div>
+                    {/* What the EMPLOYEE submitted from their Payroll Details
+                        tab, with their proof of transfer. HR verifies against
+                        this rather than retyping it from an email. */}
+                    <div className="ep-section-label" style={{ marginTop: 14 }}>Submitted by the Employee</div>
+                    {empPayLoading ? (
+                      <div className="ep-settle-note"><i className="ri-loader-4-line ri-spin" /><span>Loading submissions…</span></div>
+                    ) : (empPayments.length === 0 ? (
+                      <div className="ep-settle-note is-no">
+                        <i className="ri-time-line" />
+                        <span>
+                          <strong>Nothing submitted yet.</strong><br />
+                          The employee records this payment themselves from their profile → Payroll Details →
+                          <em> Do Payment</em>. Once they do, it appears here for you to verify. You can still
+                          record a payment manually below if it came in another way.
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="ep-submitted">
+                        {empPayments.map((p: any) => (
+                          <div key={p.id} className={`ep-sub-card is-${String(p.status).toLowerCase()}`}>
+                            <div className="ep-sub-head">
+                              <span className="ep-sub-amt">{fmtMoney(p.amount)}</span>
+                              <span className={`ep-sub-pill is-${String(p.status).toLowerCase()}`}>{p.status}</span>
+                              <span className="ep-sub-when">
+                                submitted {p.submitted_at ? fmtDateShort(String(p.submitted_at).slice(0, 10)) : '—'}
+                              </span>
+                            </div>
+                            <div className="ep-sub-grid">
+                              <div><span>Amount Due Then</span><strong>{fmtMoney(p.amount_due)}</strong></div>
+                              <div><span>Mode</span><strong>{p.payment_mode || '—'}</strong></div>
+                              <div><span>Bank</span><strong>{p.bank_name || '—'}</strong></div>
+                              <div><span>UTR / Cheque</span><strong>{p.utr_cheque_number || '—'}</strong></div>
+                              <div><span>Payment Date</span><strong>{p.payment_date ? fmtDateShort(p.payment_date) : '—'}</strong></div>
+                              <div>
+                                <span>Proof</span>
+                                <strong>
+                                  {p.attachment_url
+                                    ? <a href={p.attachment_url} target="_blank" rel="noreferrer">
+                                        <i className="ri-attachment-2" /> {p.attachment_name || 'View'}
+                                      </a>
+                                    : '—'}
+                                </strong>
+                              </div>
+                            </div>
+                            {p.employee_note && <div className="ep-sub-note"><strong>Employee note:</strong> {p.employee_note}</div>}
+                            {p.status === 'Pending' ? (
+                              <div className="ep-settle-actions">
+                                <button type="button" className="ep-btn ep-btn--complete"
+                                  disabled={settleSaving}
+                                  onClick={() => decideEmployeePayment(p.id, 'approve')}>
+                                  <i className="ri-check-double-line" />Verify &amp; Approve
+                                </button>
+                                <button type="button" className="ep-btn ep-btn--reject"
+                                  disabled={settleSaving}
+                                  onClick={() => decideEmployeePayment(p.id, 'reject')}>
+                                  <i className="ri-close-circle-line" />Reject
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="ep-sub-note">
+                                {p.status} by {p.verified_by_name || 'HR'}
+                                {p.verification_remarks ? ` — ${p.verification_remarks}` : ''}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ))}
+
+                    <div className="ep-section-label" style={{ marginTop: 14 }}>Record a Payment Manually</div>
                     <div className="ep-approval-card ep-details-card mb-2">
                       <Row className="g-2">
                         <Col md={4}>
@@ -2206,14 +2364,37 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </span>
                 </div>
 
-                {settlement !== 'served' && (
+                {/* A RECOVERY is owned by the Notice Period Payment stage — it's
+                    collected and approved there, so repeating the whole panel
+                    here only invited HR to edit the same figure in two places.
+                    Just its outcome is echoed. A PAY-IN-LIEU is different: this
+                    stage is where that money actually goes out, so it keeps the
+                    full editable summary. */}
+                {settlement === 'recover' && (
                   <>
-                    <div className="ep-section-label">
-                      {settlement === 'pay_in_lieu' ? 'Notice Period — Payment in Lieu' : 'Notice Period — Recovery'}
+                    <div className="ep-section-label">Notice Period — Recovery</div>
+                    <div className={`ep-echo ${effSettleStatus === 'Settled' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
+                      <i className={effSettleStatus === 'Settled' ? 'ri-check-double-line'
+                        : effSettleStatus === 'Rejected' ? 'ri-close-circle-line' : 'ri-time-line'} />
+                      <span className="ep-echo-txt">
+                        <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
+                        {effSettleStatus === 'Settled' ? 'collected and approved.'
+                          : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
+                          : 'not settled yet.'}
+                        <em> Handled in Stage {stages.find(s => s.key === 'notice_payment')?.num ?? 2} — Notice Period Payment.</em>
+                      </span>
+                      <span className="ep-echo-pill">
+                        {effSettleStatus === 'Settled' ? 'Settled' : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
+                      </span>
                     </div>
+                  </>
+                )}
+
+                {settlement === 'pay_in_lieu' && (
+                  <>
+                    <div className="ep-section-label">Notice Period — Payment in Lieu</div>
                     <SettlementSummary
                       settle={settle} settlement={settlement} status={effSettleStatus}
-                      basis={noticeBasis} onBasis={setNoticeBasis}
                       monthly={monthlyAmount} onMonthly={setMonthlyAmount}
                       fmtMoney={fmtMoney}
                     />
@@ -2457,6 +2638,42 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     ))}
                   </div>
 
+                  {/* Release gate — nothing on this stage can be opened or sent
+                      until HR confirms the employee is cleared to receive their
+                      paperwork. A sent document can't be un-sent, so the switch
+                      defaults to OFF. */}
+                  <div className={`ep-release${docsReleased ? ' is-on' : ''}${fnfPaid ? '' : ' is-blocked'}`}>
+                    <span className="ep-release-ico">
+                      <i className={docsReleased ? 'ri-lock-unlock-line' : 'ri-lock-line'} />
+                    </span>
+                    <div className="ep-release-text">
+                      <div className="ep-release-title">Do you want to release this employee's documents?</div>
+                      <div className="ep-release-sub">
+                        {!fnfPaid
+                          ? 'Blocked — the Full & Final settlement has not been paid yet. Documents are released only after the employee has been paid.'
+                          : docsReleased
+                            ? 'Released — the exit documents below can be viewed and sent for signature.'
+                            : 'Not released — viewing and sending are disabled until you switch this on.'}
+                      </div>
+                    </div>
+                    <label className={`ep-switch${fnfPaid ? '' : ' is-off'}`}
+                           title={fnfPaid ? 'Release exit documents' : fnfBlockHint}>
+                      <input
+                        type="checkbox"
+                        checked={docsReleased}
+                        disabled={!fnfPaid}
+                        onChange={e => {
+                          // Belt and braces — the input is disabled, but a
+                          // programmatic change must not slip past the rule.
+                          if (!fnfPaid) return;
+                          setDocsReleased(e.target.checked);
+                        }}
+                      />
+                      <span className="ep-switch-track"><span className="ep-switch-thumb" /></span>
+                      <span className="ep-switch-label">{docsReleased ? 'Yes' : 'No'}</span>
+                    </label>
+                  </div>
+
                   <div className="ep-section-label">Exit Documents</div>
 
                   {exitMatchMeta && (
@@ -2546,8 +2763,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               <span className={`ep-doc-tag ${tpl.status === 'Active' ? 'ep-doc-tag--pending' : 'ep-doc-tag--blank'}`}>
                                 {tpl.status || 'Draft'}
                               </span>
-                              <Tooltip label="Preview with this employee's data" position="bottom" themed>
-                                <button type="button" className="ep-doc-btn ep-doc-btn--ghost" onClick={() => handleView(tpl)}>
+                              <Tooltip label={docsReleased ? "Preview with this employee's data" : releaseHint} position="bottom" themed>
+                                <button type="button" className="ep-doc-btn ep-doc-btn--ghost"
+                                  disabled={!docsReleased}
+                                  style={!docsReleased ? OFF_STYLE : undefined}
+                                  onClick={() => handleView(tpl)}>
                                   <i className="ri-eye-line" />View
                                 </button>
                               </Tooltip>
@@ -2570,12 +2790,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 );
                               })()}
                               {canSend && (
-                                <Tooltip label="Preview the document (fills custom fields if any) then send for signing" position="bottom" themed>
+                                <Tooltip label={docsReleased ? 'Preview the document (fills custom fields if any) then send for signing' : releaseHint} position="bottom" themed>
                                   <button
                                     type="button"
                                     className="ep-doc-btn"
+                                    disabled={!docsReleased}
                                     onClick={() => setGenTpl(tpl)}
-                                    style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }}
+                                    style={docsReleased
+                                      ? { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0 }
+                                      : { background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', border: 0, ...OFF_STYLE }}
                                   >
                                     <i className="ri-send-plane-line" />Send for Signature
                                   </button>
@@ -2827,17 +3050,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         </div>
       </ModalBody>
     </Modal>
-
-    {/* Reopened from Stage 1 to correct a mis-pick. The FIRST pick doesn't
-        happen here — it happens before this modal exists (see the list's
-        Initiate Exit button), so the wizard is never shown behind the picker. */}
-    <ExitTypePickerModal
-      employee={employee}
-      current={exitType}
-      onClose={() => setTypePickerOpen(false)}
-      onPick={chooseExitType}
-      open={typePickerOpen}
-    />
 
     <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered contentClassName="border-0" backdrop="static">
       <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg)' }}>
@@ -3204,7 +3416,9 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
         </div>
         <div style={{ padding: 18, background: 'var(--vz-secondary-bg)' }}>
           <div className="ep-section-label" style={{ marginBottom: 10 }}>Exit Type</div>
-          <div className="etp-grid">
+          {/* --tiles: three square boxes side by side. The Rehire picker reuses
+              .etp-grid without this modifier and stays as stacked rows. */}
+          <div className="etp-grid etp-grid--tiles">
             {EXIT_TYPE_CHOICES.map(c => (
               <button
                 key={c.value}
@@ -3223,15 +3437,15 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                     {settlementOf(c.value) === 'recover' && <em> · Notice Period Payment</em>}
                   </span>
                 </span>
-                <i className={`${busy ? 'ri-loader-4-line ri-spin' : 'ri-arrow-right-s-line'} etp-go`} />
+                {busy && <i className="ri-loader-4-line ri-spin etp-go" />}
               </button>
             ))}
           </div>
           <div className="etp-foot">
             <div className="etp-note">
-              <i className="ri-information-line" />
-              The type sets how the notice period is settled. You can change it later from Stage&nbsp;1 —
-              doing so reshapes the stages and clears anything already recorded against the old settlement.
+              <i className="ri-alert-line" />
+              The type sets how the notice period is settled and which stages the exit runs through.
+              <strong> It cannot be changed once the exit has started</strong> — pick carefully.
             </div>
             <button type="button" className="etp-cancel" onClick={onClose} disabled={busy}>
               Cancel
@@ -3247,13 +3461,11 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
    stages. Everything except the salary basis is derived from Stage 1, so this
    is a summary with two inputs rather than a form. */
 function SettlementSummary({
-  settle, settlement, status, basis, onBasis, monthly, onMonthly, fmtMoney,
+  settle, settlement, status, monthly, onMonthly, fmtMoney,
 }: {
   settle: { required: number; served: number; unserved: number; perDay: number; amount: number };
   settlement: Settlement;
   status: string;
-  basis: 'gross' | 'basic';
-  onBasis: (v: 'gross' | 'basic') => void;
   monthly: string;
   onMonthly: (v: string) => void;
   fmtMoney: (n: number) => string;
@@ -3282,15 +3494,11 @@ function SettlementSummary({
         <div><span>Notice days {settlement === 'pay_in_lieu' ? 'payable' : 'required'}</span><strong>{settle.required}</strong></div>
         <div><span>Days served</span><strong>{settle.served}</strong></div>
         <div><span>{settlement === 'pay_in_lieu' ? 'Days to pay' : 'Days unserved'}</span><strong>{settle.unserved}</strong></div>
+        {/* Fixed, not a choice: the notice recovery is always priced on monthly
+            BASIC ÷ 30, so offering "gross" only invited an inconsistent figure. */}
+        <div><span>Salary basis</span><strong>Monthly Basic</strong></div>
         <div>
-          <span>Salary basis</span>
-          <select className="ep-settle-sel" value={basis} onChange={e => onBasis(e.target.value as 'gross' | 'basic')}>
-            <option value="gross">Monthly Gross</option>
-            <option value="basic">Monthly Basic</option>
-          </select>
-        </div>
-        <div>
-          <span>Monthly amount</span>
+          <span>Monthly basic</span>
           <input className="ep-settle-in" type="number" min={0} value={monthly}
             onChange={e => onMonthly(e.target.value)} placeholder="0.00" />
         </div>
@@ -3859,9 +4067,12 @@ function apiToExitRow(e: any): EmployeeRow {
     // Only a PREFILL for the notice-period settlement — HR confirms/overrides
     // the figure there, so a payload without salary just means an empty field
     // rather than a broken stage.
+    /* Monthly BASIC — what the notice-period settlement is priced on. Mirrors
+       PayrollService::resolveCompensation()'s fallback split (basic = 50% of
+       monthly gross) so the exit and payroll agree on the same figure. */
     monthlySalary: (() => {
       const a = Number(e.annual_salary);
-      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 100) / 100 : null;
+      return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 0.5 * 100) / 100 : null;
     })(),
     probationEndIso: e.probation_end_date ? String(e.probation_end_date).slice(0, 10) : null,
     laptopAsset: e.laptop_asset ? {

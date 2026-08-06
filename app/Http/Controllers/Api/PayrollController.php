@@ -1077,6 +1077,45 @@ class PayrollController extends Controller
         if ($full) {
             $row['earningsBreakup']   = $p->earnings ?: [];
             $row['deductionsBreakup'] = $p->deductions ?: [];
+
+            /* Overtime — surfaced only for employees the employee master marks
+               overtime-applicable, so the payslip doesn't grow an OT card and
+               an OT allowance line for staff the policy doesn't cover.
+               The rate here is the DERIVED per-hour figure
+               (gross ÷ working days ÷ shift hours × multiplier), which is what
+               the amount was actually priced at — see PayrollService::overtimeRate(). */
+            $emp = $p->relationLoaded('employee') ? $p->employee : $p->employee()->first();
+            $otApplicable = (bool) $emp?->overtimeApplicable();
+            $row['overtimeApplicable'] = $otApplicable;
+            $row['overtimeHours']      = (float) ($p->overtime_hours ?? 0);
+            $row['overtimeAmount']     = (float) ($p->overtime_amount ?? 0);
+            if ($otApplicable) {
+                $svc  = app(\App\Services\PayrollService::class);
+                $rate = $svc->overtimeRate(
+                    $emp,
+                    (float) $p->gross_earnings,
+                    (float) ($p->working_days ?: 0),
+                );
+                $row['overtimeRateName']  = $rate['rate_name'];
+                $row['overtimeMultiplier'] = (float) $rate['multiplier'];
+                $row['overtimeHourly']     = (float) $rate['hourly'];
+                $row['overtimeRate']       = (float) $rate['effective_rate'];
+
+                /* Hours the ATTENDANCE actually shows past the shift end, which
+                   is a different number from the PAID hours above: Rule 4 pays
+                   only OT that HR has recorded and approved as an adjustment.
+                   Both are surfaced so the payslip can show the real worked
+                   hours AND make it obvious when they haven't been approved —
+                   showing 0 for someone who demonstrably worked overtime reads
+                   as a bug. */
+                if ($p->period) {
+                    $winStart = Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->startOfDay();
+                    $winEnd   = (clone $winStart)->endOfMonth()->startOfDay();
+                    $detected = $svc->overtimeHoursFromAttendance($emp, $winStart, $winEnd);
+                    $row['overtimeDetectedHours'] = (float) $detected['hours'];
+                    $row['overtimeDetectedDays']  = (int) $detected['days'];
+                }
+            }
             $row['exceptions']        = $p->exceptions ?: [];
             $row['paidDays']          = (float) $p->paid_days;
             $row['lopDays']           = (float) $p->lop_days;

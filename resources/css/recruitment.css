@@ -5883,6 +5883,44 @@
 .etp-stages { font-size: 11px; font-weight: 600; color: var(--etp-accent, #7c3aed); }
 .etp-stages em { font-style: normal; opacity: 0.85; }
 .etp-go { margin-left: auto; align-self: center; font-size: 20px; color: var(--vz-secondary-color); flex: none; }
+
+/* ── Tile variant — the three exit types as square boxes on one row. ──── */
+.etp-grid--tiles {
+  display: grid;
+  grid-auto-flow: column;      /* one equal column per card, whatever the count */
+  grid-auto-columns: 1fr;
+  gap: 12px;
+}
+.etp-grid--tiles .etp-card {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  /* NOT aspect-ratio: at three-up these cards are ~450px wide, and a 1:1 ratio
+     made them 450px TALL — a screen of empty space under two lines of text.
+     A modest min-height keeps the three equal without the dead area. */
+  min-height: 172px;
+  padding: 14px 13px;
+  gap: 8px;
+}
+.etp-grid--tiles .etp-ico { width: 44px; height: 44px; border-radius: 13px; font-size: 21px; }
+.etp-grid--tiles .etp-body { align-items: center; gap: 5px; flex: 1; min-height: 0; }
+.etp-grid--tiles .etp-title { font-size: 13px; line-height: 1.3; }
+.etp-grid--tiles .etp-desc  { font-size: 11px; line-height: 1.45; }
+.etp-grid--tiles .etp-stages { font-size: 10.5px; margin-top: auto; }
+.etp-grid--tiles .etp-stages em { display: block; }
+/* The chevron only appears as the busy spinner in tile mode — no row affordance
+   to point at, so it must not reserve space on the left. */
+.etp-grid--tiles .etp-go { position: absolute; top: 10px; right: 10px; margin: 0; font-size: 15px; }
+.etp-grid--tiles .etp-card { position: relative; }
+
+@media (max-width: 767px) {
+  /* Squares get unreadably small below three-up — stack them instead. */
+  .etp-grid--tiles { grid-auto-flow: row; grid-auto-columns: auto; }
+  .etp-grid--tiles .etp-card { min-height: 0; flex-direction: row; text-align: left; }
+  .etp-grid--tiles .etp-body { align-items: flex-start; }
+  .etp-grid--tiles .etp-stages { margin-top: 0; }
+}
 .etp-foot {
   display: flex; align-items: flex-start; gap: 14px; margin-top: 12px;
 }
@@ -5914,12 +5952,125 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ep-type-value.is-empty { color: var(--vz-secondary-color); font-weight: 400; }
-.ep-type-change {
-  flex: none; display: inline-flex; align-items: center; gap: 5px;
-  background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe;
-  border-radius: 8px; padding: 7px 11px; font-size: 12px; font-weight: 700; cursor: pointer;
+/* Compact echo of a settlement owned by ANOTHER stage — status only, so the
+   same figure isn't editable in two places. */
+.ep-echo {
+  display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
+  border: 1.5px solid var(--vz-border-color); border-radius: 10px;
+  padding: 11px 14px; font-size: 12.5px; background: var(--vz-secondary-bg);
 }
-.ep-type-change:hover { background: #ddd6fe; }
+.ep-echo i { font-size: 17px; flex: none; }
+.ep-echo-txt { min-width: 0; }
+.ep-echo-txt em { font-style: normal; opacity: .8; }
+.ep-echo-pill {
+  margin-left: auto; flex: none; border-radius: 999px; padding: 3px 12px;
+  font-size: 11px; font-weight: 800; background: var(--vz-card-bg); border: 1.5px solid;
+}
+.ep-echo.is-due { background: #fffbeb; border-color: #fde68a; color: #92400e; }
+.ep-echo.is-due .ep-echo-pill { border-color: #fde68a; color: #b45309; }
+.ep-echo.is-ok  { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
+.ep-echo.is-ok .ep-echo-pill  { border-color: #a7f3d0; color: #0d9488; }
+.ep-echo.is-no  { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+.ep-echo.is-no .ep-echo-pill  { border-color: #fecaca; color: #b91c1c; }
+[data-bs-theme="dark"] .ep-echo.is-due { background: rgba(245,158,11,0.10); color: #fcd34d; }
+[data-bs-theme="dark"] .ep-echo.is-ok  { background: rgba(16,185,129,0.10); color: #6ee7b7; }
+[data-bs-theme="dark"] .ep-echo.is-no  { background: rgba(239,68,68,0.10); color: #fca5a5; }
+
+/* ══ Employee-submitted notice payment (HR verification view) ══════════ */
+.ep-submitted { display: flex; flex-direction: column; gap: 10px; }
+.ep-sub-card {
+  border: 1.5px solid var(--vz-border-color); border-radius: 12px;
+  padding: 12px 14px; background: var(--vz-card-bg);
+}
+.ep-sub-card.is-pending  { border-color: #fde68a; background: #fffbeb; }
+.ep-sub-card.is-approved { border-color: #a7f3d0; background: #ecfdf5; }
+.ep-sub-card.is-rejected { border-color: #fecaca; background: #fef2f2; }
+.ep-sub-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.ep-sub-amt { font-size: 19px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.ep-sub-pill { border-radius: 999px; padding: 2px 11px; font-size: 10.5px; font-weight: 800; border: 1px solid; }
+.ep-sub-pill.is-pending  { background: #fff; border-color: #fde68a; color: #b45309; }
+.ep-sub-pill.is-approved { background: #fff; border-color: #a7f3d0; color: #0d9488; }
+.ep-sub-pill.is-rejected { background: #fff; border-color: #fecaca; color: #b91c1c; }
+.ep-sub-when { margin-left: auto; font-size: 11px; color: var(--vz-secondary-color); }
+.ep-sub-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 9px;
+}
+.ep-sub-grid span {
+  display: block; font-size: 10px; font-weight: 700; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--vz-secondary-color);
+}
+.ep-sub-grid strong { font-size: 12.5px; }
+.ep-sub-grid a { color: #4338ca; text-decoration: none; }
+.ep-sub-grid a:hover { text-decoration: underline; }
+.ep-sub-note { margin-top: 9px; font-size: 11.5px; color: #4b5563; }
+[data-bs-theme="dark"] .ep-sub-card.is-pending  { background: rgba(245,158,11,0.10); }
+[data-bs-theme="dark"] .ep-sub-card.is-approved { background: rgba(16,185,129,0.10); }
+[data-bs-theme="dark"] .ep-sub-card.is-rejected { background: rgba(239,68,68,0.10); }
+[data-bs-theme="dark"] .ep-sub-note { color: var(--vz-secondary-color); }
+
+/* ══ Exit-document release gate ════════════════════════════════════════
+   Banner + switch above the document list. Amber while closed, green once
+   released, so the state reads at a glance. */
+.ep-release {
+  display: flex; align-items: center; gap: 12px;
+  border: 1.5px solid #fde68a; background: #fffbeb;
+  border-radius: 12px; padding: 12px 15px; margin-bottom: 12px;
+}
+.ep-release.is-on { border-color: #a7f3d0; background: #ecfdf5; }
+/* Held shut by an unpaid F&F — read-only, not merely "off". */
+.ep-release.is-blocked { border-color: var(--vz-border-color); background: var(--vz-secondary-bg); }
+.ep-release.is-blocked .ep-release-ico { border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
+.ep-release.is-blocked .ep-release-title,
+.ep-release.is-blocked .ep-release-sub { color: var(--vz-secondary-color); }
+.ep-switch.is-off { cursor: not-allowed; opacity: 0.55; }
+.ep-release-ico {
+  flex: none; width: 36px; height: 36px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid #fde68a; color: #b45309; font-size: 17px;
+}
+.ep-release.is-on .ep-release-ico { border-color: #a7f3d0; color: #0d9488; }
+.ep-release-text { min-width: 0; }
+.ep-release-title { font-weight: 700; font-size: 13px; color: #92400e; }
+.ep-release.is-on .ep-release-title { color: #065f46; }
+.ep-release-sub { font-size: 11.5px; color: #a16207; margin-top: 2px; }
+.ep-release.is-on .ep-release-sub { color: #047857; }
+
+.ep-switch { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; flex: none; }
+.ep-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ep-switch-track {
+  width: 44px; height: 24px; border-radius: 999px; background: #d1d5db;
+  position: relative; transition: background .18s ease; flex: none;
+}
+.ep-switch-thumb {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; transition: transform .18s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.ep-switch input:checked + .ep-switch-track { background: #10b981; }
+.ep-switch input:checked + .ep-switch-track .ep-switch-thumb { transform: translateX(20px); }
+.ep-switch input:focus-visible + .ep-switch-track { box-shadow: 0 0 0 3px rgba(16,185,129,0.30); }
+.ep-switch-label { font-size: 12px; font-weight: 700; color: var(--vz-secondary-color); min-width: 22px; }
+.ep-switch input:checked ~ .ep-switch-label { color: #0d9488; }
+
+[data-bs-theme="dark"] .ep-release { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.35); }
+[data-bs-theme="dark"] .ep-release.is-on { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.35); }
+[data-bs-theme="dark"] .ep-release-ico { background: transparent; }
+[data-bs-theme="dark"] .ep-release-title { color: #fcd34d; }
+[data-bs-theme="dark"] .ep-release.is-on .ep-release-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .ep-release-sub { color: #fbbf24; }
+[data-bs-theme="dark"] .ep-release.is-on .ep-release-sub { color: #34d399; }
+
+@media (max-width: 575px) {
+  .ep-release { flex-wrap: wrap; }
+  .ep-switch { margin-left: 0; width: 100%; justify-content: flex-end; }
+}
+
+/* Padlock in place of the old "Change" button — the exit type is fixed once
+   the case has started. */
+.ep-type-locked {
+  flex: none; font-size: 15px; color: var(--vz-secondary-color);
+  opacity: 0.7; cursor: default;
+}
 
 /* ══ Notice-period settlement summary ══════════════════════════════════ */
 .ep-settle {

@@ -49,7 +49,11 @@ class ExitController extends Controller
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+        $lockedType     = $this->lockedExitType($row);
+        $wasReleased    = (bool) $row->documents_released;
         $row->fill($data);
+        $this->assertExitTypeUnchanged($lockedType, $row);
+        $this->stampDocumentRelease($row, $wasReleased, $request);
         $row->employee_id          = $employee->id;
         $row->client_id            = $employee->client_id;
         $row->branch_id            = $employee->branch_id;
@@ -95,7 +99,9 @@ class ExitController extends Controller
 
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+            $lockedType = $this->lockedExitType($row);
             $row->fill($data);
+            $this->assertExitTypeUnchanged($lockedType, $row);
             $row->employee_id          = $employee->id;
             $row->client_id            = $employee->client_id;
             $row->branch_id            = $employee->branch_id;
@@ -458,6 +464,76 @@ class ExitController extends Controller
      * unserved notice has always been treated.
      */
     /**
+     * Record WHO released the exit documents and WHEN, on the transition only.
+     * Toggling it back off clears the stamp, so the pair always describes the
+     * current state rather than the last time it happened to be switched on.
+     */
+    private function stampDocumentRelease(EmployeeExit $row, bool $wasReleased, Request $request): void
+    {
+        $isReleased = (bool) $row->documents_released;
+
+        /* Exit documents follow the money. The relieving letter and experience
+           certificate are only released once the Full & Final settlement has
+           actually been PAID — which is why F&F sits before Exit Documents in
+           the stage order. The SPA disables the switch; this is the
+           server-side twin so a direct call can't do what the UI won't.
+           Reopening F&F (back to unpaid) also revokes an existing release. */
+        if (!$this->isFnfPaid($row)) {
+            $row->documents_released    = false;
+            $row->documents_released_at = null;
+            $row->documents_released_by = null;
+            abort_if($isReleased, 422,
+                'Exit documents cannot be released until the Full & Final settlement has been paid.');
+            return;
+        }
+
+        if ($isReleased === $wasReleased) {
+            return;
+        }
+        $row->documents_released_at = $isReleased ? now() : null;
+        $row->documents_released_by = $isReleased ? $request->user()?->id : null;
+    }
+
+    /** Has the Full & Final settlement been marked paid? The F&F stage stores
+     *  its state as a JSON blob owned by the wizard; the payment status lives
+     *  at fnf.meta.payStatus. */
+    private function isFnfPaid(EmployeeExit $row): bool
+    {
+        $status = data_get($row->fnf, 'meta.payStatus');
+        return is_string($status) && strcasecmp($status, 'Paid') === 0;
+    }
+
+    /** The exit type already on file for a saved case, or null for a new one. */
+    private function lockedExitType(EmployeeExit $row): ?string
+    {
+        $existing = trim((string) ($row->exists ? $row->exit_type : ''));
+        return $existing !== '' ? $existing : null;
+    }
+
+    /**
+     * The exit type is IMMUTABLE once the case exists.
+     *
+     * It decides the stage list, the notice settlement, whether the blacklist
+     * question is asked and whether the employee can ever be rehired — so
+     * changing it mid-process would strand everything already recorded against
+     * the old one (a verified notice recovery, an F&F priced on a pay-in-lieu).
+     * The SPA shows it locked; this is the server-side twin so a direct call
+     * can't do what the UI won't.
+     */
+    private function assertExitTypeUnchanged(?string $locked, EmployeeExit $row): void
+    {
+        if ($locked === null) {
+            return;   // first save — anything goes
+        }
+        $incoming = trim((string) ($row->exit_type ?? ''));
+        if ($incoming === '' || $incoming === $locked) {
+            $row->exit_type = $locked;   // absent or unchanged → keep it
+            return;
+        }
+        abort(422, "The exit type cannot be changed once the exit has started (this case is a \"{$locked}\"). Cancel this exit and start a new one if the type is wrong.");
+    }
+
+    /**
      * The blacklist question is only asked when the notice wasn't served —
      * a resignation without notice, or a termination. If the exit type is
      * changed back to a standard resignation, any answer recorded under the
@@ -509,6 +585,11 @@ class ExitController extends Controller
             'clearances'            => 'nullable|array',
             'asset_returns'         => 'nullable|array',
             'handover_notes'        => 'nullable|string|max:5000',
+
+            // Exit Documents — HR's decision to release the paperwork. The
+            // stamp/actor are set server-side on the transition, never trusted
+            // from the client.
+            'documents_released'    => 'nullable|boolean',
 
             // Stage 4 — Final Deactivation & Closure
             'validation'            => 'nullable|array',
@@ -660,6 +741,8 @@ class ExitController extends Controller
             'clearances'            => $row?->clearances ?? [],
             'asset_returns'         => $row?->asset_returns ?? [],
             'handover_notes'        => $row?->handover_notes,
+            'documents_released'    => (bool) ($row?->documents_released ?? false),
+            'documents_released_at' => $row?->documents_released_at?->toIso8601String(),
 
             // Stage 4 — Final Deactivation & Closure
             'validation'            => $row?->validation ?? [],

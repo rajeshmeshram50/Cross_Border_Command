@@ -1521,64 +1521,112 @@ class PayrollService
         if (!Schema::hasTable('advance_requests')) {
             return 0;
         }
-        $rows = DB::table('advance_requests')
-            ->where('employee_id', $employeeId)
-            ->where('hr_status', 'approved')
-            ->whereNotNull('recovery_start')
-            ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
-            // Oldest advance takes priority when the cap can't cover everything.
-            ->orderBy('recovery_start')
-            ->orderBy('id')
-            ->get(['id', 'amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
-                   'advance_no', 'advance_type', 'advance_type_other']);
-
         $hasLedger = Schema::hasTable('advance_recovery_ledger');
         $room  = max(0.0, $cap);
         $total = 0.0;
 
-        foreach ($rows as $r) {
-            $amount = (float) $r->amount;
-            $start  = Carbon::parse($r->recovery_start)->startOfMonth();
+        // Build the recovery STREAMS for this employee. An advance can be
+        // recovered on two independent streams:
+        //   self   — the employee repaying the advance they took (recovery_*).
+        //   return — the employee returning UNUSED advance via payroll
+        //            (settle_return_*), scheduled at settlement time.
+        $streams = [];
+
+        foreach (DB::table('advance_requests')
+            ->where('employee_id', $employeeId)
+            ->where('hr_status', 'approved')
+            ->whereNotNull('recovery_start')
+            ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
+            ->get(['id', 'amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+                   'advance_no', 'advance_type', 'advance_type_other']) as $r) {
+            $type = $this->advanceTypeLabel($r->advance_type, $r->advance_type_other);
+            $streams[] = [
+                'advance_request_id' => (int) $r->id,
+                'stream'     => 'self',
+                'start'      => $r->recovery_start,
+                'mode'       => $r->recovery_mode,
+                'months'     => (int) ($r->recovery_months ?: 0),
+                'emi'        => (float) ($r->monthly_emi ?: 0),
+                'amount'     => (float) $r->amount,
+                'advance_no' => $r->advance_no,
+                'label'      => 'Advance Recovery – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
+            ];
+        }
+
+        // Company-return-via-payroll streams (only once scheduled at settlement).
+        foreach (DB::table('advance_requests')
+            ->where('employee_id', $employeeId)
+            ->whereNotNull('settle_return_scheduled_at')
+            ->whereNotNull('settle_return_recovery_start')
+            ->whereDate('settle_return_recovery_start', '<=', $period->period_end->toDateString())
+            ->get(['id', 'settle_balance', 'settle_return_payments', 'settle_return_recovery_start',
+                   'settle_return_recovery_mode', 'settle_return_recovery_months', 'settle_return_monthly',
+                   'advance_no', 'advance_type', 'advance_type_other']) as $r) {
+            // Amount to recover via payroll = balance owed minus any DIRECT
+            // return payments already recorded (cash/bank before scheduling).
+            $paid = 0.0;
+            foreach ((json_decode((string) ($r->settle_return_payments ?? '[]'), true) ?: []) as $p) {
+                $paid += (float) ($p['amount'] ?? 0);
+            }
+            $retAmount = round((float) $r->settle_balance - $paid, 2);
+            if ($retAmount <= 0.0) {
+                continue;
+            }
+            $type = $this->advanceTypeLabel($r->advance_type, $r->advance_type_other);
+            $streams[] = [
+                'advance_request_id' => (int) $r->id,
+                'stream'     => 'return',
+                'start'      => $r->settle_return_recovery_start,
+                'mode'       => $r->settle_return_recovery_mode,
+                'months'     => (int) ($r->settle_return_recovery_months ?: 0),
+                'emi'        => (float) ($r->settle_return_monthly ?: 0),
+                'amount'     => $retAmount,
+                'advance_no' => $r->advance_no,
+                'label'      => 'Advance Return – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
+            ];
+        }
+
+        // Oldest schedule first — that stream gets priority when the cap can't
+        // cover everything (self before return on the same date/advance).
+        usort($streams, function ($a, $b) {
+            return strcmp((string) $a['start'], (string) $b['start'])
+                ?: ($a['advance_request_id'] <=> $b['advance_request_id'])
+                ?: strcmp($a['stream'], $b['stream']);
+        });
+
+        $priorScope = function ($q) use ($period) {
+            $q->where('year', '<', (int) $period->year)
+              ->orWhere(function ($q2) use ($period) {
+                  $q2->where('year', (int) $period->year)->where('month', '<', (int) $period->month);
+              });
+        };
+
+        foreach ($streams as $s) {
+            $amount = $s['amount'];
+            $start  = Carbon::parse($s['start'])->startOfMonth();
             if ($period->period_end->lt($start)) {
                 continue; // recovery hasn't started yet
             }
+            // 0-based month offset from the start month to this cycle.
+            $monthIndex = $start->diffInMonths($period->period_end->copy()->startOfMonth());
 
             // NORMAL amount owed for THIS cycle (stateless — no ledger needed).
-            $hasEmi = in_array($r->recovery_mode, ['emi', 'bimonthly'], true)
-                && ($r->monthly_emi || $r->recovery_months);
-            if ($hasEmi) {
-                $months = max(1, (int) ($r->recovery_months ?: 1));
-                $emi    = (float) ($r->monthly_emi ?: round($amount / $months, 2));
-                $endMonth = $start->copy()->addMonthsNoOverflow($months - 1)->endOfMonth();
-                // Owed only while the cycle falls inside [start month … end month].
-                $inWindow = $period->period_end->gte($start) && $period->period_start->lte($endMonth);
-                $normalDue = $inWindow ? $emi : 0.0;
-            } else {
-                // Lump-sum — owed once, in its start month.
-                $normalDue = ($start->year === (int) $period->year && $start->month === (int) $period->month)
-                    ? $amount : 0.0;
-            }
+            $normalDue = $this->scheduledDueForCycle($s['mode'], $monthIndex, $s['months'], $s['emi'], $amount);
 
-            // Arrears carried in from prior lean months + total already recovered
-            // (both read from the ledger; both zero when there's no ledger yet).
+            // Arrears carried from prior lean months + total already recovered on
+            // THIS stream (both zero when there's no ledger yet).
             $arrears = 0.0; $recoveredBefore = 0.0;
             if ($hasLedger) {
-                $priorScope = function ($q) use ($period) {
-                    $q->where('year', '<', (int) $period->year)
-                      ->orWhere(function ($q2) use ($period) {
-                          $q2->where('year', (int) $period->year)
-                             ->where('month', '<', (int) $period->month);
-                      });
-                };
                 $prior = DB::table('advance_recovery_ledger')
-                    ->where('advance_request_id', $r->id)->where($priorScope)
-                    ->orderByDesc('year')->orderByDesc('month')->first();
+                    ->where('advance_request_id', $s['advance_request_id'])->where('stream', $s['stream'])
+                    ->where($priorScope)->orderByDesc('year')->orderByDesc('month')->first();
                 $arrears = $prior ? (float) $prior->carried : 0.0;
                 $recoveredBefore = (float) DB::table('advance_recovery_ledger')
-                    ->where('advance_request_id', $r->id)->where($priorScope)->sum('amount');
+                    ->where('advance_request_id', $s['advance_request_id'])->where('stream', $s['stream'])
+                    ->where($priorScope)->sum('amount');
             }
 
-            // Due = this month's EMI + carried arrears, never beyond the balance.
+            // Due = this cycle's EMI + carried arrears, never beyond the balance.
             $outstanding = round($amount - $recoveredBefore, 2);
             $due = round(min($normalDue + $arrears, max(0.0, $outstanding)), 2);
             if ($due <= 0.0) {
@@ -1589,22 +1637,50 @@ class PayrollService
             $take = round(min($due, $room), 2);
             $room  = round($room - $take, 2);
             $total = round($total + $take, 2);
-            // Human label for the payslip line — "<Type> (<ADV-no>)".
-            $type = trim((string) ($r->advance_type === 'Other'
-                ? ($r->advance_type_other ?: 'Advance') : ($r->advance_type ?: 'Advance')));
-            $label = 'Advance Recovery – ' . $type
-                . ($r->advance_no ? ' (' . $r->advance_no . ')' : '');
-
             $this->lastRecoveryBreakdown[] = [
-                'advance_request_id' => (int) $r->id,
-                'advance_no'         => $r->advance_no,
-                'label'              => $label,
+                'advance_request_id' => $s['advance_request_id'],
+                'stream'             => $s['stream'],
+                'advance_no'         => $s['advance_no'],
+                'label'              => $s['label'],
                 'due'                => $due,
                 'recovered'          => $take,
                 'carried'            => round($due - $take, 2),
             ];
         }
         return round($total, 2);
+    }
+
+    /**
+     * The stateless amount an advance stream owes in a given cycle (no ledger).
+     * EMI = the instalment every month within the schedule; BI-MONTHLY = the
+     * instalment on ALTERNATE months (offsets 0, 2, 4 …); LUMP-SUM = the whole
+     * amount in the start month only.
+     */
+    private function scheduledDueForCycle(?string $mode, int $monthIndex, int $months, float $emi, float $amount): float
+    {
+        if ($monthIndex < 0) {
+            return 0.0;
+        }
+        $hasEmi = in_array($mode, ['emi', 'bimonthly'], true) && ($emi > 0 || $months > 0);
+        if (!$hasEmi) {
+            return $monthIndex === 0 ? $amount : 0.0; // lump-sum: start month only
+        }
+        $n   = max(1, $months);
+        $per = $emi > 0 ? $emi : round($amount / $n, 2);
+        if ($mode === 'bimonthly') {
+            if ($monthIndex % 2 !== 0) {
+                return 0.0; // off month
+            }
+            return intdiv($monthIndex, 2) < $n ? $per : 0.0;
+        }
+        return $monthIndex < $n ? $per : 0.0; // plain monthly EMI
+    }
+
+    /** Friendly advance-type label ("Other" falls back to the free-text type). */
+    private function advanceTypeLabel(?string $type, ?string $other): string
+    {
+        $t = trim((string) ($type === 'Other' ? ($other ?: 'Advance') : ($type ?: 'Advance')));
+        return $t !== '' ? $t : 'Advance';
     }
 
     /**
@@ -1621,6 +1697,7 @@ class PayrollService
             DB::table('advance_recovery_ledger')->updateOrInsert(
                 [
                     'advance_request_id' => $b['advance_request_id'],
+                    'stream'             => $b['stream'] ?? 'self',
                     'year'               => (int) $period->year,
                     'month'              => (int) $period->month,
                 ],

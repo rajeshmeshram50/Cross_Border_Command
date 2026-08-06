@@ -60,6 +60,10 @@ type Summary = {
   recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | string | null;
   recovery_months?: number | null;
   monthly_emi?: number | null;
+  // What payroll has actually recovered so far (self stream) — drives the
+  // Pending → Recovered status on the schedule instead of always "Pending".
+  recovery_ledger?: { year: number; month: number; amount: number; carried: number }[];
+  recovery_recovered?: number;
   // Advance-only settle context (company advances).
   employee_id?: number | null;
   used_for?: 'self' | 'company' | string;
@@ -82,6 +86,8 @@ type Summary = {
   settle_return_recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | null;
   settle_return_recovery_months?: number | null;
   settle_return_monthly?: number | null;
+  settle_return_ledger?: { year: number; month: number; amount: number; carried: number }[];
+  settle_return_recovered?: number;
   employee_monthly_salary?: number | null;
   emi_ongoing?: number;
   emi_available?: number | null;
@@ -641,6 +647,15 @@ export default function ExpenseSettlementModal({
   // (70% of salary − the employee's other ongoing advance EMIs).
   const returnEmiCap = summary?.emi_available != null ? Math.floor(summary.emi_available) : 0;
   const returnPerCycleOver = returnEmiCap > 0 && recMonthlyNum > returnEmiCap;
+  // ≤120-cycle tenure guard (mirrors the Advance Request form). If the monthly
+  // amount is so low the return needs >120 cycles, block and tell them to raise
+  // it; if even the full EMI headroom can't clear it within 120 cycles, it
+  // can't be scheduled via payroll at all (return it directly instead).
+  const RET_MAX_MONTHS = 120;
+  const returnMinMonthly = returnRemaining > 0 ? Math.ceil(returnRemaining / RET_MAX_MONTHS) : 0;
+  const returnCannotSchedule = returnEmiCap > 0 && returnMinMonthly > returnEmiCap;
+  const returnTenureExceeds = (returnRecType === 'emi' || returnRecType === 'bimonthly')
+    && recMonthlyNum > 0 && recMonths > RET_MAX_MONTHS;
   // Row 2 (monthly / months / end date) stays locked until start + type are set.
   const returnRow2Locked = !returnRecStart || (returnRecType !== 'emi' && returnRecType !== 'bimonthly');
   const toastRow2Locked = () => toast.warning('Complete step 1 first', !returnRecType ? 'Select the recovery start and recovery type first.' : !returnRecStart ? 'Select the recovery start month first.' : 'Select the recovery start and recovery type first.');
@@ -666,6 +681,14 @@ export default function ExpenseSettlementModal({
       if (returnRecType !== 'lumpsum' && !(recMonthlyNum > 0)) { setReturnErr(true); return; }
       if (returnRecType !== 'lumpsum' && returnPerCycleOver) {
         toast.warning('Over the EMI headroom', `Available EMI headroom is ${inr(returnEmiCap)} (70% of salary − ongoing EMIs).`);
+        return;
+      }
+      if (returnRecType !== 'lumpsum' && returnCannotSchedule) {
+        toast.warning('Can’t schedule via payroll', `${inr(returnRemaining)} can’t be recovered within ${RET_MAX_MONTHS} ${returnRecType === 'bimonthly' ? 'cycles' : 'months'} at the EMI headroom (${inr(returnEmiCap)}). Return it directly instead.`);
+        return;
+      }
+      if (returnRecType !== 'lumpsum' && returnTenureExceeds) {
+        toast.warning('Too many instalments', `At ${inr(recMonthlyNum)}/${returnRecType === 'bimonthly' ? 'cycle' : 'month'} this needs ${recMonths} — over the ${RET_MAX_MONTHS} limit. Increase the monthly amount (min ${inr(returnMinMonthly)}).`);
         return;
       }
     }
@@ -1177,8 +1200,32 @@ export default function ExpenseSettlementModal({
                 const total = summary.claimed_amount ?? 0;
                 const n = rmode === 'lumpsum' ? 1 : (rmonths || 1);
                 const startStr = summary.recovery_start || '';
-                const nextAmt = rmode === 'lumpsum' ? total : emi;
-                const nextDate = startStr ? new Date(startStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                // What payroll has actually recovered so far → drives status.
+                const recovered = summary.recovery_recovered ?? 0;
+                const pending = +Math.max(0, total - recovered).toFixed(2);
+                // Actual amount payroll cut in each cycle, keyed "YYYY-M" from the
+                // ledger — this is what the RECOVERED column shows per row (it can
+                // differ from the scheduled EMI when arrears carry forward).
+                const ledgerByMonth: Record<string, number> = {};
+                (summary.recovery_ledger ?? []).forEach(l => {
+                  const key = `${l.year}-${l.month}`;
+                  ledgerByMonth[key] = (ledgerByMonth[key] ?? 0) + l.amount;
+                });
+                const instAmt = (k: number) => rmode === 'lumpsum' ? total : (k === n - 1 ? +(total - emi * (n - 1)).toFixed(2) : emi);
+                // Per-instalment status by walking the cumulative recovered total.
+                const instStatus = (k: number): 'Recovered' | 'Partial' | 'Pending' => {
+                  let cum = 0; for (let i = 0; i <= k; i++) cum += instAmt(i);
+                  if (recovered + 0.005 >= cum) return 'Recovered';
+                  if (recovered > cum - instAmt(k) + 0.005) return 'Partial';
+                  return 'Pending';
+                };
+                const nextK = Array.from({ length: n }, (_, k) => k).find(k => instStatus(k) !== 'Recovered');
+                const nextAmt = nextK == null ? 0 : instAmt(nextK);
+                const nextDate = (() => {
+                  if (pending <= 0 || nextK == null || !startStr) return pending <= 0 ? 'Fully recovered' : '—';
+                  const [yy, mm] = startStr.split('-').map(Number);
+                  return new Date(yy, (mm - 1) + nextK * rstep, 1).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                })();
                 const rEnd = (() => {
                   if (!startStr) return '—';
                   const d = new Date(startStr);
@@ -1200,7 +1247,7 @@ export default function ExpenseSettlementModal({
                         </div>
                       </div>
                       <div className="esm-sec-hd-actions">
-                        <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(total)}<span className="esm-recap-dot">•</span><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</span>
+                        <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(pending)}<span className="esm-recap-dot">•</span>{pending > 0 ? (<><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</>) : (<span className="esm-recap-k" style={{ color: '#15803d' }}>Fully recovered</span>)}</span>
                         <button type="button" className={`esm-sec-chev ${recoveryOpen ? '' : 'is-collapsed'}`} onClick={() => setRecoveryOpen(o => !o)} aria-label={recoveryOpen ? 'Collapse' : 'Expand'}>
                           <i className="ri-arrow-down-s-line" />
                         </button>
@@ -1212,19 +1259,21 @@ export default function ExpenseSettlementModal({
                         <>
                           <div className="esm-tblwrap">
                             <table className="esm-tbl">
-                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>{rmode === 'bimonthly' ? 'CYCLE' : 'MONTH'}</th><th>STATUS</th></tr></thead>
+                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>{rmode === 'bimonthly' ? 'CYCLE' : 'MONTH'}</th><th>RECOVERED</th><th>STATUS</th></tr></thead>
                               <tbody>
                                 {Array.from({ length: n }, (_, k) => {
-                                  const isLast = k === n - 1;
-                                  const amt = rmode === 'lumpsum' ? total : (isLast ? +(total - emi * (n - 1)).toFixed(2) : emi);
+                                  const amt = instAmt(k);
                                   const [y, m] = startStr.split('-').map(Number);
                                   const d = new Date(y, (m - 1) + k * rstep, 1);
+                                  const st = instStatus(k);
+                                  const recAmt = ledgerByMonth[`${d.getFullYear()}-${d.getMonth() + 1}`] ?? 0;
                                   return (
                                     <tr key={k}>
                                       <td>{k + 1}</td>
                                       <td className="esm-tbl-amt">{inr(amt)}</td>
-                                      <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{k === 0 ? <span className="esm-muted"> · next</span> : null}</td>
-                                      <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                      <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{k === nextK ? <span className="esm-muted"> · next</span> : null}</td>
+                                      <td className="esm-tbl-amt">{recAmt > 0 ? <span style={{ color: '#15803d', fontWeight: 700 }}>{inr(recAmt)}</span> : <span className="esm-muted">—</span>}</td>
+                                      <td>{st === 'Recovered' ? pill('Recovered', '#dcfce7', '#15803d') : st === 'Partial' ? pill('Partial', '#e0e7ff', '#3730a3') : pill('Pending', '#fef3c7', '#a4661c')}</td>
                                     </tr>
                                   );
                                 })}
@@ -1351,12 +1400,17 @@ export default function ExpenseSettlementModal({
                     const step = rm === 'bimonthly' ? 2 : 1;
                     const total = summary?.settle_balance ?? 0;
                     const nCycles = rm ? (rm === 'lumpsum' ? 1 : months) : 0;
+                    // What payroll has actually recovered on the RETURN stream.
+                    const retRecovered = summary?.settle_return_recovered ?? 0;
+                    let cumRet = 0;
                     const installments = rm && startStr ? Array.from({ length: nCycles }, (_, k) => {
                       const [y, m] = startStr.split('-').map(Number);
                       const isLast = k === nCycles - 1;
                       const amt = rm === 'lumpsum' ? total : (isLast ? +(total - perCycle * (nCycles - 1)).toFixed(2) : perCycle);
                       const d = new Date(y, (m - 1) + k * step, 1);
-                      return { amt, dateLbl: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), n: k + 1 };
+                      cumRet += amt;
+                      const status = retRecovered + 0.005 >= cumRet ? 'Recovered' : (retRecovered > cumRet - amt + 0.005 ? 'Partial' : 'Pending');
+                      return { amt, dateLbl: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), n: k + 1, status };
                     }) : [];
                     const hasRows = directPays.length > 0 || !!rm;
                     return (
@@ -1386,7 +1440,7 @@ export default function ExpenseSettlementModal({
                                     <td>{methodLbl}</td>
                                     <td>{rm === 'lumpsum' ? 'One-time' : `Instalment ${it.n} of ${nCycles}`}</td>
                                     <td>{it.dateLbl}</td>
-                                    <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                    <td>{it.status === 'Recovered' ? pill('Recovered', '#dcfce7', '#15803d') : it.status === 'Partial' ? pill('Partial', '#e0e7ff', '#3730a3') : pill('Pending', '#fef3c7', '#a4661c')}</td>
                                     <td>—</td>
                                   </tr>
                                 ))}
@@ -2001,6 +2055,8 @@ export default function ExpenseSettlementModal({
                         </div>
                         {returnErr && !returnRow2Locked && !(recMonthlyNum > 0) && <span className="esm-err">Enter an amount.</span>}
                         {!returnRow2Locked && returnPerCycleOver && <span className="esm-err">Max {inr(returnEmiCap)} (EMI headroom).</span>}
+                        {!returnRow2Locked && !returnPerCycleOver && returnCannotSchedule && <span className="esm-err">Balance too large for payroll — can’t clear in {RET_MAX_MONTHS} within the EMI headroom. Return directly.</span>}
+                        {!returnRow2Locked && !returnPerCycleOver && !returnCannotSchedule && returnTenureExceeds && <span className="esm-err">Over {RET_MAX_MONTHS} {returnRecType === 'bimonthly' ? 'cycles' : 'months'} — raise the monthly amount (min {inr(returnMinMonthly)}).</span>}
                       </div>
                       <div className={`esm-fld s4 ${returnRow2Locked ? 'is-locked' : ''} ${returnErr && !returnRow2Locked && !(recMonths > 0) ? 'esm-fld--err' : ''}`} onMouseDownCapture={returnRow2Locked ? (e) => { e.preventDefault(); toastRow2Locked(); } : undefined}>
                         <label>NO. OF {returnRecType === 'bimonthly' ? 'CYCLES' : 'MONTHS'} <span className="esm-req">*</span></label>
@@ -2030,7 +2086,7 @@ export default function ExpenseSettlementModal({
                 ) : (
                   <>
                     <button type="button" className="esm-btn-ghost" onClick={() => setReturnStep('mode')} disabled={returnSaving}>Back</button>
-                    <button type="button" className="esm-btn-primary" disabled={returnSaving || (returnMode === 'payroll' && returnRecType === 'lumpsum' && !singleLumpOk)} onClick={submitReturn}>{returnSaving ? 'Saving…' : returnMode === 'payroll' ? 'Schedule payroll recovery' : 'Record payment'}</button>
+                    <button type="button" className="esm-btn-primary" disabled={returnSaving || (returnMode === 'payroll' && ((returnRecType === 'lumpsum' && !singleLumpOk) || (returnRecType !== 'lumpsum' && (returnPerCycleOver || returnCannotSchedule || returnTenureExceeds))))} onClick={submitReturn}>{returnSaving ? 'Saving…' : returnMode === 'payroll' ? 'Schedule payroll recovery' : 'Record payment'}</button>
                   </>
                 )}
               </div>
@@ -2092,7 +2148,11 @@ const CSS = `
 /* Review mode fits its content instead of forcing the tall min-height, with
    even spacing around the content on all four sides. */
 .esm-modal--fit{min-height:0;}
-.esm-modal--fit .esm-body{flex:0 0 auto;padding:22px;}
+/* Fit mode still fits SHORT content, but a tall body (e.g. Review & Approve with
+   several adjustment rows) must scroll inside the 94vh cap instead of being
+   clipped by the modal's overflow:hidden — otherwise the footer (Approve/Reject)
+   is unreachable. flex:1 1 auto + min-height:0 lets the body shrink and scroll. */
+.esm-modal--fit .esm-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:22px;}
 .esm-modal--fit .esm-hero{padding-bottom:0;}
 /* Manager review is just the Claim Details card — sit it tight under the header,
    with a divider line at the bottom of the header (no read-only panel here). */
@@ -2166,7 +2226,7 @@ const CSS = `
 [data-bs-theme="dark"] .esm-radio.is-on{color:#67e8f9;}
 [data-bs-theme="dark"] .esm-radio{background:#0b2029;border-color:#173947;color:#cbd5e1;}
 [data-bs-theme="dark"] .esm-radio.is-on{background:#0e2730;border-color:#0891b2;color:#67e8f9;}
-.esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;}
+.esm-hero{display:flex;flex-direction:column;gap:16px;padding:22px 28px;background:linear-gradient(120deg,#0e7490 0%,#0891b2 55%,#06b6d4 100%);color:#fff;flex-shrink:0;}
 .esm-hero-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
 .esm-hero-l{display:flex;align-items:center;gap:14px;min-width:0;}
 /* Embedded claim summary panel. Left edge indented past the hero icon so it
@@ -2478,7 +2538,7 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-tbl-amt{color:#e2e8f0;}
 .esm-tbl-link{display:inline-flex;align-items:center;gap:5px;max-width:170px;overflow:hidden;text-overflow:ellipsis;color:#0891b2;text-decoration:none;font-weight:600;}
 .esm-tbl-link:hover{text-decoration:underline;}
-.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;}
+.esm-foot{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:16px 28px 22px;border-top:1px solid #eef2f4;background:#f8fafc;flex-shrink:0;}
 [data-bs-theme="dark"] .esm-foot{background:#0b1a22;border-color:#173947;}
 .esm-foot-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:#64748b;min-width:0;}
 .esm-foot-hint i{color:#0891b2;font-size:15px;flex-shrink:0;}
