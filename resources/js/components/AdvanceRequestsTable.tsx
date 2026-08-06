@@ -25,6 +25,9 @@ export type AdvanceRequestRow = {
   recovery_mode: 'emi' | 'lumpsum' | 'bimonthly' | string;
   recovery_months: number | null;
   monthly_emi: number | null;
+  recovery_recovered?: number;   // payroll-recovered so far (self stream)
+  recovery_complete?: boolean;   // fully recovered → Settle shows "Recovered"
+  settle_return_recovered?: number;
   reason: string;
   attachments: { name: string; size?: number; url?: string }[];
   status: 'pending' | 'approved' | 'rejected';
@@ -366,9 +369,11 @@ export function advanceRequestColumns({
             : pillEl('ri-time-line', 'Pending', '#fde8c4', '#a4661c');
         }
         // Self: recovered from salary per the EMI schedule. Until payroll finishes
-        // recovering it, it's "Recovering"; flips to Completed once fully recovered.
+        // recovering it, it's "Recovering"; flips to Recovered once fully cut.
         if (r.status === 'approved' && r.recovery_mode) {
-          return pillEl('ri-calendar-schedule-line', 'Recovering', '#eef2ff', '#3730a3');
+          return r.recovery_complete
+            ? pillEl('ri-checkbox-circle-line', 'Recovered', '#d6f4e3', '#108548')
+            : pillEl('ri-calendar-todo-line', 'Recovering', '#eef2ff', '#3730a3');
         }
         return <span className="text-muted">—</span>;
       },

@@ -60,6 +60,10 @@ type Summary = {
   recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | string | null;
   recovery_months?: number | null;
   monthly_emi?: number | null;
+  // What payroll has actually recovered so far (self stream) — drives the
+  // Pending → Recovered status on the schedule instead of always "Pending".
+  recovery_ledger?: { year: number; month: number; amount: number; carried: number }[];
+  recovery_recovered?: number;
   // Advance-only settle context (company advances).
   employee_id?: number | null;
   used_for?: 'self' | 'company' | string;
@@ -82,6 +86,8 @@ type Summary = {
   settle_return_recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | null;
   settle_return_recovery_months?: number | null;
   settle_return_monthly?: number | null;
+  settle_return_ledger?: { year: number; month: number; amount: number; carried: number }[];
+  settle_return_recovered?: number;
   employee_monthly_salary?: number | null;
   emi_ongoing?: number;
   emi_available?: number | null;
@@ -1177,8 +1183,32 @@ export default function ExpenseSettlementModal({
                 const total = summary.claimed_amount ?? 0;
                 const n = rmode === 'lumpsum' ? 1 : (rmonths || 1);
                 const startStr = summary.recovery_start || '';
-                const nextAmt = rmode === 'lumpsum' ? total : emi;
-                const nextDate = startStr ? new Date(startStr).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+                // What payroll has actually recovered so far → drives status.
+                const recovered = summary.recovery_recovered ?? 0;
+                const pending = +Math.max(0, total - recovered).toFixed(2);
+                // Actual amount payroll cut in each cycle, keyed "YYYY-M" from the
+                // ledger — this is what the RECOVERED column shows per row (it can
+                // differ from the scheduled EMI when arrears carry forward).
+                const ledgerByMonth: Record<string, number> = {};
+                (summary.recovery_ledger ?? []).forEach(l => {
+                  const key = `${l.year}-${l.month}`;
+                  ledgerByMonth[key] = (ledgerByMonth[key] ?? 0) + l.amount;
+                });
+                const instAmt = (k: number) => rmode === 'lumpsum' ? total : (k === n - 1 ? +(total - emi * (n - 1)).toFixed(2) : emi);
+                // Per-instalment status by walking the cumulative recovered total.
+                const instStatus = (k: number): 'Recovered' | 'Partial' | 'Pending' => {
+                  let cum = 0; for (let i = 0; i <= k; i++) cum += instAmt(i);
+                  if (recovered + 0.005 >= cum) return 'Recovered';
+                  if (recovered > cum - instAmt(k) + 0.005) return 'Partial';
+                  return 'Pending';
+                };
+                const nextK = Array.from({ length: n }, (_, k) => k).find(k => instStatus(k) !== 'Recovered');
+                const nextAmt = nextK == null ? 0 : instAmt(nextK);
+                const nextDate = (() => {
+                  if (pending <= 0 || nextK == null || !startStr) return pending <= 0 ? 'Fully recovered' : '—';
+                  const [yy, mm] = startStr.split('-').map(Number);
+                  return new Date(yy, (mm - 1) + nextK * rstep, 1).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+                })();
                 const rEnd = (() => {
                   if (!startStr) return '—';
                   const d = new Date(startStr);
@@ -1200,7 +1230,7 @@ export default function ExpenseSettlementModal({
                         </div>
                       </div>
                       <div className="esm-sec-hd-actions">
-                        <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(total)}<span className="esm-recap-dot">•</span><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</span>
+                        <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(pending)}<span className="esm-recap-dot">•</span>{pending > 0 ? (<><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</>) : (<span className="esm-recap-k" style={{ color: '#15803d' }}>Fully recovered</span>)}</span>
                         <button type="button" className={`esm-sec-chev ${recoveryOpen ? '' : 'is-collapsed'}`} onClick={() => setRecoveryOpen(o => !o)} aria-label={recoveryOpen ? 'Collapse' : 'Expand'}>
                           <i className="ri-arrow-down-s-line" />
                         </button>
@@ -1212,19 +1242,21 @@ export default function ExpenseSettlementModal({
                         <>
                           <div className="esm-tblwrap">
                             <table className="esm-tbl">
-                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>{rmode === 'bimonthly' ? 'CYCLE' : 'MONTH'}</th><th>STATUS</th></tr></thead>
+                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>{rmode === 'bimonthly' ? 'CYCLE' : 'MONTH'}</th><th>RECOVERED</th><th>STATUS</th></tr></thead>
                               <tbody>
                                 {Array.from({ length: n }, (_, k) => {
-                                  const isLast = k === n - 1;
-                                  const amt = rmode === 'lumpsum' ? total : (isLast ? +(total - emi * (n - 1)).toFixed(2) : emi);
+                                  const amt = instAmt(k);
                                   const [y, m] = startStr.split('-').map(Number);
                                   const d = new Date(y, (m - 1) + k * rstep, 1);
+                                  const st = instStatus(k);
+                                  const recAmt = ledgerByMonth[`${d.getFullYear()}-${d.getMonth() + 1}`] ?? 0;
                                   return (
                                     <tr key={k}>
                                       <td>{k + 1}</td>
                                       <td className="esm-tbl-amt">{inr(amt)}</td>
-                                      <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{k === 0 ? <span className="esm-muted"> · next</span> : null}</td>
-                                      <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                      <td>{d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}{k === nextK ? <span className="esm-muted"> · next</span> : null}</td>
+                                      <td className="esm-tbl-amt">{recAmt > 0 ? <span style={{ color: '#15803d', fontWeight: 700 }}>{inr(recAmt)}</span> : <span className="esm-muted">—</span>}</td>
+                                      <td>{st === 'Recovered' ? pill('Recovered', '#dcfce7', '#15803d') : st === 'Partial' ? pill('Partial', '#e0e7ff', '#3730a3') : pill('Pending', '#fef3c7', '#a4661c')}</td>
                                     </tr>
                                   );
                                 })}
@@ -1351,12 +1383,17 @@ export default function ExpenseSettlementModal({
                     const step = rm === 'bimonthly' ? 2 : 1;
                     const total = summary?.settle_balance ?? 0;
                     const nCycles = rm ? (rm === 'lumpsum' ? 1 : months) : 0;
+                    // What payroll has actually recovered on the RETURN stream.
+                    const retRecovered = summary?.settle_return_recovered ?? 0;
+                    let cumRet = 0;
                     const installments = rm && startStr ? Array.from({ length: nCycles }, (_, k) => {
                       const [y, m] = startStr.split('-').map(Number);
                       const isLast = k === nCycles - 1;
                       const amt = rm === 'lumpsum' ? total : (isLast ? +(total - perCycle * (nCycles - 1)).toFixed(2) : perCycle);
                       const d = new Date(y, (m - 1) + k * step, 1);
-                      return { amt, dateLbl: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), n: k + 1 };
+                      cumRet += amt;
+                      const status = retRecovered + 0.005 >= cumRet ? 'Recovered' : (retRecovered > cumRet - amt + 0.005 ? 'Partial' : 'Pending');
+                      return { amt, dateLbl: d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }), n: k + 1, status };
                     }) : [];
                     const hasRows = directPays.length > 0 || !!rm;
                     return (
@@ -1386,7 +1423,7 @@ export default function ExpenseSettlementModal({
                                     <td>{methodLbl}</td>
                                     <td>{rm === 'lumpsum' ? 'One-time' : `Instalment ${it.n} of ${nCycles}`}</td>
                                     <td>{it.dateLbl}</td>
-                                    <td>{pill('Pending', '#fef3c7', '#a4661c')}</td>
+                                    <td>{it.status === 'Recovered' ? pill('Recovered', '#dcfce7', '#15803d') : it.status === 'Partial' ? pill('Partial', '#e0e7ff', '#3730a3') : pill('Pending', '#fef3c7', '#a4661c')}</td>
                                     <td>—</td>
                                   </tr>
                                 ))}

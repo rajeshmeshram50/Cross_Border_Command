@@ -599,6 +599,13 @@ class AdvanceRequestController extends Controller
             ? ($manager->display_name
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
             : null;
+        // What payroll has recovered so far on each stream, so the list's Settle
+        // column can show "Recovered" once recovery is complete (not forever
+        // "Recovering"). Self target = advance amount; return target = balance.
+        $selfRecovered   = $this->recoveryLedgerTotal($row->id, 'self');
+        $returnRecovered = $this->recoveryLedgerTotal($row->id, 'return');
+        $selfComplete    = $row->recovery_mode && $row->hr_status === 'approved'
+            && (float) $row->amount > 0 && $selfRecovered + 0.005 >= (float) $row->amount;
         return [
             'id'                 => $row->id,
             'advance_no'         => $row->advance_no,
@@ -619,6 +626,9 @@ class AdvanceRequestController extends Controller
             'recovery_mode'      => $row->recovery_mode,
             'recovery_months'    => $row->recovery_months,
             'monthly_emi'        => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
+            'recovery_recovered' => $selfRecovered,
+            'recovery_complete'  => $selfComplete,
+            'settle_return_recovered' => $returnRecovered,
             'reason'             => $row->reason,
             'attachments'        => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
                 return [
@@ -1173,6 +1183,11 @@ class AdvanceRequestController extends Controller
             'recovery_mode'     => $row->recovery_mode,
             'recovery_months'   => $row->recovery_months,
             'monthly_emi'       => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
+            // What payroll has ACTUALLY recovered so far (self stream) — lets the
+            // recovery schedule flip instalments from Pending → Recovered instead
+            // of always showing Pending. Per-month rows + running total.
+            'recovery_ledger'   => $this->recoveryLedgerRows($row->id, 'self'),
+            'recovery_recovered'=> $this->recoveryLedgerTotal($row->id, 'self'),
             'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
             'deduction_amount'  => (float) $row->deduction_amount,
             'deduction_reason'  => $row->deduction_reason,
@@ -1270,6 +1285,9 @@ class AdvanceRequestController extends Controller
             'settle_return_recovery_mode'   => $row->settle_return_recovery_mode,
             'settle_return_recovery_months' => $row->settle_return_recovery_months,
             'settle_return_monthly'         => $row->settle_return_monthly !== null ? (float) $row->settle_return_monthly : null,
+            // What payroll has recovered on the RETURN stream so far.
+            'settle_return_ledger'          => $this->recoveryLedgerRows($row->id, 'return'),
+            'settle_return_recovered'       => $this->recoveryLedgerTotal($row->id, 'return'),
             // Employee monthly salary — used to gate the "Single Lump" payroll
             // option (net take-home when a payslip exists, else structure gross,
             // else annual/12). Read-only; no payroll-engine change.
@@ -1316,6 +1334,36 @@ class AdvanceRequestController extends Controller
      * schedules. "Ongoing" = a recurring EMI/bi-monthly plan whose last cycle
      * hasn't passed. Optionally excludes one advance (the one being edited).
      */
+    /** Per-cycle recovery rows the payroll engine has recorded for an advance
+     *  on a given stream ('self' or 'return'). Empty if the ledger is absent. */
+    private function recoveryLedgerRows($advanceId, string $stream): array
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger')) {
+            return [];
+        }
+        return DB::table('advance_recovery_ledger')
+            ->where('advance_request_id', $advanceId)->where('stream', $stream)
+            ->orderBy('year')->orderBy('month')
+            ->get(['year', 'month', 'amount', 'carried'])
+            ->map(fn ($r) => [
+                'year'    => (int) $r->year,
+                'month'   => (int) $r->month,
+                'amount'  => (float) $r->amount,
+                'carried' => (float) $r->carried,
+            ])->all();
+    }
+
+    /** Total the payroll engine has recovered for an advance on a stream. */
+    private function recoveryLedgerTotal($advanceId, string $stream): float
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger')) {
+            return 0.0;
+        }
+        return round((float) DB::table('advance_recovery_ledger')
+            ->where('advance_request_id', $advanceId)->where('stream', $stream)
+            ->sum('amount'), 2);
+    }
+
     private function ongoingEmiTotal($employeeId, $excludeId = null): float
     {
         if (!$employeeId) return 0.0;
