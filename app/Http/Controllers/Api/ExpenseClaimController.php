@@ -107,8 +107,14 @@ class ExpenseClaimController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         if ($scope === 'mine') {
-           
-            $targetEmployeeId = $employeeIdFilter ?: $this->currentEmployeeId($user);
+            // "Mine" = the authenticated user's OWN claims. For a non-super-admin,
+            // resolve from the auth user — NOT a request employee_id/code. The SPA
+            // sends a numeric employee_id and resolveEmployeeId returns it verbatim
+            // (no tenant/ownership check); a stale/wrong value would filter to
+            // another employee and return an EMPTY list of the user's own claims.
+            $targetEmployeeId = ($user && $user->user_type === 'super_admin')
+                ? ($employeeIdFilter ?: $this->currentEmployeeId($user))
+                : ($this->currentEmployeeId($user) ?: $employeeIdFilter);
             $q->where('employee_id', $targetEmployeeId ?? -1);
         } elseif ($scope === 'team') {
             // Team scope rules:
