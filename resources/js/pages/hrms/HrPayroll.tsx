@@ -288,7 +288,7 @@ export default function HrPayroll() {
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
   const [payslipOt, setPayslipOt] = useState<{
-    applicable: boolean; hours: number; amount: number;
+    applicable: boolean; hours: number; detectedHours: number; amount: number;
     multiplier?: number; rate?: number; rateName?: string | null;
   } | null>(null);
 
@@ -314,6 +314,7 @@ export default function HrPayroll() {
         setPayslipOt(d.overtimeApplicable ? {
           applicable: true,
           hours:      Number(d.overtimeHours) || 0,
+          detectedHours: Number(d.overtimeDetectedHours) || 0,
           amount:     Number(d.overtimeAmount) || 0,
           multiplier: typeof d.overtimeMultiplier === 'number' ? d.overtimeMultiplier : undefined,
           rate:       typeof d.overtimeRate === 'number' ? d.overtimeRate : undefined,
@@ -1849,6 +1850,7 @@ export default function HrPayroll() {
             paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
+            overtimeDetectedHours={payslipOt?.detectedHours ?? 0}
             overtimeAmount={payslipOt?.amount ?? 0}
             overtimeMultiplier={payslipOt?.multiplier}
             overtimeRate={payslipOt?.rate}

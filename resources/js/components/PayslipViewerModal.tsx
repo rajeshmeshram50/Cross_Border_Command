@@ -41,6 +41,10 @@ export interface PayslipViewerModalProps {
   overtimeHours?: number;
   /** Payable OT, already priced as hourly × multiplier × hours upstream. */
   overtimeAmount?: number;
+  /** Hours the ATTENDANCE shows past the shift end. Differs from the paid
+   *  hours whenever OT hasn't been approved as an adjustment yet — the KPI
+   *  shows these (the real worked hours), the allowance shows what's payable. */
+  overtimeDetectedHours?: number;
   /** OT rate multiplier from the employee's Overtime (OT) policy, e.g. 1.5. */
   overtimeMultiplier?: number;
   /** Effective per-hour OT rate (hourly × multiplier) — shown as the workings. */
@@ -90,6 +94,7 @@ export default function PayslipViewerModal({
   paidDays = 31,
   overtimeApplicable = false,
   overtimeHours = 0,
+  overtimeDetectedHours = 0,
   overtimeAmount = 0,
   overtimeMultiplier,
   overtimeRate,
@@ -228,16 +233,23 @@ export default function PayslipViewerModal({
      earnings breakup, so appending our own line would double it — only add one
      when the breakup doesn't already carry it. */
   const hasOtLine = earnings.some(r => /overtime/i.test(r.label));
-  const showOt    = overtimeApplicable && !hasOtLine && overtimeAmount > 0;
-  const otHoursLabel = Number.isInteger(overtimeHours)
-    ? String(overtimeHours)
-    : overtimeHours.toFixed(2).replace(/\.?0+$/, '');
+  /* The KPI shows the hours the ATTENDANCE recorded — that's what "OT Hours"
+     means to anyone reading a payslip. The allowance shows what's actually
+     PAYABLE, which is only the approved hours (Rule 4). When the two disagree
+     the line says so rather than silently reading zero. */
+  const otKpiHours   = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
+  const otUnapproved = overtimeApplicable && overtimeAmount <= 0 && overtimeDetectedHours > 0;
+  const showOt       = overtimeApplicable && !hasOtLine && (overtimeAmount > 0 || otUnapproved);
+  const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
+  const otHoursLabel = num(otKpiHours);
   // Spell the pricing out next to the line so the figure is checkable by hand.
-  const otWorkings = [
-    overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
-    overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
-    `${otHoursLabel} hr`,
-  ].filter(Boolean).join(' · ');
+  const otWorkings = otUnapproved
+    ? `${num(overtimeDetectedHours)} hr detected in attendance · not yet approved, so nothing is payable. Approve it in Payroll → Adjustments.`
+    : [
+        overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
+        overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
+        `${num(overtimeHours)} hr approved`,
+      ].filter(Boolean).join(' · ');
 
   const shownEarnings = showOt
     ? [...earnings, { label: 'Overtime Allowance', amount: overtimeAmount }]

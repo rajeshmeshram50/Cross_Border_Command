@@ -5952,6 +5952,63 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ep-type-value.is-empty { color: var(--vz-secondary-color); font-weight: 400; }
+/* ══ Exit-document release gate ════════════════════════════════════════
+   Banner + switch above the document list. Amber while closed, green once
+   released, so the state reads at a glance. */
+.ep-release {
+  display: flex; align-items: center; gap: 12px;
+  border: 1.5px solid #fde68a; background: #fffbeb;
+  border-radius: 12px; padding: 12px 15px; margin-bottom: 12px;
+}
+.ep-release.is-on { border-color: #a7f3d0; background: #ecfdf5; }
+/* Held shut by an unpaid F&F — read-only, not merely "off". */
+.ep-release.is-blocked { border-color: var(--vz-border-color); background: var(--vz-secondary-bg); }
+.ep-release.is-blocked .ep-release-ico { border-color: var(--vz-border-color); color: var(--vz-secondary-color); }
+.ep-release.is-blocked .ep-release-title,
+.ep-release.is-blocked .ep-release-sub { color: var(--vz-secondary-color); }
+.ep-switch.is-off { cursor: not-allowed; opacity: 0.55; }
+.ep-release-ico {
+  flex: none; width: 36px; height: 36px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid #fde68a; color: #b45309; font-size: 17px;
+}
+.ep-release.is-on .ep-release-ico { border-color: #a7f3d0; color: #0d9488; }
+.ep-release-text { min-width: 0; }
+.ep-release-title { font-weight: 700; font-size: 13px; color: #92400e; }
+.ep-release.is-on .ep-release-title { color: #065f46; }
+.ep-release-sub { font-size: 11.5px; color: #a16207; margin-top: 2px; }
+.ep-release.is-on .ep-release-sub { color: #047857; }
+
+.ep-switch { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; flex: none; }
+.ep-switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.ep-switch-track {
+  width: 44px; height: 24px; border-radius: 999px; background: #d1d5db;
+  position: relative; transition: background .18s ease; flex: none;
+}
+.ep-switch-thumb {
+  position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  border-radius: 50%; background: #fff; transition: transform .18s ease;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+.ep-switch input:checked + .ep-switch-track { background: #10b981; }
+.ep-switch input:checked + .ep-switch-track .ep-switch-thumb { transform: translateX(20px); }
+.ep-switch input:focus-visible + .ep-switch-track { box-shadow: 0 0 0 3px rgba(16,185,129,0.30); }
+.ep-switch-label { font-size: 12px; font-weight: 700; color: var(--vz-secondary-color); min-width: 22px; }
+.ep-switch input:checked ~ .ep-switch-label { color: #0d9488; }
+
+[data-bs-theme="dark"] .ep-release { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.35); }
+[data-bs-theme="dark"] .ep-release.is-on { background: rgba(16,185,129,0.10); border-color: rgba(16,185,129,0.35); }
+[data-bs-theme="dark"] .ep-release-ico { background: transparent; }
+[data-bs-theme="dark"] .ep-release-title { color: #fcd34d; }
+[data-bs-theme="dark"] .ep-release.is-on .ep-release-title { color: #6ee7b7; }
+[data-bs-theme="dark"] .ep-release-sub { color: #fbbf24; }
+[data-bs-theme="dark"] .ep-release.is-on .ep-release-sub { color: #34d399; }
+
+@media (max-width: 575px) {
+  .ep-release { flex-wrap: wrap; }
+  .ep-switch { margin-left: 0; width: 100%; justify-content: flex-end; }
+}
+
 /* Padlock in place of the old "Change" button — the exit type is fixed once
    the case has started. */
 .ep-type-locked {

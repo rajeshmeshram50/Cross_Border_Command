@@ -49,9 +49,11 @@ class ExitController extends Controller
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
-        $lockedType = $this->lockedExitType($row);
+        $lockedType     = $this->lockedExitType($row);
+        $wasReleased    = (bool) $row->documents_released;
         $row->fill($data);
         $this->assertExitTypeUnchanged($lockedType, $row);
+        $this->stampDocumentRelease($row, $wasReleased, $request);
         $row->employee_id          = $employee->id;
         $row->client_id            = $employee->client_id;
         $row->branch_id            = $employee->branch_id;
@@ -461,6 +463,46 @@ class ExitController extends Controller
      * behaviour of no settlement; Absconding recovers, matching how an
      * unserved notice has always been treated.
      */
+    /**
+     * Record WHO released the exit documents and WHEN, on the transition only.
+     * Toggling it back off clears the stamp, so the pair always describes the
+     * current state rather than the last time it happened to be switched on.
+     */
+    private function stampDocumentRelease(EmployeeExit $row, bool $wasReleased, Request $request): void
+    {
+        $isReleased = (bool) $row->documents_released;
+
+        /* Exit documents follow the money. The relieving letter and experience
+           certificate are only released once the Full & Final settlement has
+           actually been PAID — which is why F&F sits before Exit Documents in
+           the stage order. The SPA disables the switch; this is the
+           server-side twin so a direct call can't do what the UI won't.
+           Reopening F&F (back to unpaid) also revokes an existing release. */
+        if (!$this->isFnfPaid($row)) {
+            $row->documents_released    = false;
+            $row->documents_released_at = null;
+            $row->documents_released_by = null;
+            abort_if($isReleased, 422,
+                'Exit documents cannot be released until the Full & Final settlement has been paid.');
+            return;
+        }
+
+        if ($isReleased === $wasReleased) {
+            return;
+        }
+        $row->documents_released_at = $isReleased ? now() : null;
+        $row->documents_released_by = $isReleased ? $request->user()?->id : null;
+    }
+
+    /** Has the Full & Final settlement been marked paid? The F&F stage stores
+     *  its state as a JSON blob owned by the wizard; the payment status lives
+     *  at fnf.meta.payStatus. */
+    private function isFnfPaid(EmployeeExit $row): bool
+    {
+        $status = data_get($row->fnf, 'meta.payStatus');
+        return is_string($status) && strcasecmp($status, 'Paid') === 0;
+    }
+
     /** The exit type already on file for a saved case, or null for a new one. */
     private function lockedExitType(EmployeeExit $row): ?string
     {
@@ -543,6 +585,11 @@ class ExitController extends Controller
             'clearances'            => 'nullable|array',
             'asset_returns'         => 'nullable|array',
             'handover_notes'        => 'nullable|string|max:5000',
+
+            // Exit Documents — HR's decision to release the paperwork. The
+            // stamp/actor are set server-side on the transition, never trusted
+            // from the client.
+            'documents_released'    => 'nullable|boolean',
 
             // Stage 4 — Final Deactivation & Closure
             'validation'            => 'nullable|array',
@@ -694,6 +741,8 @@ class ExitController extends Controller
             'clearances'            => $row?->clearances ?? [],
             'asset_returns'         => $row?->asset_returns ?? [],
             'handover_notes'        => $row?->handover_notes,
+            'documents_released'    => (bool) ($row?->documents_released ?? false),
+            'documents_released_at' => $row?->documents_released_at?->toIso8601String(),
 
             // Stage 4 — Final Deactivation & Closure
             'validation'            => $row?->validation ?? [],

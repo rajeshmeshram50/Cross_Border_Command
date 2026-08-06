@@ -27,6 +27,8 @@ class EmployeeExit extends Model
         'fnf',
         // Stage 2 — Clearance & Handover
         'clearances', 'asset_returns', 'handover_notes',
+        // Exit Documents — gate on viewing / sending the exit paperwork.
+        'documents_released', 'documents_released_at', 'documents_released_by',
         // Stage 4 — Final Deactivation & Closure
         'validation', 'final_employee_status', 'profile_lock',
         'exit_case_status', 'hr_sign_off',
@@ -53,6 +55,8 @@ class EmployeeExit extends Model
         'fnf'              => 'array',
         'rehired_at'       => 'datetime',
         'rehire_restart_onboarding' => 'boolean',
+        'documents_released'    => 'boolean',
+        'documents_released_at' => 'datetime',
         'notice_days_required'     => 'integer',
         'notice_days_served'       => 'integer',
         'notice_days_unserved'     => 'integer',
