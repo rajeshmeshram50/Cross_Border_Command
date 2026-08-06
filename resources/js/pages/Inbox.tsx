@@ -7,6 +7,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
+import ExpenseSettlementModal from '../components/ExpenseSettlementModal';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
@@ -104,8 +105,8 @@ export default function Inbox() {
   };
   const [expenseRows, setExpenseRows] = useState<ExpenseApprovalRow[]>([]);
   const [expenseLoading, setExpenseLoading] = useState(true);
- const [expenseActing, setExpenseActing] = useState<{ key: string; verdict: 'approve' | 'reject' } | null>(null);
-  const [expenseComment, setExpenseComment] = useState<Record<string, string>>({});
+  // Expense/advance being reviewed in the deduction popup (Review & Approve).
+  const [reviewItem, setReviewItem] = useState<{ id: number; module: 'expense' | 'advance' } | null>(null);
   const expRowKey = (r: { module: string; id: number }) => `${r.module}-${r.id}`;
  type MyUpdate = {
     module: 'expense' | 'advance';
@@ -308,35 +309,6 @@ export default function Inbox() {
         </div>
       </div>
     );
-  };
-
-  const actOnExpense = async (row: ExpenseApprovalRow, verdict: 'approve' | 'reject') => {
-    const key = expRowKey(row);
-    const comment = (expenseComment[key] || '').trim();
-    if (verdict === 'reject' && !comment) {
-      toast.error('Reason required', 'Please add a short comment explaining the rejection.');
-      return;
-    }
-    const stage = row.raw.stage === 'hr' ? 'hr' : 'manager';
-    // Route to the right module's approve/reject endpoint. Both follow the
-    // identical /{id}/{stage}-{verdict} shape.
-    const base = row.module === 'advance' ? 'advance-requests' : 'expense-claims';
-    const noun = row.module === 'advance' ? 'Advance request' : 'Claim';
-    setExpenseActing({ key, verdict });
-    try {
-      await api.post(`/${base}/${row.id}/${stage}-${verdict}`, comment ? { comment } : {});
-      toast.success(
-        verdict === 'approve' ? `${noun} approved` : `${noun} rejected`,
-        verdict === 'approve' ? 'The employee will be notified.' : 'The employee will see your remark.',
-      );
-      setExpenseComment(prev => { const next = { ...prev }; delete next[key]; return next; });
-      await loadExpenses();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Action failed';
-      toast.error(`Could not act on this ${row.module === 'advance' ? 'advance request' : 'claim'}`, msg);
-    } finally {
-      setExpenseActing(null);
-    }
   };
 
   const actOnLeave = async (id: number, verdict: 'approve' | 'reject') => {
@@ -735,9 +707,6 @@ export default function Inbox() {
                     const isAdvance = r.module === 'advance';
                     const empName = r.raw.employee_name || r.subject_name || '—';
                     const initials = empName.split(/\s+/).filter(Boolean).map(s => s[0]).join('').slice(0, 2).toUpperCase() || '?';
-                    const acting = expenseActing?.key === rk;
-                    const isApproving = acting && expenseActing?.verdict === 'approve';
-                    const isRejecting = acting && expenseActing?.verdict === 'reject';
                     const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
                     const fmtAmt = `₹${Number(r.raw.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
                     const stageLabel = r.raw.stage === 'hr' ? 'HR / Finance stage' : 'Manager stage';
@@ -785,30 +754,18 @@ export default function Inbox() {
                                 <i className="ri-double-quotes-l me-1" />{note}
                               </div>
                             )}
-                            <input
-                              type="text"
-                              className="form-control mt-2 ib-remark-input"
-                              placeholder="Add a remark (required for reject, optional for approve)"
-                              value={expenseComment[rk] || ''}
-                              onChange={e => setExpenseComment(prev => ({ ...prev, [rk]: e.target.value }))}
-                            />
                           </div>
                           <div className="d-flex flex-column gap-2 ib-actions-col">
+                            {/* One action: open the deduction popup (Review &
+                                Approve). HR sets adjustments then approves; the
+                                same modal also carries Reject. No inline direct
+                                approve — an advance/claim must be reviewed. */}
                             <button
                               type="button"
-                              onClick={() => actOnExpense(r, 'approve')}
-                              disabled={acting}
+                              onClick={() => setReviewItem({ id: r.id, module: r.module })}
                               className="ib-btn-approve"
                             >
-                              {isApproving ? <><i className="ri-loader-4-line ri-spin me-1" />Approving…</> : <><i className="ri-check-line me-1" />Approve</>}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => actOnExpense(r, 'reject')}
-                              disabled={acting}
-                              className="ib-btn-reject"
-                            >
-                              {isRejecting ? <><i className="ri-loader-4-line ri-spin me-1" />Rejecting…</> : <><i className="ri-close-line me-1" />Reject</>}
+                              <i className="ri-checkbox-circle-line me-1" />Review &amp; Approve
                             </button>
                           </div>
                         </div>
@@ -1303,6 +1260,29 @@ export default function Inbox() {
           </ModalShell>
         );
       })()}
+
+      {/* Deduction / Review popup — the SAME modal the expense module uses.
+          `review` adapts to the row's stage: HR/Finance sees adjustments +
+          Approve/Reject; a manager-stage row sees plain Approve/Reject. On
+          done we refresh the inbox so the actioned row drops off. */}
+      {reviewItem?.module === 'expense' && (
+        <ExpenseSettlementModal
+          claimId={reviewItem.id}
+          review
+          onClose={() => setReviewItem(null)}
+          onDone={() => { setReviewItem(null); loadExpenses(); }}
+        />
+      )}
+      {reviewItem?.module === 'advance' && (
+        <ExpenseSettlementModal
+          claimId={reviewItem.id}
+          basePath="/advance-requests"
+          kind="advance"
+          review
+          onClose={() => setReviewItem(null)}
+          onDone={() => { setReviewItem(null); loadExpenses(); }}
+        />
+      )}
     </Row>
   );
 }
