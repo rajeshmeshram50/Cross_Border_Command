@@ -5,7 +5,8 @@ import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import '../../../css/recruitment.css';
 import '../../../css/leave.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
-import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse } from './leavePlansApi';
+import { leavePlansApi, leaveTypesApi, leaveBalancesApi, ApiLeavePlan, ApiLeaveType, ApiPlanEmployee, ApiLeaveBalancesResponse, ApiLeaveBalanceRow } from './leavePlansApi';
+import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
@@ -136,7 +137,9 @@ interface LeaveTypeConfig {
 const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
   accrual: {
     unit: 'days', unlimited: false, yearlyQuota: 12,
-    mode: 'periodic', frequency: 'monthly', dayOfMonth: 1,
+    // 'immediate' is the only allocation mode the UI can express (see
+    // AccrualSectionView) — the whole yearly quota is available from day one.
+    mode: 'immediate', frequency: 'monthly', dayOfMonth: 1,
     variesEachMonth: false,
     attendanceDaysWorked: 0, attendanceDaysAccrued: 0,
     leaveExpires: { enabled: false, unit: 'day', days: 0 },
@@ -194,8 +197,15 @@ const defaultLeaveTypeConfig = (): LeaveTypeConfig => ({
 function mergeWithDefaultConfig(raw: Partial<LeaveTypeConfig> | undefined | null): LeaveTypeConfig {
   const def = defaultLeaveTypeConfig();
   if (!raw || typeof raw !== 'object') return def;
+  const accrual = { ...def.accrual, ...(raw.accrual ?? {}) };
+  /* "Leave accrued periodically" and "Leave accrues based on attendance" were
+     both removed from the setup UI (#102 / earlier). A plan saved under either
+     mode is normalised to 'immediate' on load, so the section never renders
+     with no option selected and re-saving clears the dead mode from the stored
+     config. The whole yearly quota is available from day one either way. */
+  if (accrual.mode !== 'immediate') accrual.mode = 'immediate';
   return {
-    accrual:      { ...def.accrual,      ...(raw.accrual      ?? {}) },
+    accrual,
     leaveApp:     { ...def.leaveApp,     ...(raw.leaveApp     ?? {}) },
     approval:     { ...def.approval,     ...(raw.approval     ?? {}) },
     yearEnd:      { ...def.yearEnd,      ...(raw.yearEnd      ?? {}) },
@@ -492,7 +502,10 @@ export default function HrLeavePlans() {
     const row = catalog.find(c => c.id === id);
     const ok = await confirmDialog({
       title: 'Delete leave type?',
-      message: <>Delete <strong>{row ? row.name : 'this leave type'}</strong>? This cannot be undone. The type will also be removed from any leave plan it's assigned to.</>,
+      // No longer promises to strip the type out of its plans — a type that is
+      // assigned to a plan, or referenced by leave requests, is refused
+      // server-side (#108) and the reason comes back as a toast.
+      message: <>Delete <strong>{row ? row.name : 'this leave type'}</strong>? This cannot be undone. A type that is assigned to a leave plan, or already used by leave requests, cannot be deleted.</>,
       tone: 'danger',
       confirmLabel: 'Delete',
       cancelLabel: 'Cancel',
@@ -754,7 +767,10 @@ export default function HrLeavePlans() {
                       className="lp-new-plan-btn"
                       onClick={() => setShowAddPlan(true)}
                     >
-                      <i className="ri-add-line" />New Plan
+                      {/* Same label as the header button it duplicates, and the
+                          same "Add <thing>" form as Add Leave Type — one action
+                          should not have two names. */}
+                      <i className="ri-add-line" />Add Leave Plan
                     </button>
                   )}
                 </aside>
@@ -1241,22 +1257,18 @@ function CatalogRow({
 function LeaveBalancesTab() {
   const [data, setData] = useState<ApiLeaveBalancesResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // DataTable owns the search input and debounces it before calling back, so
+  // this value is already settled — no second debounce of our own.
   const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [department, setDepartment] = useState('All');
   const [location, setLocation] = useState('All');
-
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
-    return () => clearTimeout(t);
-  }, [search]);
 
   const refetch = useCallback(async () => {
     setLoading(true);
     try {
       const resp = await leaveBalancesApi.fetch({
         location: location === 'All' ? undefined : location,
-        search: debouncedSearch || undefined,
+        search: search.trim() || undefined,
       });
       setData(resp);
     } catch (err) {
@@ -1265,7 +1277,7 @@ function LeaveBalancesTab() {
     } finally {
       setLoading(false);
     }
-  }, [location, debouncedSearch]);
+  }, [location, search]);
 
   useEffect(() => { refetch(); }, [refetch]);
 
@@ -1288,7 +1300,115 @@ function LeaveBalancesTab() {
   const DEPT_OPTS = [{ value: 'All', label: 'Department' }, ...(data?.filters.departments ?? []).map(v => ({ value: v, label: v }))];
   const LOC_OPTS  = [{ value: 'All', label: 'Location'   }, ...(data?.filters.locations   ?? []).map(v => ({ value: v, label: v }))];
 
-  const colCount = data?.columns.length ?? 0;
+  /* Fixed identity columns + one per leave type. The type columns are
+     data-driven, so the list is rebuilt whenever the server's column set
+     changes. Each balance cell is looked up BY leave_type_id rather than by
+     position — `balances` is parallel to `columns` today, but keying on the id
+     means a row that is short an entry renders a dash instead of shifting every
+     later column one place left. */
+  const balanceColumns = useMemo<DataTableColumn<ApiLeaveBalanceRow>[]>(() => {
+    const cols: DataTableColumn<ApiLeaveBalanceRow>[] = [
+      {
+        id: 'name',
+        header: 'Employee Name',
+        accessorFn: r => r.name,
+        meta: { width: 240, wrap: true },
+        cell: info => {
+          const e = info.row.original;
+          const accent = accentFor(e.id);
+          return (
+            <div className="d-flex align-items-center gap-2">
+              <span
+                className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
+                style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}
+              >
+                {initialsOf(e.name)}
+              </span>
+              <div>
+                <span className="lp-emp-name d-block fs-13 fw-semibold">{e.name}</span>
+                <span className="text-muted" style={{ fontSize: 11 }}>{e.designation || e.plan_name || ''}</span>
+              </div>
+            </div>
+          );
+        },
+      },
+      {
+        id: 'emp_code',
+        header: 'Emp No.',
+        accessorFn: r => r.emp_code,
+        meta: { width: 110 },
+        cell: info => <span className="lp-emp-link fs-13">{info.getValue()}</span>,
+      },
+      {
+        id: 'location',
+        header: 'Location',
+        accessorFn: r => r.location ?? '',
+        meta: { width: 140 },
+        cell: info => {
+          const v = String(info.getValue() ?? '');
+          return v
+            ? <span className="fs-13 text-muted"><i className="ri-map-pin-line me-1" />{v}</span>
+            : <span className="text-muted">—</span>;
+        },
+      },
+    ];
+
+    for (const c of data?.columns ?? []) {
+      cols.push({
+        id: `lt_${c.leave_type_id}`,
+        header: c.name,
+        /* Sort on consumption ratio, so "who has burned the most of this leave
+           type" is one header click. Rows the type doesn't apply to sort last
+           (-1); unlimited never has a ratio, so it sorts last too. */
+        accessorFn: r => {
+          const b = r.balances.find(x => x.leave_type_id === c.leave_type_id);
+          if (!b || !b.applies || b.unlimited || !b.quota) return -1;
+          return b.used / b.quota;
+        },
+        meta: { width: 170 },
+        cell: info => {
+          const b = info.row.original.balances.find(x => x.leave_type_id === c.leave_type_id);
+          if (!b || !b.applies) return <span className="text-muted">—</span>;
+          if (b.unlimited) {
+            return (
+              <span className="rec-pill" style={{ background: '#d1fae5', color: '#065f46', fontSize: 10.5 }}>
+                <i className="ri-infinity-line me-1" />Unlimited
+              </span>
+            );
+          }
+          if (b.quota === 0) return <span className="text-muted">Not Setup</span>;
+          const pct = Math.min(100, Math.round((b.used / b.quota) * 100));
+          const tone = pct >= 100 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#7c5cfc';
+          return (
+            <div className="lp-balance-cell">
+              <div className="d-flex align-items-center justify-content-between">
+                <span className="fw-semibold fs-13">{b.used}/{b.quota}</span>
+                <span className="text-muted" style={{ fontSize: 10.5 }}>{pct}%</span>
+              </div>
+              <span className="lp-balance-track">
+                <span className="lp-balance-fill" style={{ width: `${pct}%`, background: tone }} />
+              </span>
+            </div>
+          );
+        },
+      });
+    }
+    return cols;
+  }, [data?.columns]);
+
+  const balancesToolbarActions = (
+    <>
+      <div style={{ minWidth: 150 }}>
+        <MasterSelect value={department} onChange={setDepartment} options={DEPT_OPTS} placeholder="Department" />
+      </div>
+      <div style={{ minWidth: 140 }}>
+        <MasterSelect value={location} onChange={setLocation} options={LOC_OPTS} placeholder="Location" />
+      </div>
+      <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
+        <i className="ri-refresh-line" />
+      </button>
+    </>
+  );
 
   return (
     <div className="lp-balances-pane">
@@ -1297,118 +1417,35 @@ function LeaveBalancesTab() {
         <div className="text-muted fs-13">View and configure leave balances of all employees</div>
       </div>
 
-      <div className="d-flex align-items-center gap-2 flex-wrap mb-3">
-        <div style={{ minWidth: 150 }}>
-          <MasterSelect value={department} onChange={setDepartment} options={DEPT_OPTS} placeholder="Department" />
-        </div>
-        <div style={{ minWidth: 140 }}>
-          <MasterSelect value={location} onChange={setLocation} options={LOC_OPTS} placeholder="Location" />
-        </div>
-        <div className="lp-search-box flex-grow-1" style={{ minWidth: 240 }}>
-          <i className="ri-search-line" />
-          <input
-            type="text"
-            placeholder="Search employees..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-        </div>
-        <button type="button" className="lp-icon-btn" aria-label="Refresh" onClick={refetch} title="Refresh">
-          <i className="ri-refresh-line" />
-        </button>
-      </div>
-
-      <div className="lp-config-table-wrap lp-balances-wrap">
-        <table className="lp-config-table lp-balances-table">
-          <thead>
-            <tr>
-              <th style={{ minWidth: 220 }}>EMPLOYEE NAME</th>
-              <th style={{ minWidth: 100 }}>EMP NO.</th>
-              <th style={{ minWidth: 110 }}>LOCATION</th>
-              {(data?.columns ?? []).map(c => (
-                <th key={c.leave_type_id} style={{ minWidth: 140 }}>{c.name.toUpperCase()}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={3 + colCount} className="text-center py-5 text-muted">
-                  <i className="ri-loader-4-line ri-spin d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                  Loading balances...
-                </td>
-              </tr>
-            ) : filteredRows.length === 0 ? (
-              <tr>
-                <td colSpan={3 + colCount} className="text-center py-5 text-muted">
-                  <i className="ri-team-line d-block mb-2" style={{ fontSize: 28, opacity: 0.4 }} />
-                  {data && data.employees.length === 0
-                    ? 'No employees are assigned to a leave plan yet.'
-                    : 'No employees match your filters'}
-                </td>
-              </tr>
-            ) : filteredRows.map((e) => {
-              const accent = accentFor(e.id);
-              return (
-                <tr key={e.id}>
-                  <td>
-                    <div className="d-flex align-items-center gap-2">
-                      <span
-                        className="rounded-circle d-inline-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                        style={{ width: 30, height: 30, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}
-                      >
-                        {initialsOf(e.name)}
-                      </span>
-                      <div>
-                        <span className="lp-emp-name d-block fs-13 fw-semibold">{e.name}</span>
-                        <span className="text-muted" style={{ fontSize: 11 }}>{e.designation || e.plan_name || ''}</span>
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span className="lp-emp-link fs-13">{e.emp_code}</span>
-                  </td>
-                  <td className="fs-13 text-muted">
-                    {e.location ? <><i className="ri-map-pin-line me-1" />{e.location}</> : '—'}
-                  </td>
-                  {e.balances.map((b) => {
-                    if (!b.applies) {
-                      return <td key={b.leave_type_id} className="text-muted">—</td>;
-                    }
-                    if (b.unlimited) {
-                      return (
-                        <td key={b.leave_type_id}>
-                          <span className="rec-pill" style={{ background: '#d1fae5', color: '#065f46', fontSize: 10.5 }}>
-                            <i className="ri-infinity-line me-1" />Unlimited
-                          </span>
-                        </td>
-                      );
-                    }
-                    if (b.quota === 0) {
-                      return <td key={b.leave_type_id} className="text-muted">Not Setup</td>;
-                    }
-                    const pct = Math.min(100, Math.round((b.used / b.quota) * 100));
-                    const tone = pct >= 100 ? '#dc2626' : pct >= 70 ? '#f59e0b' : '#7c5cfc';
-                    return (
-                      <td key={b.leave_type_id}>
-                        <div className="lp-balance-cell">
-                          <div className="d-flex align-items-center justify-content-between">
-                            <span className="fw-semibold fs-13">{b.used}/{b.quota}</span>
-                            <span className="text-muted" style={{ fontSize: 10.5 }}>{pct}%</span>
-                          </div>
-                          <span className="lp-balance-track">
-                            <span className="lp-balance-fill" style={{ width: `${pct}%`, background: tone }} />
-                          </span>
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {/* Shared list table — search box, sortable headers, rows-per-page pager
+          and card chrome all come from the component, so this list looks and
+          behaves like every other list in the app. Search stays SERVER-side:
+          passing onSearchChange puts DataTable in controlled mode, which
+          disables its own client-side global filter (see DataTable), so the
+          rows are filtered once, by the API. */}
+      <DataTable<ApiLeaveBalanceRow>
+        data={filteredRows}
+        columns={balanceColumns}
+        serial={{ header: 'Sr. No.' }}
+        accent="violet"
+        autoFitRows
+        /* 3 identity columns + a variable number of leave-type columns; below
+           this the wrapper scrolls sideways rather than crushing the bars. */
+        minWidth={720 + (data?.columns.length ?? 0) * 170}
+        loading={loading}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search employees…"
+        toolbarActions={balancesToolbarActions}
+        emptyMessage={
+          <>
+            <i className="ri-team-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
+            {data && data.employees.length === 0
+              ? 'No employees are assigned to a leave plan yet.'
+              : 'No employees match your filters'}
+          </>
+        }
+      />
     </div>
   );
 }
@@ -1657,7 +1694,13 @@ function AddLeavePlanModal({
     reset();
   };
 
-  const handleClose = () => { reset(); onClose(); };
+  /* While the save is in flight the whole popup is frozen (#107): the fields
+     below sit in a disabled <fieldset>, and closing is refused here so neither
+     the X, Cancel, ESC nor the backdrop can abandon a request that is already
+     on its way to the server — reopening would then show a stale form while
+     the plan quietly got created. Mirrors the read-only fieldset used by the
+     leave-type Setup wizard. */
+  const handleClose = () => { if (saving) return; reset(); onClose(); };
 
   return (
     <Modal
@@ -1666,6 +1709,7 @@ function AddLeavePlanModal({
       centered
       size="lg"
       backdrop="static"
+      keyboard={!saving}
       modalClassName="rec-form-modal"
       contentClassName="rec-form-content border-0"
     >
@@ -1694,14 +1738,26 @@ function AddLeavePlanModal({
             <button
               type="button"
               onClick={handleClose}
+              disabled={saving}
               aria-label="Close"
               className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+              style={saving ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
           </div>
         </div>
 
+        {/* A disabled <fieldset> neutralises every native control inside it in
+            one go; pointer-events covers anything non-native, and the dimming
+            makes the frozen state visible rather than merely unresponsive. */}
+        <fieldset
+          disabled={saving}
+          style={{
+            border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+            ...(saving ? { pointerEvents: 'none', opacity: 0.6 } : {}),
+          }}
+        >
         <div className="rec-form-body">
           <div className="rec-form-section">
             <div className="rec-form-section-head">
@@ -1796,11 +1852,14 @@ function AddLeavePlanModal({
           </div>
 
         </div>
+        </fieldset>
 
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
+            {/* Cancel sits OUTSIDE the fieldset (so it can stay reachable when
+                nothing is in flight) and is disabled explicitly during a save. */}
+            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
@@ -1847,7 +1906,10 @@ function AddLeaveTypeModal({
   }, [isOpen, editing]);
 
   const reset = () => { setName(''); setType('Regular'); setIsPaid('Paid'); setCode(''); setErrors({}); setSaving(false); };
-  const handleClose = () => { reset(); onClose(); };
+  /* Frozen while the save/update is in flight (#106) — same rule as the Add
+     Leave Plan popup: closing is refused so neither the X, Cancel, ESC nor the
+     backdrop can abandon a request already on its way to the server. */
+  const handleClose = () => { if (saving) return; reset(); onClose(); };
 
   // 'Unpaid' is intentionally NOT a category — Paid/Unpaid is set by the
   // Compensation section below, so it would be a redundant/contradictory choice.
@@ -1886,6 +1948,7 @@ function AddLeaveTypeModal({
       centered
       size="lg"
       backdrop="static"
+      keyboard={!saving}
       modalClassName="rec-form-modal"
       contentClassName="rec-form-content border-0"
     >
@@ -1914,14 +1977,26 @@ function AddLeaveTypeModal({
             <button
               type="button"
               onClick={handleClose}
+              disabled={saving}
               aria-label="Close"
               className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+              style={saving ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
           </div>
         </div>
 
+        {/* A disabled <fieldset> neutralises every native control inside it in
+            one go; pointer-events covers anything non-native, and the dimming
+            makes the frozen state visible rather than merely unresponsive. */}
+        <fieldset
+          disabled={saving}
+          style={{
+            border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+            ...(saving ? { pointerEvents: 'none', opacity: 0.6 } : {}),
+          }}
+        >
         <div className="rec-form-body">
           <div className="rec-form-section">
             <div className="rec-form-section-head">
@@ -2031,11 +2106,14 @@ function AddLeaveTypeModal({
             </Row>
           </div>
         </div>
+        </fieldset>
 
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
+            {/* Cancel sits OUTSIDE the fieldset (so it stays reachable when
+                nothing is in flight) and is disabled explicitly during a save. */}
+            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
@@ -2395,7 +2473,7 @@ function LeaveTypeSetupModal({
                 style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', ...(readOnly ? { pointerEvents: 'none' } : {}) }}
               >
               {active === 'accrual'      && <AccrualSectionView      cfg={config.accrual}      update={updateAccrual} />}
-              {active === 'leaveApp'     && <LeaveAppSectionView     cfg={config.leaveApp}     update={updateLeaveApp} accrualMode={config.accrual.mode} />}
+              {active === 'leaveApp'     && <LeaveAppSectionView     cfg={config.leaveApp}     update={updateLeaveApp} />}
               {active === 'approval'     && <ApprovalSectionView     cfg={config.approval}     update={updateApproval} />}
               {active === 'yearEnd'      && <YearEndSectionView      cfg={config.yearEnd}      update={updateYearEnd} />}
               {active === 'probation'    && <ProbationSectionView    cfg={config.probation}    update={updateProbation} />}
@@ -2564,39 +2642,21 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
       {!cfg.unlimited && (
         <>
       <SectionCard icon="ri-pulse-line" iconBg="#dbeafe" title="Allocation & Accrual Rate">
-        {/* Reset the attendance-only field when leaving attendance mode so a
-            stale invalid value doesn't block the save (bug #73). */}
+        {/* "Leave accrued periodically" (#102) and "Leave accrues based on
+            attendance" were both removed on request, leaving immediate
+            allocation as the only mode. The values still exist in the config
+            type so a plan saved under either one still loads — it is normalised
+            to 'immediate' in mergeWithDefaultConfig(). Kept as a radio rather
+            than plain text so the section reads the same as every other one. */}
         <RadioRow
-          selected={cfg.mode === 'periodic'}
-          onSelect={() => update({ mode: 'periodic', attendanceDaysWorked: 0 })}
-          label="Leave accrued periodically"
-        />
-        {cfg.mode === 'periodic' && (
-          <div className="lts-nested-block">
-            <div className="d-flex align-items-center gap-2 flex-wrap">
-              <span className="text-muted" style={{ fontSize: 12.5 }}>Accrue leave</span>
-              <div style={{ width: 170 }}>
-                <MasterSelect
-                  value={cfg.frequency}
-                  onChange={v => update({ frequency: v as AccrualConfig['frequency'] })}
-                  options={[
-                    { value: 'monthly', label: 'Once every month' },
-                    { value: 'yearly',  label: 'Once a year' },
-                  ]}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-        {/* The "Leave accrues based on attendance" mode was removed from the UI
-            on request. The 'attendance' value still exists in the config type
-            and on the server, so plans already saved with it keep working —
-            it simply can no longer be picked for new or edited plans. */}
-        <RadioRow
-          selected={cfg.mode === 'immediate'}
+          selected
           onSelect={() => update({ mode: 'immediate', attendanceDaysWorked: 0 })}
           label="Leave quota available immediately"
         />
+        <div className="text-muted" style={{ fontSize: 12, marginTop: 6, marginLeft: 28 }}>
+          The full yearly quota is available from the first day — it is not vested month by month.
+          To limit how much can be taken in one month, use <strong>Leave Application → maximum days per month</strong>.
+        </div>
       </SectionCard>
 
       <SectionCard icon="ri-add-circle-line" iconBg="#d3f0ee" title="Extra Leave">
@@ -2633,11 +2693,11 @@ function AccrualSectionView({ cfg, update }: { cfg: AccrualConfig; update: (p: P
   );
 }
 
-function LeaveAppSectionView({ cfg, update, accrualMode }: { cfg: LeaveAppConfig; update: (p: Partial<LeaveAppConfig>) => void; accrualMode: AccrualConfig['mode'] }) {
-  // Periodic accrual already governs the monthly allocation, so the manual
-  // "at most N days per calendar month" cap doesn't apply and must be locked
-  // (bug #66). Disable both the toggle and the number input in that mode.
-  const perMonthLocked = accrualMode === 'periodic';
+/* The per-month cap used to be locked out under periodic accrual, which owned
+   the monthly allocation itself (bug #66). Periodic accrual no longer exists
+   (#102), so the cap is now the ONLY way to limit monthly usage and is always
+   editable — the lock and its `accrualMode` prop went with the mode. */
+function LeaveAppSectionView({ cfg, update }: { cfg: LeaveAppConfig; update: (p: Partial<LeaveAppConfig>) => void }) {
   return (
     <>
       <h5 className="fw-bold mb-3">Leave Application</h5>
@@ -2647,8 +2707,6 @@ function LeaveAppSectionView({ cfg, update, accrualMode }: { cfg: LeaveAppConfig
         <CheckRow
           checked={cfg.maxPerMonth.enabled}
           onChange={v => update({ maxPerMonth: { ...cfg.maxPerMonth, enabled: v } })}
-          disabled={perMonthLocked}
-          sub={perMonthLocked ? 'Not applicable — periodic accrual controls the monthly allocation.' : undefined}
           label={
             <span className="d-inline-flex align-items-center gap-2 flex-wrap">
               Allow at most
@@ -2659,7 +2717,7 @@ function LeaveAppSectionView({ cfg, update, accrualMode }: { cfg: LeaveAppConfig
                 style={{ width: 70 }}
                 value={cfg.maxPerMonth.days}
                 onChange={e => update({ maxPerMonth: { ...cfg.maxPerMonth, days: Number(e.target.value) || 0 } })}
-                disabled={!cfg.maxPerMonth.enabled || perMonthLocked}
+                disabled={!cfg.maxPerMonth.enabled}
               />
               day(s) of this leave type per calendar month
             </span>

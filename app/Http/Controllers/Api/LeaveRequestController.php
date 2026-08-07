@@ -352,32 +352,20 @@ class LeaveRequestController extends Controller
             }
         }
 
-        // Periodic monthly accrual (Bug #74) — "Leave accrued periodically → Once
-        // every month" vests one month's worth of quota per calendar month, so
-        // usage in a month must be capped at that monthly accrual (yearlyQuota /
-        // 12). Without this the employee could drain the whole annual quota
-        // inside a single month. Approved + Pending days in the month count.
-        $mode      = strtolower((string) ($accrual['mode'] ?? ''));
-        $frequency = strtolower((string) ($accrual['frequency'] ?? ''));
-        if (!$unlimited && $mode === 'periodic' && $frequency === 'monthly') {
-            $monthlyAccrual = round(((float) ($accrual['yearlyQuota'] ?? 0)) / 12.0, 2);
-            if ($monthlyAccrual > 0) {
-                $usedThisMonthAcc = (float) LeaveRequest::query()
-                    ->where('employee_id', $employee->id)
-                    ->where('leave_type_id', $data['leave_type_id'])
-                    ->whereIn('status', ['Approved', 'Pending'])
-                    ->whereBetween('from_date', [
-                        $from->copy()->startOfMonth()->toDateString(),
-                        $from->copy()->endOfMonth()->toDateString(),
-                    ])
-                    ->sum('days');
-                if ($usedThisMonthAcc + $days > $monthlyAccrual) {
-                    $fmt = fn (float $n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
-                    $remaining = max(0.0, $monthlyAccrual - $usedThisMonthAcc);
-                    abort(422, "This leave type accrues {$fmt($monthlyAccrual)} day(s) per month (Once every month). You've already used {$fmt($usedThisMonthAcc)} this month, so only {$fmt($remaining)} more can be applied (you requested {$fmt($days)}).");
-                }
-            }
-        }
+        /* Periodic monthly accrual (was Bug #74) is GONE. "Leave accrued
+           periodically" was removed from the leave-type setup on request
+           (#102), leaving immediate allocation as the only mode: the whole
+           yearly quota is available from day one.
+
+           Its enforcement is removed with it rather than left running against
+           `accrual.mode === 'periodic'` still sitting in older config_json
+           rows. Keeping it would block leave by a rule HR can no longer see or
+           switch off in Setup — the balance would read "12 available" while
+           the request 422'd at 1/month, with the message naming a dropdown
+           that no longer exists.
+
+           Capping monthly usage is still supported and is now the only way to
+           do it: `leaveApp.maxPerMonth`, enforced just above. */
 
         // Snapshot the approval chain from the plan-type config_json so
         // changing the plan rules later doesn't reroute in-flight requests.
