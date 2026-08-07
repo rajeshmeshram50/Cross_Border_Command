@@ -873,13 +873,40 @@ function ManageGroupsModal({
                   <tr key={g.id}>
                     <td className="text-center text-muted fs-13">{idx + 1}</td>
                     <td><span className="rec-id-pill">{g.code || `HGRP-${g.id}`}</span></td>
-                    <td>
-                      {/* Same overflow guard as the holiday list, but this
-                          table is hand-rolled (table-layout: auto), where
-                          nowrap+ellipsis would just widen the column instead
-                          of truncating. Wrap mid-word and clamp to 2 lines —
-                          that holds regardless of layout mode. */}
-                      <div className="fw-bold fs-13" style={{ overflowWrap: 'anywhere' }}>{g.name}</div>
+                    {/* whiteSpace:'normal' is load-bearing. The table carries
+                        Velzon's `table-nowrap`, which sets `white-space: nowrap`
+                        on EVERY cell — that silently defeated the wrap + clamp
+                        below, so a long description rendered as one endless
+                        line and stretched the column until the whole modal
+                        scrolled sideways (#49). Overridden here only, so the
+                        Code / Holidays / Actions cells keep their nowrap.
+
+                        Same overflow guard as the holiday list, but this table
+                        is hand-rolled (table-layout: auto), where
+                        nowrap+ellipsis would just widen the column instead of
+                        truncating. Wrap mid-word and clamp to 2 lines — that
+                        holds regardless of layout mode. `overflow-wrap: anywhere`
+                        (not `break-word`) is what lets an unbroken 200-char
+                        string shrink the column in auto layout. */}
+                    <td style={{ whiteSpace: 'normal' }}>
+                      {/* The NAME gets the same clamp as the description. It
+                          already wrapped, so it never broke the layout — but an
+                          unbroken 200-char name still grew the row to a dozen
+                          lines, which is the same problem one step quieter. */}
+                      <Tooltip label={g.name}>
+                        <div
+                          className="fw-bold fs-13"
+                          style={{
+                            overflowWrap: 'anywhere',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          {g.name}
+                        </div>
+                      </Tooltip>
                       {g.description && (
                         <Tooltip label={g.description}>
                           <div

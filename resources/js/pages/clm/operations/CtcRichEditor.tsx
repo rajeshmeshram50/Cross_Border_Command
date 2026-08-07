@@ -1,5 +1,7 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
-import { Extension } from '@tiptap/core';
+import { Extension, Node } from '@tiptap/core';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import { TextStyle, FontSize, Color, BackgroundColor } from '@tiptap/extension-text-style';
@@ -39,6 +41,195 @@ const INDENT_MAX = 10;
  * serialised as an inline margin-left so it round-trips through the HTML draft
  * and the generated PDF. Commands live in the toolbar (see changeIndent) to
  * avoid TipTap command module-augmentation ceremony. */
+/* ── Page flow ─────────────────────────────────────────────────────────────
+   Moves a block that would cross a page boundary onto the next sheet, leaving
+   the rest of the current one empty — which is exactly what dompdf does with
+   the same HTML. Neither engine splits a paragraph, so the blank tail of a
+   sheet here is the blank tail that comes out of the PDF.
+
+   Geometry, all read off the PDF (derivation in .ctcte-pageview):
+     PAGE_H   printable height of a sheet
+     FIRST_H  sheet one, shorter because the document header sits in the flow
+              there and nowhere else
+     GAP      the band drawn between sheets
+
+   ── Why this measures the DOM's own spacers ──
+   The obvious version keeps a running total of the spacer height it has
+   inserted and subtracts it to get "natural" positions. It does not converge.
+   On the first pass a block has no spacer above it, so its offsetTop is
+   natural; on the second the spacer IS above it and offsetTop includes it, but
+   the accumulator was only incremented AFTER that block was handled — so the
+   two passes disagree about the same block, the decision flips, and the page
+   numbers and gap heights oscillate.
+
+   So nothing is accumulated. The spacers are read straight out of the DOM, in
+   document order, and their measured heights are subtracted. That frame is the
+   same on every pass whatever has already been inserted, so the pass is
+   idempotent — run it twice and it produces the identical decoration set. */
+const PAGE_H   = 1006;
+const HEAD_H   = 94;
+const FIRST_H  = PAGE_H - HEAD_H;
+const PAGE_GAP = 30;
+/* Above this the per-edit measure costs more than it gives — this editor also
+   carries 200-300 page DOCX imports. The sheet still renders; only the
+   pushing stops. */
+const PAGINATE_MAX_BLOCKS = 400;
+
+const pageFlowKey = new PluginKey('ctcPageFlow');
+
+const PageFlow = Extension.create({
+  name: 'ctcPageFlow',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: pageFlowKey,
+        state: {
+          init: () => DecorationSet.empty,
+          apply: (tr, old) => tr.getMeta(pageFlowKey) ?? old.map(tr.mapping, tr.doc),
+        },
+        props: { decorations: (state) => pageFlowKey.getState(state) },
+        view(view) {
+          let timer = 0;
+          let frame = 0;
+          let signature = '';
+
+          const measure = () => {
+            const dom = view.dom as HTMLElement;
+            if (!dom.isConnected || !dom.closest('.ctcte-pageview')) return;
+            if (view.state.doc.childCount > PAGINATE_MAX_BLOCKS) return;
+
+            /* Walk the rendered children once, in order. Spacers and content
+               blocks are interleaved siblings, so filtering the spacers out
+               leaves exactly the document's top-level blocks — and the running
+               gap total gives each block's natural (un-spaced) position. */
+            /* offsetTop is measured from the nearest POSITIONED ancestor, not
+               from .ProseMirror — and .ProseMirror carries no position of its
+               own, so every reading was inflated by however far the editor sat
+               inside the page shell (toolbar, wrapper padding, …). The first
+               sheet therefore looked full long before it was, and the counter
+               was already past page 1 by the time the first gap appeared —
+               which is why the very first band read "END OF PAGE 2".
+
+               .ctcte-pageview .ProseMirror is now position:relative, so
+               offsetTop is relative to it; subtracting its padding-top puts the
+               first block at natural 0, matching the PDF where 1006px is the
+               PRINTABLE height, margins already excluded. */
+            const padTop = parseFloat(getComputedStyle(dom).paddingTop) || 0;
+
+            const natural: { top: number; height: number }[] = [];
+            let gapAcc = 0;
+            for (const child of Array.from(dom.children) as HTMLElement[]) {
+              if (child.classList.contains('ctcte-pagegap')) {
+                gapAcc += child.offsetHeight;
+                continue;
+              }
+              natural.push({ top: child.offsetTop - padTop - gapAcc, height: child.offsetHeight });
+            }
+            // The DOM can lag the doc for one frame after an edit; a mismatch
+            // means the measurement would be against stale geometry.
+            if (natural.length !== view.state.doc.childCount) return;
+
+            const decos: Decoration[] = [];
+            let page = 1;         // sheet currently being filled
+            let cap  = FIRST_H;   // natural height available through this sheet
+            let i    = 0;
+
+            view.state.doc.forEach((_node, offset) => {
+              const m = natural[i++];
+              if (!m) return;
+              const { top, height } = m;
+
+              // Fits on a sheet, just not on this one → move it down.
+              if (height <= PAGE_H && top + height > cap) {
+                const fill = cap - top;
+                if (fill > 0) {
+                  const from = page;
+                  decos.push(Decoration.widget(offset, () => {
+                    const gap = document.createElement('div');
+                    gap.className = 'ctcte-pagegap';
+                    gap.style.height = `${fill + PAGE_GAP}px`;
+                    gap.setAttribute('data-from', String(from));
+                    gap.setAttribute('data-to', String(from + 1));
+                    gap.contentEditable = 'false';
+                    return gap;
+                  }, { side: -1, key: `pg${offset}` }));
+                }
+                page += 1;
+                cap  += PAGE_H;
+              }
+
+              // Taller than a whole sheet — nothing to be done, but keep the
+              // page count honest for the labels below it.
+              while (top + height > cap) { page += 1; cap += PAGE_H; }
+            });
+
+            // Dispatch only on a real change, or each pass would trigger the next.
+            const sig = decos.map(d => `${(d as any).from}`).join(',');
+            if (sig === signature) return;
+            signature = sig;
+            view.dispatch(
+              view.state.tr
+                .setMeta(pageFlowKey, DecorationSet.create(view.state.doc, decos))
+                .setMeta('addToHistory', false),
+            );
+          };
+
+          const schedule = () => {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(() => {
+              cancelAnimationFrame(frame);
+              frame = requestAnimationFrame(measure);
+            }, 160);
+          };
+
+          schedule();
+          return {
+            update: schedule,
+            destroy() { window.clearTimeout(timer); cancelAnimationFrame(frame); },
+          };
+        },
+      }),
+    ];
+  },
+});
+
+/**
+ * An explicit page break.
+ *
+ * dompdf already honours page-break-* (the signature-document blade leans on it
+ * throughout), but the editor had no way to EMIT one — a drafter could see a
+ * clause land across two pages in the generated PDF and had no control over it
+ * beyond padding the text with blank lines.
+ *
+ * Serialises to `<div class="page-break"></div>`, which the PDF stylesheet turns
+ * into `page-break-after: always`. In the browser the same element is styled as
+ * a labelled dashed rule, so the break is visible while writing. Being a plain
+ * div means an older draft round-trips untouched and the backend contract
+ * (draft = HTML string) is unchanged.
+ */
+const PageBreak = Node.create({
+  name: 'pageBreak',
+  group: 'block',
+  atom: true,          // one indivisible thing — no cursor inside it
+  selectable: true,
+  parseHTML() {
+    return [{ tag: 'div.page-break' }, { tag: 'div[data-page-break]' }];
+  },
+  renderHTML() {
+    // data-page-break as well as the class: a stylesheet can be stripped or
+    // overridden, but the attribute survives for the PDF side to match on.
+    return ['div', { class: 'page-break', 'data-page-break': 'true' }];
+  },
+  addCommands() {
+    return {
+      setPageBreak: () => ({ chain }: any) =>
+        // Insert the break AND a paragraph after it, otherwise an atom at the
+        // end of the doc leaves nowhere to put the caret.
+        chain().insertContent([{ type: 'pageBreak' }, { type: 'paragraph' }]).run(),
+    } as any;
+  },
+});
+
 const ParagraphIndent = Extension.create({
   name: 'paragraphIndent',
   addOptions() { return { types: ['paragraph', 'heading'] as string[] }; },
@@ -162,6 +353,8 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
       StyledTableHeader,
       StyledTableCell,
       ParagraphIndent,
+      PageBreak,
+      PageFlow,
     ],
     content: repairBrokenLinkHrefs(value) || '<p></p>',
     onUpdate({ editor }) {
@@ -201,9 +394,16 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
 }
 
 /** Content-area render — drop inside the HeaderFooterPanel (or any surface). */
-export function CtcEditorContent({ editor }: { editor: Editor | null }) {
+/**
+ * @param pageView  Lay the surface out as A4 pages, the way Word does.
+ *   Without it the drafter types into an endless column and cannot tell where
+ *   the PDF will split — they only find out after generating it. The geometry
+ *   is taken from the PDF itself (see .ctcte-pageview) so the guides land where
+ *   dompdf actually breaks.
+ */
+export function CtcEditorContent({ editor, pageView }: { editor: Editor | null; pageView?: boolean }) {
   if (!editor) return null;
-  return <EditorContent editor={editor} className="ctcte-content" />;
+  return <EditorContent editor={editor} className={`ctcte-content${pageView ? ' ctcte-pageview' : ''}`} />;
 }
 
 /** Formatting toolbar — render ABOVE the content surface. */
@@ -324,6 +524,26 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
       </div>
 
       <span className="ctcte-div" />
+      {/* Page break — the only EXACT control over where the PDF splits. The
+          A4 guides on the surface are an estimate (browser and dompdf lay text
+          out differently); this is a real instruction dompdf obeys. */}
+      {/* Labelled, unlike every other button here. Icon-only was invisible in
+          practice: it sat among a dozen formatting glyphs and read as one more
+          alignment control, so nobody found it. This is a rare, deliberate
+          action with no widely-known glyph — the word is what makes it
+          findable. */}
+      <button
+        type="button"
+        className="ctcte-pgbtn"
+        title="Insert a page break — the PDF starts a new page from here"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
+      >
+        <Ico d="M3 5h18M3 19h18M4 12h3M10.5 12h3M17 12h3" />
+        Page Break
+      </button>
+
+      <span className="ctcte-div" />
       <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8" /></TB>
       <TB onClick={() => editor.chain().focus().redo().run()} title="Redo"><Ico d="M21 7v6h-6M21 13a9 9 0 1 1-3-7.7L21 8" /></TB>
     </div>
@@ -347,6 +567,66 @@ export const CTC_EDITOR_CSS = `
 .ctcte-toolbar > * { flex-shrink: 0; }
 .ctcte-sel { height: 28px; border: 1.5px solid #E5E1F3; border-radius: 8px; background: #fff; color: #4C1D95; font-family: inherit; font-size: 11px; font-weight: 600; padding: 0 8px; cursor: pointer; outline: none; }
 .ctcte-sel-sm { min-width: 56px; padding: 0 6px; }
+/* ── A4 page view ──────────────────────────────────────────────────────────
+   Every number is read off the PDF, not chosen for looks — a sheet edge here
+   has to be where dompdf really breaks.
+
+     config/dompdf.php : paper a4, dpi 96  ->  A4 = 794 x 1123 px
+     blade @page       : margins 25 top / 25 sides / 92 bottom
+       => printable area 744 x 1006 px                            (PAGE_H)
+     blade .page-header: padding 20 + logo 62 + margin 12 = 94px, and it sits
+       in the NORMAL flow, so it costs that height on sheet ONE only  (HEAD_H)
+     blade body        : font-size 11px, line-height 15px
+
+   No background gradient any more: the sheets are defined by the gaps PageFlow
+   inserts, so there is exactly one source of truth for where a page ends. A
+   gradient drawn independently would drift away from the real breaks. */
+.ctcte-pageview { --pg-w: 744px; background: #EEF0F6; padding: 18px 0 26px; }
+.ctcte-pageview .ProseMirror {
+  width: var(--pg-w);
+  margin: 0 auto;
+  padding: 25px 25px 92px;
+  box-sizing: content-box;
+  /* Load-bearing: PageFlow reads child.offsetTop, which is relative to the
+     nearest positioned ancestor. Without this it would measure from somewhere
+     up in the page shell and every page boundary would land early. */
+  position: relative;
+  background: #fff;
+  /* Same type metrics as the PDF body, so a line here is a line there. */
+  font-size: 11px;
+  line-height: 15px;
+  box-shadow: 0 1px 3px rgba(16,24,40,.10), 0 8px 24px rgba(16,24,40,.06);
+}
+/* The band between two sheets. Negative margins cancel the ProseMirror padding
+   so it spans the full width and reads as the sheet ENDING, not a grey box
+   inside it. */
+.ctcte-pagegap {
+  position: relative;
+  margin: 0 -25px;
+  background: #EEF0F6;
+  border-top: 1px solid #D3D8E3;
+  border-bottom: 1px solid #D3D8E3;
+  box-shadow: inset 0 7px 10px -9px rgba(16,24,40,.30), inset 0 -7px 10px -9px rgba(16,24,40,.30);
+  user-select: none;
+}
+/* Labels pinned to the band's own edges, never to the middle — a short gap
+   would otherwise stack them on top of each other. */
+.ctcte-pagegap::before,
+.ctcte-pagegap::after {
+  position: absolute; left: 50%; transform: translateX(-50%);
+  padding: 1px 9px; border-radius: 999px;
+  background: #fff; border: 1px solid #DDD6FE; color: #6D28D9;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .08em; white-space: nowrap;
+}
+.ctcte-pagegap::before { content: 'END OF PAGE ' attr(data-from); top: -9px; }
+.ctcte-pagegap::after  { content: 'PAGE ' attr(data-to);       bottom: -9px; }
+[data-bs-theme="dark"] .ctcte-pageview { background: #12151c; }
+[data-bs-theme="dark"] .ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
+[data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
+
+.ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }
+.ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
+[data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }
 .ctcte-btn { min-width: 26px; height: 26px; padding: 0 6px; border: none; border-radius: 7px; background: none; color: #4C1D95; font-family: 'Georgia', serif; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
 .ctcte-btn:hover { background: #EDE9FE; }
@@ -362,6 +642,18 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content .ProseMirror h1 { font-size: 1.55em; font-weight: 800; margin: .5em 0 .35em; }
 .ctcte-content .ProseMirror h2 { font-size: 1.3em; font-weight: 800; margin: .5em 0 .3em; }
 .ctcte-content .ProseMirror h3 { font-size: 1.12em; font-weight: 700; margin: .45em 0 .28em; }
+.ctcte-content .ProseMirror div.page-break {
+  position: relative; height: 0; margin: 22px 0;
+  border-top: 2px dashed #C4B5FD;
+}
+.ctcte-content .ProseMirror div.page-break::after {
+  content: 'PAGE BREAK';
+  position: absolute; top: -8px; left: 50%; transform: translateX(-50%);
+  padding: 1px 9px; border-radius: 999px;
+  background: #F5F3FF; border: 1px solid #DDD6FE;
+  color: #6D28D9; font-family: inherit; font-size: 9px; font-weight: 800; letter-spacing: .08em;
+}
+.ctcte-content .ProseMirror div.page-break.ProseMirror-selectednode { border-top-color: #6D28D9; }
 .ctcte-content .ProseMirror ul, .ctcte-content .ProseMirror ol { padding-left: 1.4em; margin: 0 0 .55em; }
 .ctcte-content .ProseMirror a { color: #6D28D9; text-decoration: underline; }
 .ctcte-content .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: #A78BFA; pointer-events: none; float: left; height: 0; }

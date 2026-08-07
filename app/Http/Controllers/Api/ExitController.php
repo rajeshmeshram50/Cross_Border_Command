@@ -66,8 +66,21 @@ class ExitController extends Controller
 
         $lockedType     = $this->lockedExitType($row);
         $wasReleased    = (bool) $row->documents_released;
+        $storedLwd      = $row->last_working_day;   // captured BEFORE fill()
+        $storedCase     = (string) ($row->exit_case_status ?? 'Open');
         $row->fill($data);
+
+        /* Closing the case is complete()'s job ALONE — that is what stamps the
+           terminal employee status, kills the login and disables the employee
+           so they show in HR > Employees > Disabled Employees.
+           `exit_case_status` is fillable, so a plain Save Draft carrying
+           "Closed" could close a case through the side door and skip every one
+           of those side effects, leaving a fully "Exited" person sitting in the
+           ACTIVE employee list with a working login. An already-closed case
+           stays closed; anything else stays Open. */
+        $row->exit_case_status = $storedCase === 'Closed' ? 'Closed' : 'Open';
         $this->assertExitTypeUnchanged($lockedType, $row);
+        $this->assertLastWorkingDayWithinNotice($row, $employee, $storedLwd);
         $this->stampDocumentRelease($row, $wasReleased, $request);
         $row->employee_id          = $employee->id;
         $row->client_id            = $employee->client_id;
@@ -126,8 +139,10 @@ class ExitController extends Controller
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             $lockedType = $this->lockedExitType($row);
+            $storedLwd  = $row->last_working_day;   // captured BEFORE fill()
             $row->fill($data);
             $this->assertExitTypeUnchanged($lockedType, $row);
+            $this->assertLastWorkingDayWithinNotice($row, $employee, $storedLwd);
             $row->employee_id          = $employee->id;
             $row->client_id            = $employee->client_id;
             $row->branch_id            = $employee->branch_id;
@@ -147,11 +162,31 @@ class ExitController extends Controller
             $employee->status = $this->resolveFinalStatus((string) ($row->exit_type ?? ''));
             $employee->save();
 
-            // Disable the paired login + revoke tokens (mirrors
-            // EmployeeController::destroy, minus the soft-delete).
+            // Disable the paired login + revoke tokens. Without revoking, an
+            // already-issued token keeps authenticating — no middleware
+            // re-checks users.status on subsequent requests.
             if ($employee->user) {
                 $employee->user->update(['status' => 'inactive']);
                 $employee->user->tokens()->delete();
+            }
+
+            /* Completing an exit also DISABLES the employee, so they appear in
+               HR > Employees > Disabled Employees alongside the Exited tab.
+               This used to be deliberately skipped ("minus the soft-delete"),
+               which left a fully-exited person sitting in the ACTIVE employee
+               list — their login was dead but every picker and list still
+               offered them as live staff.
+
+               Soft-delete is how "disabled" is expressed everywhere else
+               (EmployeeController::destroy, which the HR toggle calls), so
+               using the same mechanism means the Disabled tab, the enable
+               toggle and rehire() all just work — rehire() already restores a
+               trashed row, so the two halves were always meant to pair up.
+
+               Guarded: an exit re-completed after a rehire must not fail on an
+               already-trashed row. */
+            if (!$employee->trashed()) {
+                $employee->delete();
             }
 
             return $row;
@@ -374,32 +409,18 @@ class ExitController extends Controller
 
     /**
      * Salary earned in the exit month, up to and including the last working
-     * day. Pro-rated on CALENDAR days — the same basis the notice period uses,
-     * so the two never disagree.
+     * day — delegated to the payroll engine.
+     *
+     * This used to pro-rate annual_salary ÷ 12 across CALENDAR days here,
+     * which ignored the employee's salary structure, their attendance, loss of
+     * pay, overtime and every allowance — and returned ₹0 outright for anyone
+     * paid through a salary structure with no annual_salary set. The F&F now
+     * settles exactly what payroll would have paid for that month.
      */
     private function fnfEarnedSalary(Employee $employee, \Carbon\Carbon $lwd): array
     {
-        $annual  = (float) ($employee->annual_salary ?? 0);
-        $monthly = $annual > 0 ? round($annual / 12, 2) : 0.0;
-
-        $monthDays  = (int) $lwd->daysInMonth;
-        // Someone who joined mid-month is only owed from their joining date.
-        $start = $lwd->copy()->startOfMonth();
-        if ($employee->date_of_joining) {
-            $doj = \Carbon\Carbon::parse($employee->date_of_joining)->startOfDay();
-            if ($doj->gt($start)) $start = $doj;
-        }
-        $earnedDays = $lwd->lt($start) ? 0 : $start->diffInDays($lwd) + 1;
-
-        return [
-            'cycle'         => $lwd->format('F Y'),
-            'monthly_gross' => $monthly,
-            'month_days'    => $monthDays,
-            'earned_days'   => $earnedDays,
-            'amount'        => $monthDays > 0 ? round($monthly * $earnedDays / $monthDays, 2) : 0.0,
-            'note'          => 'Excluded from the ' . $lwd->format('F Y')
-                . ' payroll run — settle the earned salary here.',
-        ];
+        return app(\App\Services\PayrollService::class)
+            ->earnedSalaryForExitMonth($employee, $lwd);
     }
 
     /**
@@ -538,6 +559,65 @@ class ExitController extends Controller
      * behaviour of no settlement; Absconding recovers, matching how an
      * unserved notice has always been treated.
      */
+    /**
+     * The last working day may fall ON the notice period end date, never AFTER
+     * it. The notice end (notice start + the employee's notice period, counted
+     * in CALENDAR days — the same basis the wizard derives it on) is the last
+     * date the employee is on the books; a later last working day would have
+     * them working days they are no longer employed for, and it inflated the
+     * "days served" figure the notice settlement is priced on.
+     *
+     * Deliberately NOT enforced in three cases:
+     *   · No notice period applies (probation, or a resignation within
+     *     EARLY_EXIT_DAYS of joining) — there is no end date to cap against.
+     *   · The employee record carries no notice period, so nothing derives.
+     *   · The value is UNCHANGED from what is already stored. An approved
+     *     UNPAID leave during notice legitimately pushes the last working day
+     *     past the notice end (NoticePeriodGuard::applyExtension writes it
+     *     directly), and re-saving that case must not be refused for a date the
+     *     policy itself set. Mirrors the SPA, which likewise only validates a
+     *     date the user has actually touched.
+     */
+    private function assertLastWorkingDayWithinNotice(EmployeeExit $row, Employee $employee, $storedLwd): void
+    {
+        $lwd = $row->last_working_day;
+        if (!$lwd || !$row->notice_date) {
+            return;
+        }
+        $normalize = fn ($d) => $d ? \Carbon\Carbon::parse($d)->toDateString() : null;
+        if ($normalize($lwd) === $normalize($storedLwd)) {
+            return;   // untouched — see the extension carve-out above
+        }
+        if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $row->notice_date)) {
+            return;
+        }
+        $days = $this->noticePeriodDays($employee);
+        if ($days <= 0) {
+            return;
+        }
+
+        $end = \Carbon\Carbon::parse($row->notice_date)->startOfDay()->addDays($days);
+        if (\Carbon\Carbon::parse($lwd)->startOfDay()->gt($end)) {
+            abort(422, 'Last working day cannot be after the notice period end date ('
+                . $end->format('j M Y') . '). It may be the same day, or earlier.');
+        }
+    }
+
+    /**
+     * The employee's notice period in whole days. `notice_period_days` is often
+     * NULL while the human-readable `notice_period` holds "15 Days", so the
+     * label is parsed as a fallback — the same rule the SPA and
+     * ExitNoticePaymentController::noticeDays() use.
+     */
+    private function noticePeriodDays(Employee $employee): int
+    {
+        $n = $employee->notice_period_days;
+        if ($n !== null && $n !== '' && is_numeric($n)) {
+            return (int) $n;
+        }
+        return preg_match('/(\d+)/', (string) $employee->notice_period, $m) ? (int) $m[1] : 0;
+    }
+
     /**
      * Notice-period waiver — an employee on probation, or one who RESIGNED
      * within ProbationGuard::EARLY_EXIT_DAYS of joining, serves no notice

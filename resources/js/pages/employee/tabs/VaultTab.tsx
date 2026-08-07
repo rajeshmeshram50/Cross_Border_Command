@@ -1,8 +1,10 @@
 // Evidence Vault tab — Employee Documents (uploaded KYC/education/etc.) and
 // Organizational Documents (signed agreements/policies), with a sub-tab switch.
 // Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
+import { useMemo } from 'react';
 import { Card, Col, Row } from 'reactstrap';
-import { Shimmer, ShimmerTableRows } from '../../../components/ui/Shimmer';
+import { Shimmer } from '../../../components/ui/Shimmer';
+import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
 import { resolveFileUrl } from '../../../utils/resolveFileUrl';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
@@ -22,6 +24,161 @@ export default function VaultTab() {
     prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     employeeDocCount, organizationalDocCount,
   } = useEmployeeProfile();
+
+  /* Both vault tables are the shared DataTable now, so they carry the same
+     header band, sortable columns and "Showing X–Y of Z / Rows per page"
+     footer as Attendance, Leave, Holidays and Hiring Requests. The hand-rolled
+     tables they replace had no footer at all — the list just stopped after the
+     last row, with no count and no way to page (#45). */
+  const uploadedColumns = useMemo<DataTableColumn<any>[]>(() => [
+    {
+      id: 'document',
+      header: 'Document',
+      accessorFn: (d: any) => prettyDocKey(d.document_key),
+      meta: { width: 180 },
+      cell: info => <span className="fw-semibold">{String(info.getValue() ?? '')}</span>,
+    },
+    {
+      id: 'file_name',
+      header: 'File Name',
+      accessorFn: (d: any) => d.original_name || '',
+      meta: { width: 260 },
+      cell: info => {
+        const v = String(info.getValue() ?? '');
+        return <span className="text-muted vt-fname-cell" title={v}>{v || '—'}</span>;
+      },
+    },
+    {
+      id: 'size',
+      header: 'Size',
+      // Sort on the raw byte count, not the formatted "1.6 MB" string —
+      // otherwise 900 KB sorts above 1.6 MB.
+      accessorFn: (d: any) => Number(d.size_bytes) || 0,
+      meta: { width: 110 },
+      cell: info => <span className="font-monospace vt-mono-sm">{formatBytes(info.row.original.size_bytes)}</span>,
+    },
+    {
+      id: 'uploaded',
+      header: 'Uploaded',
+      // Same reason: sort on the timestamp, display the local date.
+      accessorFn: (d: any) => (d.uploaded_at ? new Date(d.uploaded_at).getTime() : 0),
+      meta: { width: 130 },
+      cell: info => {
+        const at = info.row.original.uploaded_at;
+        return <span className="font-monospace vt-mono-sm">{at ? new Date(at).toLocaleDateString() : '—'}</span>;
+      },
+    },
+    {
+      id: 'attachment',
+      header: 'Attachment',
+      enableSorting: false,
+      meta: { width: 120, wrap: true },
+      cell: info => {
+        const d = info.row.original;
+        return d.url
+          ? <a href={resolveFileUrl(d.url) || d.url} target="_blank" rel="noopener noreferrer" className="d-inline-flex align-items-center gap-1 text-decoration-none vt-open-link">
+              <i className="ri-file-text-line" /> Open
+            </a>
+          : <span className="text-muted">—</span>;
+      },
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      accessorFn: (d: any) => d.status || '',
+      // wrap: the cell is a pill, which is wider than its text — without this
+      // the table's default ellipsis paints a stray "…" past the pill's edge.
+      meta: { width: 130, wrap: true },
+      cell: info => {
+        const d = info.row.original;
+        const statusKey = d.status === 'verified' ? 'Verified'
+                        : d.status === 'rejected' ? 'Pending'   // surface rejected in amber
+                        : 'Uploaded';
+        const st = VAULT_STATUS_TONE[statusKey as keyof typeof VAULT_STATUS_TONE]
+                || { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' };
+        return (
+          <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase vt-status-badge"
+            title={d.status === 'rejected' ? (d.rejection_reason || 'Rejected') : undefined}
+            style={{
+              ['--vt-status-bg' as any]: d.status === 'rejected' ? '#fee2e2' : st.bg,
+              ['--vt-status-fg' as any]: d.status === 'rejected' ? '#b91c1c' : st.fg }}>
+            <span className="vt-status-dot" style={{ ['--vt-status-dot' as any]: d.status === 'rejected' ? '#ef4444' : st.dot }} /> {d.status}
+          </span>
+        );
+      },
+    },
+  ], [prettyDocKey, formatBytes]);
+
+  const signedColumns = useMemo<DataTableColumn<any>[]>(() => [
+    {
+      id: 'document',
+      header: 'Document',
+      accessorFn: (d: any) => d.template?.name || '',
+      meta: { width: 220 },
+      cell: info => <span className="fw-semibold">{info.row.original.template?.name || '(template removed)'}</span>,
+    },
+    {
+      id: 'code',
+      header: 'Code',
+      accessorFn: (d: any) => d.code || '',
+      meta: { width: 130, wrap: true },
+      cell: info => <code className="epv-code-badge">{info.row.original.code || '—'}</code>,
+    },
+    {
+      id: 'signers',
+      header: 'Signers',
+      enableSorting: false,
+      meta: { width: 260, wrap: true },
+      cell: info => {
+        const doc = info.row.original;
+        return (
+          <div className="d-flex flex-wrap gap-1">
+            {(doc.signers || []).slice(0, 3).map((s: any, j: number) => (
+              <span key={j} className={`epv-signer-tag ${s.status === 'Done' ? 'is-done' : 'is-pending'}`}>
+                {s.name}
+              </span>
+            ))}
+            {doc.signers && doc.signers.length > 3 && (
+              <span className="vt-signers-more">+{doc.signers.length - 3} more</span>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      id: 'completed',
+      header: 'Completed',
+      accessorFn: (d: any) => (d.updated_at ? new Date(d.updated_at).getTime() : 0),
+      meta: { width: 130 },
+      cell: info => (
+        <span className="font-monospace vt-mono-sm">
+          {info.row.original.updated_at ? new Date(info.row.original.updated_at).toLocaleDateString() : '—'}
+        </span>
+      ),
+    },
+    {
+      id: 'actions',
+      header: 'Actions',
+      enableSorting: false,
+      meta: { width: 230, wrap: true },
+      cell: info => {
+        const doc = info.row.original;
+        return (
+          <div className="d-flex gap-1">
+            <button type="button" className="epv-view-btn" onClick={() => setSignedPreview(doc)}>
+              <i className="ri-eye-line me-1" />View
+            </button>
+            <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}
+              className="vt-download-btn" disabled={downloadingDocId === doc.id}>
+              {downloadingDocId === doc.id
+                ? (<><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>)
+                : (<><i className="ri-file-pdf-2-line me-1" />Download PDF</>)}
+            </button>
+          </div>
+        );
+      },
+    },
+  ], [setSignedPreview, downloadSignedPdf, downloadingDocId]);
 
   return (
         // Fill the profile content pane's full height so the active document
@@ -146,64 +303,22 @@ export default function VaultTab() {
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
-                <div className="table-responsive border rounded ep-att-scroll-wrap flex-grow-1">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead>
-                      <tr>
-                        {['SR', 'Document', 'File Name', 'Size', 'Uploaded', 'Attachment', 'Status'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {uploadedLoading ? (
-                        <ShimmerTableRows rows={4} cols={7} keyPrefix="uploaded-shim" />
-                      ) : uploadedDocs.length === 0 ? (
-                        <tr><td colSpan={7} className="vt-empty-cell">
-                          <i className="ri-inbox-line vt-empty-icon" />
-                          No uploaded documents yet. Files attached during onboarding will land here.
-                        </td></tr>
-                      ) : (
-                        uploadedDocs.map((d, idx) => {
-                          const statusKey = d.status === 'verified' ? 'Verified'
-                                          : d.status === 'rejected' ? 'Pending'   // surface rejected in amber
-                                          : 'Uploaded';
-                          const st = VAULT_STATUS_TONE[statusKey as keyof typeof VAULT_STATUS_TONE]
-                                  || { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' };
-                          return (
-                            <tr key={d.id}>
-                              <td className="text-muted">{idx + 1}</td>
-                              <td className="fw-semibold">{prettyDocKey(d.document_key)}</td>
-                              <td className="text-muted vt-fname-cell" title={d.original_name || ''}>
-                                {d.original_name || '—'}
-                              </td>
-                              <td className="font-monospace vt-mono-sm">{formatBytes(d.size_bytes)}</td>
-                              <td className="font-monospace vt-mono-sm">
-                                {d.uploaded_at ? new Date(d.uploaded_at).toLocaleDateString() : '—'}
-                              </td>
-                              <td>
-                                {d.url
-                                  ? <a href={resolveFileUrl(d.url) || d.url} target="_blank" rel="noopener noreferrer" className="d-inline-flex align-items-center gap-1 text-decoration-none vt-open-link">
-                                      <i className="ri-file-text-line" /> Open
-                                    </a>
-                                  : <span className="text-muted">—</span>}
-                              </td>
-                              <td>
-                                <span className="d-inline-flex align-items-center gap-1 fw-semibold text-uppercase vt-status-badge"
-                                  title={d.status === 'rejected' ? (d.rejection_reason || 'Rejected') : undefined}
-                                  style={{
-                                    ['--vt-status-bg' as any]: d.status === 'rejected' ? '#fee2e2' : st.bg,
-                                    ['--vt-status-fg' as any]: d.status === 'rejected' ? '#b91c1c' : st.fg }}>
-                                  <span className="vt-status-dot" style={{ ['--vt-status-dot' as any]: d.status === 'rejected' ? '#ef4444' : st.dot }} /> {d.status}
-                                </span>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  data={uploadedDocs}
+                  columns={uploadedColumns}
+                  serial={{ header: 'SR' }}
+                  accent="violet"
+                  pageSize={10}
+                  minWidth={1130}
+                  loading={uploadedLoading}
+                  searchPlaceholder="Search document, file name…"
+                  emptyMessage={
+                    <>
+                      <i className="ri-inbox-line vt-empty-icon" />
+                      No uploaded documents yet. Files attached during onboarding will land here.
+                    </>
+                  }
+                />
               </div>
             </div>
           )}
@@ -253,65 +368,22 @@ export default function VaultTab() {
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
-                <div className="table-responsive border rounded ep-att-scroll-wrap flex-grow-1">
-                  <table className="table align-middle table-nowrap ep-att-table mb-0">
-                    <thead>
-                      <tr>
-                        {['SR', 'Document', 'Code', 'Signers', 'Completed', 'Actions'].map(h => (
-                          <th key={h}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {signedLoading ? (
-                        <ShimmerTableRows rows={3} cols={6} keyPrefix="signed-shim" />
-                      ) : signedDocs.length === 0 ? (
-                        <tr><td colSpan={6} className="vt-empty-cell">
-                          <i className="ri-inbox-line vt-empty-icon" />
-                          No signed documents yet. Completed workflows will land here automatically.
-                        </td></tr>
-                      ) : (
-                        signedDocs.map((doc, i) => (
-                          <tr key={doc.id}>
-                            <td className="text-muted">{i + 1}</td>
-                            <td className="fw-semibold">{doc.template?.name || '(template removed)'}</td>
-                            <td>
-                              <code className="epv-code-badge">{doc.code || '—'}</code>
-                            </td>
-                            <td>
-                              <div className="d-flex flex-wrap gap-1">
-                                {(doc.signers || []).slice(0, 3).map((s: any, j: number) => (
-                                  <span key={j} className={`epv-signer-tag ${s.status === 'Done' ? 'is-done' : 'is-pending'}`}>
-                                    {s.name}
-                                  </span>
-                                ))}
-                                {doc.signers && doc.signers.length > 3 && (
-                                  <span className="vt-signers-more">+{doc.signers.length - 3} more</span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="font-monospace vt-mono-sm">
-                              {new Date(doc.updated_at).toLocaleDateString()}
-                            </td>
-                            <td>
-                              <div className="d-flex gap-1">
-                                <button type="button" className="epv-view-btn" onClick={() => setSignedPreview(doc)}>
-                                  <i className="ri-eye-line me-1" />View
-                                </button>
-                                <button type="button" onClick={() => downloadSignedPdf(doc.id, doc.code)}
-                                  className="vt-download-btn" disabled={downloadingDocId === doc.id}>
-                                  {downloadingDocId === doc.id
-                                    ? (<><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>)
-                                    : (<><i className="ri-file-pdf-2-line me-1" />Download PDF</>)}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  data={signedDocs}
+                  columns={signedColumns}
+                  serial={{ header: 'SR' }}
+                  accent="violet"
+                  pageSize={10}
+                  minWidth={1030}
+                  loading={signedLoading}
+                  searchPlaceholder="Search document, code, signer…"
+                  emptyMessage={
+                    <>
+                      <i className="ri-inbox-line vt-empty-icon" />
+                      No signed documents yet. Completed workflows will land here automatically.
+                    </>
+                  }
+                />
               </div>
             </div>
           )}

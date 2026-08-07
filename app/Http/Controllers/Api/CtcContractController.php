@@ -867,6 +867,7 @@ class CtcContractController extends Controller
             'renewal_type'       => 'nullable|string|max:16',
             'content'            => 'nullable|string',
             'header_config'      => 'nullable|array',
+            'page_config'        => 'nullable|array',
             'footer_config'      => 'nullable|array',
             'approvers'          => 'nullable|array',
             'days_to_approve'    => 'nullable|integer',
@@ -928,6 +929,7 @@ class CtcContractController extends Controller
                 'renewal_type'       => $data['renewal_type'] ?? null,
                 'content'            => $data['content'] ?? null,
                 'header_config'      => $data['header_config'] ?? null,
+                'page_config'        => $data['page_config'] ?? null,
                 'footer_config'      => $data['footer_config'] ?? null,
                 'approvers'          => $approvers->all(),
                 'approver_emails'    => $approvers->pluck('email')->filter()->values()->all(),
@@ -960,6 +962,7 @@ class CtcContractController extends Controller
             'agreement_type' => 'nullable|string|max:255',
             'content'        => 'nullable|string',
             'header_config'  => 'nullable|array',
+            'page_config'    => 'nullable|array',
             'footer_config'  => 'nullable|array',
             'counterparties' => 'nullable|array',
             'eff_date'       => 'nullable|date',
@@ -1137,6 +1140,7 @@ class CtcContractController extends Controller
             'title'          => 'sometimes|string|max:255',
             'agreement_type' => 'nullable|string|max:255',
             'header_config'  => 'nullable|array',
+            'page_config'    => 'nullable|array',
             'footer_config'  => 'nullable|array',
             // Full-edit fields — sent by the add/edit form's "Update & Send for
             // Approval"; absent on the lighter rejected/declined resubmit.
@@ -1160,6 +1164,7 @@ class CtcContractController extends Controller
         if (array_key_exists('title', $data))           $row->title = $data['title'];
         if (array_key_exists('agreement_type', $data))  $row->agreement_type = $data['agreement_type'];
         if (array_key_exists('header_config', $data))   $row->header_config = $data['header_config'];
+        if (array_key_exists('page_config', $data))     $row->page_config   = $data['page_config'];
         if (array_key_exists('footer_config', $data))   $row->footer_config = $data['footer_config'];
         if (array_key_exists('counterparties', $data))  $row->counterparties = $data['counterparties'] ?? [];
         if (array_key_exists('eff_date', $data))         $row->eff_date = $data['eff_date'];

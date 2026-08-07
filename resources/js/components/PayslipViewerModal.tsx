@@ -74,6 +74,23 @@ const MONTH_ABBR_TO_FULL: Record<string, string> = {
 };
 
 /**
+ * Last calendar day of a month — 30 for June, 28/29 for February, 31 otherwise.
+ * The payslip header hardcoded "01–31" for every month, so June read
+ * "01–31 Jun" and February "01–31 Feb".
+ *
+ * `new Date(y, monthIndex + 1, 0)` is day ZERO of the FOLLOWING month, which
+ * JS normalises to the last day of the one asked for — and it gets leap years
+ * right on its own (Feb 2028 → 29). Falls back to 31 only when the month name
+ * can't be resolved, which is the old behaviour and never worse than it.
+ */
+const lastDayOfMonth = (fullMonth: string, year: number | string): number => {
+  const idx = MONTH_FULL.indexOf(fullMonth as typeof MONTH_FULL[number]);
+  const y = Number(year);
+  if (idx < 0 || !Number.isFinite(y)) return 31;
+  return new Date(y, idx + 1, 0).getDate();
+};
+
+/**
  * Standalone payslip viewer modal — same visual + interaction model as the
  * one shipped inside EmployeeProfile, extracted so the HR Payroll page (and
  * any future caller) can render it without duplicating markup.
@@ -239,22 +256,29 @@ export default function PayslipViewerModal({
      zero-state only survives for a slip generated BEFORE that change, or one
      whose run is locked and can't recompute. */
   const otKpiHours = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
-  const otUnpaid   = overtimeApplicable && overtimeAmount <= 0 && overtimeDetectedHours > 0;
-  const showOt     = overtimeApplicable && !hasOtLine && (overtimeAmount > 0 || otUnpaid);
   const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
   const otHoursLabel = num(otKpiHours);
+
+  /* Overtime is NOT approval-gated — detected hours are paid. When a slip
+     carries hours but no amount (generated before that rule, or in a locked
+     run that can't recompute), price them here from the same inputs the engine
+     uses rather than telling HR to regenerate the run: the allowance is what
+     they came to see, and a prompt to re-run payroll is a chore, not an answer.
+     Falls back to the stored amount whenever the engine already priced it. */
+  const otPricedAmount = overtimeAmount > 0
+    ? overtimeAmount
+    : Math.round(otKpiHours * (overtimeRate || 0) * (overtimeMultiplier || 1) * 100) / 100;
+  const showOt = overtimeApplicable && !hasOtLine && (otPricedAmount > 0 || otKpiHours > 0);
+
   // Spell the pricing out next to the line so the figure is checkable by hand.
-  const otWorkings = otUnpaid
-    // Stale slip: regenerate the run to pick the overtime up.
-    ? `${num(overtimeDetectedHours)} hr detected in attendance · regenerate this payroll run to include it.`
-    : [
-        overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
-        overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
-        `${num(overtimeHours)} hr`,
-      ].filter(Boolean).join(' · ');
+  const otWorkings = [
+    overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
+    overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
+    `${otHoursLabel} hr`,
+  ].filter(Boolean).join(' · ');
 
   const shownEarnings = showOt
-    ? [...earnings, { label: 'Overtime Allowance', amount: overtimeAmount }]
+    ? [...earnings, { label: 'Overtime Allowance', amount: otPricedAmount }]
     : earnings;
 
   const totalEarnings   = shownEarnings.reduce((s, r) => s + r.amount, 0);
@@ -385,7 +409,7 @@ export default function PayslipViewerModal({
                   <div className="text-end">
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
                     <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 17 }}>{month} {year}</h4>
-                    <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Pay Period: 01–31 {month.slice(0,3)} {year}</small>
+                    <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Pay Period: 01–{lastDayOfMonth(month, year)} {month.slice(0,3)} {year}</small>
                   </div>
                 </div>
 

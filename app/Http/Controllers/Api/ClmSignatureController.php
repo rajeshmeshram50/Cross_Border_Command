@@ -1316,6 +1316,9 @@ class ClmSignatureController extends Controller
             'signers'          => $signers,
             'client'           => $client,
             'headerConfig'     => $headerConfig,
+            // Per-document page setup (left/right margin). Empty for rows saved
+            // before it existed — the blade falls back to the original 25px.
+            'pageConfig'       => is_array($c->page_config ?? null) ? $c->page_config : [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])->setPaper('a4')->setOption('isPhpEnabled', true);
@@ -1889,6 +1892,9 @@ class ClmSignatureController extends Controller
             'signers'          => $signers ?? [],
             'client'           => $client,
             'headerConfig'     => $headerConfig,
+            // Agreement-library / trade-document renders have no per-document
+            // page setup of their own — the blade's 25px default applies.
+            'pageConfig'       => [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])
@@ -2636,6 +2642,9 @@ class ClmSignatureController extends Controller
             'signers'          => $signers ?? [],
             'client'           => $client,
             'headerConfig'     => $headerConfig,
+            // Agreement-library / trade-document renders have no per-document
+            // page setup of their own — the blade's 25px default applies.
+            'pageConfig'       => [],
             'footerConfig'     => $footerConfig,
             'headerLogoBase64' => $headerLogoBase64,
         ])
