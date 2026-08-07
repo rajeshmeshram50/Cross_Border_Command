@@ -42,6 +42,14 @@
   $headerShowLogo   = array_key_exists('show_logo',  $hcfg) ? (bool) $hcfg['show_logo']  : true;
   $headerShowTitle  = array_key_exists('show_title', $hcfg) ? (bool) $hcfg['show_title'] : true;
   $headerLogoHeight = (int) ($hcfg['logo_height'] ?? 62);
+
+  /* Left/right page margin, chosen per document (page_config.margin_x).
+     Clamped: dompdf will happily accept 0 or 300 and produce a document whose
+     text runs into the footer band or collapses to a ribbon. 25px is what every
+     document used before this became configurable, so an unset value keeps
+     rendering exactly as it did. */
+  $pcfg    = is_array($pageConfig ?? null) ? $pageConfig : [];
+  $marginX = (int) max(10, min(60, $pcfg['margin_x'] ?? 25));
   // dompdf has no support for the % free-drag positions HeaderFooterPanel
   // emits — collapse them into a simple left/right 2-col header keyed off
   // the logo's horizontal position (logo_pos.x ≤ 50 → logo on the left).
@@ -93,8 +101,8 @@
            band painted in the page_text script) keeps content off the footer. */
         margin-bottom: 92px;
         margin-top: 25px;
-        margin-left: 25px;
-        margin-right: 25px;
+        margin-left: {{ $marginX }}px;
+        margin-right: {{ $marginX }}px;
       }
 
       /* FOOTER — fixed at the bottom of every page. Background / colour
@@ -135,6 +143,13 @@
       }
 
       .no-page-break { page-break-inside: avoid; }
+      /* Explicit break emitted by the editor's Page Break button. The div is
+         zero-height and invisible in print; only the instruction matters. */
+      .document-content div.page-break,
+      .document-content div[data-page-break] {
+        page-break-after: always;
+        height: 0; margin: 0; padding: 0; border: 0; line-height: 0;
+      }
 
       table { border-collapse: collapse; width: 100%; }
 

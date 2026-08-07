@@ -1257,7 +1257,7 @@ function Stage1(p: {
                     </div>}
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <CtcEditorContent editor={ctcEd.editor} />
+                    <CtcEditorContent editor={ctcEd.editor} pageView />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
