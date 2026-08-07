@@ -51,6 +51,7 @@ export type AdvanceRequestRow = {
   // Follow-through status (drives the action button when settlement is done).
   settle_type?: 'equal' | 'return' | 'reimburse' | null;
   settle_balance?: number;
+  settle_approval_status?: 'pending' | 'approved' | 'rejected' | null;
   settle_returned_at?: string | null;
   settle_return_scheduled_at?: string | null;
   settle_reimbursed?: boolean;
@@ -363,10 +364,17 @@ export function advanceRequestColumns({
         if (isCompany) {
           const paid = r.status === 'approved' && (r.settlement_status ?? 'unpaid') === 'paid';
           if (!paid) return <span className="text-muted">—</span>;
-          // Company: settled by the employee (accounted the company-paid amount).
-          return r.employee_settled_at
-            ? pillEl('ri-checkbox-circle-line', 'Completed', '#d6f4e3', '#108548')
-            : pillEl('ri-time-line', 'Pending', '#fde8c4', '#a4661c');
+          // Company: employee settles the usage → branch/HR approve → done.
+          if (r.settle_approval_status === 'rejected') {
+            return pillEl('ri-close-circle-line', 'Reopened', '#fee2e2', '#b91c1c');
+          }
+          if (r.settle_approval_status === 'pending') {
+            return pillEl('ri-time-line', 'In review', '#eef2ff', '#3730a3');
+          }
+          if (r.settle_approval_status === 'approved' || r.employee_settled_at) {
+            return pillEl('ri-checkbox-circle-line', 'Approved', '#d6f4e3', '#108548');
+          }
+          return pillEl('ri-time-line', 'To settle', '#fde8c4', '#a4661c');
         }
         // Self: recovered from salary per the EMI schedule. Until payroll finishes
         // recovering it, it's "Recovering"; flips to Recovered once fully cut.

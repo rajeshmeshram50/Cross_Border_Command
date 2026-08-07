@@ -68,6 +68,10 @@ type Summary = {
   employee_id?: number | null;
   used_for?: 'self' | 'company' | string;
   employee_settled_at?: string | null;
+  // Settlement approval gate — branch/HR approve the usage before payout.
+  settle_approval_status?: 'pending' | 'approved' | 'rejected' | null;
+  settle_approval_comment?: string | null;
+  settle_approved_at?: string | null;
   settle_actual_amount?: number | null;
   settle_type?: 'equal' | 'return' | 'reimburse' | null;
   settle_balance?: number;
@@ -139,6 +143,7 @@ const IcoPlus = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none
 export default function ExpenseSettlementModal({
   claimId, onClose, onDone, readOnly = false, review = false,
   basePath = '/expense-claims', kind = 'expense', allowSettle = false,
+  canApproveSettle = false,
   onRaiseReimbursement,
 }: {
   claimId: number | null;
@@ -160,6 +165,9 @@ export default function ExpenseSettlementModal({
   /** Employee viewing their OWN company advance — enables the "Settlement"
    *  section's usage form (itemised amount + reason + proof) so they can settle. */
   allowSettle?: boolean;
+  /** Branch/HR viewer may approve or reject a pending employee settlement
+   *  (advances only). Enables the Approve / Reject Settlement controls. */
+  canApproveSettle?: boolean;
   /** When set, "Raise Expense" for a reimburse settlement opens the real
    *  Expense Claim form (pre-filled + amount-capped) instead of auto-creating.
    *  Provided by the Employee Profile where that form lives. */
@@ -238,6 +246,7 @@ export default function ExpenseSettlementModal({
   const [settleTargetTmp, setSettleTargetTmp] = useState(''); // in the choose popup
   const [settleFinalizeAsk, setSettleFinalizeAsk] = useState(false);
   const [raising, setRaising] = useState(false);
+  const [settleApprovSaving, setSettleApprovSaving] = useState(false);
   // "Make Payment" (return) — mode choice (direct/payroll) + instalment form.
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnMode, setReturnMode] = useState<'' | 'direct' | 'payroll'>('');
@@ -521,6 +530,12 @@ export default function ExpenseSettlementModal({
   // Settlement is incremental: bills accumulate across saves; the advance is
   // only LOCKED once finalised. `alreadySettled` = finalised (read-only).
   const alreadySettled = !!summary?.employee_settled_at;
+  // Settlement approval gate: a finalised settlement waits for branch/HR
+  // approval before the return / reimburse / close is unlocked.
+  const settleApprovalStatus = summary?.settle_approval_status ?? null;
+  const settlePendingApproval = alreadySettled && settleApprovalStatus === 'pending';
+  const settleApproved        = alreadySettled && settleApprovalStatus === 'approved';
+  const settleRejected        = settleApprovalStatus === 'rejected'; // reopened (employee_settled_at cleared)
   const existingSettleItems = summary?.settle_items ?? [];
   const existingSettleTotal = +existingSettleItems.reduce((s, it) => s + (Number(it.amount) || 0), 0).toFixed(2);
   const settleInProgress = !alreadySettled && existingSettleItems.length > 0;
@@ -630,6 +645,35 @@ export default function ExpenseSettlementModal({
     } catch (e: any) {
       toast.error('Could not raise reimbursement', e?.response?.data?.message ?? 'Please try again.');
     } finally { setRaising(false); }
+  };
+
+  // Branch/HR: approve or reject the employee's finalised settlement. Approving
+  // unlocks the return/reimburse/close; rejecting reopens it for a re-settle.
+  const approveSettle = async () => {
+    if (claimId == null || settleApprovSaving) return;
+    setSettleApprovSaving(true);
+    try {
+      const { data: r } = await api.post(`${basePath}/${claimId}/settle-approve`, {});
+      toast.success('Settlement approved', r?.message ?? 'The settlement has been approved.');
+      onDone();
+      setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+    } catch (e: any) {
+      toast.error('Could not approve', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSettleApprovSaving(false); }
+  };
+  const rejectSettle = async () => {
+    if (claimId == null || settleApprovSaving) return;
+    const comment = (window.prompt('Reason for rejecting this settlement (the employee will see it):') || '').trim();
+    if (!comment) { toast.error('Reason required', 'Add a short reason so the employee can fix the settlement.'); return; }
+    setSettleApprovSaving(true);
+    try {
+      const { data: r } = await api.post(`${basePath}/${claimId}/settle-reject`, { comment });
+      toast.success('Settlement rejected', r?.message ?? 'Reopened for the employee to re-settle.');
+      onDone();
+      setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+    } catch (e: any) {
+      toast.error('Could not reject', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSettleApprovSaving(false); }
   };
 
   // Prefer opening the real Expense Claim form (profile) when available;
@@ -1397,9 +1441,43 @@ export default function ExpenseSettlementModal({
               </div>
               )}
 
+              {/* ── Settlement approval gate — the finalised usage waits for a
+                  branch admin / HR to approve before any return/reimburse. ── */}
+              {showSettleSection && settlePendingApproval && (
+                <div className="esm-sec">
+                  <div className="esm-sec-hd">
+                    <div className="esm-sec-l">
+                      <span className="esm-sec-ico" style={{ background: '#fef3c7', color: '#a16207' }}><i className="ri-time-line" /></span>
+                      <div className="esm-sec-tt">
+                        <div className="esm-sec-title-row"><span className="esm-sec-tag">Settlement</span><span className="esm-sec-div">|</span><span className="esm-sec-title">Awaiting approval</span></div>
+                        <div className="esm-sec-sub">Total used {inr(summary?.settle_actual_amount ?? 0)}{summary?.settle_type === 'return' ? ` · ${inr(summary?.settle_balance ?? 0)} to return once approved` : summary?.settle_type === 'reimburse' ? ` · ${inr(summary?.settle_balance ?? 0)} to reimburse once approved` : ' · matches the advance'}</div>
+                      </div>
+                    </div>
+                    {canApproveSettle && (
+                      <div className="esm-sec-hd-actions" style={{ gap: 8 }}>
+                        <button type="button" className="esm-btn-approve" disabled={settleApprovSaving} onClick={approveSettle}><i className="ri-check-line" /> {settleApprovSaving ? 'Saving…' : 'Approve Settlement'}</button>
+                        <button type="button" className="esm-btn-ghost" disabled={settleApprovSaving} onClick={rejectSettle}><i className="ri-close-line" /> Reject</button>
+                      </div>
+                    )}
+                  </div>
+                  {!canApproveSettle && (
+                    <div className="esm-sec-body"><div className="esm-hint"><i className="ri-information-line" /> Your settlement is with a branch admin / HR. Once approved you can {summary?.settle_type === 'return' ? 'return the balance' : summary?.settle_type === 'reimburse' ? 'raise the reimbursement' : 'close it'}.</div></div>
+                  )}
+                </div>
+              )}
+              {showSettleSection && settleRejected && (
+                <div className="esm-sec">
+                  <div className="esm-sec-body">
+                    <div className="esm-reimb-done" style={{ background: '#fee2e2', borderColor: '#fecaca', color: '#b91c1c' }}>
+                      <i className="ri-close-circle-line" /> <span>Settlement rejected{summary?.settle_approval_comment ? `: ${summary.settle_approval_comment}` : ''}. Review the bills above and submit again.</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ── Settlement payout — return only (make payment). Reimburse is
                   handled in the Settle Advance / finalise flow, not here. ── */}
-              {showSettleSection && alreadySettled && summary?.settle_type === 'return' && (summary?.settle_balance ?? 0) > 0 && (
+              {showSettleSection && settleApproved && summary?.settle_type === 'return' && (summary?.settle_balance ?? 0) > 0 && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div className="esm-sec-l">
@@ -1501,7 +1579,7 @@ export default function ExpenseSettlementModal({
               )}
 
               {/* ── Raised Expense (reimburse follow-through) ── */}
-              {showSettleSection && alreadySettled && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
+              {showSettleSection && settleApproved && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div className="esm-sec-l">

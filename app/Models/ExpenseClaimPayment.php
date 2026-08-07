@@ -18,7 +18,7 @@ class ExpenseClaimPayment extends Model
     protected $table = 'expense_claim_payments';
 
     protected $fillable = [
-        'client_id', 'branch_id', 'expense_claim_id',
+        'client_id', 'branch_id', 'expense_claim_id', 'batch_payment_id',
         'amount', 'category_id', 'category_name',
         'payment_type', 'expense_type', 'note',
         'proof_path', 'proof_name',

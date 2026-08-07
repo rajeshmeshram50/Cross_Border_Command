@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
+import BatchPaymentModal from '../../components/BatchPaymentModal';
 import { advanceRequestColumns, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
@@ -147,6 +148,7 @@ export default function HrExpenseManagement() {
   const [advanceRows, setAdvanceRows] = useState<AdvanceRequestRow[]>([]);
   const [advanceLoading, setAdvanceLoading] = useState(false);
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
+  const [batchOpen, setBatchOpen] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
@@ -611,6 +613,17 @@ export default function HrExpenseManagement() {
           placeholder="All Dates"
         />
       </div>
+      {module === 'expense' && canHrApprove && (
+        <button
+          type="button"
+          className="hrexp-cta rounded-pill"
+          onClick={() => setBatchOpen(true)}
+          title="Pay several small approved claims of one employee at once"
+        >
+          <i className="ri-stack-line me-2" style={{ fontSize: 16 }} />
+          Batch Payment
+        </button>
+      )}
       <button
         ref={exportBtnRef}
         type="button"
@@ -1030,6 +1043,9 @@ export default function HrExpenseManagement() {
         )}
       </div>
 
+      {/* Consolidated (batch) payment — settle several small approved claims at once. */}
+      <BatchPaymentModal open={batchOpen} onClose={() => setBatchOpen(false)} onDone={refresh} />
+
       {/* Record Payment (settlement) for an approved claim — partial payments supported. */}
       <ExpenseSettlementModal
         claimId={settleClaimId}
@@ -1052,6 +1068,7 @@ export default function HrExpenseManagement() {
         claimId={settleAdvId}
         basePath="/advance-requests"
         kind="advance"
+        canApproveSettle={canHrApprove}
         onClose={() => { setSettleAdvId(null); refreshAdvances(); }}
         onDone={refreshAdvances}
       />
@@ -1060,6 +1077,7 @@ export default function HrExpenseManagement() {
         basePath="/advance-requests"
         kind="advance"
         review
+        canApproveSettle={canHrApprove}
         onClose={() => { setReviewAdvId(null); refreshAdvances(); }}
         onDone={refreshAdvances}
       />

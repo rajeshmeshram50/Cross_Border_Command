@@ -330,24 +330,36 @@ $effectiveWorkingDays = round(period.working_days * proration, 2)
 2. Exit LWD before period start → excluded.
 3. Exit LWD inside the period → included but pro-rated (Rule 6) — then handled by FnF for the remainder.
 
-### RULE 7a — Early exit (within 15 days of joining) ✅
+### RULE 7a — Early exit (resigned within 15 days of joining) ✅
 
-**Rule:** An employee who leaves **within 15 days of joining** is not put through payroll at all — no payslip, not counted in the run.
+**Rule:** An employee who **resigns within 15 days of joining** is not put through payroll at all — no payslip, not counted in the run. The same 15-day window also waives their **notice period** entirely (see the Exit module).
 
-**Code:** `PayrollService::eligibleEmployees()` → `ProbationGuard::isEarlyExit()`; reported by `PayrollService::payrollExclusions()`.
+**Code:** `PayrollService::eligibleEmployees()` → `ProbationGuard::isEarlyExit()`; reported by `PayrollService::payrollExclusions()`. The notice half is `ProbationGuard::noticePeriodApplies()`.
 
-- Tenure counts the **joining day itself**: joined 1 Aug, LWD 15 Aug = **15 days → skipped**; LWD 16 Aug = 16 days → **paid normally**.
+- Triggered by **either** date: the **resignation (notice) date** — the policy's own trigger, so an exit still *in progress* with no last working day agreed is already excluded — or the **last working day**, kept as a fallback for terminations and legacy cases with no notice date.
+- Tenure counts the **joining day itself**: joined 1 Aug, resigned 15 Aug = **15 days → skipped**; 16 Aug = 16 days → **paid normally**.
 - Threshold is `ProbationGuard::EARLY_EXIT_DAYS` (15).
-- No last working day on file, or an LWD *before* joining → rule does not apply.
-- The status filter does **not** hide them from `payrollExclusions()` — an early leaver is normally already stamped `Resigned`.
-- Skipped employees are surfaced on `GET /payroll/preflight` under `excluded[]` (employee, joining date, LWD, tenure, reason) so HR sees a deliberate skip rather than a missing person.
+- Neither date on file, or a date *before* joining → rule does not apply.
+- The status filter does **not** hide them from `payrollExclusions()` — an early leaver is normally already stamped `Resigned`, and one mid-exit is still `Notice Period`/`Active`.
+- Skipped employees are surfaced on `GET /payroll/preflight` under `excluded[]` (employee, joining date, resignation date, LWD, tenure, reason) so HR sees a deliberate skip rather than a missing person. `last_working_day` is **null** when the early exit is still in progress.
+- **A run generated before the exit was recorded still holds the old payslip** — regenerate the draft run to drop them (a locked period is not rewritten).
+- **Pending leave is never touched.** Resigning, being excluded from payroll, completing the exit and having the login disabled all leave a `Pending` leave request exactly as it is — it is not auto-approved, auto-rejected or auto-cancelled. Every write to `leave_requests.status` lives in `LeaveRequestController` (raise / cancel / approve / reject); `ExitController` and `PayrollService` never write it, and `LeaveRequest` has no model observers. Payroll only ever *reads* `status = 'Approved'` leave (`PayrollService::leaveDays()`), so a pending row cannot affect a payslip either.
 
 | TC | Input | Expected | Result |
 |---|---|---|---|
 | G1 | Join 1 Aug, exit LWD 10 Aug | no payslip; listed in preflight `excluded[]` with "10 day(s)" | ☐ |
 | G2 | Join 1 Aug, exit LWD **15 Aug** (boundary) | **skipped** | ☐ |
 | G3 | Join 1 Aug, exit LWD **16 Aug** (boundary) | **paid** (pro-rated per Rule 6), not in `excluded[]` | ☐ |
-| G4 | Join 1 Aug, no exit record | paid normally | ☐ |
+| G4 | Join 1 Aug, resigned 8 Aug, exit **in progress**, no LWD set | **skipped**; in `excluded[]` with "8 day(s)", `last_working_day: null` | ☐ |
+| G5 | Join 1 Aug, resigned 8 Aug, LWD set to 20 Aug | **skipped** — the resignation date is inside the window even though the LWD is not | ☐ |
+| G6 | Join 1 Aug, resigned **16 Aug** (boundary), LWD 20 Aug | **paid**; notice period applies normally | ☐ |
+| G7 | Join 24 Jul, resigned 7 Aug → open/reopen the **January** cycle | **not** in `excluded[]` — they had not joined by 31 Jan, so January never expected them | ☐ |
+| G8 | Same employee, open the **July** and **August** cycles | **is** in `excluded[]` on both — joined in July, exited in August | ☐ |
+| G9 | LWD before the period start (left in June, open August) | **not** in `excluded[]` — belongs to an earlier cycle | ☐ |
+| G10 | Employee has a **Pending** leave, then resigns within 15 days | leave stays **Pending** — visible unchanged in HR Leave + the RM's approval queue | ☐ |
+| G11 | G10, then run payroll for that cycle | employee excluded from the run; leave **still Pending**, no payslip impact | ☐ |
+| G12 | G10, then complete the exit (login disabled, status → Resigned) | leave **still Pending** — not auto-rejected or auto-cancelled by closing the case | ☐ |
+| G13 | Join 1 Aug, no exit record | paid normally | ☐ |
 | G5 | Exit LWD earlier than the joining date (bad data) | rule does not fire; employee still processed | ☐ |
 
 ---

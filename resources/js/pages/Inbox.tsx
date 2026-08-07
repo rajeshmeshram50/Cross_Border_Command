@@ -7,6 +7,7 @@ import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows, Shimmer } from '../components/ui/Shimmer';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
+
 import ExpenseSettlementModal from '../components/ExpenseSettlementModal';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -1279,6 +1280,7 @@ export default function Inbox() {
           basePath="/advance-requests"
           kind="advance"
           review
+          canApproveSettle
           onClose={() => setReviewItem(null)}
           onDone={() => { setReviewItem(null); loadExpenses(); }}
         />

@@ -89,3 +89,35 @@ export const probationLeaveMessage = (probationEndDate?: string | null): string 
   const until = probationEndLabel(probationEndDate);
   return `You are on probation and cannot apply for leave.${until ? ` Leave can be applied from ${until}.` : ''}`;
 };
+
+/* ── Early exit ───────────────────────────────────────────────────────────
+   Mirrors ProbationGuard::EARLY_EXIT_DAYS / isEarlyResignation — keep the two
+   in step. An employee who RESIGNS within 15 days of joining:
+     · serves no notice period (nothing recovered, nothing paid in lieu), and
+     · is not put through payroll at all (enforced in PayrollService).
+   This stands on its own rather than riding on probation: a "No Probation"
+   hire has no probation end date, and would otherwise be charged a full
+   notice period for quitting on day 8.                                      */
+
+export const EARLY_EXIT_DAYS = 15;
+
+/**
+ * Whole days from joining to `endDate`, counting the joining day itself
+ * (joined 1st, resigned 15th = 15 days). Null when either date is missing or
+ * the end date precedes joining.
+ */
+export const tenureDays = (joinDate?: string | null, endDate?: string | null): number | null => {
+  const join = String(joinDate ?? '').slice(0, 10);
+  const end  = String(endDate ?? '').slice(0, 10);
+  if (!join || !end) return null;
+  const a = new Date(join + 'T00:00:00').getTime();
+  const b = new Date(end + 'T00:00:00').getTime();
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return null;
+  return Math.round((b - a) / 86400000) + 1;
+};
+
+/** Resigned within EARLY_EXIT_DAYS of joining → the notice period is waived. */
+export const isEarlyResignation = (joinDate?: string | null, resignationDate?: string | null): boolean => {
+  const t = tenureDays(joinDate, resignationDate);
+  return t !== null && t <= EARLY_EXIT_DAYS;
+};

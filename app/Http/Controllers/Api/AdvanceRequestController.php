@@ -201,6 +201,17 @@ class AdvanceRequestController extends Controller
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true) && empty($data['recovery_months'])) {
             abort(422, 'Number of instalments is required for EMI / Bi-Monthly recovery.');
         }
+        // A single instalment can never exceed the advance itself — equal (a
+        // one-month recovery) is fine, more is not. Guards against a direct API
+        // call slipping a monthly_emi larger than the amount past the UI.
+        if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)
+            && (float) ($data['monthly_emi'] ?? 0) > (float) $data['amount'] + 0.005) {
+            return response()->json([
+                'message' => 'The monthly instalment ₹' . number_format((float) $data['monthly_emi'], 2)
+                    . ' cannot exceed the advance amount ₹' . number_format((float) $data['amount'], 2) . '.',
+                'errors'  => ['monthly_emi' => ['Instalment can be equal to the advance amount, but not more.']],
+            ], 422);
+        }
         if ($data['advance_type'] === 'Other' && empty($data['advance_type_other'])) {
             abort(422, 'Please specify the advance type when "Other" is selected.');
         }
@@ -698,6 +709,10 @@ class AdvanceRequestController extends Controller
             'settle_balance'       => (float) $row->settle_balance,
             'settle_declared_type' => $row->settle_declared_type, // equal | minimum | maximum
             'settle_target_amount' => $row->settle_target_amount !== null ? (float) $row->settle_target_amount : null,
+            // Settlement approval gate (branch/HR approve the usage before payout).
+            'settle_approval_status'  => $row->settle_approval_status,
+            'settle_approval_comment' => $row->settle_approval_comment,
+            'settle_approved_at'      => optional($row->settle_approved_at)->toIso8601String(),
             // Follow-through status so the list can show the right action button.
             'settle_returned_at'         => optional($row->settle_returned_at)->toIso8601String(),
             'settle_return_scheduled_at' => optional($row->settle_return_scheduled_at)->toIso8601String(),
@@ -866,7 +881,15 @@ class AdvanceRequestController extends Controller
         $row->settle_type          = $settleType;
         $row->settle_balance       = $balance;
         if ($finalize) {
-            $row->employee_settled_at = now();
+            // Finalising no longer unlocks return/reimburse directly — it sends
+            // the usage declaration to a branch admin / HR for approval first.
+            // (A re-finalise after a rejection resets it to pending + clears the
+            // stale rejection comment.)
+            $row->employee_settled_at     = now();
+            $row->settle_approval_status  = 'pending';
+            $row->settle_approved_by      = null;
+            $row->settle_approved_at      = null;
+            $row->settle_approval_comment = null;
         }
         $row->save();
 
@@ -874,15 +897,81 @@ class AdvanceRequestController extends Controller
         if (!$finalize) {
             $msg = 'Bills saved — ₹' . number_format($total, 2) . ' itemised so far. Add more or finalise when done.';
         } else {
-            $msg = $settleType === 'equal'
-                ? 'Advance settled — usage matched the advance.'
+            // Finalise now routes to branch/HR for approval before any payout.
+            $tail = ' Sent to a branch admin / HR for approval.';
+            $msg = ($settleType === 'equal'
+                ? 'Settlement submitted — usage matched the advance.'
                 : ($settleType === 'return'
-                    ? 'Advance settled — ₹' . number_format($balance, 2) . ' to be returned to the company.'
-                    : 'Advance settled — ₹' . number_format($balance, 2) . ' to be reimbursed to the employee.');
+                    ? 'Settlement submitted — ₹' . number_format($balance, 2) . ' to return once approved.'
+                    : 'Settlement submitted — ₹' . number_format($balance, 2) . ' to reimburse once approved.')) . $tail;
         }
         return response()->json([
             'status'  => true,
             'message' => $msg,
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/settle-approve
+     * A branch admin / HR approves the employee's finalised settlement. Only
+     * after this can the return / reimbursement / close proceed.
+     */
+    public function settleApprove(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if (!$row->employee_settled_at || ($row->settle_approval_status ?? null) !== 'pending') {
+            abort(409, 'This settlement is not awaiting approval.');
+        }
+        $row->settle_approval_status  = 'approved';
+        $row->settle_approved_by      = $user->id;
+        $row->settle_approved_at      = now();
+        $row->settle_approval_comment = trim((string) $request->input('comment')) ?: null;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Settlement approved — the employee can now settle the balance.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/settle-reject
+     * Reject the settlement and REOPEN it (clears employee_settled_at) so the
+     * employee can fix the bills and resubmit. A remark is required.
+     */
+    public function settleReject(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if (!$row->employee_settled_at || ($row->settle_approval_status ?? null) !== 'pending') {
+            abort(409, 'This settlement is not awaiting approval.');
+        }
+        $data = $request->validate([
+            'comment' => ['required', 'string', 'max:500'],
+        ], ['comment.required' => 'Add a short reason so the employee can fix the settlement.']);
+
+        $row->settle_approval_status  = 'rejected';
+        $row->settle_approval_comment = trim($data['comment']);
+        $row->settle_approved_by      = $user->id;
+        $row->settle_approved_at      = now();
+        // Reopen so the employee can edit the bills and resubmit for approval.
+        $row->employee_settled_at     = null;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Settlement rejected — reopened for the employee to re-settle.',
             'data'    => $this->serialize($row),
         ]);
     }
@@ -927,6 +1016,9 @@ class AdvanceRequestController extends Controller
         }
         if (!$row->employee_settled_at || $row->settle_type !== 'reimburse') {
             abort(409, 'A reimbursement can only be raised for a finalised, over-spent (reimburse) advance.');
+        }
+        if (($row->settle_approval_status ?? null) !== 'approved') {
+            abort(409, 'The settlement must be approved by a branch admin / HR before a reimbursement can be raised.');
         }
         $balance = round((float) $row->settle_balance, 2);
         if ($balance <= 0) {
@@ -1035,6 +1127,9 @@ class AdvanceRequestController extends Controller
         if (!$row->employee_settled_at || $row->settle_type !== 'return') {
             abort(409, 'A return can only be recorded for a finalised, under-spent (return) advance.');
         }
+        if (($row->settle_approval_status ?? null) !== 'approved') {
+            abort(409, 'The settlement must be approved by a branch admin / HR before the balance can be returned.');
+        }
         $balance = round((float) $row->settle_balance, 2);
         if ($balance <= 0) {
             abort(409, 'There is nothing to return.');
@@ -1085,6 +1180,15 @@ class AdvanceRequestController extends Controller
                 $monthly = round((float) ($rec['monthly'] ?? 0), 2);
                 if ($monthly <= 0) {
                     return response()->json(['message' => 'Enter a monthly deduction amount.', 'errors' => ['monthly' => ['A monthly amount is required.']]], 422);
+                }
+                // A single instalment can't exceed the balance being returned —
+                // equal (a one-cycle recovery) is fine, more is not.
+                if ($monthly > $remaining + 0.005) {
+                    return response()->json([
+                        'message' => 'The monthly deduction ₹' . number_format($monthly, 2)
+                            . ' cannot exceed the balance ₹' . number_format($remaining, 2) . '.',
+                        'errors'  => ['monthly' => ['It can equal the balance, but not more.']],
+                    ], 422);
                 }
                 $months = (int) max(1, ceil($remaining / $monthly));
                 // ≤120-instalment guard (mirrors the Advance Request cap). Too
@@ -1274,6 +1378,9 @@ class AdvanceRequestController extends Controller
             'used_for'             => $row->used_for ?: 'self',
             'employee_settled_at'  => optional($row->employee_settled_at)->toIso8601String(),
             'employee_settle_note' => $row->employee_settle_note,
+            'settle_approval_status'  => $row->settle_approval_status,
+            'settle_approval_comment' => $row->settle_approval_comment,
+            'settle_approved_at'      => optional($row->settle_approved_at)->toIso8601String(),
             'settle_actual_amount' => $row->settle_actual_amount !== null ? (float) $row->settle_actual_amount : null,
             'settle_type'          => $row->settle_type,
             'settle_balance'       => (float) $row->settle_balance,

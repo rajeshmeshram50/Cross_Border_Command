@@ -574,6 +574,346 @@ class ExpenseClaimController extends Controller
         ]);
     }
 
+    /* ==================== Consolidated (batch) payment ==================== */
+
+    private function expNo(ExpenseClaim $c): string
+    {
+        return $c->claim_no ?: ('EXP-' . str_pad((string) $c->id, 4, '0', STR_PAD_LEFT));
+    }
+
+    /**
+     * GET /expense-claims/batch-payable?employee_id=
+     * An employee's APPROVED, not-yet-paid claims — the pool a batch payment can
+     * settle. (Only approved + unpaid; you never pay an unapproved claim.)
+     */
+    public function batchPayable(Request $request)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_approve');
+        $employeeId = $this->resolveEmployeeId($request->query('employee_id'), $request->query('employee_code'), $user);
+        if (!$employeeId) {
+            return response()->json(['data' => []]);
+        }
+        // All UNPAID claims (approved OR still under review) so the modal can
+        // show a Review-&-Approve action on pending ones and a checkbox on
+        // approved ones. Only approved claims are actually selectable to pay.
+        $q = ExpenseClaim::query()
+            ->with(['category:id,name'])
+            ->where('employee_id', $employeeId)
+            ->whereIn('status', ['approved', 'pending'])
+            ->where(fn ($w) => $w->whereNull('settlement_status')->orWhere('settlement_status', '!=', 'paid'));
+        $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
+
+        return response()->json([
+            'data' => $q->orderBy('id')->get()->map(fn ($c) => [
+                'id'            => $c->id,
+                'exp_no'        => $this->expNo($c),
+                'title'         => $c->title,
+                'category_id'   => $c->category_id,
+                'category_name' => $c->category?->name ?? $c->category_name,
+                'expense_date'  => optional($c->expense_date)->format('Y-m-d'),
+                'amount'        => (float) $c->amount,
+                'note'          => $c->purpose ?: $c->title,
+                'attachments'   => collect($c->attachments ?? [])->count(),
+                'status'        => $c->status,          // approved | pending
+                'payable'       => $c->status === 'approved',
+            ])->values(),
+        ]);
+    }
+
+    /**
+     * GET /expense-claims/batch-payments — history of consolidated payments.
+     */
+    public function batchPayments(Request $request)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_view');
+        $q = \App\Models\ExpenseBatchPayment::query()->with(['employee:id,first_name,last_name,display_name,emp_code', 'payments:id,batch_payment_id,expense_claim_id']);
+        if ($user->client_id) $q->where('client_id', $user->client_id);
+        if ($user->user_type === 'branch_user' && $user->branch_id) $q->where('branch_id', $user->branch_id);
+
+        return response()->json([
+            'data' => $q->orderByDesc('id')->limit(100)->get()->map(function ($b) {
+                $claimIds = $b->payments->pluck('expense_claim_id')->all();
+                $expNos = ExpenseClaim::whereIn('id', $claimIds)->pluck('claim_no', 'id');
+                return [
+                    'id'               => $b->id,
+                    'employee_name'    => $b->employee?->display_name
+                        ?: trim(($b->employee->first_name ?? '') . ' ' . ($b->employee->last_name ?? '')),
+                    'employee_code'    => $b->employee?->emp_code,
+                    'reference_number' => $b->reference_number,
+                    'payment_type'     => $b->payment_type,
+                    'total_amount'     => (float) $b->total_amount,
+                    'note'             => $b->note,
+                    'paid_at'          => optional($b->created_at)->toIso8601String(),
+                    'count'            => count($claimIds),
+                    'exp_nos'          => collect($claimIds)->map(fn ($id) => $expNos[$id] ?? ('EXP-' . str_pad((string) $id, 4, '0', STR_PAD_LEFT)))->values(),
+                    'proof_url'        => $b->proof_path ? url("/api/expense-claims/batch-payments/{$b->id}/proof") : null,
+                    'zoho_status'      => $b->zoho_status,
+                    'zoho_expense_id'  => $b->zoho_expense_id,
+                    'zoho_url'         => $b->zoho_expense_id ? $this->zohoExpenseUrl($b->zoho_expense_id) : null,
+                ];
+            }),
+        ]);
+    }
+
+    /** Stream a batch payment's shared proof-of-payment. */
+    public function batchPaymentProof(Request $request, $batchId)
+    {
+        $this->authenticateFromQueryToken($request);
+        $b = \App\Models\ExpenseBatchPayment::findOrFail($batchId);
+        $user = $request->user();
+        if ($user && $user->client_id && (int) $b->client_id !== (int) $user->client_id) {
+            abort(403, 'Out of tenant scope.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$b->proof_path || !$disk->exists($b->proof_path)) {
+            abort(404, 'Proof of payment not found.');
+        }
+        return $disk->response($b->proof_path, $b->proof_name ?: basename($b->proof_path));
+    }
+
+    /**
+     * POST /expense-claims/batch-payments/{batchId}/sync-zoho
+     * Push a recorded batch to Zoho Books as ONE itemised expense (one line per
+     * claim, its EXP-#### in the line note). Idempotent — a batch already
+     * carrying a zoho_expense_id is not re-created.
+     */
+    public function syncBatchPaymentToZoho(Request $request, $batchId)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_approve');
+        $batch = \App\Models\ExpenseBatchPayment::findOrFail($batchId);
+        if ($user->client_id && (int) $batch->client_id !== (int) $user->client_id) {
+            abort(403, 'Out of tenant scope.');
+        }
+        if (!empty($batch->zoho_expense_id)) {
+            return response()->json([
+                'status'   => true,
+                'message'  => 'This batch is already synced to Zoho Books.',
+                'zoho_url' => $this->zohoExpenseUrl($batch->zoho_expense_id),
+            ]);
+        }
+        /** @var \App\Services\ZohoBooksService $zoho */
+        $zoho = app(\App\Services\ZohoBooksService::class);
+        if (!$zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books is not configured.'], 422);
+        }
+
+        // Reconstruct the claims + goods/service type from the batch's payments.
+        $payments = \App\Models\ExpenseClaimPayment::where('batch_payment_id', $batch->id)->get();
+        $claims   = ExpenseClaim::with('category:id,name')->whereIn('id', $payments->pluck('expense_claim_id')->all())->get();
+        $expenseType = $payments->first()?->expense_type ?: 'Goods';
+
+        $this->syncBatchToZoho($batch, $claims, $expenseType);
+        $batch->refresh();
+        if ($batch->zoho_status !== 'synced' || empty($batch->zoho_expense_id)) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books sync failed — please retry (details in the server log).'], 422);
+        }
+        return response()->json([
+            'status'   => true,
+            'message'  => 'Batch synced to Zoho Books as one itemised expense.',
+            'zoho_url' => $this->zohoExpenseUrl($batch->zoho_expense_id),
+        ]);
+    }
+
+    /**
+     * POST /expense-claims/batch-pay
+     * Settle several APPROVED, unpaid claims of ONE employee with a single payout
+     * (one UTR + one proof), and sync to Zoho Books as ONE itemised expense
+     * (one line per claim). Each claim is marked fully paid.
+     */
+    public function batchPay(Request $request)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_approve');
+
+        $data = $request->validate([
+            'employee_id'      => ['required'],
+            'claim_ids'        => ['required', 'array', 'min:1'],
+            'claim_ids.*'      => ['integer'],
+            'reference_number' => ['required', 'string', 'max:120'],
+            'payment_type'     => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
+            'expense_type'     => ['required', 'string', 'in:Goods,Service'],
+            'note'             => ['nullable', 'string', 'max:500'],
+            'proof'            => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+        ]);
+
+        $employeeId = $this->resolveEmployeeId($data['employee_id'], $request->input('employee_code'), $user);
+        if (!$employeeId) {
+            abort(422, 'Employee not found.');
+        }
+
+        // Load + validate the selected claims: same employee, approved, unpaid,
+        // in the caller's tenant.
+        $claims = ExpenseClaim::with('category:id,name')
+            ->whereIn('id', $data['claim_ids'])
+            ->where('employee_id', $employeeId)
+            ->get();
+        if ($claims->count() !== count(array_unique($data['claim_ids']))) {
+            abort(422, 'Some selected claims were not found for this employee.');
+        }
+        foreach ($claims as $c) {
+            $this->ensureTenantAccess($c, $user);
+            if ($c->status !== 'approved') {
+                abort(409, $this->expNo($c) . ' is not approved yet — only approved claims can be paid.');
+            }
+            if (($c->settlement_status ?? 'unpaid') === 'paid') {
+                abort(409, $this->expNo($c) . ' is already fully paid.');
+            }
+        }
+
+        $total = round($claims->sum(fn ($c) => (float) $c->amount), 2);
+
+        // Shared proof of payment (one file for the whole batch).
+        $f = $request->file('proof');
+        $proofName = $f->getClientOriginalName();
+        $proofPath = $f->store('expense_batch_payments', 'public');
+
+        $batch = DB::transaction(function () use ($user, $employeeId, $claims, $data, $total, $proofPath, $proofName) {
+            $batch = \App\Models\ExpenseBatchPayment::create([
+                'client_id'        => $claims->first()->client_id,
+                'branch_id'        => $claims->first()->branch_id,
+                'employee_id'      => $employeeId,
+                'reference_number' => trim($data['reference_number']),
+                'payment_type'     => $data['payment_type'],
+                'total_amount'     => $total,
+                'note'             => $data['note'] ?? null,
+                'proof_path'       => $proofPath,
+                'proof_name'       => $proofName,
+                'zoho_status'      => 'not_synced',
+                'paid_by'          => $user->id,
+            ]);
+
+            foreach ($claims as $c) {
+                $amt = (float) $c->amount;
+                \App\Models\ExpenseClaimPayment::create([
+                    'client_id'        => $c->client_id,
+                    'branch_id'        => $c->branch_id,
+                    'expense_claim_id' => $c->id,
+                    'batch_payment_id' => $batch->id,
+                    'amount'           => $amt,
+                    'category_id'      => $c->category_id,
+                    'category_name'    => $c->category?->name ?? $c->category_name,
+                    'payment_type'     => $data['payment_type'],
+                    'expense_type'     => $data['expense_type'],
+                    'note'             => $data['note'] ?? ('Batch ' . trim($data['reference_number'])),
+                    'proof_path'       => $proofPath,
+                    'proof_name'       => $proofName,
+                    'paid_by'          => $user->id,
+                    'paid_at'          => now(),
+                ]);
+                // No batch-time deductions — the full approved amount is paid.
+                if ($c->sanctioned_amount === null) $c->sanctioned_amount = $amt;
+                $c->total_paid = round((float) $c->total_paid + $amt, 2);
+                $c->settlement_status = 'paid';
+                $c->settled_at = now();
+                $c->save();
+            }
+            return $batch;
+        });
+
+        // Zoho sync is a separate, explicit step (the "Zoho Sync" button in the
+        // batch history) — mirrors the single-payment flow, so HR controls when
+        // the itemised expense is pushed.
+        return response()->json([
+            'status'  => true,
+            'message' => 'Batch payment recorded — ' . $claims->count() . ' claim(s), ₹' . number_format($total, 2) . ' paid. Use “Zoho Sync” to push it to Zoho Books.',
+            'batch_id'=> $batch->id,
+        ]);
+    }
+
+    /**
+     * Push a batch as ONE itemised Zoho expense: one line_item per claim (its
+     * category = account_id), reference = UTR, then attach the batch proof +
+     * each claim's receipts (first 5, Zoho's cap). Best-effort — a Zoho failure
+     * leaves the payment intact and just flags the batch as not synced.
+     */
+    private function syncBatchToZoho(\App\Models\ExpenseBatchPayment $batch, $claims, string $expenseType): void
+    {
+        /** @var \App\Services\ZohoBooksService $zoho */
+        $zoho = app(\App\Services\ZohoBooksService::class);
+        if (!$zoho->isConfigured()) {
+            return; // Zoho not set up — payment already recorded.
+        }
+
+        $expenseId = null;
+        try {
+            $lineItems = $claims->map(fn ($c) => [
+                'account_id'  => $zoho->resolveExpenseAccountId($c->category?->name ?: ($c->category_name ?: 'Employee Reimbursement')),
+                'description' => $this->expNo($c) . ' - ' . $c->title,
+                'amount'      => (float) $c->amount,
+            ])->values()->all();
+
+            $payload = [
+                'paid_through_account_id' => $zoho->findOrCreatePaidThroughAccountId($batch->payment_type ?: 'Bank'),
+                'date'                    => now()->format('Y-m-d'),
+                'reference_number'        => $batch->reference_number,
+                'is_itemized_expense'     => true,
+                'line_items'              => $lineItems,
+                'product_type'            => strtolower($expenseType) === 'service' ? 'service' : 'goods',
+                'description'             => 'Batch payment · ' . $claims->map(fn ($c) => $this->expNo($c))->implode(', '),
+            ];
+            $state = $zoho->orgStateCode();
+            if ($state) {
+                $payload['source_of_supply']      = $state;
+                $payload['destination_of_supply'] = $state;
+            }
+
+            $expense   = $zoho->createExpense($payload);
+            $expenseId = (string) ($expense['expense_id'] ?? '');
+
+            if ($expenseId !== '') {
+                $disk = \Illuminate\Support\Facades\Storage::disk('public');
+                // Proof-of-payment first, then each claim's receipts named
+                // "EXP-#### - Title" (…-2 for a claim's 2nd receipt). Zoho caps at 5.
+                $receiptFiles = [];
+                if ($batch->proof_path) {
+                    $receiptFiles[] = ['path' => $batch->proof_path, 'name' => $batch->proof_name ?: basename($batch->proof_path)];
+                }
+                foreach ($claims as $c) {
+                    $atts = array_values($c->attachments ?? []);
+                    foreach ($atts as $i => $att) {
+                        $p = is_array($att) ? ($att['path'] ?? null) : null;
+                        if (empty($p)) continue;
+                        $ext = pathinfo((string) $p, PATHINFO_EXTENSION);
+                        $label = $this->expNo($c) . (count($atts) > 1 ? '-' . ($i + 1) : '') . ' - ' . $c->title;
+                        $receiptFiles[] = ['path' => $p, 'name' => $label . ($ext ? '.' . $ext : '')];
+                    }
+                }
+                $seen = [];
+                $receiptFiles = array_values(array_filter($receiptFiles, function ($rf) use (&$seen) {
+                    if (isset($seen[$rf['path']])) return false;
+                    $seen[$rf['path']] = true;
+                    return true;
+                }));
+                // /attachment accumulates, so push EVERY claim's proof + the
+                // payment proof (Zoho allows up to 10 attachments per entity).
+                $skipped = max(0, count($receiptFiles) - 10);
+                foreach (array_slice($receiptFiles, 0, 10) as $rf) {
+                    if (!$disk->exists($rf['path'])) continue;
+                    try { $zoho->attachExpenseReceipt($expenseId, $disk->get($rf['path']), $rf['name']); }
+                    catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('Zoho batch attachment failed', ['batch' => $batch->id, 'file' => $rf['path'], 'error' => $e->getMessage()]); }
+                }
+                if ($skipped > 0) {
+                    \Illuminate\Support\Facades\Log::info("Zoho 10-attachment cap: {$skipped} file(s) not pushed for batch {$batch->id}.");
+                }
+            }
+
+            $batch->zoho_status     = 'synced';
+            $batch->zoho_synced_at  = now();
+            $batch->zoho_expense_id = $expenseId;
+            $batch->save();
+            \App\Models\ExpenseClaimPayment::where('batch_payment_id', $batch->id)
+                ->update(['zoho_status' => 'synced', 'zoho_synced_at' => now(), 'zoho_expense_id' => $expenseId]);
+        } catch (\Throwable $e) {
+            if ($expenseId) { try { $zoho->deleteExpense($expenseId); } catch (\Throwable $ignore) {} }
+            $batch->zoho_status = 'failed';
+            $batch->save();
+            \Illuminate\Support\Facades\Log::warning('Zoho batch expense sync failed', ['batch' => $batch->id, 'error' => $e->getMessage()]);
+        }
+    }
+
     /**
      * POST /expense-claims/{id}/email-reimbursement
      * Email the employee their reimbursement confirmation (breakdown + payments +
