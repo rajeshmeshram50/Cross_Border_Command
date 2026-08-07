@@ -493,10 +493,16 @@ class PayrollService
      */
     public function payrollExclusions(PayrollPeriod $period): array
     {
-        // No status filter here, unlike eligibleEmployees(): an early leaver is
-        // normally already stamped Resigned/Terminated by the exit flow, and
-        // filtering those out would hide exactly the people this reports on.
-        $q = Employee::query()->where('onboarding_stage_completed', '>=', 6);
+        /* No status filter here, unlike eligibleEmployees(): an early leaver is
+           normally already stamped Resigned/Terminated by the exit flow, and
+           filtering those out would hide exactly the people this reports on.
+
+           withTrashed for the same reason — completing an exit now soft-deletes
+           the employee (ExitController::complete, so they land in the Disabled
+           list). Without this they would silently drop out of the panel in the
+           very cycle it needs to explain their absence, which is the exact
+           "person vanished from the run" confusion it exists to prevent. */
+        $q = Employee::withTrashed()->where('onboarding_stage_completed', '>=', 6);
         if ($period->client_id) $q->where('client_id', $period->client_id);
         if ($period->branch_id) $q->where('branch_id', $period->branch_id);
 

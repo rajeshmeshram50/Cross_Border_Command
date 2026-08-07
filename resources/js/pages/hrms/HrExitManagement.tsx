@@ -166,7 +166,16 @@ export default function HrExitManagement() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the exit-state caption sits on a second line under the name.
-      meta: { width: '16%', wrap: true },
+      /* PIXEL widths, not percentages.
+         Percentages are a share of the table's width, so on any container
+         narrower than the content every column shrank together and the whole
+         table truncated at once — worse, they summed to 110%, so `table-layout:
+         fixed` scaled each one down even further. Fixed px gives every column a
+         guaranteed size; when the viewport can't fit the total, .dt-scroll
+         scrolls horizontally instead of crushing the columns. Their sum is
+         mirrored in `minWidth` on the DataTable below — keep the two in step
+         when adding or resizing a column. */
+      meta: { width: 260, wrap: true },
       cell: info => {
         const e = info.row.original;
         const isScheduled = e.status === 'Active' && e.exitInitiated;
@@ -213,15 +222,19 @@ export default function HrExitManagement() {
     {
       header: 'Emp ID',
       accessorKey: 'empId',
-      meta: { width: '8%' },
+      /* `wrap` for the same reason as Status: the cell renders a PILL, which is
+         an inline-block wider than its text, so the table's default
+         `text-overflow: ellipsis` painted a "…" just past the pill's edge.
+         Every column whose cell is a pill/badge needs this opt-out. */
+      meta: { width: 130, wrap: true },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: 140 },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: 150 }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%' },
+      meta: { width: 140 },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
          the full name on hover, same contract as the Designation column. */
@@ -231,7 +244,7 @@ export default function HrExitManagement() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: '9%' },
+      meta: { width: 150 },
       cell: info => {
         const e = info.row.original;
         return (
@@ -244,7 +257,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: '10%' },
+      meta: { width: 170 },
       cell: info => {
         const e = info.row.original;
         return (
@@ -266,7 +279,7 @@ export default function HrExitManagement() {
     ...(tab === 'active' ? [] : [{
       header: 'Exit Type',
       accessorKey: 'exitType',
-      meta: { width: '10%', wrap: true },
+      meta: { width: 170, wrap: true },
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
         if (!t) return <span className="text-muted">—</span>;
@@ -294,7 +307,7 @@ export default function HrExitManagement() {
          bar, so the cell must not clip it. */
       header: 'Exit Readiness',
       accessorKey: 'exitReadiness',
-      meta: { width: '9%', wrap: true },
+      meta: { width: 130, wrap: true },
       cell: info => {
         const p = info.row.original.exitReadiness;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -343,7 +356,13 @@ export default function HrExitManagement() {
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '8%', align: 'center' },
+      /* `wrap` opts this cell out of the table's default
+         `overflow:hidden; text-overflow:ellipsis` (DataTable.css). Without it
+         the "Exit In Progress" pill was wider than the column and got clipped,
+         and the ellipsis rendered just past the pill's edge — the stray dot
+         that looked like a bug in the data. Widened to 10% as well so the pill
+         fits outright rather than merely being allowed to overflow. */
+      meta: { width: 160, align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const statusColor = STATUS_COLOR[e.status];
@@ -358,10 +377,12 @@ export default function HrExitManagement() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      // 13%, not 9%: an Exited row carries Evidence Vault plus the icon-only
-      // Rehire on ONE line. 9% squeezed them onto two lines, and 11% left the
-      // icon flush against the table's right edge.
-      meta: { width: '13%', align: 'center', wrap: true },
+      /* An Exited row carries Evidence Vault plus the icon-only Rehire on ONE
+         line, so this column needs real room. 12% of the raised minWidth
+         (1700) is ~204px — MORE absolute space than the old 13% of 1500
+         (~195px), so the buttons still fit on one line while the percentages
+         now total exactly 100. */
+      meta: { width: 210, align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const isExited = e.status === 'Exited';
@@ -500,7 +521,14 @@ export default function HrExitManagement() {
               columns={columns}
               serial
               accent="violet"
-              minWidth={1500}
+              /* Sum of the columns' pixel widths (see the `meta.width` block at
+                 the top of `columns`): 56 serial + 1810 = 1866, and 1696 on the
+                 Active tab where Exit Type is not rendered. Matching minWidth to
+                 the real total is what stops the compaction — the table never
+                 shrinks below the space its columns actually need, and
+                 .dt-scroll scrolls horizontally instead. Keep this in step when
+                 a column is added or resized. */
+              minWidth={tab === 'active' ? 1696 : 1866}
               fitToViewport
               autoFitRows
               loading={listLoading}
@@ -1119,10 +1147,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const lwdMin = noticeServed
     ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
     : (noticeDate || todayIso);
+  /* CEILING — the last working day can never be LATER than the notice period
+     end date; the two may be the SAME day (serving the notice in full, which is
+     what a standard resignation looks like). The notice period end is the last
+     date the employee is on the books, so a last working day beyond it would
+     have them working days they are no longer employed for — and it silently
+     inflated "days served" in the notice settlement.
+
+     Only applies when an end date actually exists. It does not for a waived
+     notice (probation / early resignation) or when the employee record carries
+     no notice period, and there is nothing to cap against in those cases. */
+  const lwdMax = noticePeriodEnd || '';
+  const lwdOverEnd = !!lwd && !!lwdMax && lwd > lwdMax;
   // "Must be a future date" is part of serving notice, so it is waived for the
   // types that don't serve one — they can be relieved today.
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && (noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin);
+    && ((noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin) || lwdOverEnd);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1130,6 +1170,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
   const noticeMin  = ndLoaded && ndLoaded < todayIso ? ndLoaded : todayIso;
   const effLwdMin  = lwdLoaded && lwdLoaded < lwdMin ? lwdLoaded : lwdMin;
+  /* Same protection on the ceiling as on the floor: a value already saved on
+     the exit is never clamped away. An approved UNPAID leave during notice
+     legitimately pushes the last working day PAST the notice end
+     (NoticePeriodGuard::applyExtension), so a loaded date beyond the cap is
+     valid history, not a mistake. */
+  const effLwdMax  = lwdMax && lwdLoaded && lwdLoaded > lwdMax ? lwdLoaded : lwdMax;
   // Exit can only be finalised on/after the Last Working Day — you can't close
   // out an employee before their last day has actually arrived.
   const lwdReached = !!lwd && lwd <= todayIso;
@@ -1570,11 +1616,27 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const rawStagePct = (n: StageKey): number => {
     if (n === 'initiation') {
+      /* Only the fields HR actually FILLS IN on this stage — it must read 0%
+         on a freshly opened exit.
+
+         Two were counted that HR never enters, which is where the phantom
+         "50% with an empty form" came from:
+           · exitType — answered in the type picker BEFORE this modal opens
+             (the list routes both Initiate and Continue through it), so it is
+             always already set and the stage could never start at zero.
+           · reportingManagerId — read-only, populated from the employee
+             record; the field on screen is disabled.
+
+         Notice Start Date was missing even though saveStage1() requires it.
+         The set now mirrors that required list exactly (minus exitType), so
+         100% here means "Save & Next will pass" rather than an unrelated
+         count. Business Impact / Replacement Required stay OUT: they are
+         optional, and counting them would stop the stage ever reaching 100%
+         for HR who legitimately skip them. */
       const items = [
-        !!String(exitType).trim(),
         !!String(reasonForExit).trim(),
+        !!String(noticeDate).trim(),
         !!String(lwd).trim(),
-        !!reportingManagerId,
       ];
       return Math.round((items.filter(Boolean).length / items.length) * 100);
     }
@@ -2222,7 +2284,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         onChange={(v) => {
                           setLwd(v); clearS1Err('lwd');
                           if (v && v !== loadedLwdRef.current) {
-                            if (!noticeServed) {
+                            // Ceiling first — it applies to every exit type, so
+                            // checking it before the type-specific floors keeps
+                            // one message per mistake.
+                            if (lwdMax && v > lwdMax) {
+                              toast.warning(
+                                'Invalid last working day',
+                                `Last working day cannot be after the notice period end date (${fmtDateShort(lwdMax)}). It may be the same day, or earlier.`,
+                              );
+                            } else if (!noticeServed) {
                               // No notice is being served (probation, or an
                               // exit type that pays/recovers it instead), so
                               // today is fine — only "not before the start".
@@ -2245,13 +2315,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           }
                         }}
                         min={effLwdMin}
+                        max={effLwdMax || undefined}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
                       {(s1Errors.has('lwd') || lwdInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
                           {lwdInvalid
-                            ? (!noticeServed
+                            ? (lwdOverEnd
+                                ? `Last working day cannot be after the notice period end date (${fmtDateShort(lwdMax)}). It may be the same day, or earlier.`
+                                : !noticeServed
                                 ? (settlement === 'pay_in_lieu'
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.')
