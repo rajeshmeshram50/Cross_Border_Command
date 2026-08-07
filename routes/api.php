@@ -783,6 +783,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
     Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
 
+    // On-demand sandwich-leave test data (admins only) — run via curl when needed.
+    Route::post  ('/dev/sandwich-leave', [\App\Http\Controllers\Api\SandwichTestController::class, 'seed']);
+
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
     Route::get ('/payroll/history',             [\App\Http\Controllers\Api\PayrollController::class, 'history']);
