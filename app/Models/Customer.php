@@ -124,11 +124,14 @@ class Customer extends Model
      */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        // Sales-department employees share the WHOLE branch's customer book —
-        // every Sales employee (not just the branch admin or HOD) sees all the
-        // branch's customers, not only the rows they created (QA #14). Other
-        // employees stay peer-isolated via applyReadScope below.
-        if (\App\Support\SalesVisibility::isSalesDepartmentEmployee($user)) {
+        // Sales AND Legal employees share the WHOLE branch's customer book —
+        // every member (not just the branch admin or HOD) sees all the branch's
+        // customers, not only the rows they created (QA #14). Legal was added
+        // because CLM work (KYC / DD / segment docs / agreements) is done
+        // against a customer, and peer-isolation left every Legal designation
+        // looking at an empty list even with the sales.customers permission
+        // granted. Other departments stay peer-isolated via applyReadScope.
+        if (\App\Support\SalesVisibility::sharesBranchCustomerBook($user)) {
             \App\Support\MasterVisibility::applyBranchScope($q, $user);
             return $q;
         }

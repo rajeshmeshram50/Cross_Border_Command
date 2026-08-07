@@ -92,10 +92,12 @@ class Consignee extends Model
      */
     public function scopeForUser(Builder $q, $user, ?int $branchFilter = null): Builder
     {
-        // Sales-department employees share the WHOLE branch's consignee book —
-        // every Sales employee sees all the branch's consignees, not only the
-        // rows they created (QA #14). See Customer::scopeForUser.
-        if (\App\Support\SalesVisibility::isSalesDepartmentEmployee($user)) {
+        // Sales AND Legal employees share the WHOLE branch's consignee book —
+        // every member sees all the branch's consignees, not only the rows they
+        // created (QA #14). Kept in step with Customer::scopeForUser on purpose:
+        // a consignee is reached FROM a customer profile, so widening one book
+        // without the other just moves the empty screen one click along.
+        if (\App\Support\SalesVisibility::sharesBranchCustomerBook($user)) {
             \App\Support\MasterVisibility::applyBranchScope($q, $user);
             return $q;
         }

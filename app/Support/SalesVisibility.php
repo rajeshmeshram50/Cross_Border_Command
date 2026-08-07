@@ -168,22 +168,62 @@ class SalesVisibility
     }
 
     /**
-     * True when the user is an EMPLOYEE whose department is Sales. Sales-team
-     * employees share the WHOLE branch's customer / consignee book — every
-     * Sales employee (not just the branch admin or the HOD) sees all the
-     * customers in their branch scope, not only the rows they created (QA #14).
-     * Every other account type keeps the standard creator-hierarchy visibility.
+     * Departments whose employees share the WHOLE branch's customer /
+     * consignee book instead of seeing only the rows they created.
+     *
+     * Sales owns the book. Legal reads it: the CLM work — KYC, due diligence,
+     * segment document checks, agreements — is all done AGAINST a customer, so
+     * a Legal employee who cannot see the customer cannot do their job. They
+     * were landing on an empty Customers list at every designation, because
+     * peer-isolation hid every row (Legal creates none, so "own rows" = none)
+     * even when the admin had granted them the sales.customers permission.
+     *
+     * Membership here only widens WHAT IS VISIBLE. Whether a member may add /
+     * edit / delete is still the Permission grant on the module — the same gate
+     * that already governs the Sales team.
+     */
+    public const CUSTOMER_BOOK_DEPARTMENTS = ['sales', 'legal'];
+
+    /** Per-request memo: lower-cased department name list => master ids. */
+    private static array $deptIdCache = [];
+    /** Per-request memo: user id => their employee record's department_id. */
+    private static array $userDeptCache = [];
+
+    /**
+     * True when the user is an EMPLOYEE in a department that shares the branch
+     * customer / consignee book (see CUSTOMER_BOOK_DEPARTMENTS). Every other
+     * account type keeps the standard creator-hierarchy visibility.
+     */
+    public static function sharesBranchCustomerBook($user): bool
+    {
+        return self::employeeIsInDepartment($user, self::CUSTOMER_BOOK_DEPARTMENTS);
+    }
+
+    /**
+     * True when the user is an EMPLOYEE whose department is Sales. Narrower
+     * than sharesBranchCustomerBook() — this one answers "is this a member of
+     * the Sales team?", which is what lead assignment keys off.
      */
     public static function isSalesDepartmentEmployee($user): bool
+    {
+        return self::employeeIsInDepartment($user, ['sales']);
+    }
+
+    /** Is this user an employee posted to one of the named departments? */
+    private static function employeeIsInDepartment($user, array $names): bool
     {
         if (!$user || ($user->user_type ?? null) !== 'employee') {
             return false;
         }
-        $deptIds = self::salesDepartmentIds();
+        $deptIds = self::departmentIdsNamed($names);
         if (empty($deptIds)) {
             return false;
         }
-        $deptId = Employee::where('user_id', $user->id)->value('department_id');
+        $userId = (int) $user->id;
+        if (!array_key_exists($userId, self::$userDeptCache)) {
+            self::$userDeptCache[$userId] = Employee::where('user_id', $userId)->value('department_id');
+        }
+        $deptId = self::$userDeptCache[$userId];
         return $deptId !== null && in_array((int) $deptId, $deptIds, true);
     }
 
@@ -191,8 +231,26 @@ class SalesVisibility
      *  array = no Sales department defined at all. */
     public static function salesDepartmentIds(): array
     {
-        return \App\Models\Masters\Departments::query()
-            ->whereRaw('LOWER(name) = ?', ['sales'])
+        return self::departmentIdsNamed(['sales']);
+    }
+
+    /** Master-department ids matching any of the given names (case-insensitive).
+     *  Names that don't exist are simply absent from the result. */
+    public static function departmentIdsNamed(array $names): array
+    {
+        $names = array_values(array_unique(array_map(fn ($n) => mb_strtolower((string) $n), $names)));
+        sort($names);
+        if (empty($names)) {
+            return [];   // an empty IN () is a SQL syntax error, not "match none"
+        }
+        $key = implode('|', $names);
+        if (isset(self::$deptIdCache[$key])) {
+            return self::$deptIdCache[$key];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($names), '?'));
+        return self::$deptIdCache[$key] = \App\Models\Masters\Departments::query()
+            ->whereRaw("LOWER(name) IN ({$placeholders})", $names)
             ->pluck('id')
             ->map(fn ($v) => (int) $v)
             ->all();
