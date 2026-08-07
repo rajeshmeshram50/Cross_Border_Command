@@ -617,6 +617,13 @@ class ExpenseClaimController extends Controller
                 'attachments'   => collect($c->attachments ?? [])->count(),
                 'status'        => $c->status,          // approved | pending
                 'payable'       => $c->status === 'approved',
+                // Which stage a pending claim is waiting on, so the UI can enable
+                // "Review & Approve" only for HR-stage (manager must go first).
+                'manager_status' => $c->manager_status,  // pending | approved | rejected
+                'hr_status'      => $c->hr_status,
+                'pending_stage'  => $c->status === 'approved'
+                    ? null
+                    : (($c->manager_status ?? 'pending') !== 'approved' ? 'manager' : 'hr'),
             ])->values(),
         ]);
     }

@@ -1905,6 +1905,9 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-flashlight-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Define lifecycle trigger modules for document generation',
     cat: 'Document & Evidence',
+    // Trigger points are seed-managed (Onboarding / Exit / Promotion) — no manual
+    // Add button; existing rows stay editable.
+    lockedFixed: true,
     fields: [
       { n: 'module_name', l: 'Module Name', t: 'text', r: true, p: 'e.g. Onboarding, Offboarding, Event Based', full: true },
       { n: 'description', l: 'Description', t: 'textarea', p: 'Describe when this trigger activates and what documents it generates...', full: true },
