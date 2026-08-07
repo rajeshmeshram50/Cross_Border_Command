@@ -2374,6 +2374,19 @@ function LeaveTypeSetupModal({
 }) {
   const [active, setActive] = useState<SetupSection>('accrual');
   const [saving, setSaving] = useState(false);
+  /* Always open on the FIRST section (#103 / #105).
+     useState's initial value only applies on MOUNT, and this component is never
+     unmounted between opens — the `if (!leaveType) return null` below is an
+     early return, not an unmount, so `active` survived from last time. After a
+     full Save & Close the wizard ends on Approval, so the next Setup (a
+     different leave type, or a read-only View) opened straight onto Approval
+     and skipped the first two steps.
+
+     Keyed on the leave type as well as `isOpen`, so switching types without
+     closing the modal also rewinds to the start. */
+  useEffect(() => {
+    if (isOpen) setActive(SETUP_SECTIONS[0].key);
+  }, [isOpen, leaveType?.id]);
   const sectionIndex = SETUP_SECTIONS.findIndex(s => s.key === active);
   const sectionMeta = SETUP_SECTIONS[sectionIndex] ?? SETUP_SECTIONS[0];
 

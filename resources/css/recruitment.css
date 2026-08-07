@@ -904,6 +904,35 @@
     0 0 0 3px rgba(0,0,0,0.04);
 }
 
+/* Save lock — covers the whole modal while a save is in flight, so fields and
+   step buttons can't be touched mid-request (bugs #49 / #50). `inset: 0` on an
+   absolutely-positioned child resolves against .modal-content (Bootstrap makes
+   it position: relative), so this reaches the header and footer as well as the
+   body. Mirrors the CLM trade-document / agreement wizards, which lock the same
+   way. Scoped to the modal deliberately — it is the FORM that must freeze, not
+   the whole application. */
+.rec-save-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 30, 42, 0.32);
+  backdrop-filter: blur(1.5px);
+  cursor: wait;
+  border-radius: inherit;
+}
+.rec-save-lock-box {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 14px 22px;
+  border-radius: 14px;
+  background: var(--vz-card-bg, #fff);
+  color: var(--vz-body-color, #0c2c3a);
+  font-size: 14px; font-weight: 700;
+  box-shadow: 0 18px 44px rgba(8, 40, 60, 0.28);
+}
+
 /* ---------------------------------------------------------------------
    4. Form footer + Save (primary) + Cancel (ghost) + close buttons
    --------------------------------------------------------------------- */
