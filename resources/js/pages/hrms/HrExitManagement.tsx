@@ -9,6 +9,13 @@ import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../comp
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
+/* Every file URL on this page goes through resolveFileUrl, like the rest of the
+   app. The API returns Storage::url() paths — bare "/storage/…" strings — which
+   a browser resolves against the SPA's own origin, not the API's. Wherever those
+   differ (Vite dev server vs. artisan serve, or a split host in production) the
+   link 404s. resolveFileUrl re-bases them on VITE_API_URL and leaves absolute
+   Azure/CDN URLs alone. */
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../../../css/recruitment.css';
 
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
@@ -1453,7 +1460,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         if (savedFnf?.meta)  setFnfMeta({ approval: '', payStatus: 'Pending', payMode: 'Bank Transfer (NEFT)', payDate: '', ...savedFnf.meta });
         if (savedFnf?.monthly && !String(savedFnf.monthly).startsWith('0')) setMonthlyAmount(String(savedFnf.monthly));
         setFnfDoc(savedFnf?.attachment?.name
-          ? { name: savedFnf.attachment.name, url: savedFnf.attachment.url }
+          // Older rows stored only `path`; resolveFileUrl handles both a
+          // "/storage/…" url and a bare disk-relative path.
+          ? { name: savedFnf.attachment.name, url: resolveFileUrl(savedFnf.attachment.url || savedFnf.attachment.path) }
           : null);
 
         // The type is answered BEFORE this modal opens (the list routes both
@@ -1973,7 +1982,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       const { data } = await api.post(`/employees/${employee.id}/exit/fnf-attachment`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setFnfDoc({ name: data?.attachment?.name || file.name, url: data?.attachment?.url });
+      setFnfDoc({
+        name: data?.attachment?.name || file.name,
+        url: resolveFileUrl(data?.attachment?.url || data?.attachment?.path),
+      });
       // Mirror onto the fnf blob too — buildExitPayload reads it from there,
       // so without this the next Save Draft would overwrite the upload.
       setFnf((prev: any) => ({ ...(prev || {}), attachment: data?.attachment }));
@@ -2362,7 +2374,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 <span>Proof</span>
                                 <strong>
                                   {p.attachment_url
-                                    ? <a href={p.attachment_url} target="_blank" rel="noreferrer">
+                                    ? <a href={resolveFileUrl(p.attachment_url)} target="_blank" rel="noreferrer">
                                         <i className="ri-attachment-2" /> {p.attachment_name || 'View'}
                                       </a>
                                     : '—'}
@@ -3890,7 +3902,8 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
       : 'Pending';
     return {
       id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
-      category: cat.category, status, url: d.url,
+      // Resolved once here so both View and Download below get an absolute URL.
+      category: cat.category, status, url: d.url ? resolveFileUrl(d.url) : null,
     };
   });
 

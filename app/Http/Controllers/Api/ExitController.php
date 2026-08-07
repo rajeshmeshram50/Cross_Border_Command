@@ -231,7 +231,15 @@ class ExitController extends Controller
         $fnf['attachment'] = [
             'path' => $path,
             'name' => $file->getClientOriginalName(),
-            'url'  => \Illuminate\Support\Facades\Storage::url($path),
+            /* file_url(), not Storage::url() — the same resolver every other
+               document endpoint uses. Storage::url() THROWS "This driver does
+               not support retrieving URLs" whenever the public disk resolves to
+               Azure with AZURE_STORAGE_URL unset (or a config cache left over
+               from a previous deploy), which turned a successful upload into a
+               500 on the server. file_url() catches that and falls back to a
+               constructed URL, and also normalises backslashes, leading
+               slashes and a duplicated "storage/" prefix. */
+            'url'  => file_url($path),
             'uploaded_at' => now()->toIso8601String(),
         ];
         $row->fnf = $fnf;
