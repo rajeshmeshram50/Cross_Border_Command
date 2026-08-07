@@ -443,7 +443,7 @@ export default function HrPayroll() {
      per-employee, per-leave computation and there is no reason to pay for it
      on every page render. */
   const [sandwichItems, setSandwichItems] = useState<PayrollSandwichItem[]>([]);
-  const [sandwichBusyId, setSandwichBusyId] = useState<number | null>(null);
+  const [sandwichBusyCode, setSandwichBusyCode] = useState<string | null>(null);
 
   const loadSandwichReview = useCallback(async () => {
     if (!cycle) return;
@@ -461,25 +461,27 @@ export default function HrPayroll() {
 
   useEffect(() => { if (runOpen) loadSandwichReview(); }, [runOpen, loadSandwichReview]);
 
-  /* Waive / re-apply for one leave. Goes through the LEAVE endpoint, not a
-     payroll-local one, so the same call re-sizes leave_requests.days — the
-     number the employee's leave balance reads. A payroll-only override would
-     pay 2 days while the balance stayed down 4. */
-  const toggleSandwich = useCallback(async (
-    item: PayrollSandwichItem, waived: boolean, reason?: string,
-  ) => {
-    setSandwichBusyId(item.leave_id);
+  /* Excuse every still-charged sandwich leave for ONE employee.
+     Sequential, not Promise.all: each call re-sizes leave_requests.days, and
+     the sandwich for one leave can depend on a neighbouring one — firing them
+     together would let two requests size themselves against the same stale
+     picture. One refresh at the end rather than per leave. */
+  const waiveSandwich = useCallback(async (items: PayrollSandwichItem[]) => {
+    if (!items.length) return;
+    setSandwichBusyCode(items[0].emp_code);
     try {
-      await api.post(`/leave-requests/${item.leave_id}/sandwich-waiver`, { waived, reason });
+      for (const it of items) {
+        await api.post(`/leave-requests/${it.leave_id}/sandwich-waiver`, { waived: true });
+      }
       await loadSandwichReview();
       toast.success(
-        waived ? 'Sandwich waived' : 'Policy re-applied',
-        `${item.emp_name} — re-run payroll to pick up the new day count.`,
+        'Off-days excused',
+        `${items[0].emp_name} — re-run payroll to pick up the new day count.`,
       );
     } catch (err: any) {
       toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
-      setSandwichBusyId(null);
+      setSandwichBusyCode(null);
     }
   }, [loadSandwichReview, toast]);
 
@@ -1844,8 +1846,8 @@ export default function HrPayroll() {
         atRiskAmountLabel={fmtINRShort(atRiskAmount)}
         issues={runIssues}
         sandwichItems={sandwichItems}
-        onToggleSandwich={toggleSandwich}
-        sandwichBusyId={sandwichBusyId}
+        onWaiveSandwich={waiveSandwich}
+        sandwichBusyCode={sandwichBusyCode}
         onAction={handleIssueAction}
         onExportPayslips={downloadAllPayslips}
         exporting={downloading === 'zip'}
