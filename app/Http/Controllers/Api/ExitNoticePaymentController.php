@@ -279,8 +279,10 @@ class ExitNoticePaymentController extends Controller
         if (!$exit || (string) $exit->exit_type !== 'Resignation without notice period') {
             return $blank;
         }
-        // On probation there is no notice period to serve, so nothing is owed.
-        if (\App\Support\ProbationGuard::isOnProbation($employee)) {
+        /* No notice period to serve → nothing is owed. Two cases: still on
+           probation, or resigned within 15 days of joining (an early exit is
+           exempt even when there was no probation policy at all). */
+        if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $exit->notice_date)) {
             return $blank;
         }
 

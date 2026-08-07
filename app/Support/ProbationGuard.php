@@ -21,8 +21,20 @@ use Illuminate\Http\Exceptions\HttpResponseException;
  *   2. Notice period does not apply — an exit is immediate, with no
  *      notice-period end date gating the last working day.
  *
- * Separately, an employee who leaves within EARLY_EXIT_DAYS of joining is not
- * put through payroll at all.
+ * EARLY EXIT — resigned within EARLY_EXIT_DAYS of joining
+ * ------------------------------------------------------
+ * A separate carve-out that stands on its own, because probation is not
+ * guaranteed: an employee hired under a "No Probation" policy has no probation
+ * end date at all, and without this rule someone who quit on day 8 would still
+ * be charged a full notice period. Someone who resigns that early:
+ *   · serves NO notice period — nothing is recovered from them and nothing is
+ *     paid to them in lieu (noticePeriodApplies), and
+ *   · is not put through payroll at all (isEarlyExit → PayrollService).
+ *
+ * The waiver is keyed on the RESIGNATION date, not the last working day: the
+ * last working day is DERIVED from whether a notice period applies, so keying
+ * the waiver on it would be circular. Payroll still honours either date (see
+ * isEarlyExit) so a case with no resignation date recorded is not missed.
  *
  * Dates are compared in the display timezone (IST): the app runs in UTC, so a
  * raw now()->toDateString() reports YESTERDAY for the first 5.5h of every IST
@@ -33,10 +45,10 @@ class ProbationGuard
     public const DISPLAY_TZ = 'Asia/Kolkata';
 
     /**
-     * Exit inside this many days of joining (inclusive, counting the joining
-     * day itself) means payroll is skipped entirely for that employee.
-     * Joined the 1st + last working day the 15th = 15 days → skipped;
-     * last working day the 16th = 16 days → paid normally.
+     * Resigning/leaving inside this many days of joining (inclusive, counting
+     * the joining day itself) waives the notice period and skips payroll
+     * entirely for that employee. Joined the 1st + resigned the 15th = 15 days
+     * → waived/skipped; the 16th = 16 days → normal notice, paid normally.
      */
     public const EARLY_EXIT_DAYS = 15;
 
@@ -96,13 +108,19 @@ class ProbationGuard
     }
 
     /**
-     * Rule 2 — notice period is waived on probation, so an exit can be
-     * effective immediately (the last working day is not pushed out to
-     * notice start + notice_period_days).
+     * Rule 2 — notice period is waived on probation, AND for an employee who
+     * resigned within EARLY_EXIT_DAYS of joining. Either way the exit can be
+     * effective immediately: the last working day is not pushed out to notice
+     * start + notice_period_days, and no notice settlement (recovery or pay in
+     * lieu) can arise, because there is no notice period to leave unserved.
+     *
+     * @param  mixed  $resignationDate  The exit case's notice/resignation date.
+     *                Omit it to test the probation half alone.
      */
-    public static function noticePeriodApplies(?Employee $employee): bool
+    public static function noticePeriodApplies(?Employee $employee, $resignationDate = null): bool
     {
-        return !self::isOnProbation($employee);
+        return !self::isOnProbation($employee)
+            && !self::isEarlyResignation($employee, $resignationDate);
     }
 
     /**
@@ -124,13 +142,34 @@ class ProbationGuard
     }
 
     /**
+     * Resigned within EARLY_EXIT_DAYS of joining — the trigger for the notice
+     * waiver. Null/blank resignation date → false (nothing to measure against),
+     * so a case where HR hasn't recorded one yet keeps the normal notice rules.
+     */
+    public static function isEarlyResignation(?Employee $employee, $resignationDate): bool
+    {
+        $tenure = self::tenureDays($employee, $resignationDate);
+
+        return $tenure !== null && $tenure <= self::EARLY_EXIT_DAYS;
+    }
+
+    /**
      * Rule 3 — left within EARLY_EXIT_DAYS of joining, so payroll must not be
      * processed for them at all.
+     *
+     * EITHER date can trigger it. The resignation date is the policy's own
+     * trigger; the last working day is kept as a fallback so a termination or a
+     * legacy case with no notice date recorded is still caught, and so an exit
+     * whose last day was pulled back inside the window is caught too.
+     *
+     * @param  mixed  $resignationDate  Optional; omitted for callers that only
+     *                                  hold the last working day.
      */
-    public static function isEarlyExit(?Employee $employee, $lastWorkingDay): bool
+    public static function isEarlyExit(?Employee $employee, $lastWorkingDay, $resignationDate = null): bool
     {
         $tenure = self::tenureDays($employee, $lastWorkingDay);
 
-        return $tenure !== null && $tenure <= self::EARLY_EXIT_DAYS;
+        return ($tenure !== null && $tenure <= self::EARLY_EXIT_DAYS)
+            || self::isEarlyResignation($employee, $resignationDate);
     }
 }

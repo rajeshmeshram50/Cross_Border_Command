@@ -60,6 +60,7 @@ class ExitController extends Controller
         $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
         // Never trust a client-sent settlement mode — it follows the exit type.
         $row->notice_settlement_mode = $this->resolveSettlementMode((string) ($row->exit_type ?? ''));
+        $this->applyNoticeWaiver($row, $employee);
         if (!$row->exists) $row->created_by = $request->user()?->id;
         $row->save();
 
@@ -90,6 +91,17 @@ class ExitController extends Controller
         $mode   = $this->resolveSettlementMode((string) ($data['exit_type'] ?? ''));
         $amount = (float) ($data['notice_settlement_amount'] ?? 0);
         $status = (string) ($data['notice_settlement_status'] ?? 'NA');
+        /* No notice period applies (probation, or resigned within 15 days of
+           joining) → nothing can be owed, so a stale amount left on the payload
+           must not gate the completion. applyNoticeWaiver() zeroes what is
+           actually stored; this keeps the gate consistent with it. Falls back
+           to the saved notice date when the payload omits it, so the gate reads
+           the same date the waiver will. */
+        $noticeDate = $data['notice_date']
+            ?? EmployeeExit::where('employee_id', $employee->id)->value('notice_date');
+        if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $noticeDate)) {
+            $amount = 0.0;
+        }
         if ($mode !== 'served' && $amount > 0 && $status !== 'Settled') {
             abort(422, $mode === 'recover'
                 ? 'The notice-period recovery from this employee is not settled yet — record the payment and approve it before completing the exit.'
@@ -106,6 +118,7 @@ class ExitController extends Controller
             $row->branch_id            = $employee->branch_id;
             $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
             $row->notice_settlement_mode = $mode;
+            $this->applyNoticeWaiver($row, $employee);
             if (!$row->exists) $row->created_by = $request->user()?->id;
 
             // Lock the case closed regardless of what the client sent.
@@ -502,6 +515,31 @@ class ExitController extends Controller
      * behaviour of no settlement; Absconding recovers, matching how an
      * unserved notice has always been treated.
      */
+    /**
+     * Notice-period waiver — an employee on probation, or one who RESIGNED
+     * within ProbationGuard::EARLY_EXIT_DAYS of joining, serves no notice
+     * period at all. With no notice period there are no unserved days, so
+     * nothing can be recovered from them and nothing paid to them in lieu.
+     *
+     * The wizard already collapses these figures to zero; this is the
+     * server-side twin, so a stale draft or a crafted payload cannot save a
+     * recovery against someone the policy exempts. Applied on every save
+     * (not just the first) because the notice date is editable — moving it
+     * into or out of the 15-day window has to move the settlement with it.
+     */
+    private function applyNoticeWaiver(EmployeeExit $row, Employee $employee): void
+    {
+        if (\App\Support\ProbationGuard::noticePeriodApplies($employee, $row->notice_date)) {
+            return;
+        }
+        $row->notice_days_required     = 0;
+        $row->notice_days_served       = 0;
+        $row->notice_days_unserved     = 0;
+        $row->notice_per_day_rate      = 0;
+        $row->notice_settlement_amount = 0;
+        $row->notice_settlement_status = 'NA';
+    }
+
     /**
      * Record WHO released the exit documents and WHEN, on the transition only.
      * Toggling it back off clears the stamp, so the pair always describes the

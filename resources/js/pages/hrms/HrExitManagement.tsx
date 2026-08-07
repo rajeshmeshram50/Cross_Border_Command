@@ -8,7 +8,7 @@ import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
-import { isOnProbation, probationEndLabel } from '../../utils/probation';
+import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
 import '../../../css/recruitment.css';
 
 type ExitStatus = 'Active' | 'Exit In Progress' | 'Exited' | 'Missing Details';
@@ -56,6 +56,9 @@ interface EmployeeRow {
   // Probation end date. While it's in the future the notice period does NOT
   // apply — the exit is immediate (see ProbationGuard on the backend).
   probationEndIso: string | null;
+  // Joining date. Resigning within 15 days of it also waives the notice period
+  // (and keeps the employee out of payroll) — see ProbationGuard::EARLY_EXIT_DAYS.
+  dateOfJoiningIso: string | null;
   laptopAsset:  AssetMini | null;
   mobileAsset:  AssetMini | null;
   otherAssets:  AssetMini[];
@@ -871,18 +874,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      immediate. So the notice-period end date is not derived, and the last
      working day is not pushed out past it (it may even be today). */
   const onProbation = isOnProbation(employee?.probationEndIso);
+  /* Same waiver for someone who RESIGNS within 15 days of joining, whether or
+     not they were ever on probation — a "No Probation" hire who quits on day 8
+     owes no notice either (they're also skipped by payroll entirely; see
+     ProbationGuard::EARLY_EXIT_DAYS). Keyed on the notice start date currently
+     in the form, so the waiver follows HR editing that date. */
+  const earlyResignation = isEarlyResignation(employee?.dateOfJoiningIso, noticeDate);
+  const earlyTenure      = tenureDays(employee?.dateOfJoiningIso, noticeDate);
+  const noticeWaived     = onProbation || earlyResignation;
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
   const noticePeriodEnd = useMemo(() => {
-    if (onProbation) return '';   // notice period waived on probation
+    if (noticeWaived) return '';   // probation / early resignation → no notice
     const days = employee?.noticePeriodDays;
     if (!noticeDate || days == null || !Number.isFinite(days)) return '';
     const d = new Date(noticeDate + 'T00:00:00');
     if (isNaN(d.getTime())) return '';
     d.setDate(d.getDate() + Number(days));
     return d.toISOString().slice(0, 10);
-  }, [noticeDate, employee?.noticePeriodDays, onProbation]);
+  }, [noticeDate, employee?.noticePeriodDays, noticeWaived]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
   // The assigned reporting manager is disabled/exited — exit can't proceed until
@@ -954,10 +965,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
        · unserved     = required − served
        · per-day rate = monthly figure ÷ 30
        · amount       = unserved × rate, and always 0 when the notice was served
-     A late-starting or probation exit carries no notice period, so `required`
-     collapses to 0 and nothing is ever owed. */
+     A late-starting exit, a probation exit or a resignation inside the 15-day
+     early-exit window carries no notice period, so `required` collapses to 0
+     and nothing is ever owed. */
   const settle = useMemo(() => {
-    const required = onProbation ? 0 : Number(employee?.noticePeriodDays ?? 0) || 0;
+    const required = noticeWaived ? 0 : Number(employee?.noticePeriodDays ?? 0) || 0;
     const dayMs = 86400000;
     let served = 0;
     if (noticeDate && lwd) {
@@ -969,7 +981,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const perDay   = monthly > 0 ? monthly / 30 : 0;
     const amount   = settlement === 'served' ? 0 : Math.round(unserved * perDay * 100) / 100;
     return { required, served, unserved, monthly, perDay, amount };
-  }, [onProbation, employee?.noticePeriodDays, noticeDate, lwd, monthlyAmount, settlement]);
+  }, [noticeWaived, employee?.noticePeriodDays, noticeDate, lwd, monthlyAmount, settlement]);
 
   /* NA once nothing is owed; otherwise Pending until the money is accounted
      for — approved (recovery) or fully disbursed (payment in lieu). */
@@ -1072,12 +1084,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               termination date itself and today is valid.
        On probation           no notice period at all; immediate exit (existing
                               carve-out, unchanged).
+       Early resignation      resigned within 15 days of joining — same waiver,
+                              independent of probation.
 
      Applying the served-notice rule to every type was a bug: it pinned a
      "Resignation without notice period" exit to the notice-end date, making
      the type impossible to actually express. An already-saved value is still
      accepted as-is so reopening a case never invalidates it. */
-  const noticeServed = !onProbation && settlement === 'served';
+  const noticeServed = !noticeWaived && settlement === 'served';
   const lwdMin = noticeServed
     ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
     : (noticeDate || todayIso);
@@ -2151,19 +2165,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label={`Notice Period End Date${!onProbation && employee?.noticePeriodLabel ? ` (${employee.noticePeriodLabel})` : ''}`}>
+                    <EpField label={`Notice Period End Date${!noticeWaived && employee?.noticePeriodLabel ? ` (${employee.noticePeriodLabel})` : ''}`}>
                       <EpInput
                         type="date"
                         value={noticePeriodEnd}
                         disabled
                         onChange={() => {}}
                       />
-                      <div className="ep-hint" style={{ fontSize: 11, color: onProbation ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                      <div className="ep-hint" style={{ fontSize: 11, color: noticeWaived ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                        {/* Probation is stated first when both apply: it's the
+                            longer-running condition and the one HR recognises. */}
                         {onProbation
                           ? `Not applicable — employee is on probation until ${probationEndLabel(employee?.probationEndIso)}. No notice period is served; the exit can be effective immediately.`
-                          : (employee?.noticePeriodDays != null
-                              ? 'Auto-calculated from the notice start date + the employee’s notice period.'
-                              : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
+                          : earlyResignation
+                            ? `Not applicable — resigned within ${EARLY_EXIT_DAYS} days of joining${earlyTenure != null ? ` (${earlyTenure} day(s))` : ''}. No notice period is served, the exit can be effective immediately, and this employee is not included in payroll processing.`
+                            : (employee?.noticePeriodDays != null
+                                ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                                : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
                       </div>
                     </EpField>
                   </Col>
@@ -4206,6 +4224,7 @@ function apiToExitRow(e: any): EmployeeRow {
       return Number.isFinite(a) && a > 0 ? Math.round((a / 12) * 0.5 * 100) / 100 : null;
     })(),
     probationEndIso: e.probation_end_date ? String(e.probation_end_date).slice(0, 10) : null,
+    dateOfJoiningIso: e.date_of_joining ? String(e.date_of_joining).slice(0, 10) : null,
     laptopAsset: e.laptop_asset ? {
       id:           Number(e.laptop_asset.id),
       asset_name:   e.laptop_asset.asset_name,
