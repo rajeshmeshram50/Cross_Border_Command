@@ -40,6 +40,10 @@ interface EmployeeRow {
   managerAccent: string;
   exitReadiness: number;
   status: ExitStatus;
+  /** Switched off in HR > Employees (soft-deleted, login dead). Independent of
+   *  the exit status — a disabled employee may still have an exit in progress,
+   *  in which case they show in BOTH lists. */
+  disabled: boolean;
   exitInitiated: boolean;
   /** Exit type already on file, if any. Empty means the type question hasn't
    *  been answered yet — so even "Continue" has to go through the picker,
@@ -101,10 +105,17 @@ export default function HrExitManagement() {
     if (!silent) setListLoading(true);
     api.get('/employees')
       .then(({ data }) => {
-        const list = (Array.isArray(data) ? data : []).filter(
-          e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6
-        );
-        setEmployees(list.map(apiToExitRow));
+        const rows = (Array.isArray(data) ? data : [])
+          .filter(e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6)
+          .map(apiToExitRow)
+          /* A DISABLED employee with no exit case has nothing to do with this
+             page: switching someone off in HR > Employees is not an exit, so
+             they appear in Employees > Disabled and nowhere here — not under
+             Active (their login is dead) and not under Exited (they never
+             exited). Disabled employees who ARE mid-exit are deliberately kept,
+             so they show in both the Disabled list and Exit In Progress. */
+          .filter(r => !r.disabled || r.exitInitiated || r.status === 'Exited');
+        setEmployees(rows);
       })
       .catch(() => setEmployees([]))
       .finally(() => setListLoading(false));
@@ -180,6 +191,12 @@ export default function HrExitManagement() {
                   : e.status === 'Active' ? 'Active'
                   : e.status === 'Exit In Progress' ? 'In Progress'
                   : e.status === 'Exited' ? 'Exited' : 'Action Needed'}
+                {/* Disabled mid-exit: the row legitimately sits here AND in
+                    Employees > Disabled, so say so — otherwise "In Progress"
+                    with a dead login reads as a bug. */}
+                {e.disabled && e.status !== 'Exited' && (
+                  <span style={{ color: '#b45309', fontWeight: 600 }}> · Disabled</span>
+                )}
               </span>
             </div>
           </div>
@@ -4150,17 +4167,26 @@ function apiToExitRow(e: any): EmployeeRow {
   const ex        = rawExit?.rehired_at ? null : rawExit;
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
   const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
-  // Inactive is grouped with Resigned/Terminated as a non-active status
-  // (deactivating an employee flips employees.status to 'Inactive' and kills
-  // the login — see EmployeeController). Such staff must NOT appear in the
-  // Active Employees list; they belong in the Exited bucket (bug #34).
-  //
-  // A soft-deleted (trashed) row counts too: disabling an employee via the
-  // Employees-master toggle calls DELETE /employees/{id}, which soft-deletes
-  // the row (deleted_at set) but leaves employees.status = 'Active'. Without
-  // the `trashed` check such a disabled employee leaked back into the Active
-  // Employees list even though the login is dead — the exact bug #34 report.
-  const statusExited = trashed || ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
+  /* Inactive is grouped with Resigned/Terminated as a non-active status
+     (completing an exit flips employees.status to one of these and kills the
+     login — see ExitController::complete). Such staff must NOT appear in the
+     Active Employees list; they belong in the Exited bucket (bug #34).
+
+     DISABLED IS NOT EXITED. `trashed` used to be lumped in here, which sent
+     anyone switched off in HR > Employees straight to the Exited tab even
+     though no exit ever happened — nobody resigned, no notice was served, no
+     F&F was settled. Being disabled is now carried separately (`disabled`
+     below) and decides nothing about the exit status:
+
+       · disabled, no exit case      → dropped from this page entirely; they
+                                       show in Employees > Disabled only.
+       · disabled, exit in progress  → stays in Exit In Progress, and is also
+                                       in the Disabled list — both, by design.
+       · disabled, exit completed    → Exited, as any completed exit is.
+
+     The drop for the first case happens in loadEmployees(), which is the only
+     place that can remove a row rather than re-label it. */
+  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
@@ -4200,6 +4226,7 @@ function apiToExitRow(e: any): EmployeeRow {
     managerAccent:   _exitAccent(mgrName || 'manager'),
     exitReadiness,
     status,
+    disabled: trashed,
     exitInitiated,
     exitType: String(ex?.exit_type ?? ''),
     noticeStartIso: noticeRaw,

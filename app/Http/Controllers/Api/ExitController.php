@@ -49,6 +49,21 @@ class ExitController extends Controller
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+
+        /* An exit cannot be STARTED for a disabled employee — re-enable them
+           first. Disabling (HR > Employees toggle) soft-deletes the row and
+           kills the login; an exit process needs a live employee to serve
+           notice, hand over, clear assets and sign off, so opening a case
+           against a switched-off record produces one nobody can complete.
+           HR > Employees > Disabled Employees has the Enable toggle.
+
+           Only NEW cases are refused. An exit already in progress carries on
+           even if the employee is disabled midway — that pair is legitimate and
+           deliberately shows in both the Disabled and Exit In Progress lists. */
+        if (!$row->exists && $employee->trashed()) {
+            abort(422, 'This employee is disabled, so an exit cannot be started for them. Re-enable them from HR > Employees > Disabled Employees, then run the exit process.');
+        }
+
         $lockedType     = $this->lockedExitType($row);
         $wasReleased    = (bool) $row->documents_released;
         $row->fill($data);
