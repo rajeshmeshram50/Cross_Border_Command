@@ -1691,7 +1691,13 @@ function AddLeavePlanModal({
     reset();
   };
 
-  const handleClose = () => { reset(); onClose(); };
+  /* While the save is in flight the whole popup is frozen (#107): the fields
+     below sit in a disabled <fieldset>, and closing is refused here so neither
+     the X, Cancel, ESC nor the backdrop can abandon a request that is already
+     on its way to the server — reopening would then show a stale form while
+     the plan quietly got created. Mirrors the read-only fieldset used by the
+     leave-type Setup wizard. */
+  const handleClose = () => { if (saving) return; reset(); onClose(); };
 
   return (
     <Modal
@@ -1700,6 +1706,7 @@ function AddLeavePlanModal({
       centered
       size="lg"
       backdrop="static"
+      keyboard={!saving}
       modalClassName="rec-form-modal"
       contentClassName="rec-form-content border-0"
     >
@@ -1728,14 +1735,26 @@ function AddLeavePlanModal({
             <button
               type="button"
               onClick={handleClose}
+              disabled={saving}
               aria-label="Close"
               className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+              style={saving ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
           </div>
         </div>
 
+        {/* A disabled <fieldset> neutralises every native control inside it in
+            one go; pointer-events covers anything non-native, and the dimming
+            makes the frozen state visible rather than merely unresponsive. */}
+        <fieldset
+          disabled={saving}
+          style={{
+            border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+            ...(saving ? { pointerEvents: 'none', opacity: 0.6 } : {}),
+          }}
+        >
         <div className="rec-form-body">
           <div className="rec-form-section">
             <div className="rec-form-section-head">
@@ -1830,11 +1849,14 @@ function AddLeavePlanModal({
           </div>
 
         </div>
+        </fieldset>
 
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
+            {/* Cancel sits OUTSIDE the fieldset (so it can stay reachable when
+                nothing is in flight) and is disabled explicitly during a save. */}
+            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
