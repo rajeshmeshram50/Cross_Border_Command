@@ -486,8 +486,10 @@ class PayrollService
      *     at all. Reported even when no last working day has been set yet, so
      *     an in-progress early exit still shows up as deliberately skipped.
      *
-     * Someone whose last working day precedes this period entirely is NOT
-     * reported: they belong to an earlier cycle and were never expected here.
+     * Both reasons are scoped to employees THIS period would otherwise have
+     * expected — see the relevance gate below. The panel answers "who is
+     * missing from this run and why", so anyone the run was never going to
+     * contain has no business in it.
      */
     public function payrollExclusions(PayrollPeriod $period): array
     {
@@ -507,6 +509,28 @@ class PayrollService
         foreach ($employees as $e) {
             $lwd    = $exits[$e->id] ?? null;
             $resign = $resigns[$e->id] ?? null;
+
+            /* Relevance gate — only report people this period would otherwise
+               have expected, mirroring eligibleEmployees()' own bounds:
+
+                 · Not joined by the period end → they did not exist as an
+                   employee yet. A July 2026 hire has no business appearing on
+                   the January 2026 preflight, whatever happened to them later.
+                   A NULL joining date is kept, because eligibleEmployees()
+                   keeps it too.
+                 · Last working day before the period start → they belong to an
+                   earlier cycle and were never expected here. An exit with no
+                   last working day agreed yet is still open, so it stays.
+
+               Without this the early-exit branch reported against EVERY period
+               the tenant has ever opened, turning the panel into a running log
+               of all-time early exits. */
+            if ($e->date_of_joining && Carbon::parse($e->date_of_joining)->gt($period->period_end)) {
+                continue;
+            }
+            if ($lwd && Carbon::parse($lwd)->lt($period->period_start)) {
+                continue;
+            }
 
             $earlyExit = ProbationGuard::isEarlyExit($e, $lwd, $resign);
             // Exited inside THIS cycle (not before it — that's an earlier
