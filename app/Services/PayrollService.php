@@ -958,6 +958,18 @@ class PayrollService
         $lopDays = min($effectiveWorkingDays, $lopDays);
         $paidDays = max(0, round($effectiveWorkingDays - $lopDays, 2));
 
+        // Unpaid-leave vs LOP sanity — an employee on unpaid leave should be
+        // docked at least those working days. When fewer LOP days are charged
+        // than the unpaid leave taken, the same dates are ALSO marked present /
+        // paid-leave (overlapping attendance), so the unpaid leave was silently
+        // not cut. Surface it as a WARNING (never blocks) so it shows in the
+        // execution summary + row exceptions instead of reading as "no cut".
+        if ($unpaidLeaveDays > $lopDays + 0.001) {
+            $notCharged = round($unpaidLeaveDays - $lopDays, 2);
+            $exceptions = $this->withException($exceptions, 'warning',
+                "{$notCharged} unpaid-leave day(s) not charged as LOP — the employee is also marked present/paid-leave on those dates. Verify attendance before approving.");
+        }
+
         // ── Money ──────────────────────────────────────────────────────────
         $proratedGross = round($gross * $proration, 2);
         $proratedBasic = round($basic * $proration, 2);
