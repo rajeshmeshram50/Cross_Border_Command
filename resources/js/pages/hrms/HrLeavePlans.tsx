@@ -767,7 +767,10 @@ export default function HrLeavePlans() {
                       className="lp-new-plan-btn"
                       onClick={() => setShowAddPlan(true)}
                     >
-                      <i className="ri-add-line" />New Plan
+                      {/* Same label as the header button it duplicates, and the
+                          same "Add <thing>" form as Add Leave Type — one action
+                          should not have two names. */}
+                      <i className="ri-add-line" />Add Leave Plan
                     </button>
                   )}
                 </aside>
@@ -1903,7 +1906,10 @@ function AddLeaveTypeModal({
   }, [isOpen, editing]);
 
   const reset = () => { setName(''); setType('Regular'); setIsPaid('Paid'); setCode(''); setErrors({}); setSaving(false); };
-  const handleClose = () => { reset(); onClose(); };
+  /* Frozen while the save/update is in flight (#106) — same rule as the Add
+     Leave Plan popup: closing is refused so neither the X, Cancel, ESC nor the
+     backdrop can abandon a request already on its way to the server. */
+  const handleClose = () => { if (saving) return; reset(); onClose(); };
 
   // 'Unpaid' is intentionally NOT a category — Paid/Unpaid is set by the
   // Compensation section below, so it would be a redundant/contradictory choice.
@@ -1942,6 +1948,7 @@ function AddLeaveTypeModal({
       centered
       size="lg"
       backdrop="static"
+      keyboard={!saving}
       modalClassName="rec-form-modal"
       contentClassName="rec-form-content border-0"
     >
@@ -1970,14 +1977,26 @@ function AddLeaveTypeModal({
             <button
               type="button"
               onClick={handleClose}
+              disabled={saving}
               aria-label="Close"
               className="rec-close-btn d-inline-flex align-items-center justify-content-center"
+              style={saving ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             >
               <i className="ri-close-line" style={{ fontSize: 17 }} />
             </button>
           </div>
         </div>
 
+        {/* A disabled <fieldset> neutralises every native control inside it in
+            one go; pointer-events covers anything non-native, and the dimming
+            makes the frozen state visible rather than merely unresponsive. */}
+        <fieldset
+          disabled={saving}
+          style={{
+            border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+            ...(saving ? { pointerEvents: 'none', opacity: 0.6 } : {}),
+          }}
+        >
         <div className="rec-form-body">
           <div className="rec-form-section">
             <div className="rec-form-section-head">
@@ -2087,11 +2106,14 @@ function AddLeaveTypeModal({
             </Row>
           </div>
         </div>
+        </fieldset>
 
         <div className="rec-form-footer">
           <span className="hint" />
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
+            {/* Cancel sits OUTSIDE the fieldset (so it stays reachable when
+                nothing is in flight) and is disabled explicitly during a save. */}
+            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"
