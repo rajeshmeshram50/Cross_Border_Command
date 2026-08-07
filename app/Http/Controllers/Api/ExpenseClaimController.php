@@ -223,7 +223,10 @@ class ExpenseClaimController extends Controller
             'category_id'    => ['nullable', 'integer'],
             'currency'       => ['nullable', 'string', 'max:8'],
             'project'        => ['nullable', 'string', 'max:64'],
-            'payment_method' => ['nullable', 'string', 'max:64'],
+            // Payment method is mandatory — finance reconciles the payout
+            // against how the employee actually paid. Enforced server-side too
+            // so a direct API call can't file a claim without it.
+            'payment_method' => ['required', 'string', 'max:64'],
             'title'          => ['required', 'string', 'max:255'],
             // Cap at 9,999,999,999,999.99 — well inside the decimal(18,2)
             // column on `expense_claims.amount` so a paste of "9999..."
@@ -232,7 +235,9 @@ class ExpenseClaimController extends Controller
             'amount'         => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
             'expense_date'   => ['required', 'date', 'before_or_equal:today', 'after_or_equal:' . $minExpenseDate],
             'vendor'         => ['nullable', 'string', 'max:255'],
-            'purpose'        => ['nullable', 'string'],
+            // Capped at 500 — an unbounded purpose wrecked the approval screen's
+            // layout when rendered in full (CBC #57). Matches the advance Reason.
+            'purpose'        => ['nullable', 'string', 'max:500'],
             // Proof & receipt is mandatory — every claim must be backed by at
             // least one supporting document. Enforced server-side too so the
             // requirement can't be bypassed by a direct API call.
@@ -1302,7 +1307,12 @@ class ExpenseClaimController extends Controller
             'expense_type'        => ['required', 'string', 'in:Goods,Service'],
             'note'                => ['required', 'string', 'max:500'],
             // Proof of payment — the receipt / transfer confirmation (mandatory).
-            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            // A receipt document or a photo of one only: spreadsheets and Word
+            // files are not evidence of a payment, and the picker used to let a
+            // .xlsx through (CBC #77). Mirrors PROOF_EXTS on the client.
+            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png'],
+        ], [
+            'proof.mimes' => 'Proof of payment must be a PDF, JPG, JPEG or PNG file.',
         ]);
 
         // Normalise deductions + additions (first payment only). Net payable =

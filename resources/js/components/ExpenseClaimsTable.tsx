@@ -338,7 +338,10 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '10%', wrap: true },
+      // HR sees the wide "Review & Approve" CTA, so the column reserves room
+      // for it — otherwise the fixed table layout squeezed the button and the
+      // action group wrapped on some rows but not others.
+      meta: { align: 'center', width: mode === 'hr' ? 240 : '10%', wrap: true },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}
@@ -473,7 +476,16 @@ function ExpenseActionCell({
 
   return (
     <>
-      <div className="d-inline-flex align-items-center gap-1">
+      {/* Fixed-width, end-justified action group. Rows carry different button
+          sets (wide "Review & Approve" on pending, icon-only elsewhere), so a
+          free-width centered group left every row's buttons at a different x
+          and the column read as ragged. Reserving the widest case and pushing
+          the buttons to its right edge keeps the trailing kebab — and every
+          icon before it — in a straight line down the table. */}
+      <div
+        className="d-inline-flex align-items-center justify-content-end gap-1"
+        style={{ minWidth: mode === 'hr' ? 216 : undefined }}
+      >
         {(canManagerAct || canHrAct) && onReview ? (
           <button
             type="button"
@@ -792,8 +804,10 @@ function AuditLogTrigger({
   const popRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Recompute the popover position whenever it opens (and on scroll/resize
-  // while open) so it stays anchored to the trigger button.
+  // Position the popover when it opens. It is pinned to fixed coords taken
+  // from the trigger, so a scroll strands it away from its row — close it
+  // instead (same rule as the customers segment popover), except when the
+  // scroll happens INSIDE the popover's own body. A resize just re-anchors.
   useEffect(() => {
     if (!open) { setPos(null); return; }
     const recompute = () => {
@@ -815,11 +829,31 @@ function AuditLogTrigger({
       setPos({ top, left });
     };
     recompute();
-    window.addEventListener('scroll', recompute, true);
+    const onScroll = (e: Event) => {
+      const t = e.target as HTMLElement | null;
+      if (t && typeof t.closest === 'function' && t.closest('.ep-audit-popover')) return;
+      setOpen(false);
+    };
+    window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', recompute);
     return () => {
-      window.removeEventListener('scroll', recompute, true);
+      window.removeEventListener('scroll', onScroll, true);
       window.removeEventListener('resize', recompute);
+    };
+  }, [open, setOpen]);
+
+  // Lock the page behind the popover. It is pinned to fixed coords, so letting
+  // the page scroll underneath drags it away from its row; the popover's own
+  // body still scrolls (CBC #73).
+  useEffect(() => {
+    if (!open) return;
+    const body = document.body.style.overflow;
+    const html = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = body;
+      document.documentElement.style.overflow = html;
     };
   }, [open]);
 
@@ -878,6 +912,10 @@ function AuditLogTrigger({
             boxShadow: '0 18px 44px rgba(15,23,42,0.45)',
             padding: 14,
             zIndex: 6500,
+            // The page behind is locked while this is open, so a long log
+            // scrolls HERE rather than taking the page with it.
+            maxHeight: 'min(70vh, 420px)',
+            overflowY: 'auto',
           }}
         >
           <AuditLogPopover claim={claim} />

@@ -5974,6 +5974,22 @@
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ep-type-value.is-empty { color: var(--vz-secondary-color); font-weight: 400; }
+/* Badge form of the same box — tint + colour come from the type (inline, from
+   exitTypeTone) so it matches the Exit Type column in the list. Sized to the
+   text rather than filling the field: it is a state, not an input. */
+.ep-type-badge {
+  flex: 0 1 auto; align-self: flex-start;
+  padding: 6px 14px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .01em;
+}
+/* Dark mode: the pastel fills wash out, so drop the tint and keep the outline
+   — the inline background/border are overridden, the text colour is not. */
+[data-bs-theme="dark"] .ep-type-badge,
+[data-layout-mode="dark"] .ep-type-badge {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  filter: brightness(1.5);
+}
 /* Compact echo of a settlement owned by ANOTHER stage — status only, so the
    same figure isn't editable in two places. */
 .ep-echo {

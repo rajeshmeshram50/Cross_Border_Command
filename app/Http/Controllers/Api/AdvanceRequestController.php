@@ -151,6 +151,11 @@ class AdvanceRequestController extends Controller
             ], 422);
         }
 
+        // Earliest salary-recovery start = 1st of the month after the request.
+        // requested_date is pinned to today by the rules below, so "now" is the
+        // right base even if the client omits or fakes it.
+        $minRecoveryStart = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
+
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
             // Only meaningful when advance_type='Other'. The frontend already
@@ -169,7 +174,11 @@ class AdvanceRequestController extends Controller
             'requested_date'      => ['required', 'date', 'after_or_equal:today', 'before_or_equal:today'],
             // Recovery start / mode only apply to a SELF advance (salary recovery).
             // A COMPANY advance has NO recovery and NO date at all.
-            'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:requested_date'],
+            // Recovery can only begin in the month AFTER the request: the
+            // requested month's payroll is already in flight, so no deduction
+            // can land on it (CBC #93). Same rule the settle-return schedule
+            // already enforces further down.
+            'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:' . $minRecoveryStart],
             'recovery_mode'       => ['required_if:used_for,self', 'nullable', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
             // Months + monthly EMI only required when mode='emi'. The
             // validator below promotes them to required-when conditionally.
@@ -184,6 +193,7 @@ class AdvanceRequestController extends Controller
         ], [
             'requested_date.after_or_equal'  => 'Requested date must be today (the request creation date).',
             'requested_date.before_or_equal' => 'Requested date cannot be in the future — it is the request creation date.',
+            'recovery_start.after_or_equal'  => 'Recovery must start in the month after the requested date (this month’s payroll may already be done).',
             'reason.max'                     => 'Reason is too long — please keep it under 500 characters.',
         ]);
 

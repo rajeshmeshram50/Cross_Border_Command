@@ -124,12 +124,16 @@ const DCP_TABS_CSS = `
 }
 [data-bs-theme="dark"] .dcp-pills { background: linear-gradient(110deg, rgba(8,145,178,.18), rgba(8,145,178,.10)); border-color: rgba(34,211,238,.30); box-shadow: 0 2px 10px rgba(0,0,0,.25) inset; }
 /* Right-aligned toolbar: Regulatory + Customer≠Consignee filters + a compact search. */
-.dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* nowrap + a shrinkable search: with wrap on, the fixed 480px search claimed
+   the whole line and pushed the Filter button onto a row of its own. The
+   search now gives up width first and the toolbar stays a single strip. */
+.dcp-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
 .dcp-filter-ms { flex: 0 0 auto; }
-.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 0 auto; width: 480px; max-width: 100%; }
-@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { width: 300px; } }
+.dcp-toolbar .dcp-filter-btn { flex-shrink: 0; }
+.dcp-pre-table .dcp-toolbar .clm-search { flex: 0 1 480px; min-width: 180px; max-width: 100%; }
+@media (max-width: 1100px) { .dcp-pre-table .dcp-toolbar .clm-search { flex-basis: 300px; } }
 @media (max-width: 760px) {
-  .dcp-toolbar { width: 100%; }
+  .dcp-toolbar { width: 100%; flex-wrap: wrap; }
   .dcp-pre-table .dcp-toolbar .clm-search { width: 100%; }
   .dcp-filter-ms { flex: 1 1 auto; }
 }

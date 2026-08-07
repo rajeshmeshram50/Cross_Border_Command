@@ -187,13 +187,27 @@ export default function DataTable<T extends object>({
   const scrollRef = useRef<HTMLDivElement>(null);
   const cloneRef  = useRef<HTMLDivElement>(null);
   const [cloneCols, setCloneCols] = useState<number[]>([]);
+  /* Width of .dt-scroll's vertical scrollbar. The clone sits OUTSIDE that box,
+   * so without reserving the same gutter it is wider than the body's content
+   * box: the columns drift out of line and, at the far right, the clone runs
+   * out of scrollLeft before the body does — the header appears to stop
+   * following the horizontal scroll. */
+  const [scrollGutter, setScrollGutter] = useState(0);
 
   useEffect(() => {
     const head = theadRef.current;
     const box  = scrollRef.current;
     if (!head || !box) return;
 
+    const syncX = () => {
+      if (cloneRef.current) cloneRef.current.scrollLeft = box.scrollLeft;
+    };
+
     const measure = () => {
+      setScrollGutter(prev => {
+        const g = Math.round(box.offsetWidth - box.clientWidth);
+        return Math.abs(prev - g) < 1 ? prev : g;
+      });
       const cells = head.rows[0]?.cells;
       if (!cells?.length) return;
       const next = Array.from(cells, c => c.getBoundingClientRect().width);
@@ -206,11 +220,11 @@ export default function DataTable<T extends object>({
           : next);
     };
 
-    const syncX = () => {
-      if (cloneRef.current) cloneRef.current.scrollLeft = box.scrollLeft;
-    };
-
     measure();
+    // Re-assert on every render, not only on scroll: the clone mounts (and
+    // remounts on a column-count change) at scrollLeft 0, which would leave the
+    // header parked at the left while the body stayed scrolled.
+    syncX();
     box.addEventListener('scroll', syncX, { passive: true });
     const ro = new ResizeObserver(measure);
     ro.observe(head);
@@ -450,7 +464,12 @@ export default function DataTable<T extends object>({
             starts at the first row. Widths are the real header's measured
             widths; scrollLeft is mirrored from the body. */}
         {cloneCols.length > 0 && (
-          <div className="dt-head-clone" ref={cloneRef} aria-hidden="true">
+          <div
+            className="dt-head-clone"
+            ref={cloneRef}
+            aria-hidden="true"
+            style={scrollGutter > 0 ? { width: `calc(100% - ${scrollGutter}px)` } : undefined}
+          >
             <table className="dt-table" style={{ tableLayout: 'fixed', width: cloneCols.reduce((a, b) => a + b, 0) }}>
               <colgroup>
                 {cloneCols.map((w, i) => <col key={i} style={{ width: w }} />)}
