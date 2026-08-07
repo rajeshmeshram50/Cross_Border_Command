@@ -185,7 +185,19 @@ class Employee extends Model
         }
 
         // 2. Match the shift NAME against the branch's configured shifts.
-        $branch = $this->relationLoaded('branch') ? $this->getRelation('branch') : $this->branch()->first();
+        /* An eager load with a column list — EmployeeController uses
+           'branch:id,name' — returns a Branch with no `shifts` attribute at
+           all. Reading it yields null, which looks exactly like "this branch
+           defines no shifts", so every profile silently showed the shift name
+           with no window. Absent is not empty: fall back to a real query when
+           the loaded relation simply wasn't asked for the column. */
+        $branch = $this->relationLoaded('branch') ? $this->getRelation('branch') : null;
+        if (!$branch || !array_key_exists('shifts', $branch->getAttributes())) {
+            $branch = $this->branch()->first();
+        }
+        if (!$branch) {
+            return [null, null];
+        }
         foreach ((array) ($branch->shifts ?? []) as $s) {
             if (strcasecmp(trim((string) ($s['name'] ?? '')), $shift) === 0) {
                 $start = $this->hhmm($s['start'] ?? '');

@@ -31,7 +31,9 @@ class EmployeeController extends Controller
     use PasswordHistory;
     private const WITH = [
         'client:id,org_name',
-        'branch:id,name',
+        // `shifts` is needed by Employee::resolveShiftWindow() — without it the
+        // profile can show a shift name but never its timings.
+        'branch:id,name,shifts',
         'creator:id,name,user_type',
         'user:id,name,email,status,last_login_at,user_type,designation',
         'department:id,name,code',
@@ -802,7 +804,8 @@ class EmployeeController extends Controller
         $this->authorize($request, 'can_add');
         $data = $this->validatePayload($request);
         $data = $this->mirrorAncillaryRoles($data);
-        $this->assertAssetsNotDoubleBooked($data, null);
+        [$dbClientId] = $this->resolveOwnership($request);
+        $this->assertAssetsNotDoubleBooked($data, null, $dbClientId);
 
         try {
             return DB::transaction(function () use ($request, $data) {
@@ -992,7 +995,9 @@ class EmployeeController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
-        $this->assertAssetsNotDoubleBooked($data, $row->id);
+        // Scope from the row being saved, not the acting user — a super_admin
+        // has no client of their own and would otherwise scan every tenant.
+        $this->assertAssetsNotDoubleBooked($data, $row->id, $row->client_id);
         // Same duplicate guard as store(), but exclude the row being
         // edited so saving an unchanged employee never reports itself
         // as its own duplicate.
@@ -1638,8 +1643,16 @@ class EmployeeController extends Controller
         }
 
         $this->stripDanglingAssetRefs($request);
-        if ($request->filled('email')) {
-            $request->merge(['email' => mb_strtolower(trim($request->input('email')))]);
+        /* Addresses are stored lower-case. The domain half is case-insensitive
+           by spec and every provider treats the local half that way too, so
+           "Test@Gmail.com" and "test@gmail.com" are one mailbox — storing both
+           spellings creates duplicates the uniqueness check below cannot see,
+           and a login typed in the other case that never matches.
+           official_email was left out of this and drifted from `email`. */
+        foreach (['email', 'official_email'] as $emailField) {
+            if ($request->filled($emailField)) {
+                $request->merge([$emailField => mb_strtolower(trim($request->input($emailField)))]);
+            }
         }
       if ($request->filled('pan_number')) {
             $request->merge(['pan_number' => mb_strtoupper(trim($request->input('pan_number')))]);
@@ -2004,8 +2017,16 @@ class EmployeeController extends Controller
      * a different employee. Throws a ValidationException with the
      * conflicting field names so the SPA can highlight them.
      */
-    private function assertAssetsNotDoubleBooked(array $data, ?int $employeeId): void
-    {
+    /**
+     * Refuse to issue a device that somebody else is already holding.
+     *
+     * @param  int|null  $clientId  tenant the saved row belongs to
+     */
+    private function assertAssetsNotDoubleBooked(
+        array $data,
+        ?int $employeeId,
+        ?int $clientId = null,
+    ): void {
         $picked = [];
         if (!empty($data['laptop_master_asset_id'])) {
             $picked[(int) $data['laptop_master_asset_id']] = ['field' => 'laptop_master_asset_id', 'label' => 'Laptop'];
@@ -2021,7 +2042,29 @@ class EmployeeController extends Controller
         }
         if (empty($picked)) return;
 
-        $q = Employee::query()->whereNull('deleted_at');
+        /* Scoped to the SAME tenant. Unscoped, this scanned every employee of
+         * every client: saving an asset could fail with "already assigned to
+         * <name>" naming somebody in a different company entirely — a blocked
+         * save AND another tenant's employee name leaked into the message.
+         *
+         * Client scope only — deliberately NOT narrowed to the branch as well.
+         * That would reopen the opposite bug: a super_admin operating with no
+         * branch selected sees every device, and a same-client holder one
+         * branch over would slip past and end up double-booked. Cross-branch
+         * conflicts cannot arise from the UI anyway, because availableAssets()
+         * offers only devices belonging to the caller's branch — so the wider
+         * scope costs nothing and catches the case the narrow one misses. */
+        $q = Employee::query()
+            // A DISABLED employee still physically holds the device; someone who
+            // has EXITED has returned it. Same rule availableAssets() applies,
+            // so the picker and this guard can never disagree about who holds
+            // what.
+            ->withTrashed()
+            ->where(function ($w) {
+                $w->whereNull('status')
+                  ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+            })
+            ->when($clientId, fn ($x) => $x->where('client_id', $clientId));
         if ($employeeId) $q->where('id', '!=', $employeeId);
         $rows = $q->select(['id', 'display_name', 'emp_code', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])->get();
 

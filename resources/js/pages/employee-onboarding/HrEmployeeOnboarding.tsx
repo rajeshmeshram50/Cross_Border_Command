@@ -32,7 +32,13 @@ const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International 
 const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
-const ONB_NOTICE       = OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days');
+/* Same sentinel string HrEmployees uses — the two forms write the same column,
+   so a value typed in one has to round-trip through the other. */
+const ONB_CUSTOM_NOTICE = '__custom_notice__';
+const ONB_NOTICE = [
+  ...OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days'),
+  { value: ONB_CUSTOM_NOTICE, label: 'Set Custom Notice Period…' },
+];
 /* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
    Master (/holiday-groups) and Shift by the branch's configured Shift Details
    (/branch-shifts). Never hardcode either list. */
@@ -150,6 +156,15 @@ const _todayIso = (): string => {
  * (Initiate modal AND the public previous-employment section) can use it for
  * date-picker min/max bounds — a local copy lived only inside the Initiate
  * modal and threw "_shiftYears is not defined" when used elsewhere. */
+/* An ISO date shifted by N days. Used to cap previous-employment dates at the
+ * day BEFORE this employer's joining date — the two jobs cannot overlap. */
+const _shiftIsoDays = (iso: string, days: number): string => {
+  const d = new Date(`${iso}T00:00:00`);
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
 const _shiftYears = (years: number): string => {
   const d = new Date();
   d.setFullYear(d.getFullYear() + years);
@@ -158,6 +173,18 @@ const _shiftYears = (years: number): string => {
 };
 const EMAIL_INVALID = (v: string | null | undefined): boolean =>
   !!v && v.trim() !== '' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+/* Addresses are stored and compared lower-case.
+ *
+ * The DOMAIN half is case-insensitive by spec, and every mail provider this
+ * app talks to treats the LOCAL half that way too — so "Test@Gmail.com" and
+ * "test@gmail.com" are one mailbox. Storing both spellings gives duplicate
+ * employees that the uniqueness check cannot see, and a login typed in the
+ * other case that fails to match. Normalising as the user types keeps one
+ * spelling in the database and one on screen.
+ * Whitespace goes at the same time: pasted addresses routinely carry a
+ * trailing space and the SMTP gateway rejects it. */
+const normaliseEmail = (raw: string): string => raw.replace(/\s/g, '').toLowerCase();
+
 const validateOfficialEmail = (raw: string | null | undefined): string => {
   const email = String(raw ?? '').trim();
   if (!email) return 'Official email is required.';
@@ -3640,6 +3667,19 @@ function InitiateOnboardingModal({
     pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
+  /* Notice period: is the free-text box showing?
+   *
+   * Two ways it opens — the user picks "Set Custom Notice Period…", or an
+   * EXISTING employee already holds a value that is not one of the presets
+   * (e.g. "45 Days" typed on the Employee form). The second case matters
+   * because both forms write the same column: without it, reopening
+   * onboarding would show an empty dropdown and silently drop the value on
+   * the next save. */
+  const ONB_NOTICE_PRESETS = new Set(['Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days']);
+  const [noticeCustomOpen, setNoticeCustomOpen] = useState(false);
+  const noticeIsCustom = noticeCustomOpen
+    || (!!s1.notice_period && !ONB_NOTICE_PRESETS.has(s1.notice_period));
+
   /* Holiday List options as rendered: the active groups, plus this employee's
      own group when it has since been deactivated (so an existing assignment
      never disappears from the dropdown). `s1.holiday_list` holds the group id. */
@@ -3966,11 +4006,26 @@ const validateStage1 = (): boolean => {
   }
 
   // Contact Information - Required + format
+  /* The loose `x@y.z` shape this used let through "a@b.c", double dots and
+     over-long local parts that Official Email rejects two stages later.
+     One validator for both fields. */
   const email = s1.email?.trim() ?? '';
   if (!email) {
     errors.email = 'Work email is required';
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    errors.email = 'Enter a valid email address';
+  } else {
+    const msg = validateOfficialEmail(email);
+    if (msg) errors.email = msg.replace('Official email', 'Work email');
+  }
+
+  /* Asset pickers — required only while the matching "Assigned" answer is Yes.
+     The Employee form has enforced this from the start; onboarding let the
+     picker be left empty, so an employee could be onboarded marked as holding a
+     laptop that the asset register never linked to anyone. */
+  if (s1.laptop_assigned === 'Yes' && !String(s1.laptop_master_asset_id || '').trim()) {
+    errors.laptop_master_asset_id = 'Laptop Device is required';
+  }
+  if (s1.mobile_assigned === 'Yes' && !String(s1.mobile_master_asset_id || '').trim()) {
+    errors.mobile_master_asset_id = 'Mobile Device is required';
   }
 
   const mobile = s1.mobile?.trim() ?? '';
@@ -4305,7 +4360,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 //   setS1Errors(errors);
 //   return Object.keys(errors).length === 0;
 // };
-  const saveStage4 = async (markComplete: boolean, silent = false): Promise<boolean> => {
+  /**
+   * @param skipValidate  Set when the caller is NAVIGATING, not submitting.
+   *   The hard gates below block the save AND toast, which is right for Save
+   *   Draft / Next Stage but wrong for the Previous button and the sidebar:
+   *   clicking Previous fired "Bank details required" at a user who was
+   *   walking BACK, not forward. In that mode an incomplete stage simply is
+   *   not persisted — silently, with nothing written and nothing said. The
+   *   typed values stay in `s4` for as long as the modal is open.
+   */
+  const saveStage4 = async (markComplete: boolean, silent = false, skipValidate = false): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
 
     /* Hard validation — when salary mode is "bank" the full bank
@@ -4329,6 +4393,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
       if (!s4.bank_branch.trim())          missing.push('Bank Branch');
       if (missing.length > 0) {
+        // Navigating away: don't write a half-filled bank block, and don't
+        // scold someone who is only going back a stage.
+        if (skipValidate) return false;
         setS4ShowErrors(true);   // highlight the offending bank fields
         toast.error(
           'Bank details required',
@@ -4344,6 +4411,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     // also enforces, so the user gets a clear message instead of a raw 422.
     const panVal = s4.pan_number.trim().toUpperCase();
     if (panVal && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panVal)) {
+      if (skipValidate) return false;
       setS4ShowErrors(true);   // highlight the PAN field
       toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A — 5 letters, 4 digits, then 1 letter.');
       return false;
@@ -4525,7 +4593,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     } else if (from === 3) {
       void saveStage1(false, true, true);
     } else if (from === 4) {
-      void saveStage4(false, true);
+      void saveStage4(false, true, true);   // silent + skipValidate — this is navigation
     }
   };
 
@@ -4664,7 +4732,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
      checks must not be able to block the stage either (a stale UAN typed
      before PF was switched off would otherwise gate an invisible field). */
   const stage4PfApplicable = s1.enable_payroll !== false && !!s1.pf_eligible;
-  const stage4UanOk = !stage4PfApplicable || !s4.uan_number.trim() || UAN_RE.test(s4.uan_number.trim());
+  /* UAN is REQUIRED once PF applies — it is the number the PF contribution is
+     filed against, so an employee enrolled in PF without one cannot actually be
+     remitted for. It used to be optional-but-well-formed ("12 digits, or leave
+     it blank"), which let a PF-enrolled employee through with no UAN at all.
+     Still ignored entirely when PF does not apply — the field is hidden then,
+     and a stale value must not gate an invisible input. */
+  const stage4UanOk = !stage4PfApplicable || UAN_RE.test(s4.uan_number.trim());
   // Salary structure check passes once Stage 4's Agreed CTC is set. We
   // don't couple this to Stage 1's annual_salary — admins often record
   // a negotiated CTC at Stage 4 that's distinct from the wizard's
@@ -4722,7 +4796,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           : 'Enter the PAN number.' });
     }
     if (!stage4UanOk) {
-      p.push({ field: 'uan_number', label: 'UAN Number', message: 'UAN must be exactly 12 digits, or leave it blank.' });
+      p.push({
+        field: 'uan_number',
+        label: 'UAN Number',
+        message: s4.uan_number.trim()
+          ? 'UAN must be exactly 12 digits.'
+          : 'UAN is required because PF applies to this employee.',
+      });
     }
     if (!stage4SalaryOk) {
       /* Two very different causes, and telling them apart matters: an unset
@@ -4809,11 +4889,20 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // Reflect real signing progress (signed / total agreements). 100% only
       // when all are signed; "sent — awaiting sign" stays In Progress, so the
       // stage no longer shows Completed just because it was sent.
+      /* 0 documents assigned means 0% — there is nothing to have done.
+         This used to fall through to a flat 35% whenever the stage was merely
+         OPEN, so a stage with no policy or agreement at all reported itself a
+         third complete and dragged the overall onboarding figure up with it.
+         The 35% is a "you are here" placeholder and only makes sense for a
+         stage with no countable work (stage 6); stage 5 has a real
+         denominator, so it reports the real fraction. */
       progress = stage5IsDone ? 100
-        : (stage5Total > 0 ? Math.round((stage5Signed / stage5Total) * 100)
-        : (activeStage === 5 ? 35 : 0));
+        : (stage5Total > 0 ? Math.round((stage5Signed / stage5Total) * 100) : 0);
+      /* Opening the stage no longer marks it In Progress on its own — with
+         nothing assigned there is no work in progress to report. */
       status = stage5IsDone ? 'Completed'
-        : ((stage5Signed > 0 || activeStage === 5 || macroCompleted >= 5) ? 'In Progress' : 'Pending');
+        : (stage5Total === 0 ? 'Pending'
+        : ((stage5Signed > 0 || activeStage === 5 || macroCompleted >= 5) ? 'In Progress' : 'Pending'));
     } else if (s.num === 6) {
       progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
       status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
@@ -5113,7 +5202,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     placeholder="name@enterprise.com"
     value={s1.email}
     onChange={e => {
-      const next = e.target.value;
+      const next = normaliseEmail(e.target.value);
       setS1(p => {
         // Auto-mirror Work Email → Official Email (Stage 3) for as long
         // as the HR hasn't manually overridden the official one. The
@@ -5129,8 +5218,21 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           official_email: stillMirrored ? next : p.official_email,
         };
       });
-      setS1Errors(p => ({ ...p, email: '', official_email: '' }));
+      // Re-validate inline so the error clears the moment it becomes valid,
+      // and use the SAME validator as Official Email — the two used to
+      // disagree, so a value the work field accepted was rejected two stages
+      // later by the official one.
+      setS1Errors(p => ({
+        ...p,
+        email: next ? validateOfficialEmail(next) : '',
+        official_email: '',
+      }));
     }}
+    onBlur={e => setS1Errors(p => ({ ...p, email: validateOfficialEmail(e.target.value) }))}
+    autoComplete="email"
+    inputMode="email"
+    spellCheck={false}
+    maxLength={254}
   />
   {s1Errors.email && <div className="onb-error-msg">{s1Errors.email}</div>}
 </Col>
@@ -5255,7 +5357,39 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <Row className="g-3">
                   <Col md={3}><label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select months (1–12)" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
-                  <Col md={3}><label className="onb-init-label">Notice Period<span className="req">*</span></label><MasterSelect options={ONB_NOTICE} value={s1.notice_period} placeholder="Select notice period" onChange={(v) => setS1(p => ({ ...p, notice_period: v }))} /></Col>
+                  <Col md={3}>
+                    <label className="onb-init-label">Notice Period<span className="req">*</span></label>
+                    {/* Custom option mirrored from the Employee form. Without it
+                        an onboarding could only record one of the four presets,
+                        so a 45-day or "2 months" notice had to be fixed later by
+                        editing the employee — the same field, two different sets
+                        of allowed answers. */}
+                    <MasterSelect
+                      options={ONB_NOTICE}
+                      value={noticeIsCustom ? ONB_CUSTOM_NOTICE : s1.notice_period}
+                      placeholder="Select notice period"
+                      onChange={(v) => {
+                        setNoticeCustomOpen(v === ONB_CUSTOM_NOTICE);
+                        setS1(p => ({
+                          ...p,
+                          // The sentinel is a UI state, never a stored value: it
+                          // clears the field so the text box starts empty and the
+                          // required-check still bites until something is typed.
+                          notice_period: v === ONB_CUSTOM_NOTICE ? '' : v,
+                        }));
+                      }}
+                    />
+                    {noticeIsCustom && (
+                      <input
+                        className="onb-init-input"
+                        style={{ marginTop: 8 }}
+                        type="text"
+                        placeholder="e.g. 45 Days, 2 months, etc."
+                        value={s1.notice_period}
+                        onChange={(e) => setS1(p => ({ ...p, notice_period: e.target.value }))}
+                      />
+                    )}
+                  </Col>
                   <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
               </div>
@@ -5318,17 +5452,28 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                   </Col>
                   {s1.laptop_assigned === 'Yes' && (
-                    <Col md={4}>
-                      <label className="onb-init-label">Laptop Device</label>
+                    <Col md={4} data-field="laptop_master_asset_id">
+                      {/* Required once "Laptop Assigned" is Yes — same rule the
+                          Employee form enforces. Saying a laptop was issued
+                          without naming WHICH one leaves the asset register
+                          unable to show who holds the device. */}
+                      <label className="onb-init-label">Laptop Device<span className="req">*</span></label>
                       <MasterSelect
                         options={laptopAssets}
                         onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                         value={s1.laptop_master_asset_id}
-                        onChange={(v) => setS1(p => ({ ...p, laptop_master_asset_id: v }))}
+                        invalid={!!s1Errors.laptop_master_asset_id}
+                        onChange={(v) => {
+                          setS1(p => ({ ...p, laptop_master_asset_id: v }));
+                          setS1Errors(p => ({ ...p, laptop_master_asset_id: '' }));
+                        }}
                         disabled={!assetsLoading && laptopAssets.length === 0}
                       />
+                      {s1Errors.laptop_master_asset_id && (
+                        <div className="onb-error-msg">{s1Errors.laptop_master_asset_id}</div>
+                      )}
                     </Col>
                   )}
 
@@ -5346,17 +5491,24 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                   </Col>
                   {s1.mobile_assigned === 'Yes' && (
-                    <Col md={4}>
-                      <label className="onb-init-label">Mobile Device</label>
+                    <Col md={4} data-field="mobile_master_asset_id">
+                      <label className="onb-init-label">Mobile Device<span className="req">*</span></label>
                       <MasterSelect
                         options={mobileAssets}
                         onOpen={() => reloadAssets()}
                         loading={assetsLoading}
                         placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                         value={s1.mobile_master_asset_id}
-                        onChange={(v) => setS1(p => ({ ...p, mobile_master_asset_id: v }))}
+                        invalid={!!s1Errors.mobile_master_asset_id}
+                        onChange={(v) => {
+                          setS1(p => ({ ...p, mobile_master_asset_id: v }));
+                          setS1Errors(p => ({ ...p, mobile_master_asset_id: '' }));
+                        }}
                         disabled={!assetsLoading && mobileAssets.length === 0}
                       />
+                      {s1Errors.mobile_master_asset_id && (
+                        <div className="onb-error-msg">{s1Errors.mobile_master_asset_id}</div>
+                      )}
                     </Col>
                   )}
 
@@ -6214,6 +6366,18 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
 }>(({ emp, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
 
+  /* Latest date a PREVIOUS employment may run to: the day before this employer's
+     joining date. The pickers were capped at today instead, which let a joiner
+     dated 02-Jun-2026 record a previous job running 01-Aug → 06-Aug-2026 —
+     employment at the old company after they had already started here.
+     Falls back to today when the joining date is not on file yet. Note this is
+     NOT clamped to today: a future joiner may legitimately still be serving out
+     their notice at the old employer. */
+  const joiningIso = String((emp as any)?.raw?.date_of_joining || '').slice(0, 10);
+  const prevEmpMaxIso = /^\d{4}-\d{2}-\d{2}$/.test(joiningIso)
+    ? _shiftIsoDays(joiningIso, -1)
+    : _todayIso();
+
   // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
   // Each row owns its own server id (or `null` while it's a draft the
   // user is still typing into; we persist via POST when company_name is
@@ -6523,6 +6687,16 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           if (!c.job_title.trim())    errs[`${k}:job_title`]    = 'Job title is required';
           if (!c.start_date)          errs[`${k}:start_date`]   = 'Start date is required';
           if (!c.end_date)            errs[`${k}:end_date`]     = 'End date is required';
+          /* Catches rows saved before the pickers were bounded — tightening a
+             maxDate does not re-validate what is already stored. */
+          if (c.end_date && c.end_date > prevEmpMaxIso) {
+            errs[`${k}:end_date`] = joiningIso
+              ? `Must end before this employee joined (${_formatDate(joiningIso)})`
+              : 'End date cannot be in the future';
+          }
+          if (c.start_date && c.end_date && c.start_date > c.end_date) {
+            errs[`${k}:start_date`] = 'Start date must be on or before the end date';
+          }
           if (!c.hr_email_1.trim())   errs[`${k}:hr_email_1`]   = 'HR Email ID 1 is required';
           else if (EMAIL_INVALID(c.hr_email_1)) errs[`${k}:hr_email_1`] = 'Enter a valid email address';
           // Previous Offer Letter is optional — only the salary slips are required.
@@ -7138,7 +7312,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     // today; floor at 5 years ago so the captured experience
                     // can't exceed the allowed 5-year window (BUG-034).
                     minDate={_shiftYears(-5)}
-                    maxDate={c.end_date || _todayIso()}
+                    maxDate={c.end_date || prevEmpMaxIso}
                     onChange={(v) => { updateCompany(c._localKey, { start_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
                   {compErrors[`${c._localKey}:start_date`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:start_date`]}</div>}
@@ -7153,7 +7327,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     // (a previous employer relationship has, by definition,
                     // already happened).
                     minDate={c.start_date || undefined}
-                    maxDate={_todayIso()}
+                    maxDate={prevEmpMaxIso}
                     onChange={(v) => { updateCompany(c._localKey, { end_date: v }); setTimeout(() => persistCompany(c._localKey), 0); }}
                   />
                   {compErrors[`${c._localKey}:end_date`] && <div className="onb-error-msg">{compErrors[`${c._localKey}:end_date`]}</div>}
@@ -7487,7 +7661,7 @@ function Stage3Provisioning({
     onChange={e => {
       // Strip whitespace as the user types — pasted emails often
       // arrive with stray spaces and the SMTP gateway rejects them.
-      const v = e.target.value.replace(/\s/g, '');
+      const v = normaliseEmail(e.target.value);
       setS1((p: any) => ({ ...p, official_email: v }));
       // Inline re-validate so the red border / message disappears
       // the moment the input becomes valid.
@@ -7710,9 +7884,9 @@ function Stage4Payroll({
     pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
     pf_deduction:        showErrors && !s4.pf_deduction.trim(),
     agreed_ctc_lpa:      showErrors && !(Number(s4.agreed_ctc_lpa) > 0),
-    // UAN is optional, but a partially-typed one blocks the advance — it was
-    // missing from this map, so the only clue was a small grey-area hint.
-    uan_number:          showErrors && !!s4.uan_number.trim() && !/^\d{12}$/.test(s4.uan_number.trim()),
+    // Required whenever the field is VISIBLE — it is only rendered when PF
+    // applies, and PF without a UAN cannot be filed.
+    uan_number:          showErrors && !!pfApplicable && !/^\d{12}$/.test(s4.uan_number.trim()),
   };
 
   return (
@@ -7833,9 +8007,9 @@ function Stage4Payroll({
                 (Compensation). */}
             {pfApplicable && (
               <Col data-field="uan_number" md={4}>
-                <label className="onb-init-label">UAN Number (PF)</label>
+                <label className="onb-init-label">UAN Number (PF) <span className="req">*</span></label>
                 <input
-                  className={`onb-init-input${invalid.uan_number ? ' is-invalid' : ''}`}
+                  className={`onb-init-input is-required${invalid.uan_number ? ' is-invalid' : ''}`}
                   placeholder="12-digit UAN"
                   maxLength={12}
                   value={s4.uan_number}
@@ -7843,6 +8017,9 @@ function Stage4Payroll({
                 />
                 {s4.uan_number && s4.uan_number.length !== 12 && (
                   <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
+                )}
+                {invalid.uan_number && !s4.uan_number.trim() && (
+                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN is required because PF applies</small>
                 )}
               </Col>
             )}
