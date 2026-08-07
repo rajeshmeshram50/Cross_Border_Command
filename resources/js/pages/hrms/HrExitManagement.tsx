@@ -1714,8 +1714,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === 'closure' && exitPending.length > 0) {
       return (n === currentKey || rawStagePct('closure') > 0 || stageStatus.closure === 'In Progress') ? 'In Progress' : 'Pending';
     }
-    if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
-    if (n === currentKey || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
+    /* A stage is Completed only when its OWN measure says so.
+       `stageStatus[n]` is stamped 'Completed' by Save & Next / markStageCompleted,
+       and letting that stamp alone win meant simply moving on jumped a
+       part-filled stage straight to 100% — a 75% stage read as done the moment
+       you clicked Next (#54), which is exactly the reassurance the percentage
+       is supposed to withhold.
+
+       The stamp still carries intent: it keeps a stage the user has worked on
+       out of 'Pending' (second line) even when nothing measurable landed yet.
+       It just can no longer claim a completion the data doesn't support. */
+    if (rawStagePct(n) === 100) return 'Completed';
+    if (n === currentKey || rawStagePct(n) > 0
+        || stageStatus[n] === 'In Progress' || stageStatus[n] === 'Completed') return 'In Progress';
     return 'Pending';
   };
 
@@ -2795,7 +2806,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   );
                 })()}
 
-                <div className="ep-section-label">Clearance Status</div>
+                {/* All 5 clearances must be Approved before the stage can
+                    complete, so the section carries the mandatory * — the same
+                    marker EpField renders — instead of a warning note appearing
+                    underneath once the rule is broken (#55). */}
+                <div className="ep-section-label">
+                  Clearance Status
+                  <span aria-hidden="true" style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}>*</span>
+                </div>
                 <div className="ep-checklist mb-2">
                   {['Manager Clearance','IT Clearance','Admin Clearance','Finance Clearance','Legal / Compliance'].map((label, idx) => (
                     <div key={idx} className="ep-check-row">
@@ -2823,14 +2841,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   ))}
                 </div>
 
-                {clearances.some(c => c.status !== 'Approved') && (
-                  <div className="ep-alert ep-alert--warning mb-3">
-                    <i className="ri-error-warning-line" />All 5 clearances must be individually approved before advancing.
-                  </div>
-                )}
-
                 <div className="ep-section-label">Handover Notes</div>
-                <EpField label="Work Handover Notes">
+                {/* `required`: these notes are counted by rawStagePct('clearance')
+                    — they are one of the items the stage's completion is measured
+                    against, so Clearance & Handover can never reach 100% without
+                    them. The field behaved as mandatory but carried no * to say
+                    so (#55). */}
+                <EpField label="Work Handover Notes" required>
                   <textarea
                     className="ep-textarea"
                     rows={3}

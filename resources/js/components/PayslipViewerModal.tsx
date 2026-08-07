@@ -74,6 +74,23 @@ const MONTH_ABBR_TO_FULL: Record<string, string> = {
 };
 
 /**
+ * Last calendar day of a month — 30 for June, 28/29 for February, 31 otherwise.
+ * The payslip header hardcoded "01–31" for every month, so June read
+ * "01–31 Jun" and February "01–31 Feb".
+ *
+ * `new Date(y, monthIndex + 1, 0)` is day ZERO of the FOLLOWING month, which
+ * JS normalises to the last day of the one asked for — and it gets leap years
+ * right on its own (Feb 2028 → 29). Falls back to 31 only when the month name
+ * can't be resolved, which is the old behaviour and never worse than it.
+ */
+const lastDayOfMonth = (fullMonth: string, year: number | string): number => {
+  const idx = MONTH_FULL.indexOf(fullMonth as typeof MONTH_FULL[number]);
+  const y = Number(year);
+  if (idx < 0 || !Number.isFinite(y)) return 31;
+  return new Date(y, idx + 1, 0).getDate();
+};
+
+/**
  * Standalone payslip viewer modal — same visual + interaction model as the
  * one shipped inside EmployeeProfile, extracted so the HR Payroll page (and
  * any future caller) can render it without duplicating markup.
@@ -385,7 +402,7 @@ export default function PayslipViewerModal({
                   <div className="text-end">
                     <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.10em', color: 'rgba(255,255,255,0.62)' }}>PAYSLIP</div>
                     <h4 className="text-white mb-0 fw-bold" style={{ fontSize: 17 }}>{month} {year}</h4>
-                    <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Pay Period: 01–31 {month.slice(0,3)} {year}</small>
+                    <small style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12 }}>Pay Period: 01–{lastDayOfMonth(month, year)} {month.slice(0,3)} {year}</small>
                   </div>
                 </div>
 
