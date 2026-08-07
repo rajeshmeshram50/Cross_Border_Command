@@ -14,7 +14,7 @@ class CtcContract extends Model
         'client_id', 'branch_id', 'code', 'title', 'agreement_type',
         'org_name', 'org_short_code', 'org_state', 'org_country',
         'counterparties', 'eff_date', 'end_date',
-        'auto_renewal', 'renewal_type', 'content', 'header_config', 'footer_config',
+        'auto_renewal', 'renewal_type', 'content', 'header_config', 'footer_config', 'page_config',
         'approvers', 'approver_emails', 'clarifications',
         'versions', 'signing_recipients', 'days_to_sign',
         'zoho_request_id', 'signature_request_id', 'signature_declined_at',
@@ -28,6 +28,8 @@ class CtcContract extends Model
         'counterparties' => 'array',
         'header_config'  => 'array',
         'footer_config'  => 'array',
+        // { "margin_x": 25 } — left/right page margin in px, see the migration.
+        'page_config'    => 'array',
         'approvers'      => 'array',
         'approver_emails' => 'array',
         'clarifications' => 'array',
