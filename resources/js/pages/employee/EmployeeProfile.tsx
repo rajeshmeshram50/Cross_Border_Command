@@ -38,18 +38,35 @@ import PayrollTab from './tabs/PayrollTab';
 import ExpenseTab from './tabs/ExpenseTab';
 import HiringTab from './tabs/HiringTab';
 
-const UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
+// Attachment limits. Each file is capped at 2 MB and the whole claim's
+// receipts at 5 MB total. The total cap keeps a single claim's multipart
+// POST under PHP's `post_max_size`, which is what produced the "Post data
+// too long" (HTTP 413) error QA hit when several receipts were attached.
+const UPLOAD_MAX_FILE_BYTES = 2 * 1024 * 1024;    // 2 MB per file
+const UPLOAD_MAX_TOTAL_BYTES = 5 * 1024 * 1024;   // 5 MB total per claim
 const UPLOAD_ALLOWED_MIME = ['application/pdf', 'image/jpeg', 'image/png'];
 const UPLOAD_ALLOWED_EXT = /\.(pdf|jpe?g|png)$/i;
-function filterValidUploads(picked: File[]): { accepted: File[]; errors: string[] } {
+const fmtMB = (b: number) => `${(b / 1024 / 1024).toFixed(1)} MB`;
+/** Validate newly-picked files against the per-file and per-claim total
+ *  caps. `existing` is whatever is already attached to this claim so the
+ *  5 MB total is enforced across the whole claim, not just this batch. */
+function filterValidUploads(picked: File[], existing: File[] = []): { accepted: File[]; errors: string[] } {
   const accepted: File[] = [];
   const errors: string[] = [];
+  // Seed the running total from files already attached so re-picking can't
+  // sneak past the 5 MB ceiling one batch at a time.
+  let runningTotal = existing.reduce((n, f) => n + f.size, 0);
   for (const f of picked) {
     // Some browsers leave File.type empty (e.g. drag-drop on Windows), so
     // fall back to the extension when the MIME type isn't conclusive.
     const typeOk = UPLOAD_ALLOWED_MIME.includes(f.type) || UPLOAD_ALLOWED_EXT.test(f.name);
     if (!typeOk) { errors.push(`${f.name}: unsupported format (only PDF, JPG, PNG)`); continue; }
-    if (f.size > UPLOAD_MAX_BYTES) { errors.push(`${f.name}: larger than 5 MB`); continue; }
+    if (f.size > UPLOAD_MAX_FILE_BYTES) { errors.push(`${f.name}: larger than 2 MB (${fmtMB(f.size)})`); continue; }
+    if (runningTotal + f.size > UPLOAD_MAX_TOTAL_BYTES) {
+      errors.push(`${f.name}: skipped — would push this claim over the 5 MB total`);
+      continue;
+    }
+    runningTotal += f.size;
     accepted.push(f);
   }
   return { accepted, errors };
@@ -878,6 +895,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // File objects are stripped before serialising since browsers can't
   // round-trip File through JSON — attachments must be re-staged on resume.
   const handleSaveDraft = () => {
+    // Require at least the minimum mandatory information — an entirely empty
+    // form used to save a blank draft and silently close the modal (QA #83).
+    // Expense: a title or amount on at least one claim. Advance: a type,
+    // amount, or reason. Anything less isn't a meaningful draft.
+    if (claimMode === 'advance') {
+      const hasInput = !!(advType.trim() || String(advAmount).replace(/[^\d.]/g, '') || advReason.trim() || advTypeOther.trim());
+      if (!hasInput) {
+        toast.warning('Nothing to save', 'Enter an advance type, amount, or reason before saving a draft.');
+        return;
+      }
+    } else {
+      const hasInput = claimDrafts.some(d => d.title.trim() || String(d.amount).replace(/[^\d.]/g, ''));
+      if (!hasInput) {
+        toast.warning('Nothing to save', 'Add at least an expense title or amount before saving a draft.');
+        return;
+      }
+    }
     try {
       const savedAt = new Date().toISOString();
       const newId = `${claimMode === 'advance' ? 'adv' : 'exp'}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1805,6 +1839,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (!(d.files && d.files.length > 0)) {
         draftErrs.files = 'At least one proof / receipt is required';
         errors.push(`${label}: At least one proof / receipt is required`);
+      } else {
+        // Re-check the attachment caps at submit time (defence-in-depth vs.
+        // the picker) so a claim can never exceed PHP's post_max_size and
+        // trigger the "Post data too long" error. Per file ≤ 2 MB, per
+        // claim ≤ 5 MB total.
+        const oversize = d.files.find(f => f.size > UPLOAD_MAX_FILE_BYTES);
+        if (oversize) {
+          draftErrs.files = `${oversize.name} is larger than 2 MB — replace it before submitting`;
+          errors.push(`${label}: ${oversize.name} is larger than 2 MB`);
+        } else {
+          const total = d.files.reduce((n, f) => n + f.size, 0);
+          if (total > UPLOAD_MAX_TOTAL_BYTES) {
+            draftErrs.files = `Attachments total ${fmtMB(total)} — over the 5 MB per-claim limit`;
+            errors.push(`${label}: attachments total ${fmtMB(total)}, over the 5 MB limit`);
+          }
+        }
       }
       if (idx === activeClaimIdx) Object.assign(firstFieldErrors, draftErrs);
     });
@@ -1825,77 +1875,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         return;
       }
     }
-    setClaimSubmitting(true);
-    try {
-      const created: ApiClaim[] = [];
-      for (const d of valid) {
-        const fd = new FormData();
-        fd.append('title', d.title.trim());
-        fd.append('amount', String(Number(String(d.amount).replace(/[^\d.]/g, '')) || 0));
-        fd.append('expense_date', d.date);
-        if (d.category)       fd.append('category_id', d.category);
-        if (d.currency)       fd.append('currency', d.currency);
-        if (d.project)        fd.append('project', d.project);
-        if (d.payment)        fd.append('payment_method', d.payment);
-        if (d.vendor)         fd.append('vendor', d.vendor);
-        if (d.purpose)        fd.append('purpose', d.purpose);
-        if (reimburseCtx)     fd.append('reimbursement_for_advance_id', String(reimburseCtx.advanceId));
-        // Always file under the profile we're viewing. The backend resolves
-        // either employee_id (numeric) or employee_code (EMP- string), and
-        // falls back to the current user's linked Employee row if neither is
-        // present. Backend also enforces "non-super-admin can only file under
-        // their own employee record".
-        if (profileEmpIdNum !== null) {
-          fd.append('employee_id', String(profileEmpIdNum));
-        } else if (profileEmpCode) {
-          fd.append('employee_code', profileEmpCode);
-        }
-        // Use THIS draft's own attachments — earlier the loop reused the
-        // active-draft's files for every claim, so every backend row got
-        // an identical copy of whichever attachment list was showing.
-        for (const f of (d.files || [])) fd.append('files[]', f);
-        const res = await api.post('/expense-claims', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
-        if (res?.data?.id) created.push(res.data as ApiClaim);
-      }
-      toast.success('Claim submitted', `${valid.length} claim${valid.length > 1 ? 's' : ''} sent for approval`);
-      // If this submission resumed a parked draft entry, drop only that
-      // one from storage. Other parked drafts are preserved. Fresh
-      // submissions leave storage untouched.
-      if (editingDraftId) {
-        try {
-          const next = expenseDrafts.filter(e => e.id !== editingDraftId);
-          if (next.length) localStorage.setItem(claimDraftKey, JSON.stringify(next));
-          else             localStorage.removeItem(claimDraftKey);
-          void deleteDraftFiles(draftFilesKey(claimDraftKey, editingDraftId));
-        } catch { /* ignore */ }
-      }
-      setEditingDraftId(null);
-      setClaimOpen(false);
-      // A reimbursement submission linked back to an advance — refresh advances
-      // so the settled section flips to "Reimbursement raised", then clear ctx.
-      if (reimburseCtx) { setReimburseCtx(null); void refreshAdvances(); }
-      // Show the new claim(s) in the All Claims list immediately — the POST
-      // returns the fully-serialized row, so prepend it (newest first) without
-      // waiting on the refetch. Fixes "claim not displayed until page refresh".
-      // refreshClaims() then reconciles (claim_no / approval routing); the
-      // server replace de-dupes since the row is already committed.
-      if (created.length) {
-        setApiClaims(prev => {
-          const seen = new Set(prev.map(c => c.id));
-          return [...created.slice().reverse().filter(c => c.id && !seen.has(c.id)), ...prev];
-        });
-      }
-      await refreshClaims();
-    } catch (err: any) {
-      // Pick the most useful message out of the response:
-      //   1. 422 field errors (Laravel validator) — pull the first one
-      //   2. Top-level `message` (controller's abort/exception)
-      //   3. Raw status — special-case 500 with a hint, because the most
-      //      common cause is an amount that overflowed the decimal(18,2)
-      //      column and we already cap the input now but legacy payloads
-      //      can still hit it.
+    // Turn an Axios error into the most useful human message:
+    //   1. 422 field errors (Laravel validator) — pull the first one
+    //   2. Top-level `message` (controller's abort/exception)
+    //   3. Raw status — 413 is the "Post data too long" case, 500 is
+    //      usually an amount overflow.
+    const describeErr = (err: any): string => {
       const fieldErrors = err?.response?.data?.errors;
       let msg = '';
       if (fieldErrors && typeof fieldErrors === 'object') {
@@ -1908,10 +1893,102 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         msg = status === 500
           ? 'The server rejected the claim. Check that the amount fits within 12 digits and try again.'
           : status === 413
-            ? 'One or more receipts are too large to upload. Trim attachments and retry.'
+            ? 'Receipts are too large — keep each file under 2 MB and the claim under 5 MB, then retry.'
             : 'Could not submit the claim. Please try again.';
       }
-      toast.error('Submit failed', msg);
+      return msg;
+    };
+
+    setClaimSubmitting(true);
+    try {
+      // Submit each claim independently so one failure (e.g. a 413 "Post
+      // data too long") doesn't block the others — QA asked that "if any
+      // one fails, the other claims still submit". Successes and failures
+      // are tallied separately and reported together at the end; only the
+      // failed drafts are kept in the modal for a retry.
+      const created: ApiClaim[] = [];
+      const failed: { draft: ClaimDraft; label: string; msg: string }[] = [];
+      for (const d of valid) {
+        const label = `Claim ${claimDrafts.indexOf(d) + 1}`;
+        try {
+          const fd = new FormData();
+          fd.append('title', d.title.trim());
+          fd.append('amount', String(Number(String(d.amount).replace(/[^\d.]/g, '')) || 0));
+          fd.append('expense_date', d.date);
+          if (d.category)       fd.append('category_id', d.category);
+          if (d.currency)       fd.append('currency', d.currency);
+          if (d.project)        fd.append('project', d.project);
+          if (d.payment)        fd.append('payment_method', d.payment);
+          if (d.vendor)         fd.append('vendor', d.vendor);
+          if (d.purpose)        fd.append('purpose', d.purpose);
+          if (reimburseCtx)     fd.append('reimbursement_for_advance_id', String(reimburseCtx.advanceId));
+          // Always file under the profile we're viewing. The backend resolves
+          // either employee_id (numeric) or employee_code (EMP- string), and
+          // falls back to the current user's linked Employee row if neither is
+          // present. Backend also enforces "non-super-admin can only file under
+          // their own employee record".
+          if (profileEmpIdNum !== null) {
+            fd.append('employee_id', String(profileEmpIdNum));
+          } else if (profileEmpCode) {
+            fd.append('employee_code', profileEmpCode);
+          }
+          // Use THIS draft's own attachments — earlier the loop reused the
+          // active-draft's files for every claim, so every backend row got
+          // an identical copy of whichever attachment list was showing.
+          for (const f of (d.files || [])) fd.append('files[]', f);
+          const res = await api.post('/expense-claims', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          });
+          if (res?.data?.id) created.push(res.data as ApiClaim);
+        } catch (err: any) {
+          failed.push({ draft: d, label, msg: describeErr(err) });
+        }
+      }
+      // Show the successfully-created claim(s) in the All Claims list
+      // immediately — the POST returns the fully-serialized row, so prepend
+      // it (newest first) without waiting on the refetch. refreshClaims()
+      // then reconciles (claim_no / approval routing); the server replace
+      // de-dupes since the row is already committed.
+      if (created.length) {
+        setApiClaims(prev => {
+          const seen = new Set(prev.map(c => c.id));
+          return [...created.slice().reverse().filter(c => c.id && !seen.has(c.id)), ...prev];
+        });
+      }
+
+      if (failed.length === 0) {
+        // Full success — clean up drafts and close as before.
+        toast.success('Claim submitted', `${created.length} claim${created.length > 1 ? 's' : ''} sent for approval`);
+        // If this submission resumed a parked draft entry, drop only that
+        // one from storage. Other parked drafts are preserved. Fresh
+        // submissions leave storage untouched.
+        if (editingDraftId) {
+          try {
+            const next = expenseDrafts.filter(e => e.id !== editingDraftId);
+            if (next.length) localStorage.setItem(claimDraftKey, JSON.stringify(next));
+            else             localStorage.removeItem(claimDraftKey);
+            void deleteDraftFiles(draftFilesKey(claimDraftKey, editingDraftId));
+          } catch { /* ignore */ }
+        }
+        setEditingDraftId(null);
+        setClaimOpen(false);
+        // A reimbursement submission linked back to an advance — refresh advances
+        // so the settled section flips to "Reimbursement raised", then clear ctx.
+        if (reimburseCtx) { setReimburseCtx(null); void refreshAdvances(); }
+      } else if (created.length > 0) {
+        // Partial — some went through, some didn't. Keep only the failed
+        // drafts in the modal so the user can fix and resubmit just those.
+        toast.warning(
+          'Some claims not submitted',
+          `${created.length} submitted · ${failed.length} failed. ${failed[0].label}: ${failed[0].msg}`,
+        );
+        setClaimDrafts(failed.map(f => f.draft));
+        setActiveClaimIdx(0);
+      } else {
+        // Nothing went through — keep the modal open with all drafts intact.
+        toast.error('Submit failed', failed.length > 1 ? `All ${failed.length} claims failed. ${failed[0].label}: ${failed[0].msg}` : failed[0].msg);
+      }
+      await refreshClaims();
     } finally {
       setClaimSubmitting(false);
     }
@@ -3050,7 +3127,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     className="d-none"
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
-                      const { accepted, errors } = filterValidUploads(picked);
+                      const { accepted, errors } = filterValidUploads(picked, claimFiles);
                       if (errors.length) toast.error('Some files were not added', errors.slice(0, 3).join(' · '));
                       if (accepted.length) { setClaimFiles(prev => [...prev, ...accepted]); clearClaimErr('files'); }
                       e.target.value = '';
@@ -3060,7 +3137,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <i className="ri-upload-2-line" />
                   </span>
                   <div className="fw-semibold ep-fs-13">Click to upload or drag &amp; drop</div>
-                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 2 MB per file · 5 MB total per claim</small>
                 </label>
                 {claimErrors.files && (
                   <div className="ep-claim-err mb-2"><i className="ri-error-warning-line" />{claimErrors.files}</div>
@@ -3381,7 +3458,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     className="d-none"
                     onChange={(e) => {
                       const picked = Array.from(e.target.files || []);
-                      const { accepted, errors } = filterValidUploads(picked);
+                      const { accepted, errors } = filterValidUploads(picked, advFiles);
                       if (errors.length) toast.error('Some files were not added', errors.slice(0, 3).join(' · '));
                       if (accepted.length) setAdvFiles(prev => [...prev, ...accepted]);
                       e.target.value = '';
@@ -3391,7 +3468,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <i className="ri-attachment-line" />
                   </span>
                   <div className="fw-semibold ep-claim-upload-title-indigo">Attach documents (bank letter, itinerary…)</div>
-                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 5 MB each</small>
+                  <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 2 MB per file · 5 MB total per claim</small>
                 </label>
                 {advFiles.length > 0 && (
                   <div className="ep-claim-file-list mb-4">

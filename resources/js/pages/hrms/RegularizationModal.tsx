@@ -83,23 +83,13 @@ export default function RegularizationModal({
       : inOuts.map(io => ({ action: 'keep' as const, oldIn: io.in, oldOut: io.out, newIn: io.in ?? '', newOut: io.out ?? '' }));
   }, [initialPunches]);
 
-  /* Punches may only be picked inside the employee's shift window, so the time
-     columns are clamped to it. Two cases are deliberately left UNCLAMPED:
-       · a shift that crosses midnight (end <= start, e.g. 20:00–04:00) — a
-         legitimate punch sits on either side of the boundary, which a simple
-         min/max range can't express, so restricting it would block valid times;
-       · no resolvable shift window at all.
-     Existing out-of-window punches are never rewritten — they stay visible and
-     submittable; the bounds only govern what the picker OFFERS. */
-  const shiftMinutes = (v?: string): number | null => {
-    const m = /^(\d{1,2}):(\d{2})/.exec((v || '').trim());
-    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
-  };
-  const startMin = shiftMinutes(shiftStart);
-  const endMin   = shiftMinutes(shiftEnd);
-  const clampable = startMin != null && endMin != null && endMin > startMin;
-  const windowMin = clampable ? shiftStart : undefined;
-  const windowMax = clampable ? shiftEnd   : undefined;
+  /* The time columns are NOT clamped to the shift window — any time of day can
+     be picked. Regularization exists precisely for the days attendance got the
+     times wrong, and the real cases routinely sit outside the shift: an early
+     arrival, work past the shift end, a night shift crossing midnight, or a
+     shift that was changed after the fact. Greying those hours out blocked the
+     correction the screen is for. The shift window is still SHOWN above as
+     context, so it is obvious what the expected hours were. */
 
   const [punchEdits, setPunchEdits] = useState<PunchEdit[]>(initialEdits);
   const [reason, setReason]       = useState('');
@@ -239,9 +229,6 @@ export default function RegularizationModal({
               </label>
               <div className="att-reg-keka-hint">
                 Click and select time stamp box that you would like to adjust and make changes to the time
-                {clampable && (
-                  <> · Times outside <strong>{fmt12h(shiftStart!)} – {fmt12h(shiftEnd!)}</strong> are unavailable — a punch has to fall inside the shift.</>
-                )}
               </div>
             </div>
 
@@ -271,8 +258,6 @@ export default function RegularizationModal({
                             showNow={false}
                             hour12
                             accent="teal"
-                            minTime={windowMin}
-                            maxTime={windowMax}
                             value={e.newIn}
                             onChange={v => updateEdit(realIdx, { newIn: v })}
                           />
@@ -284,8 +269,6 @@ export default function RegularizationModal({
                             showNow={false}
                             hour12
                             accent="teal"
-                            minTime={windowMin}
-                            maxTime={windowMax}
                             value={e.newOut}
                             onChange={v => updateEdit(realIdx, { newOut: v })}
                           />

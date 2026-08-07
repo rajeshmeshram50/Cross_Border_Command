@@ -166,7 +166,16 @@ export default function HrExitManagement() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: the exit-state caption sits on a second line under the name.
-      meta: { width: '16%', wrap: true },
+      /* PIXEL widths, not percentages.
+         Percentages are a share of the table's width, so on any container
+         narrower than the content every column shrank together and the whole
+         table truncated at once — worse, they summed to 110%, so `table-layout:
+         fixed` scaled each one down even further. Fixed px gives every column a
+         guaranteed size; when the viewport can't fit the total, .dt-scroll
+         scrolls horizontally instead of crushing the columns. Their sum is
+         mirrored in `minWidth` on the DataTable below — keep the two in step
+         when adding or resizing a column. */
+      meta: { width: 260, wrap: true },
       cell: info => {
         const e = info.row.original;
         const isScheduled = e.status === 'Active' && e.exitInitiated;
@@ -213,15 +222,19 @@ export default function HrExitManagement() {
     {
       header: 'Emp ID',
       accessorKey: 'empId',
-      meta: { width: '8%' },
+      /* `wrap` for the same reason as Status: the cell renders a PILL, which is
+         an inline-block wider than its text, so the table's default
+         `text-overflow: ellipsis` painted a "…" just past the pill's edge.
+         Every column whose cell is a pill/badge needs this opt-out. */
+      meta: { width: 130, wrap: true },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '9%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: 140 },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: 150 }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%' },
+      meta: { width: 140 },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
          the full name on hover, same contract as the Designation column. */
@@ -231,7 +244,7 @@ export default function HrExitManagement() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: '9%' },
+      meta: { width: 150 },
       cell: info => {
         const e = info.row.original;
         return (
@@ -244,7 +257,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: '10%' },
+      meta: { width: 170 },
       cell: info => {
         const e = info.row.original;
         return (
@@ -266,7 +279,7 @@ export default function HrExitManagement() {
     ...(tab === 'active' ? [] : [{
       header: 'Exit Type',
       accessorKey: 'exitType',
-      meta: { width: '10%', wrap: true },
+      meta: { width: 170, wrap: true },
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
         if (!t) return <span className="text-muted">—</span>;
@@ -294,7 +307,7 @@ export default function HrExitManagement() {
          bar, so the cell must not clip it. */
       header: 'Exit Readiness',
       accessorKey: 'exitReadiness',
-      meta: { width: '9%', wrap: true },
+      meta: { width: 130, wrap: true },
       cell: info => {
         const p = info.row.original.exitReadiness;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -343,7 +356,13 @@ export default function HrExitManagement() {
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '8%', align: 'center' },
+      /* `wrap` opts this cell out of the table's default
+         `overflow:hidden; text-overflow:ellipsis` (DataTable.css). Without it
+         the "Exit In Progress" pill was wider than the column and got clipped,
+         and the ellipsis rendered just past the pill's edge — the stray dot
+         that looked like a bug in the data. Widened to 10% as well so the pill
+         fits outright rather than merely being allowed to overflow. */
+      meta: { width: 160, align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const statusColor = STATUS_COLOR[e.status];
@@ -358,10 +377,12 @@ export default function HrExitManagement() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      // 13%, not 9%: an Exited row carries Evidence Vault plus the icon-only
-      // Rehire on ONE line. 9% squeezed them onto two lines, and 11% left the
-      // icon flush against the table's right edge.
-      meta: { width: '13%', align: 'center', wrap: true },
+      /* An Exited row carries Evidence Vault plus the icon-only Rehire on ONE
+         line, so this column needs real room. 12% of the raised minWidth
+         (1700) is ~204px — MORE absolute space than the old 13% of 1500
+         (~195px), so the buttons still fit on one line while the percentages
+         now total exactly 100. */
+      meta: { width: 210, align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const isExited = e.status === 'Exited';
@@ -500,7 +521,14 @@ export default function HrExitManagement() {
               columns={columns}
               serial
               accent="violet"
-              minWidth={1500}
+              /* Sum of the columns' pixel widths (see the `meta.width` block at
+                 the top of `columns`): 56 serial + 1810 = 1866, and 1696 on the
+                 Active tab where Exit Type is not rendered. Matching minWidth to
+                 the real total is what stops the compaction — the table never
+                 shrinks below the space its columns actually need, and
+                 .dt-scroll scrolls horizontally instead. Keep this in step when
+                 a column is added or resized. */
+              minWidth={tab === 'active' ? 1696 : 1866}
               fitToViewport
               autoFitRows
               loading={listLoading}
@@ -1044,10 +1072,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      folded into these. */
   useEffect(() => {
     if (!fnfDues) return;
-    setFnfLines(s => ({
-      ...s,
-      basic: s.basic || (fnfDues.payroll?.amount ? String(fnfDues.payroll.amount) : ''),
-    }));
+    const earned = Number(fnfDues.payroll?.amount ?? 0);
+    setFnfLines(s => {
+      /* Prefill when the line is empty OR still zero. `s.basic || …` alone made
+         a zero STICKY: a settlement opened while the old calendar-day estimate
+         returned ₹0 (which it did for anyone paid via a salary structure with
+         no annual_salary) kept that 0 forever, even once the payroll engine
+         could price the month properly. A zero earned salary is never a
+         deliberate HR entry worth protecting; any non-zero figure they typed
+         still is. */
+      const current = Number(s.basic);
+      const keep = s.basic !== '' && Number.isFinite(current) && current !== 0;
+      return keep ? s : { ...s, basic: earned ? String(earned) : '' };
+    });
   }, [fnfDues]);
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
@@ -1119,10 +1156,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const lwdMin = noticeServed
     ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
     : (noticeDate || todayIso);
+  /* CEILING — the last working day can never be LATER than the notice period
+     end date; the two may be the SAME day (serving the notice in full, which is
+     what a standard resignation looks like). The notice period end is the last
+     date the employee is on the books, so a last working day beyond it would
+     have them working days they are no longer employed for — and it silently
+     inflated "days served" in the notice settlement.
+
+     Only applies when an end date actually exists. It does not for a waived
+     notice (probation / early resignation) or when the employee record carries
+     no notice period, and there is nothing to cap against in those cases. */
+  const lwdMax = noticePeriodEnd || '';
+  const lwdOverEnd = !!lwd && !!lwdMax && lwd > lwdMax;
   // "Must be a future date" is part of serving notice, so it is waived for the
   // types that don't serve one — they can be relieved today.
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && (noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin);
+    && ((noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin) || lwdOverEnd);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1130,6 +1179,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
   const noticeMin  = ndLoaded && ndLoaded < todayIso ? ndLoaded : todayIso;
   const effLwdMin  = lwdLoaded && lwdLoaded < lwdMin ? lwdLoaded : lwdMin;
+  /* Same protection on the ceiling as on the floor: a value already saved on
+     the exit is never clamped away. An approved UNPAID leave during notice
+     legitimately pushes the last working day PAST the notice end
+     (NoticePeriodGuard::applyExtension), so a loaded date beyond the cap is
+     valid history, not a mistake. */
+  const effLwdMax  = lwdMax && lwdLoaded && lwdLoaded > lwdMax ? lwdLoaded : lwdMax;
   // Exit can only be finalised on/after the Last Working Day — you can't close
   // out an employee before their last day has actually arrived.
   const lwdReached = !!lwd && lwd <= todayIso;
@@ -1570,11 +1625,27 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const rawStagePct = (n: StageKey): number => {
     if (n === 'initiation') {
+      /* Only the fields HR actually FILLS IN on this stage — it must read 0%
+         on a freshly opened exit.
+
+         Two were counted that HR never enters, which is where the phantom
+         "50% with an empty form" came from:
+           · exitType — answered in the type picker BEFORE this modal opens
+             (the list routes both Initiate and Continue through it), so it is
+             always already set and the stage could never start at zero.
+           · reportingManagerId — read-only, populated from the employee
+             record; the field on screen is disabled.
+
+         Notice Start Date was missing even though saveStage1() requires it.
+         The set now mirrors that required list exactly (minus exitType), so
+         100% here means "Save & Next will pass" rather than an unrelated
+         count. Business Impact / Replacement Required stay OUT: they are
+         optional, and counting them would stop the stage ever reaching 100%
+         for HR who legitimately skip them. */
       const items = [
-        !!String(exitType).trim(),
         !!String(reasonForExit).trim(),
+        !!String(noticeDate).trim(),
         !!String(lwd).trim(),
-        !!reportingManagerId,
       ];
       return Math.round((items.filter(Boolean).length / items.length) * 100);
     }
@@ -1652,8 +1723,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === 'closure' && exitPending.length > 0) {
       return (n === currentKey || rawStagePct('closure') > 0 || stageStatus.closure === 'In Progress') ? 'In Progress' : 'Pending';
     }
-    if (stageStatus[n] === 'Completed' || rawStagePct(n) === 100) return 'Completed';
-    if (n === currentKey || rawStagePct(n) > 0 || stageStatus[n] === 'In Progress') return 'In Progress';
+    /* A stage is Completed only when its OWN measure says so.
+       `stageStatus[n]` is stamped 'Completed' by Save & Next / markStageCompleted,
+       and letting that stamp alone win meant simply moving on jumped a
+       part-filled stage straight to 100% — a 75% stage read as done the moment
+       you clicked Next (#54), which is exactly the reassurance the percentage
+       is supposed to withhold.
+
+       The stamp still carries intent: it keeps a stage the user has worked on
+       out of 'Pending' (second line) even when nothing measurable landed yet.
+       It just can no longer claim a completion the data doesn't support. */
+    if (rawStagePct(n) === 100) return 'Completed';
+    if (n === currentKey || rawStagePct(n) > 0
+        || stageStatus[n] === 'In Progress' || stageStatus[n] === 'Completed') return 'In Progress';
     return 'Pending';
   };
 
@@ -1891,6 +1973,35 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
+  /**
+   * Navigate to a stage from the sidebar stepper.
+   *
+   * Leaving Stage 1 runs the SAME gate as the Next Stage button — saveStage1()
+   * validates the mandatory fields, surfaces the inline errors and toast, and
+   * only then persists. The stepper used to be a plain `setStage`, so an exit
+   * could be walked straight past Stage 1 with Reason / Notice Start Date /
+   * Last Working Day still empty: the validation existed but guarded only one
+   * of the two ways out.
+   *
+   * Only LEAVING stage 1 is gated. Coming back to it, and moving between any
+   * later stages, is free — those have their own completion rules and blocking
+   * navigation there would trap HR on a stage they cannot yet finish.
+   */
+  const goToStage = async (num: number, key: StageKey) => {
+    if (num === stage) return;
+    if (currentKey === 'initiation') {
+      if (stage1Saving) return;             // a save is already in flight
+      const ok = await saveStage1();
+      if (!ok) return;                      // errors already shown by saveStage1
+      markStageCompleted('initiation');
+    }
+    setStage(num);
+    setStageStatus(prev => ({
+      ...prev,
+      [key]: prev[key] === 'Completed' ? 'Completed' : 'In Progress',
+    }));
+  };
+
   const current = stages[stage - 1] ?? stages[0];
   const isLastStage = stage === stageCount;
 
@@ -2099,7 +2210,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   key={s.key}
                   type="button"
                   className={`ep-stage-card ep-stage-card--${st.toLowerCase().replace(' ', '-')}${stage === s.num ? ' is-current' : ''}`}
-                  onClick={() => { setStage(s.num); setStageStatus(prev => ({ ...prev, [s.key]: prev[s.key] === 'Completed' ? 'Completed' : 'In Progress' })); }}
+                  // Same mandatory-field gate as Next Stage — see goToStage().
+                  disabled={stage1Saving && currentKey === 'initiation' && s.num !== stage}
+                  onClick={() => { void goToStage(s.num, s.key); }}
                 >
                   <span className="ep-stage-num">
                     {st === 'Completed' ? <i className="ri-check-line" /> : s.num}
@@ -2222,7 +2335,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         onChange={(v) => {
                           setLwd(v); clearS1Err('lwd');
                           if (v && v !== loadedLwdRef.current) {
-                            if (!noticeServed) {
+                            // Ceiling first — it applies to every exit type, so
+                            // checking it before the type-specific floors keeps
+                            // one message per mistake.
+                            if (lwdMax && v > lwdMax) {
+                              toast.warning(
+                                'Invalid last working day',
+                                `Last working day cannot be after the notice period end date (${fmtDateShort(lwdMax)}). It may be the same day, or earlier.`,
+                              );
+                            } else if (!noticeServed) {
                               // No notice is being served (probation, or an
                               // exit type that pays/recovers it instead), so
                               // today is fine — only "not before the start".
@@ -2245,13 +2366,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           }
                         }}
                         min={effLwdMin}
+                        max={effLwdMax || undefined}
                         invalid={s1Errors.has('lwd') || lwdInvalid}
                       />
                       {(s1Errors.has('lwd') || lwdInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
                           {lwdInvalid
-                            ? (!noticeServed
+                            ? (lwdOverEnd
+                                ? `Last working day cannot be after the notice period end date (${fmtDateShort(lwdMax)}). It may be the same day, or earlier.`
+                                : !noticeServed
                                 ? (settlement === 'pay_in_lieu'
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.')
@@ -2547,9 +2671,28 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-fnf">
                   <FnfRow label="Salary for the Exit Month (earned up to the last working day)"
                           value={fnfLines.basic}       onChange={v => setFnfLines(s => ({ ...s, basic: v }))}
-                          hint={fnfDues?.payroll
-                            ? `${fnfDues.payroll.earned_days} of ${fnfDues.payroll.month_days} days in ${fnfDues.payroll.cycle} — payroll skipped this employee for that cycle.`
-                            : 'Payroll skipped this employee for the exit month — their earned salary belongs here.'} />
+                          /* Show the payroll BREAKDOWN, not just a day count —
+                             this figure is now produced by the payroll engine
+                             (structure components, attendance-driven paid days,
+                             LOP, overtime), so the hint has to explain how it
+                             was reached or the number looks arbitrary. */
+                          hint={(() => {
+                            const p = fnfDues?.payroll;
+                            if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
+                            const b = p.breakdown;
+                            if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
+                            const parts: string[] = [
+                              `${b.paid_days} paid of ${b.working_days} working days in ${p.cycle}`,
+                            ];
+                            if (b.lop_days > 0)       parts.push(`LOP ${b.lop_days}d (−${fmtMoney(b.lop_amount)})`);
+                            if (b.overtime_hours > 0) parts.push(`overtime ${b.overtime_hours}h (${fmtMoney(b.overtime_amount)})`);
+                            const comps = (b.earnings || [])
+                              .map((x: any) => `${x.label} ${fmtMoney(x.amount)}`)
+                              .join(' · ');
+                            if (comps) parts.push(comps);
+                            parts.push(`gross ${fmtMoney(b.gross_earnings)} − deductions ${fmtMoney(b.total_deductions)}`);
+                            return `${parts.join(' · ')}. Computed on the payroll basis — this employee was skipped in that cycle's run.`;
+                          })()} />
                   <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} />
                   <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} />
 
@@ -2592,28 +2735,36 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 </div>
 
                 <div className="ep-section-label" style={{ marginTop: 14 }}>Finance Approval &amp; Payment</div>
+                {/* Every field here is required to settle the F&F (#61):
+                    markFnfPaid() refuses without Finance Controller Approval =
+                    Approved and a Payment Date, the stage's own completion
+                    measure counts Payment Status = Paid, and Payment Mode is
+                    part of the payment record it writes. They carry the * now;
+                    Approval and Payment Date are additionally marked invalid
+                    while empty, since those are the two that hard-block the
+                    "Mark F&F Paid" button. */}
                 <div className="ep-approval-card ep-details-card mb-2">
                   <Row className="g-2">
                     <Col md={6}>
-                      <EpField label="Finance Controller Approval">
+                      <EpField label="Finance Controller Approval" required invalid={fnfMeta.approval !== 'Approved'}>
                         <EpSelect value={fnfMeta.approval} onChange={v => setFnfMeta(s => ({ ...s, approval: v }))}
                           options={['Pending', 'Approved', 'Rejected']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Status">
+                      <EpField label="Payment Status" required>
                         <EpSelect value={fnfMeta.payStatus} onChange={v => setFnfMeta(s => ({ ...s, payStatus: v }))}
                           options={['Pending', 'Processing', 'Paid']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Mode">
+                      <EpField label="Payment Mode" required>
                         <EpSelect value={fnfMeta.payMode} onChange={v => setFnfMeta(s => ({ ...s, payMode: v }))}
                           options={['Bank Transfer (NEFT)', 'Bank Transfer (RTGS)', 'IMPS', 'UPI', 'Cheque']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Date">
+                      <EpField label="Payment Date" required invalid={!fnfMeta.payDate}>
                         <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} />
                       </EpField>
                     </Col>
@@ -2639,9 +2790,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         {fnfDoc ? 'Click again to replace' : 'PDF, image, Word or Excel · up to 10 MB · required'}
                       </span>
                     </span>
+                    {/* Download, not View (#59). The label said "View" but an
+                        F&F attachment can be PDF, image, Word or Excel — the
+                        browser only ever renders the first two inline and
+                        downloads the rest, so the button could not honour its
+                        own name. It is a download now, stated by an icon:
+                        `download` makes the behaviour explicit instead of
+                        leaving it to the file type, and the attachment's own
+                        name is used rather than the storage hash. */}
                     {fnfDoc?.url && (
-                      <a className="ep-fnf-drop-view" href={fnfDoc.url} target="_blank" rel="noreferrer"
-                         onClick={e => e.stopPropagation()}>View</a>
+                      <a className="ep-fnf-drop-view" href={fnfDoc.url}
+                         download={fnfDoc.name || true}
+                         title={`Download ${fnfDoc.name || 'document'}`}
+                         aria-label={`Download ${fnfDoc.name || 'document'}`}
+                         onClick={e => e.stopPropagation()}>
+                        <i className="ri-download-2-line" style={{ fontSize: 15 }} />
+                      </a>
                     )}
                   </label>
 
@@ -2722,7 +2886,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   );
                 })()}
 
-                <div className="ep-section-label">Clearance Status</div>
+                {/* All 5 clearances must be Approved before the stage can
+                    complete, so the section carries the mandatory * — the same
+                    marker EpField renders — instead of a warning note appearing
+                    underneath once the rule is broken (#55). */}
+                <div className="ep-section-label">
+                  Clearance Status
+                  <span aria-hidden="true" style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}>*</span>
+                </div>
                 <div className="ep-checklist mb-2">
                   {['Manager Clearance','IT Clearance','Admin Clearance','Finance Clearance','Legal / Compliance'].map((label, idx) => (
                     <div key={idx} className="ep-check-row">
@@ -2750,14 +2921,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   ))}
                 </div>
 
-                {clearances.some(c => c.status !== 'Approved') && (
-                  <div className="ep-alert ep-alert--warning mb-3">
-                    <i className="ri-error-warning-line" />All 5 clearances must be individually approved before advancing.
-                  </div>
-                )}
-
                 <div className="ep-section-label">Handover Notes</div>
-                <EpField label="Work Handover Notes">
+                {/* `required`: these notes are counted by rawStagePct('clearance')
+                    — they are one of the items the stage's completion is measured
+                    against, so Clearance & Handover can never reach 100% without
+                    them. The field behaved as mandatory but carried no * to say
+                    so (#55). */}
+                <EpField label="Work Handover Notes" required>
                   <textarea
                     className="ep-textarea"
                     rows={3}

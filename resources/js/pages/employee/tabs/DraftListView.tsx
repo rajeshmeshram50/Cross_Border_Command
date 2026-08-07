@@ -99,47 +99,61 @@ export default function DraftListView({
       );
     });
   } else {
-    // One card per saved expense draft entry. Each entry can hold one
-    // or more line items (the "Save & Add Another" stack inside the
-    // modal), so the summary surfaces the first line item plus a
-    // count badge when the entry holds more than one.
+    // One card per saved expense draft entry. Each entry can hold one or
+    // more line items (the "Save & Add Another" stack inside the modal).
+    // Every line item is rendered as its own row so a multi-claim draft
+    // shows ALL its claims separately — previously only the first claim
+    // was shown, so a 2-claim draft looked like it had lost one.
     expenseEntries.forEach(entry => {
-      const head = entry.drafts[0] ?? null;
-      if (!head) return;
-      const catName = (() => {
-        const found = claimCategories.find(c => String(c.id) === String(head.category));
-        return found?.name || (head.category ? `Cat #${head.category}` : '—');
-      })();
-      const lineCount = entry.drafts.length;
+      const lines: any[] = Array.isArray(entry.drafts) ? entry.drafts : [];
+      if (lines.length === 0) return;
+      const lineCount = lines.length;
       cards.push(
         <div key={entry.id} className="border rounded p-3 mb-2 dlv-card-bg">
           <div className="d-flex align-items-start justify-content-between gap-3 flex-wrap">
-            <div className="d-flex align-items-start gap-2 min-w-0 dlv-flex-280">
+            <div className="d-flex align-items-start gap-2 min-w-0 dlv-flex-280 flex-grow-1">
               <span className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0 dlv-icon-expense">
                 <i className="ri-file-list-3-line" />
               </span>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-grow-1">
                 <div className="d-flex align-items-center gap-2 flex-wrap">
                   <strong className="ep-fs-13">
-                    {head.title || 'Untitled claim'}
+                    {lineCount > 1 ? `Expense Draft · ${lineCount} claims` : (lines[0].title || 'Untitled claim')}
                   </strong>
-                  <span className="badge rounded-pill dlv-badge-draft">
-                    DRAFT{lineCount > 1 ? ` · ${lineCount} lines` : ''}
-                  </span>
+                  <span className="badge rounded-pill dlv-badge-draft">DRAFT</span>
                 </div>
-                <div className="text-muted mt-1 ep-fs-115">
-                  {head.amount ? <>₹{Number(String(head.amount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
-                  {catName && catName !== '—' && <> · {catName}</>}
-                  {head.date && <> · {head.date}</>}
-                  {head.vendor && <> · {head.vendor}</>}
+                {/* One row per claim so both/all claims are visible separately. */}
+                <div className="d-flex flex-column gap-2 mt-2">
+                  {lines.map((ln, i) => {
+                    const catName = (() => {
+                      const found = claimCategories.find(c => String(c.id) === String(ln.category));
+                      return found?.name || (ln.category ? `Cat #${ln.category}` : '');
+                    })();
+                    return (
+                      <div key={i} className="border rounded p-2" style={{ background: 'rgba(0,0,0,0.02)' }}>
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                          {lineCount > 1 && (
+                            <span className="badge rounded-pill text-bg-light border">Claim {i + 1}</span>
+                          )}
+                          <strong className="ep-fs-115">{ln.title || 'Untitled claim'}</strong>
+                        </div>
+                        <div className="text-muted mt-1 ep-fs-115">
+                          {ln.amount ? <>₹{Number(String(ln.amount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}
+                          {catName && <> · {catName}</>}
+                          {ln.date && <> · {ln.date}</>}
+                          {ln.vendor && <> · {ln.vendor}</>}
+                        </div>
+                        {ln.purpose && (
+                          <div className="text-muted mt-1 dlv-reason" title={ln.purpose}>
+                            <i className="ri-double-quotes-l me-1" />
+                            {String(ln.purpose).length > 100 ? String(ln.purpose).slice(0, 100) + '…' : ln.purpose}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-                {head.purpose && (
-                  <div className="text-muted mt-1 dlv-reason" title={head.purpose}>
-                    <i className="ri-double-quotes-l me-1" />
-                    {head.purpose.length > 100 ? head.purpose.slice(0, 100) + '…' : head.purpose}
-                  </div>
-                )}
-                <small className="text-muted d-inline-flex align-items-center gap-1 mt-1 ep-fs-105">
+                <small className="text-muted d-inline-flex align-items-center gap-1 mt-2 ep-fs-105">
                   <i className="ri-time-line" /> {fmtSavedAt(entry.savedAt)}
                 </small>
               </div>

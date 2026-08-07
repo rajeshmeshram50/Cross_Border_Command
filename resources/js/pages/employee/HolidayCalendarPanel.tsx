@@ -294,6 +294,10 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
           accent="violet"
           pageSize={10}
           minWidth={720}
+          /* No search box: one year's holiday calendar is a short, complete
+             list the employee reads top to bottom, and the year stepper above
+             already scopes it. Sorting on Holiday Name / Date covers the rest. */
+          searchable={false}
           emptyMessage={`No holidays in ${year}`}
         />
       )}

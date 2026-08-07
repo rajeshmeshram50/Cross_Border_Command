@@ -1276,7 +1276,9 @@ export default function ExpenseSettlementModal({
                 const rstep = rmode === 'bimonthly' ? 2 : 1;
                 const rmonths = summary.recovery_months ?? 0;
                 const emi = summary.monthly_emi ?? 0;
-                const total = summary.claimed_amount ?? 0;
+                // Recover only what was actually paid — the sanctioned (net) amount
+                // after payout adjustments — not the originally-claimed amount.
+                const total = summary.sanctioned_amount ?? summary.claimed_amount ?? 0;
                 const n = rmode === 'lumpsum' ? 1 : (rmonths || 1);
                 const startStr = summary.recovery_start || '';
                 // What payroll has actually recovered so far → drives status.
@@ -1632,7 +1634,17 @@ export default function ExpenseSettlementModal({
           <div className="esm-foot">
             <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? `Review the ${noun}, then approve or reject.` : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
             <div className="esm-foot-r">
-              <button className="esm-btn-approve" onClick={requestApprove} disabled={saving || (!managerReview && sanctioned <= 0)}>Approve</button>
+              {/* When net payable ≤ 0 the button stays clickable but reads as
+                  disabled, so clicking it fires requestApprove()'s toast
+                  ("Net payable must be greater than zero") instead of doing
+                  nothing — a truly `disabled` button swallows the click. */}
+              <button
+                className="esm-btn-approve"
+                onClick={requestApprove}
+                disabled={saving}
+                aria-disabled={!managerReview && sanctioned <= 0}
+                style={(!managerReview && sanctioned <= 0) ? { opacity: .55, cursor: 'not-allowed' } : undefined}
+              >Approve</button>
               <button className="esm-btn-reject" onClick={() => { setRejectReason(''); setConfirmKind('reject'); }} disabled={saving}>Reject</button>
               <button className="esm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
             </div>
@@ -2230,15 +2242,27 @@ export default function ExpenseSettlementModal({
               )
             ) : (
               <>
-                <div className="esm-confirm-msg">This will reject <b>{summary.title || summary.claim_no}</b>. Please provide a reason.</div>
+                <div className="esm-confirm-msg">This will reject{' '}
+                  {/* Truncate a long claim name so it can't overflow the
+                      confirm popup — full name on hover via title. */}
+                  <b
+                    title={summary.title || summary.claim_no || ''}
+                    style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'bottom' }}
+                  >{summary.title || summary.claim_no}</b>. Please provide a reason.</div>
                 <textarea
                   className="esm-in"
                   rows={3}
                   placeholder="Reason for rejection…"
                   value={rejectReason}
+                  maxLength={1000}
                   onChange={e => setRejectReason(e.target.value)}
                   autoFocus
                 />
+                {/* Live character counter — mirrors the backend max:1000 cap
+                    so the user can see how much room is left. */}
+                <div style={{ textAlign: 'right', fontSize: 11, color: rejectReason.length >= 1000 ? '#dc2626' : '#6b7280', marginTop: 2 }}>
+                  {rejectReason.length}/1000
+                </div>
               </>
             )}
             <div className="esm-confirm-actions">

@@ -413,6 +413,85 @@ class PayrollService
         return $days;
     }
 
+    /**
+     * Salary EARNED in the exit month, up to and including the last working
+     * day — the "Salary for the Exit Month" line on the Full & Final stage.
+     *
+     * Runs the real payroll engine for that month rather than pro-rating
+     * annual_salary ÷ 12 on calendar days, so the figure matches what payroll
+     * would have paid: the employee's salary STRUCTURE (basic / HRA / special
+     * allowance / any custom component), attendance-driven paid days, loss of
+     * pay, overtime, and the statutory deductions. The old calendar-day
+     * estimate ignored all of it — and read ₹0 for anyone paid through a
+     * salary structure with no annual_salary set.
+     *
+     * The amount is NET plus the advance EMI the engine deducted for the
+     * month, because the F&F recovers the FULL outstanding advance on its own
+     * line — adding it back here keeps the advance from being recovered twice.
+     * Same rule computeFnf() uses, so the two never disagree.
+     *
+     * Read-only: when the exit month has no payroll period row this builds a
+     * TRANSIENT one rather than persisting it, since the F&F stage is a GET
+     * and must not create payroll periods as a side effect.
+     * computeForEmployee() only reads month / period_start / period_end /
+     * working_days off it.
+     */
+    public function earnedSalaryForExitMonth(Employee $employee, Carbon $lwd): array
+    {
+        $start = $lwd->copy()->startOfMonth();
+        $end   = $lwd->copy()->endOfMonth();
+
+        $period = PayrollPeriod::where('client_id', $employee->client_id)
+            ->where('branch_id', $employee->branch_id)
+            ->where('month', (int) $lwd->month)
+            ->where('year', (int) $lwd->year)
+            ->first()
+            ?: new PayrollPeriod([
+                'client_id'    => $employee->client_id,
+                'branch_id'    => $employee->branch_id,
+                'month'        => (int) $lwd->month,
+                'year'         => (int) $lwd->year,
+                'label'        => $start->format('M Y'),
+                'period_start' => $start->toDateString(),
+                'period_end'   => $end->toDateString(),
+                'working_days' => $this->defaultWorkingDays($start, $end),
+            ]);
+
+        $slip = $this->computeForEmployee($employee, $period);
+
+        $amount = round((float) $slip['net_pay'] + (float) ($slip['advance_recovery'] ?? 0), 2);
+
+        return [
+            'cycle'         => $lwd->format('F Y'),
+            'monthly_gross' => (float) ($slip['gross_earnings'] ?? 0),
+            'month_days'    => (int) $end->day,
+            // Kept for the existing "X of Y days" caption; paid_days is the
+            // figure the money is actually built from.
+            'earned_days'   => (float) ($slip['paid_days'] ?? 0),
+            'amount'        => max(0, $amount),
+            // The full payroll breakdown, so the F&F stage can show WHY the
+            // number is what it is instead of an unexplained total.
+            'breakdown'     => [
+                'working_days'      => (float) ($slip['working_days'] ?? 0),
+                'present_days'      => (float) ($slip['present_days'] ?? 0),
+                'paid_days'         => (float) ($slip['paid_days'] ?? 0),
+                'lop_days'          => (float) ($slip['lop_days'] ?? 0),
+                'paid_leave_days'   => (float) ($slip['paid_leave_days'] ?? 0),
+                'unpaid_leave_days' => (float) ($slip['unpaid_leave_days'] ?? 0),
+                'overtime_hours'    => (float) ($slip['overtime_hours'] ?? 0),
+                'overtime_amount'   => (float) ($slip['overtime_amount'] ?? 0),
+                'gross_earnings'    => (float) ($slip['gross_earnings'] ?? 0),
+                'lop_amount'        => (float) ($slip['lop_amount'] ?? 0),
+                'total_deductions'  => (float) ($slip['total_deductions'] ?? 0),
+                'net_pay'           => (float) ($slip['net_pay'] ?? 0),
+                'earnings'          => $slip['earnings'] ?? [],
+                'deductions'        => $slip['deductions'] ?? [],
+            ],
+            'note' => 'Excluded from the ' . $lwd->format('F Y')
+                . ' payroll run — computed here on the same basis and settled in the F&F.',
+        ];
+    }
+
     /** Rule 1 — finalize attendance so payroll can be processed. */
     public function finalizeAttendance(PayrollPeriod $period, ?int $userId): void
     {
@@ -493,10 +572,16 @@ class PayrollService
      */
     public function payrollExclusions(PayrollPeriod $period): array
     {
-        // No status filter here, unlike eligibleEmployees(): an early leaver is
-        // normally already stamped Resigned/Terminated by the exit flow, and
-        // filtering those out would hide exactly the people this reports on.
-        $q = Employee::query()->where('onboarding_stage_completed', '>=', 6);
+        /* No status filter here, unlike eligibleEmployees(): an early leaver is
+           normally already stamped Resigned/Terminated by the exit flow, and
+           filtering those out would hide exactly the people this reports on.
+
+           withTrashed for the same reason — completing an exit now soft-deletes
+           the employee (ExitController::complete, so they land in the Disabled
+           list). Without this they would silently drop out of the panel in the
+           very cycle it needs to explain their absence, which is the exact
+           "person vanished from the run" confusion it exists to prevent. */
+        $q = Employee::withTrashed()->where('onboarding_stage_completed', '>=', 6);
         if ($period->client_id) $q->where('client_id', $period->client_id);
         if ($period->branch_id) $q->where('branch_id', $period->branch_id);
 
@@ -1655,7 +1740,7 @@ class PayrollService
             ->where('hr_status', 'approved')
             ->whereNotNull('recovery_start')
             ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
-            ->get(['id', 'amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+            ->get(['id', 'amount', 'sanctioned_amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
                    'advance_no', 'advance_type', 'advance_type_other']) as $r) {
             $type = $this->advanceTypeLabel($r->advance_type, $r->advance_type_other);
             $streams[] = [
@@ -1665,7 +1750,10 @@ class PayrollService
                 'mode'       => $r->recovery_mode,
                 'months'     => (int) ($r->recovery_months ?: 0),
                 'emi'        => (float) ($r->monthly_emi ?: 0),
-                'amount'     => (float) $r->amount,
+                // Recover only what the employee actually RECEIVED — the sanctioned
+                // (net) amount after any deduction/addition at payout, not the
+                // originally-claimed amount. The last EMI trims to this total.
+                'amount'     => (float) ($r->sanctioned_amount ?? $r->amount),
                 'advance_no' => $r->advance_no,
                 'label'      => 'Advance Recovery – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
             ];

@@ -258,7 +258,23 @@ export default function DocGenerateModal({
                   filled automatically — just preview &amp; generate below.
                 </div>
               ) : (
-                <div className="row g-2 mb-2">
+                /* Frozen while a save / send / preview is in flight (#46).
+                   These values are what get merged into the document, so
+                   editing them mid-save would produce a file that doesn't match
+                   what is on screen — and a signing request is sent with the
+                   values frozen in, which cannot be taken back.
+
+                   A disabled <fieldset> covers the native inputs in one go;
+                   pointer-events is what stops MasterDatePicker, which is a
+                   custom widget that `disabled` alone does not reach. */
+                <fieldset
+                  disabled={busy}
+                  className="row g-2 mb-2"
+                  style={{
+                    border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+                    ...(busy ? { pointerEvents: 'none', opacity: 0.6 } : {}),
+                  }}
+                >
                   {customFields.map(cf => (
                     <div key={cf.id} className="col-md-6">
                       <label className="dgm-label">
@@ -282,13 +298,16 @@ export default function DocGenerateModal({
                       )}
                     </div>
                   ))}
-                </div>
+                </fieldset>
               )}
 
               {/* Preview */}
               <div className="dgm-section-title mt-3 d-flex align-items-center justify-content-between">
                 <span><i className="ri-eye-line me-1" /> Preview</span>
-                <button type="button" className="dgm-refresh" onClick={refreshPreview} disabled={previewing}>
+                {/* `busy`, not just `previewing` — re-rendering the preview
+                    while a save or send is in flight races the very values
+                    that request is carrying. */}
+                <button type="button" className="dgm-refresh" onClick={refreshPreview} disabled={busy}>
                   <i className={`${previewing ? 'ri-loader-4-line dgm-spin' : 'ri-refresh-line'} me-1`} />
                   {previewing ? 'Rendering…' : 'Refresh preview'}
                 </button>

@@ -27,6 +27,11 @@ type PayableClaim = {
 type Emp = { id: number; first_name?: string; last_name?: string; display_name?: string; emp_code?: string };
 
 const PAGE = 8;
+// The proof link opens in a new tab (plain browser navigation), so it can't
+// send the Authorization header. Append the Sanctum token as ?token= — the
+// batch-payment-proof route authenticates from the query token. Without this
+// the request hits auth and 500s with "Route [login] not defined".
+const tokenUrl = (u: string) => `${u}${u.includes('?') ? '&' : '?'}token=${encodeURIComponent(localStorage.getItem('cbc_token') || '')}`;
 const inr = (n: number) => '₹' + Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -211,7 +216,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                               <td style={td}>{b.zoho_status === 'synced' && b.zoho_url
                                 ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={link}>View</a>
                                 : <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }} disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>{syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}</button>}</td>
-                              <td style={td}>{b.proof_url ? <a href={resolveFileUrl(b.proof_url)} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
+                              <td style={td}>{b.proof_url ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
                             </tr>
                           ))}
                     </tbody>

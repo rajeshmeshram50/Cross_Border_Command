@@ -748,7 +748,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // Consolidated (batch) payment — static paths BEFORE the {id} route.
     Route::get   ('/expense-claims/batch-payable',            [ExpenseClaimController::class, 'batchPayable']);
     Route::get   ('/expense-claims/batch-payments',           [ExpenseClaimController::class, 'batchPayments']);
-    Route::get   ('/expense-claims/batch-payments/{batchId}/proof', [ExpenseClaimController::class, 'batchPaymentProof']);
+    // NOTE: the batch-payment proof file link is a plain browser navigation
+    // (opens in a new tab) so it carries no Authorization header. Its route
+    // lives OUTSIDE this auth:sanctum group with the other file-download
+    // routes and authenticates via ?token= — see below near the other
+    // expense-claim file routes. Keeping it here would 500 with
+    // "Route [login] not defined".
     Route::post  ('/expense-claims/batch-payments/{batchId}/sync-zoho', [ExpenseClaimController::class, 'syncBatchPaymentToZoho']);
     Route::post  ('/expense-claims/batch-pay',                [ExpenseClaimController::class, 'batchPay']);
     Route::post  ('/expense-claims',                          [ExpenseClaimController::class, 'store']);
@@ -1026,6 +1031,12 @@ Route::get('/expense-claims/{id}/attachments/{index}', [ExpenseClaimController::
 
 Route::get('/expense-claims/payments/{paymentId}/proof', [ExpenseClaimController::class, 'downloadPaymentProof'])
     ->name('expense-claims.payment-proof');
+
+// Batch-payment proof — opened as a new-tab link, so it authenticates via
+// ?token= inside the controller (batchPaymentProof) rather than the
+// auth:sanctum middleware. Must stay outside the authenticated group.
+Route::get('/expense-claims/batch-payments/{batchId}/proof', [ExpenseClaimController::class, 'batchPaymentProof'])
+    ->name('expense-claims.batch-payment-proof');
 
 
 Route::get('/advance-requests/{id}/attachments/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'downloadAttachment'])

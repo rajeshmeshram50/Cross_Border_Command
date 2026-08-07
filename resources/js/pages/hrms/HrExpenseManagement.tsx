@@ -66,7 +66,7 @@ function withinDateFilter(iso: string | null | undefined, filter: DateFilter): b
 }
 
 function KpiTile({
-  label, sub, value, iconClass, strip, tint, fg,
+  label, sub, value, iconClass, strip, tint, fg, titleText,
 }: {
   label: string;
   sub?: string;
@@ -75,10 +75,14 @@ function KpiTile({
   strip: string;
   tint: string;
   fg: string;
+  /** Native hover tooltip — used to surface the exact rupee value behind a
+   *  compact figure (e.g. "₹500.00Cr" → "₹5,00,00,32,001"). */
+  titleText?: string;
 }) {
   return (
     <div
       className="hrexp-surface hrexp-kpi-card"
+      title={titleText}
       style={{
         borderRadius: 14,
         border: '1px solid var(--vz-border-color)',
@@ -279,11 +283,19 @@ export default function HrExpenseManagement() {
     approved: usedForAdvances.filter(a => a.status === 'approved').length,
     rejected: usedForAdvances.filter(a => a.status === 'rejected').length,
   };
-  const totalAmount = dateFilteredRows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+  // "Total Amount" is a SPEND total, so rejected claims are excluded — they
+  // were previously summed in here while being excluded from the Approved
+  // card and the Spend-by-Category chart, which made the figures look like
+  // they mixed statuses (QA #87). Total = pending + approved (money in play).
+  const totalAmount = dateFilteredRows
+    .filter(r => r.status !== 'rejected')
+    .reduce((sum, r) => sum + Number(r.amount || 0), 0);
   const approvedAmount = dateFilteredRows
     .filter(r => r.status === 'approved')
     .reduce((sum, r) => sum + Number(r.amount || 0), 0);
-  const advanceTotalAmount = dateFilteredAdvances.reduce((sum, a) => sum + Number(a.amount || 0), 0);
+  const advanceTotalAmount = dateFilteredAdvances
+    .filter(a => a.status !== 'rejected')
+    .reduce((sum, a) => sum + Number(a.amount || 0), 0);
   const advanceApprovedAmount = dateFilteredAdvances
     .filter(a => a.status === 'approved')
     .reduce((sum, a) => sum + Number(a.amount || 0), 0);
@@ -766,6 +778,7 @@ export default function HrExpenseManagement() {
               label="Total Amount"
               sub={dateSubLabel}
               value={fmtCompact(kpiTotalAmount)}
+              titleText={`₹${kpiTotalAmount.toLocaleString('en-IN')} · excludes rejected`}
               iconClass="ri-cash-line"
               strip="#f97316"
               tint="#fdf3d6"
@@ -777,6 +790,7 @@ export default function HrExpenseManagement() {
               label="Approved"
               sub="Disbursable"
               value={fmtCompact(kpiApprovedAmount)}
+              titleText={`₹${kpiApprovedAmount.toLocaleString('en-IN')} · approved only`}
               iconClass="ri-checkbox-circle-line"
               strip="#10b981"
               tint="#d6f4e3"
@@ -870,7 +884,7 @@ export default function HrExpenseManagement() {
                 </div>
               ) : (
                 <>
-                  <div style={{ width: '100%', height: 280 }}>
+                  <div style={{ width: '100%', height: 320 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart
                         data={spendByCategory.map(c => ({
@@ -878,16 +892,39 @@ export default function HrExpenseManagement() {
                           spent: Math.round(c.spent),
                           color: c.color,
                         }))}
-                        margin={{ top: 24, right: 12, left: 0, bottom: 8 }}
+                        margin={{ top: 24, right: 12, left: 0, bottom: 48 }}
                         barCategoryGap="22%"
                       >
                         <CartesianGrid strokeDasharray="3 3" stroke={chartTheme.grid} vertical={false} />
                         <XAxis
                           dataKey="name"
-                          tick={{ fontSize: 11, fill: chartTheme.axisTick, fontWeight: 600 }}
                           interval={0}
                           axisLine={false}
                           tickLine={false}
+                          height={64}
+                          // Rotate + truncate so all category names stay legible
+                          // instead of overlapping in one flat row. Full name
+                          // shows on hover via <title>.
+                          tick={(props: any) => {
+                            const { x, y, payload } = props;
+                            const label = String(payload?.value ?? '');
+                            const short = label.length > 14 ? label.slice(0, 13) + '…' : label;
+                            return (
+                              <g transform={`translate(${x},${y})`}>
+                                <text
+                                  dy={10}
+                                  textAnchor="end"
+                                  transform="rotate(-35)"
+                                  fontSize={10.5}
+                                  fontWeight={600}
+                                  fill={chartTheme.axisTick}
+                                >
+                                  <title>{label}</title>
+                                  {short}
+                                </text>
+                              </g>
+                            );
+                          }}
                         />
                         <YAxis
                           tick={{ fontSize: 10, fill: chartTheme.axisTickMuted }}

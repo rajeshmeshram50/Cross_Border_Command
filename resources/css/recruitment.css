@@ -904,6 +904,35 @@
     0 0 0 3px rgba(0,0,0,0.04);
 }
 
+/* Save lock — covers the whole modal while a save is in flight, so fields and
+   step buttons can't be touched mid-request (bugs #49 / #50). `inset: 0` on an
+   absolutely-positioned child resolves against .modal-content (Bootstrap makes
+   it position: relative), so this reaches the header and footer as well as the
+   body. Mirrors the CLM trade-document / agreement wizards, which lock the same
+   way. Scoped to the modal deliberately — it is the FORM that must freeze, not
+   the whole application. */
+.rec-save-lock {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 30, 42, 0.32);
+  backdrop-filter: blur(1.5px);
+  cursor: wait;
+  border-radius: inherit;
+}
+.rec-save-lock-box {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 14px 22px;
+  border-radius: 14px;
+  background: var(--vz-card-bg, #fff);
+  color: var(--vz-body-color, #0c2c3a);
+  font-size: 14px; font-weight: 700;
+  box-shadow: 0 18px 44px rgba(8, 40, 60, 0.28);
+}
+
 /* ---------------------------------------------------------------------
    4. Form footer + Save (primary) + Cancel (ghost) + close buttons
    --------------------------------------------------------------------- */
@@ -6031,13 +6060,79 @@
 .ep-fnf-drop-txt { display: flex; flex-direction: column; min-width: 0; }
 .ep-fnf-drop-t1 { font-size: 12.5px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ep-fnf-drop-t2 { font-size: 11px; color: var(--vz-secondary-color); }
+/* Icon-only download button. Was a text "View" link, so it was padded for a
+   word and hovered with an underline — neither of which suits a glyph. Square
+   hit target, centred icon, and the hover now tints the button itself. */
 .ep-fnf-drop-view {
-  margin-left: auto; flex: none; font-size: 11.5px; font-weight: 700;
-  color: #4338ca; text-decoration: none; padding: 4px 10px;
+  margin-left: auto; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; padding: 0;
+  color: #4338ca; text-decoration: none;
   border: 1px solid var(--vz-border-color); border-radius: 7px; background: var(--vz-card-bg);
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
-.ep-fnf-drop-view:hover { text-decoration: underline; }
+.ep-fnf-drop-view:hover {
+  color: #3730a3;
+  background: rgba(67, 56, 202, 0.10);
+  border-color: rgba(67, 56, 202, 0.40);
+}
+[data-bs-theme="dark"] .ep-fnf-drop-view,
+[data-layout-mode="dark"] .ep-fnf-drop-view { color: #c7d2fe; }
+[data-bs-theme="dark"] .ep-fnf-drop-view:hover,
+[data-layout-mode="dark"] .ep-fnf-drop-view:hover {
+  color: #e0e7ff; background: rgba(129, 140, 248, 0.18); border-color: rgba(129, 140, 248, 0.40);
+}
 [data-bs-theme="dark"] .ep-fnf-drop.has-file { background: rgba(16,185,129,0.10); }
+
+/* ══ Exit modal — 90% density ══════════════════════════════════════════
+   The popup was only comfortable at 90% browser zoom; this reproduces that
+   density at 100%. Values are the originals × 0.9, restated in ONE block
+   rather than edited in place, so the base sizing above stays readable and
+   this is a single deletion away if it needs tuning or reverting.
+
+   Deliberately NOT done with `zoom` or `transform: scale()`: MasterSelect
+   portals its dropdown to <body> and positions it from
+   getBoundingClientRect(), so scaling the trigger would leave every select's
+   menu the wrong size and offset from its field. Scaling the real values
+   keeps layout, hit targets and portalled menus in agreement.
+
+   Placed after the base rules and before the media queries, so the ≤1199px /
+   ≤991px / ≤767px overrides still win on small screens.               */
+.modal-dialog:has(> .ep-modal) { max-width: 1260px; }
+/* Header + footer are ~10% shorter now, so the body's reserve shrinks with them. */
+.ep-body { max-height: calc(90vh - 180px); }
+
+.ep-head { padding: 12px 16px; }
+.ep-head-top { gap: 12px; }
+.ep-head-avatar { width: 43px; height: 43px; font-size: 14.5px; }
+.ep-head-title { font-size: 15.5px; }
+.ep-head-sub { font-size: 10.5px; }
+.ep-head-status-pill { padding: 2px 9px; font-size: 9px; }
+.ep-head-chip { padding: 3px 9px; font-size: 9.5px; }
+.ep-head-chip i { font-size: 11px; }
+.ep-head-chip--profile { padding: 3px 12px 3px 3px; gap: 7px; }
+.ep-head-chip-profile-label { font-size: 10px; }
+.ep-head-chip-profile-sub { font-size: 8px; }
+
+.ep-sidebar { width: 268px; padding: 12px 12px 12px 16px; }
+.ep-sidebar-progress { padding: 9px 11px 11px; }
+.ep-stage-card { padding: 10px 12px; gap: 9px; }
+.ep-stage-num { width: 23px; height: 23px; font-size: 11px; }
+.ep-stage-num i { font-size: 12.5px; }
+.ep-stage-title { font-size: 11px; }
+.ep-stage-status { padding: 2px 7px; }
+.ep-stage-pct { font-size: 10px; }
+
+.ep-content { padding: 12px 18px; }
+.ep-section-label { font-size: 10px; }
+.ep-field-label { font-size: 9.5px; }
+/* 33px keeps the fields comfortably above the ~32px minimum a click target
+   wants; below that the form gets fiddly rather than merely denser. */
+.ep-input, .ep-select { height: 33px; padding: 0 10px; font-size: 11.5px; }
+.ep-textarea { min-height: 50px; padding: 6px 10px; font-size: 11.5px; }
+.ep-approval-card { padding: 9px 11px; }
+
+.ep-footer { padding: 10px 20px; }
 
 /* ══ Employee-submitted notice payment (HR verification view) ══════════ */
 .ep-submitted { display: flex; flex-direction: column; gap: 10px; }
