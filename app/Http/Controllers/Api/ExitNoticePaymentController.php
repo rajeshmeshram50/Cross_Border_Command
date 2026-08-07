@@ -395,7 +395,10 @@ class ExitNoticePaymentController extends Controller
             'bank_name'         => $r->bank_name,
             'utr_cheque_number' => $r->utr_cheque_number,
             'payment_date'      => $r->payment_date?->toDateString(),
-            'attachment_url'    => $r->attachment_path ? Storage::url($r->attachment_path) : null,
+            // file_url(), not Storage::url() — see ExitController::uploadFnfAttachment.
+            // The raw call throws (→ 500) when the public disk is Azure and
+            // AZURE_STORAGE_URL is unset/stale, taking this whole payload with it.
+            'attachment_url'    => file_url($r->attachment_path),
             'attachment_name'   => $r->attachment_name,
             'employee_note'     => $r->employee_note,
             'status'            => $r->status,

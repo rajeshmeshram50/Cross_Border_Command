@@ -3200,7 +3200,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <MasterSelect
                       value={advType}
                       placeholder="Select type..."
-                      options={['Travel Advance','Salary Advance','Medical Advance','Other'].map(o => ({ value: o, label: o }))}
+                      options={['Travel Advance','Medical Advance','Other'].map(o => ({ value: o, label: o }))}
                       onChange={(v) => { setAdvType(v); clearAdvErr('type'); }}
                       invalid={!!advErrors.type}
                     />

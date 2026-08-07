@@ -22,6 +22,7 @@ type PayableClaim = {
   id: number; exp_no: string; title: string; category_name?: string | null;
   expense_date?: string | null; amount: number; note?: string | null;
   attachments: number; status: string; payable: boolean;
+  pending_stage?: 'manager' | 'hr' | null;
 };
 type Emp = { id: number; first_name?: string; last_name?: string; display_name?: string; emp_code?: string };
 
@@ -44,6 +45,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   const [expenseType, setExpenseType] = useState<'Goods' | 'Service'>('Goods');
   const [note, setNote] = useState('');
   const [proof, setProof] = useState<File | null>(null);
+  const proofInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncingId, setSyncingId] = useState<number | null>(null);
@@ -119,9 +121,16 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
 
   if (!open) return null;
 
-  const pillStatus = (s: string) => s === 'approved'
-    ? <span style={{ ...chip, background: '#d1fae5', color: '#065f46' }}>Approved</span>
-    : <span style={{ ...chip, background: '#fef3c7', color: '#a16207' }}>Pending review</span>;
+  const pillStatus = (c: PayableClaim) => {
+    if (c.status === 'approved') return <span style={{ ...chip, background: '#d1fae5', color: '#065f46' }}>Approved</span>;
+    const stageLabel = c.pending_stage === 'hr' ? 'Pending HR approval' : 'Pending reporting manager';
+    return (
+      <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ ...chip, background: '#fef3c7', color: '#a16207' }}>Pending review</span>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>({stageLabel})</span>
+      </span>
+    );
+  };
 
   const histSlice = history.slice((histPage - 1) * PAGE, histPage * PAGE);
   const claimSlice = payable.slice((claimPage - 1) * PAGE, claimPage * PAGE);
@@ -247,13 +256,15 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                                 <td style={{ ...td, fontFamily: 'monospace' }}>{c.exp_no}</td>
                                 <td style={td}>{fmtDate(c.expense_date)}</td>
                                 <td style={td}>{c.category_name || '—'}</td>
-                                <td style={{ ...td, maxWidth: 180, color: '#64748b' }} title={c.note ?? ''}>{c.note || c.title}</td>
+                                <td style={td}><div style={noteCell} title={c.note ?? ''}>{c.note || c.title}</div></td>
                                 <td style={td}>{c.attachments || 0}</td>
                                 <td style={{ ...td, fontWeight: 700 }}>{inr(c.amount)}</td>
-                                <td style={td}>{pillStatus(c.status)}</td>
+                                <td style={td}>{pillStatus(c)}</td>
                                 <td style={td}>{c.payable
                                   ? <button style={ghostSm} onClick={() => setViewId(c.id)}>View</button>
-                                  : <button style={warnSm} onClick={() => setReviewId(c.id)}>Review &amp; Approve</button>}</td>
+                                  : c.pending_stage === 'hr'
+                                    ? <button style={warnSm} onClick={() => setReviewId(c.id)}>Review &amp; Approve</button>
+                                    : <button style={disabledSm} disabled title="Waiting for the reporting manager to approve first">Review &amp; Approve</button>}</td>
                               </tr>
                             ))}
                     </tbody>
@@ -306,7 +317,23 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   </div>
                   <div>
                     <label style={lbl}>Proof of payment <span style={req}>*</span></label>
-                    <input style={{ ...input, padding: '7px 10px' }} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" onChange={e => setProof(e.target.files?.[0] ?? null)} />
+                    <input ref={proofInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={e => setProof(e.target.files?.[0] ?? null)} />
+                    {proof ? (
+                      <div style={proofBox}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                          <i className="ri-file-text-line" style={{ fontSize: 18, color: '#0e7490', flexShrink: 0 }} />
+                          <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 600, color: '#0f172a' }}>{proof.name}</span>
+                        </span>
+                        <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <button type="button" style={proofBtn} onClick={() => window.open(URL.createObjectURL(proof), '_blank')}><i className="ri-eye-line" /> View</button>
+                          <button type="button" style={proofBtn} onClick={() => proofInputRef.current?.click()}><i className="ri-refresh-line" /> Reupload</button>
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={attachZone} onClick={() => proofInputRef.current?.click()}>
+                        <i className="ri-attachment-2" style={{ fontSize: 18 }} /> <span style={{ fontWeight: 700, letterSpacing: .3 }}>ATTACH PROOF</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
@@ -408,6 +435,11 @@ const primaryBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'c
 const ghostBtn: React.CSSProperties = { background: '#fff', color: '#334155', border: '1px solid #cbd5e1', borderRadius: 9, padding: '10px 16px', fontWeight: 600, cursor: 'pointer', fontSize: 14 };
 const ghostSm: React.CSSProperties = { background: '#fff', color: '#0e7490', border: '1px solid #99f6e4', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer' };
 const warnSm: React.CSSProperties = { background: '#fffbeb', color: '#a16207', border: '1px solid #fde68a', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
+const disabledSm: React.CSSProperties = { background: '#f1f5f9', color: '#94a3b8', border: '1px solid #e2e8f0', borderRadius: 7, padding: '4px 12px', fontWeight: 700, fontSize: 12, cursor: 'not-allowed', whiteSpace: 'nowrap' };
+const noteCell: React.CSSProperties = { maxWidth: 220, color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' };
+const attachZone: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, padding: '12px 14px', border: '1.5px dashed #94d8e6', borderRadius: 10, background: '#f0fbfe', color: '#0e7490', cursor: 'pointer', fontSize: 13 };
+const proofBox: React.CSSProperties = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', border: '1px solid #cbd5e1', borderRadius: 10, background: '#f8fafc' };
+const proofBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', color: '#0e7490', border: '1px solid #99f6e4', borderRadius: 7, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const syncBtn: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 4, background: '#0891b2', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontWeight: 700, fontSize: 12, cursor: 'pointer', whiteSpace: 'nowrap' };
 const link: React.CSSProperties = { color: '#0891b2', fontWeight: 600, textDecoration: 'none' };
 const chip: React.CSSProperties = { display: 'inline-block', padding: '2px 9px', borderRadius: 999, fontWeight: 700, fontSize: 11 };

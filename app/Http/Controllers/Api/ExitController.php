@@ -49,6 +49,21 @@ class ExitController extends Controller
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+
+        /* An exit cannot be STARTED for a disabled employee — re-enable them
+           first. Disabling (HR > Employees toggle) soft-deletes the row and
+           kills the login; an exit process needs a live employee to serve
+           notice, hand over, clear assets and sign off, so opening a case
+           against a switched-off record produces one nobody can complete.
+           HR > Employees > Disabled Employees has the Enable toggle.
+
+           Only NEW cases are refused. An exit already in progress carries on
+           even if the employee is disabled midway — that pair is legitimate and
+           deliberately shows in both the Disabled and Exit In Progress lists. */
+        if (!$row->exists && $employee->trashed()) {
+            abort(422, 'This employee is disabled, so an exit cannot be started for them. Re-enable them from HR > Employees > Disabled Employees, then run the exit process.');
+        }
+
         $lockedType     = $this->lockedExitType($row);
         $wasReleased    = (bool) $row->documents_released;
         $row->fill($data);
@@ -216,7 +231,15 @@ class ExitController extends Controller
         $fnf['attachment'] = [
             'path' => $path,
             'name' => $file->getClientOriginalName(),
-            'url'  => \Illuminate\Support\Facades\Storage::url($path),
+            /* file_url(), not Storage::url() — the same resolver every other
+               document endpoint uses. Storage::url() THROWS "This driver does
+               not support retrieving URLs" whenever the public disk resolves to
+               Azure with AZURE_STORAGE_URL unset (or a config cache left over
+               from a previous deploy), which turned a successful upload into a
+               500 on the server. file_url() catches that and falls back to a
+               constructed URL, and also normalises backslashes, leading
+               slashes and a duplicated "storage/" prefix. */
+            'url'  => file_url($path),
             'uploaded_at' => now()->toIso8601String(),
         ];
         $row->fnf = $fnf;
