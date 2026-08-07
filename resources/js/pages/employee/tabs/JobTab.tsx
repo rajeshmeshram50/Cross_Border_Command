@@ -19,6 +19,27 @@ const fmtShiftTime = (hhmm?: string | null): string => {
 export default function JobTab() {
   const { empDetail, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
 
+  /* "General (09:30 AM – 06:30 PM)".
+   *
+   * The name alone is what both fields used to print, which tells the reader
+   * nothing about when the person is actually expected in. The window is
+   * resolved server-side (Employee::resolveShiftWindow → the branch's Shift
+   * Details, matched on the shift NAME) and arrives as shift_start/shift_end.
+   *
+   * It comes back null when the employee's stored shift name matches no shift
+   * the branch defines — the name is a plain string with no foreign key, so a
+   * shift renamed or removed in Branch leaves the employee pointing at nothing.
+   * The name is still shown in that case; inventing a window would be worse
+   * than admitting there isn't one. */
+  const shiftName  = (empDetail?.shift || '').trim();
+  const shiftStart = fmtShiftTime(empDetail?.shift_start);
+  const shiftEnd   = fmtShiftTime(empDetail?.shift_end);
+  const shiftLabel = !shiftName
+    ? '—'
+    : (shiftStart && shiftEnd
+        ? <>{shiftName}<span className="ep-field-note"> ({shiftStart} – {shiftEnd})</span></>
+        : <>{shiftName}</>);
+
   // `leave_plan` stores the plan ID — resolve it to the plan name for display
   // (the field shows a bare id like "3" otherwise).
   const [leavePlanName, setLeavePlanName] = useState('');
@@ -57,21 +78,16 @@ export default function JobTab() {
                   <AncillaryRolesChip names={ancillaryList} />
                 </Col>
                 <Col><div className="ep-field-label">Employment Status</div><div className="ep-field-value">{empDetail?.status || (employee?.enabled === false ? 'Disabled' : 'Active')}</div></Col>
-                {/* Work Type and Time Type used to be "Worker Type" / "Time
-                    Type", both falling back to the SAME `work_type` column
-                    (neither `worker_type` nor `time_type` exists), so the two
-                    printed "Full Time" twice. Work Type is now the employee
-                    form's own Work Type; Time Type carries the assigned shift
-                    and the window it resolves to in the branch's Shift Details. */}
+                {/* "Time Type" was the old label and it named nothing anyone
+                    recognises — the value it printed is the employee's SHIFT and
+                    the window that shift resolves to in the branch's Shift
+                    Details, so it is called Shift Time. (Work Type beside it is
+                    the employee form's own Work Type; the two once shared the
+                    `work_type` column and printed "Full Time" twice.) */}
                 <Col><div className="ep-field-label">Work Type</div><div className="ep-field-value">{empDetail?.work_type || '—'}</div></Col>
                 <Col>
-                  <div className="ep-field-label">Time Type</div>
-                  <div className="ep-field-value">
-                    {empDetail?.shift || '—'}
-                    {empDetail?.shift_start && empDetail?.shift_end && (
-                      <span className="ep-field-note"> ({fmtShiftTime(empDetail.shift_start)} – {fmtShiftTime(empDetail.shift_end)})</span>
-                    )}
-                  </div>
+                  <div className="ep-field-label">Shift Time</div>
+                  <div className="ep-field-value">{shiftLabel}</div>
                 </Col>
               </Row>
             </div>
@@ -182,7 +198,7 @@ export default function JobTab() {
                   <Row className="g-3">
                     <Col xs={4}><div className="ep-field-label">Leave Plan</div><div className="ep-field-value">{leavePlanName || empDetail?.leave_plan || '—'}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Holiday List</div><div className="ep-field-value">{empDetail?.holidayGroup?.name || empDetail?.holiday_group?.name || '—'}</div></Col>
-                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">{empDetail?.shift || '—'}</div></Col>
+                    <Col xs={4}><div className="ep-field-label">Shift</div><div className="ep-field-value">{shiftLabel}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Weekly Off</div><div className="ep-field-value">{empDetail?.weekly_off || '—'}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Attendance Number</div><div className="ep-field-value font-monospace">{empDetail?.attendance_number || '—'}</div></Col>
                     <Col xs={4}><div className="ep-field-label">Overtime</div><div className="ep-field-value">{empDetail?.overtime || '—'}</div></Col>

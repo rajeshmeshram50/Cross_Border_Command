@@ -461,15 +461,17 @@ class PayrollService
 
         // Drop anyone whose exit last-working-day lands on or before this
         // period's end — they are settled through F&F, not regular payroll —
-        // and anyone who left within 15 days of joining (an early exit is not
-        // put through payroll at all, ProbationGuard::EARLY_EXIT_DAYS).
-        $exits = $this->exitMap($employees->pluck('id')->all());
-        return $employees->reject(function (Employee $e) use ($exits, $period) {
+        // and anyone who RESIGNED (or left) within 15 days of joining: an early
+        // exit is not put through payroll at all, ProbationGuard::EARLY_EXIT_DAYS.
+        $ids     = $employees->pluck('id')->all();
+        $exits   = $this->exitMap($ids);
+        $resigns = $this->resignationMap($ids);
+        return $employees->reject(function (Employee $e) use ($exits, $resigns, $period) {
             $lwd = $exits[$e->id] ?? null;
             if ($lwd && Carbon::parse($lwd)->lte($period->period_end)) {
                 return true;
             }
-            return ProbationGuard::isEarlyExit($e, $lwd);
+            return ProbationGuard::isEarlyExit($e, $lwd, $resigns[$e->id] ?? null);
         })->values();
     }
 
@@ -480,7 +482,9 @@ class PayrollService
      *   · Exited in this cycle — settled through F&F instead of regular pay.
      *     Reported because a mid-month leaver vanishing from the run is exactly
      *     the kind of thing that reads as a bug unless it's spelled out.
-     *   · Left within 15 days of joining — payroll not processed at all.
+     *   · Resigned (or left) within 15 days of joining — payroll not processed
+     *     at all. Reported even when no last working day has been set yet, so
+     *     an in-progress early exit still shows up as deliberately skipped.
      *
      * Someone whose last working day precedes this period entirely is NOT
      * reported: they belong to an earlier cycle and were never expected here.
@@ -495,13 +499,16 @@ class PayrollService
         if ($period->branch_id) $q->where('branch_id', $period->branch_id);
 
         $employees = $q->get();
-        $exits     = $this->exitMap($employees->pluck('id')->all());
+        $ids       = $employees->pluck('id')->all();
+        $exits     = $this->exitMap($ids);
+        $resigns   = $this->resignationMap($ids);
         $out       = [];
 
         foreach ($employees as $e) {
-            $lwd = $exits[$e->id] ?? null;
+            $lwd    = $exits[$e->id] ?? null;
+            $resign = $resigns[$e->id] ?? null;
 
-            $earlyExit = ProbationGuard::isEarlyExit($e, $lwd);
+            $earlyExit = ProbationGuard::isEarlyExit($e, $lwd, $resign);
             // Exited inside THIS cycle (not before it — that's an earlier
             // period's business).
             $exitedInCycle = $lwd
@@ -512,26 +519,61 @@ class PayrollService
                 continue;
             }
 
-            $tenure  = ProbationGuard::tenureDays($e, $lwd);
-            $lwdDate = Carbon::parse($lwd);
+            /* Report the tenure against whichever date actually triggered the
+               exclusion. An early exit can be keyed on the RESIGNATION date, in
+               which case quoting the (later, or entirely absent) last-working-day
+               tenure would either contradict the reason or blow up on a null. */
+            $lwdTenure = ProbationGuard::tenureDays($e, $lwd);
+            $tenure    = $lwdTenure;
+            if ($earlyExit) {
+                $found  = array_filter(
+                    [ProbationGuard::tenureDays($e, $resign), $lwdTenure],
+                    fn ($t) => $t !== null,
+                );
+                $tenure = $found ? min($found) : null;
+            }
             $out[] = [
                 'employee_id'      => $e->id,
                 'employee_code'    => $e->emp_code,
                 'employee_name'    => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
                 'date_of_joining'  => $e->date_of_joining ? Carbon::parse($e->date_of_joining)->toDateString() : null,
-                'last_working_day' => $lwdDate->toDateString(),
+                'resignation_date' => $resign ? Carbon::parse($resign)->toDateString() : null,
+                // Null is possible on an early resignation whose last working
+                // day has not been agreed yet — the exclusion still stands.
+                'last_working_day' => $lwd ? Carbon::parse($lwd)->toDateString() : null,
                 'tenure_days'      => $tenure,
                 // Early exit is the stronger statement (no payroll at all), so
                 // it wins when both apply.
                 'reason'           => $earlyExit
-                    ? 'Exited within ' . ProbationGuard::EARLY_EXIT_DAYS
-                        . " days of joining ({$tenure} day(s)) — payroll not processed."
-                    : 'Left on ' . $lwdDate->format('j M Y')
+                    ? 'Resigned within ' . ProbationGuard::EARLY_EXIT_DAYS
+                        . ' days of joining' . ($tenure !== null ? " ({$tenure} day(s))" : '')
+                        . ' — notice period not applicable and payroll not processed.'
+                    : 'Left on ' . Carbon::parse($lwd)->format('j M Y')
                         . ' — excluded from this cycle; salary and dues are settled in the Full & Final settlement.',
             ];
         }
 
         return $out;
+    }
+
+    /**
+     * employee_id => notice/resignation date, for the given ids.
+     *
+     * Kept separate from exitMap() rather than folded into it: exitMap's
+     * id => last_working_day shape is consumed by computeForEmployee() for
+     * mid-month proration, and widening it there would touch the pay maths for
+     * the sake of a policy check that only two callers need.
+     */
+    private function resignationMap(array $employeeIds): array
+    {
+        if (empty($employeeIds) || !Schema::hasTable('employee_exits')) {
+            return [];
+        }
+        return DB::table('employee_exits')
+            ->whereIn('employee_id', $employeeIds)
+            ->whereNotNull('notice_date')
+            ->pluck('notice_date', 'employee_id')
+            ->all();
     }
 
     /** employee_id => last_working_day, for the given ids (empty if no table). */
