@@ -1405,8 +1405,25 @@ class PayrollService
      */
     public function sandwichDaysFor(Employee $employee, $leave): float
     {
+        return $this->sandwichBreakdown($employee, $leave)['sandwich'];
+    }
+
+    /**
+     * How a leave splits under the policy: working days actually applied for,
+     * and the off-days the policy adds on top.
+     *
+     * Both numbers are needed because leave_requests.days ALONE is ambiguous —
+     * a leave raised while the policy was on already has the off-days folded
+     * into it, while one approved before it was switched on does not. A screen
+     * given only "days" and "sandwich days" cannot tell whether to add them or
+     * not, and read "4 days deducted (+2 off-days)" as six.
+     *
+     * @return array{working: float, sandwich: float}
+     */
+    public function sandwichBreakdown(Employee $employee, $leave): array
+    {
         if (!\App\Support\SandwichPolicy::appliesTo($employee)) {
-            return 0.0;
+            return ['working' => 0.0, 'sandwich' => 0.0];
         }
 
         $from = Carbon::parse($leave->from_date);
@@ -1429,9 +1446,17 @@ class PayrollService
         $approved = \App\Support\SandwichPolicy::approvedLeaveDates((int) $employee->id, $padFrom, $padTo);
         $isLeave  = fn (Carbon $d): bool => isset($approved[$d->copy()->startOfDay()->toDateString()]);
 
-        return (float) count(
-            \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
-        );
+        $working = 0.0;
+        for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
+            if (!$isOff($d)) $working += 1.0;
+        }
+
+        return [
+            'working'  => $working,
+            'sandwich' => (float) count(
+                \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
+            ),
+        ];
     }
 
     /**
