@@ -1246,6 +1246,19 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
             </button>
           </div>
         </div>
+        {/* While a Save is in flight, lock the WHOLE modal (#49) — the button
+            spinner alone didn't stop the user editing fields or hitting the
+            other action mid-save. Absolute inset:0 resolves against
+            .modal-content, so it covers the header and footer too. Same pattern
+            as the CLM trade-document / agreement wizards. */}
+        {!!saving && (
+          <div className="rec-save-lock">
+            <div className="rec-save-lock-box">
+              <Spinner size="sm" style={{ width: 18, height: 18 }} />
+              <span>{saving === 'draft' ? 'Saving draft…' : 'Submitting…'}</span>
+            </div>
+          </div>
+        )}
       </ModalBody>
     </Modal>
   );
@@ -2607,6 +2620,15 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
             </button>
           </div>
         </div>
+        {/* Same modal-wide save lock as the Raise-Request form (#49). */}
+        {saving && (
+          <div className="rec-save-lock">
+            <div className="rec-save-lock-box">
+              <Spinner size="sm" style={{ width: 18, height: 18 }} />
+              <span>{mode === 'edit' ? 'Saving changes…' : 'Saving recruitment…'}</span>
+            </div>
+          </div>
+        )}
       </ModalBody>
     </Modal>
   );

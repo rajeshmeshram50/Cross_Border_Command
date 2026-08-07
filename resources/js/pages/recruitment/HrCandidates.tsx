@@ -1308,8 +1308,11 @@ function CandidateFormModal({
     }
   };
 
+  /* toggle/keyboard guards: the overlay swallows clicks, but ESC is handled at
+     the document level and would still close the popup mid-submit. The two
+     recruitment modals already set keyboard={false}; this one did not. */
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-form-modal cand-form-clientstyle" contentClassName="rec-form-content border-0">
+    <Modal isOpen={open} toggle={saving ? undefined : onClose} keyboard={!saving} centered size="lg" backdrop="static" modalClassName="rec-form-modal cand-form-clientstyle" contentClassName="rec-form-content border-0">
       <ModalBody className="p-0">
         <div className="rec-form-header">
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1599,6 +1602,19 @@ function CandidateFormModal({
             </div>
           )}
         </div>
+        {/* Locks the WHOLE popup after Submit (#50) — previously only the two
+            footer buttons went disabled, so every field stayed editable while
+            the request was in flight. Absolute inset:0 resolves against
+            .modal-content, covering the header and footer too. Same pattern as
+            the CLM trade-document / agreement wizards. */}
+        {saving && (
+          <div className="rec-save-lock">
+            <div className="rec-save-lock-box">
+              <Spinner size="sm" style={{ width: 18, height: 18 }} />
+              <span>Saving candidate…</span>
+            </div>
+          </div>
+        )}
       </ModalBody>
     </Modal>
   );
