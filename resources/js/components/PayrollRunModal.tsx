@@ -39,8 +39,12 @@ export interface PayrollSandwichItem {
   to_date: string;
   /** Total days charged, sandwich included. */
   days: number;
-  /** How many of `days` the policy added — what waiving gives back. */
+  /** How many off-days the policy charges for this leave. */
   sandwich_days: number;
+  /** What the leave costs with the policy fully applied. Compared against
+   *  `days` to tell whether those off-days are ALREADY counted or still to
+   *  come — `days` alone cannot say. */
+  days_with_policy?: number;
   waived: boolean;
   waiver_reason?: string | null;
 }
@@ -72,9 +76,9 @@ export interface PayrollRunModalProps {
      before the cycle is paid. */
   sandwichItems?: PayrollSandwichItem[];
   /** Toggle the waiver on one leave. Parent owns the API call + refresh. */
-  onToggleSandwich?: (item: PayrollSandwichItem, waived: boolean, reason?: string) => Promise<void> | void;
-  /** leave_id currently being saved — drives the row's spinner. */
-  sandwichBusyId?: number | null;
+  onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
+  /** emp_code currently saving — drives that entry's spinner. */
+  sandwichBusyCode?: string | null;
   /** Fired when an issue action chip (Go to Attendance / Open Employee /
    *  Upload Proof) is clicked — parent handles navigation. */
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
@@ -97,6 +101,76 @@ function shortRange(from: string, to: string): string {
   return f.getMonth() === t.getMonth() && f.getFullYear() === t.getFullYear()
     ? `${f.getDate()}–${t.getDate()} ${mon(t)}`
     : `${f.getDate()} ${mon(f)} – ${t.getDate()} ${mon(t)}`;
+}
+
+/** Initials for the little avatar disc. */
+const initialsOf = (name: string) =>
+  name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?';
+
+/* What the numbers mean, spelled out.
+ *
+ * The row used to read "+1 day of 3" / "2 waived of 2", which is only legible
+ * to whoever wrote it: neither the "of" nor the bare count says WHAT is being
+ * counted or WHY. `days` is the total deducted from the employee's balance and
+ * `sandwich_days` is how many of those the policy added on top of the dates
+ * actually applied for — so the sentence names both. */
+/** One leave. Its own line and its own action — an employee's leaves stay
+ *  separate rows inside ONE card, rather than being merged into a single
+ *  summary: the dates are what an approver recognises, and excusing is a
+ *  per-leave decision even when the same person has several. */
+function SandwichRow({ item, busy, onWaive }: {
+  item: PayrollSandwichItem;
+  busy: boolean;
+  onWaive?: (items: PayrollSandwichItem[]) => void;
+}) {
+  const d  = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
+  const od = (n: number) => `${n} ${n === 1 ? 'off-day' : 'off-days'}`;
+  return (
+    <div className="prm-sw-row">
+      <span className="prm-sw-date">{shortRange(item.from_date, item.to_date)}</span>
+      <span className="prm-sw-text">
+        <b>{d(item.days)}</b> deducted
+        <span className={`prm-sw-chip${item.waived ? ' is-off' : ''}`}>
+          {item.waived ? `${od(item.sandwich_days)} excused` : `incl. ${od(item.sandwich_days)}`}
+        </span>
+      </span>
+      {item.waived ? (
+        <span className="prm-sw-done"><i className="ri-check-line" />Excused</span>
+      ) : (
+        <button
+          type="button"
+          className="prm-sw-btn"
+          disabled={busy || !onWaive}
+          onClick={() => onWaive?.([item])}
+        >
+          {busy ? 'Saving…' : "Don't deduct them"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** All of one employee's sandwich leaves, in a single card. Grouping is at the
+ *  EMPLOYEE level so the same person never appears twice in the list. */
+function SandwichCard({ name, code, dept, rows, busy, onWaive }: {
+  name: string; code: string; dept?: string;
+  rows: PayrollSandwichItem[];
+  busy: boolean;
+  onWaive?: (items: PayrollSandwichItem[]) => void;
+}) {
+  return (
+    <div className="prm-sw-card">
+      <div className="prm-sw-head">
+        <span className="prm-sw-avatar">{initialsOf(name)}</span>
+        <span className="fw-bold" style={{ fontSize: 13 }}>{name}</span>
+        <span className="prm-emp-pill">{code}</span>
+        {dept && <span className="text-muted" style={{ fontSize: 11.5 }}>{dept}</span>}
+      </div>
+      {rows.map(r => (
+        <SandwichRow key={r.leave_id} item={r} busy={busy} onWaive={onWaive} />
+      ))}
+    </div>
+  );
 }
 
 const ACTION_TONES: Record<PayrollRunActionChip['tone'], { bg: string; fg: string; border: string }> = {
@@ -125,8 +199,8 @@ export default function PayrollRunModal({
   atRiskAmountLabel,
   issues,
   sandwichItems = [],
-  onToggleSandwich,
-  sandwichBusyId = null,
+  onWaiveSandwich,
+  sandwichBusyCode = null,
   onAction,
   onExportPayslips,
   exporting = false,
@@ -352,8 +426,8 @@ export default function PayrollRunModal({
                     onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
-                    onToggleSandwich={onToggleSandwich}
-                    sandwichBusyId={sandwichBusyId}
+                    onWaiveSandwich={onWaiveSandwich}
+                    sandwichBusyCode={sandwichBusyCode}
                   />
                 ))}
               </>
@@ -378,80 +452,50 @@ export default function PayrollRunModal({
                     onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
-                    onToggleSandwich={onToggleSandwich}
-                    sandwichBusyId={sandwichBusyId}
+                    onWaiveSandwich={onWaiveSandwich}
+                    sandwichBusyCode={sandwichBusyCode}
                   />
                 ))}
               </>
             )}
 
-            {/* Same block, for employees with NO issue card of their own —
-                everyone else's rows sit inside their card above, so nobody is
-                listed twice. Carries the employee name, which the in-card
-                version does not need. */}
+            {/* Employees with NO issue card of their own — everyone else's
+                leaves render inside their card above, so nobody is listed
+                twice. Grouped per person: the name used to repeat on every
+                leave, so four leaves read as four different employees. */}
             {orphanSandwich.length > 0 && (
               <>
                 <div className="prm-section-head mt-3">
                   <span className="d-inline-flex align-items-center gap-2">
                     <span className="d" style={{ background: '#7c5cfc' }} />
                     <span className="fw-bold" style={{ color: '#5a3fd1', fontSize: 11, letterSpacing: '0.10em', textTransform: 'uppercase' }}>Sandwich Leave</span>
-                    <span className="text-muted" style={{ fontSize: 11.5 }}>— waive if the absence was genuine</span>
+                    <span className="text-muted" style={{ fontSize: 11.5 }}>— review before paying</span>
                   </span>
                   <span className="prm-count-chip prm-count-chip--amber">{orphanSandwich.length}</span>
                 </div>
-                {orphanSandwich.map(s => {
-                  const busy = sandwichBusyId === s.leave_id;
-                  return (
-                    <div
-                      key={s.leave_id}
-                      className="d-flex align-items-center mt-2"
-                      style={{
-                        gap: 8, fontSize: 11.5, padding: '7px 10px', borderRadius: 8,
-                        border: `1px solid ${s.waived ? 'rgba(10,179,156,.22)' : 'rgba(124,92,252,.20)'}`,
-                        background: s.waived ? 'rgba(10,179,156,.05)' : 'rgba(124,92,252,.05)',
-                      }}
-                    >
-                      <span className="fw-bold" style={{ fontSize: 12 }}>{s.emp_name}</span>
-                      <span className="prm-emp-pill">{s.emp_code}</span>
-                      <span className="fw-semibold flex-shrink-0">{shortRange(s.from_date, s.to_date)}</span>
-                      <span
-                        className="fw-semibold flex-shrink-0"
-                        style={{
-                          fontSize: 10.5, padding: '1px 7px', borderRadius: 20,
-                          background: s.waived ? 'rgba(10,179,156,.16)' : 'rgba(124,92,252,.16)',
-                          color: s.waived ? '#0ab39c' : '#5a3fd1',
-                        }}
-                      >
-                        {s.waived ? `${s.sandwich_days} waived` : `+${s.sandwich_days} day`}
-                      </span>
-                      <span className="text-muted" style={{ fontSize: 11 }}>of {s.days}</span>
-                      {s.waived ? (
-                        <span
-                          className="ms-auto flex-shrink-0 fw-semibold"
-                          style={{ fontSize: 10.5, color: '#0ab39c' }}
-                        >
-                          <i className="ri-check-line me-1" />Not cut
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          className="prm-action-chip ms-auto flex-shrink-0"
-                          data-tone="purple"
-                          disabled={busy || !onToggleSandwich}
-                          onClick={() => onToggleSandwich?.(s, true)}
-                          style={{
-                            background: ACTION_TONES.purple.bg,
-                            color: ACTION_TONES.purple.fg,
-                            borderColor: ACTION_TONES.purple.border,
-                            cursor: busy ? 'wait' : 'pointer', fontSize: 10.5, padding: '2px 9px',
-                          }}
-                        >
-                          {busy ? 'Saving…' : "Don't cut"}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                <div className="text-muted" style={{ fontSize: 11.5, margin: '0 0 8px', lineHeight: 1.45 }}>
+                  These employees took leave on both sides of a week-off or holiday, so that
+                  off-day came out of their leave balance too. Excuse it if the absence was genuine.
+                </div>
+
+                <div className="prm-sw-list">
+                {Object.entries(
+                  orphanSandwich.reduce((acc, r) => {
+                    (acc[r.emp_code] ||= { name: r.emp_name, dept: r.department, rows: [] }).rows.push(r);
+                    return acc;
+                  }, {} as Record<string, { name: string; dept: string; rows: PayrollSandwichItem[] }>),
+                ).map(([code, grp]) => (
+                  <SandwichCard
+                    key={code}
+                    name={grp.name}
+                    code={code}
+                    dept={grp.dept}
+                    rows={grp.rows}
+                    busy={sandwichBusyCode === code}
+                    onWaive={onWaiveSandwich}
+                  />
+                ))}
+                </div>
               </>
             )}
 
@@ -623,8 +667,8 @@ function IssueCard({
   onMarkResolved,
   onAction,
   sandwich = [],
-  onToggleSandwich,
-  sandwichBusyId = null,
+  onWaiveSandwich,
+  sandwichBusyCode = null,
 }: {
   issue: PayrollRunIssue;
   resolved: boolean;
@@ -632,8 +676,8 @@ function IssueCard({
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
   /** Sandwich-inflated leaves belonging to THIS employee. */
   sandwich?: PayrollSandwichItem[];
-  onToggleSandwich?: (item: PayrollSandwichItem, waived: boolean, reason?: string) => Promise<void> | void;
-  sandwichBusyId?: number | null;
+  onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
+  sandwichBusyCode?: string | null;
 }) {
   const isBlocking = issue.type === 'blocking';
   const tone = isBlocking
@@ -692,76 +736,19 @@ function IssueCard({
               rows are actionable. The tint and the small caps label mark them
               as a distinct group without spending a whole section on them.
               Dates sit in a fixed-width column so multiple leaves line up. */}
+          {/* This employee's sandwich leaves — one entry, however many there
+              are. The card above already names them. */}
           {sandwich.length > 0 && (
-            <div
-              className="mt-2"
-              style={{
-                border: '1px solid rgba(124,92,252,.20)',
-                background: 'rgba(124,92,252,.05)',
-                borderRadius: 8, padding: '6px 9px 7px',
-              }}
-            >
-              <div
-                className="fw-bold"
-                style={{ fontSize: 9.5, letterSpacing: '.09em', textTransform: 'uppercase', color: '#7c5cfc' }}
-              >
-                Sandwich leave
-              </div>
-              {sandwich.map(s => {
-                const busy = sandwichBusyId === s.leave_id;
-                return (
-                  <div
-                    key={s.leave_id}
-                    className="d-flex align-items-center"
-                    style={{ gap: 8, fontSize: 11.5, marginTop: 3 }}
-                  >
-                    <span className="fw-semibold flex-shrink-0" style={{ minWidth: 74 }}>
-                      {shortRange(s.from_date, s.to_date)}
-                    </span>
-                    <span
-                      className="fw-semibold flex-shrink-0"
-                      style={{
-                        fontSize: 10.5, padding: '1px 7px', borderRadius: 20,
-                        background: s.waived ? 'rgba(10,179,156,.16)' : 'rgba(124,92,252,.16)',
-                        color: s.waived ? '#0ab39c' : '#5a3fd1',
-                      }}
-                    >
-                      {s.waived ? `${s.sandwich_days} waived` : `+${s.sandwich_days} day`}
-                    </span>
-                    <span className="text-muted" style={{ fontSize: 11 }}>of {s.days}</span>
-                    {/* Only ever offers "Don't cut". Undoing a waiver is a
-                        second, opposite decision and it does not belong on a
-                        screen whose job is to get the cycle paid — a stray
-                        click here would quietly put days back into a payslip.
-                        Once waived the row states the outcome and stops; the
-                        reversal lives on the leave itself. */}
-                    {s.waived ? (
-                      <span
-                        className="ms-auto flex-shrink-0 fw-semibold"
-                        style={{ fontSize: 10.5, color: '#0ab39c' }}
-                      >
-                        <i className="ri-check-line me-1" />Not cut
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        className="prm-action-chip ms-auto flex-shrink-0"
-                        data-tone="purple"
-                        disabled={busy || !onToggleSandwich}
-                        onClick={() => onToggleSandwich?.(s, true)}
-                        style={{
-                          background: ACTION_TONES.purple.bg,
-                          color: ACTION_TONES.purple.fg,
-                          borderColor: ACTION_TONES.purple.border,
-                          cursor: busy ? 'wait' : 'pointer', fontSize: 10.5, padding: '2px 9px',
-                        }}
-                      >
-                        {busy ? 'Saving…' : "Don't cut"}
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="prm-sw-inline">
+              <div className="prm-sw-label">Sandwich leave</div>
+              {sandwich.map(r => (
+                <SandwichRow
+                  key={r.leave_id}
+                  item={r}
+                  busy={sandwichBusyCode === issue.empCode}
+                  onWaive={onWaiveSandwich}
+                />
+              ))}
             </div>
           )}
 
@@ -842,6 +829,12 @@ function PayrollRunStyles() {
       .prm-body {
         padding: 16px 18px;
         overflow-y: auto;
+        /* Capped so the popup stops growing with its content. It had no ceiling,
+           so a cycle with many warnings pushed the dialog past the screen and
+           the footer buttons went out of reach. Leaves room for the header
+           strip and the fixed footer. */
+        max-height: calc(100vh - 250px);
+        overscroll-behavior: contain;
         background: var(--vz-secondary-bg);
       }
       [data-bs-theme="dark"] .prm-body { background: var(--vz-secondary-bg); }
@@ -982,6 +975,143 @@ function PayrollRunStyles() {
       }
       .prm-resolve-btn:hover:not(:disabled) {
         border-color: #10b981; color: #108548; background: rgba(16,179,108,0.06);
+      }
+
+      /* Sandwich leave.
+         Two presentations, one row layout:
+          · .prm-sw-inline — inside an issue card. Flat: a hairline rule and a
+            small-caps label. A tinted, bordered panel nested inside the card's
+            own border read as a box in a box.
+          · .prm-sw-card   — standalone, for employees with no issue card. Built
+            from the same vocabulary as .prm-issue so it belongs to this modal;
+            the left accent marks it as a review, not a problem. */
+      .prm-sw-inline {
+        margin-top: 9px;
+        padding-top: 8px;
+        border-top: 1px solid var(--vz-border-color);
+      }
+      /* The label sits ON the rule as a caption, so the block reads as one
+         unit instead of "rule, floating label, another rule, content". */
+      .prm-sw-label {
+        display: inline-flex; align-items: center; gap: 5px;
+        font-size: 9.5px; font-weight: 800;
+        letter-spacing: .09em; text-transform: uppercase;
+        color: #7c5cfc;
+      }
+      .prm-sw-label::before {
+        content: ''; width: 5px; height: 5px; border-radius: 50%;
+        background: #7c5cfc;
+      }
+      /* Roughly four employee cards, then scroll inside the list rather than
+         letting it stretch the dialog. overscroll-behavior:contain stops the
+         wheel handing off to .prm-body at the ends, which reads as the whole
+         modal lurching mid-review. */
+      .prm-sw-list {
+        max-height: 336px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 4px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--vz-border-color) transparent;
+      }
+      .prm-sw-list::-webkit-scrollbar { width: 6px; }
+      .prm-sw-list::-webkit-scrollbar-track { background: transparent; }
+      .prm-sw-list::-webkit-scrollbar-thumb {
+        background: var(--vz-border-color); border-radius: 6px;
+      }
+      .prm-sw-list::-webkit-scrollbar-thumb:hover { background: var(--vz-secondary-color); }
+
+      .prm-sw-card {
+        background: var(--vz-card-bg);
+        border: 1px solid var(--vz-border-color);
+        border-left: 3px solid #7c5cfc;
+        border-radius: 12px;
+        padding: 11px 14px 7px;
+        margin-bottom: 8px;
+      }
+      .prm-sw-head {
+        display: flex; align-items: center; gap: 8px;
+        padding-bottom: 6px;
+        border-bottom: 1px solid var(--vz-border-color);
+      }
+      .prm-sw-avatar {
+        width: 28px; height: 28px; border-radius: 50%;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: linear-gradient(135deg, #7c5cfc, #a78bfa);
+        color: #fff; font-size: 10px; font-weight: 800; flex-shrink: 0;
+      }
+      /* One entry per employee: the date ranges they took, what it costs, and
+         a single action. Grid so the action stays hard right whatever the
+         ranges wrap to. */
+      .prm-sw-entry {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-areas: 'ranges action' 'sum action';
+        align-items: center; gap: 2px 12px;
+        padding: 6px 0 2px;
+      }
+      .prm-sw-ranges { grid-area: ranges; display: flex; flex-wrap: wrap; gap: 5px; }
+      .prm-sw-range {
+        font-size: 11px; font-weight: 700;
+        padding: 1px 7px; border-radius: 999px;
+        background: rgba(124,92,252,.12); color: #5a3fd1;
+        white-space: nowrap;
+      }
+      .prm-sw-range.is-off { background: rgba(10,179,156,.14); color: #0ab39c; }
+      [data-bs-theme="dark"] .prm-sw-range { background: rgba(124,92,252,.24); color: #c4b5fd; }
+      .prm-sw-sum {
+        grid-area: sum;
+        font-size: 11.5px; color: var(--vz-secondary-color);
+      }
+      .prm-sw-sum b { color: var(--vz-body-color); font-weight: 700; }
+      .prm-sw-sep { margin: 0 6px; opacity: .5; }
+      .prm-sw-ok  { color: #0ab39c; font-weight: 600; }
+      .prm-sw-entry > .prm-sw-btn,
+      .prm-sw-entry > .prm-sw-done { grid-area: action; }
+
+      /* Grid, not flex: the date column stays aligned down the list however
+         long the text beside it runs, and the action stays hard right. */
+      .prm-sw-row {
+        display: grid;
+        grid-template-columns: 82px 1fr auto;
+        align-items: center; gap: 10px;
+        padding: 5px 0;
+      }
+      /* Separators only BETWEEN rows. This was a border-top on every row with a
+         :first-of-type reset — which never matched, because :first-of-type goes
+         by TAG and the label div above is the first div. Result: a rule under
+         the label AND the rule above it, two hairlines a few pixels apart.
+         The adjacent-sibling form cannot drift like that.
+         (No backticks anywhere in here: this whole style block is a JS template
+         literal, so one would end the string mid-CSS.) */
+      .prm-sw-row + .prm-sw-row { border-top: 1px solid var(--vz-border-color); }
+      .prm-sw-date { font-size: 12px; font-weight: 700; white-space: nowrap; }
+      .prm-sw-text {
+        font-size: 11.5px; color: var(--vz-secondary-color);
+        display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap;
+      }
+      .prm-sw-text b { color: var(--vz-body-color); font-weight: 700; }
+      .prm-sw-chip {
+        padding: 1px 8px; border-radius: 999px;
+        background: rgba(124,92,252,.14); color: #5a3fd1;
+        font-size: 10.5px; font-weight: 700; white-space: nowrap;
+      }
+      .prm-sw-chip.is-off { background: rgba(10,179,156,.16); color: #0ab39c; }
+      [data-bs-theme="dark"] .prm-sw-chip { background: rgba(124,92,252,.24); color: #c4b5fd; }
+      .prm-sw-done {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 11px; font-weight: 700; color: #0ab39c; white-space: nowrap;
+      }
+      .prm-sw-btn {
+        border: 1px solid #d6c9ff; background: #ece6ff; color: #5a3fd1;
+        border-radius: 999px; padding: 5px 12px;
+        font-size: 11px; font-weight: 700; white-space: nowrap;
+        cursor: pointer; transition: all .15s ease;
+      }
+      .prm-sw-btn:hover:not(:disabled) { background: #ddd0ff; border-color: #b9a2ff; }
+      .prm-sw-btn:disabled { cursor: wait; opacity: .6; }
+      [data-bs-theme="dark"] .prm-sw-btn {
+        background: rgba(124,92,252,0.20); border-color: rgba(124,92,252,0.45); color: #c4b5fd;
       }
 
       /* Error banner under issue lists */

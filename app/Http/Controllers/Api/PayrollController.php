@@ -421,8 +421,23 @@ class PayrollController extends Controller
                 // How many days the policy contributed — the difference between
                 // sizing the leave with the rule and without it. Derived, never
                 // stored, so it stays true as neighbouring leaves change.
-                $extra = $this->payroll->sandwichDaysFor($employee, $leave);
-                if ($extra <= 0 && !$leave->sandwich_waived) continue;
+                $bd    = $this->payroll->sandwichBreakdown($employee, $leave);
+                $extra = $bd['sandwich'];
+
+                /* Only list a leave the policy is ACTUALLY charging for.
+                 *
+                 * Turning the branch switch on does not retroactively re-price
+                 * leaves that were approved before it — leave_requests.days is
+                 * what both the balance and the payslip read, and it stays as
+                 * approved. Such a leave still LOOKS sandwiched (its dates
+                 * straddle an off-day), but nothing is being deducted for those
+                 * days, so offering "don't deduct them" was an action against a
+                 * charge that does not exist. Those rows are dropped; a waived
+                 * one is kept so the decision stays visible. */
+                $policyTotal = $bd['working'] + $extra;
+                $alreadyCharged = (float) $leave->days >= $policyTotal - 0.001;
+
+                if (!$leave->sandwich_waived && ($extra <= 0 || !$alreadyCharged)) continue;
 
                 $items[] = [
                     'leave_id'       => $leave->id,
@@ -434,6 +449,10 @@ class PayrollController extends Controller
                     'to_date'        => Carbon::parse($leave->to_date)->toDateString(),
                     'days'           => (float) $leave->days,
                     'sandwich_days'  => $extra,
+                    // What the leave costs with the policy fully applied. The
+                    // screen compares this against `days` to know whether the
+                    // off-days are ALREADY counted or still pending.
+                    'days_with_policy' => $bd['working'] + $extra,
                     'waived'         => (bool) $leave->sandwich_waived,
                     'waiver_reason'  => $leave->sandwich_waiver_reason,
                 ];
