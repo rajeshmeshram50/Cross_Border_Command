@@ -42,10 +42,17 @@ const INDENT_MAX = 10;
  * and the generated PDF. Commands live in the toolbar (see changeIndent) to
  * avoid TipTap command module-augmentation ceremony. */
 /* ── Page flow ─────────────────────────────────────────────────────────────
-   Moves a block that would cross a page boundary onto the next sheet, leaving
-   the rest of the current one empty — which is exactly what dompdf does with
-   the same HTML. Neither engine splits a paragraph, so the blank tail of a
-   sheet here is the blank tail that comes out of the PDF.
+   Two different things happen at a page boundary, because two different things
+   happen in the PDF:
+
+     a block that FITS on a sheet but not on this one  → moved down, leaving the
+       tail of the sheet blank. dompdf does the same, so the blank tail here is
+       the blank tail in the PDF.
+     a block TALLER than a whole sheet                 → left where it is, with
+       the boundary drawn over it. The template sets .document-content { page-
+       break-inside: auto }, so dompdf splits it at a line box and leaves no
+       blank tail. Reserving space here would invent whitespace the PDF does
+       not have; drawing nothing (the original behaviour) hid whole pages.
 
    Geometry, all read off the PDF (derivation in .ctcte-pageview):
      PAGE_H   printable height of a sheet
@@ -66,14 +73,73 @@ const INDENT_MAX = 10;
    document order, and their measured heights are subtracted. That frame is the
    same on every pass whatever has already been inserted, so the pass is
    idempotent — run it twice and it produces the identical decoration set. */
-const PAGE_H   = 1006;
-const HEAD_H   = 94;
-const FIRST_H  = PAGE_H - HEAD_H;
-const PAGE_GAP = 30;
-/* Above this the per-edit measure costs more than it gives — this editor also
-   carries 200-300 page DOCX imports. The sheet still renders; only the
-   pushing stops. */
-const PAGINATE_MAX_BLOCKS = 400;
+/* ── Measured against dompdf, not derived ────────────────────────────────
+   These were computed from the @page rule — 1123 (A4 @96dpi) - 25 - 92 = 1006 —
+   and that was wrong by 42px a page, about two lines. Rendering the template's
+   own CSS through dompdf and binary-searching the page count gives the real
+   numbers: a full page holds 964px of content, and page one 948px before the
+   document header.
+   dompdf's line boxes are also ~1.28x what a browser produces for the same
+   unitless line-height, so 11px/1.5 is 16.5px here and 21.4px there — a 30%
+   error on EVERY line, which no amount of box tuning could absorb. The page
+   surface therefore states its line heights in px, at dompdf's scale. */
+const PAGE_H   = 964;    // measured: full page content height
+/* .page-header, measured off the blade rather than assumed:
+     logo max-height 62 (header_config.logo_height default; the title block is
+     shorter at ~38, and the cells are vertical-align:middle, so the logo sets
+     the row) + padding 10 top + 10 bottom + margin-bottom 12 = 94.
+   Only holds while the logo height is the default — a tenant who sets
+   header_config.logo_height taller gets a taller header and one fewer line on
+   page one. */
+const HEAD_H   = 94;     // document header, in flow on page one only
+const DOC_PAD  = 18;     // .document-content padding-top, page one only (measured 964-948)
+const FIRST_H  = PAGE_H - HEAD_H - DOC_PAD;
+/* No gutter between sheets. A grey strip is decoration — the PDF has nothing
+   there, so drawing it both added space the output does not have and put a band
+   under the boundary line that read as part of the document. The blank tail
+   above the line is the only real thing, and that is the paper itself. */
+const PAGE_GAP = 0;
+/* Runaway guard only. The measure below is one forced reflow followed by N
+   cached reads — it does not write inside the loop, so it stays linear and a
+   few thousand blocks are cheap. The old 400 was set as if each read cost a
+   reflow, and an uploaded agreement clears 400 top-level blocks at around
+   twenty pages, so real imports silently lost their page breaks entirely. */
+const PAGINATE_MAX_BLOCKS = 12000;
+
+/* Fired on the editor's root once a pagination pass has settled. An import is
+   not "done" when the HTTP call returns — the browser still has to lay out the
+   document and this pass still has to find the page boundaries. */
+export const CTC_PAGINATED_EVENT = 'ctc-paginated';
+/* detail: { pages } — emitted after every pass that changed something, so a
+   caller can show the count climbing instead of an unmoving spinner. */
+export const CTC_PAGINATING_EVENT = 'ctc-paginating';
+
+/* Resolves when the page boundaries for the current document are on screen, so
+   a caller can keep its spinner up instead of handing the user a document that
+   then reflows under them. Resolves at once outside page view (nothing to
+   wait for) and always resolves — a timeout never leaves a spinner stuck. */
+export function waitForPagination(
+  editor: Editor | null,
+  onProgress?: (pages: number) => void,
+  // A safety net, not the normal exit. At 12s this was firing FIRST on a large
+  // import and releasing the caller mid-pagination.
+  timeoutMs = 120000,
+): Promise<void> {
+  const dom = editor?.view?.dom as HTMLElement | undefined;
+  if (!dom || !dom.closest('.ctcte-pageview')) return Promise.resolve();
+  return new Promise<void>(resolve => {
+    let t = 0;
+    const tick = (e: Event) => onProgress?.((e as CustomEvent).detail?.pages ?? 0);
+    const done = () => {
+      window.clearTimeout(t);
+      dom.removeEventListener(CTC_PAGINATING_EVENT, tick);
+      resolve();
+    };
+    dom.addEventListener(CTC_PAGINATING_EVENT, tick);
+    dom.addEventListener(CTC_PAGINATED_EVENT, done, { once: true });
+    t = window.setTimeout(done, timeoutMs);
+  });
+}
 
 const pageFlowKey = new PluginKey('ctcPageFlow');
 
@@ -91,12 +157,22 @@ const PageFlow = Extension.create({
         view(view) {
           let timer = 0;
           let frame = 0;
-          let signature = '';
+          /* null, not '' — an empty string is a LEGAL signature (a document
+             with no page breaks yet), so starting there let the very first pass
+             match itself and declare the layout converged before it had
+             measured anything. */
+          let signature: string | null = null;
+          let retries = 0;
+          /* Retries are frame-cheap now (the count check below reads no
+             geometry), so this can be generous — a 300-page layout needs many
+             more than a dozen frames to finish. */
+          const MEASURE_RETRIES = 240;
 
           const measure = () => {
             const dom = view.dom as HTMLElement;
+            const settled = () => dom.dispatchEvent(new CustomEvent(CTC_PAGINATED_EVENT));
             if (!dom.isConnected || !dom.closest('.ctcte-pageview')) return;
-            if (view.state.doc.childCount > PAGINATE_MAX_BLOCKS) return;
+            if (view.state.doc.childCount > PAGINATE_MAX_BLOCKS) { settled(); return; }
 
             /* Walk the rendered children once, in order. Spacers and content
                blocks are interleaved siblings, so filtering the spacers out
@@ -114,75 +190,342 @@ const PageFlow = Extension.create({
                offsetTop is relative to it; subtracting its padding-top puts the
                first block at natural 0, matching the PDF where 1006px is the
                PRINTABLE height, margins already excluded. */
+            const kids = Array.from(dom.children) as HTMLElement[];
+
+            /* Readiness check FIRST, and deliberately without touching offsetTop
+               or offsetHeight — reading either forces the browser to lay the
+               whole document out. The DOM lags the model after a bulk replace,
+               so on a 300-page import the early passes are all going to be
+               rejected; making each rejected pass pay for a full layout is what
+               turned the import into a visible grind.
+               classList is free, so a retry now costs one frame and nothing else. */
+            /* Both of PageFlow's OWN children have to be excluded here, not
+               just the spacer. The absolutely-positioned mark overlay is a real
+               child of .ProseMirror too, so once a single in-place boundary
+               existed this count was permanently one too high, the readiness
+               check never passed again, and pagination stopped dead — and with
+               it settled(), so the import spinner sat out its whole timeout.
+               That is the 2-3 minutes on a 4-5 page file: no work, just a wait. */
+            const isOurs = (el: HTMLElement) =>
+              el.classList.contains('ctcte-pagegap') || el.classList.contains('ctcte-spanmarks');
+
+            let blocks = 0;
+            for (const child of kids) if (!isOurs(child)) blocks += 1;
+            if (blocks !== view.state.doc.childCount) {
+              if (retries < MEASURE_RETRIES) { retries += 1; schedule(true); return; }
+              // Out of retries: stop waiting on it, but never leave a caller
+              // holding a spinner for something that is not going to arrive.
+              settled();
+              return;
+            }
+            retries = 0;
+
             const padTop = parseFloat(getComputedStyle(dom).paddingTop) || 0;
 
-            const natural: { top: number; height: number }[] = [];
+            /* ── Flow units ──────────────────────────────────────────────────
+               A table is ONE top-level block, so a block-level pass can only
+               count pages across it — it can never place a boundary inside it.
+               An imported agreement is very often a single several-hundred-row
+               table, which is why a whole upload could come back with no page
+               break drawn anywhere.
+
+               dompdf does split a table, at row boundaries. So rows are the
+               correct unit here, and everything else stays a block.
+
+               The spacer inside a table is a real <tr>, not the <div> used
+               between blocks: a div is invalid inside <tbody> and the browser
+               hoists it out of the table, taking the reserved height with it.
+               Being a genuine sibling row also means it is measured and
+               subtracted exactly like the block spacers, so the pass stays
+               idempotent for the same reason. */
+            const rowsOf = (el: HTMLElement): HTMLElement[] | null => {
+              /* The table is not reliably a direct child, and its rows are not
+                 reliably all in one <tbody>. `:scope > table` + `:scope > tbody`
+                 missed both cases, rowsOf returned null, and the whole table
+                 fell back to being ONE block — which is exactly how the page
+                 counter jumps 2 → 5 with no band in between: a three-page table
+                 counted as three pages and drew none of them.
+                 querySelector('table') is tree order, so a nested table in a
+                 cell can never win over its own outer table. */
+              const table = (el.tagName === 'TABLE' ? el : el.querySelector('table')) as HTMLElement | null;
+              if (!table) return null;
+              const rows: HTMLElement[] = [];
+              for (const sec of Array.from(table.children) as HTMLElement[]) {
+                if (sec.tagName === 'TR') { rows.push(sec); continue; }
+                if (sec.tagName === 'THEAD' || sec.tagName === 'TBODY' || sec.tagName === 'TFOOT') {
+                  for (const r of Array.from(sec.children) as HTMLElement[]) {
+                    if (r.tagName === 'TR') rows.push(r);
+                  }
+                }
+              }
+              return rows.length ? rows : null;
+            };
+
+            const docKids: { node: any; pos: number }[] = [];
+            view.state.doc.forEach((node, offset) => docKids.push({ node, pos: offset }));
+
+            // `phys` is offsetTop as rendered — .ProseMirror is position:relative,
+            // so it is already the coordinate an absolutely placed marker needs.
+            type Unit = { top: number; height: number; phys: number; pos: number; size: number; row: boolean; cols: number; brk: boolean };
+            const units: Unit[] = [];
             let gapAcc = 0;
-            for (const child of Array.from(dom.children) as HTMLElement[]) {
-              if (child.classList.contains('ctcte-pagegap')) {
-                gapAcc += child.offsetHeight;
+            let di = 0;
+            for (const child of kids) {
+              // The mark overlay is absolutely positioned — no flow height to
+              // subtract, and not a document block either.
+              if (child.classList.contains('ctcte-spanmarks')) continue;
+              if (child.classList.contains('ctcte-pagegap')) { gapAcc += child.offsetHeight; continue; }
+              /* A block carrying its own blank tail as padding. The padding is
+                 INSIDE the element, so its border-box top is still the natural
+                 position and only what follows is displaced — the same frame as
+                 a spacer sibling, which is why it subtracts identically.
+                 Base padding-top for p/h/div in the page view is 0, so the
+                 computed value IS the reserved tail. */
+              const own = child.classList.contains('ctcte-pgtop')
+                ? (parseFloat(getComputedStyle(child).paddingTop) || 0) : 0;
+              const dk = docKids[di++];
+              if (!dk) break;
+
+              const rows = dk.node.type.name === 'table' ? rowsOf(child) : null;
+              const content = rows?.filter(r => !r.classList.contains('ctcte-pagegap-row'));
+              /* Pair model rows to DOM rows by index, and require only that the
+                 DOM has at least as many.
+                 Demanding an EXACT match was too strict and it failed silently:
+                 one extra <tr> anywhere — and rowsOf now also reads <thead> and
+                 <tfoot> — dropped the whole table back to being one block. A
+                 table two pages tall then ate two page boundaries and produced
+                 the in-place dashes instead of proper gutters, which is why
+                 boundaries appeared in two different designs.
+                 rowsOf only collects direct section children of the outer table,
+                 so a nested table's rows can never shift this alignment. */
+              if (!rows || !content || content.length < dk.node.childCount) {
+                units.push({
+                  top: child.offsetTop - padTop - gapAcc, height: child.offsetHeight - own,
+                  phys: child.offsetTop, pos: dk.pos, size: dk.node.nodeSize, row: false, cols: 0,
+                  brk: dk.node.type.name === 'pageBreak',
+                });
+                gapAcc += own;
                 continue;
               }
-              natural.push({ top: child.offsetTop - padTop - gapAcc, height: child.offsetHeight });
+
+              let rp = dk.pos + 1;
+              let ri = 0;
+              for (const tr of rows) {
+                if (tr.classList.contains('ctcte-pagegap-row')) { gapAcc += tr.offsetHeight; continue; }
+                if (ri >= dk.node.childCount) break;
+                const cols = (Array.from(tr.children) as HTMLTableCellElement[])
+                  .reduce((n, c) => n + (c.colSpan || 1), 0);
+                units.push({ top: tr.offsetTop - padTop - gapAcc, height: tr.offsetHeight, phys: tr.offsetTop, pos: rp, size: 0, row: true, cols, brk: false });
+                rp += dk.node.child(ri++).nodeSize;
+              }
             }
-            // The DOM can lag the doc for one frame after an edit; a mismatch
-            // means the measurement would be against stale geometry.
-            if (natural.length !== view.state.doc.childCount) return;
 
-            const decos: Decoration[] = [];
-            let page = 1;         // sheet currently being filled
-            let cap  = FIRST_H;   // natural height available through this sheet
-            let i    = 0;
+            /* Every block measuring zero means the browser has not laid the
+               document out yet — NOT "nothing overflows a page". Without this
+               the pass produced an empty decoration set, called that a converged
+               layout, and released the import spinner onto a document whose page
+               breaks had not been worked out at all. */
+            const last = units[units.length - 1];
+            if (units.length && last.top + last.height <= 0) {
+              if (retries < MEASURE_RETRIES) { retries += 1; schedule(true); }
+              return;
+            }
 
-            view.state.doc.forEach((_node, offset) => {
-              const m = natural[i++];
-              if (!m) return;
-              const { top, height } = m;
+            /* ── Boundaries, then numbers ─────────────────────────────────
+               The page number used to be a counter incremented at each of four
+               sites, and the label was read off it at the moment a band was
+               drawn. Any site that advanced the counter without drawing
+               anything silently ate a page number — which is how the labels
+               could read PAGE 2 ENDS then PAGE 5 ENDS.
 
-              // Fits on a sheet, just not on this one → move it down.
-              if (height <= PAGE_H && top + height > cap) {
-                const fill = cap - top;
-                if (fill > 0) {
-                  const from = page;
-                  decos.push(Decoration.widget(offset, () => {
-                    const gap = document.createElement('div');
-                    gap.className = 'ctcte-pagegap';
-                    gap.style.height = `${fill + PAGE_GAP}px`;
-                    gap.setAttribute('data-from', String(from));
-                    gap.setAttribute('data-to', String(from + 1));
-                    gap.contentEditable = 'false';
-                    return gap;
-                  }, { side: -1, key: `pg${offset}` }));
-                }
-                page += 1;
-                cap  += PAGE_H;
+               So nothing is numbered during the walk. Every boundary is
+               COLLECTED, in document order, and numbered 1..N afterwards. A
+               skipped number is then not a bug to hunt, it is unrepresentable:
+               a boundary either exists in this list and gets the next number,
+               or it does not exist at all.
+
+               Every boundary also gets a mark. Where the PDF pushes content
+               down (a block that fits on a sheet, just not this one) that mark
+               is a spacer band. Where the PDF splits in place (a block taller
+               than a sheet, page-break-inside:auto) it is a line drawn over the
+               content, reserving nothing. */
+            /* `pad` is the ordinary case and deliberately not a widget.
+               A widget means a DOM node created and destroyed on every pass —
+               and the page number is part of its key, so ordinary typing churned
+               every band in the document. Insert-and-remove under a scrolling,
+               clipped, fixed shell is what leaves Chrome painting stale tiles,
+               i.e. the doubled text. A node decoration touches no DOM at all
+               when nothing changed, and when something does it is one inline
+               style on an element that was already there. */
+            type Bound =
+              | { kind: 'pad'; from: number; to: number; fill: number }
+              | { kind: 'band'; at: number; key: string; h: number; row: boolean; cols: number }
+              | { kind: 'mark'; top: number };
+            const bounds: Bound[] = [];
+            let cap = FIRST_H;   // natural height available through this sheet
+
+            for (const u of units) {
+              /* An explicit Page Break ends the sheet HERE, however much room is
+                 left. PageFlow used to ignore the node entirely and keep filling
+                 the same sheet, so every automatic band after a manual break was
+                 measured against a page that had already ended. */
+              if (u.brk) {
+                const bottom = u.top + u.height;
+                const fill = Math.round(cap - bottom);
+                if (fill > 0) bounds.push({ kind: 'band', at: u.pos + u.size, key: `pb${u.pos}`, h: fill + PAGE_GAP, row: false, cols: 0 });
+                else bounds.push({ kind: 'mark', top: u.phys + u.height });
+                cap = (fill > 0 ? bottom : cap) + PAGE_H;
+                continue;
               }
 
-              // Taller than a whole sheet — nothing to be done, but keep the
-              // page count honest for the labels below it.
-              while (top + height > cap) { page += 1; cap += PAGE_H; }
+              /* ── A block that fits on a sheet, but not on THIS one ────
+                 …is pushed down whole, leaving the tail of the sheet blank.
+
+                 This was removed on the reasoning that .document-content is
+                 page-break-inside:auto, so dompdf must be splitting the block
+                 at a line box instead. That reasoning was wrong, and rendering
+                 the template through dompdf settles it: twenty 4-line
+                 paragraphs fit in two pages, not twenty-two. dompdf moves the
+                 whole block. The blank tail is real, and it is the gap that
+                 shows up above the footer in the generated PDF. */
+              if (u.height <= PAGE_H && u.top + u.height > cap) {
+                const fill = Math.round(cap - u.top);
+                if (fill > 0) bounds.push(u.row
+                  ? { kind: 'band', at: u.pos, key: `pg${u.pos}`, h: fill + PAGE_GAP, row: true, cols: u.cols }
+                  : { kind: 'pad', from: u.pos, to: u.pos + u.size, fill });
+                // Sheet ended exactly at this block's edge — nothing to reserve,
+                // but still a boundary, so still a mark.
+                else bounds.push({ kind: 'mark', top: u.phys });
+                cap = (fill > 0 ? u.top : cap) + PAGE_H;
+              }
+
+              /* Taller than a whole sheet, so it cannot be pushed anywhere —
+                 dompdf has to break it in place, and so do we. */
+              while (u.top + u.height > cap) {
+                bounds.push({ kind: 'mark', top: u.phys + (cap - u.top) });
+                cap += PAGE_H;
+              }
+            }
+
+            const decos: Decoration[] = [];
+            const sigParts: string[] = [];
+            const marks = bounds
+              .map((b, i) => ({ b, page: i + 1 }))
+              .filter(x => x.b.kind === 'mark') as { b: { kind: 'mark'; top: number }; page: number }[];
+
+            bounds.forEach((b, i) => {
+              const from = i + 1;
+              if (b.kind === 'pad') {
+                sigParts.push(`p${b.from}:${b.fill}:${from}`);
+                decos.push(Decoration.node(b.from, b.to, {
+                  class: 'ctcte-pgtop',
+                  style: `--pg-fill:${b.fill}px`,
+                  'data-from': String(from),
+                }));
+                return;
+              }
+              if (b.kind !== 'band') return;
+              sigParts.push(`${b.key}:${b.h}:${from}`);
+              decos.push(Decoration.widget(b.at, () => {
+                if (!b.row) {
+                  const gap = document.createElement('div');
+                  gap.className = 'ctcte-pagegap';
+                  gap.style.height = `${b.h}px`;
+                  gap.style.setProperty('--pg-fill', `${b.h - PAGE_GAP}px`);
+                  gap.setAttribute('data-from', String(from));
+                  gap.contentEditable = 'false';
+                  return gap;
+                }
+                const gap = document.createElement('tr');
+                gap.className = 'ctcte-pagegap-row';
+                gap.contentEditable = 'false';
+                const cell = document.createElement('td');
+                cell.colSpan = Math.max(1, b.cols);
+                cell.style.height = `${b.h}px`;
+                cell.style.setProperty('--pg-fill', `${b.h - PAGE_GAP}px`);
+                cell.setAttribute('data-from', String(from));
+                gap.appendChild(cell);
+                return gap;
+              }, { side: -1, key: `${b.key}#${from}` }));
             });
 
-            // Dispatch only on a real change, or each pass would trigger the next.
-            const sig = decos.map(d => `${(d as any).from}`).join(',');
-            if (sig === signature) return;
+            /* All in-place boundaries ride in ONE absolutely-positioned widget
+               at the top of the document. Absolute means zero flow impact — no
+               reflow, no caret jump, no re-measure cascade. */
+            if (marks.length) {
+              sigParts.push('m' + marks.map(m => `${Math.round(m.b.top)}/${m.page}`).join('.'));
+              decos.push(Decoration.widget(0, () => {
+                const wrap = document.createElement('div');
+                wrap.className = 'ctcte-spanmarks';
+                wrap.contentEditable = 'false';
+                for (const m of marks) {
+                  const line = document.createElement('div');
+                  line.className = 'ctcte-spanmark';
+                  line.style.top = `${Math.round(m.b.top)}px`;
+                  line.setAttribute('data-page', String(m.page));
+                  wrap.appendChild(line);
+                }
+                return wrap;
+              }, { side: -1, key: 'spans' }));
+            }
+
+            /* Dispatch only on a real change, or each pass would trigger the
+               next. An unchanged signature is also the ONLY honest definition of
+               "the pages have stopped moving": inserting the spacers reflows the
+               document, so the pass that inserts them cannot know whether that
+               reflow pushed anything further along. Only the pass that finds
+               nothing left to do can say the layout has converged — that is what
+               the waiting spinner is holding out for. */
+            const sig = sigParts.join(',');
+            if (sig === signature) { settled(); return; }
             signature = sig;
-            view.dispatch(
-              view.state.tr
-                .setMeta(pageFlowKey, DecorationSet.create(view.state.doc, decos))
-                .setMeta('addToHistory', false),
-            );
+            dom.dispatchEvent(new CustomEvent(CTC_PAGINATING_EVENT, { detail: { pages: bounds.length + 1 } }));
+            /* Follow the caret across the reflow — but ONLY when it has
+               actually been pushed out of sight.
+               Scrolling on every pass was wrong twice over. A pass runs two or
+               three times per edit, so the view was being scrolled repeatedly
+               while PageFlow was still changing the content height — and a
+               scroll concurrent with a height change is exactly the pairing
+               that makes Chrome reuse stale tiles, which is the doubled text.
+               So it self-inflicted the very artefact it was meant to help with,
+               and made typing feel like it was fighting back. */
+            const tr = view.state.tr
+              .setMeta(pageFlowKey, DecorationSet.create(view.state.doc, decos))
+              .setMeta('addToHistory', false);
+
+            let chase = false;
+            if (view.hasFocus()) {
+              const scroller = dom.closest('.ctc-mid-scroll') as HTMLElement | null;
+              try {
+                const c = view.coordsAtPos(view.state.selection.head);
+                const box = (scroller ?? dom).getBoundingClientRect();
+                chase = c.top < box.top + 8 || c.bottom > box.bottom - 8;
+              } catch { chase = false; }
+            }
+            view.dispatch(chase ? tr.scrollIntoView() : tr);
+            // Confirm on the very next frame instead of behind the typing
+            // debounce — the confirmation pass is what releases the spinner.
+            schedule(true);
           };
 
-          const schedule = () => {
+          /* A pass costs one forced layout, so on a 300-page import it is worth
+             real milliseconds. Keep it snappy on ordinary drafts and let it
+             breathe on the huge ones, where re-measuring every 160ms while
+             typing is what makes the editor feel like it is stuttering. */
+          const schedule = (immediate = false) => {
+            const delay = immediate ? 0 : (view.state.doc.childCount > 1200 ? 600 : 160);
             window.clearTimeout(timer);
             timer = window.setTimeout(() => {
               cancelAnimationFrame(frame);
               frame = requestAnimationFrame(measure);
-            }, 160);
+            }, delay);
           };
 
           schedule();
+          /* The first pass runs in the fallback face while the PDF font is still
+             downloading, so every line measured there is the wrong width. Redo
+             it once the real font is in. */
+          (document as any).fonts?.ready?.then(() => schedule(true));
           return {
             update: schedule,
             destroy() { window.clearTimeout(timer); cancelAnimationFrame(frame); },
@@ -401,9 +744,80 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
  *   is taken from the PDF itself (see .ctcte-pageview) so the guides land where
  *   dompdf actually breaks.
  */
-export function CtcEditorContent({ editor, pageView }: { editor: Editor | null; pageView?: boolean }) {
+/* Left/right page margin, in px, as the PDF measures it.
+   Clamped to the same 10..60 window as clm-signature-document.blade.php, so a
+   margin that can be set here is always a margin the PDF can render. */
+export const MARGIN_MIN = 10;
+export const MARGIN_MAX = 60;
+export type CtcMargins = { left: number; right: number };
+export const DEFAULT_MARGINS: CtcMargins = { left: 25, right: 25 };
+
+const SHEET_W = 794;          // A4 at 96dpi
+const PX_PER_CM = SHEET_W / 21;
+
+/** Word's ruler: the sheet's full width, with a draggable marker per margin. */
+function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: (m: CtcMargins) => void }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [drag, setDrag] = useState<'left' | 'right' | null>(null);
+
+  useEffect(() => {
+    if (!drag) return;
+    const move = (e: PointerEvent) => {
+      const bar = barRef.current;
+      if (!bar) return;
+      const x = e.clientX - bar.getBoundingClientRect().left;
+      // Each side is measured from its OWN edge, which is what the @page rule
+      // means by margin-left / margin-right.
+      const raw = drag === 'left' ? x : SHEET_W - x;
+      const v = Math.round(Math.max(MARGIN_MIN, Math.min(MARGIN_MAX, raw)));
+      onChange(drag === 'left' ? { ...margins, left: v } : { ...margins, right: v });
+    };
+    const up = () => setDrag(null);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+  }, [drag, margins, onChange]);
+
+  const ticks = [];
+  for (let cm = 1; cm < 21; cm++) ticks.push(cm);
+
+  return (
+    <div className="ctcte-ruler" ref={barRef} style={{ width: SHEET_W }}>
+      {/* The greyed ends are the margins — the writable column is what stays white. */}
+      <div className="ctcte-ruler-pad" style={{ left: 0, width: margins.left }} />
+      <div className="ctcte-ruler-pad" style={{ right: 0, width: margins.right }} />
+      {ticks.map(cm => (
+        <span key={cm} className="ctcte-ruler-tick" style={{ left: cm * PX_PER_CM }}>{cm}</span>
+      ))}
+      <button
+        type="button" title={`Left margin — ${margins.left}px`}
+        className={`ctcte-ruler-grip${drag === 'left' ? ' is-drag' : ''}`}
+        style={{ left: margins.left }}
+        onPointerDown={e => { e.preventDefault(); setDrag('left'); }} />
+      <button
+        type="button" title={`Right margin — ${margins.right}px`}
+        className={`ctcte-ruler-grip${drag === 'right' ? ' is-drag' : ''}`}
+        style={{ left: SHEET_W - margins.right }}
+        onPointerDown={e => { e.preventDefault(); setDrag('right'); }} />
+    </div>
+  );
+}
+
+export function CtcEditorContent({ editor, pageView, margins, onMargins }: {
+  editor: Editor | null; pageView?: boolean;
+  margins?: CtcMargins; onMargins?: (m: CtcMargins) => void;
+}) {
   if (!editor) return null;
-  return <EditorContent editor={editor} className={`ctcte-content${pageView ? ' ctcte-pageview' : ''}`} />;
+  if (!pageView) return <EditorContent editor={editor} className="ctcte-content" />;
+  const m = margins ?? DEFAULT_MARGINS;
+  return (
+    <div
+      className="ctcte-content ctcte-pageview"
+      style={{ ['--pg-ml' as any]: `${m.left}px`, ['--pg-mr' as any]: `${m.right}px` }}>
+      {onMargins && <CtcMarginRuler margins={m} onChange={onMargins} />}
+      <EditorContent editor={editor} />
+    </div>
+  );
 }
 
 /** Formatting toolbar — render ABOVE the content surface. */
@@ -581,47 +995,216 @@ export const CTC_EDITOR_CSS = `
    No background gradient any more: the sheets are defined by the gaps PageFlow
    inserts, so there is exactly one source of truth for where a page ends. A
    gradient drawn independently would drift away from the real breaks. */
-.ctcte-pageview { --pg-w: 744px; background: #EEF0F6; padding: 18px 0 26px; }
-.ctcte-pageview .ProseMirror {
-  width: var(--pg-w);
+/* The sheet is 744px because that is A4's printable width, and it is not
+   negotiable — every page boundary is measured against it.
+   It was briefly scaled up with a CSS transform to fill a full-screen window.
+   That has to stay out: a transform over a contenteditable this large makes
+   Chrome miss repaint invalidations, so editing after an import left the old
+   paint on screen underneath the new one and the document appeared doubled.
+   Bounding the workspace is layout only, so it cannot corrupt paint. */
+/* Chrome leaves the old paint behind here without this.
+   The draft scroller (.ctc-mid-scroll) sits inside a position:fixed, rounded,
+   overflow:hidden shell in full screen. Chrome scrolls that by blitting tiles,
+   and PageFlow changes the content height underneath it every time a band is
+   inserted — so tiles that should have been repainted get reused, and the text
+   from before the shift stays on screen under the text from after it. The
+   document itself is fine; only the screen is wrong.
+   Promoting the page surface to its own layer makes Chrome composite it
+   instead of blitting stale tiles. It changes no geometry, so nothing PageFlow
+   measures moves.
+
+   The promotion goes HERE and not on .ctc-mid-scroll. will-change: transform
+   makes an element the containing block for every position:fixed descendant,
+   and .ctc-mid-scroll is also the class on the Panel-02 workspace — an ancestor
+   of the draft editor's position:fixed full-screen shell. Promoting it pinned
+   full screen inside the panel instead of the viewport. .ctcte-pageview is
+   inside that shell and contains nothing fixed, so it is safe. */
+.ctcte-pageview { will-change: transform; }
+
+.ctcte-pageview { --pg-w: 744px; background: #EEF0F6; padding: 26px 0 34px; min-height: 100%; box-sizing: border-box; }
+/* ── Type metrics, copied from the PDF, not chosen ────────────────────────
+   Every number below is read off resources/views/pdf/clm-signature-document
+   .blade.php. They were previously eyeballed, and each gap made the editor fit
+   MORE on a page than the PDF does, so the breaks drifted earlier and earlier:
+
+     text column   744px here vs 704 there  (.document-content adds 20px of
+                   padding each side inside the 25px @page margin) — the widest
+                   single error: wider lines wrap less, so paragraphs came out
+                   short and pages held too much
+     line-height   fixed 15px here vs 1.5 there = 16.5px at an 11px body — 10%
+                   more height per line, ~60 lines to a page
+     paragraph     .55em (6px) here vs a flat 8px there
+     headings      1.55/1.3/1.12em (17/14.3/12.3px) here vs 20/17/15px there  */
+.ctcte-content.ctcte-pageview .ProseMirror {
+  /* 704 text + 45 left + 45 right = 794 = A4 at 96dpi.
+     45 is the 25px @page margin plus .document-content's own 20px. */
+  /* 794 (A4) minus both @page margins minus everything the PDF nests inside
+     them. There are TWO wrappers, not one:
+         .document-section  padding: 0 5px
+         .document-content  padding: 18px 20px
+     The 5px pair was missed, so the editor's text column was 10px wider than
+     the PDF's. Wider lines wrap later, so each page held fractionally more than
+     the PDF would — the exact way a boundary drifts early and content the
+     editor shows on the next page comes back up on this one.
+     Whatever the margins are, the border box is still exactly A4. */
+  width: calc(794px - var(--pg-ml, 25px) - var(--pg-mr, 25px) - 50px);
   margin: 0 auto;
-  padding: 25px 25px 92px;
+  padding: 43px calc(var(--pg-mr, 25px) + 25px) 110px calc(var(--pg-ml, 25px) + 25px);
   box-sizing: content-box;
   /* Load-bearing: PageFlow reads child.offsetTop, which is relative to the
      nearest positioned ancestor. Without this it would measure from somewhere
      up in the page shell and every page boundary would land early. */
   position: relative;
   background: #fff;
-  /* Same type metrics as the PDF body, so a line here is a line there. */
   font-size: 11px;
-  line-height: 15px;
-  box-shadow: 0 1px 3px rgba(16,24,40,.10), 0 8px 24px rgba(16,24,40,.06);
+  /* 11 x 1.5 x 1.28 — the template's 1.5 at dompdf's line-box scale. */
+  line-height: 21.1px;
+  font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
+  /* A sheet is always a whole sheet. Without this an empty draft rendered as a
+     short white strip floating in grey, which reads as a broken layout rather
+     than as page 1 of 1. */
+  min-height: 852px;   /* FIRST_H */
+  box-shadow: 0 0 0 1px rgba(16,24,40,.05), 0 2px 5px rgba(16,24,40,.10), 0 12px 28px rgba(16,24,40,.07);
 }
-/* The band between two sheets. Negative margins cancel the ProseMirror padding
-   so it spans the full width and reads as the sheet ENDING, not a grey box
-   inside it. */
-.ctcte-pagegap {
-  position: relative;
-  margin: 0 -25px;
-  background: #EEF0F6;
-  border-top: 1px solid #D3D8E3;
-  border-bottom: 1px solid #D3D8E3;
-  box-shadow: inset 0 7px 10px -9px rgba(16,24,40,.30), inset 0 -7px 10px -9px rgba(16,24,40,.30);
+/* Every line-height below is the template's value x 1.28, stated in px so the
+   browser cannot re-derive it. Measured: a 20px/1.3 heading is 33.2px in
+   dompdf, an 11px/1.5 paragraph 21.4px. */
+.ctcte-content.ctcte-pageview .ProseMirror p,
+.ctcte-content.ctcte-pageview .ProseMirror div { margin: 0 0 8px; line-height: 21.1px; }
+.ctcte-content.ctcte-pageview .ProseMirror h1,
+.ctcte-content.ctcte-pageview .ProseMirror h2,
+.ctcte-content.ctcte-pageview .ProseMirror h3 { margin: 14px 0 8px; }
+.ctcte-content.ctcte-pageview .ProseMirror h1 { font-size: 20px; line-height: 33.3px; }
+.ctcte-content.ctcte-pageview .ProseMirror h2 { font-size: 17px; line-height: 28.3px; }
+.ctcte-content.ctcte-pageview .ProseMirror h3 { font-size: 15px; line-height: 25.0px; }
+.ctcte-content.ctcte-pageview .ProseMirror ul,
+.ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px; padding-left: 24px; }
+.ctcte-content.ctcte-pageview .ProseMirror li { line-height: 21.1px; }
+
+/* ── The PDF's own font ──────────────────────────────────────────────────
+   dompdf renders the body in DejaVu Sans (see the blade's font-family). The
+   editor was rendering in DM Sans, the app font. Same size, same line-height,
+   completely different letterforms — so every line wrapped at a different word,
+   every paragraph came out a different number of lines, and the two paginations
+   could never agree no matter how exactly the box geometry was matched.
+   These are dompdf's own .ttf files, published from its lib/fonts, so the
+   editor measures the identical typeface the PDF will print. Loaded only where
+   they are used, which is the page surface. */
+@font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans.ttf') format('truetype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-Bold.ttf') format('truetype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-Oblique.ttf') format('truetype'); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: 'DejaVu Sans'; src: url('/fonts/DejaVuSans-BoldOblique.ttf') format('truetype'); font-weight: 700; font-style: italic; font-display: swap; }
+
+/* Word's ruler. Sits above the sheet and is exactly as wide as it, so a marker
+   is literally over the paper edge it controls. */
+.ctcte-ruler {
+  position: relative; height: 22px; margin: 0 auto 10px;
+  background: #fff; border: 1px solid #E3E6EF; border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.05);
   user-select: none;
 }
-/* Labels pinned to the band's own edges, never to the middle — a short gap
-   would otherwise stack them on top of each other. */
-.ctcte-pagegap::before,
-.ctcte-pagegap::after {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  padding: 1px 9px; border-radius: 999px;
-  background: #fff; border: 1px solid #DDD6FE; color: #6D28D9;
-  font-size: 8.5px; font-weight: 800; letter-spacing: .08em; white-space: nowrap;
+.ctcte-ruler-pad { position: absolute; top: 0; bottom: 0; background: #E6E9F2; }
+.ctcte-ruler-tick {
+  position: absolute; top: 4px; transform: translateX(-50%);
+  font-size: 7.5px; font-weight: 700; color: #98A2B3; letter-spacing: .04em;
 }
-.ctcte-pagegap::before { content: 'END OF PAGE ' attr(data-from); top: -9px; }
-.ctcte-pagegap::after  { content: 'PAGE ' attr(data-to);       bottom: -9px; }
-[data-bs-theme="dark"] .ctcte-pageview { background: #12151c; }
-[data-bs-theme="dark"] .ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
+.ctcte-ruler-grip {
+  position: absolute; top: 50%; width: 11px; height: 11px; padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  background: #7C3AED; border: 1px solid #fff; border-radius: 2px;
+  cursor: ew-resize; box-shadow: 0 1px 3px rgba(16,24,40,.35);
+}
+.ctcte-ruler-grip:hover, .ctcte-ruler-grip.is-drag { background: #4C1D95; }
+[data-bs-theme="dark"] .ctcte-ruler { background: #1b2028; border-color: #2a3140; }
+[data-bs-theme="dark"] .ctcte-ruler-pad { background: #2a3140; }
+
+/* A page boundary that falls inside a single block — a table row taller than a
+   sheet, or a very long paragraph. The PDF splits these mid-block and leaves no
+   blank tail, so there is nothing to reserve: this is drawn OVER the content,
+   absolutely, and costs the layout nothing. */
+.ctcte-spanmarks { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; z-index: 2; }
+.ctcte-spanmark {
+  position: absolute; left: -45px; right: -45px; height: 0;
+  border-top: 1px solid #CFD5E2;
+  box-shadow: 0 4px 8px -6px rgba(16,24,40,.45);
+}
+[data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
+
+/* A block carrying the blank tail of the sheet above it. Padding, not a spacer
+   element: the space is real (dompdf leaves it) but it needs no DOM of its own,
+   and DOM that appears and disappears is what makes the paint smear. */
+.ctcte-pgtop { padding-top: var(--pg-fill, 0px) !important; position: relative; }
+.ctcte-pgtop::before {
+  content: ''; position: absolute; top: var(--pg-fill, 0px);
+  left: calc((var(--pg-ml, 25px) + 25px) * -1);
+  right: calc((var(--pg-mr, 25px) + 25px) * -1);
+  border-top: 1px solid #CFD5E2;
+}
+.ctcte-pgtop::after {
+  content: 'PAGE ' attr(data-from) ' ENDS';
+  position: absolute; left: 50%; top: var(--pg-fill, 0px); transform: translate(-50%, -50%);
+  padding: 2px 11px; border-radius: 999px;
+  background: rgba(255,255,255,.96); border: 1px solid #DDD6FE; color: #7C3AED;
+  font-size: 8px; font-weight: 800; letter-spacing: .11em; white-space: nowrap;
+}
+[data-bs-theme="dark"] .ctcte-pgtop::before { border-top-color: #2a3140; }
+[data-bs-theme="dark"] .ctcte-pgtop::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
+
+/* ── One design for every page boundary ───────────────────────────────────
+   A boundary is always the same thing on screen: a hairline across the paper
+   with the page number on it. What differs is only what sits ABOVE that line,
+   and that difference is real, not stylistic:
+
+     block moved down   the tail of the sheet it left is genuinely blank paper
+                        in the PDF, so it is drawn as blank paper — white —
+                        and the line goes at its bottom, on the actual paper
+                        edge. --pg-fill is exactly how much blank tail there is.
+     split in place     the PDF splits mid-block and leaves no tail, so there
+                        is nothing above the line at all.
+
+   Two visual languages for the same event was the confusing part; the earlier
+   band also centred its label in the strip rather than on the paper edge, so
+   it did not even mark the right spot. */
+.ctcte-pagegap {
+  position: relative;
+  margin: 0 calc((var(--pg-mr, 25px) + 25px) * -1) 0 calc((var(--pg-ml, 25px) + 25px) * -1);
+  background: linear-gradient(#fff 0 var(--pg-fill, 0px), #EEF0F6 var(--pg-fill, 0px) 100%);
+  user-select: none;
+}
+.ctcte-pagegap-row > td {
+  padding: 0 !important;
+  border: none !important;
+  position: relative;
+  background: linear-gradient(#fff 0 var(--pg-fill, 0px), #EEF0F6 var(--pg-fill, 0px) 100%) !important;
+  user-select: none;
+}
+/* The line itself, and the label sitting on it. Shared by all three boundary
+   kinds so they cannot drift apart again. */
+.ctcte-pagegap::before,
+.ctcte-pagegap-row > td::before {
+  content: ''; position: absolute; left: 0; right: 0; top: var(--pg-fill, 0px);
+  border-top: 1px solid #CFD5E2;
+  box-shadow: 0 4px 8px -6px rgba(16,24,40,.45);
+}
+.ctcte-pagegap::after,
+.ctcte-pagegap-row > td::after,
+.ctcte-spanmark::after {
+  content: 'PAGE ' attr(data-from) ' ENDS';
+  position: absolute; left: 50%; top: var(--pg-fill, 0px); transform: translate(-50%, -50%);
+  padding: 2px 11px; border-radius: 999px;
+  background: rgba(255,255,255,.96); border: 1px solid #DDD6FE; color: #7C3AED;
+  font-size: 8px; font-weight: 800; letter-spacing: .11em; white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(16,24,40,.06);
+}
+.ctcte-spanmark::after { content: 'PAGE ' attr(data-page) ' ENDS'; }
+[data-bs-theme="dark"] .ctcte-pagegap { background: linear-gradient(#1b2028 0 var(--pg-fill, 0px), #12151c var(--pg-fill, 0px) 100%); }
+[data-bs-theme="dark"] .ctcte-pagegap-row > td { background: linear-gradient(#1b2028 0 var(--pg-fill, 0px), #12151c var(--pg-fill, 0px) 100%) !important; }
+[data-bs-theme="dark"] .ctcte-pagegap::before,
+[data-bs-theme="dark"] .ctcte-pagegap-row > td::before { border-top-color: #2a3140; }
+[data-bs-theme="dark"] .ctcte-pagegap::after,
+[data-bs-theme="dark"] .ctcte-pagegap-row > td::after,
+[data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
+[data-bs-theme="dark"] .ctcte-content.ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
 [data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
 
 .ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }

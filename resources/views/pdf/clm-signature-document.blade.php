@@ -50,6 +50,10 @@
      rendering exactly as it did. */
   $pcfg    = is_array($pageConfig ?? null) ? $pageConfig : [];
   $marginX = (int) max(10, min(60, $pcfg['margin_x'] ?? 25));
+  // Independent sides, as the editor's ruler sets them. margin_x stays the
+  // fallback so documents saved before the ruler existed render unchanged.
+  $marginL = (int) max(10, min(60, $pcfg['margin_left']  ?? $marginX));
+  $marginR = (int) max(10, min(60, $pcfg['margin_right'] ?? $marginX));
   // dompdf has no support for the % free-drag positions HeaderFooterPanel
   // emits — collapse them into a simple left/right 2-col header keyed off
   // the logo's horizontal position (logo_pos.x ≤ 50 → logo on the left).
@@ -101,8 +105,8 @@
            band painted in the page_text script) keeps content off the footer. */
         margin-bottom: 92px;
         margin-top: 25px;
-        margin-left: {{ $marginX }}px;
-        margin-right: {{ $marginX }}px;
+        margin-left: {{ $marginL }}px;
+        margin-right: {{ $marginR }}px;
       }
 
       /* FOOTER — fixed at the bottom of every page. Background / colour
