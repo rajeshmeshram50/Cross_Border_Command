@@ -194,15 +194,23 @@ export function expenseClaimColumns({
       header: 'Exp ID',
       id: 'claim_no',
       accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
-      meta: { width: '8%' },
-      cell: info => (
-        <span
-          className="font-monospace fw-semibold exp-id-badge"
-          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em' }}
-        >
-          {info.row.original.claim_no || `#${info.row.original.id}`}
-        </span>
-      ),
+      // Fixed width sized to the "EXP-0000" pill + `wrap` so the cell opts
+      // out of the table's default ellipsis clipping — the ID used to render
+      // as "EXP-0002…" in an 8% column even though it fits. `title` still
+      // gives the full ID on hover as a safety net.
+      meta: { width: 104, wrap: true },
+      cell: info => {
+        const id = info.row.original.claim_no || `#${info.row.original.id}`;
+        return (
+          <span
+            className="font-monospace fw-semibold exp-id-badge"
+            title={id}
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}
+          >
+            {id}
+          </span>
+        );
+      },
     },
     {
       header: 'Employee',

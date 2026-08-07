@@ -187,10 +187,12 @@ class AdvanceRequestController extends Controller
             // Capped at 500 chars so a long reason can't break the table layout.
             'reason'              => ['required', 'string', 'max:500'],
             // Supporting documents are optional for advances, but when present
-            // must be PDF/JPG/PNG up to 5 MB each (mirrors the client picker).
+            // must be PDF/JPG/PNG up to 2 MB each (mirrors the client picker).
             'files'               => ['nullable', 'array'],
-            'files.*'             => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
+            'files.*'             => ['file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ], [
+            'files.*.max'                    => 'Each file must be 2 MB or smaller.',
+            'files.*.mimes'                  => 'Files must be PDF, JPG or PNG.',
             'requested_date.after_or_equal'  => 'Requested date must be today (the request creation date).',
             'requested_date.before_or_equal' => 'Requested date cannot be in the future — it is the request creation date.',
             'recovery_start.after_or_equal'  => 'Recovery must start in the month after the requested date (this month’s payroll may already be done).',

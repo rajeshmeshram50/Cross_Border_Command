@@ -242,7 +242,9 @@ class ExpenseClaimController extends Controller
             // least one supporting document. Enforced server-side too so the
             // requirement can't be bypassed by a direct API call.
             'files'          => ['required', 'array', 'min:1'],
-            'files.*'        => ['file', 'max:5120', 'mimes:pdf,jpg,jpeg,png'],
+            // Per-file cap 2 MB (2048 KB). The frontend enforces the same
+            // limit; this mirrors it so a direct API call can't bypass it.
+            'files.*'        => ['file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
             // Optional: this claim is the reimbursement for an over-spent company
             // advance. When set (and valid), the created claim is linked back to
             // the advance and the amount is capped at the reimburse balance.
@@ -250,9 +252,23 @@ class ExpenseClaimController extends Controller
         ], [
             'files.required'             => 'At least one proof / receipt is required.',
             'files.min'                  => 'At least one proof / receipt is required.',
+            'files.*.max'                => 'Each receipt must be 2 MB or smaller.',
+            'files.*.mimes'              => 'Receipts must be PDF, JPG or PNG.',
             'expense_date.before_or_equal' => 'Expense date cannot be in the future.',
             'expense_date.after_or_equal'  => 'Expense date must be within the last 30 days.',
         ]);
+
+        // Total-size guard — the whole claim's receipts must stay under 5 MB
+        // so a single claim's multipart POST can't exceed PHP's post_max_size
+        // ("Post data too long"). Per-file size is already validated above.
+        $totalBytes = collect((array) $request->file('files', []))
+            ->filter()
+            ->sum(fn ($f) => (int) $f->getSize());
+        if ($totalBytes > 5 * 1024 * 1024) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'files' => ['Attachments total ' . round($totalBytes / 1048576, 1) . ' MB — keep the claim under 5 MB.'],
+            ]);
+        }
 
         // File attachments — accepted as multipart `files[]`. Each file is
         // stored on the public disk; the saved row carries an array of

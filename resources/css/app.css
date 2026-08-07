@@ -2278,11 +2278,15 @@ html[data-bs-theme="dark"] .hr-mega-leaf-link.active {
    pseudo-elements inherit them from the trigger. */
 [data-tooltip] {
   position: relative;
-  --tt-bg: linear-gradient(180deg, #ffffff 0%, #f3f4f6 100%);
-  --tt-fg: #1f2937;
-  --tt-arrow: #f3f4f6;
-  --tt-border: 1px solid #e5e7eb;
-  --tt-shadow: 0 12px 26px -6px rgba(15,23,42,0.18), 0 4px 10px rgba(15,23,42,0.10), 0 0 0 1px rgba(15,23,42,0.04);
+  /* Solid pure-white pill with black text in light mode — the old
+     white→grey gradient + grey text read faint against light surfaces
+     (CBC: "tooltip is very faint"). Border + shadow keep the white pill
+     defined against white backgrounds. */
+  --tt-bg: #ffffff;
+  --tt-fg: #000000;
+  --tt-arrow: #ffffff;
+  --tt-border: 1px solid #d1d5db;
+  --tt-shadow: 0 12px 26px -6px rgba(15,23,42,0.22), 0 4px 10px rgba(15,23,42,0.14), 0 0 0 1px rgba(15,23,42,0.06);
 }
 [data-bs-theme="dark"] [data-tooltip],
 [data-layout-mode="dark"] [data-tooltip] {

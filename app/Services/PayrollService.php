@@ -1655,7 +1655,7 @@ class PayrollService
             ->where('hr_status', 'approved')
             ->whereNotNull('recovery_start')
             ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
-            ->get(['id', 'amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+            ->get(['id', 'amount', 'sanctioned_amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
                    'advance_no', 'advance_type', 'advance_type_other']) as $r) {
             $type = $this->advanceTypeLabel($r->advance_type, $r->advance_type_other);
             $streams[] = [
@@ -1665,7 +1665,10 @@ class PayrollService
                 'mode'       => $r->recovery_mode,
                 'months'     => (int) ($r->recovery_months ?: 0),
                 'emi'        => (float) ($r->monthly_emi ?: 0),
-                'amount'     => (float) $r->amount,
+                // Recover only what the employee actually RECEIVED — the sanctioned
+                // (net) amount after any deduction/addition at payout, not the
+                // originally-claimed amount. The last EMI trims to this total.
+                'amount'     => (float) ($r->sanctioned_amount ?? $r->amount),
                 'advance_no' => $r->advance_no,
                 'label'      => 'Advance Recovery – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
             ];
