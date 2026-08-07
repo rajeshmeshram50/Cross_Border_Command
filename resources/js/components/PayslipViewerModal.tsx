@@ -256,22 +256,29 @@ export default function PayslipViewerModal({
      zero-state only survives for a slip generated BEFORE that change, or one
      whose run is locked and can't recompute. */
   const otKpiHours = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
-  const otUnpaid   = overtimeApplicable && overtimeAmount <= 0 && overtimeDetectedHours > 0;
-  const showOt     = overtimeApplicable && !hasOtLine && (overtimeAmount > 0 || otUnpaid);
   const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
   const otHoursLabel = num(otKpiHours);
+
+  /* Overtime is NOT approval-gated — detected hours are paid. When a slip
+     carries hours but no amount (generated before that rule, or in a locked
+     run that can't recompute), price them here from the same inputs the engine
+     uses rather than telling HR to regenerate the run: the allowance is what
+     they came to see, and a prompt to re-run payroll is a chore, not an answer.
+     Falls back to the stored amount whenever the engine already priced it. */
+  const otPricedAmount = overtimeAmount > 0
+    ? overtimeAmount
+    : Math.round(otKpiHours * (overtimeRate || 0) * (overtimeMultiplier || 1) * 100) / 100;
+  const showOt = overtimeApplicable && !hasOtLine && (otPricedAmount > 0 || otKpiHours > 0);
+
   // Spell the pricing out next to the line so the figure is checkable by hand.
-  const otWorkings = otUnpaid
-    // Stale slip: regenerate the run to pick the overtime up.
-    ? `${num(overtimeDetectedHours)} hr detected in attendance · regenerate this payroll run to include it.`
-    : [
-        overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
-        overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
-        `${num(overtimeHours)} hr`,
-      ].filter(Boolean).join(' · ');
+  const otWorkings = [
+    overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
+    overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
+    `${otHoursLabel} hr`,
+  ].filter(Boolean).join(' · ');
 
   const shownEarnings = showOt
-    ? [...earnings, { label: 'Overtime Allowance', amount: overtimeAmount }]
+    ? [...earnings, { label: 'Overtime Allowance', amount: otPricedAmount }]
     : earnings;
 
   const totalEarnings   = shownEarnings.reduce((s, r) => s + r.amount, 0);
