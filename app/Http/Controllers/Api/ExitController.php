@@ -409,32 +409,18 @@ class ExitController extends Controller
 
     /**
      * Salary earned in the exit month, up to and including the last working
-     * day. Pro-rated on CALENDAR days — the same basis the notice period uses,
-     * so the two never disagree.
+     * day — delegated to the payroll engine.
+     *
+     * This used to pro-rate annual_salary ÷ 12 across CALENDAR days here,
+     * which ignored the employee's salary structure, their attendance, loss of
+     * pay, overtime and every allowance — and returned ₹0 outright for anyone
+     * paid through a salary structure with no annual_salary set. The F&F now
+     * settles exactly what payroll would have paid for that month.
      */
     private function fnfEarnedSalary(Employee $employee, \Carbon\Carbon $lwd): array
     {
-        $annual  = (float) ($employee->annual_salary ?? 0);
-        $monthly = $annual > 0 ? round($annual / 12, 2) : 0.0;
-
-        $monthDays  = (int) $lwd->daysInMonth;
-        // Someone who joined mid-month is only owed from their joining date.
-        $start = $lwd->copy()->startOfMonth();
-        if ($employee->date_of_joining) {
-            $doj = \Carbon\Carbon::parse($employee->date_of_joining)->startOfDay();
-            if ($doj->gt($start)) $start = $doj;
-        }
-        $earnedDays = $lwd->lt($start) ? 0 : $start->diffInDays($lwd) + 1;
-
-        return [
-            'cycle'         => $lwd->format('F Y'),
-            'monthly_gross' => $monthly,
-            'month_days'    => $monthDays,
-            'earned_days'   => $earnedDays,
-            'amount'        => $monthDays > 0 ? round($monthly * $earnedDays / $monthDays, 2) : 0.0,
-            'note'          => 'Excluded from the ' . $lwd->format('F Y')
-                . ' payroll run — settle the earned salary here.',
-        ];
+        return app(\App\Services\PayrollService::class)
+            ->earnedSalaryForExitMonth($employee, $lwd);
     }
 
     /**

@@ -1072,10 +1072,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      folded into these. */
   useEffect(() => {
     if (!fnfDues) return;
-    setFnfLines(s => ({
-      ...s,
-      basic: s.basic || (fnfDues.payroll?.amount ? String(fnfDues.payroll.amount) : ''),
-    }));
+    const earned = Number(fnfDues.payroll?.amount ?? 0);
+    setFnfLines(s => {
+      /* Prefill when the line is empty OR still zero. `s.basic || …` alone made
+         a zero STICKY: a settlement opened while the old calendar-day estimate
+         returned ₹0 (which it did for anyone paid via a salary structure with
+         no annual_salary) kept that 0 forever, even once the payroll engine
+         could price the month properly. A zero earned salary is never a
+         deliberate HR entry worth protecting; any non-zero figure they typed
+         still is. */
+      const current = Number(s.basic);
+      const keep = s.basic !== '' && Number.isFinite(current) && current !== 0;
+      return keep ? s : { ...s, basic: earned ? String(earned) : '' };
+    });
   }, [fnfDues]);
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
@@ -1964,6 +1973,35 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
+  /**
+   * Navigate to a stage from the sidebar stepper.
+   *
+   * Leaving Stage 1 runs the SAME gate as the Next Stage button — saveStage1()
+   * validates the mandatory fields, surfaces the inline errors and toast, and
+   * only then persists. The stepper used to be a plain `setStage`, so an exit
+   * could be walked straight past Stage 1 with Reason / Notice Start Date /
+   * Last Working Day still empty: the validation existed but guarded only one
+   * of the two ways out.
+   *
+   * Only LEAVING stage 1 is gated. Coming back to it, and moving between any
+   * later stages, is free — those have their own completion rules and blocking
+   * navigation there would trap HR on a stage they cannot yet finish.
+   */
+  const goToStage = async (num: number, key: StageKey) => {
+    if (num === stage) return;
+    if (currentKey === 'initiation') {
+      if (stage1Saving) return;             // a save is already in flight
+      const ok = await saveStage1();
+      if (!ok) return;                      // errors already shown by saveStage1
+      markStageCompleted('initiation');
+    }
+    setStage(num);
+    setStageStatus(prev => ({
+      ...prev,
+      [key]: prev[key] === 'Completed' ? 'Completed' : 'In Progress',
+    }));
+  };
+
   const current = stages[stage - 1] ?? stages[0];
   const isLastStage = stage === stageCount;
 
@@ -2172,7 +2210,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   key={s.key}
                   type="button"
                   className={`ep-stage-card ep-stage-card--${st.toLowerCase().replace(' ', '-')}${stage === s.num ? ' is-current' : ''}`}
-                  onClick={() => { setStage(s.num); setStageStatus(prev => ({ ...prev, [s.key]: prev[s.key] === 'Completed' ? 'Completed' : 'In Progress' })); }}
+                  // Same mandatory-field gate as Next Stage — see goToStage().
+                  disabled={stage1Saving && currentKey === 'initiation' && s.num !== stage}
+                  onClick={() => { void goToStage(s.num, s.key); }}
                 >
                   <span className="ep-stage-num">
                     {st === 'Completed' ? <i className="ri-check-line" /> : s.num}
@@ -2631,9 +2671,28 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-fnf">
                   <FnfRow label="Salary for the Exit Month (earned up to the last working day)"
                           value={fnfLines.basic}       onChange={v => setFnfLines(s => ({ ...s, basic: v }))}
-                          hint={fnfDues?.payroll
-                            ? `${fnfDues.payroll.earned_days} of ${fnfDues.payroll.month_days} days in ${fnfDues.payroll.cycle} — payroll skipped this employee for that cycle.`
-                            : 'Payroll skipped this employee for the exit month — their earned salary belongs here.'} />
+                          /* Show the payroll BREAKDOWN, not just a day count —
+                             this figure is now produced by the payroll engine
+                             (structure components, attendance-driven paid days,
+                             LOP, overtime), so the hint has to explain how it
+                             was reached or the number looks arbitrary. */
+                          hint={(() => {
+                            const p = fnfDues?.payroll;
+                            if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
+                            const b = p.breakdown;
+                            if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
+                            const parts: string[] = [
+                              `${b.paid_days} paid of ${b.working_days} working days in ${p.cycle}`,
+                            ];
+                            if (b.lop_days > 0)       parts.push(`LOP ${b.lop_days}d (−${fmtMoney(b.lop_amount)})`);
+                            if (b.overtime_hours > 0) parts.push(`overtime ${b.overtime_hours}h (${fmtMoney(b.overtime_amount)})`);
+                            const comps = (b.earnings || [])
+                              .map((x: any) => `${x.label} ${fmtMoney(x.amount)}`)
+                              .join(' · ');
+                            if (comps) parts.push(comps);
+                            parts.push(`gross ${fmtMoney(b.gross_earnings)} − deductions ${fmtMoney(b.total_deductions)}`);
+                            return `${parts.join(' · ')}. Computed on the payroll basis — this employee was skipped in that cycle's run.`;
+                          })()} />
                   <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} />
                   <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} />
 
@@ -2676,28 +2735,36 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 </div>
 
                 <div className="ep-section-label" style={{ marginTop: 14 }}>Finance Approval &amp; Payment</div>
+                {/* Every field here is required to settle the F&F (#61):
+                    markFnfPaid() refuses without Finance Controller Approval =
+                    Approved and a Payment Date, the stage's own completion
+                    measure counts Payment Status = Paid, and Payment Mode is
+                    part of the payment record it writes. They carry the * now;
+                    Approval and Payment Date are additionally marked invalid
+                    while empty, since those are the two that hard-block the
+                    "Mark F&F Paid" button. */}
                 <div className="ep-approval-card ep-details-card mb-2">
                   <Row className="g-2">
                     <Col md={6}>
-                      <EpField label="Finance Controller Approval">
+                      <EpField label="Finance Controller Approval" required invalid={fnfMeta.approval !== 'Approved'}>
                         <EpSelect value={fnfMeta.approval} onChange={v => setFnfMeta(s => ({ ...s, approval: v }))}
                           options={['Pending', 'Approved', 'Rejected']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Status">
+                      <EpField label="Payment Status" required>
                         <EpSelect value={fnfMeta.payStatus} onChange={v => setFnfMeta(s => ({ ...s, payStatus: v }))}
                           options={['Pending', 'Processing', 'Paid']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Mode">
+                      <EpField label="Payment Mode" required>
                         <EpSelect value={fnfMeta.payMode} onChange={v => setFnfMeta(s => ({ ...s, payMode: v }))}
                           options={['Bank Transfer (NEFT)', 'Bank Transfer (RTGS)', 'IMPS', 'UPI', 'Cheque']} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Date">
+                      <EpField label="Payment Date" required invalid={!fnfMeta.payDate}>
                         <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} />
                       </EpField>
                     </Col>
@@ -2723,9 +2790,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         {fnfDoc ? 'Click again to replace' : 'PDF, image, Word or Excel · up to 10 MB · required'}
                       </span>
                     </span>
+                    {/* Download, not View (#59). The label said "View" but an
+                        F&F attachment can be PDF, image, Word or Excel — the
+                        browser only ever renders the first two inline and
+                        downloads the rest, so the button could not honour its
+                        own name. It is a download now, stated by an icon:
+                        `download` makes the behaviour explicit instead of
+                        leaving it to the file type, and the attachment's own
+                        name is used rather than the storage hash. */}
                     {fnfDoc?.url && (
-                      <a className="ep-fnf-drop-view" href={fnfDoc.url} target="_blank" rel="noreferrer"
-                         onClick={e => e.stopPropagation()}>View</a>
+                      <a className="ep-fnf-drop-view" href={fnfDoc.url}
+                         download={fnfDoc.name || true}
+                         title={`Download ${fnfDoc.name || 'document'}`}
+                         aria-label={`Download ${fnfDoc.name || 'document'}`}
+                         onClick={e => e.stopPropagation()}>
+                        <i className="ri-download-2-line" style={{ fontSize: 15 }} />
+                      </a>
                     )}
                   </label>
 
