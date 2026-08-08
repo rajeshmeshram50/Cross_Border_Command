@@ -393,9 +393,13 @@ export function advanceRequestColumns({
           }
           return pillEl('ri-time-line', 'To settle', '#fde8c4', '#a4661c');
         }
-        // Self: recovered from salary per the EMI schedule. Until payroll finishes
-        // recovering it, it's "Recovering"; flips to Recovered once fully cut.
+        // Self: recovered from salary per the EMI schedule. Recovery can't start
+        // until the advance has actually been PAID to the employee, so while the
+        // advance-paid status is still pending, show "—" rather than "Recovering".
         if (r.status === 'approved' && r.recovery_mode) {
+          if ((r.settlement_status ?? 'unpaid') !== 'paid') {
+            return <span className="text-muted">—</span>;
+          }
           return r.recovery_complete
             ? pillEl('ri-checkbox-circle-line', 'Recovered', '#d6f4e3', '#108548')
             : pillEl('ri-calendar-todo-line', 'Recovering', '#eef2ff', '#3730a3');

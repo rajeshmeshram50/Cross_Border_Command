@@ -436,10 +436,52 @@ class PayrollService
      * computeForEmployee() only reads month / period_start / period_end /
      * working_days off it.
      */
-    public function earnedSalaryForExitMonth(Employee $employee, Carbon $lwd): array
+    public function earnedSalaryForExitMonth(Employee $employee, Carbon $lwd, $resignationDate = null): array
     {
         $start = $lwd->copy()->startOfMonth();
         $end   = $lwd->copy()->endOfMonth();
+
+        /* EARLY EXIT — resigned/left within ProbationGuard::EARLY_EXIT_DAYS of
+         * joining. Such an employee "is not put through payroll at all": the
+         * regular run already drops them (eligibleEmployees), and the F&F must
+         * agree or the policy is defeated — the month simply gets settled here
+         * instead of there, for the same money.
+         *
+         * Zeroed rather than skipped so the F&F still renders the line (with
+         * its reason) and every downstream total keeps a numeric field to add. */
+        if (ProbationGuard::isEarlyExit($employee, $lwd, $resignationDate)) {
+            $tenure = ProbationGuard::tenureDays($employee, $resignationDate ?: $lwd);
+
+            return [
+                'cycle'         => $lwd->format('F Y'),
+                'monthly_gross' => 0.0,
+                'month_days'    => (int) $end->day,
+                'earned_days'   => 0.0,
+                'amount'        => 0.0,
+                'early_exit'    => true,
+                'breakdown'     => [
+                    'working_days'      => 0.0,
+                    'present_days'      => 0.0,
+                    'paid_days'         => 0.0,
+                    'weekoff_days'      => 0.0,
+                    'lop_days'          => 0.0,
+                    'paid_leave_days'   => 0.0,
+                    'unpaid_leave_days' => 0.0,
+                    'overtime_hours'    => 0.0,
+                    'overtime_amount'   => 0.0,
+                    'gross_earnings'    => 0.0,
+                    'lop_amount'        => 0.0,
+                    'total_deductions'  => 0.0,
+                    'net_pay'           => 0.0,
+                    'earnings'          => [],
+                    'deductions'        => [],
+                ],
+                'note' => 'No salary for this cycle — '
+                    . ($tenure !== null ? "exited on day {$tenure} of joining, within " : 'exited within ')
+                    . ProbationGuard::EARLY_EXIT_DAYS
+                    . ' days, so payroll is not processed for this employee.',
+            ];
+        }
 
         $period = PayrollPeriod::where('client_id', $employee->client_id)
             ->where('branch_id', $employee->branch_id)
