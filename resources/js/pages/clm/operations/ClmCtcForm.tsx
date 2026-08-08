@@ -11,7 +11,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../../master/m
 import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderModal';
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS } from './CtcRichEditor';
+import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, type CtcMargins } from './CtcRichEditor';
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
@@ -24,6 +24,36 @@ import CustomerEvidenceVaultModal from '../../sales/core-masters/customer/Custom
 import ConsigneeEvidenceVaultModal from '../../sales/core-masters/consignee/ConsigneeEvidenceVaultModal';
 import SupplierEvidenceVaultModal from '../../p2p/p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 import { checkSpelling } from '../../../utils/spellCheck';
+
+/* Draft-content Word upload caps. Mirror the Agreement wizard exactly
+   (AGREEMENT_DOCX_MAX_BYTES / RENDER_MAX_CHARS) — a CTC draft ends up in the
+   same dompdf/PhpWord renderers, so it has the same ceiling.
+
+   Two separate gates, because they catch different things: a .docx is a ZIP, so
+   a 900 KB file can still unpack into several million characters of HTML. The
+   byte check saves the upload; the character check saves the download. */
+const CTC_DOCX_MAX_BYTES = 1024 * 1024;   // 1 MB
+const CTC_RENDER_MAX_CHARS = 1000000;     // ~1 MB of HTML
+/* Live spelling review is O(document) on the main thread, so it is capped well
+   below the render limit — about 20k words, past anything hand-written. */
+const LIVE_REVIEW_MAX_CHARS = 120000;
+
+/* Live counter against the render limit. Amber near the cap, red past it — the
+   point is that the draft stops being generatable long before anyone clicks
+   Download, and silence until then is what makes that feel like a bug. */
+function CtcCharCounter({ length, dark }: { length: number; dark: boolean }) {
+  const over = length > CTC_RENDER_MAX_CHARS;
+  const color = over ? '#e11d48' : length / CTC_RENDER_MAX_CHARS > 0.8 ? '#d97706' : (dark ? '#8b93a7' : '#5e7888');
+  return (
+    <span
+      title={over
+        ? 'Over the 1,000,000-character limit — the PDF/Word download will be blocked until you shorten it.'
+        : `${CTC_RENDER_MAX_CHARS.toLocaleString()} character limit (~1 MB) for PDF/Word export`}
+      style={{ fontSize: 8, fontWeight: 700, color, whiteSpace: 'nowrap', letterSpacing: '.03em' }}>
+      {length.toLocaleString()} / {CTC_RENDER_MAX_CHARS.toLocaleString()}{over ? ' ⚠' : ''}
+    </span>
+  );
+}
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Case to Case Contracts → full-screen "Create / Edit CTC Agreement" form.
@@ -213,6 +243,8 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
   const [resubmitting, setResubmitting] = useState(false);   // in-flight guard for "Resubmit for Review"
   const [moving, setMoving] = useState(false);               // in-flight guard for "Move to Final Repository"
   const [submittingApproval, setSubmittingApproval] = useState(false);   // in-flight guard for Submit/Resubmit for Approval
+  // Page margins ride page_config, the same per-document JSON the PDF reads.
+  const [margins, setMargins] = useState<CtcMargins>(DEFAULT_MARGINS);
   const [agTitle, setAgTitle] = useState(editing?.title ?? '');
   const [agType, setAgType] = useState(editing?.type ?? '');
   const [effDate, setEffDate] = useState('');
@@ -403,6 +435,11 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       const cpArr = (Array.isArray(r.counterparties) ? r.counterparties : []) as Record<string, unknown>[];
       setCps(cpArr.map((c, i) => ({ name: String(c.name ?? ''), initials: orgInitials(String(c.name ?? '')), country: String(c.country ?? ''), phone: String(c.phone ?? ''), email: String(c.email ?? ''), grad: ORG_GRADS[i % ORG_GRADS.length], badge: String(c.badge ?? ''), referred: String(c.referred ?? c.name ?? ''), sourceType: c.source_type ? String(c.source_type) : undefined, sourceId: (c.source_id as string | number | undefined) ?? undefined, sourceDbId: (c.source_db_id as number | undefined) ?? undefined })));
       if (r.header_config) setHeader({ ...brandedDefaults, ...(r.header_config as object) } as HeaderConfig);
+      const pc = (r.page_config ?? null) as { margin_left?: number; margin_right?: number; margin_x?: number } | null;
+      if (pc) setMargins({
+        left:  Number(pc.margin_left  ?? pc.margin_x ?? DEFAULT_MARGINS.left),
+        right: Number(pc.margin_right ?? pc.margin_x ?? DEFAULT_MARGINS.right),
+      });
       if (r.footer_config) setFooter({ ...DEFAULT_FOOTER, ...(r.footer_config as object) } as FooterConfig);
     }).catch(() => { if (alive) toast.error('Could not load', 'Failed to open this agreement for editing.'); })
       .finally(() => { if (alive) setHydrating(false); });
@@ -422,7 +459,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     try {
       await api.put(`/clm/ctc-contracts/${editing.dbId}`, {
         title: agTitle, agreement_type: agType || null,
-        content: draft || null, header_config: header, footer_config: footer,
+        content: draft || null, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer,
         counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null, source_db_id: c.sourceDbId ?? null })),
         eff_date: effDate || null, end_date: endDate || null,
       });
@@ -444,7 +481,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
       org_name: org?.name ?? null, org_short_code: org?.shortCode ?? null, org_state: org?.state ?? null, org_country: org?.country ?? null,
       counterparties: cps.map(c => ({ name: c.name, country: c.country, phone: c.phone, email: c.email, badge: c.badge, referred: c.referred, source_type: c.sourceType ?? null, source_id: c.sourceId ?? null, source_db_id: c.sourceDbId ?? null })),
       eff_date: effDate || null, end_date: endDate || null,
-      content: draft || null, header_config: header, footer_config: footer,
+      content: draft || null, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer,
       approvers: approval.approvers, days_to_approve: approval.days, reminder_days: approval.reminder,
     };
     try {
@@ -502,7 +539,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
     if (!agTitle.trim()) { toast.error('Missing title', 'Enter an agreement title in Step 2.'); setStage(1); return; }
     setResubmitting(true);
     try {
-      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, header_config: header, footer_config: footer });
+      await api.post(`/clm/ctc-contracts/${workingId}/resubmit`, { content: draft || null, title: agTitle, page_config: { margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }, header_config: header, footer_config: footer });
       toast.success('Resubmitted', 'Revised draft sent back for internal review.');
       await refreshRecord();
       goStage(2);
@@ -626,6 +663,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
           {!hydrating && stage === 1 && (
             <Stage1
               t={t}
+              margins={margins} setMargins={setMargins}
               cps={cps} orgs={orgs} agTypes={agTypes} agTypesLoading={agTypesLoading} org={org} orgOpen={orgOpen} setOrgOpen={setOrgOpen}
               onAddCp={() => setPicker(true)} onRemoveCp={(idx) => setCps(cps.filter((_, j) => j !== idx))}
               onSelectOrg={(o) => {
@@ -761,6 +799,7 @@ function Stage1(p: {
   effDate: string; setEffDate: (s: string) => void; endDate: string; setEndDate: (s: string) => void;
   draft: string; setDraft: (s: string) => void;
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
+  margins: CtcMargins; setMargins: (m: CtcMargins) => void;
   isEditing: boolean; onUpdate: () => void;
   onSubmitForApproval: (approval: { approvers: { name: string; email: string; role: string; mandatory: boolean }[]; days: number; reminder: number }) => Promise<boolean>;
   resubmitMode: boolean; onResubmit: () => void; resubmitting?: boolean;
@@ -789,7 +828,14 @@ function Stage1(p: {
   // editable in resubmit (it's gated on p.editLock only, which is false here).
   const prevLocked = !!p.editLock || !!p.resubmitMode;
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
+  // Margins live in ClmCtcForm, not here: submitForApproval and the save
+  // handlers are all up there, and they are what write page_config.
+  const { margins, setMargins } = p;
   const [docxBusy, setDocxBusy] = useState(false);              // DOCX → HTML conversion in flight
+  // An import has two waits, and they feel completely different in length. One
+  // label for both read as a hang once the server was already done.
+  const [docxPhase, setDocxPhase] = useState<'convert' | 'paginate'>('convert');
+  const [docxPages, setDocxPages] = useState(0);   // pages laid out so far
   // Page-shell header/footer config (logo, header name, footer text, pagination) —
   // lifted to the parent so the Stage-2 preview shares the same config.
   const header = p.header, setHeader = p.setHeader, footer = p.footer, setFooter = p.setFooter;
@@ -822,18 +868,55 @@ function Stage1(p: {
       toast.error('Only Word files', 'Please upload a .doc or .docx file — PDFs aren’t supported here.');
       return;
     }
+    // Cheap gate first — refuse before spending a round trip on the conversion.
+    if (file.size > CTC_DOCX_MAX_BYTES) {
+      toast.error(
+        'File too large',
+        `${file.name} is ${(file.size / 1024 / 1024).toFixed(1)} MB. Word documents must be 1 MB or smaller.`,
+      );
+      return;
+    }
     const fd = new FormData(); fd.append('docx', file);
     // Converting a large (200-300 page) DOCX takes several seconds server-side.
     // Lock the whole surface behind a spinner so the user knows work is happening
     // and can't cut it off (close the modal / switch step) mid-conversion.
+    setDocxPhase('convert');
     setDocxBusy(true);
     try {
       const res = await api.post('/clm/docx-to-html', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const html = String(res.data?.html ?? '');
+      /* Second gate, on the CONVERTED length. A .docx is a ZIP, so a file that
+         cleared the 1 MB byte check can still unpack past a million characters
+         — and it is the character count, not the file size, that the PDF and
+         Word renderers actually choke on. Reject here rather than let it into
+         the editor and fail at download time. */
+      if (html.length > CTC_RENDER_MAX_CHARS) {
+        toast.error(
+          'Document too long',
+          `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${CTC_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller agreements, or shorten it before uploading.`,
+        );
+        return;
+      }
       // Replace the whole document via the ProseMirror model — no innerHTML,
       // no ghost caret, no manual scroll reset (TipTap handles all of that).
       ctcEd.setHTML(html);
-      (docxRef.current?.closest('.ctc-mid-scroll') as HTMLElement | null)?.scrollTo({ top: 0 });
+      /* Reset the EDITOR's scroller, found from the editor itself.
+         This used to walk up from docxRef — the hidden file input, which lives
+         in the editor's header, above the editor's own scroll area. So the
+         nearest .ctc-mid-scroll it found was the Panel-02 workspace wrapper
+         (the class is on nine elements in this file), and the draft's own
+         scroller kept whatever offset it already had. The import therefore
+         landed the user somewhere in the middle of the new document instead of
+         on page 1. */
+      (ctcEd.editor?.view.dom.closest('.ctc-mid-scroll') as HTMLElement | null)?.scrollTo({ top: 0 });
+      /* The conversion is only the first half of the wait. Handing the document
+       * to TipTap here returns immediately; the browser then lays out 300 pages
+       * and PageFlow then finds the page boundaries — and dropping the spinner
+       * at that point is what made the import look like it was flickering and
+       * loading on its own. Hold it until the pages have actually settled. */
+      setDocxPhase('paginate');
+      setDocxPages(0);
+      await waitForPagination(ctcEd.editor, setDocxPages);
       toast.success('Document imported', 'Your file was converted into the editor.');
     } catch {
       toast.error('Import failed', 'Could not convert this document. Please try another file.');
@@ -1257,13 +1340,16 @@ function Stage1(p: {
                     </div>}
                 <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                   <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <CtcEditorContent editor={ctcEd.editor} pageView />
+                    <CtcEditorContent editor={ctcEd.editor} pageView margins={margins} onMargins={p.editLock ? undefined : setMargins} />
                   </HeaderFooterPanel>
                 </div>
                 {/* footer hint */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, flexShrink: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg><span style={{ fontSize: 8, color: t.dark ? '#a78bfa' : '#A78BFA', fontWeight: 500, fontStyle: 'italic' }}>Placeholders auto-fill on agreement generation</span></div>
-                  <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <CtcCharCounter length={(p.draft ?? '').length} dark={t.dark} />
+                    <span style={{ fontSize: 8, fontWeight: 700, color: t.dark ? '#a78bfa' : '#C4B5FD', letterSpacing: '.05em' }}>{'{{PLACEHOLDER}}'}</span>
+                  </div>
                 </div>
                 {phOpen && <ClmInsertPlaceholderModal open={phOpen} hideProductTab counterparties={p.cps.map(c => ({ name: c.name, code: String(c.sourceId ?? ''), role: (c.sourceType || c.badge || '').toLowerCase(), type: c.sourceType, id: c.sourceId }))} onClose={() => setPhOpen(false)} onInsert={tok => { const isHtml = /^\s*</.test(tok); toast.success(isHtml ? 'Inserted' : 'Placeholder added', isHtml ? 'Added to the agreement draft.' : tok); if (isHtml) insertHtml(tok); else insertText(tok); }} />}
                 {clauseOpen && <ClmClauseInsertPanel onClose={() => setClauseOpen(false)} onInsert={html => insertHtml(html)} />}
@@ -1272,8 +1358,28 @@ function Stage1(p: {
                 {docxBusy && createPortal(
                   <div style={{ position: 'fixed', inset: 0, zIndex: 2000000, background: 'rgba(15,7,50,.62)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16, fontFamily: 'var(--font-sans)' }}>
                     <svg className="ctc-spin" width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#c4b5fd" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Converting document…</div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>Large files can take a moment — please don't close this window.</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>
+                      {docxPhase === 'paginate' ? 'Laying out pages…' : 'Converting document…'}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.72)' }}>
+                      {docxPhase === 'paginate'
+                        ? 'Working out where each page breaks — almost there.'
+                        : "Large files can take a moment — please don't close this window."}
+                    </div>
+                    {docxPhase === 'paginate' && (
+                      <div style={{ width: 260, marginTop: 2 }}>
+                        <div style={{ height: 5, borderRadius: 999, background: 'rgba(255,255,255,.16)', overflow: 'hidden' }}>
+                          {/* No honest denominator until the last page is found,
+                              so this eases towards full as pages accumulate and
+                              only ever reaches 100% when the wait actually ends. */}
+                          <div style={{ width: `${Math.min(96, docxPages * 4)}%`, height: '100%', borderRadius: 999, background: 'linear-gradient(90deg,#a78bfa,#67e8f9)', transition: 'width .25s ease' }} />
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: '#c4b5fd', textAlign: 'center' }}>
+                          {docxPages > 0 ? `${docxPages} pages laid out…` : 'Measuring…'}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#67e8f9' }}>Max 1 MB · 1,000,000 characters</div>
                   </div>, document.body)}
               </div>
             )}
@@ -2401,7 +2507,22 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
   // re-scanning a document that hadn't changed. Combined with a format action
   // (which syncs the draft ~250ms later) that main-thread block is what read as
   // "the editor is slow / formatting takes ages" (CBC-576).
-  const { score, words, issues } = useMemo(() => checkSpelling(draft), [draft]);
+  /* Hard size gate on top of the memo.
+     The memo only stops it running on renders the draft did not change; it does
+     nothing about the cost of ONE run. That cost is linear in the document, and
+     an imported agreement is three orders of magnitude bigger than the ~5k-word
+     case above — several regex passes plus per-word work over a megabyte of
+     HTML blocks the main thread for minutes.
+     It runs on any draft change, and submitting changes the draft (the record is
+     refreshed straight after). So the POST finished in a moment and the browser
+     then froze mid-repaint, leaving "Submitting…" on screen the whole time. The
+     submit was never slow; the UI could not paint the result.
+     Live review stays exactly as it was for drafts anyone actually types. */
+  const reviewTooBig = draft.length > LIVE_REVIEW_MAX_CHARS;
+  const { score, words, issues } = useMemo(
+    () => (reviewTooBig ? { score: 0, words: 0, issues: [] as ReturnType<typeof checkSpelling>['issues'] } : checkSpelling(draft)),
+    [draft, reviewTooBig],
+  );
   const clean = score >= 90, mild = score >= 60 && score < 90;
   const scoreClr = words === 0 ? '#EF4444' : clean ? (t.dark ? '#6ee7b7' : '#059669') : mild ? (t.dark ? '#fcd34d' : '#D97706') : (t.dark ? '#fca5a5' : '#DC2626');
   const statusLabel = words === 0 ? 'Not Started' : clean ? 'Looks Clean' : mild ? 'Minor Issues' : 'Needs Review';
@@ -2471,7 +2592,7 @@ function RightTools({ t, draft, onInsert, summary, declineReason, declinedBy, ac
           <div style={{ height: 5, borderRadius: 4, background: t.dark ? 'rgba(255,255,255,.06)' : '#EDE9FE', overflow: 'hidden' }}><div style={{ height: '100%', width: `${score}%`, background: `linear-gradient(90deg,#7C3AED,${scoreClr})`, transition: 'width .25s' }} /></div>
           {/* Spelling feedback — flagged words with suggestions where known. */}
           {words === 0 ? (
-            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>Start typing in the editor to see live spelling review</div>
+            <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px dashed ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, textAlign: 'center', fontSize: 9, fontWeight: 600, color: t.dark ? '#a78bfa' : '#7C3AED' }}>{reviewTooBig ? 'Document too large for live review — spelling is not checked above 120,000 characters' : 'Start typing in the editor to see live spelling review'}</div>
           ) : issues.length === 0 ? (
             <div style={{ marginTop: 10, padding: '10px 12px', borderRadius: 8, border: `1px solid ${t.dark ? 'rgba(16,185,129,.35)' : '#A7F3D0'}`, background: t.dark ? 'rgba(16,185,129,.1)' : '#F0FDF4', display: 'flex', alignItems: 'center', gap: 7, fontSize: 9.5, fontWeight: 700, color: t.dark ? '#6ee7b7' : '#059669' }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
