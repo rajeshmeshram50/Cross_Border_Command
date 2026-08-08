@@ -109,18 +109,23 @@ class ClmTncController extends Controller
 
         $data = $request->validate([
             // segment now holds a CSV (one for "highly", many for "less").
-            // Debit/Credit Note documents carry NO segment/regulatory/party —
-            // they're saved blank (rendered as "—" in the list), so regulatory
-            // accepts an empty string and party is no longer required.
+            // Debit/Credit Note documents carry NO segment/regulatory — they're
+            // saved blank (rendered as "—" in the list), so regulatory accepts
+            // an empty string.
             'segment'    => 'nullable|string|max:1024',
             'regulatory' => 'nullable|string|max:16',
             'category'   => 'required|string|max:255',
-            'party'      => 'nullable|string|max:255',
             'content'    => 'nullable|string',
         ]);
 
-        // Debit/Credit Note documents carry NO segment/regulatory/party. Force
-        // them blank HERE (not via the payload): Laravel's
+        // A T&C has NO applicable party — the "Applies To" picker was removed
+        // from the wizard. `party` stays on the table (NOT NULL) but is written
+        // blank on every save, so any value a client still posts is discarded
+        // and legacy rows clear themselves the next time they're edited.
+        $data['party'] = '';
+
+        // Debit/Credit Note documents carry NO segment/regulatory. Force them
+        // blank HERE (not via the payload): Laravel's
         // ConvertEmptyStringsToNull middleware turns the frontend's '' into
         // null, so the "?? 'General'/'highly'" fallbacks below would otherwise
         // wrongly backfill them. Empty string keeps the NOT-NULL columns valid
@@ -128,7 +133,6 @@ class ClmTncController extends Controller
         if ($this->isNoteCategory($data['category'] ?? '')) {
             $data['segment'] = '';
             $data['regulatory'] = '';
-            $data['party'] = '';
         }
 
         // One Terms & Conditions entry per (segment, document category) within a
@@ -178,16 +182,17 @@ class ClmTncController extends Controller
             'segment'    => 'nullable|string|max:1024',
             'regulatory' => 'nullable|string|max:16',
             'category'   => 'sometimes|required|string|max:255',
-            'party'      => 'sometimes|nullable|string|max:255',
             'content'    => 'nullable|string',
         ]);
         $data['updated_by'] = $user->id;
+        // No applicable party on a T&C (see libraryStore) — blanked on every
+        // update, which is what retires the legacy values on existing rows.
+        $data['party'] = '';
         // Same note-doc blanking as libraryStore (category may be omitted on a
         // partial update, so fall back to the row's current category).
         if ($this->isNoteCategory($data['category'] ?? $row->category)) {
             $data['segment'] = '';
             $data['regulatory'] = '';
-            $data['party'] = '';
         }
 
         // Re-run the segment+category uniqueness guard against the row's OWN

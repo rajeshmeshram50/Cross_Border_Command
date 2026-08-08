@@ -29,20 +29,13 @@ export function deriveShortCode(name: string): string {
 }
 
 type Cat = { id: number; code: string; name: string };
-type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; party: string; content: string | null };
+type Lib = { id: number; code: string; segment: string; regulatory?: 'highly' | 'less' | null; category: string; content: string | null };
 type Seg = { id: number; code: string; name: string; regulatory_status: 'highly' | 'less' };
 
-/* The party field is stored by internal value ("Buyer", "Supplier-Material")
-   but the form (and the user) picks by label ("Customer", "Material"). Map the
-   stored values back to their display labels so the "Applies To" column matches
-   what was selected — e.g. "Customer", not "Buyer" (CBC-443). */
-const PARTY_LABELS: Record<string, string> = {
-  'Buyer': 'Customer',
-  'Consignee': 'Consignee',
-  'Supplier-Material': 'Material',
-};
-const partyLabels = (party: string): string[] =>
-  party.split(',').map(s => s.trim()).filter(Boolean).map(v => PARTY_LABELS[v] ?? v);
+/* The "Applies To" column and its Buyer/Consignee/Supplier-Material label map
+   were removed: a T&C has no applicable party. It belongs to a DOCUMENT and a
+   segment, not to a counterparty. The legacy `party` column is still on the
+   table but is written blank and read by nothing. */
 
 /* Display label for the regulatory status — mirrors the table cell (anything
    not "less" reads as "Highly Regulatory"). Used for the status search + filter. */
@@ -217,18 +210,15 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
   // All-segments popover — opened from the +N badge in the SEGMENT column
   // (same pattern as the DCP authorities popover).
   const [segPop, setSegPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
-  // All-parties popover — opened from the +N badge in the APPLIES TO column
-  // (same one-badge + "+N" pattern as the SEGMENT column).
-  const [partyPop, setPartyPop] = useState<{ id: number; names: string[]; x: number; y: number } | null>(null);
-  // Close the fixed-positioned badge popovers on scroll/resize so they can't
+  // Close the fixed-positioned badge popover on scroll/resize so it can't
   // drift out of the table (capture:true catches ancestor + table scrolls).
   useEffect(() => {
-    if (!segPop && !partyPop) return;
-    const close = () => { setSegPop(null); setPartyPop(null); };
+    if (!segPop) return;
+    const close = () => setSegPop(null);
     window.addEventListener('scroll', close, true);
     window.addEventListener('resize', close);
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); };
-  }, [segPop, partyPop]);
+  }, [segPop]);
   // Regulatory-status filter dropdown (All / Highly / Less).
   const [statusFilter, setStatusFilter] = useState<'all' | 'highly' | 'less'>('all');
 
@@ -238,7 +228,7 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
     if (statusFilter === 'highly') list = list.filter(r => r.regulatory !== 'less');
     const s = search.trim().toLowerCase();
     if (!s) return list;
-    return list.filter(r => r.category.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.party.toLowerCase().includes(s) || partyLabels(r.party).join(' ').toLowerCase().includes(s) || r.segment.toLowerCase().includes(s) || regLabel(r.regulatory).toLowerCase().includes(s));
+    return list.filter(r => r.category.toLowerCase().includes(s) || r.code.toLowerCase().includes(s) || r.segment.toLowerCase().includes(s) || regLabel(r.regulatory).toLowerCase().includes(s));
   }, [rows, search, statusFilter]);
   /* Next T&C code preview for a NEW entry — MAX(existing suffix)+1, matching the
      backend's allocator, so gaps from deletions don't reuse a lower number
@@ -337,11 +327,10 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                 <th style={{ width: 150, textAlign: 'center' }}>SEGMENT</th>
                 <th style={{ width: 150, textAlign: 'center' }}>STATUS</th>
                 <th>DOCUMENT CATEGORY</th>
-                <th>APPLIES TO</th>
                 <th style={{ width: 90, textAlign: 'center' }}>ACTIONS</th>
               </tr></thead>
               <tbody>
-                {loading && <ClmSkeletonRows cols={7} />}
+                {loading && <ClmSkeletonRows cols={6} />}
                 {!loading && slice.map((r, i) => (
                   <tr key={r.id}>
                     <td className="clm-td-num">{start + i + 1}</td>
@@ -390,30 +379,6 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
                         <span>{r.category}</span>
                       </Tooltip>
                     </td>
-                    <td className="clm-td-desc">
-                      {(() => {
-                        const list = partyLabels(r.party);
-                        if (list.length === 0) return <span style={{ color: '#94a3b8', fontWeight: 700 }}>—</span>;
-                        const extra = list.length - 1;
-                        return (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                            <Tooltip label={`Applies to · ${list[0]}`}>
-                              <span className="clm-badge clm-badge-teal">{list[0]}</span>
-                            </Tooltip>
-                            {extra > 0 && (
-                              <Tooltip label="View all applicable parties">
-                                <button
-                                  type="button"
-                                  onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setPartyPop(partyPop?.id === r.id ? null : { id: r.id, names: list, x: b.left, y: b.bottom + 4 }); }}
-                                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 20, height: 20, padding: '0 6px', borderRadius: 20, background: 'linear-gradient(135deg, #06b6d4, #0891b2, #0e7490)', color: '#fff', fontSize: 10, fontWeight: 800, border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, boxShadow: '0 2px 8px rgba(8,145,178,.4)' }}>
-                                  +{extra}
-                                </button>
-                              </Tooltip>
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </td>
                     <td style={{ textAlign: 'center' }}>
                       <div className="clm-actions">
                         <Tooltip label={`Edit T&C — ${r.category}`}>
@@ -444,22 +409,6 @@ function LibraryPane({ rows, cats, segs, loading, reload }: { rows: Lib[]; cats:
           <div className="clm-pop" style={{ position: 'fixed', left: Math.min(segPop.x, window.innerWidth - 230), top: segPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
             <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Segments ({segPop.names.length})</div>
             {segPop.names.map((name, i) => (
-              <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
-                <span className="clm-badge clm-badge-teal">{name}</span>
-              </div>
-            ))}
-          </div>
-        </>,
-        document.body
-      )}
-
-      {/* All-parties popover (opened from the +N badge in the APPLIES TO column) */}
-      {partyPop && createPortal(
-        <>
-          <div onClick={() => setPartyPop(null)} style={{ position: 'fixed', inset: 0, zIndex: 600 }} />
-          <div className="clm-pop" style={{ position: 'fixed', left: Math.min(partyPop.x, window.innerWidth - 230), top: partyPop.y, zIndex: 601, width: 210, maxHeight: 280, overflowY: 'auto', borderRadius: 12, padding: 8 }}>
-            <div className="clm-pop-title" style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', padding: '4px 8px 7px' }}>Applies To ({partyPop.names.length})</div>
-            {partyPop.names.map((name, i) => (
               <div key={i} className={i % 2 ? 'clm-pop-row-alt' : ''} style={{ display: 'flex', alignItems: 'center', padding: '6px 8px', borderRadius: 8 }}>
                 <span className="clm-badge clm-badge-teal">{name}</span>
               </div>

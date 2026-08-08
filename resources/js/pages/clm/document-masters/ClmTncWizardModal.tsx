@@ -76,14 +76,20 @@ const BlockIndent = Extension.create({
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → T&C Master → Library → "Add New T&C" (2-step wizard modal)
  *
- *   Step 1 — T&C Basic Details (segment, T&C document name, applicable party)
+ *   Step 1 — T&C Basic Details (segment + T&C document name)
  *   Step 2 — T&C Content (rich text editor + clause library hook-up)
  *
- * Same backend contract as the previous TncBlockModal — POST/PUT
- * /clm/tnc-library with { segment, category, party, content }. The
- * applicable-party checkbox grid serialises into the existing `party`
- * CSV. Quick-add for T&C Document Name calls POST /clm/tnc-categories,
- * mirroring the Trade-Doc Draft wizard's quick-add flow.
+ * POST/PUT /clm/tnc-library with { segment, category, content }.
+ *
+ * A T&C has NO applicable party. It is a property of the DOCUMENT (Domestic
+ * Proforma Invoice, International Purchase Order …) and of the segment, not of
+ * whoever the document is addressed to — the same PI terms hold whether the
+ * counterparty is a customer, a consignee or a supplier. The "Applies To"
+ * checkbox grid that used to sit here was removed for that reason; the server
+ * now stores the legacy `party` column blank on every write.
+ *
+ * Quick-add for T&C Document Name calls POST /clm/tnc-categories, mirroring
+ * the Trade-Doc Draft wizard's quick-add flow.
  * ─────────────────────────────────────────────────────────────────────── */
 
 export type Cat = { id: number; code: string; name: string };
@@ -93,25 +99,16 @@ export type Lib = {
   segment: string;
   regulatory?: 'highly' | 'less' | null;
   category: string;
-  party: string;
   content: string | null;
 };
 export type SegOpt = { name: string; regulatory_status: 'highly' | 'less'; code?: string };
 type Reg = 'highly' | 'less';
 
-const PARTY_BUYER_CONSIGNEE = [
-  { value: 'Buyer',     label: 'Customer',  icon: '👤' },
-  { value: 'Consignee', label: 'Consignee', icon: '🚚' },
-];
-const PARTY_SUPPLIER = [
-  { value: 'Supplier-Material', label: 'Material', icon: '📦' },
-];
-const ALL_PARTY_VALUES = [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value);
 const NOTE_DOC_NAMES = new Set(['debit note', 'credit note']);
 const isNoteDocName = (name: string) => NOTE_DOC_NAMES.has(name.trim().toLowerCase());
 
 const STEPS = [
-  { key: 1, label: 'T&C Basic Details', sub: 'Segment, category & party' },
+  { key: 1, label: 'T&C Basic Details', sub: 'Segment & category' },
   { key: 2, label: 'T&C Content',       sub: 'Rich text editor & clauses' },
 ];
 
@@ -147,7 +144,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   // with the tier they were added under so they show in the right picker.
   const [localSegs, setLocalSegs] = useState<{ name: string; tier: Reg }[]>([]);
   const [category, setCategory] = useState('');
-  const [parties, setParties]   = useState<Set<string>>(new Set());
 
   const [content, setContent] = useState('');
   const [clauseOpen, setClauseOpen] = useState(false);
@@ -185,14 +181,12 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       setSegment(reg === 'highly' ? (segList[0] ?? '') : '');
       setSegmentsMulti(reg === 'less' ? new Set(segList) : new Set());
       setCategory(existing.category ?? '');
-      setParties(new Set((existing.party ?? '').split(',').map(s => s.trim()).filter(Boolean)));
       setContent(existing.content ?? '');
     } else {
       setRegulatory('highly');
       setSegment('');
       setSegmentsMulti(new Set());
       setCategory('');
-      setParties(new Set());
       setContent('');
     }
     // Hydrate Tiptap with the row's content (or empty paragraph). Suppress
@@ -243,49 +237,26 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     setErrors(p => ({ ...p, segment: '' }));
   };
 
-
-  const toggleParty = (v: string) => {
-    setParties(prev => {
-      const next = new Set(prev);
-      if (next.has(v)) next.delete(v);
-      else next.add(v);
-      return next;
-    });
-    setErrors(p => ({ ...p, party: '' }));
-  };
-
-  const toggleAllParties = () => {
-    const all = [...PARTY_BUYER_CONSIGNEE, ...PARTY_SUPPLIER].map(p => p.value);
-    const allSelected = all.every(v => parties.has(v));
-    setParties(allSelected ? new Set() : new Set(all));
-    setErrors(p => ({ ...p, party: '' }));
-  };
-
-  const allPartiesSelected = useMemo(() => {
-    return ALL_PARTY_VALUES.every(v => parties.has(v));
-  }, [parties]);
-
-  // Debit/Credit Note → segment + party step is skipped (content-only flow).
+  // Debit/Credit Note → the segment step is skipped (content-only flow).
   const isNoteDoc = useMemo(() => isNoteDocName(category), [category]);
 
   const validateStep1 = () => {
     const next: Record<string, string> = {};
     if (!category.trim()) {
       // Document name is the primary field; without it we can't tell whether
-      // the segment/party step even applies.
+      // the segment step even applies.
       next.category = 'T&C document name is required';
       setErrors(next);
       return false;
     }
-    // Debit/Credit Note skip the segment + applicable-party step — only the
-    // document name (above) and the content (step 2) are required.
+    // Debit/Credit Note skip the segment step — only the document name (above)
+    // and the content (step 2) are required.
     if (!isNoteDoc) {
       if (regulatory === 'highly') {
         if (!segment.trim()) next.segment = 'Select a segment';
       } else {
         if (segmentsMulti.size === 0) next.segment = 'Select at least one segment';
       }
-      if (parties.size === 0) next.party = 'Select at least one applicable party';
     }
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -311,18 +282,19 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     }
     setSaving(true);
     
-    // Debit/Credit Note carry NO segment / regulatory / party — persist them
-    // blank so the list shows "—" for those columns. Other docs use the picked
-    // values: highly → one segment; less → CSV of the chosen segments.
+    // Debit/Credit Note carry NO segment / regulatory — persist them blank so
+    // the list shows "—" for those columns. Other docs use the picked values:
+    // highly → one segment; less → CSV of the chosen segments.
     const segmentCsv = isNoteDoc
       ? ''
       : (regulatory === 'highly' ? segment.trim() : Array.from(segmentsMulti).join(','));
-    const partyCsv = isNoteDoc ? '' : Array.from(parties).join(',');
+    // No `party` key: a T&C has no applicable party. The server blanks the
+    // legacy column on every write, so old rows clear themselves as they are
+    // re-saved.
     const payload = {
       segment: segmentCsv,
       regulatory: (isNoteDoc ? '' : regulatory) as Reg | '',
       category: category.trim(),
-      party: partyCsv,
       content: content?.trim() ? content : null,
     };
     try {
@@ -490,8 +462,8 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             <div className="tnw-step-body">
               {/* Regulatory Type leads for a normal document; picking Debit
                   Note / Credit Note as the document name hides it (and the
-                  segment + applicable-party step) and jumps straight to the
-                  content editor on "Save & Next". */}
+                  segment step) and jumps straight to the content editor on
+                  "Save & Next". */}
               {!isNoteDoc && (
               <div className="tnw-field">
                 <label className="tnw-label">Regulatory Type <span className="tnw-req">*</span></label>
@@ -530,7 +502,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></svg>
                     </span>
                     <span>
-                      <strong>{category}</strong> needs no segment or applicable-party setup — click <strong>Save &amp; Next</strong> to write its Terms &amp; Conditions content.
+                      <strong>{category}</strong> needs no segment setup — click <strong>Save &amp; Next</strong> to write its Terms &amp; Conditions content.
                     </span>
                   </div>
                 </>
@@ -595,46 +567,6 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                     </div>
                   </div>
 
-              <div className="tnw-party">
-                <div className="tnw-party-top">
-                  <div className="tnw-party-head">
-                    <span className="tnw-party-ico">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>
-                    </span>
-                    Applies To <span className="tnw-req">*</span>
-                  </div>
-                  <label className={`tnw-checkbox tnw-checkbox-all ${allPartiesSelected ? 'is-on' : ''}`}>
-                    <input type="checkbox" checked={allPartiesSelected} onChange={toggleAllParties} />
-                    <span className="tnw-checkbox-label">ALL</span>
-                  </label>
-                </div>
-                <div className="tnw-party-row">
-                  <div className="tnw-party-label">CUSTOMER &amp; CONSIGNEE</div>
-                  <div className="tnw-party-options">
-                    {PARTY_BUYER_CONSIGNEE.map(p => (
-                      <label key={p.value} className={`tnw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
-                        <span className="tnw-checkbox-emoji">{p.icon}</span>
-                        <span className="tnw-checkbox-label">{p.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="tnw-party-row">
-                  <div className="tnw-party-label">SUPPLIER</div>
-                  <div className="tnw-party-options">
-                    {PARTY_SUPPLIER.map(p => (
-                      <label key={p.value} className={`tnw-checkbox ${parties.has(p.value) ? 'is-on' : ''}`}>
-                        <input type="checkbox" checked={parties.has(p.value)} onChange={() => toggleParty(p.value)} />
-                        <span className="tnw-checkbox-emoji">{p.icon}</span>
-                        <span className="tnw-checkbox-label">{p.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="tnw-party-hint">Tick "ALL" to apply to every party · or pick specific ones</div>
-                {errors.party && <div className="tnw-err">{errors.party}</div>}
-              </div>
                 </>
               )}
             </div>
@@ -1574,58 +1506,6 @@ const TNW_CSS = `
 }
 .tnw-add-mini:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
 
-/* ── Applies-To card ── */
-.tnw-party {
-  border: 1.5px solid rgba(6,182,212,.20);
-  border-radius: 14px;
-  padding: 18px 20px;
-  background: linear-gradient(180deg, #ffffff 0%, #f7feff 100%);
-  display: flex; flex-direction: column; gap: 14px;
-}
-.tnw-party-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.tnw-party-head {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
-  color: #0891b2;
-}
-.tnw-party-ico {
-  width: 22px; height: 22px; border-radius: 7px;
-  background: rgba(8,145,178,.10);
-  display: inline-flex; align-items: center; justify-content: center;
-  color: #0891b2;
-}
-.tnw-party-row {
-  display: grid;
-  grid-template-columns: 170px 1fr;
-  align-items: center;
-  gap: 14px;
-}
-.tnw-party-label {
-  font-size: 11px; font-weight: 700; letter-spacing: .04em; color: #475569;
-  text-transform: uppercase;
-}
-.tnw-party-options { display: inline-flex; flex-wrap: wrap; gap: 10px; }
-.tnw-checkbox {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 14px; border-radius: 10px;
-  border: 1.5px solid #e2e8f0;
-  background: #fff;
-  font-size: 13px; font-weight: 600; color: #334155;
-  cursor: pointer;
-  transition: border-color .15s ease, background .15s ease, color .15s ease, box-shadow .22s ease;
-}
-.tnw-checkbox input { width: 14px; height: 14px; accent-color: #0891b2; }
-.tnw-checkbox-emoji { font-size: 15px; line-height: 1; }
-.tnw-checkbox:hover { border-color: rgba(6,182,212,.45); background: #f0fdff; }
-.tnw-checkbox.is-on {
-  background: #f0fdff;
-  border-color: #0891b2;
-  color: #0e7490;
-  box-shadow: 0 2px 8px rgba(8,145,178,.18);
-}
-.tnw-checkbox-all { padding: 6px 12px; font-size: 12px; letter-spacing: .04em; font-weight: 800; }
-.tnw-party-hint { font-size: 11.5px; color: #94a3b8; }
-
 /* ── Editor (step 2) ── */
 .tnw-editor-shell {
   border: 1px solid rgba(6,182,212,.20);
@@ -1957,14 +1837,6 @@ const TNW_CSS = `
 [data-bs-theme="dark"] .tnw-step-body .master-select-toggle { background: #1e293b; border-color: rgba(6,182,212,.30); }
 [data-bs-theme="dark"] .tnw-input::placeholder { color: #94a3b8; }
 [data-bs-theme="dark"] .tnw-hint { color: #67e8f9; }
-[data-bs-theme="dark"] .tnw-party { background: linear-gradient(180deg, #0f172a 0%, #102234 100%); border-color: rgba(6,182,212,.22); }
-[data-bs-theme="dark"] .tnw-party-head { color: #67e8f9; }
-[data-bs-theme="dark"] .tnw-party-ico { background: rgba(8,145,178,.20); color: #67e8f9; }
-[data-bs-theme="dark"] .tnw-party-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .tnw-checkbox { background: #1e293b; border-color: rgba(6,182,212,.22); color: #cbd5e1; }
-[data-bs-theme="dark"] .tnw-checkbox:hover { background: rgba(8,145,178,.10); border-color: rgba(103,232,249,.45); }
-[data-bs-theme="dark"] .tnw-checkbox.is-on { background: rgba(8,145,178,.22); border-color: #67e8f9; color: #cffafe; }
-[data-bs-theme="dark"] .tnw-party-hint { color: #94a3b8; }
 [data-bs-theme="dark"] .tnw-label-tag { background: #1e293b; border-color: rgba(148,163,184,.25); color: #94a3b8; }
 [data-bs-theme="dark"] .tnw-reg-card { background: #1e293b; border-color: rgba(148,163,184,.22); }
 [data-bs-theme="dark"] .tnw-reg-title { color: #e2e8f0; }
@@ -2015,7 +1887,6 @@ const TNW_CSS = `
   .tnw-stepper-row { width: 100%; }
   .tnw-step-line { display: none; }
   .tnw-grid-2 { grid-template-columns: minmax(0,1fr); }
-  .tnw-party-row { grid-template-columns: 1fr; }
 }
 @media (max-width: 640px) {
   .tnw-overlay { padding: 8px; }

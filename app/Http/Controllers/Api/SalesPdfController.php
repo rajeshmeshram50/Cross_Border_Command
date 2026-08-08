@@ -2326,10 +2326,7 @@ class SalesPdfController extends Controller
      *      'international', derived from purchase_orders.document_type, tolerant
      *      of "Domestics") AND the words "purchase order". So "Domestic Purchase
      *      Order" / "International Purchase Order" match.
-     *   2. Applies-to PARTY — must apply to the PO's supplier type. po_type
-     *      "Material / Goods" → the T&C's party must mention "material" (FFD /
-     *      Services map to their own keyword); an "All" / blank party matches any.
-     *   3. SEGMENT + regulatory tier — each PO line's product resolves to a
+     *   2. SEGMENT + regulatory tier — each PO line's product resolves to a
      *      clm_segments row; a T&C applies when its `regulatory` equals that
      *      segment's tier AND its segment list contains the segment name.
      *
@@ -2346,12 +2343,6 @@ class SalesPdfController extends Controller
         $docType   = str_contains($docTypeLc, 'international') ? 'international' : 'domestic';
         $docKind   = 'purchase order';
 
-        // Supplier party the T&C must apply to, from po_type (Material / FFD /
-        // Services). "Material / Goods" → 'material'.
-        $poTypeLc  = mb_strtolower((string) ($po->po_type ?? ''));
-        $partyKey  = (str_contains($poTypeLc, 'ffd') || str_contains($poTypeLc, 'transport')) ? 'ffd'
-                   : (str_contains($poTypeLc, 'service') ? 'service' : 'material');
-
         // PO items in sequence → their products → segments (name + tier).
         $items = collect($po->items ?? [])
             ->sortBy(fn($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
@@ -2366,17 +2357,17 @@ class SalesPdfController extends Controller
             ->keyBy('id');
         if ($segById->isEmpty()) return [];
 
-        // Candidates: category matches doc type + "purchase order", AND the T&C
-        // applies to this supplier type (party contains the keyword, or is All/blank).
+        /* Candidates: category matches doc type + "purchase order". The
+         * supplier-party filter is gone — a T&C has no applicable party (see
+         * PoTncResolver, which this mirrors). Segment + tier below are the only
+         * narrowing. */
         $candidates = \App\Models\ClmTncLibrary::where('client_id', $clientId)
             ->where(fn ($w) => $w->whereNull('status')->orWhere('status', 'active'))
             ->orderBy('id')
             ->get()
-            ->filter(function ($row) use ($docType, $docKind, $partyKey) {
+            ->filter(function ($row) use ($docType, $docKind) {
                 $cat = mb_strtolower((string) $row->category);
-                if (!str_contains($cat, $docType) || !str_contains($cat, $docKind)) return false;
-                $party = mb_strtolower(trim((string) $row->party));
-                return $party === '' || str_contains($party, 'all') || str_contains($party, $partyKey);
+                return str_contains($cat, $docType) && str_contains($cat, $docKind);
             });
 
         // Segment + tier match, product sequence, dedup by id.
