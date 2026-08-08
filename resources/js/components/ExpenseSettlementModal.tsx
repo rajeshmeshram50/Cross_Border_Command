@@ -189,6 +189,10 @@ export default function ExpenseSettlementModal({
   const [cats, setCats] = useState<Cat[]>([]);
   // The Add-Payment form opens as its own nested popup over the overview.
   const [showForm, setShowForm] = useState(false);
+  // After an inline HR approval we keep the SAME modal open and flip it into
+  // payment mode — no reopening the popup just to disburse (QA: "don't break
+  // the flow"). Drives `inReview` below.
+  const [approvedInline, setApprovedInline] = useState(false);
 
   // Editable deduction / addition rows (first payment only).
   const [deductions, setDeductions] = useState<{ amount: string; reason: string }[]>([]);
@@ -286,6 +290,7 @@ export default function ExpenseSettlementModal({
   useEffect(() => {
     if (!open || claimId == null) { setSummary(null); return; }
     setShowForm(false);
+    setApprovedInline(false);
     setConfirmKind(null);
     setRejectReason('');
     setShowAllProofs(false);
@@ -357,6 +362,9 @@ export default function ExpenseSettlementModal({
   // (editable adjustments). Only meaningful when `review` is true.
   const reviewStage: 'manager' | 'hr' = (summary?.manager_status && summary.manager_status !== 'approved') ? 'manager' : 'hr';
   const managerReview = review && reviewStage === 'manager';
+  // The review gate used throughout the render. After an inline HR approval it
+  // goes false so the SAME modal shows the payment view (Record / Add Payment).
+  const inReview = review && !approvedInline;
   // Deductions are editable only before the first payment, not view-only, and
   // never in a manager review (the manager can't deduct — only approve/reject).
   const editDeductions = firstPayment && !readOnly && !managerReview;
@@ -440,15 +448,22 @@ export default function ExpenseSettlementModal({
       if (managerReview) {
         await api.post(`${basePath}/${claimId}/manager-approve`);
         toast.success('Request approved', 'Approved and forwarded to HR / Finance for settlement.');
+        onDone();
+        onClose();
       } else {
         await api.post(`${basePath}/${claimId}/hr-approve`, {
           deductions: deductions.filter(d => (Number(d.amount) || 0) > 0).map(d => ({ amount: Number(d.amount), reason: d.reason })),
           additions: additions.filter(a => (Number(a.amount) || 0) > 0).map(a => ({ amount: Number(a.amount), reason: a.reason })),
         });
-        toast.success(isAdvance ? 'Advance approved' : 'Claim approved', `The ${noun} is approved and adjustments are locked. Record payments to disburse.`);
+        toast.success(isAdvance ? 'Advance approved' : 'Claim approved', `The ${noun} is approved — record the payment below to disburse.`);
+        // Stay in the SAME modal and flip to payment mode instead of forcing a
+        // reopen: clear the confirm dialog, refresh the (now-approved) summary,
+        // and let HR record the payout right here.
+        onDone();
+        setConfirmKind(null);
+        setApprovedInline(true);
+        setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
       }
-      onDone();
-      onClose();
     } catch (e: any) {
       toast.error('Could not approve', e?.response?.data?.message ?? 'Please try again.');
     } finally { setSaving(false); }
@@ -845,7 +860,7 @@ export default function ExpenseSettlementModal({
   return createPortal(
     <div className="esm-backdrop" onMouseDown={onClose}>
       <style>{CSS}</style>
-      <div className={`esm-modal ${review ? 'esm-modal--fit' : ''} ${managerReview ? 'esm-modal--fit-mgr' : ''}`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div className={`esm-modal ${inReview ? 'esm-modal--fit' : ''} ${managerReview ? 'esm-modal--fit-mgr' : ''}`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* ── Teal hero header (with embedded claim summary panel) ── */}
         <div className="esm-hero">
           <div className="esm-hero-top">
@@ -855,8 +870,8 @@ export default function ExpenseSettlementModal({
               </span>
               <div>
                 <div className="esm-hero-eyebrow">HRMS · EXPENSE MANAGEMENT</div>
-                <div className="esm-hero-title">{review ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
-                <div className="esm-hero-sub">{review ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
+                <div className="esm-hero-title">{inReview ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
+                <div className="esm-hero-sub">{inReview ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
               </div>
             </div>
             <button className="esm-x" onClick={onClose} aria-label="Close">✕</button>
@@ -927,7 +942,7 @@ export default function ExpenseSettlementModal({
             <>
               {/* KPI strip — hidden in a manager review (everything's in Claim Details). */}
               {!managerReview && (
-              <div className={`esm-kpis ${review ? 'esm-kpis--4' : ''}`}>
+              <div className={`esm-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
                 <div className="esm-kpi esm-kpi-teal">
                   <span className="esm-kpi-ico"><IcoDoc /></span>
                   <div className="esm-kpi-txt">
@@ -944,7 +959,7 @@ export default function ExpenseSettlementModal({
                     <div className="esm-kpi-sub">{summary.payments.length} {isAdvance ? 'payout' : 'payment'}{summary.payments.length === 1 ? '' : 's'} recorded</div>
                   </div>
                 </div>
-                {!review && (
+                {!inReview && (
                 <div className="esm-kpi esm-kpi-amber">
                   <span className="esm-kpi-ico"><IcoWallet /></span>
                   <div className="esm-kpi-txt">
@@ -1190,7 +1205,7 @@ export default function ExpenseSettlementModal({
                     </div>
                   </div>
 
-                  {editDeductions && !review && (
+                  {editDeductions && !inReview && (
                     <div className="esm-sec-actions">
                       <span className="esm-sec-actions-hint">{sanctioned <= 0 ? 'Net payable must be greater than zero — reduce the deductions.' : 'Once submitted, the deduction is locked and can’t be edited.'}</span>
                       <button type="button" className="esm-btn-submit" onClick={submitDeductions} disabled={saving || !summary || sanctioned <= 0}>{saving ? 'Submitting…' : 'Submit'}</button>
@@ -1201,8 +1216,9 @@ export default function ExpenseSettlementModal({
               </div>
               )}
 
-              {/* Payment History — hidden in review mode (no payments yet). */}
-              {!review && (
+              {/* Payment History + Add Payment — hidden during review, revealed
+                  once HR approves inline so they can disburse in the same modal. */}
+              {!inReview && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div className="esm-sec-l">
@@ -1693,7 +1709,7 @@ export default function ExpenseSettlementModal({
         </div>
 
         {/* ── Footer ── */}
-        {review ? (
+        {inReview ? (
           <div className="esm-foot">
             <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? `Review the ${noun}, then approve or reject.` : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
             <div className="esm-foot-r">
