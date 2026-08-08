@@ -1073,6 +1073,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   useEffect(() => {
     if (!fnfDues) return;
     const earned = Number(fnfDues.payroll?.amount ?? 0);
+    /* An EARLY EXIT (left within the early-exit window of joining) is not put
+       through payroll at all, so its zero is a definite answer rather than a
+       missing figure — it prefills as an explicit 0.00 instead of the blank
+       used when the amount simply isn't known yet. */
+    const earlyExit = !!fnfDues.payroll?.early_exit;
     setFnfLines(s => {
       /* Prefill when the line is empty OR still zero. `s.basic || …` alone made
          a zero STICKY: a settlement opened while the old calendar-day estimate
@@ -1083,7 +1088,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
          still is. */
       const current = Number(s.basic);
       const keep = s.basic !== '' && Number.isFinite(current) && current !== 0;
-      return keep ? s : { ...s, basic: earned ? String(earned) : '' };
+      if (keep) return s;
+      if (earlyExit) return { ...s, basic: '0' };
+      return { ...s, basic: earned ? String(earned) : '' };
     });
   }, [fnfDues]);
 
@@ -1175,6 +1182,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
+  /* On probation the notice start date is not a choice either.
+     A probationer serves no notice, so the exit is effective immediately and
+     the "start" of a notice that is never served can only be today. The field
+     is frozen for exactly the reason the end date is, and seeded here so the
+     required check still passes on a case HR hasn't typed a date into.
+
+     Keyed on `onProbation` ALONE, never on `noticeWaived`: the other half of
+     that flag (earlyResignation) is derived from this very field, so freezing
+     on it would trap HR — one date typed inside the early-exit window would
+     lock the field it was computed from, with no way back to correct it. */
+  useEffect(() => {
+    if (onProbation && !noticeDate) setNoticeDate(todayIso);
+  }, [onProbation, noticeDate, todayIso]);
+
   const ndLoaded   = loadedNoticeRef.current ? loadedNoticeRef.current.slice(0, 10) : '';
   const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
   const noticeMin  = ndLoaded && ndLoaded < todayIso ? ndLoaded : todayIso;
@@ -1447,6 +1468,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [blacklisted, setBlacklisted]         = useState('No');
   const [blacklistReason, setBlacklistReason] = useState('');
 
+  /* Stage 1's progress is measured on what has been SAVED, not on what is
+     currently typed into the form.
+     Reading the live fields made the ring jump to 100% the moment a date was
+     picked — including a date the save gate would reject — so the stage
+     announced "Completed" while a validation error was on screen and nothing
+     had been persisted. Committed here on load and on every successful save
+     (Save Draft and Next Stage both go through saveStage1), which is exactly
+     when the number is allowed to move. */
+  const [committedS1, setCommittedS1] = useState({ reason: '', notice: '', lwd: '' });
+
   useEffect(() => {
     if (employee) {
       setStage(1);
@@ -1466,6 +1497,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
         loadedNoticeRef.current = data.notice_date ? String(data.notice_date) : '';
         loadedLwdRef.current    = data.last_working_day ? String(data.last_working_day) : '';
+        // What's on the server IS the committed state — an exit reopened
+        // mid-way shows the progress it was actually saved with.
+        setCommittedS1({
+          reason: String(data.reason_for_exit ?? '').trim(),
+          notice: data.notice_date ? String(data.notice_date) : '',
+          lwd:    data.last_working_day ? String(data.last_working_day) : '',
+        });
         setReportingManagerId(data.reporting_manager_id ?? null);
         setReportingManagerName(data.reporting_manager?.display_name || '');
         setReportingManagerDisabled(!!data.reporting_manager?.disabled);
@@ -1623,6 +1661,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const statusOf = (k: StageKey): StageStatus => stageStatus[k] || (k === currentKey ? 'In Progress' : 'Pending');
 
+  /* A date rule is currently broken on Stage 1. These are the same two flags
+     saveStage1() refuses on, so "the stepper says incomplete" and "the save
+     will be rejected" can never disagree. */
+  const stage1HasDateError = noticeDateInvalid || lwdInvalid;
+
   const rawStagePct = (n: StageKey): number => {
     if (n === 'initiation') {
       /* Only the fields HR actually FILLS IN on this stage — it must read 0%
@@ -1641,13 +1684,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
          100% here means "Save & Next will pass" rather than an unrelated
          count. Business Impact / Replacement Required stay OUT: they are
          optional, and counting them would stop the stage ever reaching 100%
-         for HR who legitimately skip them. */
+         for HR who legitimately skip them.
+
+         Measured on committedS1 — the SAVED values — not on the live fields.
+         Picking a date no longer moves the ring; Save Draft / Next Stage do,
+         and both run the same validation gate first. */
       const items = [
-        !!String(reasonForExit).trim(),
-        !!String(noticeDate).trim(),
-        !!String(lwd).trim(),
+        !!committedS1.reason.trim(),
+        !!committedS1.notice.trim(),
+        !!committedS1.lwd.trim(),
       ];
-      return Math.round((items.filter(Boolean).length / items.length) * 100);
+      const pct = Math.round((items.filter(Boolean).length / items.length) * 100);
+      /* An unsaved edit that breaks a date rule pulls a previously-complete
+         stage back off 100%. Without this, a case saved valid and then edited
+         to an invalid last working day would keep claiming "Completed" while
+         the error sits on screen — the report's exact complaint, just one save
+         later. Held at 99 rather than recomputed: the saved work is still
+         there, it simply isn't finished until the error is cleared. */
+      return pct === 100 && stage1HasDateError ? 99 : pct;
     }
     // The notice recovery is binary: collected and approved, or not.
     if (n === 'notice_payment') {
@@ -1954,6 +2008,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         business_impact:      businessImpact || null,
         replacement_required: replacementNeeded || null,
       });
+      /* Only now does Stage 1's progress move. Everything above this line is a
+         gate: required fields, the reporting-manager check and the date rules
+         all return early, so an invalid form can never reach here — which is
+         what stops the stage reading 100% while an error is displayed. */
+      setCommittedS1({ reason: reasonForExit.trim(), notice: noticeDate, lwd });
       return true;
     } catch (err: any) {
       const fieldErrors = err?.response?.data?.errors;
@@ -2084,8 +2143,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
   };
 
+  /* Accepted F&F attachment types. Kept in step with the server's
+     `mimes:pdf,jpg,jpeg,png` rule — the check below only saves the user a
+     round-trip, it is not the guard. */
+  const FNF_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
+
   const uploadFnfDoc = async (file: File | null) => {
     if (!file || !employee || fnfDocUploading) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    if (!FNF_DOC_EXTS.includes(ext)) {
+      toast.error(
+        'File type not allowed',
+        'The Full & Final document must be a PDF, JPG or PNG file.',
+      );
+      return;
+    }
+
     setFnfDocUploading(true);
     try {
       const fd = new FormData();
@@ -2287,18 +2361,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Notice Start Date" required invalid={s1Errors.has('noticeDate') || noticeDateInvalid}>
+                    <EpField label="Notice Start Date" required invalid={!onProbation && (s1Errors.has('noticeDate') || noticeDateInvalid)}>
+                      {/* Frozen on probation, exactly like the end date beside
+                          it: there is no notice period to start, so the date is
+                          fixed at the immediate exit rather than picked. */}
                       <EpInput
                         type="date"
                         value={noticeDate}
+                        disabled={onProbation}
                         onChange={(v) => {
                           setNoticeDate(v); clearS1Err('noticeDate');
                           if (v && v !== loadedNoticeRef.current && v < todayIso) toast.warning('Invalid notice start date', 'Notice start date cannot be in the past.');
                         }}
                         min={noticeMin}
-                        invalid={s1Errors.has('noticeDate') || noticeDateInvalid}
+                        invalid={!onProbation && (s1Errors.has('noticeDate') || noticeDateInvalid)}
                       />
-                      {(s1Errors.has('noticeDate') || noticeDateInvalid) && (
+                      {onProbation ? (
+                        <div className="ep-hint" style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                          Fixed — employee is on probation until {probationEndLabel(employee?.probationEndIso)}. No notice period is served, so the exit is effective immediately.
+                        </div>
+                      ) : (s1Errors.has('noticeDate') || noticeDateInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
                           {noticeDateInvalid ? 'Notice start date cannot be in the past.' : 'Notice start date is required.'}
@@ -2679,6 +2761,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           hint={(() => {
                             const p = fnfDues?.payroll;
                             if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
+                            /* Early exit — a day/LOP breakdown of an all-zero
+                               month explains nothing; the reason does. */
+                            if (p.early_exit) return p.note;
                             const b = p.breakdown;
                             if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
                             const parts: string[] = [
@@ -2776,9 +2861,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     Full &amp; Final Document <span style={{ color: '#b91c1c' }}>*</span>
                   </div>
                   <label className={`ep-fnf-drop${fnfDoc ? ' has-file' : ''}`}>
-                    <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+                    {/* PDF / JPG / PNG only — the signed F&F is evidence, so an
+                        editable Word or Excel file is not accepted. `accept` is
+                        only a picker hint (the user can switch to "All files"),
+                        which is why uploadFnfDoc re-checks and the server
+                        validates the real file type as well. */}
+                    <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
                       disabled={fnfDocUploading}
-                      onChange={e => uploadFnfDoc((e.target as HTMLInputElement).files?.[0] ?? null)} />
+                      onChange={e => {
+                        const input = e.target as HTMLInputElement;
+                        uploadFnfDoc(input.files?.[0] ?? null);
+                        // Clear so picking the SAME rejected file again still
+                        // fires onChange (the value is unchanged otherwise).
+                        input.value = '';
+                      }} />
                     <span className="ep-fnf-drop-ico">
                       <i className={fnfDocUploading ? 'ri-loader-4-line ri-spin' : fnfDoc ? fnfFileIcon(fnfDoc.name) : 'ri-upload-cloud-2-line'} />
                     </span>
@@ -2787,17 +2883,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         {fnfDocUploading ? 'Uploading…' : fnfDoc ? fnfDoc.name : 'Click to upload the signed F&F sheet / payment advice'}
                       </span>
                       <span className="ep-fnf-drop-t2">
-                        {fnfDoc ? 'Click again to replace' : 'PDF, image, Word or Excel · up to 10 MB · required'}
+                        {fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 10 MB · required'}
                       </span>
                     </span>
-                    {/* Download, not View (#59). The label said "View" but an
-                        F&F attachment can be PDF, image, Word or Excel — the
-                        browser only ever renders the first two inline and
-                        downloads the rest, so the button could not honour its
-                        own name. It is a download now, stated by an icon:
-                        `download` makes the behaviour explicit instead of
-                        leaving it to the file type, and the attachment's own
-                        name is used rather than the storage hash. */}
+                    {/* Download, not View (#59). Legacy attachments predate the
+                        PDF/JPG/PNG-only rule and may still be a Word or Excel
+                        file, which the browser downloads rather than renders —
+                        so the button could not honour a "View" label. It is a
+                        download now, stated by an icon: `download` makes the
+                        behaviour explicit instead of leaving it to the file
+                        type, and the attachment's own name is used rather than
+                        the storage hash. */}
                     {fnfDoc?.url && (
                       <a className="ep-fnf-drop-view" href={fnfDoc.url}
                          download={fnfDoc.name || true}
@@ -3075,7 +3171,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               <span className="ep-doc-icon"><i className="ri-file-text-line" /></span>
                               <div className="ep-doc-info">
                                 <div className="ep-doc-name">
-                                  {tpl.name || '(unnamed template)'}{' '}
+                                  {/* Truncated, with the full name on hover.
+                                      A template name is free text and can be
+                                      pasted in at any length with no spaces to
+                                      wrap on, which let one row set the width
+                                      of the whole card. The code chip and the
+                                      run-status badge stay outside the clipped
+                                      span so a long name can never hide
+                                      them. */}
+                                  <span className="ep-doc-name-txt" title={tpl.name || '(unnamed template)'}>
+                                    {tpl.name || '(unnamed template)'}
+                                  </span>
                                   {tpl.code && (
                                     <span className="ep-doc-code">{tpl.code}</span>
                                   )}

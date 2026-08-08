@@ -5538,9 +5538,27 @@
   color: color-mix(in srgb, var(--pill-fg) 60%, #ffffff) !important;
 }
 .ep-doc-info { flex: 1; min-width: 160px; }
-.ep-doc-name { font-size: 13px; font-weight: 600; color: var(--vz-body-color); }
+.ep-doc-name {
+  display: flex; align-items: center; flex-wrap: wrap;
+  font-size: 13px; font-weight: 600; color: var(--vz-body-color);
+}
+/* The name is the only part that gives: it is free text of any length, while
+   the code chip and status badge next to it are short and must stay readable.
+   min-width:0 is what actually lets it shrink — without it the span takes its
+   min-content width, and a 200-character name with no spaces has a min-content
+   width of 200 characters, which is what pushed the card open. */
+.ep-doc-name-txt {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 [data-bs-theme="dark"] .ep-doc-name { color: #ffffff; }
-.ep-doc-sub { font-size: 11.5px; color: var(--vz-secondary-color); }
+.ep-doc-sub {
+  font-size: 11.5px; color: var(--vz-secondary-color);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .ep-doc-tag {
   display: inline-flex; align-items: center;
   padding: 4px 10px;
