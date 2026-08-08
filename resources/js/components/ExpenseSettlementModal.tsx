@@ -83,8 +83,11 @@ type Summary = {
   settle_returned_at?: string | null;
   settle_return_method?: string | null;
   settle_return_proof_url?: string | null;
-  settle_return_payments?: { amount: number; method: string; mode: string; note?: string | null; paid_at: string | null; proof_name: string | null; proof_url: string | null }[];
+  settle_return_payments?: { index?: number; amount: number; method: string; mode: string; note?: string | null; paid_at: string | null; status?: 'pending' | 'approved' | 'rejected'; rejected_reason?: string | null; proof_name: string | null; proof_url: string | null }[];
   settle_return_remaining?: number;
+  // Direct return payments confirmed by HR/branch vs. still awaiting approval.
+  settle_return_approved?: number;
+  settle_return_pending?: number;
   settle_return_scheduled_at?: string | null;
   settle_return_recovery_start?: string | null;
   settle_return_recovery_mode?: 'emi' | 'lumpsum' | 'bimonthly' | null;
@@ -247,6 +250,8 @@ export default function ExpenseSettlementModal({
   const [settleFinalizeAsk, setSettleFinalizeAsk] = useState(false);
   const [raising, setRaising] = useState(false);
   const [settleApprovSaving, setSettleApprovSaving] = useState(false);
+  // Ledger index of the return payment whose approve/reject call is in flight.
+  const [returnPayBusy, setReturnPayBusy] = useState<number | null>(null);
   // "Make Payment" (return) — mode choice (direct/payroll) + instalment form.
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnMode, setReturnMode] = useState<'' | 'direct' | 'payroll'>('');
@@ -674,6 +679,34 @@ export default function ExpenseSettlementModal({
     } catch (e: any) {
       toast.error('Could not reject', e?.response?.data?.message ?? 'Please try again.');
     } finally { setSettleApprovSaving(false); }
+  };
+
+  // Branch admin / HR confirms (or rejects) a single employee return payment.
+  // The return only closes once every covering payment is approved.
+  const approveReturnPayment = async (index: number) => {
+    if (claimId == null || returnPayBusy !== null) return;
+    setReturnPayBusy(index);
+    try {
+      const { data: r } = await api.post(`${basePath}/${claimId}/return-payments/${index}/approve`, {});
+      toast.success('Payment approved', r?.message ?? 'Return payment confirmed.');
+      onDone();
+      setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+    } catch (e: any) {
+      toast.error('Could not approve', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setReturnPayBusy(null); }
+  };
+  const rejectReturnPayment = async (index: number) => {
+    if (claimId == null || returnPayBusy !== null) return;
+    const reason = (window.prompt('Reason for rejecting this return payment (optional — the employee will see it):') || '').trim();
+    setReturnPayBusy(index);
+    try {
+      const { data: r } = await api.post(`${basePath}/${claimId}/return-payments/${index}/reject`, reason ? { reason } : {});
+      toast.info('Payment rejected', r?.message ?? 'The employee can record it again.');
+      onDone();
+      setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+    } catch (e: any) {
+      toast.error('Could not reject', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setReturnPayBusy(null); }
   };
 
   // Prefer opening the real Expense Claim form (profile) when available;
@@ -1499,6 +1532,9 @@ export default function ExpenseSettlementModal({
                       : summary?.settle_returned_at
                         ? <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#d6f4e3', color: '#108548', borderColor: '#a7e3c2' }}><i className="ri-checkbox-circle-line" /> Returned</span>
                         : <span className="esm-payout-amt" style={{ color: '#a4661c' }}>{inr(returnRemaining)} left</span>}
+                    {!summary?.settle_returned_at && (summary?.settle_return_pending ?? 0) > 0 && (
+                      <span className="esm-sec-badge" style={{ background: '#fef3c7', color: '#a4661c', borderColor: '#fde68a', marginLeft: 6 }}><i className="ri-time-line" /> {inr(summary?.settle_return_pending ?? 0)} pending approval</span>
+                    )}
                   </div>
                 </div>
                 <div className="esm-sec-body">
@@ -1543,7 +1579,23 @@ export default function ExpenseSettlementModal({
                                     <td>{p.method || '—'}</td>
                                     <td title={p.note || ''}>{p.note || '—'}</td>
                                     <td>{fmtDate(p.paid_at)}</td>
-                                    <td>{pill('Paid', '#d6f4e3', '#108548')}</td>
+                                    <td>
+                                      {/* Each employee return payment must be confirmed by
+                                          branch admin / HR before it closes the return. */}
+                                      <span title={p.status === 'rejected' ? (p.rejected_reason || 'Rejected') : ''}>
+                                        {p.status === 'rejected'
+                                          ? pill('Rejected', '#fee2e2', '#b91c1c')
+                                          : p.status === 'pending'
+                                            ? pill('Pending approval', '#fef3c7', '#a4661c')
+                                            : pill('Approved', '#d6f4e3', '#108548')}
+                                      </span>
+                                      {canApproveSettle && p.status === 'pending' && (
+                                        <span style={{ display: 'inline-flex', gap: 4, marginLeft: 6, verticalAlign: 'middle' }}>
+                                          <button type="button" title="Approve — money received" disabled={returnPayBusy !== null} onClick={() => approveReturnPayment(p.index ?? i)} style={{ border: 'none', borderRadius: 6, padding: '2px 7px', background: '#108548', color: '#fff', fontSize: 10, fontWeight: 800, cursor: returnPayBusy !== null ? 'wait' : 'pointer' }}><i className="ri-check-line" /></button>
+                                          <button type="button" title="Reject — not received" disabled={returnPayBusy !== null} onClick={() => rejectReturnPayment(p.index ?? i)} style={{ border: 'none', borderRadius: 6, padding: '2px 7px', background: '#dc2626', color: '#fff', fontSize: 10, fontWeight: 800, cursor: returnPayBusy !== null ? 'wait' : 'pointer' }}><i className="ri-close-line" /></button>
+                                        </span>
+                                      )}
+                                    </td>
                                     <td>{p.proof_url ? <a className="esm-tbl-link" href={tokenUrl(p.proof_url)} target="_blank" rel="noreferrer"><i className="ri-attachment-2" /> View</a> : '—'}</td>
                                   </tr>
                                 ))}
@@ -1567,9 +1619,20 @@ export default function ExpenseSettlementModal({
                           <div className="esm-reimb-done" style={{ background: '#eef2ff', borderColor: '#c7d2fe', color: '#3730a3' }}><i className="ri-calendar-todo-line" /> <span>Recovery of {inr(summary?.settle_balance ?? 0)} scheduled from payroll — {methodLbl}, next deduction {nextEmi}.</span></div>
                         ) : summary?.settle_returned_at ? (
                           <div className="esm-reimb-done"><i className="ri-checkbox-circle-fill" /> <span>Balance of {inr(summary?.settle_balance ?? 0)} returned to the company in full.</span></div>
+                        ) : (returnRemaining <= 0.005 && (summary?.settle_return_pending ?? 0) > 0) ? (
+                          // Whole balance recorded, but a payment is still awaiting
+                          // HR/branch confirmation — the return isn't closed yet.
+                          <div className="esm-reimb-done" style={{ background: '#fffbeb', borderColor: '#fde68a', color: '#a4661c' }}><i className="ri-time-line" /> <span>{inr(summary?.settle_return_pending ?? 0)} recorded — awaiting branch admin / HR approval to close the return.</span></div>
+                        ) : canApproveSettle ? (
+                          // HR / branch view — recording the return is the EMPLOYEE's
+                          // action; HR only confirms each payment they record. No
+                          // Make Payment button here.
+                          <div className="esm-payout-row">
+                            <span className="esm-payout-note"><strong>{inr(returnRemaining)}</strong> to be returned by the employee. You'll confirm each payment they record.</span>
+                          </div>
                         ) : (
                           <div className="esm-payout-row">
-                            <span className="esm-payout-note">Employee returns <strong>{inr(returnRemaining)}</strong> to the company. Pay directly (instalments allowed) or cut it from payroll.</span>
+                            <span className="esm-payout-note">You return <strong>{inr(returnRemaining)}</strong> to the company. Pay directly (instalments allowed) or cut it from payroll — each payment is confirmed by branch admin / HR.</span>
                             <button type="button" className="esm-btn-primary esm-payout-btn" onClick={() => { setReturnStep('mode'); setReturnMode(''); setReturnAmount(String(returnRemaining)); setReturnMethod(''); setReturnProof(null); setReturnErr(false); setReturnOpen(true); }}><i className="ri-bank-card-line" /> Make Payment</button>
                           </div>
                         )}
