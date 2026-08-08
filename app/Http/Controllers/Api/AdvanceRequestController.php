@@ -527,6 +527,40 @@ class AdvanceRequestController extends Controller
         }
     }
 
+    /** Non-throwing variant of guardHrPermission — does this user have the HR
+     *  expense `can_approve` right (or is a super / tenant admin)? Used to decide
+     *  whether a return payment they record is auto-confirmed vs. left pending
+     *  for a branch admin / HR to approve. */
+    private function isHrApprover($user): bool
+    {
+        if (!$user) return false;
+        if ($user->user_type === 'super_admin') return true;
+        $moduleId = Module::where('slug', 'hr.expense')->value('id');
+        if (!$moduleId) {
+            return in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
+        }
+        return Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_approve', true)
+            ->exists();
+    }
+
+    /** Recompute whether a company-advance RETURN is fully closed: it counts
+     *  only APPROVED direct payments plus payroll deductions (payroll = the
+     *  company cutting salary itself). A pending, unconfirmed employee payment
+     *  does NOT close the return until a branch admin / HR approves it. */
+    private function recomputeReturnComplete(AdvanceRequest $row): void
+    {
+        $balance  = round((float) $row->settle_balance, 2);
+        $approved = round(array_sum(array_map(
+            fn ($p) => (($p['status'] ?? 'approved') === 'approved') ? (float) ($p['amount'] ?? 0) : 0.0,
+            $row->settle_return_payments ?? []
+        )), 2);
+        $row->settle_returned_at = ($balance > 0 && $approved >= $balance - 0.005)
+            ? ($row->settle_returned_at ?: now())
+            : null;
+    }
+
     private function ensureTenantAccess(AdvanceRequest $row, $user): void
     {
         if (!$user) abort(401);
@@ -721,9 +755,19 @@ class AdvanceRequestController extends Controller
             'settle_reimbursed'          => (bool) $row->settle_reimbursement_claim_id,
             'settle_return_remaining'    => (function () use ($row) {
                 $bal  = round((float) $row->settle_balance, 2);
-                $paid = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $row->settle_return_payments ?? [])), 2);
+                // Exclude rejected — their amount is freed to re-record.
+                $paid = round(array_sum(array_map(
+                    fn ($p) => (($p['status'] ?? 'approved') !== 'rejected') ? (float) ($p['amount'] ?? 0) : 0.0,
+                    $row->settle_return_payments ?? []
+                )), 2);
                 return max(0, round($bal - $paid, 2));
             })(),
+            // Return payments the employee recorded that a branch admin / HR has
+            // not yet confirmed — lets the list flag "return payment pending".
+            'settle_return_pending'      => round(array_sum(array_map(
+                fn ($p) => (($p['status'] ?? 'approved') === 'pending') ? (float) ($p['amount'] ?? 0) : 0.0,
+                $row->settle_return_payments ?? []
+            )), 2),
             'settle_items'         => collect($row->settle_items ?? [])->values()->map(fn ($it, $i) => [
                 'amount'    => (float) ($it['amount'] ?? 0),
                 'reason'    => (string) ($it['reason'] ?? ''),
@@ -1151,7 +1195,12 @@ class AdvanceRequestController extends Controller
         ]);
 
         $ledger    = array_values($row->settle_return_payments ?? []);
-        $paidSoFar = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $ledger)), 2);
+        // Rejected payments free up the balance again so the employee can
+        // re-record — only pending + approved count as "recorded so far".
+        $paidSoFar = round(array_sum(array_map(
+            fn ($p) => (($p['status'] ?? 'approved') !== 'rejected') ? (float) ($p['amount'] ?? 0) : 0.0,
+            $ledger
+        )), 2);
         $remaining = round($balance - $paidSoFar, 2);
         if ($remaining <= 0) {
             abort(409, 'The return has already been fully recorded.');
@@ -1233,20 +1282,29 @@ class AdvanceRequestController extends Controller
             }
         }
 
+        // A payroll deduction is the company cutting salary itself, so it counts
+        // as confirmed on record. A DIRECT payment recorded by the employee is
+        // PENDING until a branch admin / HR confirms the money was received; one
+        // recorded by an approver is auto-approved (they ARE the confirmer).
+        $autoOk = ($data['mode'] === 'payroll') || $this->isHrApprover($user);
         $ledger[] = [
-            'amount'     => $amount,
-            'method'     => $method,
-            'mode'       => $data['mode'],
-            'note'       => $data['note'] ?? null,
-            'proof_path' => $path,
-            'proof_name' => $name,
-            'paid_at'    => now()->toIso8601String(),
+            'amount'      => $amount,
+            'method'      => $method,
+            'mode'        => $data['mode'],
+            'note'        => $data['note'] ?? null,
+            'proof_path'  => $path,
+            'proof_name'  => $name,
+            'paid_at'     => now()->toIso8601String(),
+            'status'      => $autoOk ? 'approved' : 'pending',
+            'recorded_by' => $user?->id,
+            'approved_at' => $autoOk ? now()->toIso8601String() : null,
+            'approved_by' => $autoOk ? $user?->id : null,
         ];
         $row->settle_return_payments = $ledger;
         $newPaid = round($paidSoFar + $amount, 2);
-        if ($newPaid >= $balance - 0.005) {
-            $row->settle_returned_at = now();
-        }
+        // Close the return ONLY when APPROVED payments cover the balance — a
+        // pending employee payment leaves it open until HR/branch confirms it.
+        $this->recomputeReturnComplete($row);
         if ($request->filled('note')) {
             $row->employee_settle_note = trim(($row->employee_settle_note ? $row->employee_settle_note . "\n" : '') . $data['note']);
         }
@@ -1256,6 +1314,9 @@ class AdvanceRequestController extends Controller
         $left = round($balance - $newPaid, 2);
         if ($data['mode'] === 'payroll') {
             $msg = 'Payroll recovery scheduled for ₹' . number_format($amount, 2) . '.';
+        } elseif (!$autoOk) {
+            // Employee-recorded payment — awaits branch admin / HR confirmation.
+            $msg = 'Return of ₹' . number_format($amount, 2) . ' recorded — pending branch admin / HR approval.';
         } else {
             $msg = $left <= 0.005
                 ? 'Return complete — ₹' . number_format($balance, 2) . ' returned.'
@@ -1264,6 +1325,80 @@ class AdvanceRequestController extends Controller
         return response()->json([
             'status'  => true,
             'message' => $msg,
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/return-payments/{index}/approve
+     * A branch admin / HR confirms that a specific employee return payment was
+     * actually received by the company. The return only closes once EVERY
+     * payment covering the balance is approved. Payroll deductions are already
+     * confirmed on record, so they cannot be approved/rejected here.
+     */
+    public function approveReturnPayment(Request $request, $id, $index)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_approve');
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        $ledger = array_values($row->settle_return_payments ?? []);
+        $i = (int) $index;
+        if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
+        if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
+            abort(422, 'Payroll deductions are confirmed automatically — nothing to approve.');
+        }
+        $ledger[$i]['status']      = 'approved';
+        $ledger[$i]['approved_at'] = now()->toIso8601String();
+        $ledger[$i]['approved_by'] = $user?->id;
+        unset($ledger[$i]['rejected_at'], $ledger[$i]['rejected_by'], $ledger[$i]['rejected_reason']);
+        $row->settle_return_payments = $ledger;
+        $this->recomputeReturnComplete($row);
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => $row->settle_returned_at
+                ? 'Payment approved — return now complete.'
+                : 'Payment approved.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * POST /advance-requests/{id}/return-payments/{index}/reject
+     * A branch admin / HR rejects a return payment (money not actually received).
+     * Its amount is freed so the employee can re-record. The return stays open.
+     */
+    public function rejectReturnPayment(Request $request, $id, $index)
+    {
+        $user = $request->user();
+        $this->guardHrPermission($user, 'can_approve');
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+        $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
+
+        $ledger = array_values($row->settle_return_payments ?? []);
+        $i = (int) $index;
+        if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
+        if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
+            abort(422, 'Payroll deductions cannot be rejected here.');
+        }
+        $ledger[$i]['status']          = 'rejected';
+        $ledger[$i]['rejected_at']     = now()->toIso8601String();
+        $ledger[$i]['rejected_by']     = $user?->id;
+        $ledger[$i]['rejected_reason'] = $data['reason'] ?? null;
+        unset($ledger[$i]['approved_at'], $ledger[$i]['approved_by']);
+        $row->settle_return_payments = $ledger;
+        $this->recomputeReturnComplete($row);
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        return response()->json([
+            'status'  => true,
+            'message' => 'Payment rejected — the employee can record it again.',
             'data'    => $this->serialize($row),
         ]);
     }
@@ -1415,19 +1550,39 @@ class AdvanceRequestController extends Controller
                 : null,
             'settle_returned_at'   => optional($row->settle_returned_at)->toIso8601String(),
             'settle_return_payments' => collect($row->settle_return_payments ?? [])->values()->map(fn ($p, $i) => [
+                'index'     => $i,
                 'amount'    => (float) ($p['amount'] ?? 0),
                 'method'    => (string) ($p['method'] ?? ''),
                 'mode'      => (string) ($p['mode'] ?? 'direct'),
                 'note'      => $p['note'] ?? null,
                 'paid_at'   => $p['paid_at'] ?? null,
+                // Approval state of this payment. Legacy rows (recorded before
+                // the approval gate) default to 'approved' so they stay closed.
+                'status'    => (string) ($p['status'] ?? 'approved'),
+                'rejected_reason' => $p['rejected_reason'] ?? null,
                 'proof_name'=> $p['proof_name'] ?? null,
                 'proof_url' => !empty($p['proof_path']) ? url("/api/advance-requests/{$row->id}/return-proof/{$i}") : null,
             ])->all(),
+            // Remaining excludes REJECTED payments (their amount is freed to
+            // re-record); approved + pending count as recorded.
             'settle_return_remaining' => (function () use ($row) {
                 $bal  = round((float) $row->settle_balance, 2);
-                $paid = round(array_sum(array_map(fn ($p) => (float) ($p['amount'] ?? 0), $row->settle_return_payments ?? [])), 2);
+                $paid = round(array_sum(array_map(
+                    fn ($p) => (($p['status'] ?? 'approved') !== 'rejected') ? (float) ($p['amount'] ?? 0) : 0.0,
+                    $row->settle_return_payments ?? []
+                )), 2);
                 return max(0, round($bal - $paid, 2));
             })(),
+            // Direct payments confirmed by HR/branch (payroll counts as approved).
+            'settle_return_approved' => round(array_sum(array_map(
+                fn ($p) => (($p['status'] ?? 'approved') === 'approved') ? (float) ($p['amount'] ?? 0) : 0.0,
+                $row->settle_return_payments ?? []
+            )), 2),
+            // Employee-recorded payments still awaiting HR/branch confirmation.
+            'settle_return_pending' => round(array_sum(array_map(
+                fn ($p) => (($p['status'] ?? 'approved') === 'pending') ? (float) ($p['amount'] ?? 0) : 0.0,
+                $row->settle_return_payments ?? []
+            )), 2),
             // Payroll-recovery plan (when the return is cut from payroll).
             'settle_return_scheduled_at'    => optional($row->settle_return_scheduled_at)->toIso8601String(),
             'settle_return_recovery_start'  => optional($row->settle_return_recovery_start)->format('Y-m-d'),

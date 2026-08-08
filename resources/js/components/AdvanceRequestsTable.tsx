@@ -56,6 +56,7 @@ export type AdvanceRequestRow = {
   settle_return_scheduled_at?: string | null;
   settle_reimbursed?: boolean;
   settle_return_remaining?: number;
+  settle_return_pending?: number;   // recorded return payments awaiting HR/branch approval
 };
 
 type ActionKind = 'manager-approve' | 'manager-reject' | 'hr-approve' | 'hr-reject';
@@ -372,6 +373,22 @@ export function advanceRequestColumns({
             return pillEl('ri-time-line', 'In review', '#eef2ff', '#3730a3');
           }
           if (r.settle_approval_status === 'approved' || r.employee_settled_at) {
+            // For an under-spent (return) advance the settlement being approved
+            // is NOT the end — the employee still has to pay the balance back,
+            // and each return payment needs HR/branch confirmation. Reflect that
+            // follow-through here instead of a blanket "Approved".
+            if (r.settle_type === 'return') {
+              if ((r.settle_return_pending ?? 0) > 0) {
+                return pillEl('ri-time-line', 'Return in review', '#fef3c7', '#a4661c');
+              }
+              if (r.settle_returned_at) {
+                return pillEl('ri-checkbox-circle-line', 'Returned', '#d6f4e3', '#108548');
+              }
+              if (r.settle_return_scheduled_at) {
+                return pillEl('ri-calendar-todo-line', 'Return via payroll', '#eef2ff', '#3730a3');
+              }
+              return pillEl('ri-arrow-go-back-line', 'Return due', '#fde8c4', '#a4661c');
+            }
             return pillEl('ri-checkbox-circle-line', 'Approved', '#d6f4e3', '#108548');
           }
           return pillEl('ri-time-line', 'To settle', '#fde8c4', '#a4661c');

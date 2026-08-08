@@ -790,6 +790,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/settle-reject',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleReject']);
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
     Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
+    // Branch admin / HR confirm (or reject) each employee return payment — the
+    // return only closes once every payment covering the balance is approved.
+    Route::post  ('/advance-requests/{id}/return-payments/{index}/approve', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'approveReturnPayment'])->whereNumber('index');
+    Route::post  ('/advance-requests/{id}/return-payments/{index}/reject',  [\App\Http\Controllers\Api\AdvanceRequestController::class, 'rejectReturnPayment'])->whereNumber('index');
 
     // On-demand test-data generators (admins only) — run via curl when needed.
     Route::post  ('/dev/sandwich-leave',  [\App\Http\Controllers\Api\SandwichTestController::class, 'seed']);
