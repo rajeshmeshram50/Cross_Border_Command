@@ -130,6 +130,39 @@ export default function HrDocumentTemplates() {
     }
   };
 
+  /* Bulk deprecate.
+     Rows are keyed by id rather than by index so the selection survives paging,
+     sorting and a refetch — an index-keyed set would silently point at
+     different templates the moment the list reordered. */
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const bulkDeprecate = async () => {
+    const targets = rows.filter(r => selected.has(r.id) && r.status === 'Active');
+    const already = selected.size - targets.length;
+    if (!targets.length) {
+      toast.error('Nothing to deprecate', 'The selected templates are already deprecated.');
+      return;
+    }
+    setBulkBusy(true);
+    let done = 0; const failed: string[] = [];
+    for (const r of targets) {
+      try {
+        await api.put(`/hr-document-templates/${r.id}`, { status: 'Deprecated' });
+        done++;
+      } catch { failed.push(r.code); }
+    }
+    setBulkBusy(false);
+    setSelected(new Set());
+    await fetchAll();
+    if (failed.length) {
+      toast.error(`${done} deprecated, ${failed.length} failed`, `Could not update: ${failed.join(', ')}`);
+    } else {
+      toast.success(`${done} template${done === 1 ? '' : 's'} deprecated`,
+        already > 0 ? `${already} already deprecated, left alone.` : 'They can be reactivated any time.');
+    }
+  };
+
   const handleToggleStatus = async (row: TemplateRow) => {
     const next: DocStatus = row.status === 'Active' ? 'Deprecated' : 'Active';
     try {
@@ -153,13 +186,56 @@ export default function HrDocumentTemplates() {
     navigate(`/hr/doc-templates/${row.id}/generate`);
   };
 
+  /* Pinned left of Sr No — DataTable prepends Sr No itself, so a checkbox
+     supplied through `columns` would always land to the RIGHT of it. */
+  const leading = useMemo<DataTableColumn<TemplateRow>[]>(() => [
+    {
+      id: 'select',
+      meta: { width: '4%', align: 'center' as const },
+      /* Header box picks / clears everything on the CURRENT page only, which is
+         what the user can see — a "select all" that silently reached rows on
+         other pages would deprecate templates nobody looked at. */
+      header: ({ table }) => {
+        const page = table.getRowModel().rows.map(r => r.original.id);
+        const on = page.length > 0 && page.every(id => selected.has(id));
+        return (
+          <input
+            type="checkbox" checked={on} aria-label="Select all on this page"
+            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#7c5cfc' }}
+            onChange={e => setSelected(prev => {
+              const next = new Set(prev);
+              page.forEach(id => e.target.checked ? next.add(id) : next.delete(id));
+              return next;
+            })}
+          />
+        );
+      },
+      cell: ({ row }) => {
+        const id = row.original.id;
+        return (
+          <input
+            type="checkbox" checked={selected.has(id)} aria-label={`Select ${row.original.code}`}
+            style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#7c5cfc' }}
+            onClick={e => e.stopPropagation()}
+            onChange={e => setSelected(prev => {
+              const next = new Set(prev);
+              e.target.checked ? next.add(id) : next.delete(id);
+              return next;
+            })}
+          />
+        );
+      },
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [selected]);
+
   /* Columns for the shared <DataTable>. Widths sum to 100 (the table runs in
-     table-layout:fixed): 5+9+24+8+14+11+15+14. */
+     table-layout:fixed): 4+5+8+22+8+13+11+15+14. */
   const columns = useMemo<DataTableColumn<TemplateRow>[]>(() => [
     {
       header: 'Code',
       accessorKey: 'code',
-      meta: { width: '9%' },
+      meta: { width: '8%' },
       cell: info => (
         <span className="dtm-code-pill" style={{ display: 'inline-block', padding: '3px 9px', borderRadius: 6, fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700, background: '#fef3c7', color: '#a16207' }}>
           {String(info.getValue() ?? '')}
@@ -170,7 +246,7 @@ export default function HrDocumentTemplates() {
       header: 'Template Name',
       accessorKey: 'name',
       // wrap: the name can carry an "Approval" sub-pill on a second line.
-      meta: { width: '24%', wrap: true },
+      meta: { width: '22%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -352,8 +428,42 @@ export default function HrDocumentTemplates() {
               The level tabs pass no `icon`: the per-level emoji added colour
               noise across six tabs and the label alone is unambiguous. Each
               carries its own count badge instead. */}
+          {/* Only present while something is picked, so the table looks
+              untouched until the user actually starts a bulk action. */}
+          {selected.size > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+              margin: '0 0 10px', padding: '9px 14px', borderRadius: 10,
+              background: 'rgba(124,92,252,.08)', border: '1px solid rgba(124,92,252,.28)',
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
+                {selected.size} selected
+              </span>
+              <button
+                type="button" onClick={bulkDeprecate} disabled={bulkBusy}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '6px 13px', borderRadius: 8, border: '1px solid #fca5a5',
+                  background: bulkBusy ? '#fee2e2' : '#fff', color: '#b91c1c',
+                  fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
+                }}>
+                <i className="ri-forbid-2-line" />
+                {bulkBusy ? 'Deprecating…' : 'Deprecate selected'}
+              </button>
+              <button
+                type="button" onClick={() => setSelected(new Set())} disabled={bulkBusy}
+                style={{
+                  padding: '6px 11px', borderRadius: 8, border: '1px solid #e5e7eb',
+                  background: '#fff', color: '#6b7280', fontSize: 11.5, fontWeight: 600,
+                  cursor: 'pointer',
+                }}>
+                Clear
+              </button>
+            </div>
+          )}
           <DataTable<TemplateRow>
             data={filtered}
+            leading={leading}
             columns={columns}
             serial
             accent="violet"
@@ -447,6 +557,54 @@ function DtmDarkStyles() {
 
       /* KPI tile hover — gentle lift + shadow so the cards feel clickable
          even though they are currently informational. */
+      /* Toolbar sizing, scoped to this page so no other list shifts.
+         The search field is the control people actually use here, and the
+         Trigger picker sat taller than everything beside it — so the strip read
+         as mismatched heights with a small search box wedged in. */
+      .dtm-page .dt-search { flex: 0 4 400px; max-width: 400px; }
+      .dtm-page .master-select-toggle { min-height: 34px; height: 34px; padding-top: 0; padding-bottom: 0; }
+      /* The Trigger picker is capped inline at 150px, which read as a cramped
+         afterthought beside a 400px search. Overridden rather than edited in
+         place so the sizing lives with the rest of this page's toolbar rules.
+         Selected by the label it always follows — no markup change needed. */
+      .dtm-page .dtm-filter-label + div { min-width: 180px !important; max-width: 210px !important; }
+      /* Pull the group off the right edge so it is not pinned against the
+         Add Template button. */
+      .dtm-page .dtm-filter-label { margin-left: 6px; }
+
+      /* ── Small screens ────────────────────────────────────────────────
+         Nine columns do not belong on a phone. The first attempt gave the
+         table a min-width so it scrolled sideways — which is not responsive,
+         it just moves the problem: the user drags a wide table around and the
+         Generate button lives permanently off-screen.
+         So columns drop out by priority instead, and what stays always fits.
+         Order is select · Sr No · Code · Name · Version · Trigger · Status ·
+         Generate · Actions, hence the nth-child numbers. */
+      @media (max-width: 1199.98px) {
+        /* Sr No is decoration — the rows are already ordered. */
+        .dtm-page .dt-table th:nth-child(2), .dtm-page .dt-table td:nth-child(2),
+        /* Version is v1 on essentially everything. */
+        .dtm-page .dt-table th:nth-child(5), .dtm-page .dt-table td:nth-child(5) { display: none; }
+      }
+      @media (max-width: 991.98px) {
+        /* Trigger matters, but it is visible on the row's edit screen and the
+           Trigger filter above already narrows by it. */
+        .dtm-page .dt-table th:nth-child(6), .dtm-page .dt-table td:nth-child(6) { display: none; }
+      }
+      @media (max-width: 767.98px) {
+        /* Code is carried in the template name in practice. */
+        .dtm-page .dt-table th:nth-child(3), .dtm-page .dt-table td:nth-child(3) { display: none; }
+        .dtm-page .frm-cstrip { flex-wrap: wrap; row-gap: 10px; }
+        .dtm-page .dt-tabrail { width: 100%; overflow-x: auto; scrollbar-width: none; }
+        .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
+        .dtm-page .dt-tabs { flex-wrap: nowrap; }
+        .dtm-page .dtm-kpi-num { font-size: 19px; }
+      }
+      /* Two KPI tiles per row rather than four crushed ones. */
+      @media (min-width: 576px) and (max-width: 767.98px) {
+        .dtm-page .row > [class*='col-md-3'] { flex: 0 0 50%; max-width: 50%; }
+      }
+
       .dtm-page .dtm-kpi-tile {
         transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
         cursor: default;
