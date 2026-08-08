@@ -2191,6 +2191,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      already closed at the Notice Period Payment stage. */
   const markFnfPaid = async () => {
     if (!employee || settleSaving) return;
+    /* A settlement is paid ONCE. The button is hidden once payStatus is Paid,
+       but this is the guard that actually holds: a double click lands two calls
+       before the first re-render, and a case reopened after payment must not be
+       re-settled from a stale view either. */
+    if (fnfPaid) {
+      toast.info('Already settled', 'This Full & Final settlement has already been marked paid.');
+      return;
+    }
     if (!fnfDoc) {
       toast.warning('Full & Final document required',
         'Upload the signed F&F sheet or payment advice before marking the settlement paid.');
@@ -2838,8 +2846,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </Col>
                     <Col md={6}>
                       <EpField label="Payment Status" required>
+                        {/* Locked once paid. This select is the switch the
+                            "Mark F&F Paid" button keys off, so leaving it open
+                            would let a settled F&F be dropped back to Pending
+                            and paid a second time — the button would simply
+                            reappear. */}
                         <EpSelect value={fnfMeta.payStatus} onChange={v => setFnfMeta(s => ({ ...s, payStatus: v }))}
-                          options={['Pending', 'Processing', 'Paid']} />
+                          options={['Pending', 'Processing', 'Paid']} disabled={fnfPaid} />
+                        {fnfPaid && (
+                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            Settled — a Full &amp; Final is paid only once.
+                          </div>
+                        )}
                       </EpField>
                     </Col>
                     <Col md={6}>
@@ -2905,16 +2923,31 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     )}
                   </label>
 
-                  <div className="ep-settle-actions">
-                    <button type="button" className="ep-btn ep-btn--complete"
-                      disabled={settleSaving}
-                      onClick={markFnfPaid}>
-                      <i className="ri-wallet-3-line" />
-                      {settlement === 'pay_in_lieu' && settle.amount > 0
-                        ? 'Mark F&F Paid & Notice Settled'
-                        : 'Mark F&F Paid'}
-                    </button>
-                  </div>
+                  {/* An F&F is settled ONCE. Past that the action is replaced by
+                      the record of it rather than left on screen greyed out —
+                      a disabled "Mark F&F Paid" still reads as an outstanding
+                      step and invites a second click. */}
+                  {fnfPaid ? (
+                    <div className="ep-settle-note is-ok">
+                      <i className="ri-check-double-line" />
+                      <span>
+                        Full &amp; Final settled — {fmtMoney(fnfNet)} paid
+                        {fnfMeta.payMode ? ` by ${fnfMeta.payMode}` : ''}
+                        {fnfMeta.payDate ? ` on ${fmtDateShort(fnfMeta.payDate)}` : ''}.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="ep-settle-actions">
+                      <button type="button" className="ep-btn ep-btn--complete"
+                        disabled={settleSaving}
+                        onClick={markFnfPaid}>
+                        <i className="ri-wallet-3-line" />
+                        {settlement === 'pay_in_lieu' && settle.amount > 0
+                          ? 'Mark F&F Paid & Notice Settled'
+                          : 'Mark F&F Paid'}
+                      </button>
+                    </div>
+                  )}
                   {settlement === 'pay_in_lieu' && settle.amount <= 0 && (
                     <div className="ep-settle-note is-ok">
                       <i className="ri-check-double-line" />
@@ -4027,12 +4060,12 @@ function EpInput({ value, onChange, type = 'text', disabled = false, placeholder
     />
   );
 }
-function EpSelect({ value, onChange, options, invalid }: { value: string; onChange: (v: string) => void; options: string[]; invalid?: boolean }) {
+function EpSelect({ value, onChange, options, invalid, disabled }: { value: string; onChange: (v: string) => void; options: string[]; invalid?: boolean; disabled?: boolean }) {
   const items = options.map(o => ({
     value: o,
     label: o.startsWith('— ') ? o : (o === 'Pending' ? '— Pending —' : o),
   }));
-  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" invalid={invalid} />;
+  return <MasterSelect value={value} onChange={onChange} options={items} placeholder="Select…" invalid={invalid} disabled={disabled} />;
 }
 function EpApprovalCard({ icon, title, children }: { icon: string; title: string; children: React.ReactNode }) {
   return (
