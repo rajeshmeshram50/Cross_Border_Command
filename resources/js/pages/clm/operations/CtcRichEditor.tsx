@@ -937,6 +937,11 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         )}
       </div>
 
+      {/* Page Break button hidden from the toolbar per request — kept in code
+          (NOT removed), so flip this guard to true to bring it back. The
+          pageBreak node/command and PDF handling are untouched; only the
+          toolbar entry is hidden. */}
+      {false && (<>
       <span className="ctcte-div" />
       {/* Page break — the only EXACT control over where the PDF splits. The
           A4 guides on the surface are an estimate (browser and dompdf lay text
@@ -956,6 +961,7 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         <Ico d="M3 5h18M3 19h18M4 12h3M10.5 12h3M17 12h3" />
         Page Break
       </button>
+      </>)}
 
       <span className="ctcte-div" />
       <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8" /></TB>
@@ -1206,6 +1212,22 @@ export const CTC_EDITOR_CSS = `
 [data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
 [data-bs-theme="dark"] .ctcte-content.ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
 [data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
+
+/* ── "PAGE N ENDS" boundary markers HIDDEN in the editor ───────────────────
+   The Live PDF Preview now shows the real page breaks, so the editor's own
+   estimated "PAGE N ENDS" pill + hairline were redundant and noisy while
+   writing / after a DOCX upload. The page-tail spacing (--pg-fill gradient) is
+   kept so the surface still reads as separated pages — only the label and the
+   line are hidden. Nothing is removed from the PageFlow logic; delete this
+   block to bring the markers back. */
+.ctcte-pgtop::after,
+.ctcte-pagegap::after,
+.ctcte-pagegap-row > td::after,
+.ctcte-spanmark::after { content: none !important; display: none !important; }
+.ctcte-pgtop::before,
+.ctcte-pagegap::before,
+.ctcte-pagegap-row > td::before { border-top: none !important; box-shadow: none !important; }
+.ctcte-spanmark { border-top: none !important; box-shadow: none !important; }
 
 .ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }

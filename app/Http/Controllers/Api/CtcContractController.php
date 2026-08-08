@@ -1441,6 +1441,99 @@ class CtcContractController extends Controller
     }
 
     /**
+     * POST /clm/ctc-contracts/preview-live
+     * Render the CURRENT (unsaved) editor HTML to an inline PDF for the draft
+     * editor's live-preview panel — same dompdf pipeline the download uses, so
+     * the preview shows exactly where dompdf breaks pages, the real footer band
+     * and the true A4 layout. Never applies the org signature (draft, not
+     * approved). Works with or without a saved contract id: when an id is
+     * given, party / org placeholders resolve to real data; otherwise every
+     * placeholder is blanked so the preview never leaks raw {{...}}.
+     */
+    public function previewLive(Request $request)
+    {
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(120);
+
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $data = $request->validate([
+            'id'            => 'nullable|integer',
+            'content'       => 'nullable|string',
+            'page_config'   => 'nullable|array',
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
+        ]);
+
+        // Resolve the backing contract (for placeholder context) only within the
+        // caller's own tenant — never trust a client_id from the request.
+        $row = null;
+        if (!empty($data['id'])) {
+            $row = CtcContract::where('client_id', $user->client_id)->find($data['id']);
+        }
+
+        $html = trim((string) ($data['content'] ?? ($row->content ?? '')));
+        if ($html === '') {
+            $html = '<p><em>Nothing to preview yet — start typing in the editor.</em></p>';
+        }
+        $processedHtml = $this->normaliseEditorHtml($html);
+
+        // Preview is a DRAFT view — the signature placeholder stays blank (the
+        // real stamp is only injected once the agreement is approved).
+        $processedHtml = preg_replace('/\{\{\s*signature\s*\}\}/i', '', $processedHtml);
+
+        if ($row) {
+            foreach ($this->orgBranchTokens($row) as $tok => $val) {
+                $processedHtml = preg_replace('/\{\{\s*' . $tok . '\s*\}\}/i', e((string) $val), $processedHtml);
+            }
+            $processedHtml = $this->resolvePartyTokens($processedHtml, $row);
+        }
+        // Blank any placeholder still left so the preview shows nothing rather
+        // than raw {{...}} (unmapped party, unsaved contract, or a typo).
+        $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $processedHtml);
+
+        // Header / footer / margins come from the editor's LIVE config when
+        // provided (so the preview tracks unsaved ruler + header/footer edits),
+        // falling back to whatever is saved on the row.
+        $headerConfig = $data['header_config'] ?? (is_array($row->header_config ?? null) ? $row->header_config : []);
+        $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
+        $pageConfig   = $data['page_config']   ?? (is_array($row->page_config   ?? null) ? $row->page_config   : []);
+        $client = \App\Models\Client::find($user->client_id);
+
+        // Header logo — same candidate resolution as downloadVersion.
+        $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $m)) ? $m[1] : null;
+        $headerLogoBase64 = '';
+        foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) { $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path)); break; }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+
+        // A lightweight stand-in document when the contract isn't saved yet, so
+        // the blade's $document->title still resolves.
+        $document = $row ?: new CtcContract(['title' => 'Agreement (draft preview)']);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $document,
+            'party'            => null,
+            'modelName'        => '',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => $row->code ?? 'DRAFT',
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'pageConfig'       => $pageConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        // Inline so the frontend can pull it as a blob and paint it with pdf.js.
+        return $pdf->stream('ctc-preview.pdf');
+    }
+
+    /**
      * Render a version's processed HTML to an editable .docx via PhpWord.
      * Data-URI images (e.g. the signature stamp) are stripped first because
      * PhpWord's HTML reader chokes on them; the malformed-HTML fallback drops

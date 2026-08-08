@@ -360,6 +360,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/clm/ctc-contracts/approver-candidates', [\App\Http\Controllers\Api\CtcContractController::class, 'approverCandidates']);
     Route::get   ('/clm/ctc-contracts/contact-persons',     [\App\Http\Controllers\Api\CtcContractController::class, 'contactPersons']);
     Route::get   ('/clm/ctc-contracts/placeholder-values',  [\App\Http\Controllers\Api\CtcContractController::class, 'placeholderValues']);
+    // Live-preview render of the current (unsaved) draft HTML → inline PDF for
+    // the draft editor's preview panel. Literal path, so it must sit before /{id}.
+    Route::post  ('/clm/ctc-contracts/preview-live',        [\App\Http\Controllers\Api\CtcContractController::class, 'previewLive']);
     Route::get   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'show'])->whereNumber('id');
     Route::put   ('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'update'])->whereNumber('id');
     Route::delete('/clm/ctc-contracts/{id}',         [\App\Http\Controllers\Api\CtcContractController::class, 'destroy'])->whereNumber('id');

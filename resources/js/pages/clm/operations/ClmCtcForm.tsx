@@ -12,6 +12,7 @@ import ClmInsertPlaceholderModal from '../document-masters/ClmInsertPlaceholderM
 import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
 import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, type CtcMargins } from './CtcRichEditor';
+import CtcLivePreview from './CtcLivePreview';
 import { pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
@@ -697,6 +698,7 @@ export default function ClmCtcForm({ editing, onClose, onSaved }: { editing: Ctc
               agTitle={agTitle} setAgTitle={setAgTitle} agType={agType} setAgType={setAgType}
               effDate={effDate} setEffDate={setEffDate} endDate={endDate} setEndDate={setEndDate}
               draft={draft} setDraft={setDraft}
+              contractId={workingId ?? editing?.dbId ?? null}
               header={header} setHeader={setHeader} footer={footer} setFooter={setFooter}
               isEditing={!!editing?.dbId} onUpdate={saveEdit}
               onSubmitForApproval={submitForApproval}
@@ -798,6 +800,7 @@ function Stage1(p: {
   agTitle: string; setAgTitle: (s: string) => void; agType: string; setAgType: (s: string) => void;
   effDate: string; setEffDate: (s: string) => void; endDate: string; setEndDate: (s: string) => void;
   draft: string; setDraft: (s: string) => void;
+  contractId: number | null;
   header: HeaderConfig; setHeader: (h: HeaderConfig) => void; footer: FooterConfig; setFooter: (f: FooterConfig) => void;
   margins: CtcMargins; setMargins: (m: CtcMargins) => void;
   isEditing: boolean; onUpdate: () => void;
@@ -828,6 +831,7 @@ function Stage1(p: {
   // editable in resubmit (it's gated on p.editLock only, which is false here).
   const prevLocked = !!p.editLock || !!p.resubmitMode;
   const [editorFs, setEditorFs] = useState(false);              // draft editor full-screen
+  const [previewOpen, setPreviewOpen] = useState(false);        // live PDF preview side panel
   // Margins live in ClmCtcForm, not here: submitForApproval and the save
   // handlers are all up there, and they are what write page_config.
   const { margins, setMargins } = p;
@@ -1327,6 +1331,11 @@ function Stage1(p: {
                     <FrostBtn onClick={() => setPhOpen(true)} icon={<><polyline points="16 18 22 12 16 6" /><polyline points="8 6 2 12 8 18" /></>}>{'{} Placeholder'}</FrostBtn>
                     <FrostBtn onClick={() => setClauseOpen(true)} icon={<><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>}>Clause Library</FrostBtn>
                     </>}
+                    {/* Live preview only in full screen — the side-by-side split
+                        is unusable in the cramped embedded view. */}
+                    {editorFs && (
+                      <FrostBtn active={previewOpen} onClick={() => setPreviewOpen(v => !v)} icon={<><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="3" /></>}>{previewOpen ? 'Hide Preview' : 'Live Preview'}</FrostBtn>
+                    )}
                     <FrostBtn active onClick={() => setEditorFs(v => !v)} icon={editorFs ? <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" /> : <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />}>{editorFs ? 'Exit Full Screen' : 'Full Screen'}</FrostBtn>
                   </div>
                 </div>
@@ -1338,10 +1347,27 @@ function Stage1(p: {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                       <span style={{ fontSize: 9.5, fontWeight: 800, color: t.dark ? '#a78bfa' : '#6D28D9', letterSpacing: '.03em' }}>Read-only — this agreement is locked</span>
                     </div>}
-                <div className="ctc-mid-scroll" style={{ flex: 1, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
-                  <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                    <CtcEditorContent editor={ctcEd.editor} pageView margins={margins} onMargins={p.editLock ? undefined : setMargins} />
-                  </HeaderFooterPanel>
+                <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                  <div className="ctc-mid-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
+                    <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
+                      <CtcEditorContent editor={ctcEd.editor} pageView margins={margins} onMargins={p.editLock ? undefined : setMargins} />
+                    </HeaderFooterPanel>
+                  </div>
+                  {/* Live PDF preview — the real rendered pages (true A4, real
+                      footer, dompdf's own page breaks) beside the editor. Only in
+                      full screen; the embedded split is too cramped to be useful. */}
+                  {editorFs && previewOpen && (
+                    <div style={{ width: '30%', minWidth: 300, flexShrink: 0, minHeight: 0 }}>
+                      <CtcLivePreview
+                        contractId={p.contractId}
+                        content={p.draft ?? ''}
+                        pageConfig={{ margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }}
+                        headerConfig={header as unknown as Record<string, unknown>}
+                        footerConfig={footer as unknown as Record<string, unknown>}
+                        dark={t.dark}
+                      />
+                    </div>
+                  )}
                 </div>
                 {/* footer hint */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 12px', background: t.dark ? 'rgba(255,255,255,.02)' : '#FAFBFF', borderTop: `1px solid ${t.dark ? 'rgba(124,58,237,.18)' : '#F1EEFF'}`, flexShrink: 0 }}>
