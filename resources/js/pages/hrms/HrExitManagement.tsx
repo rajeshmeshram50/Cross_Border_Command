@@ -1105,7 +1105,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   /* Has the Full & Final settlement actually been paid? This gates the
      document release: the relieving letter and experience certificate go out
      only after the employee has their money, which is why F&F now sits BEFORE
-     Exit Documents in the stage order. Mirrored server-side in ExitController. */
+     Exit Documents in the stage order. Mirrored server-side in ExitController.
+
+     This is only a truthful signal because markFnfPaid() is the sole writer of
+     payStatus = 'Paid' — the Payment Status select deliberately does not offer
+     it (see that field). Anything that makes 'Paid' settable by hand again
+     re-opens the hole where the UI reports a settled, locked F&F that was never
+     validated, never recorded server-side and never completed the stage. */
   const fnfPaid = fnfMeta.payStatus === 'Paid';
   const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfNet = useMemo(() => {
@@ -2895,17 +2901,30 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </Col>
                     <Col md={6}>
                       <EpField label="Payment Status" required>
-                        {/* This select is also the switch "Mark F&F Paid" keys
-                            off, so leaving it open would let a settled F&F drop
-                            back to Pending and be paid a second time — the
-                            button would simply reappear. */}
+                        {/* "Paid" is an OUTCOME of "Mark F&F Paid", never an
+                            input. `fnfPaid` reads this field, so offering Paid
+                            in the list let anyone select it and land straight in
+                            the fully-settled, locked UI — the settled banner,
+                            every figure frozen, the document sealed and the
+                            Exit Documents release unblocked — while none of it
+                            had actually happened: markFnfPaid()'s checks
+                            (finance approval, payment date, F&F document,
+                            outstanding advances) were skipped, no payment was
+                            written to the server and the stage was never
+                            completed. It is listed only once the settlement is
+                            genuinely paid, where the select is disabled anyway
+                            and merely reports the state.
+
+                            Keeping the select disabled after payment also stops
+                            a settled F&F dropping back to Pending and being
+                            paid twice — the button would simply reappear. */}
                         <EpSelect value={fnfMeta.payStatus} onChange={v => setFnfMeta(s => ({ ...s, payStatus: v }))}
-                          options={['Pending', 'Processing', 'Paid']} disabled={fnfPaid} />
-                        {fnfPaid && (
-                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            Settled — a Full &amp; Final is paid only once, and this record is now locked.
-                          </div>
-                        )}
+                          options={fnfPaid ? ['Pending', 'Processing', 'Paid'] : ['Pending', 'Processing']} disabled={fnfPaid} />
+                        <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
+                          {fnfPaid
+                            ? <>Settled — a Full &amp; Final is paid only once, and this record is now locked.</>
+                            : <>Set to Paid automatically when you click &ldquo;Mark F&amp;F Paid&rdquo; below.</>}
+                        </div>
                       </EpField>
                     </Col>
                     <Col md={6}>
