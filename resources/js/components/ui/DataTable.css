@@ -1,9 +1,12 @@
 
-/* Accent palette. Shared by the table card and by .dt-tabrail — a standalone
-   tab rail a page can drop outside the table (e.g. a header-strip toggle) and
-   still get pixel-identical pills. */
+/* Accent palette. Shared by the table card, by .dt-tabrail — a standalone
+   tab rail a page can drop outside the table (e.g. a header-strip toggle) — and
+   by .dt-search--detached, the search box when `searchHost` portals it into a
+   caller's own header. All three sit OUTSIDE .dt-root in the DOM, so they can't
+   inherit these variables and must declare them themselves. */
 .dt-root,
-.dt-tabrail {
+.dt-tabrail,
+.dt-search--detached {
   /* ── violet: the Customer / Consignee palette, and the default ── */
   --dt-a-50:  #faf5ff;
   --dt-a-100: #f3e8ff;
@@ -51,37 +54,43 @@
 
 /* ── Accent families ───────────────────────────────────────────────────────── */
 .dt-root[data-accent="teal"],
-.dt-tabrail[data-accent="teal"] {
+.dt-tabrail[data-accent="teal"],
+.dt-search--detached[data-accent="teal"] {
   --dt-a-50:#f0fdfa; --dt-a-100:#ccfbf1; --dt-a-150:#cffafe; --dt-a-200:#a5e8f5;
   --dt-a-300:#67e8f9; --dt-a-400:#22d3ee; --dt-a-500:#06b6d4; --dt-a-600:#0891b2;
   --dt-a-700:#0e7490; --dt-a-800:#155e75; --dt-a-rgb: 8, 145, 178;
 }
 .dt-root[data-accent="blue"],
-.dt-tabrail[data-accent="blue"] {
+.dt-tabrail[data-accent="blue"],
+.dt-search--detached[data-accent="blue"] {
   --dt-a-50:#eff6ff; --dt-a-100:#dbeafe; --dt-a-150:#dbeafe; --dt-a-200:#bfdbfe;
   --dt-a-300:#93c5fd; --dt-a-400:#60a5fa; --dt-a-500:#3b82f6; --dt-a-600:#2563eb;
   --dt-a-700:#1d4ed8; --dt-a-800:#1e40af; --dt-a-rgb: 37, 99, 235;
 }
 .dt-root[data-accent="emerald"],
-.dt-tabrail[data-accent="emerald"] {
+.dt-tabrail[data-accent="emerald"],
+.dt-search--detached[data-accent="emerald"] {
   --dt-a-50:#ecfdf5; --dt-a-100:#d1fae5; --dt-a-150:#d1fae5; --dt-a-200:#a7f3d0;
   --dt-a-300:#6ee7b7; --dt-a-400:#34d399; --dt-a-500:#10b981; --dt-a-600:#059669;
   --dt-a-700:#047857; --dt-a-800:#065f46; --dt-a-rgb: 5, 150, 105;
 }
 .dt-root[data-accent="amber"],
-.dt-tabrail[data-accent="amber"] {
+.dt-tabrail[data-accent="amber"],
+.dt-search--detached[data-accent="amber"] {
   --dt-a-50:#fffbeb; --dt-a-100:#fef3c7; --dt-a-150:#fef3c7; --dt-a-200:#fde68a;
   --dt-a-300:#fcd34d; --dt-a-400:#fbbf24; --dt-a-500:#f59e0b; --dt-a-600:#d97706;
   --dt-a-700:#b45309; --dt-a-800:#92400e; --dt-a-rgb: 217, 119, 6;
 }
 .dt-root[data-accent="rose"],
-.dt-tabrail[data-accent="rose"] {
+.dt-tabrail[data-accent="rose"],
+.dt-search--detached[data-accent="rose"] {
   --dt-a-50:#fff1f2; --dt-a-100:#ffe4e6; --dt-a-150:#ffe4e6; --dt-a-200:#fecdd3;
   --dt-a-300:#fda4af; --dt-a-400:#fb7185; --dt-a-500:#f43f5e; --dt-a-600:#e11d48;
   --dt-a-700:#be123c; --dt-a-800:#9f1239; --dt-a-rgb: 225, 29, 72;
 }
 .dt-root[data-accent="slate"],
-.dt-tabrail[data-accent="slate"] {
+.dt-tabrail[data-accent="slate"],
+.dt-search--detached[data-accent="slate"] {
   --dt-a-50:#f8fafc; --dt-a-100:#f1f5f9; --dt-a-150:#e2e8f0; --dt-a-200:#cbd5e1;
   --dt-a-300:#94a3b8; --dt-a-400:#64748b; --dt-a-500:#475569; --dt-a-600:#334155;
   --dt-a-700:#1e293b; --dt-a-800:#0f172a; --dt-a-rgb: 51, 65, 85;
