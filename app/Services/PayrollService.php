@@ -960,6 +960,15 @@ class PayrollService
         }
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
+        // Off-days sandwiched inside an UNPAID leave are unpaid too. They sit
+        // outside the working-day denominator, so they are added rather than
+        // subtracted — there is nothing in that denominator to take them from.
+        $sandwichLop = (float) ($leave['sandwich_lop'] ?? 0);
+        if ($sandwichLop > 0) {
+            $lopDays = round($lopDays + $sandwichLop, 2);
+            $exceptions = $this->withException($exceptions, 'info',
+                "{$sandwichLop} off-day(s) sandwiched inside unpaid leave charged as loss of pay.");
+        }
 
         // Rule 2 (BR-01) — LOP accrues in 0.5-day steps for every completed block
         // of 3 late marks: 3→0.5, 6→1, 9→1.5, 12→2, and +0.5 per extra 3.
@@ -1581,7 +1590,7 @@ class PayrollService
     private function leaveAggregates(int $employeeId, Carbon $start, Carbon $end): array
     {
         if (!Schema::hasTable('leave_requests')) {
-            return ['paid' => 0, 'unpaid' => 0];
+            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0];
         }
 
         // The employee's own weekly-off pattern decides which days inside a
@@ -1597,7 +1606,7 @@ class PayrollService
             ->get(['leave_type_id', 'from_date', 'to_date', 'days', 'day_type', 'sandwich_waived']);
 
         if ($rows->isEmpty()) {
-            return ['paid' => 0, 'unpaid' => 0];
+            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0];
         }
 
         $paidMap = $this->leaveTypePaidMap($rows->pluck('leave_type_id')->unique()->all());
@@ -1633,6 +1642,22 @@ class PayrollService
 
         $paid = 0.0;
         $unpaid = 0.0;
+        /* Sandwiched off-days on an UNPAID leave, charged straight to LOP.
+         *
+         * On a PAID leave the sandwich is charged to the leave BALANCE, and
+         * that is the whole cost — 4 days of entitlement burnt for a 2-day
+         * absence, with pay following only once the balance runs out.
+         * An unpaid leave has no balance to burn, so the rule had nothing to
+         * bite on and simply did not apply: the same Friday-off-Monday absence
+         * cost an extra day on paid leave and nothing at all on LWP, purely
+         * because of the leave type. From the employee's side it is the same
+         * absence.
+         * It cannot be fixed by adding the day to $unpaid either — paid days
+         * are built from present + paid leave + holidays, and LOP is whatever
+         * is left of the WORKING days, which never contained the off-day. So
+         * the charge has to be added to LOP explicitly, which is also what an
+         * LWP sandwich means in practice: the off-day is unpaid too. */
+        $sandwichLop = 0.0;
         foreach ($rows as $r) {
             // Clip the leave span to the active window, then size it.
             $from = Carbon::parse($r->from_date)->max($start);
@@ -1678,11 +1703,20 @@ class PayrollService
             $flag = strtolower((string) ($paidMap[$r->leave_type_id] ?? 'paid'));
             if (in_array($flag, ['unpaid', 'lwp', 'loss of pay', 'loss_of_pay'], true)) {
                 $unpaid += $span;
+                // Waived by HR on the payroll review — the same flag the paid
+                // side honours, so one decision covers both.
+                if ($sandwichOn && $employee && !$r->sandwich_waived) {
+                    $sandwichLop += (float) $this->sandwichBreakdown($employee, $r)['sandwich'];
+                }
             } else {
                 $paid += $span;
             }
         }
-        return ['paid' => round($paid, 2), 'unpaid' => round($unpaid, 2)];
+        return [
+            'paid' => round($paid, 2),
+            'unpaid' => round($unpaid, 2),
+            'sandwich_lop' => round($sandwichLop, 2),
+        ];
     }
 
     /** leave_type_id => paid_unpaid flag (defensive about table/column names). */
