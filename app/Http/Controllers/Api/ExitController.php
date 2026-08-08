@@ -269,9 +269,19 @@ class ExitController extends Controller
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
 
+        /* PDF or image only. The F&F attachment is the SIGNED sheet / payment
+         * advice — a piece of evidence, not a working document. A spreadsheet
+         * or Word file is editable after the fact, which is exactly what an
+         * audit trail must not be, so doc/docx/xls/xlsx are refused here.
+         *
+         * `mimes` validates the file's real type (guessed from its contents),
+         * not the filename, so an .xlsx renamed to .pdf is still rejected. */
         $request->validate([
-            'attachment' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx', 'max:10240'],
-        ], ['attachment.required' => 'Select the Full & Final document to upload.']);
+            'attachment' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+        ], [
+            'attachment.required' => 'Select the Full & Final document to upload.',
+            'attachment.mimes'    => 'Only PDF, JPG or PNG files are accepted for the Full & Final document.',
+        ]);
 
         $file = $request->file('attachment');
         $path = $file->store('exit-fnf/' . $employee->id, 'public');
@@ -421,7 +431,10 @@ class ExitController extends Controller
 
         return response()->json(['data' => [
             'last_working_day' => $lwd->toDateString(),
-            'payroll'          => $this->fnfEarnedSalary($employee, $lwd),
+            // notice_date is the RESIGNATION date — the early-exit waiver is
+            // keyed on it (the last working day is derived from whether a
+            // notice period applies, so keying on that would be circular).
+            'payroll'          => $this->fnfEarnedSalary($employee, $lwd, $exit?->notice_date),
             'advances'         => $this->fnfAdvances($employee, $lwd),
             'claims'           => $this->fnfClaims($employee),
         ]]);
@@ -435,12 +448,13 @@ class ExitController extends Controller
      * which ignored the employee's salary structure, their attendance, loss of
      * pay, overtime and every allowance — and returned ₹0 outright for anyone
      * paid through a salary structure with no annual_salary set. The F&F now
-     * settles exactly what payroll would have paid for that month.
+     * settles exactly what payroll would have paid for that month — including
+     * paying NOTHING for an early exit, which payroll also skips entirely.
      */
-    private function fnfEarnedSalary(Employee $employee, \Carbon\Carbon $lwd): array
+    private function fnfEarnedSalary(Employee $employee, \Carbon\Carbon $lwd, $resignationDate = null): array
     {
         return app(\App\Services\PayrollService::class)
-            ->earnedSalaryForExitMonth($employee, $lwd);
+            ->earnedSalaryForExitMonth($employee, $lwd, $resignationDate);
     }
 
     /**

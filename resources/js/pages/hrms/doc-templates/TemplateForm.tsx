@@ -78,6 +78,22 @@ export const ROLE_TYPES: { value: RoleType; label: string; icon: string; tone: {
   { value: 'Intern / Trainee',         label: 'Intern / Trainee',         icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
 ];
 
+/* Inline so the button keeps its own text colour — a spinner that hard-codes a
+   colour reads wrong on the white ghost button and the gradient one alike. */
+function Spin() {
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 13, height: 13, display: 'inline-block', verticalAlign: '-2px',
+        border: '2px solid currentColor', borderTopColor: 'transparent',
+        borderRadius: '50%', animation: 'tplspin .7s linear infinite',
+        marginRight: 6, opacity: .85,
+      }}
+    />
+  );
+}
+
 const STEPS = [
   { key: 1, label: 'Setup',                 sub: 'Basic information' },
   { key: 2, label: 'Lifecycle & Signing',   sub: 'Trigger + approval workflow' },
@@ -530,7 +546,7 @@ export default function TemplateFormPage() {
           </CardBody>
         </Card>
         {/* Form body shimmer — a grid of label + field rows. */}
-        <Card style={{ borderRadius: 14 }}>
+        <Card style={{ borderRadius: 14, position: 'relative' }}>
           <CardBody>
             <div className="row g-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -685,12 +701,35 @@ export default function TemplateFormPage() {
           )}
         </CardBody>
 
+        {/* While a save is in flight nothing on this page is clickable.
+            Disabling the footer buttons alone was not enough: the form fields,
+            the step tabs and the signer rows all stayed live, so a value could
+            be changed after the payload had been built and the user would be
+            looking at a form that no longer matched what was being written. */}
+        {saving && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 20,
+            background: 'rgba(255,255,255,.55)', backdropFilter: 'blur(1px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'wait',
+          }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 9,
+              padding: '9px 16px', borderRadius: 10, background: '#fff',
+              border: '1px solid #e5e7eb', boxShadow: '0 6px 20px rgba(16,24,40,.10)',
+              fontSize: 12.5, fontWeight: 700, color: '#4338ca',
+            }}>
+              <Spin /> Saving…
+            </div>
+          </div>
+        )}
+
         {/* Footer */}
         <div className="tpl-form-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderRadius: '0 0 14px 14px' }}>
           <button type="button" onClick={() => handleSubmit(true)} disabled={saving}
             className="tpl-btn-ghost"
             style={{ padding: '8px 16px', background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, fontSize: 13, fontWeight: 600, color: '#374151', cursor: 'pointer' }}>
-            <i className="ri-draft-line me-1" /> Save as Draft
+            {saving ? <><Spin /> Saving…</> : <><i className="ri-draft-line me-1" /> Save as Draft</>}
           </button>
           <div className="d-flex gap-2">
             <button type="button" onClick={() => navigate('/hr/doc-templates')} disabled={saving}
@@ -711,7 +750,7 @@ export default function TemplateFormPage() {
             ) : (
               <button type="button" onClick={() => handleSubmit(false)} disabled={saving}
                 style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                {saving ? 'Saving…' : (editing ? 'Update Template' : 'Publish Template')}
+                {saving ? <><Spin /> Saving…</> : (editing ? 'Update Template' : 'Publish Template')}
               </button>
             )}
           </div>
@@ -1169,6 +1208,8 @@ const errMsg: React.CSSProperties = { fontSize: 11.5, color: '#ef4444', marginTo
 function TplFormDarkStyles() {
   return (
     <style>{`
+      @keyframes tplspin { to { transform: rotate(360deg); } }
+
       [data-bs-theme="dark"] .tpl-form-page .tpl-step-strip {
         background: var(--vz-card-bg) !important;
         border-top: 1px solid var(--vz-border-color);

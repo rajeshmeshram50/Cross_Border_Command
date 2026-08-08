@@ -69,6 +69,11 @@ export interface DataTableProps<T> {
   /** Turn every header into a static label. Default false (sorting on). */
   disableSorting?: boolean;
 
+  /** Columns pinned to the far left, BEFORE the auto-numbered "Sr No".
+   *  Sr No is prepended internally, so a column supplied through `columns`
+   *  can never sit left of it — which is where a row-select checkbox belongs.
+   *  Defaults to none, so every existing caller is unaffected. */
+  leading?: DataTableColumn<T>[];
   /** Prepend an auto-numbered "Sr No" column. Counts the row's VISIBLE
    *  position (page offset + place in the current sort), so it stays 1..n
    *  down the screen instead of exposing the underlying data index. */
@@ -147,6 +152,7 @@ export default function DataTable<T extends object>({
   toolbarActions,
   initialSort,
   disableSorting = false,
+  leading,
   serial = false,
   pageSize: pageSizeProp,
   pageSizeOptions = DEFAULT_SIZE_OPTIONS,
@@ -258,7 +264,8 @@ export default function DataTable<T extends object>({
   const [globalFilter, setGlobalFilter] = useState('');
   useEffect(() => { if (!isSearchControlled) setGlobalFilter(ownQuery); }, [ownQuery, isSearchControlled]);
   const allColumns = useMemo<DataTableColumn<T>[]>(() => {
-    if (!serial) return columns;
+    const lead = leading ?? [];
+    if (!serial) return [...lead, ...columns];
     const cfg = typeof serial === 'object' ? serial : {};
     const srCol: DataTableColumn<T> = {
       id: '__dt_serial',
@@ -273,8 +280,8 @@ export default function DataTable<T extends object>({
         return <span className="dt-serial">{offset + pos + 1}</span>;
       },
     };
-    return [srCol, ...columns];
-  }, [columns, serial, paginate]);
+    return [...lead, srCol, ...columns];
+  }, [columns, serial, paginate, leading]);
 
   const anyWidth = useMemo(
     () => allColumns.some(c => (c.meta as DataTableColumnMeta | undefined)?.width !== undefined),
