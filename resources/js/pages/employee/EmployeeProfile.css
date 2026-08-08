@@ -2413,7 +2413,17 @@
   font-size: 16px;
 }
 .pft-file-input { font-size: 11px; padding: 2px 6px; height: 26px; }
-.pft-btn-icon-sm { font-size: 10.5px; padding: 3px 8px; }
+/* Square, and exactly as tall as the file input they sit beside. btn-sm's own
+   padding made them taller, so they overhung the field on both edges. */
+.pft-btn-icon-sm {
+  font-size: 10.5px; padding: 0;
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+/* The tile is align-items:center, which centred this group against the WHOLE
+   column — label plus input — so it floated above the field it belongs to.
+   Pinned to the bottom of that column instead, which is the input's row. */
+.pft-tile-photo > div:has(> .pft-btn-icon-sm) { align-self: flex-end; }
 .pft-spinner-sm { width: 10px; height: 10px; }
 .pft-btn-action { font-size: 10.5px; padding: 3px 10px; }
 .pft-icon-rose {

@@ -59,7 +59,9 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  /* top OR bottom, never both: the popover flips above the chip when there is
+     no room below it. maxH is the space actually available on that side. */
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; maxH: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   // The visible pill is the first role only, and role names ("Sales Employee",
@@ -76,11 +78,29 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
     if (!b) return;
     const POP_W = 200;
     const margin = 8;
+    const GAP = 6;
     let left = b.left;
     if (left + POP_W + margin > window.innerWidth) {
       left = Math.max(margin, window.innerWidth - POP_W - margin);
     }
-    setPos({ top: b.bottom + 6, left });
+
+    /* Flip above the chip when there is more room there.
+       It always opened downward, and this column's chips are on the LAST rows
+       of a list as often as the first — so the popover hung off the bottom of
+       the window with its lower half unreachable. Anchoring by `bottom` on the
+       flipped side means the height never has to be known in advance. */
+    const below = window.innerHeight - b.bottom - GAP - margin;
+    const above = b.top - GAP - margin;
+    /* Enough room for a useful list without scrolling. Below this the popover
+       is a sliver pinned to the bottom edge, which is what the last rows of a
+       table always got: `below` cleared the old 170px bar by a hair, so it
+       opened downward into a space it could not use. */
+    const WANT = 280;
+    if (below < WANT && above > below) {
+      setPos({ left, bottom: window.innerHeight - b.top + GAP, maxH: above });
+    } else {
+      setPos({ left, top: b.bottom + GAP, maxH: below });
+    }
   };
 
   useEffect(() => {
@@ -176,10 +196,20 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
           className="d-flex flex-column gap-1"
           style={{
             position: 'fixed',
-            top: pos.top,
+            ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
             left: pos.left,
             zIndex: 1080,
             width: 200,
+            maxWidth: 'calc(100vw - 16px)',
+            /* The list is as long as the employee has roles, and nothing capped
+               it — a dozen roles ran past the edge of the window with nothing
+               to scroll. Bounded by the room on whichever side it opened. */
+            maxHeight: pos.maxH,
+            overflowY: 'auto',
+            /* Stops the page from scrolling once this list hits its end. */
+            overscrollBehavior: 'contain',
+            scrollbarWidth: 'thin',
+            scrollbarColor: isDark ? 'rgba(255,255,255,.22) transparent' : 'rgba(15,23,42,.18) transparent',
             padding: 10,
             borderRadius: 12,
             // Explicit theme-aware colours — this popover is portalled to

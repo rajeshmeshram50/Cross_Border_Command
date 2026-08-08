@@ -146,6 +146,26 @@ class ExitController extends Controller
                 : 'The notice-period payment to this employee is not settled yet — disburse the full amount before completing the exit.');
         }
 
+        /* Company advances must be fully reconciled before the case can close:
+           an unsettled advance, an unreturned (used-less) balance whose payments
+           aren't all approved, or an un-raised (used-more) reimbursement each
+           block completion. Self advances are recovered from the F&F itself, so
+           they never block. Mirrors the frontend gate. */
+        $gateLwd = !empty($data['last_working_day'])
+            ? \Carbon\Carbon::parse($data['last_working_day'])->startOfDay()
+            : (($stored = EmployeeExit::where('employee_id', $employee->id)->value('last_working_day'))
+                ? \Carbon\Carbon::parse($stored)->startOfDay()
+                : \Carbon\Carbon::now(self::DISPLAY_TZ)->startOfDay());
+        $advCheck = $this->fnfAdvances($employee, $gateLwd);
+        if (!($advCheck['all_complete'] ?? true)) {
+            $refs = collect($advCheck['items'] ?? [])
+                ->filter(fn ($i) => empty($i['complete']))
+                ->map(fn ($i) => $i['reference'])
+                ->filter()->values()->all();
+            abort(422, 'Company advance(s) not fully settled: ' . implode(', ', $refs)
+                . '. Settle, return the balance (with each payment approved), or raise the reimbursement before completing the exit.');
+        }
+
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             $lockedType = $this->lockedExitType($row);
@@ -478,7 +498,7 @@ class ExitController extends Controller
     private function fnfAdvances(Employee $employee, \Carbon\Carbon $lwd): array
     {
         if (!\Illuminate\Support\Facades\Schema::hasTable('advance_requests')) {
-            return ['total' => 0.0, 'items' => []];
+            return ['total' => 0.0, 'items' => [], 'all_complete' => true, 'incomplete_count' => 0];
         }
 
         // NB: advance_requests / expense_claims are hard-delete tables — no
@@ -486,46 +506,138 @@ class ExitController extends Controller
         $rows = DB::table('advance_requests')
             ->where('employee_id', $employee->id)
             ->whereRaw('LOWER(hr_status) = ?', ['approved'])
-            ->get(['id', 'advance_no', 'advance_type', 'amount', 'recovery_start',
-                   'recovery_mode', 'recovery_months', 'monthly_emi']);
+            ->get(['id', 'advance_no', 'advance_type', 'amount', 'used_for',
+                   'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+                   'employee_settled_at', 'settle_type', 'settle_balance',
+                   'settle_approval_status', 'settle_returned_at', 'settle_return_scheduled_at',
+                   'settle_return_payments', 'settle_reimbursement_claim_id']);
 
+        $hasReturnLedger = \Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger');
         $items = [];
-        $total = 0.0;
+        $total = 0.0;         // money the employee still owes → recovered in the F&F
+        $incomplete = 0;      // company advances not fully reconciled → block close
+
         foreach ($rows as $r) {
             $amount = (float) $r->amount;
             if ($amount <= 0) continue;
+            $usedFor = strtolower((string) ($r->used_for ?? 'self'));
 
-            $recovered = 0.0;
-            if ($r->recovery_start) {
-                $start = \Carbon\Carbon::parse($r->recovery_start)->startOfDay();
-                if ($start->lte($lwd)) {
-                    if ($r->recovery_mode === 'emi') {
-                        $emi     = (float) ($r->monthly_emi ?: round($amount / max(1, (int) ($r->recovery_months ?: 1)), 2));
-                        // Instalments whose month has been reached by the LWD.
-                        $elapsed = $start->copy()->startOfMonth()->diffInMonths($lwd->copy()->startOfMonth()) + 1;
-                        $elapsed = min($elapsed, max(1, (int) ($r->recovery_months ?: 1)));
-                        $recovered = min($amount, round($emi * $elapsed, 2));
-                    } else {
-                        $recovered = $amount;   // lumpsum, start month reached
+            // ── SELF advance — recovered from salary on the EMI/lumpsum schedule.
+            //    Whatever the schedule hasn't reached by the LWD is recovered from
+            //    the F&F. Always resolvable at F&F time, so never blocking.
+            if ($usedFor !== 'company') {
+                $recovered = 0.0;
+                if ($r->recovery_start) {
+                    $start = \Carbon\Carbon::parse($r->recovery_start)->startOfDay();
+                    if ($start->lte($lwd)) {
+                        if ($r->recovery_mode === 'emi') {
+                            $emi     = (float) ($r->monthly_emi ?: round($amount / max(1, (int) ($r->recovery_months ?: 1)), 2));
+                            $elapsed = $start->copy()->startOfMonth()->diffInMonths($lwd->copy()->startOfMonth()) + 1;
+                            $elapsed = min($elapsed, max(1, (int) ($r->recovery_months ?: 1)));
+                            $recovered = min($amount, round($emi * $elapsed, 2));
+                        } else {
+                            $recovered = $amount;
+                        }
                     }
                 }
+                $outstanding = round($amount - $recovered, 2);
+                if ($outstanding <= 0.005) continue;   // fully recovered — nothing to do
+                $total += $outstanding;
+                $items[] = [
+                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
+                    'used_for' => 'self', 'amount' => round($amount, 2),
+                    'recovered' => round($recovered, 2), 'outstanding' => $outstanding,
+                    'settle_state' => 'self_recover', 'complete' => true,
+                    'note' => 'Recover the outstanding balance from the final settlement.',
+                ];
+                continue;
             }
 
-            $outstanding = round($amount - $recovered, 2);
-            if ($outstanding <= 0.005) continue;
+            // ── COMPANY advance — reconciled through the SETTLEMENT flow, NOT
+            //    recovered from salary. What the F&F does depends on how it settled.
+            $settled = (bool) $r->employee_settled_at && ($r->settle_approval_status === 'approved');
+            $balance = round((float) $r->settle_balance, 2);
 
-            $total += $outstanding;
+            // Not settled (or settlement not approved) → the spend is unknown, so
+            // there is nothing to auto-recover, but the exit CANNOT be closed until
+            // it is settled. Flag it as blocking.
+            if (!$settled) {
+                $incomplete++;
+                $items[] = [
+                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
+                    'used_for' => 'company', 'amount' => round($amount, 2),
+                    'recovered' => 0.0, 'outstanding' => 0.0,
+                    'settle_state' => 'not_settled', 'complete' => false,
+                    'note' => 'Company advance not settled/approved yet — settle it before closing the exit.',
+                ];
+                continue;
+            }
+
+            $type = (string) ($r->settle_type ?? 'equal');
+
+            if ($type === 'return') {
+                // Used LESS → employee owes the unspent balance back. Count what is
+                // already returned: APPROVED direct payments + payroll recovery.
+                $pays = json_decode((string) ($r->settle_return_payments ?? '[]'), true) ?: [];
+                $approvedDirect = 0.0;
+                foreach ($pays as $p) {
+                    if (($p['status'] ?? 'approved') === 'approved') $approvedDirect += (float) ($p['amount'] ?? 0);
+                }
+                $payrollReturned = $hasReturnLedger
+                    ? (float) DB::table('advance_recovery_ledger')
+                        ->where('advance_request_id', $r->id)->where('stream', 'return')->sum('amount')
+                    : 0.0;
+                $returned    = round(min($balance, $approvedDirect + $payrollReturned), 2);
+                $outstanding = round(max(0, $balance - $returned), 2);
+                $complete    = (bool) $r->settle_returned_at || $outstanding <= 0.005;
+                if (!$complete) $incomplete++;
+                if ($outstanding > 0.005) $total += $outstanding;
+                $items[] = [
+                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
+                    'used_for' => 'company', 'amount' => round($amount, 2),
+                    'recovered' => $returned, 'outstanding' => $outstanding,
+                    'settle_state' => $complete ? 'return_complete' : 'return_pending', 'complete' => $complete,
+                    'note' => $complete
+                        ? 'Unspent balance returned in full.'
+                        : 'Employee still owes the unreturned balance — recover it in the F&F (or wait for approval of pending payments).',
+                ];
+                continue;
+            }
+
+            if ($type === 'reimburse') {
+                // Used MORE → the company owes the EMPLOYEE the excess. That is paid
+                // via an expense claim (owed TO the employee), so it belongs in the
+                // claims section — not a recovery here. Complete once it was raised.
+                $raised = (bool) $r->settle_reimbursement_claim_id;
+                if (!$raised) $incomplete++;
+                $items[] = [
+                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
+                    'used_for' => 'company', 'amount' => round($amount, 2),
+                    'recovered' => round($amount, 2), 'outstanding' => 0.0,
+                    'settle_state' => $raised ? 'reimburse_raised' : 'reimburse_pending', 'complete' => $raised,
+                    'note' => $raised
+                        ? 'Over-spend reimbursement raised — paid to the employee via the claims section.'
+                        : 'Over-spend not yet raised as a reimbursement claim — raise it before closing the exit.',
+                ];
+                continue;
+            }
+
+            // Settled 'equal' — spend equals the advance, nothing owed either way.
             $items[] = [
-                'id'          => $r->id,
-                'reference'   => $r->advance_no,
-                'type'        => $r->advance_type,
-                'amount'      => round($amount, 2),
-                'recovered'   => round($recovered, 2),
-                'outstanding' => $outstanding,
+                'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
+                'used_for' => 'company', 'amount' => round($amount, 2),
+                'recovered' => round($amount, 2), 'outstanding' => 0.0,
+                'settle_state' => 'settled_equal', 'complete' => true,
+                'note' => 'Settled — spend equals the advance.',
             ];
         }
 
-        return ['total' => round($total, 2), 'items' => $items];
+        return [
+            'total'            => round($total, 2),
+            'items'            => $items,
+            'all_complete'     => $incomplete === 0,
+            'incomplete_count' => $incomplete,
+        ];
     }
 
     /**

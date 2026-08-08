@@ -1096,6 +1096,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
   const duesClaims   = Number(fnfDues?.claims?.total ?? 0);
+  // Company advances must be fully reconciled (settled / returned-and-approved /
+  // reimbursement raised) before the F&F can close. Self advances never block —
+  // they're recovered from the F&F itself. Mirrors the ExitController gate.
+  const advancesAllComplete = fnfDues?.advances?.all_complete !== false;
+  const advancesIncomplete: any[] = (fnfDues?.advances?.items ?? []).filter((a: any) => a && a.complete === false);
 
   /* Has the Full & Final settlement actually been paid? This gates the
      document release: the relieving letter and experience certificate go out
@@ -2218,6 +2223,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.warning('Finance approval pending', 'The finance controller must approve the settlement before it can be marked paid.');
       return;
     }
+    if (!advancesAllComplete) {
+      const refs = advancesIncomplete.map(a => a.reference || a.type).filter(Boolean).join(', ');
+      toast.warning('Company advances not settled',
+        `Settle / return (payments approved) / raise reimbursement for ${refs || 'the flagged advance(s)'} before marking the F&F paid.`);
+      return;
+    }
     // Only the pay-in-lieu money is settled BY this stage. A recovery is owned
     // by the Notice Period Payment stage, so don't overwrite its verdict here.
     const settlesNotice = settlement === 'pay_in_lieu' && settle.amount > 0;
@@ -2818,8 +2829,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   <FnfRow label={`Advance Recovery${fnfDues?.advances?.items?.length ? ` (${fnfDues.advances.items.length} advance${fnfDues.advances.items.length === 1 ? '' : 's'})` : ''}`}
                           value={String(duesAdvances)} readOnly deduction
                           hint={fnfDues?.advances?.items?.length
-                            ? fnfDues.advances.items.map((a: any) => `${a.reference || a.type}: ${fmtMoney(a.outstanding)} outstanding of ${fmtMoney(a.amount)}`).join(' · ')
+                            ? fnfDues.advances.items.map((a: any) => {
+                                const st = a.complete === false
+                                  ? (a.settle_state === 'not_settled' ? 'NOT SETTLED'
+                                    : a.settle_state === 'return_pending' ? 'return pending approval'
+                                    : a.settle_state === 'reimburse_pending' ? 'reimbursement not raised'
+                                    : 'incomplete')
+                                  : (Number(a.outstanding) > 0 ? `${fmtMoney(a.outstanding)} outstanding` : 'settled');
+                                return `${a.reference || a.type}: ${st}`;
+                              }).join(' · ')
                             : 'No advances are outstanding.'} />
+                  {/* Company advances that aren't fully reconciled block the F&F —
+                      surface them so HR knows exactly what to close first. */}
+                  {!advancesAllComplete && (
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#a4661c', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, margin: '6px 0 2px' }}>
+                      <i className="ri-error-warning-line" style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }} />
+                      <span>{advancesIncomplete.length} company advance{advancesIncomplete.length === 1 ? '' : 's'} not fully settled ({advancesIncomplete.map(a => a.reference || a.type).filter(Boolean).join(', ')}). Settle, return the balance (each payment approved), or raise the reimbursement before the F&F can be paid.</span>
+                    </div>
+                  )}
 
                   {settlement === 'pay_in_lieu' && (
                     <FnfRow label={`Salary in Lieu of Notice (${settle.unserved} days)`} value={String(settle.amount)} readOnly
