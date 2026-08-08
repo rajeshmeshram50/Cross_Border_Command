@@ -23,6 +23,11 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* The header band's fill, named once. Both `thead th` and the scroll box's
+     scrollbar track read it, so the bar that runs alongside the header can
+     never drift to a different purple than the header itself. Resolved per
+     element, so every [data-accent] family gets its own matching pair. */
+  --dt-head-fill: color-mix(in srgb, var(--dt-a-500) 60%, var(--dt-a-600));
   border: 1px solid var(--vz-border-color);
   border-radius: 16px;
   overflow: hidden;
@@ -352,6 +357,13 @@
   flex: 1; min-height: 0;
   overflow: hidden;
   position: relative;
+  /* Filled with the header colour so ONE strip shows it: the gutter to the
+     right of .dt-head-clone, which is narrowed by the vertical scrollbar's
+     width so its columns line up with the body. That gutter sits at header
+     height and used to paint the card's white, leaving a notch at the end of
+     the coloured band. Everywhere else this is covered by .dt-scroll's own
+     opaque background, so nothing below the header is tinted. */
+  background: var(--dt-head-fill);
 }
 /* min-width:0 is load-bearing: as a flex item this box would otherwise take its
    min-content width from the table and refuse to shrink, so `overflow-x:auto`
@@ -362,6 +374,12 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--dt-a-200) transparent;
+  /* Opaque on purpose: .dt-table-wrap behind it is filled with the header
+     colour so the gutter beside the clone header stops reading as a white
+     notch (see .dt-table-wrap). Without this the accent would bleed up
+     through the transparent rows and scrollbar tracks and turn the whole
+     body purple. */
+  background: var(--vz-card-bg, #fff);
 }
 .dt-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .dt-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -407,7 +425,7 @@
    crisp on the lighter fill. */
 .dt-table thead th {
   position: sticky; top: 0; z-index: 3;
-  background: color-mix(in srgb, var(--dt-a-500) 60%, var(--dt-a-600));
+  background: var(--dt-head-fill);
   color: #fff;
   font-size: 9.5px; font-weight: 800;
   letter-spacing: .07em;
