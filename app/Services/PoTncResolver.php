@@ -9,10 +9,10 @@ use App\Models\Product;
 /**
  * Resolves the master Terms & Conditions that apply to a Purchase Order — matched
  * from the T&C Library by document type (domestic/international), document kind
- * (purchase order), supplier party (material/ffd/service) and each line product's
- * segment + regulatory tier. This is the SAME source the PO PDF renders as its
- * "Terms And Conditions" block, extracted here so the Zoho sync sends identical
- * T&C instead of only the PO's free-text `terms` field.
+ * (purchase order) and each line product's segment + regulatory tier. This is the
+ * SAME source the PO PDF renders as its "Terms And Conditions" block, extracted
+ * here so the Zoho sync sends identical T&C instead of only the PO's free-text
+ * `terms` field.
  */
 class PoTncResolver
 {
@@ -29,11 +29,6 @@ class PoTncResolver
         $docType   = str_contains($docTypeLc, 'international') ? 'international' : 'domestic';
         $docKind   = 'purchase order';
 
-        // Supplier party the T&C must apply to, from po_type (Material / FFD / Services).
-        $poTypeLc  = mb_strtolower((string) ($po->po_type ?? ''));
-        $partyKey  = (str_contains($poTypeLc, 'ffd') || str_contains($poTypeLc, 'transport')) ? 'ffd'
-                   : (str_contains($poTypeLc, 'service') ? 'service' : 'material');
-
         // PO items in sequence → their products → segments (name + tier).
         $items = collect($po->items ?? [])
             ->sortBy(fn ($it) => [(int) ($it->line_no ?? 0), (int) ($it->id ?? 0)])
@@ -48,17 +43,21 @@ class PoTncResolver
             ->keyBy('id');
         if ($segById->isEmpty()) return [];
 
-        // Candidates: category matches doc type + "purchase order", AND the T&C
-        // applies to this supplier type (party contains the keyword, or is All/blank).
+        /* Candidates: category matches doc type + "purchase order".
+         *
+         * The supplier-party filter (po_type → material / ffd / service matched
+         * against clm_tnc_library.party) is gone: a T&C has no applicable party
+         * — it belongs to the DOCUMENT and the segment. It is dropped here
+         * rather than left to match blank values, so a legacy row that still
+         * carries "Supplier-Material" behaves the same as a freshly saved one.
+         * Segment + regulatory tier remain the only narrowing below. */
         $candidates = ClmTncLibrary::where('client_id', $clientId)
             ->where(fn ($w) => $w->whereNull('status')->orWhere('status', 'active'))
             ->orderBy('id')
             ->get()
-            ->filter(function ($row) use ($docType, $docKind, $partyKey) {
+            ->filter(function ($row) use ($docType, $docKind) {
                 $cat = mb_strtolower((string) $row->category);
-                if (!str_contains($cat, $docType) || !str_contains($cat, $docKind)) return false;
-                $party = mb_strtolower(trim((string) $row->party));
-                return $party === '' || str_contains($party, 'all') || str_contains($party, $partyKey);
+                return str_contains($cat, $docType) && str_contains($cat, $docKind);
             });
 
         // Segment + tier match, product sequence, dedup by id.
