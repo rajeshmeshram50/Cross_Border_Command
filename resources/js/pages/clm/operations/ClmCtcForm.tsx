@@ -1350,7 +1350,10 @@ function Stage1(p: {
                 <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
                   <div className="ctc-mid-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                     <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
-                      <CtcEditorContent editor={ctcEd.editor} pageView margins={margins} onMargins={p.editLock ? undefined : setMargins} />
+                      <CtcEditorContent
+                        editor={ctcEd.editor} pageView
+                        margins={margins} onMargins={p.editLock ? undefined : setMargins}
+                        footerText={(footer as { text?: string }).text || ''} />
                     </HeaderFooterPanel>
                   </div>
                   {/* Live PDF preview — the real rendered pages (true A4, real

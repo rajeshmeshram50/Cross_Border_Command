@@ -475,6 +475,7 @@ class PayrollService
                 'working_days'      => (float) ($slip['working_days'] ?? 0),
                 'present_days'      => (float) ($slip['present_days'] ?? 0),
                 'paid_days'         => (float) ($slip['paid_days'] ?? 0),
+                'weekoff_days'      => (float) ($slip['weekoff_days'] ?? 0),
                 'lop_days'          => (float) ($slip['lop_days'] ?? 0),
                 'paid_leave_days'   => (float) ($slip['paid_leave_days'] ?? 0),
                 'unpaid_leave_days' => (float) ($slip['unpaid_leave_days'] ?? 0),
@@ -937,6 +938,22 @@ class PayrollService
         // up to the working-day ceiling — they can never inflate paid days for
         // an employee who was already present every working day.
         $paidDays = min($effectiveWorkingDays, $presentDays + $paidLeaveDays + $holidayDays);
+
+        /* Weekly offs in the active window.
+         * They are NOT part of paid_days and must not be: working_days already
+         * excludes them, so the money is built from a denominator they were
+         * never in. But that also means nothing on the slip showed them at all
+         * — an August slip read "Paid Days 5" for an employee who was in fact
+         * paid for those 5 plus every Sunday, and it looked like the week-offs
+         * had been docked. This is reported alongside so the slip can say so.
+         * A week-off only ever costs anything when the sandwich rule bites, and
+         * that is charged through leave_requests.days, not here. */
+        $weekOffDays = 0;
+        for ($d = $winStart->copy(); $d->lte($winEnd); $d->addDay()) {
+            if (\App\Support\WeekOff::isOff((string) ($employee->weekly_off ?? ''), $d)) {
+                $weekOffDays++;
+            }
+        }
         if ($holidayDays > 0) {
             $exceptions = $this->withException($exceptions, 'info',
                 "{$holidayDays} holiday day(s) in this period credited as paid.");
@@ -1219,6 +1236,7 @@ class PayrollService
         return array_merge($base, [
             'present_days'   => $presentDays,
             'paid_days'      => $paidDays,
+            'weekoff_days'   => $weekOffDays,
             'lop_days'       => $lopDays,
             'paid_leave_days'   => $paidLeaveDays,
             'unpaid_leave_days' => $unpaidLeaveDays,

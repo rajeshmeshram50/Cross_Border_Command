@@ -1137,6 +1137,22 @@ class PayrollController extends Controller
             }
             $row['exceptions']        = $p->exceptions ?: [];
             $row['paidDays']          = (float) $p->paid_days;
+            /* Weekly offs in the period. Not part of paid_days and not meant to
+             * be — working_days already excludes them, so the salary is built
+             * from a denominator they were never in. The slip simply never said
+             * so, which made a low Paid Days figure look like the week-offs had
+             * been docked. Recomputed here from the employee's own pattern
+             * rather than derived from working_days, which is prorated for a
+             * mid-period joiner and would not give this back. */
+            $row['weekOffDays'] = 0;
+            if ($p->period && $emp) {
+                $wStart = Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->startOfDay();
+                $wEnd   = (clone $wStart)->endOfMonth()->startOfDay();
+                $label  = (string) ($emp->weekly_off ?? '');
+                for ($d = $wStart->copy(); $d->lte($wEnd); $d->addDay()) {
+                    if (\App\Support\WeekOff::isOff($label, $d)) $row['weekOffDays']++;
+                }
+            }
             $row['lopDays']           = (float) $p->lop_days;
             // Total calendar days of the month — salary & LOP are computed on
             // this basis (÷30/31), so the payslip shows it as the day count.

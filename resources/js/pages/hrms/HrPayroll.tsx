@@ -283,7 +283,7 @@ export default function HrPayroll() {
   // so View PDF / the day chips always reflect the SELECTED period — not the
   // period the modal was first opened on.
   const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
-  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number } | null>(null);
+  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number; weekOffDays?: number } | null>(null);
   /* Overtime for the open payslip. Only populated for employees the employee
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
@@ -1898,6 +1898,7 @@ export default function HrPayroll() {
             daysPresent={payslipDays?.present ?? r.present}
             lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? 0}
             paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
+            weekOffDays={payslipDays?.weekOffDays ?? 0}
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
             overtimeDetectedHours={payslipOt?.detectedHours ?? 0}

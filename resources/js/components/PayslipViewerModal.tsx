@@ -33,6 +33,8 @@ export interface PayslipViewerModalProps {
   daysPresent?: number;
   lossOfPay?: number;
   paidDays?: number;
+  /** Weekly offs in the period — outside paidDays, and paid. */
+  weekOffDays?: number;
   /** Overtime — only rendered when the employee master marks this employee
    *  overtime-applicable. The OT Hours KPI and the "Overtime Allowance"
    *  earnings line both key off this, so staff the policy doesn't cover see
@@ -109,6 +111,7 @@ export default function PayslipViewerModal({
   daysPresent = 31,
   lossOfPay = 0,
   paidDays = 31,
+  weekOffDays = 0,
   overtimeApplicable = false,
   overtimeHours = 0,
   overtimeDetectedHours = 0,
@@ -437,7 +440,13 @@ export default function PayslipViewerModal({
                   { label: 'Total Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
                   { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
                   { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
-                  { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
+                  /* Week-offs are NOT inside Paid Days and must not be — the
+                     salary is built from working days, which exclude them. But
+                     with nothing on the slip naming them, "Paid Days 5" in a
+                     31-day month read as if every Sunday had been docked. The
+                     note says what actually happened to them. */
+                  { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78',
+                    note: weekOffDays > 0 ? `+ ${weekOffDays} week-off${weekOffDays === 1 ? '' : 's'} (not deducted)` : undefined },
                   ...(overtimeApplicable
                     ? [{ label: 'OT Hours', value: otHoursLabel, tint: 'rgba(124,92,252,0.10)', fg: '#6d28d9' }]
                     : []),
@@ -445,6 +454,9 @@ export default function PayslipViewerModal({
                   <div className="ep-pay-kpi" key={k.label} style={{ background: k.tint }}>
                     <div className="ep-pay-kpi-label">{k.label}</div>
                     <div className="ep-pay-kpi-value" style={{ color: k.fg }}>{k.value}</div>
+                    {'note' in k && k.note && (
+                      <div style={{ marginTop: 2, fontSize: 9, fontWeight: 600, color: '#5e7888', letterSpacing: '.01em' }}>{k.note}</div>
+                    )}
                   </div>
                 ))}
               </div>

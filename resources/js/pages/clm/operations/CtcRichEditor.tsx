@@ -98,7 +98,15 @@ const FIRST_H  = PAGE_H - HEAD_H - DOC_PAD;
    there, so drawing it both added space the output does not have and put a band
    under the boundary line that read as part of the document. The blank tail
    above the line is the only real thing, and that is the paper itself. */
+/* Nothing is reserved between two sheets.
+   A footer strip + desk + top margin were drawn in here so the draft would look
+   like separate sheets. It reserved 178px at every boundary and painted over
+   it — and any boundary whose reservation did not land left that painting on
+   top of the text. The blank tail below is real (dompdf leaves it); this was
+   not, so it is gone rather than patched. */
 const PAGE_GAP = 0;
+/* How much of a manual break's blank tail the draft actually draws. */
+const MANUAL_TAIL_MAX = 90;
 /* Runaway guard only. The measure below is one forced reflow followed by N
    cached reads — it does not write inside the loop, so it stays linear and a
    few thousand blocks are cheap. The old 400 was set as if each read cost a
@@ -358,9 +366,9 @@ const PageFlow = Extension.create({
                when nothing changed, and when something does it is one inline
                style on an element that was already there. */
             type Bound =
-              | { kind: 'pad'; from: number; to: number; fill: number }
-              | { kind: 'band'; at: number; key: string; h: number; row: boolean; cols: number }
-              | { kind: 'mark'; top: number };
+              | { kind: 'pad'; from: number; to: number; fill: number; line: number }
+              | { kind: 'band'; at: number; key: string; h: number; row: boolean; cols: number; line: number; silent?: boolean }
+              | { kind: 'mark'; line: number };
             const bounds: Bound[] = [];
             let cap = FIRST_H;   // natural height available through this sheet
 
@@ -372,9 +380,30 @@ const PageFlow = Extension.create({
               if (u.brk) {
                 const bottom = u.top + u.height;
                 const fill = Math.round(cap - bottom);
-                if (fill > 0) bounds.push({ kind: 'band', at: u.pos + u.size, key: `pb${u.pos}`, h: fill + PAGE_GAP, row: false, cols: 0 });
-                else bounds.push({ kind: 'mark', top: u.phys + u.height });
-                cap = (fill > 0 ? bottom : cap) + PAGE_H;
+                /* A manual break ALWAYS ends its page — that is the point of
+                   the button. It used to fall through to a bare marker whenever
+                   it landed with no room left, which said the opposite of what
+                   the user had just asked for. */
+                const room = Math.max(0, fill);
+                /* The blank tail after a MANUAL break is shown collapsed.
+                   It is real — the PDF leaves it — but it is dead space the
+                   user deliberately created, and rendering all of it made them
+                   scroll through half a page of nothing.
+                   Safe to shorten because the page maths never reads this
+                   height: natural positions come from the DOM (gapAcc measures
+                   whatever is actually reserved) and `cap` advances by the TRUE
+                   room below. So the numbering and every later boundary stay
+                   exactly where the PDF puts them. Automatic breaks are left
+                   alone — their tails are what the PDF genuinely chose. */
+                const shown = Math.min(room, MANUAL_TAIL_MAX);
+                /* silent: the node draws its own PAGE BREAK marker right here,
+                   so an automatic "PAGE n ENDS" on the same boundary was a
+                   second label for one event. It still takes its page number —
+                   it is a real boundary — it just isn't drawn twice. */
+                bounds.push({ kind: 'band', at: u.pos + u.size, key: `pb${u.pos}`,
+                              h: shown + PAGE_GAP, row: false, cols: 0, silent: true,
+                              line: u.phys + u.height + shown });
+                cap = bottom + room + PAGE_H;
                 continue;
               }
 
@@ -389,29 +418,40 @@ const PageFlow = Extension.create({
                  whole block. The blank tail is real, and it is the gap that
                  shows up above the footer in the generated PDF. */
               if (u.height <= PAGE_H && u.top + u.height > cap) {
+                /* fill can legitimately be 0 — the sheet ended exactly at this
+                   block's edge. There is no blank tail, but the footer strip,
+                   the gutter and the next sheet's top margin are still there,
+                   so space is still reserved and this still draws as a real
+                   sheet break. It used to fall through to a bare line labelled
+                   "PAGE n ENDS" with nothing ending after it. */
                 const fill = Math.round(cap - u.top);
-                if (fill > 0) bounds.push(u.row
-                  ? { kind: 'band', at: u.pos, key: `pg${u.pos}`, h: fill + PAGE_GAP, row: true, cols: u.cols }
-                  : { kind: 'pad', from: u.pos, to: u.pos + u.size, fill });
-                // Sheet ended exactly at this block's edge — nothing to reserve,
-                // but still a boundary, so still a mark.
-                else bounds.push({ kind: 'mark', top: u.phys });
-                cap = (fill > 0 ? u.top : cap) + PAGE_H;
+                const room = Math.max(0, fill);
+                const line = u.phys + room;
+                bounds.push(u.row
+                  ? { kind: 'band', at: u.pos, key: `pg${u.pos}`, h: room + PAGE_GAP, row: true, cols: u.cols, line }
+                  : { kind: 'pad', from: u.pos, to: u.pos + u.size, fill: room, line });
+                cap = u.top + PAGE_H;
               }
 
               /* Taller than a whole sheet, so it cannot be pushed anywhere —
                  dompdf has to break it in place, and so do we. */
               while (u.top + u.height > cap) {
-                bounds.push({ kind: 'mark', top: u.phys + (cap - u.top) });
+                bounds.push({ kind: 'mark', line: u.phys + (cap - u.top) });
                 cap += PAGE_H;
               }
             }
 
             const decos: Decoration[] = [];
             const sigParts: string[] = [];
+            // EVERY boundary is drawn, whatever it also reserves.
             const marks = bounds
-              .map((b, i) => ({ b, page: i + 1 }))
-              .filter(x => x.b.kind === 'mark') as { b: { kind: 'mark'; top: number }; page: number }[];
+              .map((b, i) => ({
+                top: b.line, page: i + 1,
+                // An in-place split reserves nothing, so only a hairline fits.
+                sheet: b.kind !== 'mark',
+                silent: b.kind === 'band' && b.silent === true,
+              }))
+              .filter(m => !m.silent);
 
             bounds.forEach((b, i) => {
               const from = i + 1;
@@ -419,7 +459,8 @@ const PageFlow = Extension.create({
                 sigParts.push(`p${b.from}:${b.fill}:${from}`);
                 decos.push(Decoration.node(b.from, b.to, {
                   class: 'ctcte-pgtop',
-                  style: `--pg-fill:${b.fill}px`,
+                  // Blank tail, then footer strip + gutter + next top margin.
+                  style: `--pg-fill:${b.fill}px; --pg-pad:${b.fill + PAGE_GAP}px`,
                   'data-from': String(from),
                 }));
                 return;
@@ -453,20 +494,26 @@ const PageFlow = Extension.create({
                at the top of the document. Absolute means zero flow impact — no
                reflow, no caret jump, no re-measure cascade. */
             if (marks.length) {
-              sigParts.push('m' + marks.map(m => `${Math.round(m.b.top)}/${m.page}`).join('.'));
+              const marksSig = marks.map(m => `${Math.round(m.top)}/${m.page}/${m.sheet ? 1 : 0}`).join('.');
+              sigParts.push('m' + marksSig);
               decos.push(Decoration.widget(0, () => {
                 const wrap = document.createElement('div');
                 wrap.className = 'ctcte-spanmarks';
                 wrap.contentEditable = 'false';
                 for (const m of marks) {
                   const line = document.createElement('div');
-                  line.className = 'ctcte-spanmark';
-                  line.style.top = `${Math.round(m.b.top)}px`;
+                  line.className = m.sheet ? 'ctcte-pageline' : 'ctcte-spanmark';
+                  line.style.top = `${Math.round(m.top)}px`;
                   line.setAttribute('data-page', String(m.page));
+                  line.setAttribute('data-of', String(marks.length + 1));
                   wrap.appendChild(line);
                 }
                 return wrap;
-              }, { side: -1, key: 'spans' }));
+                              /* The key has to encode the marks. A constant key told
+                   ProseMirror the widget had not changed, so it reused the DOM
+                   and never called toDOM again — the breaks stayed frozen at
+                   positions measured BEFORE any page padding was applied. */
+              }, { side: -1, key: 'spans:' + marksSig }));
             }
 
             /* Dispatch only on a real change, or each pass would trigger the
@@ -527,7 +574,12 @@ const PageFlow = Extension.create({
              it once the real font is in. */
           (document as any).fonts?.ready?.then(() => schedule(true));
           return {
-            update: schedule,
+            /* Wrapped, not passed straight through. ProseMirror calls this as
+               update(view, prevState), so handing it `schedule` directly fed the
+               EditorView object into the `immediate` parameter — always truthy,
+               so the debounce collapsed to 0ms and every keystroke ran a full
+               measure of the whole document. */
+            update: () => schedule(),
             destroy() { window.clearTimeout(timer); cancelAnimationFrame(frame); },
           };
         },
@@ -803,9 +855,11 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
   );
 }
 
-export function CtcEditorContent({ editor, pageView, margins, onMargins }: {
+export function CtcEditorContent({ editor, pageView, margins, onMargins, footerText }: {
   editor: Editor | null; pageView?: boolean;
   margins?: CtcMargins; onMargins?: (m: CtcMargins) => void;
+  /** Printed at the foot of every sheet, so the draft shows what the PDF will. */
+  footerText?: string;
 }) {
   if (!editor) return null;
   if (!pageView) return <EditorContent editor={editor} className="ctcte-content" />;
@@ -813,7 +867,10 @@ export function CtcEditorContent({ editor, pageView, margins, onMargins }: {
   return (
     <div
       className="ctcte-content ctcte-pageview"
-      style={{ ['--pg-ml' as any]: `${m.left}px`, ['--pg-mr' as any]: `${m.right}px` }}>
+      style={{
+        ['--pg-ml' as any]: `${m.left}px`,
+        ['--pg-mr' as any]: `${m.right}px`,
+      }}>
       {onMargins && <CtcMarginRuler margins={m} onChange={onMargins} />}
       <EditorContent editor={editor} />
     </div>
@@ -937,11 +994,6 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         )}
       </div>
 
-      {/* Page Break button hidden from the toolbar per request — kept in code
-          (NOT removed), so flip this guard to true to bring it back. The
-          pageBreak node/command and PDF handling are untouched; only the
-          toolbar entry is hidden. */}
-      {false && (<>
       <span className="ctcte-div" />
       {/* Page break — the only EXACT control over where the PDF splits. The
           A4 guides on the surface are an estimate (browser and dompdf lay text
@@ -961,7 +1013,6 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         <Ico d="M3 5h18M3 19h18M4 12h3M10.5 12h3M17 12h3" />
         Page Break
       </button>
-      </>)}
 
       <span className="ctcte-div" />
       <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8" /></TB>
@@ -1084,8 +1135,20 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content.ctcte-pageview .ProseMirror h2 { font-size: 17px; line-height: 28.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h3 { font-size: 15px; line-height: 25.0px; }
 .ctcte-content.ctcte-pageview .ProseMirror ul,
-.ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px; padding-left: 24px; }
+.ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px 24px; padding-left: 0; }
 .ctcte-content.ctcte-pageview .ProseMirror li { line-height: 21.1px; }
+/* Tables, matched to the PDF the same way the body text is.
+   The page view carried NO table CSS — cells fell back to whatever the DOCX
+   converter wrote inline, or to browser defaults, so a table-heavy page fitted
+   a whole extra table here that the PDF pushed to the next page. dompdf pads
+   every cell 6px 8px and lays tables out fixed. */
+.ctcte-content.ctcte-pageview .ProseMirror table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.ctcte-content.ctcte-pageview .ProseMirror table td,
+.ctcte-content.ctcte-pageview .ProseMirror table th {
+  padding: 6px 8px; vertical-align: top;
+  word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;
+}
+.ctcte-content.ctcte-pageview .ProseMirror table p { margin: 0; }
 
 /* ── The PDF's own font ──────────────────────────────────────────────────
    dompdf renders the body in DejaVu Sans (see the blade's font-family). The
@@ -1129,87 +1192,44 @@ export const CTC_EDITOR_CSS = `
    blank tail, so there is nothing to reserve: this is drawn OVER the content,
    absolutely, and costs the layout nothing. */
 .ctcte-spanmarks { position: absolute; inset: 0 0 auto 0; height: 0; pointer-events: none; z-index: 2; }
-.ctcte-spanmark {
-  position: absolute; left: -45px; right: -45px; height: 0;
-  border-top: 1px solid #CFD5E2;
-  box-shadow: 0 4px 8px -6px rgba(16,24,40,.45);
-}
-[data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
 
-/* A block carrying the blank tail of the sheet above it. Padding, not a spacer
-   element: the space is real (dompdf leaves it) but it needs no DOM of its own,
-   and DOM that appears and disappears is what makes the paint smear. */
-.ctcte-pgtop { padding-top: var(--pg-fill, 0px) !important; position: relative; }
-.ctcte-pgtop::before {
-  content: ''; position: absolute; top: var(--pg-fill, 0px);
+/* One hairline across the paper with the page number on it, for every
+   boundary — the reserved blank tail above it is the only thing that differs,
+   and that difference is paper, not styling. */
+.ctcte-pageline, .ctcte-spanmark {
+  position: absolute; height: 0;
   left: calc((var(--pg-ml, 25px) + 25px) * -1);
   right: calc((var(--pg-mr, 25px) + 25px) * -1);
-  border-top: 1px solid #CFD5E2;
 }
-.ctcte-pgtop::after {
-  content: 'PAGE ' attr(data-from) ' ENDS';
-  position: absolute; left: 50%; top: var(--pg-fill, 0px); transform: translate(-50%, -50%);
+.ctcte-pageline { border-top: 1px solid #CFD5E2; box-shadow: 0 4px 8px -6px rgba(16,24,40,.45); }
+/* The one boundary that reserves nothing: a block taller than a whole sheet,
+   which dompdf breaks in place. It says CONTINUES because the text runs
+   straight on underneath it. */
+.ctcte-spanmark { border-top: 1px dashed #D3D8E3; }
+/* Out past the sheet edge, on the desk.
+   Centred above the line it needed clear paper to sit on, and there is none
+   when the page ends flush with a block — then it landed on the last line of
+   the page it was labelling. The desk beside the sheet is always empty, so it
+   cannot collide with anything whatever the tail measures. */
+.ctcte-pageline::after, .ctcte-spanmark::after {
+  position: absolute; right: 0; top: 0; transform: translate(calc(100% + 8px), -50%);
   padding: 2px 11px; border-radius: 999px;
   background: rgba(255,255,255,.96); border: 1px solid #DDD6FE; color: #7C3AED;
   font-size: 8px; font-weight: 800; letter-spacing: .11em; white-space: nowrap;
 }
-[data-bs-theme="dark"] .ctcte-pgtop::before { border-top-color: #2a3140; }
-[data-bs-theme="dark"] .ctcte-pgtop::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
-
-/* ── One design for every page boundary ───────────────────────────────────
-   A boundary is always the same thing on screen: a hairline across the paper
-   with the page number on it. What differs is only what sits ABOVE that line,
-   and that difference is real, not stylistic:
-
-     block moved down   the tail of the sheet it left is genuinely blank paper
-                        in the PDF, so it is drawn as blank paper — white —
-                        and the line goes at its bottom, on the actual paper
-                        edge. --pg-fill is exactly how much blank tail there is.
-     split in place     the PDF splits mid-block and leaves no tail, so there
-                        is nothing above the line at all.
-
-   Two visual languages for the same event was the confusing part; the earlier
-   band also centred its label in the strip rather than on the paper edge, so
-   it did not even mark the right spot. */
-.ctcte-pagegap {
-  position: relative;
-  margin: 0 calc((var(--pg-mr, 25px) + 25px) * -1) 0 calc((var(--pg-ml, 25px) + 25px) * -1);
-  background: linear-gradient(#fff 0 var(--pg-fill, 0px), #EEF0F6 var(--pg-fill, 0px) 100%);
-  user-select: none;
-}
-.ctcte-pagegap-row > td {
-  padding: 0 !important;
-  border: none !important;
-  position: relative;
-  background: linear-gradient(#fff 0 var(--pg-fill, 0px), #EEF0F6 var(--pg-fill, 0px) 100%) !important;
-  user-select: none;
-}
-/* The line itself, and the label sitting on it. Shared by all three boundary
-   kinds so they cannot drift apart again. */
-.ctcte-pagegap::before,
-.ctcte-pagegap-row > td::before {
-  content: ''; position: absolute; left: 0; right: 0; top: var(--pg-fill, 0px);
-  border-top: 1px solid #CFD5E2;
-  box-shadow: 0 4px 8px -6px rgba(16,24,40,.45);
-}
-.ctcte-pagegap::after,
-.ctcte-pagegap-row > td::after,
-.ctcte-spanmark::after {
-  content: 'PAGE ' attr(data-from) ' ENDS';
-  position: absolute; left: 50%; top: var(--pg-fill, 0px); transform: translate(-50%, -50%);
-  padding: 2px 11px; border-radius: 999px;
-  background: rgba(255,255,255,.96); border: 1px solid #DDD6FE; color: #7C3AED;
-  font-size: 8px; font-weight: 800; letter-spacing: .11em; white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(16,24,40,.06);
-}
-.ctcte-spanmark::after { content: 'PAGE ' attr(data-page) ' ENDS'; }
-[data-bs-theme="dark"] .ctcte-pagegap { background: linear-gradient(#1b2028 0 var(--pg-fill, 0px), #12151c var(--pg-fill, 0px) 100%); }
-[data-bs-theme="dark"] .ctcte-pagegap-row > td { background: linear-gradient(#1b2028 0 var(--pg-fill, 0px), #12151c var(--pg-fill, 0px) 100%) !important; }
-[data-bs-theme="dark"] .ctcte-pagegap::before,
-[data-bs-theme="dark"] .ctcte-pagegap-row > td::before { border-top-color: #2a3140; }
-[data-bs-theme="dark"] .ctcte-pagegap::after,
-[data-bs-theme="dark"] .ctcte-pagegap-row > td::after,
+.ctcte-pageline::after { content: 'PAGE ' attr(data-page) ' ENDS'; }
+.ctcte-spanmark::after { content: 'PAGE ' attr(data-page) ' 4 CONTINUES'; }
+[data-bs-theme="dark"] .ctcte-pageline { border-top-color: #2a3140; }
+[data-bs-theme="dark"] .ctcte-spanmark { border-top-color: #2a3140; }
+[data-bs-theme="dark"] .ctcte-pageline::after,
 [data-bs-theme="dark"] .ctcte-spanmark::after { background: #1b2028; border-color: #3b2f63; color: #c4b5fd; }
+
+/* The reservations are silent: they hold the space the PDF leaves and nothing
+   else. Three things used to draw their own line and their own label, each
+   numbering itself, so one boundary could show its label twice. */
+.ctcte-pagegap { margin: 0 calc((var(--pg-mr, 25px) + 25px) * -1) 0 calc((var(--pg-ml, 25px) + 25px) * -1); user-select: none; }
+.ctcte-pagegap-row > td { padding: 0 !important; border: none !important; user-select: none; }
+
 [data-bs-theme="dark"] .ctcte-content.ctcte-pageview .ProseMirror { background: #1b2028; color: #e5e7eb; }
 [data-bs-theme="dark"] .ctcte-pagegap { background: #12151c; border-color: #2a3140; }
 
