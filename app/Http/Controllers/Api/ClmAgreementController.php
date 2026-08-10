@@ -728,12 +728,25 @@ class ClmAgreementController extends Controller
                     'pi_code' => (string) ($pi->code ?: ('PI-' . $pi->id)),
                     'name'    => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
                     'status'  => $piDocSig?->status ?? 'Pending',
-                    'signature_request' => $piDocSig ? [
-                        'id'     => $piDocSig->id,
-                        'status' => $piDocSig->status,
-                        'reminder_count'         => $piDocSig->reminder_count ?? 0,
-                        'last_reminder_sent_at'  => $piDocSig->last_reminder_sent_at,
-                    ] : null,
+                    /* Same shape the trade-doc / agreement rows get. The signed
+                       PDF and certificate URLs were missing here, so the PI row
+                       could be sent and signed but offered no way to download
+                       the result — the one row in the table whose signature led
+                       nowhere. */
+                    'signature_request' => $piDocSig ? (function () use ($piDocSig) {
+                        $signedPaths = is_array($piDocSig->signed_document_paths) ? $piDocSig->signed_document_paths : [];
+                        $first = $signedPaths[0] ?? [];
+                        return [
+                            'id'                    => $piDocSig->id,
+                            'status'                => $piDocSig->status,
+                            'sent_at'               => optional($piDocSig->created_at)->toIso8601String(),
+                            'completed_at'          => optional($piDocSig->completed_at)->toIso8601String(),
+                            'signed_url'            => $first['file_url'] ?? $first['url'] ?? null,
+                            'certificate_url'       => $piDocSig->certificate_path ? file_url($piDocSig->certificate_path) : null,
+                            'reminder_count'        => (int) ($piDocSig->reminder_count ?? 0),
+                            'last_reminder_sent_at' => optional($piDocSig->last_reminder_sent_at)->toIso8601String(),
+                        ];
+                    })() : null,
                 ] : null,
                 'quotation' => $quotation ? [
                     'id'     => $quotation->id,

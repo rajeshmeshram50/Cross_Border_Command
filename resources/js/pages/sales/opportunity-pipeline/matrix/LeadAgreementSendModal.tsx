@@ -134,7 +134,13 @@ export type ApplicablePayload = {
      a deal that skipped Stage 5 can get it signed from either place. */
   pi_document: {
     pi_id: number; pi_code: string; name: string; status: string;
-    signature_request: { id: number; status: string; reminder_count?: number; last_reminder_sent_at?: string | null } | null;
+    signature_request: {
+      id: number; status: string;
+      reminder_count?: number; last_reminder_sent_at?: string | null;
+      /* Signed PDF + Certificate of Completion — same fields every other
+         signable row carries, so the PI can offer the same downloads. */
+      signed_url?: string | null; certificate_url?: string | null;
+    } | null;
   } | null;
   /* Latest non-cancelled quotation on the lead. Segment Details unlock as
    * soon as EITHER a quotation or a PI exists (segments derive from the
@@ -237,6 +243,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const [payload, setPayload] = useState<ApplicablePayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeSegId, setActiveSegId] = useState<number | null>(null);
+  /* Customer / Consignee detail cards — collapsible, open by default.
+   * They are read-only context you check once and then stop needing, but they
+   * eat height at the top of a fixed-height modal that the document table
+   * wants. Closed by default for that reason — the collapsed header still
+   * names both parties, so nothing is lost until you actually want the email
+   * / country / segment detail. Same show/hide pattern as the "What We Are
+   * Doing Here" banner on the Customers page. */
+  const [partyOpen, setPartyOpen] = useState(false);
   /* Top-level regulatory tier tab — High / Less (Agreements view only).
    * Filters the segment tabs below to that tier's segments. */
   const [tierTab, setTierTab] = useState<'highly' | 'less'>('highly');
@@ -1096,28 +1110,76 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                 ['both',      'Customer + Consignee'],
               ] as const;
               return (<>
-                {/* Read-only party detail cards — NOT tabs. */}
+                {/* Read-only party detail cards — NOT tabs. Collapsible: the
+                    header row is the toggle, the cards live in a max-height
+                    wrapper so hiding them animates instead of snapping. */}
+                <button
+                  type="button"
+                  className="lasm-party-toggle"
+                  onClick={() => setPartyOpen(o => !o)}
+                  aria-expanded={partyOpen}
+                >
+                  <span className="lasm-party-toggle-label">
+                    Customer &amp; Consignee details
+                  </span>
+                  {/* Collapsed, the values still matter — show who this is
+                      instead of an unlabelled closed drawer. */}
+                  {!partyOpen && (
+                    <span className="lasm-party-toggle-peek">
+                      {payload.lead.customer?.code || payload.lead.customer?.name || '—'}
+                      {' · '}
+                      {payload.lead.consignee?.code || payload.lead.consignee?.name || 'Not mapped'}
+                    </span>
+                  )}
+                  {/* A bare chevron did not read as "this opens" — it looked
+                      like decoration on a heading. Spelling out the action next
+                      to it is what makes the row obviously clickable. */}
+                  <span className="lasm-party-toggle-cta">
+                    {partyOpen ? 'Hide details' : 'Show details'}
+                    <span className={`lasm-party-chev${partyOpen ? ' is-open' : ''}`}>
+                      <i className="ri-arrow-down-s-line" />
+                    </span>
+                  </span>
+                </button>
+                <div className="lasm-party-wrap" style={{ maxHeight: partyOpen ? 260 : 0 }}>
                 <div className="lasm-party-tabs">
                   {(['customer', 'consignee'] as const).map(p => {
                     const info  = p === 'customer' ? payload.lead.customer : payload.lead.consignee;
                     return (
+                      /* Label BESIDE its value, not above it. Stacked pairs cost
+                         a whole line each for a word the eye reads once, which
+                         is what made this header ~120px tall. Every value now
+                         sits in its own `-v` span so the label can stay
+                         unshrinkable while only the value ellipsises. */
                       <div key={p} className={`lasm-party-tab lasm-party-tab-readonly lasm-party-tab-${p} is-on`}>
-                        <span className="lasm-party-tab-role">{p === 'customer' ? 'Customer' : 'Consignee'}</span>
                         <span className="lasm-party-tab-title-row">
-                          <span className="lasm-party-tab-name">{info?.code ? `${info.code}: ` : ''}{info?.name ?? 'Not mapped'}</span>
+                          <span className="lasm-party-tab-name">
+                            <span className="lasm-party-tab-k lasm-party-tab-role">{p === 'customer' ? 'Customer' : 'Consignee'}</span>
+                            <span className="lasm-party-tab-v">{info?.code ? `${info.code}: ` : ''}{info?.name ?? 'Not mapped'}</span>
+                          </span>
                           <span className="lasm-party-tab-country">
-                            <span className="lasm-party-tab-k">Country</span>{info?.country || '—'}
+                            <span className="lasm-party-tab-k">Country</span>
+                            <span className="lasm-party-tab-v">{info?.country || '—'}</span>
                           </span>
                         </span>
                         <span className="lasm-party-tab-meta">
-                          <span><span className="lasm-party-tab-k">Email</span>{info?.email || '—'}</span>
+                          <span>
+                            <span className="lasm-party-tab-k">Email</span>
+                            <span className="lasm-party-tab-v">{info?.email || '—'}</span>
+                          </span>
                           {(() => { const seg = info?.segment || ''; const long = seg.length > 25; return (
-                            <Tooltip label={seg} disabled={!long}><span><span className="lasm-party-tab-k">Segment</span>{long ? seg.slice(0, 25) + '…' : (seg || '—')}</span></Tooltip>
+                            <Tooltip label={seg} disabled={!long}>
+                              <span>
+                                <span className="lasm-party-tab-k">Segment</span>
+                                <span className="lasm-party-tab-v">{long ? seg.slice(0, 25) + '…' : (seg || '—')}</span>
+                              </span>
+                            </Tooltip>
                           ); })()}
                         </span>
                       </div>
                     );
                   })}
+                </div>
                 </div>
 
                 {/* Applicable-party tabs — only when buyer ≠ consignee. */}
@@ -1193,7 +1255,53 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                   : <span className="lasm-td-status is-pending">Pending</span>}
                               </td>
                               <td>
+                                {/* Same order and same classes as the trade-doc
+                                    rows below: Send on the left, signing
+                                    timeline on the right. This row used to run
+                                    timeline-then-Send with its own `lasm-btn-send`
+                                    (borderless, 12px) instead of `lasm-td-send`
+                                    (bordered, 11.5px), so row 1 read as a
+                                    different kind of row from rows 2-3 sitting
+                                    directly under it in the same table. */}
                                 <div className="lasm-actions">
+                                  {!sent && (
+                                    <Tooltip label="Send the Proforma Invoice for signature">
+                                      <button type="button" className="lasm-td-send"
+                                        onClick={() => setPiSend({ id: pd.pi_id, code: pd.pi_code })}>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                        Send
+                                      </button>
+                                    </Tooltip>
+                                  )}
+                                  {/* Remind — while the PI is out for signature.
+                                      Missing here, so a PI sitting unsigned for
+                                      a week could only be chased from elsewhere,
+                                      while every trade-doc row could nudge its
+                                      signer from this same table. */}
+                                  {sig && sig.status === 'inprogress' && (() => {
+                                    const remCount = sig.reminder_count ?? 0;
+                                    const lastAt   = sig.last_reminder_sent_at;
+                                    const busy     = reminderId === sig.id;
+                                    const tipLine  = remCount > 0
+                                      ? `Reminder sent ${remCount} time${remCount === 1 ? '' : 's'}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
+                                      : 'Resend reminder to the signer(s)';
+                                    return (
+                                      <Tooltip label={tipLine}>
+                                        <button
+                                          type="button"
+                                          className="lasm-btn-remind"
+                                          disabled={busy}
+                                          onClick={() => void handleRemind(sig.id)}
+                                        >
+                                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+                                          {busy ? 'Sending…' : 'Remind'}
+                                          {remCount > 0 && (
+                                            <span className="lasm-remind-count" aria-label={`Sent ${remCount} times`}>{remCount}</span>
+                                          )}
+                                        </button>
+                                      </Tooltip>
+                                    );
+                                  })()}
                                   {/* Same timeline every other row offers — the
                                       PI had a Send but no way to see what
                                       happened after it, even once signed. */}
@@ -1210,13 +1318,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                       </button>
                                     </span>
                                   </Tooltip>
-                                  {!sent && (
-                                    <Tooltip label="Send the Proforma Invoice for signature">
-                                      <button type="button" className="lasm-btn-send"
-                                        onClick={() => setPiSend({ id: pd.pi_id, code: pd.pi_code })}>
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                                        Send
-                                      </button>
+                                  {/* Signed PDF + Certificate — once the PI is signed.
+                                      Both were absent, so the row's whole point (get
+                                      the signed invoice back) had no exit. */}
+                                  {sig?.signed_url && (
+                                    <Tooltip label="View / download signed PDF">
+                                      <a href={sig.signed_url} target="_blank" rel="noreferrer" className="lasm-btn-icon" aria-label="Signed PDF" download>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                      </a>
+                                    </Tooltip>
+                                  )}
+                                  {sig?.certificate_url && (
+                                    <Tooltip label="Certificate of Completion">
+                                      <a href={sig.certificate_url} target="_blank" rel="noreferrer" className="lasm-btn-cert" aria-label="Certificate" download>
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
+                                      </a>
                                     </Tooltip>
                                   )}
                                 </div>
@@ -2078,6 +2194,36 @@ const LASM_CSS = `
 
 /* ── Party tabs (Trade Documents view): Customer / Consignee. Each tab is a
       detail card — role + name + email + doc count. ── */
+/* Collapse header for the two read-only party cards. Mirrors the Customers
+   page's "What We Are Doing Here" banner: the whole row is the hit target, a
+   round chevron on the right rotates, and the body animates by max-height. */
+.lasm-party-toggle { display: flex; align-items: center; gap: 10px; width: calc(100% - 44px); flex-shrink: 0;
+  margin: 12px 22px 0; padding: 8px 10px 8px 14px; border: 1px solid #e2e8f0; border-radius: 10px;
+  background: #f8fafc; text-align: left; font-family: inherit; cursor: pointer;
+  transition: background .15s ease, border-color .15s ease; }
+.lasm-party-toggle:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.lasm-party-toggle-label { font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
+.lasm-party-toggle-peek { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 700; color: #334155; }
+.lasm-party-toggle-cta { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  padding: 4px 6px 4px 12px; border-radius: 999px; background: rgba(124,58,237,.10);
+  color: #6d28d9; font-size: 11.5px; font-weight: 800; white-space: nowrap;
+  transition: background .15s ease; }
+.lasm-party-toggle:hover .lasm-party-toggle-cta { background: rgba(124,58,237,.18); }
+.lasm-party-chev { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: inherit; font-size: 16px; transition: transform .25s ease; }
+.lasm-party-chev.is-open { transform: rotate(180deg); }
+/* overflow:hidden is what turns the max-height change into a slide instead of
+   the cards clipping in place. */
+.lasm-party-wrap { flex-shrink: 0; overflow: hidden; transition: max-height .3s ease; }
+[data-bs-theme="dark"] .lasm-party-toggle-label { color: #94a3b8; }
+[data-bs-theme="dark"] .lasm-party-toggle-peek { color: #cbd5e1; }
+[data-bs-theme="dark"] .lasm-party-toggle { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .lasm-party-toggle:hover { background: rgba(255,255,255,.07); border-color: rgba(255,255,255,.20); }
+[data-bs-theme="dark"] .lasm-party-toggle-cta { background: rgba(167,139,250,.18); color: #c4b5fd; }
+[data-bs-theme="dark"] .lasm-party-toggle:hover .lasm-party-toggle-cta { background: rgba(167,139,250,.28); }
+
 .lasm-party-tabs { display: grid; flex-shrink: 0; grid-template-columns: 1fr 1fr; gap: 10px; padding: 14px 22px 4px; }
 .lasm-party-tab { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; text-align: left; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
 .lasm-party-tab:hover { border-color: #cbd5e1; box-shadow: 0 2px 10px rgba(15,23,42,.06); }
@@ -2088,13 +2234,16 @@ const LASM_CSS = `
 .lasm-party-tab-count { position: absolute; top: 10px; right: 12px; display: inline-flex; align-items: center; justify-content: center; padding: 2px 9px; border-radius: 999px; background: rgba(15,23,42,.06); color: #475569; font-size: 10.5px; font-weight: 800; }
 /* Title row: "code: name" in column 1, country in column 2 — same 2-col grid
    as the Email/Segment row below, so COUNTRY lines up under SEGMENT. */
-.lasm-party-tab-title-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; align-items: start; width: 100%; margin-top: 2px; }
-.lasm-party-tab-name { font-size: 13.5px; font-weight: 800; color: #0f172a; line-height: 1.3; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lasm-party-tab-country { display: flex; flex-direction: column; gap: 1px; min-width: 0; text-align: left; font-size: 11.5px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lasm-party-tab-title-row { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; align-items: baseline; width: 100%; }
+.lasm-party-tab-name { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 13.5px; font-weight: 800; color: #0f172a; line-height: 1.3; }
+.lasm-party-tab-country { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 11.5px; font-weight: 600; color: #334155; }
 /* Detail row below: Email + Segment. */
-.lasm-party-tab-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; width: 100%; margin-top: 8px; }
-.lasm-party-tab-meta > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; font-size: 11.5px; font-weight: 600; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lasm-party-tab-k { font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
+.lasm-party-tab-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 14px; width: 100%; margin-top: 6px; }
+.lasm-party-tab-meta > span { display: flex; align-items: baseline; gap: 7px; min-width: 0; font-size: 11.5px; font-weight: 600; color: #334155; }
+.lasm-party-tab-k { flex-shrink: 0; font-size: 9px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8; }
+/* Truncation lives on the VALUE, not the pair: with both on one line an
+   ellipsis on the wrapper would clip the label too. */
+.lasm-party-tab-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lasm-party-tab-customer.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }
 .lasm-party-tab-customer.is-on .lasm-party-tab-role { color: #6d28d9; }
 .lasm-party-tab-consignee.is-on { border-color: #6d28d9; background: linear-gradient(180deg,#faf5ff,#fff); box-shadow: 0 2px 10px rgba(124,58,237,.18); }

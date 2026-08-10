@@ -4250,7 +4250,12 @@ const validateStage1 = (): boolean => {
   }
   if (noticeIsCustom) {
     const txt = String(s1.notice_period ?? '').trim();
-    const num = Number((txt.match(/\d+(?:\.\d+)?/) ?? [])[0]);
+    /* `-?` is not decoration. Without it the pattern matches only DIGITS, so
+       "-1" yielded the substring "1" -> num 1 -> the `num < 1` guard below
+       saw a valid one-day notice and let a NEGATIVE notice period through.
+       Reading the sign is what makes that guard mean anything. A range like
+       "1-2 months" is unaffected: the scan still finds "1" first. */
+    const num = Number((txt.match(/-?\d+(?:\.\d+)?/) ?? [])[0]);
     if (!txt) errors.notice_period = 'Please describe the custom notice period';
     else if (!Number.isFinite(num)) errors.notice_period = 'Include a number, e.g. 45 Days';
     else if (num < 1) errors.notice_period = 'Notice period must be at least 1';
