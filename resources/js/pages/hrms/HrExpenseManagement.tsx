@@ -312,8 +312,9 @@ export default function HrExpenseManagement() {
   const fmtCompact = (n: number): string => {
     if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
     if (n >= 1_00_000)    return `₹${(n / 1_00_000).toFixed(1).replace(/\.0$/, '')}L`;
-    if (n >= 1_000)       return `₹${(n / 1_000).toFixed(0)}K`;
-    return `₹${Math.round(n)}`;
+    // Below ₹1 lakh, show the exact figure with Indian grouping. Rounding to
+    // whole "K" turned ₹6,550 into "₹7K", which read as a wrong total (QA #88).
+    return `₹${Math.round(n).toLocaleString('en-IN')}`;
   };
 
   const CAT_PALETTE = [
@@ -502,17 +503,58 @@ export default function HrExpenseManagement() {
     r.creator_name, fmtExportDateTime(r.created_at),
   ];
 
+  // Advance Requests have a different shape from expense claims, so their
+  // export needs its own header + row mapper — otherwise the Advance tab
+  // exported expense-claim columns/data (QA #131).
+  const ADVANCE_EXPORT_HEADER = [
+    'Advance No', 'Employee', 'Emp Code', 'Department', 'Advance Type', 'Used For',
+    'Reason', 'Amount', 'Requested Date', 'Expected Use Date',
+    'Recovery Mode', 'Recovery Start', 'Months', 'Monthly EMI', 'Recovery Recovered',
+    'Status', 'Manager Status', 'Manager Acted', 'Manager Comment',
+    'HR Status', 'HR User', 'HR Acted', 'HR Comment',
+    'Sanctioned', 'Deductions', 'Total Paid', 'Remaining', 'Advance Paid', 'Settle Type',
+    'Created By', 'Created At',
+  ];
+  const RECOVERY_EXPORT_LABEL: Record<string, string> = { emi: 'EMI', lumpsum: 'Lump Sum', bimonthly: 'Bi-Monthly' };
+  const advanceExportRow = (r: AdvanceRequestRow): (string | number | null)[] => {
+    const isCompany = (r.used_for || 'self') === 'company';
+    return [
+      r.advance_no ?? `#${r.id}`, r.employee_name, r.employee_code, r.department_name ?? '',
+      r.advance_type === 'Other' ? (r.advance_type_other || 'Other') : r.advance_type,
+      isCompany ? 'Company' : 'Self',
+      r.reason, r.amount, fmtExportDate(r.requested_date), fmtExportDate(r.expected_use_date),
+      isCompany ? '—' : (RECOVERY_EXPORT_LABEL[r.recovery_mode] ?? r.recovery_mode ?? '—'),
+      isCompany ? '' : fmtExportDate(r.recovery_start),
+      isCompany ? '' : (r.recovery_months ?? ''),
+      isCompany ? '' : (r.monthly_emi ?? ''),
+      isCompany ? '' : (r.recovery_recovered ?? ''),
+      r.status, r.manager_status, fmtExportDateTime(r.manager_acted_at), r.manager_comment,
+      r.hr_status, r.hr_user_name, fmtExportDateTime(r.hr_acted_at), r.hr_comment,
+      r.sanctioned_amount ?? '', r.deduction_amount ?? '', r.total_paid ?? '', r.remaining_amount ?? '',
+      r.status === 'rejected' ? 'N/A' : (PAY_LABEL[r.settlement_status ?? 'unpaid'] ?? ''),
+      r.settle_type ?? '',
+      r.creator_name, fmtExportDateTime(r.created_at),
+    ];
+  };
+
+  // Active export config follows the visible tab (advance vs expense).
+  const activeExportHeader = isAdvanceModule ? ADVANCE_EXPORT_HEADER : EXPORT_HEADER;
+  const activeExportRows: (ExpenseClaimRow | AdvanceRequestRow)[] = isAdvanceModule ? filteredAdvances : filtered;
+  const activeExportRow = (r: ExpenseClaimRow | AdvanceRequestRow): (string | number | null)[] =>
+    isAdvanceModule ? advanceExportRow(r as AdvanceRequestRow) : exportRow(r as ExpenseClaimRow);
+  const exportNoun = isAdvanceModule ? 'advance request' : 'claim';
+
   // Local, not toISOString(): after ~05:30 IST the UTC date is still yesterday,
   // which stamped exports (and their filenames) with the wrong day.
   const exportStamp = () => {
     const d = new Date();
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   };
-  const exportBaseName = () => `expense-claims-${dateFilter}-${exportStamp()}`;
+  const exportBaseName = () => `${isAdvanceModule ? 'advance-requests' : 'expense-claims'}-${dateFilter}-${exportStamp()}`;
 
   const hasExportRows = (): boolean => {
-    if (filtered.length === 0) {
-      toast.error('Nothing to export', 'No claims match the current filters.');
+    if (activeExportRows.length === 0) {
+      toast.error('Nothing to export', `No ${exportNoun}s match the current filters.`);
       return false;
     }
     return true;
@@ -530,7 +572,7 @@ export default function HrExpenseManagement() {
   };
 
   const exportDoneToast = (fmt: string) =>
-    toast.success('Export ready', `${filtered.length} claim${filtered.length === 1 ? '' : 's'} exported to ${fmt}.`);
+    toast.success('Export ready', `${activeExportRows.length} ${exportNoun}${activeExportRows.length === 1 ? '' : 's'} exported to ${fmt}.`);
 
   const exportCsv = () => {
     if (!hasExportRows()) return;
@@ -540,8 +582,8 @@ export default function HrExpenseManagement() {
       if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
       return s;
     };
-    const lines = [EXPORT_HEADER.map(escape).join(',')];
-    for (const r of filtered) lines.push(exportRow(r).map(escape).join(','));
+    const lines = [activeExportHeader.map(escape).join(',')];
+    for (const r of activeExportRows) lines.push(activeExportRow(r).map(escape).join(','));
     const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
     triggerDownload(blob, `${exportBaseName()}.csv`);
     exportDoneToast('CSV');
@@ -550,10 +592,10 @@ export default function HrExpenseManagement() {
   const exportXlsx = () => {
     if (!hasExportRows()) return;
     try {
-      const aoa = [EXPORT_HEADER, ...filtered.map(r => exportRow(r).map(v => v ?? ''))];
+      const aoa = [activeExportHeader, ...activeExportRows.map(r => activeExportRow(r).map(v => v ?? ''))];
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Expense Claims');
+      XLSX.utils.book_append_sheet(wb, ws, isAdvanceModule ? 'Advance Requests' : 'Expense Claims');
       XLSX.writeFile(wb, `${exportBaseName()}.xlsx`);
       exportDoneToast('Excel');
     } catch {
@@ -565,11 +607,11 @@ export default function HrExpenseManagement() {
     if (!hasExportRows()) return;
     const esc = (v: any) =>
       String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const thead = `<tr>${EXPORT_HEADER.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
-    const tbody = filtered
-      .map(r => `<tr>${exportRow(r).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`)
+    const thead = `<tr>${activeExportHeader.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
+    const tbody = activeExportRows
+      .map(r => `<tr>${activeExportRow(r).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`)
       .join('');
-    const title = `Expense Claims — ${DATE_FILTER_LABELS[dateFilter]}`;
+    const title = `${isAdvanceModule ? 'Advance Requests' : 'Expense Claims'} — ${DATE_FILTER_LABELS[dateFilter]}`;
     const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(exportBaseName())}</title>
       <style>
         * { box-sizing: border-box; }
@@ -584,7 +626,7 @@ export default function HrExpenseManagement() {
       </style></head>
       <body>
         <h1>${esc(title)}</h1>
-        <p class="meta">${filtered.length} claim(s) · generated ${esc(exportStamp())}</p>
+        <p class="meta">${activeExportRows.length} ${exportNoun}(s) · generated ${esc(exportStamp())}</p>
         <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
         <script>window.onload = function () { window.focus(); window.print(); };<\/script>
       </body></html>`;
@@ -596,7 +638,7 @@ export default function HrExpenseManagement() {
     w.document.open();
     w.document.write(html);
     w.document.close();
-    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${filtered.length} claim${filtered.length === 1 ? '' : 's'}.`);
+    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${activeExportRows.length} ${exportNoun}${activeExportRows.length === 1 ? '' : 's'}.`);
   };
 
   const runExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
@@ -673,11 +715,26 @@ export default function HrExpenseManagement() {
     myEmpId != null && row.employee_id != null && Number(row.employee_id) === Number(myEmpId);
   const ownToast = () => toast.info('Handled by your reporting manager',
     'This is your own request — you can’t review, approve, set deductions or pay it. Your reporting manager (the branch user) will do the approval and payment.');
-  const reviewGate = (row: { employee_id?: number | null; manager_status?: string | null }): boolean => {
+  const reviewGate = (row: { employee_id?: number | null; manager_status?: string | null; manager_id?: number | null; manager_name?: string | null; reporting_manager_user_id?: number | null }): boolean => {
     if (isOwnRow(row)) { ownToast(); return false; }
     if ((row.manager_status ?? 'pending') !== 'approved') {
-      toast.info('Approve as reporting manager first',
-        'You are the reporting manager for this — approve it in your Inbox as reporting manager. Then come back here to set deductions and record the payment.');
+      // Is the LOGGED-IN user the reporting manager of this row? Either the
+      // assigned employee-manager (manager_id = my employee id) OR the branch
+      // USER set as the employee's reporting manager (reporting_manager_user_id
+      // = my user id). In that case the manager step is THEIRS to do — send
+      // them to the Inbox to approve it there (QA #119), rather than telling
+      // them to wait on themselves.
+      const iAmEmployeeManager = myEmpId != null && row.manager_id != null && Number(row.manager_id) === Number(myEmpId);
+      const iAmBranchUserManager = user?.id != null && row.reporting_manager_user_id != null
+        && Number(row.reporting_manager_user_id) === Number(user.id);
+      if (iAmEmployeeManager || iAmBranchUserManager) {
+        toast.info('Approve as reporting manager in your Inbox',
+          'You are the reporting manager for this — taking you to your Inbox to review & approve it. Once approved, come back here to set deductions and record the payment.');
+        window.location.href = '/inbox';
+      } else {
+        toast.info('Reporting Manager approval is pending',
+          `HR approval can’t be processed until ${row.manager_name ? row.manager_name : 'the reporting manager'} approves this request in their Inbox. Once approved, it returns here for HR / Finance to set deductions and record the payment.`);
+      }
       return false;
     }
     return true;

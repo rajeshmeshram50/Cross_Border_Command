@@ -310,6 +310,10 @@ export default function ExpenseSettlementModal({
   const [returnNote, setReturnNote] = useState('');
   // Payment row currently being synced to Zoho Books.
   const [syncingId, setSyncingId] = useState<number | null>(null);
+  // Zoho bulk-sync: which un-synced payment rows are ticked, and whether a
+  // bulk sync is in flight (QA #129).
+  const [selectedZoho, setSelectedZoho] = useState<Set<number>>(new Set());
+  const [bulkSyncing, setBulkSyncing] = useState(false);
   // Review mode: confirmation dialog ('approve' | 'reject') + reject reason.
   const [confirmKind, setConfirmKind] = useState<null | 'approve' | 'reject'>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -360,6 +364,11 @@ export default function ExpenseSettlementModal({
       .then(([s]) => {
         setSummary(s);
         const first = !s.sanctioned_amount;
+        // Adjustments section: expanded only when the user still needs to enter
+        // additions/deductions (editable first payment). Once locked, or in a
+        // read-only view, it starts COLLAPSED so the details don't hog vertical
+        // space — the user expands it on demand (QA #109).
+        setAdjOpen(first && !readOnly);
         // On a fresh (unlocked) claim start with one blank row in each so the
         // inputs are visible by default; otherwise show what was saved.
         const dedRows = (s.deductions ?? []).map(d => ({ amount: String(d.amount), reason: d.reason }));
@@ -379,6 +388,36 @@ export default function ExpenseSettlementModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, claimId]);
 
+  // Multi-tab sync (QA #107 / #110). The same claim/advance can be open in two
+  // tabs; adjustments are locked once on the first submit. When the user comes
+  // back to a stale tab, re-pull the settlement so the displayed entries and the
+  // Net Payable match the server. If it was finalised elsewhere while we were
+  // editing, drop the now-void local adjustment rows and say so.
+  useEffect(() => {
+    if (!open || claimId == null) return;
+    const onSync = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      api.get<Summary>(`${basePath}/${claimId}/settlement`).then(r => {
+        const s = r.data;
+        const wasUnlocked = !summary?.sanctioned_amount;
+        setSummary(s);
+        if (wasUnlocked && s.sanctioned_amount) {
+          setDeductions([]);
+          setAdditions([]);
+          toast.info('Synced from another tab',
+            `This ${noun}’s adjustments were finalised in another tab — showing the latest figures.`);
+        }
+      }).catch(() => {});
+    };
+    document.addEventListener('visibilitychange', onSync);
+    window.addEventListener('focus', onSync);
+    return () => {
+      document.removeEventListener('visibilitychange', onSync);
+      window.removeEventListener('focus', onSync);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, claimId, basePath, noun, summary]);
+
   const claimed = summary?.claimed_amount ?? 0;
   const totalDeduction = useMemo(
     () => +deductions.reduce((s, d) => s + (Number(d.amount) || 0), 0).toFixed(2),
@@ -392,6 +431,14 @@ export default function ExpenseSettlementModal({
   const sanctioned = firstPayment ? +(claimed - totalDeduction + totalAddition).toFixed(2) : (summary?.sanctioned_amount ?? 0);
   const remaining = +(sanctioned - paidSoFar).toFixed(2);
   const amountNum = Math.max(0, Number(amount) || 0);
+  // Zoho bulk-sync selection (QA #129) — only un-synced payment rows are
+  // selectable; expense claims only (advances don't sync to Zoho).
+  const zohoUnsyncedIds = (summary?.payments ?? []).filter(p => (p.zoho_status || 'not_synced') !== 'synced').map(p => p.id);
+  const zohoSelectedIds = zohoUnsyncedIds.filter(id => selectedZoho.has(id));
+  const zohoAllSelected = zohoUnsyncedIds.length > 0 && zohoSelectedIds.length === zohoUnsyncedIds.length;
+  const showZohoSelect = !readOnly && !isAdvance && zohoUnsyncedIds.length > 0;
+  const toggleZoho = (id: number) => setSelectedZoho(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAllZoho = () => setSelectedZoho(zohoAllSelected ? new Set() : new Set(zohoUnsyncedIds));
   const fullyPaid = !firstPayment && remaining <= 0.005;
   const payPct = sanctioned > 0 ? Math.min(100, Math.round((paidSoFar / sanctioned) * 100)) : 0;
   // Review stage: a claim still pending at the manager is a MANAGER review
@@ -538,8 +585,33 @@ export default function ExpenseSettlementModal({
     } finally { setSyncingId(null); }
   };
 
+  // Sync every ticked (un-synced) payment to Zoho Books — one distinct Zoho
+  // entry per payment — so HR doesn't click "Sync to Zoho" row by row (QA #129).
+  const syncZohoBulk = async (ids: number[]) => {
+    if (claimId == null || ids.length === 0 || bulkSyncing) return;
+    setBulkSyncing(true);
+    let ok = 0; let fail = 0;
+    // Sequential so each becomes its own Zoho expense and we don't hammer the API.
+    for (const id of ids) {
+      try { await api.post(`${basePath}/payments/${id}/sync-zoho`); ok++; }
+      catch { fail++; }
+    }
+    try {
+      const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
+      setSummary(s);
+    } catch { /* keep current view on refetch failure */ }
+    setSelectedZoho(new Set());
+    setBulkSyncing(false);
+    if (fail === 0) toast.success('Synced to Zoho', `${ok} payment${ok === 1 ? '' : 's'} synced to Zoho Books.`);
+    else toast.warning('Partially synced', `${ok} synced, ${fail} failed — retry the remaining rows.`);
+  };
+
   const submit = async () => {
     if (claimId == null) return;
+    // Re-entry guard — the button is disabled while saving, but this blocks a
+    // fast double-click that could fire before the disabled state paints, so a
+    // payment can never be recorded twice (QA #128).
+    if (saving) return;
     // Inline validation — mark the offending fields red instead of a toast.
     // Category + Expense Type only apply to expense claims, not advance payouts.
     const invalid = (!isAdvance && (!categoryId || !expenseType))
@@ -644,6 +716,7 @@ export default function ExpenseSettlementModal({
   // finalize=true  → "Finalize settlement" (append remaining, then LOCK forever).
   const submitSettle = async (finalize: boolean) => {
     if (claimId == null) return;
+    if (settleSaving) return; // guard against double-submit (QA #128)
     const touched = settleRows.filter(rowTouched);
     if (touched.some(r => !rowComplete(r))) { setSettleErr(true); return; }
     if (!finalize && touched.length === 0) { setSettleErr(true); return; }
@@ -831,6 +904,7 @@ export default function ExpenseSettlementModal({
   // payroll (clears the whole remaining in one entry).
   const submitReturn = async () => {
     if (claimId == null || !returnMode) return;
+    if (returnSaving) return; // guard against double-submit (QA #128)
     if (returnMode === 'direct') {
       const amt = Number(returnAmount) || 0;
       if (!returnMethod || !(amt > 0)) { setReturnErr(true); return; }
@@ -910,7 +984,7 @@ export default function ExpenseSettlementModal({
               </span>
               <div>
                 <div className="esm-hero-eyebrow">HRMS · EXPENSE MANAGEMENT</div>
-                <div className="esm-hero-title">{inReview ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline"> · {summary.title}</span> : ''}</div>
+                <div className="esm-hero-title">{inReview ? 'Review & Approve' : readOnly ? 'Payment Details' : 'Record Payment'}{summary ? <span className="esm-hero-sub-inline" title={summary.title || ''}> · {summary.title}</span> : ''}</div>
                 <div className="esm-hero-sub">{inReview ? (managerReview ? `Review the ${noun}, then approve or reject.` : `Review the ${noun}, set adjustments, then approve or reject.`) : readOnly ? (isAdvance ? 'Payout details for this advance.' : 'Reimbursement details for this expense claim.') : (isAdvance ? 'Settle an approved advance and record the payout.' : 'Settle an approved expense claim and record the reimbursement.')}</div>
               </div>
             </div>
@@ -1293,6 +1367,19 @@ export default function ExpenseSettlementModal({
                   </div>
                   <div className="esm-sec-hd-actions">
                     <span className="esm-sec-badge">{summary.payments.length} transaction{summary.payments.length === 1 ? '' : 's'}</span>
+                    {/* Bulk Zoho sync — appears when there are un-synced rows.
+                        Syncs every ticked payment as its own Zoho entry (QA #129). */}
+                    {showZohoSelect && (
+                      <button
+                        type="button"
+                        className="esm-sec-btn"
+                        onClick={() => syncZohoBulk(zohoSelectedIds)}
+                        disabled={bulkSyncing || zohoSelectedIds.length === 0}
+                        title={zohoSelectedIds.length === 0 ? 'Tick one or more un-synced payments' : 'Sync the selected payments to Zoho Books'}
+                      >
+                        <i className="ri-refresh-line" /> {bulkSyncing ? 'Syncing…' : `Sync selected to Zoho${zohoSelectedIds.length ? ` (${zohoSelectedIds.length})` : ''}`}
+                      </button>
+                    )}
                     {!readOnly && (
                       <button
                         type="button"
@@ -1318,6 +1405,18 @@ export default function ExpenseSettlementModal({
                       <table className="esm-tbl">
                         <thead>
                           <tr>
+                            {showZohoSelect && (
+                              <th style={{ width: 34, textAlign: 'center' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={zohoAllSelected}
+                                  onChange={toggleAllZoho}
+                                  disabled={bulkSyncing}
+                                  title="Select all un-synced payments"
+                                  aria-label="Select all un-synced payments"
+                                />
+                              </th>
+                            )}
                             <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAID BY</th><th>DATE</th>{!isAdvance && <th>ZOHO BOOK STATUS</th>}{!readOnly && !isAdvance && <th>ACTION</th>}
                           </tr>
                         </thead>
@@ -1326,6 +1425,21 @@ export default function ExpenseSettlementModal({
                             const synced = (p.zoho_status || 'not_synced') === 'synced';
                             return (
                             <tr key={p.id}>
+                              {showZohoSelect && (
+                                <td style={{ textAlign: 'center' }}>
+                                  {synced ? (
+                                    <span className="esm-muted">—</span>
+                                  ) : (
+                                    <input
+                                      type="checkbox"
+                                      checked={selectedZoho.has(p.id)}
+                                      onChange={() => toggleZoho(p.id)}
+                                      disabled={bulkSyncing}
+                                      aria-label={`Select payment ${i + 1} for Zoho sync`}
+                                    />
+                                  )}
+                                </td>
+                              )}
                               <td>{i + 1}</td>
                               <td className="esm-tbl-amt">{inr(p.amount)}</td>
                               <td>{p.payment_type || '—'}</td>
@@ -1357,7 +1471,7 @@ export default function ExpenseSettlementModal({
                                       <span className="esm-muted">—</span>
                                     )
                                   ) : (
-                                    <button type="button" className="esm-zbtn" onClick={() => syncZoho(p.id)} disabled={syncingId === p.id}>
+                                    <button type="button" className="esm-zbtn" onClick={() => syncZoho(p.id)} disabled={syncingId === p.id || bulkSyncing}>
                                       <i className="ri-refresh-line" /> {syncingId === p.id ? 'Syncing…' : 'Sync to Zoho'}
                                     </button>
                                   )}
@@ -2540,7 +2654,9 @@ const CSS = `
 .esm-hero-ico{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .esm-hero-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;opacity:.85;margin-bottom:2px;}
 .esm-hero-title{font-size:20px;font-weight:800;line-height:1.15;}
-.esm-hero-sub-inline{font-weight:600;opacity:.9;}
+/* A long expense title used to stretch the whole header (QA). Cap it with an
+   ellipsis; the full title stays available on hover (title attr). */
+.esm-hero-sub-inline{font-weight:600;opacity:.9;display:inline-block;max-width:min(60vw,760px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
 .esm-hero-sub{font-size:12px;opacity:.85;margin-top:3px;}
 .esm-x{width:32px;height:32px;border-radius:9px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:14px;cursor:pointer;flex-shrink:0;}
 .esm-x:hover{background:rgba(255,255,255,.3);}

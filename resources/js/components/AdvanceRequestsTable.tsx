@@ -14,6 +14,7 @@ export type AdvanceRequestRow = {
   department_id?: number | null;
   department_name?: string | null;
   manager_id: number | null;
+  reporting_manager_user_id?: number | null;
   manager_name: string | null;
   advance_type: string;
   advance_type_other: string | null;
@@ -262,21 +263,30 @@ export function advanceRequestColumns({
       id: 'recovery_start',
       accessorFn: (r: AdvanceRequestRow) => (r.recovery_start ? new Date(r.recovery_start).getTime() : 0),
       meta: { width: '9%' },
-      cell: info => <span className="text-muted">{fmtDate(info.row.original.recovery_start)}</span>,
+      // A rejected advance is never recovered — read "N/A" instead of a value /
+      // bare "—" so it looks intentional (QA #134).
+      cell: info => info.row.original.status === 'rejected'
+        ? <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>
+        : <span className="text-muted">{fmtDate(info.row.original.recovery_start)}</span>,
     },
     {
       header: 'Recovery',
       id: 'recovery_mode',
       accessorFn: (r: AdvanceRequestRow) => RECOVERY_LABEL[r.recovery_mode] || r.recovery_mode,
       meta: { width: '8%' },
-      cell: info => (
-        <span
-          className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
-          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#d3f0ee', color: '#0a716a' }}
-        >
-          {String(info.getValue() ?? '')}
-        </span>
-      ),
+      cell: info => {
+        if (info.row.original.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
+        return (
+          <span
+            className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
+            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#d3f0ee', color: '#0a716a' }}
+          >
+            {String(info.getValue() ?? '')}
+          </span>
+        );
+      },
     },
     {
       /* Only EMI recoveries have a monthly figure; lump-sum/bi-monthly show —.
@@ -287,6 +297,9 @@ export function advanceRequestColumns({
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
+        if (r.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         return (
           <span className="text-muted">
             {r.recovery_mode === 'emi'
@@ -904,15 +917,6 @@ function AuditLogPopover({ row, viewerMode, onShowRemark }: { row: AdvanceReques
       at: r.hr_acted_at,
       comment: r.hr_comment,
     }]),
-    // One Payment entry per recorded payout — who paid, how much, when.
-    ...(r.payments ?? []).map((p, i) => ({
-      label: (r.payments && r.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
-      icon: 'ri-bank-card-line',
-      state: 'approved' as const,
-      actor: p.paid_by_name ? `By ${p.paid_by_name}` : null,
-      at: p.paid_at,
-      comment: `₹${Number(p.amount || 0).toLocaleString('en-IN')}${p.method ? ' · ' + p.method : ''}`,
-    })),
   ];
 
   return (

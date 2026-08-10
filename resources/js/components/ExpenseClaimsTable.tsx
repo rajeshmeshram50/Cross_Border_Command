@@ -35,6 +35,7 @@ export type ExpenseClaimRow = {
   department_id?: number | null;
   department_name?: string | null;
   manager_id: number | null;
+  reporting_manager_user_id?: number | null;
   manager_name: string | null;
   category_id: number | null;
   category_name: string | null;
@@ -198,6 +199,16 @@ export function expenseClaimColumns({
       header: 'Exp ID',
       id: 'claim_no',
       accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
+      // Sort strictly by the ID's numeric sequence (EXP-0002 < EXP-0028), not a
+      // raw string / any other column (QA #116). Falls back to a locale compare
+      // when the numeric parts tie.
+      sortingFn: (a, b) => {
+        const numOf = (s: string) => { const m = /(\d+)/.exec(s || ''); return m ? parseInt(m[1], 10) : 0; };
+        const av = a.original.claim_no || `#${a.original.id}`;
+        const bv = b.original.claim_no || `#${b.original.id}`;
+        const an = numOf(av), bn = numOf(bv);
+        return an !== bn ? an - bn : String(av).localeCompare(String(bv));
+      },
       // Fixed width sized to the "EXP-0000" pill + `wrap` so the cell opts
       // out of the table's default ellipsis clipping — the ID used to render
       // as "EXP-0002…" in an 8% column even though it fits. `title` still
@@ -372,10 +383,11 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      // HR sees the wide "Review & Approve" CTA, so the column reserves room
-      // for it — otherwise the fixed table layout squeezed the button and the
-      // action group wrapped on some rows but not others.
-      meta: { align: 'center', width: mode === 'hr' ? 240 : '10%', wrap: true },
+      // HR and the reporting-manager (team) view both show the wide "Review &
+      // Approve" CTA, so the column reserves room for it — otherwise the fixed
+      // table layout squeezed the button and the action group wrapped on some
+      // rows but not others, leaving the column misaligned row-to-row (QA).
+      meta: { align: 'center', width: (mode === 'hr' || mode === 'team') ? 240 : '10%', wrap: true },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}
@@ -525,7 +537,7 @@ function ExpenseActionCell({
           icon before it — in a straight line down the table. */}
       <div
         className="d-inline-flex align-items-center justify-content-end gap-1"
-        style={{ minWidth: mode === 'hr' ? 216 : undefined }}
+        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined }}
       >
         {(canManagerAct || canHrReview) && onReview ? (
           (() => {
@@ -1037,15 +1049,6 @@ function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewer
       at: c.hr_acted_at,
       comment: c.hr_comment,
     }]),
-    // One Payment entry per recorded payout — who paid, how much, when.
-    ...(c.payments ?? []).map((p, i) => ({
-      label: (c.payments && c.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
-      icon: 'ri-bank-card-line',
-      state: 'approved' as const,
-      actor: p.paid_by_name ? `By ${p.paid_by_name}` : null,
-      at: p.paid_at,
-      comment: `₹${Number(p.amount || 0).toLocaleString('en-IN')}${p.method ? ' · ' + p.method : ''}`,
-    })),
   ];
 
   return (

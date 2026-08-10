@@ -270,6 +270,8 @@ class ExpenseClaimController extends Controller
             'files.*.mimes'              => 'Receipts must be PDF, JPG or PNG.',
             'expense_date.before_or_equal' => 'Expense date cannot be in the future.',
             'expense_date.after_or_equal'  => 'Expense date must be within the last 30 days.',
+            'title.max'                  => 'Expense title is too long — please keep it under 255 characters.',
+            'purpose.max'                => 'Business purpose is too long — please keep it under 500 characters.',
         ]);
 
         // Total-size guard — the whole claim's receipts must stay under 5 MB
@@ -1466,6 +1468,9 @@ class ExpenseClaimController extends Controller
             'department_id'   => $employee?->department_id,
             'department_name' => $employee?->department?->name,
             'manager_id'      => $row->manager_id,
+            // The branch USER acting as reporting manager (when no employee
+            // manager) — lets the SPA tell whether the viewer is that manager.
+            'reporting_manager_user_id' => $employee?->reporting_manager_user_id,
             'manager_name'    => $managerName,
             'category_id'     => $row->category_id,
             'category_name'   => $row->category?->name ?? $row->category_name,

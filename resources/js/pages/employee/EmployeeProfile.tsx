@@ -1063,6 +1063,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       summary.push('Amount must be a valid number');
     } else if (!(amt > 0)) {
       errs.amount = 'Amount must be greater than 0'; summary.push('Amount must be greater than 0');
+    } else if (amt < 100) {
+      // Realistic floor — a token ₹1 advance spread over many cycles produced a
+      // zero-value repayment (QA #135).
+      errs.amount = 'Minimum advance amount is ₹100'; summary.push('Advance amount must be at least ₹100');
     }
     // Company advance = spent for the company, not recovered from salary — it has
     // NO recovery mode and NO recovery/expected-use date at all.
@@ -1107,7 +1111,13 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
       if (advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') {
         const perCycle = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
-        if (advAmountNum > 0 && perCycle > advAmountNum) {
+        const cycles = Number(advMonths) || 0;
+        // Spreading the amount over the cycles must leave at least ₹1 per cycle —
+        // otherwise the repayment rounds to zero (QA #135).
+        if (advAmountNum > 0 && cycles > 0 && (advAmountNum / cycles) < 1) {
+          errs.months = 'Too many cycles for this amount';
+          summary.push('₹' + advAmountNum.toLocaleString('en-IN') + ' can’t be spread over ' + cycles + ' ' + (advRecoveryMode === 'bimonthly' ? 'cycles' : 'months') + ' — each instalment would be under ₹1. Reduce the cycles or increase the amount.');
+        } else if (advAmountNum > 0 && perCycle > advAmountNum) {
           // A single instalment can't be bigger than the advance itself.
           errs.months = 'Instalment exceeds the advance amount';
           summary.push('Each instalment can’t exceed the advance amount ₹' + advAmountNum.toLocaleString('en-IN') + ' — it can be equal, but not more.');
@@ -3050,8 +3060,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     className={`ep-claim-input${claimErrors.title ? ' is-invalid' : ''}`}
                     placeholder="Brief description of expense..."
                     value={claimTitle}
-                    onChange={e => { setClaimTitle(e.target.value); clearClaimErr('title'); }}
+                    maxLength={255}
+                    onChange={e => { setClaimTitle(e.target.value.slice(0, 255)); clearClaimErr('title'); }}
                   />
+                  <div style={{ textAlign: 'right', fontSize: 11, color: claimTitle.length >= 255 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{claimTitle.length}/255</div>
                   {claimErrors.title && <div className="ep-claim-err"><i className="ri-error-warning-line" />{claimErrors.title}</div>}
                 </div>
                 <Row className="g-3 mb-3">

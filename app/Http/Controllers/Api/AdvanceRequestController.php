@@ -180,7 +180,9 @@ class AdvanceRequestController extends Controller
             // Cap at 9,999,999,999,999.99 to fit inside the decimal(18,2)
             // column — matches the expense-claim guard so the SPA's input
             // sanitiser (12 whole digits + 2 fraction) can't overflow it.
-            'amount'              => ['required', 'numeric', 'min:0', 'max:9999999999999.99'],
+            // Floor at ₹100 — a token ₹1 advance spread over many cycles produced
+            // a zero-value repayment (QA #135). Cap fits the decimal(18,2) column.
+            'amount'              => ['required', 'numeric', 'min:100', 'max:9999999999999.99'],
             // Who the advance is for. 'self' = the existing recoverable-from-salary
             // flow; 'company' = spent on the company's behalf, NOT recovered.
             'used_for'            => ['required', 'string', 'in:self,company'],
@@ -215,9 +217,22 @@ class AdvanceRequestController extends Controller
             'requested_date.before_or_equal' => 'Requested date cannot be in the future — it is the request creation date.',
             'recovery_start.after_or_equal'  => 'Recovery must start in the month after the requested date (this month’s payroll may already be done).',
             'reason.max'                     => 'Reason is too long — please keep it under 500 characters.',
+            'amount.min'                     => 'Minimum advance amount is ₹100.',
         ]);
 
         $isCompany = ($data['used_for'] ?? 'self') === 'company';
+        // Spreading the amount over the cycles must leave at least ₹1 per cycle —
+        // otherwise the repayment rounds to zero (QA #135).
+        if (!$isCompany
+            && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)
+            && (int) ($data['recovery_months'] ?? 0) > 0
+            && ((float) $data['amount'] / (int) $data['recovery_months']) < 1) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Amount too low for the number of cycles — each instalment would be under ₹1. Reduce the cycles or increase the amount.',
+                'errors'  => ['recovery_months' => ['Too many cycles for this amount.']],
+            ], 422);
+        }
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true) && empty($data['recovery_months'])) {
             abort(422, 'Number of instalments is required for EMI / Bi-Monthly recovery.');
         }
@@ -758,6 +773,8 @@ class AdvanceRequestController extends Controller
             'department_id'      => $employee?->department_id,
             'department_name'    => $employee?->department?->name,
             'manager_id'         => $row->manager_id,
+            // Branch USER acting as reporting manager (when no employee manager).
+            'reporting_manager_user_id' => $employee?->reporting_manager_user_id,
             'manager_name'       => $managerName,
             'advance_type'       => $row->advance_type,
             'advance_type_other' => $row->advance_type_other,

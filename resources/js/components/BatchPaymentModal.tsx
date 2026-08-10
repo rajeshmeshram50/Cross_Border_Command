@@ -69,6 +69,25 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     api.get('/employees').then(r => setEmployees(Array.isArray(r.data) ? r.data : [])).catch(() => setEmployees([]));
   }, [open]);
 
+  // Lock background scroll while open (QA #99). The app layout scrolls inside
+  // its <main> container, not <body>/<html>, so lock all three and restore on
+  // close.
+  useEffect(() => {
+    if (!open) return;
+    const html = document.documentElement;
+    const body = document.body;
+    const main = document.querySelector('main') as HTMLElement | null;
+    const prev = { html: html.style.overflow, body: body.style.overflow, main: main?.style.overflow ?? '' };
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    if (main) main.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prev.html;
+      body.style.overflow = prev.body;
+      if (main) main.style.overflow = prev.main;
+    };
+  }, [open]);
+
   const resetForm = () => {
     setEmpId(''); setPayable([]); setSelected(new Set()); setClaimPage(1);
     setReference(''); setPaymentType('Bank Transfer'); setExpenseType('Goods'); setNote(''); setProof(null);
@@ -448,7 +467,11 @@ const header: React.CSSProperties = { display: 'flex', justifyContent: 'space-be
 const heroIco: React.CSSProperties = { width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 };
 const rail: React.CSSProperties = { display: 'flex', gap: 28, padding: '12px 26px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', flexShrink: 0 };
 const selChip: React.CSSProperties = { background: '#0e7490', color: '#fff', borderRadius: 999, padding: '6px 14px', fontWeight: 700, fontSize: 13 };
-const body: React.CSSProperties = { padding: 22, overflowY: 'auto', flex: '1 1 auto', minHeight: 0 };
+// flex-grow 0 so the body sizes to its content (never stretches to fill the
+// card, which produced a spurious vertical scrollbar when everything already
+// fit — QA #126). flex-shrink 1 + overflowY:auto still lets genuinely tall
+// content scroll within the 92vh cap.
+const body: React.CSSProperties = { padding: 22, overflowY: 'auto', flex: '0 1 auto', minHeight: 0 };
 const footer: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, padding: '14px 26px', borderTop: '1px solid #eef2f4', background: '#f8fafc', flexShrink: 0 };
 const xBtn: React.CSSProperties = { background: 'rgba(255,255,255,.2)', color: '#fff', border: 'none', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', fontSize: 14, flexShrink: 0 };
 const rowBetween: React.CSSProperties = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 };

@@ -800,6 +800,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // On-demand test-data generators (admins only) — run via curl when needed.
     Route::post  ('/dev/sandwich-leave',  [\App\Http\Controllers\Api\SandwichTestController::class, 'seed']);
     Route::post  ('/dev/attendance-seed', [\App\Http\Controllers\Api\AttendanceTestController::class, 'seed']);
+    Route::post  ('/dev/backdate-joining',[\App\Http\Controllers\Api\EmployeeJoiningTestController::class, 'backdate']);
 
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
