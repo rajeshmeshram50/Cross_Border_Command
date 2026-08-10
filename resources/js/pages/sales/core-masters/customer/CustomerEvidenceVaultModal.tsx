@@ -978,7 +978,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
               )}
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 64 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -990,8 +990,12 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                       return (
                         <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
                           <td className="cev-ov-num">{absIdx + 1}</td>
-                          <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
-                            <td className="cev-ov-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+                          {/* 35 to match the shipment doc panel — the Document
+                              Name column is the widest here too, and a full PI
+                              name ("Proforma Invoice (PI/2026-27/29)") is 32
+                              characters, so 25 hid the PI number itself. */}
+                          <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
+                            <td className="cev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                           </Tooltip>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
@@ -1505,21 +1509,28 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, forceParty, pendingSend }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', pendingSend }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
   /** Launches Send-for-Signature (preview + draggable signature box) for one
    *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
    *  Omitted ⇒ no Send button. */
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
-  /** Locks the panel to one party and hides the Buyer/Consignee/Both tabs —
-   *  used by the Consignee vault, which only ever shows consignee documents. */
-  forceParty?: 'buyer' | 'consignee';
+  /** Whose vault is this — which side the panel opens on, and which side wins
+   *  when Customer = Consignee collapses the two into one.
+   *
+   *  This replaced `forceParty`, which LOCKED the panel to one list and hid the
+   *  Customer / Consignee / Both tabs. Only the Consignee vault ever passed it,
+   *  and the effect was that a deal's buyer-side and shared documents were
+   *  invisible there even though the payload carried them — the consignee could
+   *  not see the documents it co-signs with the buyer. The three tabs are the
+   *  point of the split; a vault should choose its starting tab, not lose two. */
+  primaryParty?: 'buyer' | 'consignee';
   /** The doc whose Send flow is currently launching/in-flight — its row's Send
    *  button shows a spinner until the send wizard closes. */
   pendingSend?: { doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
 }) {
   const toast = useToast();
-  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(forceParty ?? 'buyer');
+  const [party, setParty] = useState<'buyer' | 'consignee' | 'both'>(primaryParty);
   const [busy, setBusy] = useState<number | null>(null);
   const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
   // A document whose party is "both" (buyer AND consignee) is returned in BOTH
@@ -1534,9 +1545,11 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   const buyerOnly = buyer.filter(d => !consKeys.has(docKey(d)));
   const consOnly = consignee.filter(d => !buyerKeys.has(docKey(d)));
   const bothDocs = buyer.filter(d => consKeys.has(docKey(d)));
-  const docs = forceParty
-    ? (forceParty === 'consignee' ? consignee : buyer)
-    : buyerIsConsignee ? buyer
+  /* Customer = Consignee ⇒ one entity, so there is nothing to split: show that
+     entity's own side. Which side that is depends on whose vault you opened —
+     hardcoding `buyer` meant the Consignee vault fell back to the buyer list. */
+  const docs = buyerIsConsignee
+    ? (primaryParty === 'consignee' ? consignee : buyer)
     : party === 'both' ? bothDocs : party === 'buyer' ? buyerOnly : consOnly;
 
   const remind = async (d: VaultShipmentDoc) => {
@@ -1555,16 +1568,18 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
     <div className="cev-sdp" style={{ padding: '12px 16px 16px' }}>
       {/* When Customer = Consignee there's only one party, so the tab bar and the
           party-name label are redundant — render the documents table directly. */}
-      {!forceParty && !buyerIsConsignee && (
+      {!buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>👤 Customer Documents <b>{buyerOnly.length}</b></button>
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>🏢 Consignee Documents <b>{consOnly.length}</b></button>
-          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>🗂 Both <b>{bothDocs.length}</b></button>
+          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>Customer Documents <b>{buyerOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>Consignee Documents <b>{consOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>Both <b>{bothDocs.length}</b></button>
         </div>
       )}
-      {(forceParty || !buyerIsConsignee) && (
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>{forceParty === 'consignee' ? consigneeName : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}</div>
-      )}
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>
+        {buyerIsConsignee
+          ? (primaryParty === 'consignee' ? consigneeName : buyerName)
+          : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}
+      </div>
       {docs.length === 0 ? (
         <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
@@ -1572,7 +1587,7 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
             <thead>
               <tr style={{ background: 'linear-gradient(90deg,#0e7490,#0891b2)', color: '#fff' }}>
-                {['#', 'Document Name', 'Required', 'Signed On', 'Status', 'Actions'].map((h) => (
+                {['Sr No', 'Document Name', 'Required', 'Signed On', 'Status', 'Actions'].map((h) => (
                   <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Document Name' ? 'left' : 'center', fontSize: 9, fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -1581,8 +1596,12 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
               {docs.map((d, i) => (
                 <tr key={d.sig_req_id + '-' + i} style={{ borderBottom: '1px solid #ecfeff' }}>
                   <td style={{ padding: '8px 10px', textAlign: 'center', color: '#94a3b8', fontWeight: 700 }}>{i + 1}</td>
-                  <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+                  {/* 35, not 25: this column is the widest in the panel and a
+                      full PI name ("Proforma Invoice (PI/2026-27/29)") is 32
+                      characters — the old cap cut it one bracket short of
+                      useful, hiding the very number that identifies it. */}
+                  <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                   </Tooltip>
                   <td style={{ padding: '8px 10px', textAlign: 'center' }}>
                     {(d.required === 'OPT' || d.required === 'O')
@@ -1597,17 +1616,26 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                     return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', borderRadius: 20, fontSize: 10, fontWeight: 800, background: bg, color: fg, border: `1px solid ${bd}`, whiteSpace: 'nowrap' }}>● {d.status}</span>;
                   })()}</td>
                   <td style={{ padding: '8px 10px', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                    {d.signed_url && <button type="button" title="View" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>}
+                    {/* Native `title=` was the odd one out here: it waits ~1s,
+                        renders in the OS style, and ignores the app theme. Every
+                        other table in the project uses the shared Tooltip. */}
+                    {d.signed_url && (
+                      <Tooltip label="View signed document">
+                        <button type="button" aria-label="View" onClick={() => window.open(resolveFileUrl(d.signed_url!), '_blank', 'noopener')} style={{ ...docActStyle('#0891b2'), padding: '4px 8px' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg></button>
+                      </Tooltip>
+                    )}
                     {d.status === 'Draft' && onSend && d.db_id && (() => {
                       const isSending = !!pendingSend && pendingSend.doc === d;
                       return (
-                        <button type="button" title="Send" aria-label="Send" disabled={isSending}
+                        <Tooltip label={isSending ? 'Sending…' : 'Send for signature'}>
+                        <button type="button" aria-label="Send" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
                           style={{ ...docActStyle('#7c3aed'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
                         </button>
+                        </Tooltip>
                       );
                     })()}
                     {/* Proforma Invoice — same Send-for-Signature the Sales-Matrix
@@ -1616,13 +1644,15 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                     {d.pi_id && onSend && d.status !== 'Signed' && !d.sig_req_id && d.status !== 'Declined' && d.status !== 'Recalled' && (() => {
                       const isSending = !!pendingSend && pendingSend.doc === d;
                       return (
-                        <button type="button" title="Send for Signature" aria-label="Send for Signature" disabled={isSending}
+                        <Tooltip label={isSending ? 'Sending…' : 'Send the Proforma Invoice for signature'}>
+                        <button type="button" aria-label="Send for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
                           style={{ ...docActStyle('#7c3aed'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>}
                         </button>
+                        </Tooltip>
                       );
                     })()}
                     {/* Resend — a declined / recalled doc (PI or trade doc) can be
@@ -1630,24 +1660,28 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
                     {(d.status === 'Declined' || d.status === 'Recalled') && onSend && (d.db_id || d.pi_id) && (() => {
                       const isSending = !!pendingSend && pendingSend.doc === d;
                       return (
-                        <button type="button" title="Resend for Signature" aria-label="Resend for Signature" disabled={isSending}
+                        <Tooltip label={isSending ? 'Sending…' : `Re-send for signature (${d.status.toLowerCase()})`}>
+                        <button type="button" aria-label="Resend for Signature" disabled={isSending}
                           onClick={() => onSend(d, buyer.includes(d) ? 'buyer' : 'consignee')}
                           style={{ ...docActStyle('#dc2626'), padding: '4px 8px', ...(isSending ? { cursor: 'wait' } : null) }}>
                           {isSending
                             ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 12, display: 'inline-block' }} aria-hidden />
                             : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" /></svg>}
                         </button>
+                        </Tooltip>
                       );
                     })()}
-                    {d.status === 'Pending' && d.sig_req_id > 0 && <button type="button" title="Send Reminder" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button>}
+                    {d.status === 'Pending' && d.sig_req_id > 0 && <Tooltip label={busy === d.sig_req_id ? 'Sending reminder…' : 'Send reminder to the signer'}><button type="button" aria-label="Send Reminder" disabled={busy === d.sig_req_id} onClick={() => remind(d)} style={{ ...docActStyle('#06b6d4'), padding: '4px 8px' }}>{busy === d.sig_req_id ? '…' : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>}</button></Tooltip>}
                     {/* Signing tracker — shown once the doc has a signature
                         request of ANY status (sent / signed / declined). */}
                     {(d.signature_request_id ?? (d.sig_req_id > 0 ? d.sig_req_id : null)) && (
-                      <button type="button" title="Signing activity tracker" aria-label="Signing activity tracker"
-                        onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
-                        style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg>
-                      </button>
+                      <Tooltip label="View signing timeline">
+                        <button type="button" aria-label="Signing activity tracker"
+                          onClick={() => setTrackSig({ id: (d.signature_request_id ?? d.sig_req_id) as number, code: d.pi_code || d.name })}
+                          style={{ ...docActStyle('#7c3aed'), padding: '4px 8px' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5" /><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" /><path d="M12 7v5l4 2" /></svg>
+                        </button>
+                      </Tooltip>
                     )}
                   </td>
                 </tr>
@@ -1738,8 +1772,15 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
 
   return (
     <>
+      {/* z-index 13500, not 3000. Both Evidence Vaults render their shell at
+          11200 (and the Document Overview popup at 11400, the segment popover
+          at 13001), so a 3000 overlay portalled to <body> landed BEHIND the
+          vault: the screen dimmed and the spinner ran on the page underneath
+          while the vault itself sat there looking idle. Sits under the send
+          wizard (265000), which is fine — `preparing` is false by the time the
+          wizard opens. */}
       {preparing && createPortal(
-        <div style={{ position: 'fixed', inset: 0, zIndex: 3000, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 13500, background: 'rgba(15,23,42,.45)', backdropFilter: 'blur(2px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
             <i className="ri-loader-4-line cev-spin" style={{ fontSize: 34 }} aria-hidden />
             Preparing document…

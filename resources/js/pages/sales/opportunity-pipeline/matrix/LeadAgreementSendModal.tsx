@@ -492,9 +492,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * id list handed to the Zoho Sign wizard. The signer is derived from the
    * active tab (Buyer ⇒ customer, Consignee ⇒ consignee, Both/All ⇒ customer). */
   const [tdSelected, setTdSelected] = useState<Set<number>>(new Set());
+  /* The PI is selectable alongside the trade docs, but it can't live in
+     `tdSelected`: that set holds clm_trade_document_library ids, and the PI is
+     a proforma_invoices row. Sharing the set would mean an id collision between
+     two different tables the moment both had a row with the same id. */
+  const [piSelected, setPiSelected] = useState(false);
+  /* The PI does NOT share the trade-doc send endpoint — it goes through
+     SalesDocSendForSignatureModal (kind="pi"), a different wizard with a
+     different preview. So a mixed selection runs the trade docs first and then
+     opens the PI wizard; this flag is what remembers to do the second half. */
+  const [piAfterTd, setPiAfterTd] = useState(false);
   const [tdSendIds, setTdSendIds]   = useState<number[] | null>(null);
   // Clear the selection when the popup opens or the tab flips.
-  useEffect(() => { setTdSelected(new Set()); }, [open, view, tdTab]);
+  /* Reset BOTH halves of the selection together. Leaving `piSelected` set
+     across a tab switch or a reopen would carry a tick the user can no
+     longer see into the next Send. */
+  useEffect(() => { setTdSelected(new Set()); setPiSelected(false); setPiAfterTd(false); }, [open, view, tdTab]);
   /* Ticked AND marked Necessary — the set the Send button really acts on. */
   const tdSendableSelected = useMemo(
     () => (payload?.segments ?? [])
@@ -768,14 +781,25 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const onTdSent = async () => {
     setTdSendIds(null);
     setTdSelected(new Set());
+    let refreshed: ApplicablePayload | null = null;
     if (leadId) {
       try {
         const ref = await api.get(`/clm/leads/${leadId}/agreement-applicable`);
-        setPayload((ref.data?.data ?? null) as ApplicablePayload | null);
+        refreshed = (ref.data?.data ?? null) as ApplicablePayload | null;
+        setPayload(refreshed);
       } catch {
         // ignore — UI still works on the previous payload
       }
     }
+    /* Second half of a mixed selection. Read the PI off the REFRESHED payload
+       when we have one: the trade-doc send just changed server state, and
+       handing the wizard a stale pi_id is how you send the wrong invoice. */
+    const pd = (refreshed ?? payload)?.pi_document;
+    if (piAfterTd && pd) {
+      setPiSend({ id: pd.pi_id, code: pd.pi_code });
+    }
+    setPiAfterTd(false);
+    setPiSelected(false);
     onSent?.();
   };
 
@@ -1098,9 +1122,23 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               // Library docs (db_id set) that haven't been sent are the only
               // sendable rows — select-all only touches these.
               const selectableIds = Array.from(new Set(rows.filter(r => r.db_id != null && !isTdSent(r)).map(r => r.db_id as number)));
-              const allSel  = selectableIds.length > 0 && selectableIds.every(id => tdSelected.has(id));
-              const someSel = selectableIds.some(id => tdSelected.has(id)) && !allSel;
-              const toggleAll = () => setTdSelected(allSel ? new Set() : new Set(selectableIds));
+              /* Is the PI still sendable? Same rule as a trade doc: a live
+                 or finished signing round means it can't be queued again. */
+              const piSigStatus = payload.pi_document?.signature_request?.status ?? null;
+              const piSendable  = !!payload.pi_document
+                && !(!!piSigStatus && !['draft', 'recalled', 'superseded'].includes(piSigStatus));
+              /* Select-all must agree with what the header checkbox visually
+                 covers — the PI row sits under it like every other row, so
+                 leaving it out made "all" mean "all except the first one". */
+              const totalSelectable = selectableIds.length + (piSendable ? 1 : 0);
+              const pickedCount     = selectableIds.filter(id => tdSelected.has(id)).length + (piSelected ? 1 : 0);
+              const allSel  = totalSelectable > 0 && pickedCount === totalSelectable;
+              const someSel = pickedCount > 0 && !allSel;
+              const toggleAll = () => {
+                const next = !allSel;
+                setTdSelected(next ? new Set(selectableIds) : new Set());
+                setPiSelected(next && piSendable);
+              };
               const toggleOne = (id: number) => setTdSelected(prev => {
                 const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
               });
@@ -1237,7 +1275,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           const sent = !!sig && !['draft', 'recalled', 'superseded'].includes(sig.status);
                           return (
                             <tr className="lasm-pi-row">
-                              <td />
+                              <td>
+                                <input
+                                  type="checkbox"
+                                  aria-label="Select Proforma Invoice"
+                                  checked={piSelected}
+                                  disabled={!piSendable}
+                                  title={sent ? `Already ${sig?.status}` : 'Select to send with the other documents'}
+                                  onChange={() => setPiSelected(v => !v)}
+                                />
+                              </td>
                               <td>1</td>
                               <td>
                                 <div className="lasm-doc-name">Proforma Invoice</div>
@@ -1506,19 +1553,20 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
 
                     {/* Bulk send bar — one Zoho request for every checked doc,
                         all signed by the active tab's party. */}
-                    {tdSelected.size > 0 && (
+                    {(tdSelected.size > 0 || piSelected) && (
                       <div className="lasm-bulk-bar">
                         <div className="lasm-bulk-info">
-                          <strong>{tdSelected.size}</strong> selected
+                          <strong>{tdSelected.size + (piSelected ? 1 : 0)}</strong> selected
                           {/* The signer is already named in the header card, and
                               repeating it here crowded the bar. */}
                           <button type="button" className="lasm-bulk-clear" title="Clear selection"
-                            aria-label="Clear selection" onClick={() => setTdSelected(new Set())}>
+                            aria-label="Clear selection" onClick={() => { setTdSelected(new Set()); setPiSelected(false); }}>
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                           </button>
                         </div>
                         {/* Marking is separate from sending: the checked set is
                             usually decided on first, and only then sent. */}
+                        {tdSelected.size > 0 && (
                         <div className="lasm-bulk-need">
                           <button type="button" className="lasm-need-btn lasm-need-bulk is-yes"
                             onClick={() => setNeedBulk('trade_doc', Array.from(tdSelected), true)}>
@@ -1529,6 +1577,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             Mark Not necessary
                           </button>
                         </div>
+                        )}
                         {/* Counts what will ACTUALLY be sent, not what is
                             ticked. It read the checked set, so "Send Selected
                             (3)" appeared over two Necessary rows and one that
@@ -1536,11 +1585,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         <button
                           type="button"
                           className="lasm-bulk-send"
-                          disabled={!tdSignCustomer || tdSendableSelected.length === 0}
-                          onClick={() => setTdSendIds(tdSendableSelected)}
+                          disabled={
+                            (!tdSignCustomer && !piSelected)
+                            || (tdSendableSelected.length === 0 && !piSelected)
+                          }
+                          onClick={() => {
+                            if (tdSendableSelected.length > 0) {
+                              // Trade docs first; the PI wizard follows in onTdSent.
+                              setPiAfterTd(piSelected);
+                              setTdSendIds(tdSendableSelected);
+                            } else if (piSelected && payload.pi_document) {
+                              setPiSend({ id: payload.pi_document.pi_id, code: payload.pi_document.pi_code });
+                            }
+                          }}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                          {`Send Selected (${tdSendableSelected.length})`}
+                          {`Send Selected (${tdSendableSelected.length + (piSelected ? 1 : 0)})`}
                         </button>
                       </div>
                     )}
@@ -1950,7 +2010,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           leadId={leadId}
           customerName={payload?.lead?.customer?.name ?? null}
           onClose={() => setPiSend(null)}
-          onSent={() => { setPiSend(null); onSent?.(); }}
+          onSent={() => { setPiSend(null); setPiSelected(false); onSent?.(); }}
         />
       )}
 

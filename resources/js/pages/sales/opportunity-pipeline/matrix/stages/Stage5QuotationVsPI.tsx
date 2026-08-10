@@ -757,7 +757,11 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                       <td>
                         <span className="s5-qno">{r.code ?? `#${r.id}`}</span>
                       </td>
-                      <td className="s5-muted">{fmtDate(r.created_at)}</td>
+                      {/* nowrap: the header row already has it, the body
+                          did not — and browsers break a line AFTER a
+                          hyphen, so "10-Aug-2026" split into three lines
+                          inside a 120px column that it actually fits in. */}
+                      <td className="s5-muted s5-nowrap">{fmtDate(r.created_at)}</td>
                       {docType === 'pi' && (
                         <td>
                           {(() => {
@@ -1635,6 +1639,7 @@ const STAGE5_CSS = `
 .s5-row-acting { background: #ede9fe !important; }
 .s5-empty { text-align: center; padding: 30px 14px; color: #94a3b8; font-style: italic; }
 .s5-muted { color: #64748b; }
+.s5-nowrap { white-space: nowrap; }
 .s5-dash { color: #cbd5e1; font-weight: 700; }
 
 .s5-sr2 {

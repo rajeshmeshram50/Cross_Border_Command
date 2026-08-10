@@ -364,7 +364,7 @@ class SegmentDocUploadController extends Controller
                     'issue_date'      => null,
                     // Prefer the expiry the user picked at upload time; fall
                     // back to the segment-rule master's generic validity text.
-                    'expiry'          => optional($upload?->expiry_date)->format('d/m/Y')
+                    'expiry'          => optional($upload?->expiry_date)->format('d-M-Y')
                                           ?? ($master['expiry'] ?? '—'),
                     'attachment'      => $upload?->attachment_name,
                     'attachment_url'  => $upload?->attachment_url,
@@ -506,7 +506,7 @@ class SegmentDocUploadController extends Controller
                 'trade_documents'        => $trade_documents,
                 'agreements'             => $agreements,
                 'shipment_agreements'    => $shipments,
-                'last_updated'           => optional($uploads->max('updated_at'))->format('d/m/Y'),
+                'last_updated'           => optional($uploads->max('updated_at'))->format('d-M-Y'),
             ],
         ]);
     }
@@ -838,7 +838,7 @@ class SegmentDocUploadController extends Controller
                     'required'    => 'REQ',
                     'status'      => $piStatus,
                     // "Signed On" — the e-signature completion date; unsigned shows —.
-                    'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d/m/Y') : '—',
+                    'uploaded_on' => $piSigned && $piDate ? \Illuminate\Support\Carbon::parse($piDate)->format('d-M-Y') : '—',
                     'valid_upto'  => '—',
                     'signed_url'  => $signedUrl,
                     // The PI's own id/code so the vault can offer the SAME
@@ -855,38 +855,49 @@ class SegmentDocUploadController extends Controller
             $cons = $lead->consignee_id ? $consById->get($lead->consignee_id) : null;
             $buyerIsConsignee = !$cons || (bool) ($cons->same_as_customer ?? false);
 
-            // Customer = Consignee → the vault shows only the buyer tab
-            // (Consignee/Both are hidden). Per requirement that tab must list
-            // documents whose applicable party is the BUYER ALONE, so drop any
-            // buyer-list doc that ALSO appears on the consignee side (a
-            // Buyer+Consignee doc is emitted into both lists with the same
-            // db_id) — those belong to the hidden consignee/both view. Keyed the
-            // same way dedupe() keys rows. Applies to the customer vault AND the
-            // Sales-Matrix lead vault (same builder) so both read identically.
-            if ($type !== 'consignee' && $buyerIsConsignee) {
+            /* Customer = Consignee → one entity, so the panel hides the
+               Customer / Consignee / Both tabs and shows a single list: the
+               PRIMARY side of whichever vault is open (buyer for the customer
+               vault, consignee for the consignee vault). That list must hold
+               documents applicable to that side ALONE, so drop the ones that
+               also appear on the other side — a Buyer+Consignee document is
+               emitted into both lists with the same db_id, and it belongs to the
+               hidden shared view. Keyed the same way dedupe() keys rows.
+
+               The consignee vault used to be excluded from this block because it
+               never rendered tabs at all; now that it splits by party like the
+               customer vault, it needs the mirror-image strip. */
+            if ($buyerIsConsignee) {
                 $keyOf = fn (array $r) => !empty($r['db_id'])
                     ? (($r['doc_type'] ?? '') . '#' . $r['db_id'])
                     : ('n#' . ($r['name'] ?? ''));
-                $consTradeKeys = [];
-                foreach ($tradeCons as $r) { $consTradeKeys[$keyOf($r)] = true; }
-                $tradeBuyer = array_values(array_filter($tradeBuyer, fn ($r) => !isset($consTradeKeys[$keyOf($r)])));
-                $consAgrKeys = [];
-                foreach ($agrCons as $r) { $consAgrKeys[$keyOf($r)] = true; }
-                $agrBuyer = array_values(array_filter($agrBuyer, fn ($r) => !isset($consAgrKeys[$keyOf($r)])));
+                $strip = function (array $keep, array $against) use ($keyOf) {
+                    $drop = [];
+                    foreach ($against as $r) { $drop[$keyOf($r)] = true; }
+                    return array_values(array_filter($keep, fn ($r) => !isset($drop[$keyOf($r)])));
+                };
+                if ($type === 'consignee') {
+                    $tradeCons = $strip($tradeCons, $tradeBuyer);
+                    $agrCons   = $strip($agrCons, $agrBuyer);
+                } else {
+                    $tradeBuyer = $strip($tradeBuyer, $tradeCons);
+                    $agrBuyer   = $strip($agrBuyer, $agrCons);
+                }
             }
 
-            // The ratio must count exactly what the expanded panel displays:
-            //   • Consignee vault → always the consignee side (forceParty).
-            //   • Customer vault, Customer = Consignee → buyer only (the
-            //     Consignee/Both tabs are hidden); otherwise buyer + consignee
-            //     ("Both" view). Counting the wrong set gave "2/5" when 4 showed.
-            if ($type === 'consignee') {
-                $tradeAll = $tradeCons;
-                $agrAll   = $agrCons;
-            } else {
-                $tradeAll = $buyerIsConsignee ? $tradeBuyer : $dedupe(array_merge($tradeBuyer, $tradeCons));
-                $agrAll   = $buyerIsConsignee ? $agrBuyer   : $dedupe(array_merge($agrBuyer, $agrCons));
-            }
+            /* The ratio must count exactly what the expanded panel displays.
+               Both vaults now show the same three tabs, so both count the same
+               way: the primary side alone when Customer = Consignee, otherwise
+               buyer + consignee de-duped (the "Both" documents counted once).
+
+               The consignee branch used to count `$tradeCons` only, matching the
+               old consignee-only panel. Left as-is it would report e.g. 1/5 over
+               a panel now listing 8 documents. */
+            $primary = $type === 'consignee'
+                ? ['trade' => $tradeCons, 'agr' => $agrCons]
+                : ['trade' => $tradeBuyer, 'agr' => $agrBuyer];
+            $tradeAll = $buyerIsConsignee ? $primary['trade'] : $dedupe(array_merge($tradeBuyer, $tradeCons));
+            $agrAll   = $buyerIsConsignee ? $primary['agr']   : $dedupe(array_merge($agrBuyer, $agrCons));
             $signed   = fn (array $d) => collect($d)->where('status', 'Signed')->count();
 
             $sr++;
@@ -950,8 +961,8 @@ class SegmentDocUploadController extends Controller
                     'name'        => (string) $name,
                     'required'    => 'REQ',
                     'status'      => $status,
-                    'uploaded_on' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->format('d/m/Y') : '—',
-                    'valid_upto'  => $r->expiry_date ? $r->expiry_date->format('d/m/Y') : '—',
+                    'uploaded_on' => $sentAt ? \Illuminate\Support\Carbon::parse($sentAt)->format('d-M-Y') : '—',
+                    'valid_upto'  => $r->expiry_date ? $r->expiry_date->format('d-M-Y') : '—',
                     'signed_url'  => $signedUrl,
                 ];
             }
@@ -1268,7 +1279,7 @@ class SegmentDocUploadController extends Controller
         };
         // "Signed On" shows the completion date — only meaningful once signed.
         $signedOn = $status === 'Signed' && $req->completed_at
-            ? \Illuminate\Support\Carbon::parse($req->completed_at)->format('d/m/Y')
+            ? \Illuminate\Support\Carbon::parse($req->completed_at)->format('d-M-Y')
             : '—';
         $paths  = is_array($req->signed_document_paths) ? $req->signed_document_paths : [];
         $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
@@ -1284,7 +1295,7 @@ class SegmentDocUploadController extends Controller
             'required'    => $required,
             'status'      => $status,
             'uploaded_on' => $signedOn,
-            'valid_upto'  => $req->expiry_date ? $req->expiry_date->format('d/m/Y') : '—',
+            'valid_upto'  => $req->expiry_date ? $req->expiry_date->format('d-M-Y') : '—',
             'signed_url'  => $signedUrl,
         ];
     }
@@ -1374,7 +1385,7 @@ class SegmentDocUploadController extends Controller
                 default      => 'Pending',
             }) : 'Pending';
             $signedOn = ($sig && $sig->status === 'completed' && $sig->completed_at)
-                ? \Illuminate\Support\Carbon::parse($sig->completed_at)->format('d/m/Y') : null;
+                ? \Illuminate\Support\Carbon::parse($sig->completed_at)->format('d-M-Y') : null;
             $paths = $sig && is_array($sig->signed_document_paths) ? $sig->signed_document_paths : [];
             $signedUrl = $paths[0]['file_url'] ?? $paths[0]['url'] ?? null;
             if (!$signedUrl && $sig && $sig->signed_document_path) {
@@ -1390,7 +1401,7 @@ class SegmentDocUploadController extends Controller
                 'reference'            => $m->code,
                 'authority'            => null,
                 'issue_date'           => $signedOn,
-                'expiry'               => $sig && $sig->expiry_date ? $sig->expiry_date->format('d/m/Y') : '—',
+                'expiry'               => $sig && $sig->expiry_date ? $sig->expiry_date->format('d-M-Y') : '—',
                 'attachment'           => null,
                 'attachment_url'       => $signedUrl,
                 'status'               => $status,

@@ -722,7 +722,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
           {(tab === 'shipment-agreements' || tab === 'trade-documents')
             ? <ShipmentTable rows={vault.shipment_agreements} kind={tab === 'trade-documents' ? 'trade' : 'agreement'}
-                             onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }} />
+                             onSend={(leadId, doc, party) => { if (doc.pi_id) setPiSend({ leadId, doc }); else setShipSend({ leadId, doc, party }); }}
+                             activeSend={shipSend ?? (piSend ? { ...piSend, party: 'consignee' as const } : null)} />
             : <DocsTable rows={docsForTab} tab={tab} ownerType="consignee" ownerId={consignee?.db_id ?? null} onReload={reloadVault}
                          onSendTradeDoc={(d) => { if (d.db_id) setSendDocIds([d.db_id]); }}
                          onRemindTradeDoc={handleRemind} onRowBusyChange={onRowBusyChange} />}
@@ -796,12 +797,29 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           flat list (name + status + download). */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        // Case-to-Case: only the consignee's documents, segregated by shipment
-        // (one tab per shipment) — mirrors the Customer vault overview.
-        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => [
-          ...(r.trade_docs_consignee ?? []),
-          ...(r.agreements_consignee ?? []),
-        ];
+        /* Case-to-Case: every document on the shipment, segregated by shipment
+           (one tab per shipment) — same set the expanded panel now shows across
+           its Customer / Consignee / Both tabs. Listing only the consignee side
+           here would contradict the panel two clicks away.
+           A Buyer+Consignee document is emitted into BOTH payload lists with
+           the same db_id, so the merge has to de-dupe or it shows twice. */
+        const ovDocKey = (d: VaultShipmentDoc) =>
+          d.db_id != null ? `${d.doc_type ?? ''}#${d.db_id}` : `n#${d.name}#${d.sig_req_id}`;
+        const dedupeDocs = (list: VaultShipmentDoc[]): VaultShipmentDoc[] => {
+          const seen = new Set<string>();
+          return list.filter((d) => { const k = ovDocKey(d); if (seen.has(k)) return false; seen.add(k); return true; });
+        };
+        const shipDocsOf = (r: VaultShipmentRow): VaultShipmentDoc[] => r.buyer_is_consignee
+          ? [
+              ...(r.trade_docs_consignee ?? []),
+              ...(r.agreements_consignee ?? []),
+            ]
+          : dedupeDocs([
+              ...(r.trade_docs_buyer ?? []),
+              ...(r.trade_docs_consignee ?? []),
+              ...(r.agreements_buyer ?? []),
+              ...(r.agreements_consignee ?? []),
+            ]);
         const shipments     = isStd ? [] : vault.shipment_agreements;
         const shipsWithDocs = isStd ? [] : shipments.filter((r) => shipDocsOf(r).length > 0);
         const activeShip    = isStd ? null : (shipsWithDocs.find((r) => r.id === ovShip) ?? shipsWithDocs[0] ?? null);
@@ -843,7 +861,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
               )}
               <div className="cnev-ov-body">
                 <table className="cnev-ov-table">
-                  <thead><tr><th style={{ width: 64 }}>#</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 64 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cnev-ov-empty">{isStd ? 'No documents available.' : (shipsWithDocs.length === 0 ? 'No shipment documents available.' : 'No documents for this shipment.')}</td></tr>
@@ -855,8 +873,12 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                       return (
                         <tr key={`${activeShip?.id ?? 'std'}-${absIdx}`}>
                           <td className="cnev-ov-num">{absIdx + 1}</td>
-                          <Tooltip label={d.name} disabled={(d.name || '').length <= 25}>
-                            <td className="cnev-ov-name">{(d.name || '').length > 25 ? (d.name || '').slice(0, 25) + '…' : d.name}</td>
+                          {/* 35 to match the shipment doc panel — the Document
+                              Name column is the widest here too, and a full PI
+                              name ("Proforma Invoice (PI/2026-27/29)") is 32
+                              characters, so 25 hid the PI number itself. */}
+                          <Tooltip label={d.name} disabled={(d.name || '').length <= 35}>
+                            <td className="cnev-ov-name">{(d.name || '').length > 35 ? (d.name || '').slice(0, 35) + '…' : d.name}</td>
                           </Tooltip>
                           <td><StatusPill s={d.status as VaultStatus} /></td>
                           <td>
@@ -1268,22 +1290,28 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-function ShipmentTable({ rows, kind, onSend }: {
+function ShipmentTable({ rows, kind, onSend, activeSend }: {
   rows: VaultShipmentRow[];
   kind: 'trade' | 'agreement';
   /** Launches Send-for-Signature for one shipment doc (lead + doc + party). */
   onSend?: (leadId: number, doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
+  /** The send currently being prepared, so its row's button can spin. This was
+   *  never wired here (the customer vault has always passed it), so clicking
+   *  Send in the consignee vault left the button looking untouched. */
+  activeSend?: { leadId: number; doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
 }) {
   const [openId, setOpenId] = useState<number | null>(null);
-  // Consignee vault shows ALL shipments and only the consignee's documents —
-  // no Buyer = / ≠ Consignee split (that's a customer-vault concept).
+  /* Consignee vault shows ALL shipments — no Buyer = / ≠ Consignee split at the
+     TABLE level (that's a customer-vault concept). The document panel inside
+     each row does split by party, exactly like the customer vault, so a doc
+     that both sides sign is visible from here too. */
   const filtered = rows;
   const isAgreement = kind === 'agreement';
   const COLS = isAgreement ? 11 : 10;
   return (
     <>
       {/* No Customer = / ≠ Consignee tabs in the consignee vault — it always
-          shows this consignee's shipments and its own documents directly. */}
+          shows this consignee's shipments. */}
       <div className="cnev-table-wrap">
         <div className="cnev-table-scroll">
         <table className="cnev-table">
@@ -1342,7 +1370,8 @@ function ShipmentTable({ rows, kind, onSend }: {
                           consigneeName={r.consignee || '—'}
                           buyerIsConsignee={r.buyer_is_consignee}
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
-                          forceParty="consignee"
+                          pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
+                          primaryParty="consignee"
                         />
                       </td>
                     </tr>
@@ -1684,7 +1713,16 @@ const CNEV_CSS = `
 .cnev-ov-close:hover { background: rgba(255,255,255,.25); }
 /* Fixed height for ~5 rows so the popup size stays constant regardless of how
    many documents the selected shipment/page has (paginated at 5/page). */
-.cnev-ov-body { overflow: auto; padding: 14px 18px 18px; min-height: 312px; max-height: 312px; }
+/* border-top, NOT padding-top — and that is the whole fix.
+   A sticky top:0 header sticks to the SCROLLPORT, which is the padding box.
+   With padding-top: 14px there was a 14px strip above where the header parks,
+   inside the scroller, and rows scrolling up showed through it: the first row
+   floated above the header instead of disappearing under it. A border sits
+   OUTSIDE the padding box, so it reserves the same 14px of white while the
+   scrollport — and the parked header with it — starts flush at the top.
+   The customer vault already carries this rule (.cev-ov-body); the consignee
+   copy never got it. */
+.cnev-ov-body { overflow: auto; padding: 0 18px 18px; border-top: 14px solid #fff; min-height: 312px; max-height: 312px; }
 .cnev-ov-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px 16px; flex-wrap: wrap; }
 .cnev-ov-pager-info { font-size: 11px; font-weight: 600; color: #0891b2; }
 .cnev-ov-pager-btns { display: flex; align-items: center; gap: 5px; }
@@ -1699,6 +1737,22 @@ const CNEV_CSS = `
 .cnev-ov-pager-num.is-active { background: linear-gradient(135deg, #06b6d4, #0891b2); color: #fff; border-color: transparent; font-weight: 800; }
 [data-bs-theme="dark"] .cnev-ov-pager-nav, [data-bs-theme="dark"] .cnev-ov-pager-num { background: rgba(8,145,178,.14); color: #67e8f9; border-color: rgba(8,145,178,.34); }
 [data-bs-theme="dark"] .cnev-ov-pager-num.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
+/* Shipment picker tabs in the Document Overview popup.
+   The markup already used cnev-ov-shiptab / cnev-ov-shiptab-opp, but the
+   rules were never written for the cnev- prefix — only the customer vault's
+   cev- copies exist. Unstyled, the button collapsed to bare text and the opp
+   code ran straight into the shipment id: "SHP-001OPP-0001". Mirrors
+   CustomerEvidenceVaultModal's .cev-ov-shiptab* block. */
+.cnev-ov-shiptabs { display: flex; gap: 8px; overflow-x: auto; padding: 12px 18px 0; scrollbar-width: thin; scrollbar-color: rgba(8,145,178,.3) transparent; }
+.cnev-ov-shiptabs::-webkit-scrollbar-thumb { background: rgba(8,145,178,.3); border-radius: 99px; }
+.cnev-ov-shiptab { display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer; border: 1.5px solid rgba(6,182,212,.22); background: #fff; color: #0e7490; font-family: inherit; font-size: 12px; font-weight: 700; white-space: nowrap; transition: all .15s; }
+.cnev-ov-shiptab:hover { background: #ecfeff; }
+.cnev-ov-shiptab.is-active { background: linear-gradient(135deg,#0e7490,#06b6d4); color: #fff; border-color: transparent; box-shadow: 0 3px 10px rgba(8,145,178,.3); }
+.cnev-ov-shiptab-opp { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 20px; background: rgba(8,145,178,.1); color: #0891b2; }
+.cnev-ov-shiptab.is-active .cnev-ov-shiptab-opp { background: rgba(255,255,255,.22); color: #fff; }
+[data-bs-theme="dark"] .cnev-ov-shiptab { background: rgba(8,145,178,.12); color: #67e8f9; border-color: rgba(8,145,178,.34); }
+[data-bs-theme="dark"] .cnev-ov-shiptab.is-active { background: linear-gradient(135deg,#06b6d4,#22d3ee); color: #fff; border-color: transparent; }
+
 .cnev-ov-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .cnev-ov-table thead th {
   position: sticky; top: 0; z-index: 5; background: #083344; color: #fff;
@@ -1721,6 +1775,9 @@ const CNEV_CSS = `
 .cnev-ov-dl:hover:not(:disabled) { background: #fff; border-color: #06b6d4; color: #0891b2; }
 .cnev-ov-dl:disabled { opacity: .45; cursor: not-allowed; }
 [data-bs-theme="dark"] .cnev-ov-card { background: #0a2630; }
+/* The border-top above is the card colour, so it has to follow the theme —
+   left white it would read as a bright bar across a dark popup. */
+[data-bs-theme="dark"] .cnev-ov-body { border-top-color: #0a2630; }
 [data-bs-theme="dark"] .cnev-ov-table tbody td { border-bottom-color: rgba(8,145,178,.18); color: #cffafe; }
 [data-bs-theme="dark"] .cnev-ov-name { color: #e6f7fb; }
 [data-bs-theme="dark"] .cnev-ov-table tbody tr:hover td { background: rgba(8,145,178,.10); }
@@ -2038,6 +2095,12 @@ const CNEV_CSS = `
 /* Spinner used by the Export All button while the XLSX workbook is
  * being built. Class-scoped to .cnev-spin so it does not collide
  * with any global ri-spin rule the project may add later. */
+/* ShipmentDocPanel is imported from CustomerEvidenceVaultModal and its Send
+   buttons spin via .cev-spin — a class that lives in CEV_CSS, which THIS
+   modal never mounts. Without it the loader icon rendered frozen: the button
+   said Sending and nothing moved. Re-declared here rather than pulling in the
+   whole customer stylesheet (different prefix, so nothing collides). */
+.cev-spin { display: inline-block; animation: cnevSpin .8s linear infinite; }
 .cnev-spin { display: inline-block; animation: cnevSpin .8s linear infinite; }
 @keyframes cnevSpin {
   from { transform: rotate(0deg); }
