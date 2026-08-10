@@ -1194,6 +1194,22 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               </td>
                               <td>
                                 <div className="lasm-actions">
+                                  {/* Same timeline every other row offers — the
+                                      PI had a Send but no way to see what
+                                      happened after it, even once signed. */}
+                                  <Tooltip label={sig?.id ? 'View signing timeline' : 'Not sent for signature yet'}>
+                                    <span className="d-inline-flex">
+                                      <button
+                                        type="button"
+                                        className="lasm-btn-icon"
+                                        aria-label="Signing timeline"
+                                        disabled={!sig?.id}
+                                        onClick={() => { if (sig?.id) setTrackerFor({ sigId: sig.id, code: pd.pi_code }); }}
+                                      >
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+                                      </button>
+                                    </span>
+                                  </Tooltip>
                                   {!sent && (
                                     <Tooltip label="Send the Proforma Invoice for signature">
                                       <button type="button" className="lasm-btn-send"
