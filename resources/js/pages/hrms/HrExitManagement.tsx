@@ -4156,6 +4156,10 @@ type VaultRun = {
   id: number;
   status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
   template_id: number;
+  code?: string | null;
+  trigger_keyword?: string | null;
+  trigger_point_name?: string | null;
+  template?: { name?: string | null; doc_type?: string | null; code?: string | null } | null;
 };
 
 function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
@@ -4237,7 +4241,14 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
     }));
   })();
 
-  const buildTplGroup = (templates: VaultTemplate[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
+  const runStatusToDoc = (run: VaultRun): DocStatus =>
+    run.status === 'Completed'   ? 'Completed'
+    : run.status === 'In Progress' ? 'Sent'
+    : run.status === 'Pending'     ? 'Sent'
+    : run.status === 'Rejected'    ? 'Pending'
+    : 'Not Generated';
+
+  const buildTplGroup = (templates: VaultTemplate[], orphanRuns: VaultRun[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
     const docs = templates.map(tpl => {
       const run = runByTemplateId.get(tpl.id) || null;
       const status: DocStatus =
@@ -4262,10 +4273,35 @@ function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | nul
         runId: run?.status === 'Completed' ? run.id : null,
       };
     });
-    return docs.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs }] : [];
+    // Orphan runs — signing runs whose template no longer matches this employee
+    // (e.g. after they're disabled / exited, /hr-document-templates/match returns
+    // nothing). Without this, completed signed documents would silently vanish
+    // from the vault and the counts would read 0 even though the signed PDFs
+    // exist. Render them straight off the run so they always show.
+    const orphanDocs = orphanRuns.map(run => ({
+      id: run.template_id || run.id, key: `run-${run.id}`,
+      name: run.template?.name || run.code || 'Signed document',
+      sub: `${run.template?.doc_type || 'Document'}${run.code ? ` · ${run.code}` : ''} · Run #${run.id}`,
+      icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
+      category: run.trigger_point_name || 'Document',
+      status: runStatusToDoc(run),
+      url: null as string | null,
+      runId: run.status === 'Completed' ? run.id : null,
+    }));
+    const all = [...docs, ...orphanDocs];
+    return all.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs: all }] : [];
   };
-  const orgGroups  = buildTplGroup(orgTemplates,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
-  const exitGroups = buildTplGroup(exitTemplates, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
+
+  // Split runs whose template isn't in the matched set into exit vs. non-exit
+  // (organizational) by their trigger keyword, so they land in the right tab.
+  const exitTplIds = new Set(exitTemplates.map(t => t.id));
+  const orgTplIds  = new Set(orgTemplates.map(t => t.id));
+  const isExitRun  = (r: VaultRun) => String(r.trigger_keyword || '').toLowerCase() === 'exit';
+  const exitOrphanRuns = signingRuns.filter(r =>  isExitRun(r) && !exitTplIds.has(r.template_id));
+  const orgOrphanRuns  = signingRuns.filter(r => !isExitRun(r) && !orgTplIds.has(r.template_id));
+
+  const orgGroups  = buildTplGroup(orgTemplates,  orgOrphanRuns,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
+  const exitGroups = buildTplGroup(exitTemplates, exitOrphanRuns, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
 
   const groups =
     tab === 'employee'       ? empGroups
