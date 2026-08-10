@@ -92,7 +92,14 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
        So it is placed below the chip and then pushed up only as far as it must
        be to fit. It may cover the rows above; those are not what the user is
        reading at that moment, and a fully visible list is worth more. */
-    const MAX_H = Math.min(320, window.innerHeight - margin * 2);
+    /* Height of five role pills, so the sixth is visibly cut and the list
+       reads as scrollable. Built from the box's own metrics rather than a round
+       number, so it stays exactly five if the pill styling changes:
+         ROW  11px text x 1.5 line + 8px pill padding + 4px flex gap
+         HEAD the "ALL ANCILLARY ROLES" caption + its 4px margin
+         PAD  10px top + 10px bottom on the popover */
+    const ROW = 29, HEAD = 24, PAD = 20, MAX_ROWS = 5;
+    const MAX_H = Math.min(ROW * MAX_ROWS + HEAD + PAD, window.innerHeight - margin * 2);
     let top = b.bottom + GAP;
     if (top + MAX_H > window.innerHeight - margin) {
       top = Math.max(margin, window.innerHeight - margin - MAX_H);
@@ -109,7 +116,15 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
       setOpen(false);
     };
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const onScrollOrResize = () => setOpen(false);
+    /* Closing on scroll is right for the PAGE scrolling — the popover is
+       position:fixed and would otherwise float away from its chip. But the
+       listener is on capture, so it also caught the popover scrolling ITSELF:
+       the list shut the moment you tried to read past the fifth role.
+       Scrolls that start inside it are its own business. */
+    const onScrollOrResize = (e?: Event) => {
+      if (e && popRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
     document.addEventListener('mousedown', onDocClick);
     document.addEventListener('keydown', onEsc);
     window.addEventListener('scroll', onScrollOrResize, true);
