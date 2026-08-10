@@ -46,7 +46,7 @@ class Employee extends Model
         'leave_plan', 'holiday_list', 'holiday_group_id', 'attendance_tracking',
         'shift', 'weekly_off', 'attendance_number',
         'time_tracking', 'penalization_policy', 'overtime', 'expense_policy',
-        'laptop_assigned', 'laptop_asset_id', 'mobile_device', 'other_assets',
+        'laptop_assigned', 'laptop_asset_id', 'mobile_device', 'mobile_assigned', 'other_assets',
 
         // Step 4 — Compensation (added 2026-05-01)
         'enable_payroll', 'pay_group', 'annual_salary', 'salary_frequency',

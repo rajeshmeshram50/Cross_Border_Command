@@ -292,6 +292,13 @@ class HrDocumentTemplateController extends Controller
             // ignore — file is saved, web editor falls back to previous content
         }
 
+        // Checked AFTER the parse (the converted body is the fallback measure)
+        // but BEFORE storing, so an oversized file never lands in the bucket or
+        // replaces the template's current DOCX.
+        if ($err = $this->docxPageLimitError($abs, $html)) {
+            return response()->json(['status' => false, 'message' => $err], 422);
+        }
+
         [$path, $orig] = $this->storeDocx($uploaded, $row->client_id, $row->id);
 
         $update = [

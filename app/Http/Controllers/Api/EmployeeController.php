@@ -1825,6 +1825,7 @@ class EmployeeController extends Controller
             'overtime'             => 'nullable|string|max:100',
             'expense_policy'       => 'nullable|string|max:100',
             'laptop_assigned'      => 'nullable|string|max:20',
+            'mobile_assigned'      => 'nullable|string|max:20',
             'laptop_asset_id'      => 'nullable|string|max:50',
             'mobile_device'        => 'nullable|string|max:100',
             'other_assets'         => 'nullable|string|max:255',

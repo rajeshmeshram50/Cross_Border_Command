@@ -84,23 +84,20 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
       left = Math.max(margin, window.innerWidth - POP_W - margin);
     }
 
-    /* Flip above the chip when there is more room there.
-       It always opened downward, and this column's chips are on the LAST rows
-       of a list as often as the first — so the popover hung off the bottom of
-       the window with its lower half unreachable. Anchoring by `bottom` on the
-       flipped side means the height never has to be known in advance. */
-    const below = window.innerHeight - b.bottom - GAP - margin;
-    const above = b.top - GAP - margin;
-    /* Enough room for a useful list without scrolling. Below this the popover
-       is a sliver pinned to the bottom edge, which is what the last rows of a
-       table always got: `below` cleared the old 170px bar by a hair, so it
-       opened downward into a space it could not use. */
-    const WANT = 280;
-    if (below < WANT && above > below) {
-      setPos({ left, bottom: window.innerHeight - b.top + GAP, maxH: above });
-    } else {
-      setPos({ left, top: b.bottom + GAP, maxH: below });
+    /* Shift into the viewport rather than flip.
+       Flipping only helps when ONE side is cramped. On a row near the bottom of
+       a short window both sides are cramped — below was ~170px and above less
+       still — so whichever side it picked, the list came out a sliver pinned to
+       an edge and half its roles were unreachable.
+       So it is placed below the chip and then pushed up only as far as it must
+       be to fit. It may cover the rows above; those are not what the user is
+       reading at that moment, and a fully visible list is worth more. */
+    const MAX_H = Math.min(320, window.innerHeight - margin * 2);
+    let top = b.bottom + GAP;
+    if (top + MAX_H > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - margin - MAX_H);
     }
+    setPos({ left, top, maxH: MAX_H });
   };
 
   useEffect(() => {

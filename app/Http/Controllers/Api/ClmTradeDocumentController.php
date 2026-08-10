@@ -704,7 +704,14 @@ class ClmTradeDocumentController extends Controller
         $this->validateDocxUpload($request);
 
         try {
-            $html = $this->docxToHtml($request->file('docx')->getRealPath());
+            $abs  = $request->file('docx')->getRealPath();
+            $html = $this->docxToHtml($abs);
+            // Same ceiling as the HR template upload — both feed the same
+            // editors and the same PDF renderer, so the limit belongs to the
+            // conversion, not to whichever screen happened to call it.
+            if ($err = $this->docxPageLimitError($abs, $html)) {
+                return response()->json(['status' => false, 'message' => $err], 422);
+            }
         } catch (\Throwable $e) {
             return response()->json(['status' => false, 'message' => 'Could not read this document.'], 422);
         }

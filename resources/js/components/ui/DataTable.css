@@ -788,3 +788,11 @@
 [data-layout-mode="dark"] .dt-root { box-shadow: 0 6px 18px rgba(0, 0, 0, .30); }
 /* Standalone tab rails (a header-strip toggle) sit on the page, not the card. */
 [data-layout-mode="dark"] .dt-tabrail .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
+
+
+/* ── Employee list: a wider search ────────────────────────────────────────
+   That page's toolbar carries only two tabs, so most of the row is empty and
+   the default 320px field looked lost in it. Scoped to .hre-list rather than
+   raised globally — other lists fill that space with filters and pickers, and
+   widening the field there would push them onto a second row. */
+.dt-root.hre-list .dt-search { flex: 0 4 560px; max-width: 560px; }
