@@ -170,6 +170,14 @@ class BranchController extends Controller
             // Work shifts repeater — arrives as a JSON string on multipart
             // uploads and as a real array on JSON requests; normalised below.
             'shifts' => 'nullable',
+            // Late-mark deduction rule — { enabled, count, deduction }. Same
+            // transport as shifts (JSON string on multipart, array on JSON), so
+            // the element rules below only bite on the array form; the rest is
+            // clamped by Branch::normalizeLateMarkPolicy().
+            'late_mark_policy' => 'nullable',
+            'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
+            // Half day / full day only — payroll works in 0.5-day steps.
+            'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
             // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
@@ -244,6 +252,7 @@ class BranchController extends Controller
                 'status' => $request->status ?? 'active',
                 'notes' => $request->notes,
                 'shifts' => $this->normalizeShifts($request->input('shifts')),
+                'late_mark_policy' => Branch::normalizeLateMarkPolicy($request->input('late_mark_policy')),
                 'bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts')),
                 'primary_color' => $request->primary_color,
                 'secondary_color' => $request->secondary_color,
@@ -501,6 +510,14 @@ class BranchController extends Controller
             'notes' => 'nullable|string',
             // Work shifts repeater — JSON string on multipart, array on JSON.
             'shifts' => 'nullable',
+            // Late-mark deduction rule — { enabled, count, deduction }. Same
+            // transport as shifts (JSON string on multipart, array on JSON), so
+            // the element rules below only bite on the array form; the rest is
+            // clamped by Branch::normalizeLateMarkPolicy().
+            'late_mark_policy' => 'nullable',
+            'late_mark_policy.count' => 'sometimes|integer|min:1|max:31',
+            // Half day / full day only — payroll works in 0.5-day steps.
+            'late_mark_policy.deduction' => 'sometimes|in:half_day,full_day',
             // Bank accounts repeater (Legal & Registration) — same transport.
             'bank_accounts' => 'nullable',
             'logo' => 'nullable|image|mimes:jpg,jpeg,png,svg,webp|max:2048',
@@ -600,6 +617,24 @@ class BranchController extends Controller
             }
             if ($request->has('bank_accounts')) {
                 $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
+            }
+            // Same reason as shifts — normalise before writing so the array cast
+            // doesn't double-encode the JSON string multipart sends.
+            if ($request->has('late_mark_policy')) {
+                $before = Branch::normalizeLateMarkPolicy($branch->late_mark_policy);
+                $after  = Branch::normalizeLateMarkPolicy($request->input('late_mark_policy'));
+                $branch->update(['late_mark_policy' => $after]);
+
+                /* The rule feeds payroll's LOP, so an already-generated draft
+                 * payslip is stale the moment it changes — HR would edit the
+                 * branch, reopen payroll and see the OLD deduction with no hint
+                 * why. Every other payroll input (salary structure, leave
+                 * approval, adjustments) already recomputes on save; this now
+                 * matches. Locked/paid runs are frozen and skipped inside
+                 * recomputeEmployeePayslips(). */
+                if ($before !== $after) {
+                    $this->recomputeBranchPayslips($branch);
+                }
             }
 
             if ($request->hasFile('logo')) {
@@ -837,6 +872,33 @@ class BranchController extends Controller
         }
 
         return $inUse;
+    }
+
+    /**
+     * Re-run payroll for this branch's employees after a policy change.
+     *
+     * Scoped to employees who actually HAVE a payslip in an open (draft /
+     * generated) run — a branch with 400 people but one open run should cost
+     * one recompute, not 400. Failures are swallowed on purpose: a payroll
+     * hiccup must not roll back the branch edit the admin just made; the run
+     * can always be regenerated from the Payroll screen.
+     */
+    private function recomputeBranchPayslips(Branch $branch): void
+    {
+        try {
+            $employeeIds = \App\Models\Payslip::query()
+                ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated']))
+                ->whereIn('employee_id', Employee::where('branch_id', $branch->id)->pluck('id'))
+                ->distinct()
+                ->pluck('employee_id');
+
+            $payroll = app(\App\Services\PayrollService::class);
+            foreach ($employeeIds as $id) {
+                $payroll->recomputeEmployeePayslips((int) $id);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Late-mark policy recompute failed for branch ' . $branch->id . ': ' . $e->getMessage());
+        }
     }
 
     private function normalizeShifts($raw): array

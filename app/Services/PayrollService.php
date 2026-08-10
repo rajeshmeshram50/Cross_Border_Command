@@ -560,6 +560,10 @@ class PayrollService
     public function eligibleEmployees(PayrollPeriod $period): Collection
     {
         $q = Employee::query()
+            // Branch carries the shift windows AND the late-mark policy, both
+            // read per employee inside computeForEmployee() — eager-load to
+            // keep a 400-employee run from firing 800 queries.
+            ->with('branch:id,shifts,late_mark_policy')
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             // Only fully-onboarded staff belong in payroll. Half-onboarded /
             // in-progress employees (onboarding_stage_completed < 6) don't have
@@ -1012,16 +1016,44 @@ class PayrollService
                 "{$sandwichLop} off-day(s) sandwiched inside unpaid leave charged as loss of pay.");
         }
 
-        // Rule 2 (BR-01) — LOP accrues in 0.5-day steps for every completed block
-        // of 3 late marks: 3→0.5, 6→1, 9→1.5, 12→2, and +0.5 per extra 3.
-        // Fewer than 3 late marks never deducts. Flag for HR review rather than
-        // silently docking (exception: late-sitting may have covered the hours;
-        // HR can hold/waive on review).
-        $lateLopDays = intdiv(max(0, $lateMarks), 3) * 0.5;
+        /* Rule 2 (BR-01) — LOP for late marks, per the EMPLOYEE'S BRANCH policy
+         * (Branch → Attendance Policy: "every N late marks = half / full day").
+         * LOP accrues once per completed block: with the default 3 / half day,
+         * 3→0.5, 6→1, 9→1.5; fewer than N late marks never deducts.
+         *
+         * A branch that was never configured falls back to that legacy 3 → half
+         * day rule inside Branch::lateMarkPolicy(), so old runs stay reproducible.
+         * Flagged for HR review rather than silently docked — late sitting may
+         * have covered the hours, and HR can hold/waive on review. */
+        $lateBranch  = $employee->relationLoaded('branch') ? $employee->getRelation('branch') : $employee->branch;
+        // An employee with no branch (or a soft-deleted one) still has to be
+        // paid — normalize(null) hands back the legacy 3 → half day defaults.
+        $latePolicy  = $lateBranch
+            ? $lateBranch->lateMarkPolicy()
+            : \App\Models\Branch::normalizeLateMarkPolicy(null);
+        $lateLopDays = \App\Models\Branch::lateMarkLopFor($latePolicy, (int) $lateMarks);
+        $lateUnit    = $latePolicy['deduction'] === 'full_day' ? 'full day' : 'half day';
         if ($lateLopDays > 0) {
             $lopDays += $lateLopDays;
+            // Spelled out in words HR can check against the branch setting.
+            // Pluralised because "every 1 late marks = full day" read like a bug
+            // report of its own on the review screen.
+            $lateBlock = $latePolicy['count'] === 1 ? 'late mark' : 'late marks';
+            $lateDays  = $this->trimNum($lateLopDays);
             $exceptions = $this->withException($exceptions, 'warning',
-                "{$lateMarks} late marks → {$lateLopDays} day LOP (verify hours covered before approving).");
+                "{$lateMarks} late marks → {$lateDays} day" . ($lateLopDays == 1 ? '' : 's') . " LOP "
+                . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
+                . "verify hours covered before approving).");
+        } elseif ($lateMarks > 0) {
+            /* Late but nothing deducted — say why, as INFO so it never holds the
+             * run. Without this the row reads clean: a branch with deduction
+             * switched off produced no message at all, and a branch that does
+             * deduct produced none for someone sitting just under the threshold.
+             * Both cases had HR looking at a non-zero Late Marks column with no
+             * explanation of why the pay was untouched. */
+            $exceptions = $this->withException($exceptions, 'info', $latePolicy['enabled']
+                ? "{$lateMarks} late mark(s) — under this branch's threshold of {$latePolicy['count']}, no pay deducted."
+                : "{$lateMarks} late mark(s) — this branch does not deduct pay for late marks.");
         }
         $lopDays = min($effectiveWorkingDays, $lopDays);
         $paidDays = max(0, round($effectiveWorkingDays - $lopDays, 2));
