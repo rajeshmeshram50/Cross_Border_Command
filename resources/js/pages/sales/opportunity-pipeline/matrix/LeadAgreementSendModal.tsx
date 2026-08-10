@@ -4,6 +4,7 @@ import api from '../../../../api';import { resolveFileUrl } from '../../../../ut
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SigningTrackerModal } from '../SigningTrackerModal';
+import SalesDocSendForSignatureModal from './stages/SalesDocSendForSignatureModal';
 import SalesCustomerSendForSignatureModal, {
   type AgreementSendRow,
   type AgreementSigner,
@@ -129,6 +130,12 @@ export type ApplicablePayload = {
     consignee: LeadParty | null;
   };
   pi: { id: number; code: string | null; status: string | null } | null;
+  /* The PI as a signable document — Evidence Vault lists it the same way, and
+     a deal that skipped Stage 5 can get it signed from either place. */
+  pi_document: {
+    pi_id: number; pi_code: string; name: string; status: string;
+    signature_request: { id: number; status: string; reminder_count?: number; last_reminder_sent_at?: string | null } | null;
+  } | null;
   /* Latest non-cancelled quotation on the lead. Segment Details unlock as
    * soon as EITHER a quotation or a PI exists (segments derive from the
    * mapped products of whichever is present, PI preferred). */
@@ -270,11 +277,18 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   /* Normalise the agreement's `party` CSV into a stable key so
    * "Buyer, Consignee" and "buyer,consignee" group together. Matches
    * the server-side normaliser in ClmSignatureController::agreementSend. */
+  /* Only the buyer / consignee tokens.
+     The key locks a bulk selection to one signer set, and signers are derived
+     from these two alone — supplier tokens never produce a recipient here.
+     Including them made two agreements that both go to "Buyer + Consignee"
+     look like different parties whenever their supplier lists differed
+     ("Supplier-Material / Goods" vs "Supplier-Material, Supplier-Logistic"),
+     so picking one silently locked the other out of the selection. */
   const partyKey = (party: string | null | undefined) =>
     String(party ?? '')
       .split(',')
       .map(s => s.trim().toLowerCase())
-      .filter(Boolean)
+      .filter(t => t === 'buyer' || t === 'consignee')
       .sort()
       .join(',');
 
@@ -520,6 +534,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
      would otherwise lose the lot. `busy` is per document so one row saving
      never freezes the others. */
   const [needBusy, setNeedBusy] = useState<string[]>([]);
+  /* Routed to SalesDocSendForSignatureModal (kind='pi') — the same component
+     the Evidence Vault and the Q/PI stage use, so one document cannot be sent
+     two different ways from two different screens. */
+  const [piSend, setPiSend] = useState<{ id: number; code: string } | null>(null);
   /* Same decision for a whole checked set.
      One request rather than N: the endpoint already takes an items[] array, so
      marking eight documents is one round trip and one optimistic repaint
@@ -1147,6 +1165,49 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         </tr>
                       </thead>
                       <tbody>
+                        {/* The PI itself, pinned to the top — this whole list is
+                            derived from its products, and it is signable in its
+                            own right. Outside the pager on purpose: it is one
+                            fixed row, not part of the catalogue being paged. */}
+                        {payload.pi_document && (() => {
+                          const pd  = payload.pi_document;
+                          const sig = pd.signature_request;
+                          const sent = !!sig && !['draft', 'recalled', 'superseded'].includes(sig.status);
+                          return (
+                            <tr className="lasm-pi-row">
+                              <td />
+                              <td>1</td>
+                              <td>
+                                <div className="lasm-doc-name">Proforma Invoice</div>
+                                <div className="lasm-doc-sub">{pd.pi_code}</div>
+                              </td>
+                              <td><span className="lasm-doc-sub">Deal document</span></td>
+                              {/* No Yes/No here. The PI is the deal's own
+                                  invoice, not a catalogue entry someone may or
+                                  may not want — the Evidence Vault marks it
+                                  Mandatory for the same reason. */}
+                              <td><span className="lasm-need-tag is-yes">Mandatory</span></td>
+                              <td>
+                                {sent
+                                  ? <StatusPill status={sig!.status as any} />
+                                  : <span className="lasm-td-status is-pending">Pending</span>}
+                              </td>
+                              <td>
+                                <div className="lasm-actions">
+                                  {!sent && (
+                                    <Tooltip label="Send the Proforma Invoice for signature">
+                                      <button type="button" className="lasm-btn-send"
+                                        onClick={() => setPiSend({ id: pd.pi_id, code: pd.pi_code })}>
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                                        Send
+                                      </button>
+                                    </Tooltip>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })()}
                         {pagedTd.map((td, i) => {
                           const tdSig       = td.signature_request;
                           const tdSigStatus = tdSig?.status ?? null;
@@ -1181,7 +1242,11 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 onChange={() => td.db_id != null && toggleOne(td.db_id)}
                               />
                             </td>
-                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1}</td>
+                            {/* Offset by the pinned PI row so the column reads
+                                1, 2, 3 down the page instead of restarting. The
+                                PI sits outside the pager, so it is present on
+                                every page and the offset applies throughout. */}
+                            <td>{(tdSafePage - 1) * TD_PER_PAGE + i + 1 + (payload.pi_document ? 1 : 0)}</td>
                             <td>
                               {(() => { const nm = td.title || td.name || ''; const long = nm.length > 25; return <Tooltip label={nm} disabled={!long}><div className="lasm-doc-name">{long ? nm.slice(0, 25) + '…' : nm}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.reference}</div>
@@ -1293,6 +1358,20 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     </table>
                     </div>
 
+                    {/* Pagination footer — same WorklistPager (Rows-per-page +
+                        page/total + arrows) used on the Customer / master lists. */}
+                    {rows.length > 0 && (
+                      <WorklistPager
+                        total={rows.length}
+                        page={tdSafePage}
+                        pageSize={tdPerPage}
+                        onPage={setTdPage}
+                        onPageSize={(n) => { setTdPerPage(n); setTdPage(1); }}
+                        pageSizeOptions={[5, 10, 25, 50]}
+                        className="lasm-pager"
+                      />
+                    )}
+
                     {/* Bulk send bar — one Zoho request for every checked doc,
                         all signed by the active tab's party. */}
                     {tdSelected.size > 0 && (
@@ -1332,20 +1411,6 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           {`Send Selected (${tdSendableSelected.length})`}
                         </button>
                       </div>
-                    )}
-
-                    {/* Pagination footer — same WorklistPager (Rows-per-page +
-                        page/total + arrows) used on the Customer / master lists. */}
-                    {rows.length > 0 && (
-                      <WorklistPager
-                        total={rows.length}
-                        page={tdSafePage}
-                        pageSize={tdPerPage}
-                        onPage={setTdPage}
-                        onPageSize={(n) => { setTdPerPage(n); setTdPage(1); }}
-                        pageSizeOptions={[5, 10, 25, 50]}
-                        className="lasm-pager"
-                      />
                     )}
                   </>)}
                 </div>
@@ -1742,6 +1807,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         />
       )}
 
+      {/* The PI's own signature flow — the same modal the Evidence Vault and
+          the Q/PI stage open, so the invoice is sent one way from everywhere. */}
+      {piSend && leadId && (
+        <SalesDocSendForSignatureModal
+          open
+          kind="pi"
+          docId={piSend.id}
+          docCode={piSend.code}
+          leadId={leadId}
+          customerName={payload?.lead?.customer?.name ?? null}
+          onClose={() => setPiSend(null)}
+          onSent={() => { setPiSend(null); onSent?.(); }}
+        />
+      )}
+
       {/* Send-for-Signature modal — reuses the customer/consignee
           trade-doc preview UI (mode="agreement") so the workplace
           flow shows the SAME preview pane the user sees on the
@@ -1882,15 +1962,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   );
 }
 
-/* DD-Month-YYYY (e.g. 08-July-2026) — full month name, for the agreement
- * popup's "Updated On" column. Backend sends a bare Y-m-d string. */
-const MONTHS_FULL = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/* DD-Mon-YYYY (e.g. 10-Aug-2026) — the app's standard date shape.
+ * Full month names wrapped the column onto two lines ("10-August-
+2026") and
+ * read differently from every other date on screen. Backend sends a bare Y-m-d. */
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDmyLong(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime())
     ? '—'
-    : `${String(d.getDate()).padStart(2, '0')}-${MONTHS_FULL[d.getMonth()]}-${d.getFullYear()}`;
+    : `${String(d.getDate()).padStart(2, '0')}-${MONTHS_SHORT[d.getMonth()]}-${d.getFullYear()}`;
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -2111,7 +2193,12 @@ const LASM_CSS = `
    floating bar says a selection exists and is dismissable — and one selection
    pattern across the app means it does not have to be re-learned per screen. */
 .lasm-bulk-bar {
-  position: sticky; bottom: 8px; z-index: 5; flex-shrink: 0;
+  /* In flow, not sticky. Sticky pins it to the bottom of its nearest scrolling
+     ancestor — which for the trade-doc table is the scroll box around the rows,
+     so the bar floated ON TOP of the entries it was meant to act on. The
+     agreements one only looked right because it sits outside that box.
+     Both now sit after their table and push the pager down instead. */
+  position: relative; z-index: 5; flex-shrink: 0;
   margin: 6px auto 10px; width: fit-content; max-width: calc(100% - 24px);
   display: flex; align-items: center; gap: 12px; white-space: nowrap;
   padding: 11px 18px; border-radius: 16px;
@@ -2183,6 +2270,9 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-mono { color: #94a3b8; }
 [data-bs-theme="dark"] .lasm-doc-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .lasm-doc-sub  { color: #94a3b8; }
+.lasm-pi-row { background: rgba(124,58,237,.05); }
+.lasm-pi-row td { border-bottom: 1.5px solid rgba(124,58,237,.18) !important; }
+
 .lasm-need-row { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; }
 .lasm-need-tag {
   display: inline-block; padding: 3px 10px; border-radius: 999px;

@@ -555,6 +555,18 @@ class ClmAgreementController extends Controller
             }
         }
 
+        /* Latest signature request raised against the PI itself (document_type
+           = PI), so the row can show Sent / Signed instead of always Pending.
+           Separate from $sigRows, which only covers agreements. */
+        $piDocSig = $pi
+            ? ClmSignatureRequest::where('client_id', $user->client_id)
+                ->where('lead_id', $lead->id)
+                ->where('document_type', ClmSignatureRequest::DOC_PROFORMA_INVOICE)
+                ->whereNull('deleted_at')
+                ->orderByDesc('id')
+                ->first()
+            : null;
+
         // Build the per-segment agreement list.
         $segmentsOut = [];
         foreach ($segments as $seg) {
@@ -698,6 +710,30 @@ class ClmAgreementController extends Controller
                     'id'     => $pi->id,
                     'code'   => $pi->code ?? null,
                     'status' => $pi->status ?? null,
+                ] : null,
+                /* The PI as a signable DOCUMENT, not just a reference.
+                 * The Evidence Vault already lists it this way
+                 * (SegmentDocUploadController: 'Proforma Invoice (CODE)' with
+                 * pi_id marking the row), and it is sendable from there — so a
+                 * deal that skipped Stage 5 could still get it signed from the
+                 * vault but not from this popup, which lists the very documents
+                 * derived from that PI.
+                 * Kept OUTSIDE `segments`: the PI belongs to the deal, not to
+                 * one segment, and nesting it would repeat the row per segment.
+                 * Always Necessary — it is the deal's own invoice, not an
+                 * optional catalogue entry, which is why the vault marks it
+                 * mandatory rather than offering a choice. */
+                'pi_document' => $pi ? [
+                    'pi_id'   => (int) $pi->id,
+                    'pi_code' => (string) ($pi->code ?: ('PI-' . $pi->id)),
+                    'name'    => 'Proforma Invoice (' . ($pi->code ?: ('PI-' . $pi->id)) . ')',
+                    'status'  => $piDocSig?->status ?? 'Pending',
+                    'signature_request' => $piDocSig ? [
+                        'id'     => $piDocSig->id,
+                        'status' => $piDocSig->status,
+                        'reminder_count'         => $piDocSig->reminder_count ?? 0,
+                        'last_reminder_sent_at'  => $piDocSig->last_reminder_sent_at,
+                    ] : null,
                 ] : null,
                 'quotation' => $quotation ? [
                     'id'     => $quotation->id,
