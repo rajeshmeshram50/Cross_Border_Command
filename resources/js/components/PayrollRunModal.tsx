@@ -78,7 +78,8 @@ export interface PayrollRunModalProps {
   /** Toggle the waiver on one leave. Parent owns the API call + refresh. */
   onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
   /** emp_code currently saving — drives that entry's spinner. */
-  sandwichBusyCode?: string | null;
+  /** leave_ids currently being waived — one row at a time, not a whole card. */
+  sandwichBusyIds?: number[];
   /** Fired when an issue action chip (Go to Attendance / Open Employee /
    *  Upload Proof) is clicked — parent handles navigation. */
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
@@ -152,10 +153,10 @@ function SandwichRow({ item, busy, onWaive }: {
 
 /** All of one employee's sandwich leaves, in a single card. Grouping is at the
  *  EMPLOYEE level so the same person never appears twice in the list. */
-function SandwichCard({ name, code, dept, rows, busy, onWaive }: {
+function SandwichCard({ name, code, dept, rows, busyIds, onWaive }: {
   name: string; code: string; dept?: string;
   rows: PayrollSandwichItem[];
-  busy: boolean;
+  busyIds: number[];
   onWaive?: (items: PayrollSandwichItem[]) => void;
 }) {
   return (
@@ -167,7 +168,7 @@ function SandwichCard({ name, code, dept, rows, busy, onWaive }: {
         {dept && <span className="text-muted" style={{ fontSize: 11.5 }}>{dept}</span>}
       </div>
       {rows.map(r => (
-        <SandwichRow key={r.leave_id} item={r} busy={busy} onWaive={onWaive} />
+        <SandwichRow key={r.leave_id} item={r} busy={busyIds.includes(r.leave_id)} onWaive={onWaive} />
       ))}
     </div>
   );
@@ -200,7 +201,7 @@ export default function PayrollRunModal({
   issues,
   sandwichItems = [],
   onWaiveSandwich,
-  sandwichBusyCode = null,
+  sandwichBusyIds = [],
   onAction,
   onExportPayslips,
   exporting = false,
@@ -427,7 +428,7 @@ export default function PayrollRunModal({
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
                     onWaiveSandwich={onWaiveSandwich}
-                    sandwichBusyCode={sandwichBusyCode}
+                    sandwichBusyIds={sandwichBusyIds}
                   />
                 ))}
               </>
@@ -453,7 +454,7 @@ export default function PayrollRunModal({
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
                     onWaiveSandwich={onWaiveSandwich}
-                    sandwichBusyCode={sandwichBusyCode}
+                    sandwichBusyIds={sandwichBusyIds}
                   />
                 ))}
               </>
@@ -491,7 +492,7 @@ export default function PayrollRunModal({
                     code={code}
                     dept={grp.dept}
                     rows={grp.rows}
-                    busy={sandwichBusyCode === code}
+                    busyIds={sandwichBusyIds}
                     onWaive={onWaiveSandwich}
                   />
                 ))}
@@ -668,7 +669,7 @@ function IssueCard({
   onAction,
   sandwich = [],
   onWaiveSandwich,
-  sandwichBusyCode = null,
+  sandwichBusyIds = [],
 }: {
   issue: PayrollRunIssue;
   resolved: boolean;
@@ -677,7 +678,8 @@ function IssueCard({
   /** Sandwich-inflated leaves belonging to THIS employee. */
   sandwich?: PayrollSandwichItem[];
   onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
-  sandwichBusyCode?: string | null;
+  /** leave_ids currently being waived — one row at a time, not a whole card. */
+  sandwichBusyIds?: number[];
 }) {
   const isBlocking = issue.type === 'blocking';
   const tone = isBlocking
@@ -745,7 +747,7 @@ function IssueCard({
                 <SandwichRow
                   key={r.leave_id}
                   item={r}
-                  busy={sandwichBusyCode === issue.empCode}
+                  busy={sandwichBusyIds.includes(r.leave_id)}
                   onWaive={onWaiveSandwich}
                 />
               ))}

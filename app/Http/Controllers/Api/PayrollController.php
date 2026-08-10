@@ -1109,24 +1109,51 @@ class PayrollController extends Controller
             $row['overtimeHours']      = (float) ($p->overtime_hours ?? 0);
             $row['overtimeAmount']     = (float) ($p->overtime_amount ?? 0);
             if ($otApplicable) {
-                $svc  = app(\App\Services\PayrollService::class);
-                $rate = $svc->overtimeRate(
-                    $emp,
-                    (float) $p->gross_earnings,
-                    (float) ($p->working_days ?: 0),
-                );
-                $row['overtimeRateName']  = $rate['rate_name'];
-                $row['overtimeMultiplier'] = (float) $rate['multiplier'];
-                $row['overtimeHourly']     = (float) $rate['hourly'];
-                $row['overtimeRate']       = (float) $rate['effective_rate'];
+                $svc = app(\App\Services\PayrollService::class);
 
-                /* Hours the ATTENDANCE actually shows past the shift end, which
-                   is a different number from the PAID hours above: Rule 4 pays
-                   only OT that HR has recorded and approved as an adjustment.
-                   Both are surfaced so the payslip can show the real worked
-                   hours AND make it obvious when they haven't been approved —
-                   showing 0 for someone who demonstrably worked overtime reads
-                   as a bug. */
+                /* Prefer the pricing inputs STORED on the overtime earning line
+                   when the run was generated. Recomputing them here was wrong
+                   twice over: the gross passed was `gross_earnings`, which is
+                   `prorated gross + overtime + bonus` — it contains the very OT
+                   amount being explained, so the rate was circular and drifted
+                   with any OT / bonus / proration — and the employee's shift,
+                   OT rate or salary may have changed since the run anyway. A
+                   payslip has to explain the money that was actually paid. */
+                $otLine = collect(is_array($p->earnings) ? $p->earnings : [])
+                    ->first(fn ($l) => ($l['code'] ?? null) === 'overtime' && isset($l['rate']));
+
+                if ($otLine) {
+                    $row['overtimeRateName']   = $otLine['rate_name'] ?? null;
+                    $row['overtimeMultiplier'] = isset($otLine['multiplier']) ? (float) $otLine['multiplier'] : null;
+                    $row['overtimeHourly']     = isset($otLine['hourly']) ? (float) $otLine['hourly'] : null;
+                    $row['overtimeRate']       = (float) $otLine['rate'];
+                    $row['overtimePricedHours'] = isset($otLine['hours']) ? (float) $otLine['hours'] : null;
+                } else {
+                    /* Slips generated before the breakdown was stored. Derive
+                       the effective rate from the amount and hours that were
+                       actually paid — that reproduces the figure exactly by
+                       construction, where any re-derivation from today's inputs
+                       would not. The hourly/multiplier split is left off rather
+                       than guessed: the multiplier on file now may not be the
+                       one the run used. */
+                    $paidHours  = (float) ($p->overtime_hours ?? 0);
+                    $paidAmount = (float) ($p->overtime_amount ?? 0);
+                    $row['overtimeRateName']   = null;
+                    $row['overtimeMultiplier'] = null;
+                    $row['overtimeHourly']     = null;
+                    $row['overtimeRate']       = $paidHours > 0 ? round($paidAmount / $paidHours, 2) : null;
+                    $row['overtimePricedHours'] = $paidHours > 0 ? $paidHours : null;
+                }
+
+                /* Hours the ATTENDANCE shows past the shift end, recomputed
+                   LIVE — deliberately separate from the paid hours above, which
+                   were frozen when the run was generated. Overtime is no longer
+                   approval-gated, so the two normally agree; they diverge when
+                   an HR adjustment overrode the detected figure, or when the
+                   attendance itself changed after the run (a regularization
+                   approval rewrites a whole day's punches). Both are surfaced so
+                   the payslip can SAY so — what it must never do is print this
+                   number next to an amount priced on the other one. */
                 if ($p->period) {
                     $winStart = Carbon::create((int) $p->period->year, (int) $p->period->month, 1)->startOfDay();
                     $winEnd   = (clone $winStart)->endOfMonth()->startOfDay();

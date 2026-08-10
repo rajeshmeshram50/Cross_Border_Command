@@ -1096,7 +1096,21 @@ class PayrollService
             $ot = [
                 'hours'  => $hours,
                 'amount' => $amount,
-                'lines'  => [['code' => 'overtime', 'label' => 'Overtime Allowance', 'amount' => $amount]],
+                // Pricing inputs stored alongside the amount — see the note in
+                // overtimeForCycle(). Without them the payslip re-derives the
+                // rate from the WRONG gross (the stored gross_earnings, which
+                // already contains this very amount) and re-reads the hours
+                // live from attendance, so neither matches what was paid.
+                'lines'  => [[
+                    'code'       => 'overtime',
+                    'label'      => 'Overtime Allowance',
+                    'amount'     => $amount,
+                    'hours'      => $hours,
+                    'rate'       => $rate['effective_rate'],
+                    'hourly'     => $rate['hourly'],
+                    'multiplier' => $rate['multiplier'],
+                    'rate_name'  => $rate['rate_found'] ? $rate['rate_name'] : null,
+                ]],
                 'exceptions' => [],
             ];
             // Spell the arithmetic out so the figure is checkable by hand.
@@ -2325,11 +2339,26 @@ class PayrollService
             }
 
             $amount += $rowAmount;
+            /* The pricing inputs travel WITH the amount. The payslip used to
+               re-derive them at view time, which is how it ended up printing a
+               rate and an hour count that didn't multiply out to the figure
+               beside them. Stored here, the working is a snapshot of what was
+               actually paid and cannot drift from it. `rate` is the effective
+               per-hour (hourly × multiplier) the amount was priced at, so
+               hours × rate reproduces it. */
             $lines[] = [
                 'code'   => 'overtime',
                 'label'  => $r->label ?: 'Overtime',
                 'amount' => $rowAmount,
-            ];
+            ] + ($rowHours > 0 ? [
+                'hours'      => $rowHours,
+                'rate'       => round($override ?? $rate['effective_rate_exact'], 2),
+                // A per-row rate override is a negotiated all-in figure, so the
+                // hourly/multiplier split below only describes the derived rate.
+                'hourly'     => $override === null ? $rate['hourly'] : null,
+                'multiplier' => $override === null ? $rate['multiplier'] : null,
+                'rate_name'  => $override === null && $rate['rate_found'] ? $rate['rate_name'] : null,
+            ] : []);
         }
 
         $amount = round($amount, 2);

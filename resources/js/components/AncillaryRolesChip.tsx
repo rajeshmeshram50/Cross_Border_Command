@@ -59,7 +59,9 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  /* top OR bottom, never both: the popover flips above the chip when there is
+     no room below it. maxH is the space actually available on that side. */
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; maxH: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   // The visible pill is the first role only, and role names ("Sales Employee",
@@ -76,11 +78,26 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
     if (!b) return;
     const POP_W = 200;
     const margin = 8;
+    const GAP = 6;
     let left = b.left;
     if (left + POP_W + margin > window.innerWidth) {
       left = Math.max(margin, window.innerWidth - POP_W - margin);
     }
-    setPos({ top: b.bottom + 6, left });
+
+    /* Shift into the viewport rather than flip.
+       Flipping only helps when ONE side is cramped. On a row near the bottom of
+       a short window both sides are cramped — below was ~170px and above less
+       still — so whichever side it picked, the list came out a sliver pinned to
+       an edge and half its roles were unreachable.
+       So it is placed below the chip and then pushed up only as far as it must
+       be to fit. It may cover the rows above; those are not what the user is
+       reading at that moment, and a fully visible list is worth more. */
+    const MAX_H = Math.min(320, window.innerHeight - margin * 2);
+    let top = b.bottom + GAP;
+    if (top + MAX_H > window.innerHeight - margin) {
+      top = Math.max(margin, window.innerHeight - margin - MAX_H);
+    }
+    setPos({ left, top, maxH: MAX_H });
   };
 
   useEffect(() => {
@@ -176,10 +193,20 @@ export function AncillaryRolesChip({ names }: { names: string[] }) {
           className="d-flex flex-column gap-1"
           style={{
             position: 'fixed',
-            top: pos.top,
+            ...(pos.top !== undefined ? { top: pos.top } : { bottom: pos.bottom }),
             left: pos.left,
             zIndex: 1080,
             width: 200,
+            maxWidth: 'calc(100vw - 16px)',
+            /* The list is as long as the employee has roles, and nothing capped
+               it — a dozen roles ran past the edge of the window with nothing
+               to scroll. Bounded by the room on whichever side it opened. */
+            maxHeight: pos.maxH,
+            overflowY: 'auto',
+            /* Stops the page from scrolling once this list hits its end. */
+            overscrollBehavior: 'contain',
+            scrollbarWidth: 'thin',
+            scrollbarColor: isDark ? 'rgba(255,255,255,.22) transparent' : 'rgba(15,23,42,.18) transparent',
             padding: 10,
             borderRadius: 12,
             // Explicit theme-aware colours — this popover is portalled to

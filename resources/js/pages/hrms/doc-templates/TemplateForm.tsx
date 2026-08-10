@@ -360,6 +360,22 @@ export default function TemplateFormPage() {
   };
 
   const handleSubmit = async (asDraft: boolean) => {
+    /* A draft skips the checks for steps the user has not reached — that is what
+       makes it a draft — but NOT the step they are standing on.
+       Two reasons. It saved from an untouched step 2 with no trigger and no
+       signers, which reads as nothing happening even though a toast says
+       "saved". And the payload is built from the whole form, so that save wrote
+       trigger_point_id: null and signers: [] over whatever the template already
+       had — a draft save could quietly erase a finished signing workflow.
+       Validating just the current step keeps partial work savable while making
+       it impossible to save a step you have left blank.
+
+       Steps 1-2 only. Step 3's rule is "every signer has a signature
+       placeholder in the design", which is a completeness check for PUBLISHING
+       — it protects no stored data, and applying it here blocked the exact
+       thing a step-3 draft is for: parking an uploaded DOCX before the
+       placeholders have been dropped in. */
+    if (asDraft && step <= 2 && !validateStep(step)) return;
     if (!asDraft && !validateStep(1)) { setStep(1); return; }
     if (!asDraft && !validateStep(2)) { setStep(2); return; }
     // Block publishing a template whose signers have no signature spot in the
@@ -389,9 +405,13 @@ export default function TemplateFormPage() {
       if (!editing && data?.id) {
         navigate(`/hr/doc-templates/${data.id}/edit`, { replace: true });
         setEditing(data);
-      } else {
+      } else if (!asDraft) {
         navigate('/hr/doc-templates');
       }
+      /* A draft save STAYS on the form. It used to navigate back to the list,
+         so saving a draft from step 2 threw the user out of the wizard mid-edit
+         — which reads as the form closing on you rather than saving. Only
+         Publish / Update finishes and leaves. */
     } catch (err: any) {
       if (err?.response?.status === 422 && err?.response?.data?.errors) {
         const serverErrs = err.response.data.errors as Record<string, string | string[]>;

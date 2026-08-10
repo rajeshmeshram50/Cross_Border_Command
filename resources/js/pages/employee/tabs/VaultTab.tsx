@@ -1,7 +1,7 @@
 // Evidence Vault tab — Employee Documents (uploaded KYC/education/etc.) and
 // Organizational Documents (signed agreements/policies), with a sub-tab switch.
 // Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Card, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
@@ -24,6 +24,12 @@ export default function VaultTab() {
     prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     employeeDocCount, organizationalDocCount,
   } = useEmployeeProfile();
+
+  /* Host element for the Uploaded Documents search box — held in state rather
+     than a ref so the portal re-renders once the node actually exists (a ref
+     alone is still null on the first pass and the box would never mount). */
+  const [uploadedSearchHost, setUploadedSearchHost] = useState<HTMLDivElement | null>(null);
+  const [signedSearchHost, setSignedSearchHost]     = useState<HTMLDivElement | null>(null);
 
   /* Both vault tables are the shared DataTable now, so they carry the same
      header band, sortable columns and "Showing X–Y of Z / Rows per page"
@@ -282,7 +288,7 @@ export default function VaultTab() {
               className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
               <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet"
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
               >
                 <div className="d-flex align-items-center gap-2">
                   <span className="ep-section-icon ep-icon-violet">
@@ -295,11 +301,17 @@ export default function VaultTab() {
                     </small>
                   </div>
                 </div>
-                <div className="text-end">
-                  {uploadedLoading
-                    ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                    : <h4 className="mb-0 fw-bold vt-count-violet">{uploadedDocs.length}</h4>}
-                  <small className="text-muted text-uppercase vt-count-label">Documents</small>
+                <div className="d-flex align-items-center gap-3">
+                  {/* DataTable portals its own search box in here, so the
+                      toolbar strip above the table collapses away and the
+                      search sits on the card's header row instead. */}
+                  <div className="vt-head-search" ref={setUploadedSearchHost} />
+                  <div className="text-end">
+                    {uploadedLoading
+                      ? <Shimmer height={20} width={28} className="vt-count-shim" />
+                      : <h4 className="mb-0 fw-bold vt-count-violet">{uploadedDocs.length}</h4>}
+                    <small className="text-muted text-uppercase vt-count-label">Documents</small>
+                  </div>
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
@@ -311,6 +323,7 @@ export default function VaultTab() {
                   pageSize={10}
                   minWidth={1130}
                   loading={uploadedLoading}
+                  searchHost={uploadedSearchHost}
                   searchPlaceholder="Search document, file name…"
                   emptyMessage={
                     <>
@@ -347,7 +360,7 @@ export default function VaultTab() {
                 [data-bs-theme="dark"] .epv-view-btn:hover, [data-layout-mode="dark"] .epv-view-btn:hover { background: rgba(99,102,241,.26); }
               `}</style>
               <div
-                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet"
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
               >
                 <div className="d-flex align-items-center gap-2">
                   <span className="ep-section-icon ep-icon-violet">
@@ -360,11 +373,16 @@ export default function VaultTab() {
                     </small>
                   </div>
                 </div>
-                <div className="text-end">
-                  {signedLoading
-                    ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                    : <h4 className="mb-0 fw-bold vt-count-violet">{signedDocs.length}</h4>}
-                  <small className="text-muted text-uppercase vt-count-label">Documents</small>
+                <div className="d-flex align-items-center gap-3">
+                  {/* Search lifted onto the header row, same as the Uploaded
+                      Documents card — see the note on that one. */}
+                  <div className="vt-head-search" ref={setSignedSearchHost} />
+                  <div className="text-end">
+                    {signedLoading
+                      ? <Shimmer height={20} width={28} className="vt-count-shim" />
+                      : <h4 className="mb-0 fw-bold vt-count-violet">{signedDocs.length}</h4>}
+                    <small className="text-muted text-uppercase vt-count-label">Documents</small>
+                  </div>
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
@@ -376,6 +394,7 @@ export default function VaultTab() {
                   pageSize={10}
                   minWidth={1030}
                   loading={signedLoading}
+                  searchHost={signedSearchHost}
                   searchPlaceholder="Search document, code, signer…"
                   emptyMessage={
                     <>

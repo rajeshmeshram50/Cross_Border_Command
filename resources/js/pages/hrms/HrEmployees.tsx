@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Card, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import Tooltip from '../../components/ui/Tooltip';
+import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import DataTable, { ChipCell, IdCell, TruncCell, useIsClipped, type DataTableColumn } from '../../components/ui/DataTable';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -35,8 +36,12 @@ const PROBATION_POLICY_OPTIONS = [
     .map(p => ({ value: p, label: p })),
   { value: CUSTOM_PROBATION_VALUE, label: 'Set Custom Probation…' },
 ];
+/* "No Notice Period" is a real answer, not a missing one — interns and some
+   contract roles genuinely serve none. Without it the only way to record that
+   was to leave a required field blank or invent a custom "0", which the custom
+   field now rejects. It mirrors "No Probation" in the list above. */
 const NOTICE_PERIOD_OPTIONS = [
-  ...['15 Days','30 Days','60 Days','90 Days']
+  ...['No Notice Period','15 Days','30 Days','60 Days','90 Days']
     .map(n => ({ value: n, label: n })),
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
@@ -1528,6 +1533,7 @@ export default function HrEmployees() {
       setECurState(raw.state_id ? String(raw.state_id) : '');
       setECurPin(raw.pincode || '');
       setEJoinDate(raw.date_of_joining ? String(raw.date_of_joining).slice(0, 10) : '');
+      setEJoinDateOrig(raw.date_of_joining ? String(raw.date_of_joining).slice(0, 10) : '');
       setEDept(raw.department_id ? String(raw.department_id) : '');
       setEDesignation(raw.designation_id ? String(raw.designation_id) : '');
       setEPrimaryRole(raw.primary_role_id ? String(raw.primary_role_id) : '');
@@ -1593,7 +1599,11 @@ export default function HrEmployees() {
       if (raw.mobile_device !== undefined && raw.mobile_device !== null) setEMobileDevice(raw.mobile_device);
       if (raw.other_assets !== undefined && raw.other_assets !== null) setEOtherAssets(raw.other_assets);
       setELaptopMasterAssetId(raw.laptop_master_asset_id ? String(raw.laptop_master_asset_id) : '');
-      setEMobileAssigned(raw.mobile_master_asset_id ? 'Yes' : (raw.mobile_device ? 'Yes' : 'No'));
+      /* Stored flag first. This used to be derived purely from whether a device
+         had been picked, so a "Yes" set in the Onboarding wizard — where a
+         device is optional — always read back as "No" here. */
+      setEMobileAssigned(String((raw as any).mobile_assigned ?? '')
+        || (raw.mobile_master_asset_id || raw.mobile_device ? 'Yes' : 'No'));
       setEMobileMasterAssetId(raw.mobile_master_asset_id ? String(raw.mobile_master_asset_id) : '');
       setEOtherMasterAssetIds(Array.isArray(raw.other_master_asset_ids)
         ? raw.other_master_asset_ids.map((n: any) => String(n))
@@ -1717,9 +1727,23 @@ export default function HrEmployees() {
       eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName,
       eSameAsCurrent, ePermAddr1, ePermCity, ePermCountry, ePermState, ePermPin]);
 
+  /* The date the record already carried, and today. Kept together because the
+     no-back-dating rule needs both: one to decide whether the user changed it,
+     the other to decide whether the new value is in the past. */
+  const [eJoinDateOrig, setEJoinDateOrig] = useState('');
+  const todayIso = new Date().toISOString().slice(0, 10);
+
   const validateStep2 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
     if (!eJoinDate)        e.date_of_joining   = 'Joining date is required';
+    /* No back-dating — but only for a date the user is actually setting.
+       Every existing employee joined in the past, so a blanket rule would make
+       their record un-editable: step 2 would refuse to advance until a correct
+       historical date was falsified. Compared against what the record already
+       held, so an untouched past date passes and a newly chosen one does not. */
+    else if (eJoinDate < todayIso && eJoinDate !== eJoinDateOrig) {
+      e.date_of_joining = 'Joining date can’t be in the past';
+    }
     if (!eDept)            e.department_id     = 'Department is required';
     if (!eDesignation)     e.designation_id    = 'Designation is required';
     if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
@@ -1740,8 +1764,16 @@ export default function HrEmployees() {
       else if (!Number.isInteger(n) || n < 1 || n > 12) e.probation_policy = 'Probation months must be between 1 and 12';
     }
     if (!eNoticePeriod)    e.notice_period     = 'Notice period is required';
-    if (eNoticePeriod === CUSTOM_NOTICE_VALUE && !eCustomNotice.trim()) {
-      e.notice_period = 'Please describe the custom notice period';
+    if (eNoticePeriod === CUSTOM_NOTICE_VALUE) {
+      /* Free text ("45 Days", "2 months"), so the number is read out of it
+         rather than typed into a number field. It only had a non-empty check,
+         which let "0" through — and a zero-day notice period is not a notice
+         period, it is an immediate exit dressed up as one. */
+      const txt = eCustomNotice.trim();
+      const num = Number((txt.match(/\d+(?:\.\d+)?/) ?? [])[0]);
+      if (!txt) e.notice_period = 'Please describe the custom notice period';
+      else if (!Number.isFinite(num)) e.notice_period = 'Include a number, e.g. 45 Days';
+      else if (num < 1) e.notice_period = 'Notice period must be at least 1';
     }
     return e;
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eWorkType, eLegalEntity, eReportingMgr,
@@ -1913,6 +1945,7 @@ export default function HrEmployees() {
       overtime:             eOvertime || null,
       expense_policy:       eExpensePolicy || null,
       laptop_assigned:      eLaptopAssigned || null,
+      mobile_assigned:      eMobileAssigned || null,
       laptop_asset_id:      eLaptopAssetId.trim() || null,
       mobile_device:        eMobileDevice.trim() || null,
       other_assets:         eOtherAssets.trim() || null,
@@ -2661,6 +2694,7 @@ export default function HrEmployees() {
                 setTab(k as 'active' | 'disabled');
                 setStatusFilter(k === 'active' ? 'Active' : 'Disabled');
               }}
+              className="hre-list"
               searchValue={q}
               onSearchChange={setQ}
               searchPlaceholder="Search name, ID, department, role…"
@@ -3637,7 +3671,7 @@ export default function HrEmployees() {
                   <Row className="g-3">
                     <Col md={4}>
                       <label className="emp-label">Joining Date<span className="req">*</span></label>
-                      <MasterDatePicker value={eJoinDate} onChange={(v) => { setEJoinDate(v); clearEErr('date_of_joining'); }} placeholder="dd-mm-yyyy" invalid={!!eErrors.date_of_joining} />
+                      <MasterDatePicker value={eJoinDate} onChange={(v) => { setEJoinDate(v); clearEErr('date_of_joining'); }} placeholder="dd-mm-yyyy" minDate={todayIso} invalid={!!eErrors.date_of_joining} />
                       {eErrors.date_of_joining && <small className="emp-err">{eErrors.date_of_joining}</small>}
                     </Col>
                     <Col md={4}>
@@ -4640,179 +4674,11 @@ export default function HrEmployees() {
   );
 }
 
-function AncillaryRolesChip({ names }: { names: string[] }) {
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
-  const [open, setOpen] = useState(false);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  const btnRef = useRef<HTMLButtonElement>(null);
-  const popRef = useRef<HTMLDivElement>(null);
-  // Only the FIRST role is shown as a pill, and role names ("Sales Employee",
-  // "Software Development") routinely outrun this narrow column. Measure the
-  // pill and tooltip it once the name is actually cut, so a truncated role is
-  // never a dead end. Same treatment as the shared AncillaryRolesChip.
-  const firstRef = useRef<HTMLSpanElement>(null);
-  const firstClipped = useIsClipped(firstRef, names?.[0]);
-
-  const place = () => {
-    const b = btnRef.current?.getBoundingClientRect();
-    if (!b) return;
-    const POP_W = 200;
-    const margin = 8;
-    let left = b.left;
-    if (left + POP_W + margin > window.innerWidth) {
-      left = Math.max(margin, window.innerWidth - POP_W - margin);
-    }
-    setPos({ top: b.bottom + 6, left });
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    place();
-    const onDocClick = (e: MouseEvent) => {
-      const t = e.target as Node;
-      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
-      setOpen(false);
-    };
-    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    const onScrollOrResize = () => setOpen(false);
-    document.addEventListener('mousedown', onDocClick);
-    document.addEventListener('keydown', onEsc);
-    window.addEventListener('scroll', onScrollOrResize, true);
-    window.addEventListener('resize', onScrollOrResize);
-    return () => {
-      document.removeEventListener('mousedown', onDocClick);
-      document.removeEventListener('keydown', onEsc);
-      window.removeEventListener('scroll', onScrollOrResize, true);
-      window.removeEventListener('resize', onScrollOrResize);
-    };
-  }, [open]);
-
-  if (!names || names.length === 0) {
-    return <span className="text-muted">—</span>;
-  }
-
-  const first = names[0];
-  const rest = names.slice(1);
-  const firstTone = tone(first, isDark);
-
-  return (
-    <>
-      <span className="d-inline-flex align-items-center gap-1" style={{ maxWidth: '100%', minWidth: 0 }}>
-        <Tooltip label={first} disabled={!firstClipped}>
-          <span
-            ref={firstRef}
-            className="fw-semibold hr-emp-row-pill"
-            style={{
-              /* inline-block + ellipsis: the pill shrinks to the column and
-                 cuts its own label cleanly instead of overflowing the cell. */
-              display: 'inline-block',
-              maxWidth: '100%',
-              /* Flex items default to min-width:auto, which refuses to shrink
-                 below the text's own width — without this the pill just
-                 overflows the cell and the ellipsis never appears. */
-              minWidth: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              verticalAlign: 'middle',
-              fontSize: 11,
-              padding: '4px 10px',
-              borderRadius: 999,
-              background: firstTone.bg,
-              color: firstTone.fg,
-            }}
-          >
-            {first}
-          </span>
-        </Tooltip>
-        {rest.length > 0 && (
-          <button
-            ref={btnRef}
-            type="button"
-            onClick={(ev) => { ev.stopPropagation(); setOpen(o => !o); }}
-            className="d-inline-flex align-items-center fw-bold"
-            aria-label={`Show ${rest.length} more ancillary role${rest.length > 1 ? 's' : ''}`}
-            style={{
-              fontSize: 10.5,
-              padding: '4px 8px',
-              borderRadius: 999,
-              background: open ? '#7c5cfc' : 'rgba(124,92,252,0.16)',
-              color: open ? '#fff' : (isDark ? '#c4b5fd' : '#5a3fd1'),
-              border: '1px solid rgba(124,92,252,0.30)',
-              cursor: 'pointer',
-              transition: 'background .15s ease, color .15s ease',
-              lineHeight: 1.1,
-              /* The pill next to it shrinks; the +N counter never does —
-                 otherwise "+2" itself gets squeezed into "+…". */
-              flexShrink: 0,
-            }}
-          >
-            +{rest.length}
-          </button>
-        )}
-      </span>
-      {open && rest.length > 0 && pos && createPortal(
-        <div
-          ref={popRef}
-          onClick={(ev) => ev.stopPropagation()}
-          className="d-flex flex-column gap-1"
-          style={{
-            position: 'fixed',
-            top: pos.top,
-            left: pos.left,
-            zIndex: 1080,
-            width: 200,
-            padding: 10,
-            borderRadius: 12,
-            // Explicit theme-aware colours — this popover is portalled to
-            // document.body, where the card-scoped --vz-card-bg / --vz-border-color
-            // variables don't resolve and fell back to white (a light box in dark
-            // mode). isDark from useTheme drives the surface instead.
-            background: isDark ? '#1f2937' : '#fff',
-            border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'var(--vz-border-color, #e5e7eb)'}`,
-            boxShadow: isDark
-              ? '0 18px 38px -8px rgba(0,0,0,0.55), 0 6px 14px rgba(0,0,0,0.38)'
-              : '0 18px 38px -8px rgba(15,23,42,0.22), 0 6px 14px rgba(15,23,42,0.08)',
-          }}
-        >
-          <div
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: '0.06em',
-              color: isDark ? 'rgba(255,255,255,0.55)' : '#6b7280',
-              textTransform: 'uppercase',
-              marginBottom: 4,
-            }}
-          >
-            All Ancillary Roles
-          </div>
-          {names.map(n => {
-            const t = tone(n, isDark);
-            return (
-              <span
-                key={n}
-                className="fw-semibold"
-                style={{
-                  fontSize: 11,
-                  padding: '4px 10px',
-                  borderRadius: 999,
-                  background: t.bg,
-                  color: t.fg,
-                  alignSelf: 'flex-start',
-                }}
-              >
-                {n}
-              </span>
-            );
-          })}
-        </div>,
-        document.body,
-      )}
-    </>
-  );
-}
+/* AncillaryRolesChip lived here as a second, near-identical copy of
+   components/ui/../AncillaryRolesChip — its own comment even said "same
+   treatment as the shared AncillaryRolesChip". Every positioning fix went
+   into the shared one and this page kept rendering the local copy, so the
+   popover here never changed. Deleted; the shared component is imported. */
 
 function ActionBtn({
   title, icon, color, onClick, disabled, badge,

@@ -288,8 +288,8 @@ export default function HrPayroll() {
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
   const [payslipOt, setPayslipOt] = useState<{
-    applicable: boolean; hours: number; detectedHours: number; amount: number;
-    multiplier?: number; rate?: number; rateName?: string | null;
+    applicable: boolean; hours: number; detectedHours: number; pricedHours?: number; amount: number;
+    multiplier?: number; hourly?: number; rate?: number; rateName?: string | null;
   } | null>(null);
 
   const loadPayslipDetail = (payslipId?: number) => {
@@ -315,8 +315,12 @@ export default function HrPayroll() {
           applicable: true,
           hours:      Number(d.overtimeHours) || 0,
           detectedHours: Number(d.overtimeDetectedHours) || 0,
+          // Hours the stored amount was priced on — the workings quote these,
+          // NOT the live detected hours.
+          pricedHours: typeof d.overtimePricedHours === 'number' ? d.overtimePricedHours : undefined,
           amount:     Number(d.overtimeAmount) || 0,
           multiplier: typeof d.overtimeMultiplier === 'number' ? d.overtimeMultiplier : undefined,
+          hourly:     typeof d.overtimeHourly === 'number' ? d.overtimeHourly : undefined,
           rate:       typeof d.overtimeRate === 'number' ? d.overtimeRate : undefined,
           rateName:   d.overtimeRateName ?? null,
         } : null);
@@ -443,7 +447,11 @@ export default function HrPayroll() {
      per-employee, per-leave computation and there is no reason to pay for it
      on every page render. */
   const [sandwichItems, setSandwichItems] = useState<PayrollSandwichItem[]>([]);
-  const [sandwichBusyCode, setSandwichBusyCode] = useState<string | null>(null);
+  /* Keyed by leave_id, not by employee code.
+     An employee's card lists every sandwiched leave they have, and the code
+     matched all of them — so waiving ONE row put "Saving…" on every button in
+     the card and made it look like they were all being changed. */
+  const [sandwichBusyIds, setSandwichBusyIds] = useState<number[]>([]);
 
   const loadSandwichReview = useCallback(async () => {
     if (!cycle) return;
@@ -468,7 +476,7 @@ export default function HrPayroll() {
      picture. One refresh at the end rather than per leave. */
   const waiveSandwich = useCallback(async (items: PayrollSandwichItem[]) => {
     if (!items.length) return;
-    setSandwichBusyCode(items[0].emp_code);
+    setSandwichBusyIds(items.map(i => i.leave_id));
     try {
       for (const it of items) {
         await api.post(`/leave-requests/${it.leave_id}/sandwich-waiver`, { waived: true });
@@ -481,7 +489,7 @@ export default function HrPayroll() {
     } catch (err: any) {
       toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
-      setSandwichBusyCode(null);
+      setSandwichBusyIds([]);
     }
   }, [loadSandwichReview, toast]);
 
@@ -1847,7 +1855,7 @@ export default function HrPayroll() {
         issues={runIssues}
         sandwichItems={sandwichItems}
         onWaiveSandwich={waiveSandwich}
-        sandwichBusyCode={sandwichBusyCode}
+        sandwichBusyIds={sandwichBusyIds}
         onAction={handleIssueAction}
         onExportPayslips={downloadAllPayslips}
         exporting={downloading === 'zip'}
@@ -1902,8 +1910,10 @@ export default function HrPayroll() {
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
             overtimeDetectedHours={payslipOt?.detectedHours ?? 0}
+            overtimePricedHours={payslipOt?.pricedHours}
             overtimeAmount={payslipOt?.amount ?? 0}
             overtimeMultiplier={payslipOt?.multiplier}
+            overtimeHourly={payslipOt?.hourly}
             overtimeRate={payslipOt?.rate}
             overtimeRateName={payslipOt?.rateName}
             isFinal={payslipFinal}

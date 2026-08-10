@@ -198,6 +198,60 @@ trait HandlesDocxHtmlRoundtrip
      * run formatting (bold/italic/underline) and tables. Returns null when the
      * file can't be opened/parsed so the caller can fall back to PhpWord.
      */
+    /** Largest document the editors and the PDF renderer stay usable on. */
+    protected const DOCX_MAX_PAGES = 70;
+
+    /**
+     * Page count for an uploaded .docx, or null when it cannot be determined.
+     *
+     * Word caches the count in docProps/app.xml every time it saves, so for a
+     * file that came out of Word this is the real number rather than a guess
+     * from bytes or characters — a 60-page text document and a 6-page one full
+     * of images can weigh the same, which is why a size cap alone never
+     * expressed this rule.
+     *
+     * Returns null for files written by tools that omit the element (or that
+     * leave it at 1 without recalculating), so callers must treat null as
+     * "unknown" and fall back to something else rather than as "fine".
+     */
+    protected function docxPageCount(string $absPath): ?int
+    {
+        if (!class_exists('ZipArchive')) return null;
+        $zip = new \ZipArchive();
+        if ($zip->open($absPath) !== true) return null;
+        $xml = $zip->getFromName('docProps/app.xml');
+        $zip->close();
+        if (!is_string($xml) || $xml === '') return null;
+        if (!preg_match('/<Pages>(\d+)<\/Pages>/i', $xml, $m)) return null;
+        $n = (int) $m[1];
+        // 0 is meaningless and 1 is what a non-Word writer leaves behind, so
+        // neither is trusted as a real measurement.
+        return $n > 1 ? $n : null;
+    }
+
+    /**
+     * Null when the upload is within the page limit, else the message to show.
+     *
+     * `$html` is the converted body, used only when the page count is unknown:
+     * at this template's metrics a page holds roughly 3,000 characters, so it
+     * stands in for the count rather than leaving unmeasurable files unchecked.
+     */
+    protected function docxPageLimitError(string $absPath, ?string $html = null): ?string
+    {
+        $max = self::DOCX_MAX_PAGES;
+        $pages = $this->docxPageCount($absPath);
+        if ($pages !== null) {
+            return $pages > $max
+                ? "This document is {$pages} pages. The limit is {$max} pages — please split it into smaller documents."
+                : null;
+        }
+        $chars = $html === null ? 0 : mb_strlen($html);
+        $approx = (int) ceil($chars / 3000);
+        return $approx > $max
+            ? "This document is about {$approx} pages ({$chars} characters). The limit is {$max} pages — please split it into smaller documents."
+            : null;
+    }
+
     protected function docxBodyToHtml(string $absPath): ?string
     {
         if (!class_exists('ZipArchive')) return null;

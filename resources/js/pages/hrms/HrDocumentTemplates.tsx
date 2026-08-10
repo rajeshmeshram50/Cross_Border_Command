@@ -136,30 +136,42 @@ export default function HrDocumentTemplates() {
      different templates the moment the list reordered. */
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
-
-  const bulkDeprecate = async () => {
-    const targets = rows.filter(r => selected.has(r.id) && r.status === 'Active');
-    const already = selected.size - targets.length;
-    if (!targets.length) {
-      toast.error('Nothing to deprecate', 'The selected templates are already deprecated.');
-      return;
+  const selCounts = useMemo(() => {
+    let active = 0, deprecated = 0;
+    for (const r of rows) {
+      if (!selected.has(r.id)) continue;
+      if (r.status === 'Active') active++;
+      else if (r.status === 'Deprecated') deprecated++;
     }
+    return { active, deprecated };
+  }, [rows, selected]);
+
+  /* One action for both directions.
+     Only "Deprecate selected" existed, so picking rows that were already
+     deprecated led nowhere: the single-row button is a toggle, but in bulk the
+     only reply was "nothing to deprecate". Reactivating still meant clicking
+     row by row. */
+  const bulkSetStatus = async (next: DocStatus) => {
+    const from: DocStatus = next === 'Deprecated' ? 'Active' : 'Deprecated';
+    const targets = rows.filter(r => selected.has(r.id) && r.status === from);
+    if (!targets.length) return;
     setBulkBusy(true);
     let done = 0; const failed: string[] = [];
     for (const r of targets) {
       try {
-        await api.put(`/hr-document-templates/${r.id}`, { status: 'Deprecated' });
+        await api.put(`/hr-document-templates/${r.id}`, { status: next });
         done++;
       } catch { failed.push(r.code); }
     }
     setBulkBusy(false);
     setSelected(new Set());
     await fetchAll();
+    const verb = next === 'Deprecated' ? 'deprecated' : 'activated';
     if (failed.length) {
-      toast.error(`${done} deprecated, ${failed.length} failed`, `Could not update: ${failed.join(', ')}`);
+      toast.error(`${done} ${verb}, ${failed.length} failed`, `Could not update: ${failed.join(', ')}`);
     } else {
-      toast.success(`${done} template${done === 1 ? '' : 's'} deprecated`,
-        already > 0 ? `${already} already deprecated, left alone.` : 'They can be reactivated any time.');
+      toast.success(`${done} template${done === 1 ? '' : 's'} ${verb}`,
+        next === 'Deprecated' ? 'They can be reactivated any time.' : 'They are live again.');
     }
   };
 
@@ -439,17 +451,35 @@ export default function HrDocumentTemplates() {
               <span style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
                 {selected.size} selected
               </span>
-              <button
-                type="button" onClick={bulkDeprecate} disabled={bulkBusy}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  padding: '6px 13px', borderRadius: 8, border: '1px solid #fca5a5',
-                  background: bulkBusy ? '#fee2e2' : '#fff', color: '#b91c1c',
-                  fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
-                }}>
-                <i className="ri-forbid-2-line" />
-                {bulkBusy ? 'Deprecating…' : 'Deprecate selected'}
-              </button>
+              {/* Counts come from the selection itself, so a button is only
+                  offered when it has something to do — no more pressing
+                  Deprecate to be told there was nothing to deprecate. */}
+              {selCounts.active > 0 && (
+                <button
+                  type="button" onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 13px', borderRadius: 8, border: '1px solid #fca5a5',
+                    background: bulkBusy ? '#fee2e2' : '#fff', color: '#b91c1c',
+                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
+                  }}>
+                  <i className="ri-forbid-2-line" />
+                  {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
+                </button>
+              )}
+              {selCounts.deprecated > 0 && (
+                <button
+                  type="button" onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '6px 13px', borderRadius: 8, border: '1px solid #6ee7b7',
+                    background: bulkBusy ? '#d1fae5' : '#fff', color: '#047857',
+                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
+                  }}>
+                  <i className="ri-checkbox-circle-line" />
+                  {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
+                </button>
+              )}
               <button
                 type="button" onClick={() => setSelected(new Set())} disabled={bulkBusy}
                 style={{
@@ -591,14 +621,41 @@ function DtmDarkStyles() {
            Trigger filter above already narrows by it. */
         .dtm-page .dt-table th:nth-child(6), .dtm-page .dt-table td:nth-child(6) { display: none; }
       }
+      /* Six role tabs never fit beside the search + Trigger + Add Template on
+         anything short of a wide desktop, and wrapping turned the toolbar into
+         two ragged rows with one lone tab underneath. It scrolls sideways
+         instead — at every width, not just phones, because the wrap started
+         well above the phone breakpoint. */
+      .dtm-page .dt-tabrail { overflow-x: auto; scrollbar-width: none; }
+      .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
+      .dtm-page .dt-tabs { flex-wrap: nowrap; }
+      /* DataTable keeps the toolbar on ONE line above 1200px, on the assumption
+         that the tab rail will wrap its tabs INSIDE itself to give up width.
+         Six role tabs scrolling on a single line cannot do that, so everything
+         to their right got crushed instead — the search shrank to a stub and
+         TRIGGER ended up touching it.
+         Below 1500px the rail takes a line of its own and the controls take the
+         next. Two clean rows beat one crammed one; above that they all fit. */
+      @media (max-width: 1499.98px) {
+        .dtm-page .dt-toolbar { flex-wrap: wrap; }
+        .dtm-page .dt-tabrail { flex: 1 0 100%; max-width: 100%; }
+      }
       @media (max-width: 767.98px) {
         /* Code is carried in the template name in practice. */
         .dtm-page .dt-table th:nth-child(3), .dtm-page .dt-table td:nth-child(3) { display: none; }
         .dtm-page .frm-cstrip { flex-wrap: wrap; row-gap: 10px; }
-        .dtm-page .dt-tabrail { width: 100%; overflow-x: auto; scrollbar-width: none; }
-        .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
-        .dtm-page .dt-tabs { flex-wrap: nowrap; }
+        /* Load-bearing: a flex child's min-width defaults to its CONTENT width,
+           so the category rail refused to shrink and pushed itself out past the
+           card's rounded edge instead of scrolling inside it. */
+        .dtm-page .frm-cstrip > * { min-width: 0; }
+        .dtm-page .dt-tabrail { width: 100%; max-width: 100%; }
         .dtm-page .dtm-kpi-num { font-size: 19px; }
+        /* The table body is flex:1 + min-height:0 inside a shell that gets its
+           height from the viewport-fit calc. On a phone that calc leaves nothing
+           over, so the rows collapsed to zero height — the pager still read
+           "Showing 1-2 of 2" above an empty gap. A floor keeps them on screen. */
+        .dtm-page .dt-table-wrap { min-height: 260px; }
+        .dtm-page .dt-scroll { min-height: 200px; }
       }
       /* Two KPI tiles per row rather than four crushed ones. */
       @media (min-width: 576px) and (max-width: 767.98px) {

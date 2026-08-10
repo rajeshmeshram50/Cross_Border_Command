@@ -31,12 +31,21 @@ const ONB_EMP_STATUS   = OPT('Active', 'On Probation');
 const ONB_LEGAL_ENTITY = OPT('Cross Border Command Pvt Ltd', 'CBC International LLP');
 const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
-const ONB_PROBATION    = OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation');
+/* Same sentinel shape as ONB_CUSTOM_NOTICE, and for the same reason: the two
+   forms write the same column, so a custom value typed in one has to round-trip
+   through the other. Employee had "Set Custom Probation…" and onboarding did
+   not — a 4-month probation could only be recorded by creating the employee
+   here and then editing them there. */
+const ONB_CUSTOM_PROBATION = '__custom_probation__';
+const ONB_PROBATION    = [
+  ...OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation'),
+  { value: ONB_CUSTOM_PROBATION, label: 'Set Custom Probation…' },
+];
 /* Same sentinel string HrEmployees uses — the two forms write the same column,
    so a value typed in one has to round-trip through the other. */
 const ONB_CUSTOM_NOTICE = '__custom_notice__';
 const ONB_NOTICE = [
-  ...OPT('Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days'),
+  ...OPT('Default Notice Period', 'No Notice Period', '15 Days', '30 Days', '60 Days', '90 Days'),
   { value: ONB_CUSTOM_NOTICE, label: 'Set Custom Notice Period…' },
 ];
 /* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
@@ -102,6 +111,8 @@ interface OnboardRow {
   accent: string;
   photoUrl?: string | null;
   joinDate: string;
+  /** Raw yyyy-mm-dd — joinDate is display text and cannot be compared. */
+  joinDateIso: string;
   department: string;
   designation: string;
   primaryRole: string;
@@ -279,6 +290,7 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     accent,
     photoUrl: (e as any).photo_url || null,
     joinDate: _formatDate(e.date_of_joining),
+    joinDateIso: e.date_of_joining ? String(e.date_of_joining).slice(0, 10) : '',
     department: e.department?.name || '—',
     designation: e.designation?.name || '—',
     primaryRole: e.primary_role?.name || '—',
@@ -853,6 +865,9 @@ export default function HrEmployeeOnboarding() {
            pill past the column edge. The Initiate button runs in its compact
            size here (`is-compact`) so the pair fits the Action column instead
            of overflowing into the page margin. */
+        /* Compared as yyyy-mm-dd strings, which sort correctly and — unlike a
+           Date — carry no time component, so "joins today" is not off by hours. */
+        const notJoinedYet = !!r.joinDateIso && r.joinDateIso > new Date().toISOString().slice(0, 10);
         return (
           <div className="d-flex align-items-center justify-content-center gap-2 flex-nowrap">
             <Tooltip label="Edit Employee">
@@ -860,11 +875,27 @@ export default function HrEmployeeOnboarding() {
                 <i className="ri-pencil-line" style={{ fontSize: 14 }} />
               </button>
             </Tooltip>
-            <Tooltip label="Start the onboarding wizard for this employee">
-              <button type="button" className="onb-init-btn is-compact flex-shrink-0" aria-label="Initiate Onboarding" onClick={() => openInitiate(r)}>
-                <i className="ri-add-line" style={{ fontSize: 13 }} />
-                Initiate Onboarding
-              </button>
+            {/* Onboarding cannot start before the person has actually joined.
+                A December joiner belongs on this list from the day they are
+                created — HR needs to see them coming — but starting the wizard
+                then would stamp joining-day paperwork months early. Enabled ON
+                the joining date, not after it. */}
+            <Tooltip label={notJoinedYet
+              ? `Joins on ${r.joinDate} — onboarding opens that day`
+              : 'Start the onboarding wizard for this employee'}>
+              <span className="d-inline-flex">
+                <button
+                  type="button"
+                  className="onb-init-btn is-compact flex-shrink-0"
+                  aria-label="Initiate Onboarding"
+                  disabled={notJoinedYet}
+                  style={notJoinedYet ? { opacity: .5, cursor: 'not-allowed' } : undefined}
+                  onClick={() => openInitiate(r)}
+                >
+                  <i className="ri-add-line" style={{ fontSize: 13 }} />
+                  Initiate Onboarding
+                </button>
+              </span>
             </Tooltip>
           </div>
         );
@@ -3680,6 +3711,11 @@ function InitiateOnboardingModal({
   const noticeIsCustom = noticeCustomOpen
     || (!!s1.notice_period && !ONB_NOTICE_PRESETS.has(s1.notice_period));
 
+  const ONB_PROBATION_PRESETS = new Set(['Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation']);
+  const [probationCustomOpen, setProbationCustomOpen] = useState(false);
+  const probationIsCustom = probationCustomOpen
+    || (!!s1.probation_policy && !ONB_PROBATION_PRESETS.has(s1.probation_policy));
+
   /* Holiday List options as rendered: the active groups, plus this employee's
      own group when it has since been deactivated (so an existing assignment
      never disappears from the dropdown). `s1.holiday_list` holds the group id. */
@@ -3800,7 +3836,10 @@ useEffect(() => {
     laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
     // No legacy free-text "Mobile Assigned" column — derive Yes/No
     // from whether a mobile asset is currently selected.
-    mobile_assigned:     x.mobile_master_asset_id ? 'Yes' : (x.mobile_device ? 'Yes' : ''),
+    /* Stored flag first; the old derivation is only a fallback for rows saved
+       before the column existed. Deriving it was the bug — "Yes" with no device
+       chosen had nowhere to live and came back as "No". */
+    mobile_assigned:     String(x.mobile_assigned ?? '') || (x.mobile_master_asset_id || x.mobile_device ? 'Yes' : ''),
     mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
     other_master_asset_ids: Array.isArray(x.other_master_asset_ids)
       ? x.other_master_asset_ids.map((n: any) => String(n))
@@ -4080,6 +4119,22 @@ const validateStage1 = (): boolean => {
   if (!s1.department_id?.toString().trim())   errors.department_id   = 'Department is required';
   if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
   if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
+  /* Custom notice period is free text ("45 Days", "2 months"), so the number is
+     read out of it. Nothing checked it at all here, so "0" was accepted — and a
+     zero-day notice period is an immediate exit dressed up as one.
+     Same rule as the Employee form's step 2. */
+  if (probationIsCustom) {
+    const n = parseInt(String(s1.probation_policy ?? ''), 10);
+    if (!String(s1.probation_policy ?? '').trim()) errors.probation_policy = 'Please enter the probation months (1–12)';
+    else if (!Number.isInteger(n) || n < 1 || n > 12) errors.probation_policy = 'Probation months must be between 1 and 12';
+  }
+  if (noticeIsCustom) {
+    const txt = String(s1.notice_period ?? '').trim();
+    const num = Number((txt.match(/\d+(?:\.\d+)?/) ?? [])[0]);
+    if (!txt) errors.notice_period = 'Please describe the custom notice period';
+    else if (!Number.isFinite(num)) errors.notice_period = 'Include a number, e.g. 45 Days';
+    else if (num < 1) errors.notice_period = 'Notice period must be at least 1';
+  }
   // A role can't be both Primary and Ancillary for the same employee.
   else if ((s1.ancillary_role_ids ?? []).some((id: string) => String(id) === String(s1.primary_role_id))) errors.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
 
@@ -4198,8 +4253,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     };
     // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
-    // The Mobile Yes/No toggle is a UI helper; backend has no column.
-    delete payload.mobile_assigned;
+    // mobile_assigned is a real column now (same as laptop_assigned), so it
+    // travels with the rest of the payload instead of being stripped.
     if (markComplete) payload.wizard_step_completed = 4;
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
@@ -4770,8 +4825,22 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (s4.salary_payment_mode === 'bank') {
       const acct = s4.bank_account_number.trim();
       const ifsc = s4.ifsc_code.trim();
-      if (!s4.bank_name.trim()) {
+      /* A bank name has to contain letters. Only the empty case was checked, so
+         "123456" passed — and a numeric bank name is almost always the account
+         number typed into the wrong box, which is worse than a blank field
+         because it looks filled in.
+         Apostrophes, hyphens, ampersands and full stops are all legitimate
+         ("Bank of Baroda", "HDFC Bank Ltd.", "Kotak & Co.", "St. George's"),
+         so they are allowed rather than stripped. */
+      const bank = s4.bank_name.trim();
+      if (!bank) {
         p.push({ field: 'bank_name', label: 'Bank Name', message: 'Enter the bank name.' });
+      } else if (!/[A-Za-z]/.test(bank)) {
+        p.push({ field: 'bank_name', label: 'Bank Name',
+          message: 'Bank name must contain letters — this looks like a number.' });
+      } else if (!/^[A-Za-z0-9\s'&.\-(),/]+$/.test(bank)) {
+        p.push({ field: 'bank_name', label: 'Bank Name',
+          message: 'Bank name can use letters, numbers and ’ - & . , ( ) / only.' });
       }
       if (!/^\d{9,18}$/.test(acct)) {
         p.push({ field: 'bank_account_number', label: 'Account Number',
@@ -5355,7 +5424,34 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Employment Terms</p>
                 <Row className="g-3">
-                  <Col md={3}><label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label><MasterSelect options={ONB_PROBATION} value={s1.probation_policy} placeholder="Select months (1–12)" onChange={(v) => setS1(p => ({ ...p, probation_policy: v }))} /></Col>
+                  <Col md={3} data-field="probation_policy">
+                    <label className="onb-init-label">Probation Policy (Month)<span className="req">*</span></label>
+                    <MasterSelect
+                      options={ONB_PROBATION}
+                      value={probationIsCustom ? ONB_CUSTOM_PROBATION : s1.probation_policy}
+                      placeholder="Select months (1–12)"
+                      invalid={!!s1Errors.probation_policy}
+                      onChange={(v) => {
+                        setProbationCustomOpen(v === ONB_CUSTOM_PROBATION);
+                        // The sentinel is UI state, never stored: clearing the
+                        // field leaves the box empty so the required check still
+                        // bites until a number is typed.
+                        setS1(p => ({ ...p, probation_policy: v === ONB_CUSTOM_PROBATION ? '' : v }));
+                        setS1Errors(p => ({ ...p, probation_policy: '' }));
+                      }}
+                    />
+                    {probationIsCustom && (
+                      <input
+                        className="onb-init-input"
+                        style={{ marginTop: 8 }}
+                        type="number" min={1} max={12}
+                        placeholder="Months (1–12)"
+                        value={s1.probation_policy}
+                        onChange={(e) => { setS1(p => ({ ...p, probation_policy: e.target.value })); setS1Errors(p => ({ ...p, probation_policy: '' })); }}
+                      />
+                    )}
+                    {s1Errors.probation_policy && <div className="onb-error-msg">{s1Errors.probation_policy}</div>}
+                  </Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
                   <Col md={3}>
                     <label className="onb-init-label">Notice Period<span className="req">*</span></label>
@@ -5386,9 +5482,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         type="text"
                         placeholder="e.g. 45 Days, 2 months, etc."
                         value={s1.notice_period}
-                        onChange={(e) => setS1(p => ({ ...p, notice_period: e.target.value }))}
+                        onChange={(e) => { setS1(p => ({ ...p, notice_period: e.target.value })); setS1Errors(p => ({ ...p, notice_period: '' })); }}
                       />
                     )}
+                    {s1Errors.notice_period && <div className="onb-error-msg">{s1Errors.notice_period}</div>}
                   </Col>
                   <Col md={3}><label className="onb-init-label">Work Mode <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly value="On-site" /></Col>
                 </Row>
