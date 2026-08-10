@@ -76,7 +76,15 @@ class EmployeeController extends Controller
         // Progress → Exited once the notice period elapses, without an
         // extra round-trip per row. Selected columns only; the full row
         // is loaded on the exit modal itself via /employees/{id}/exit.
-        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage',
+        //
+        // `rehired_at` MUST stay in this list. A rehire keeps the exit row
+        // (the case is history worth having) and only stamps it spent, so
+        // exit_case_status stays 'Closed' and completed_at stays set — which
+        // is exactly what HrExitManagement reads to decide "Exited". Without
+        // rehired_at in the payload its `rehired_at ? null : exit` guard can
+        // never fire, and a rehired employee is stuck in the Exited tab and
+        // missing from Active Employees forever.
+        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage,rehired_at',
         // Prior work experience — drives the EmployeeProfile "Work Experience"
         // card with REAL data (was previously hardcoded sample values). Newest
         // first so the frontend's [0] is the most recent employer.
@@ -341,15 +349,20 @@ class EmployeeController extends Controller
             ->whereNotNull('id')
             ->where('status', 'Active')
             ->where('onboarding_stage_completed', '>=', 6)
-            // Drop anyone tied to an exit case — whether it's still IN PROGRESS
-            // (exit_case_status 'Open') or already finalised ('Closed' /
-            // completed / final status "Exited"). An exit has no withdraw/cancel
-            // path and EmployeeExit isn't soft-deleted, so the mere existence of
-            // an exit row means the person is leaving or already gone: never a
-            // valid reporting manager for a new hire. This also acts as
+            // Drop anyone tied to a LIVE exit case — whether it's still IN
+            // PROGRESS (exit_case_status 'Open') or already finalised ('Closed'
+            // / completed / final status "Exited"). An exit has no
+            // withdraw/cancel path and EmployeeExit isn't soft-deleted, so such
+            // a row means the person is leaving or already gone: never a valid
+            // reporting manager for a new hire. This also acts as
             // belt-and-braces for finalised exits whose employees.status column
             // wasn't flipped for some reason.
-            ->whereDoesntHave('exit');
+            //
+            // A REHIRED exit is spent history, not a live case — the person is
+            // active staff again. Ignoring rehired_at here barred them from
+            // ever being picked as a manager again, since the row is kept
+            // rather than deleted.
+            ->whereDoesntHave('exit', fn ($q) => $q->whereNull('rehired_at'));
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         // HOD designation ids so the picker can flag which employees are a
         // department's Head — the reporting-manager rule points a non-HOD hire
