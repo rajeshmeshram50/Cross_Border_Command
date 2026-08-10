@@ -642,6 +642,9 @@ function SegmentRuleModal(props: {
   const [segCodes, setSegCodes] = useState<string[]>(existing?.segment_code ? [existing.segment_code] : []);
   const [docSel, setDocSel]   = useState<DocSelections>(existing?.doc_selections ?? {});
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
+  /* Stage 2 per-tab search. Kept per category (not one shared string) so
+   * switching KYC → DD doesn't carry a stale KYC query into the DD list. */
+  const [docSearch, setDocSearch] = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState(false);
 
   // Lock the background page from scrolling while the modal is open (reserves
@@ -714,6 +717,22 @@ function SegmentRuleModal(props: {
     kyc: boot.kyc, dd: boot.dd, tl: boot.tl, qc: boot.qc,
   };
 
+  /* Documents shown in the active tab after its search query. `srNo` carries
+   * the document's position in the FULL catalog so the Sr. No column stays
+   * stable while filtering (a doc doesn't renumber just because it's the only
+   * hit). Matches on code, document name/title and authority / type — the
+   * three columns the list actually renders. */
+  const activeQuery = (docSearch[activeCat] ?? '').trim().toLowerCase();
+  const visibleDocs = useMemo(() => {
+    const rows = catData[activeCat].map((d, i) => ({ d, srNo: i + 1 }));
+    if (!activeQuery) return rows;
+    return rows.filter(({ d }) => {
+      const hay = [d.code, d.title, d.name, d.authority, d.issued_by]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(activeQuery);
+    });
+  }, [boot, activeCat, activeQuery]); // eslint-disable-line react-hooks/exhaustive-deps
+
   /* Quick-add: opens the SAME master document form used on the KYC / DD / TL /
    * QC master pages (KycModal / DdModal / TlModal / QcModal), reused here so
    * the user can add a brand-new compliance document without leaving the rule
@@ -729,6 +748,9 @@ function SegmentRuleModal(props: {
       await onDocAdded?.();
       const created = (data?.data ?? null) as { code?: string } | null;
       if (created?.code) setDocReq(cat, created.code, 'M');
+      // Drop the tab's search query — otherwise the freshly added (and
+      // auto-ticked) document can land outside the active filter and look lost.
+      setDocSearch(prev => (prev[cat] ? { ...prev, [cat]: '' } : prev));
       toast.success('Added', `${String(f.name ?? 'Document')} added to ${CAT_LABELS[cat]}.`);
       setAddOpen(false);
     } catch (e: any) {
@@ -743,15 +765,18 @@ function SegmentRuleModal(props: {
   const grandTotal = CAT_KEYS.reduce((sum, c) => sum + totalSel(c), 0);
 
   /* Select-all for the active tab: every unselected doc becomes Mandatory (same
-   * default as the per-row checkbox); when all are already selected, clear them. */
-  const allSel  = (cat: keyof DocSelections) => catData[cat].length > 0 && catData[cat].every(d => !!docSel[cat]?.[d.code]);
-  const someSel = (cat: keyof DocSelections) => catData[cat].some(d => !!docSel[cat]?.[d.code]);
-  const toggleAllDocs = (cat: keyof DocSelections) => {
+   * default as the per-row checkbox); when all are already selected, clear them.
+   * Scoped to the VISIBLE (searched) rows so ticking the header never silently
+   * selects — or clears — documents the search has filtered out of view. */
+  const allSel  = () => visibleDocs.length > 0 && visibleDocs.every(({ d }) => !!docSel[activeCat]?.[d.code]);
+  const someSel = () => visibleDocs.some(({ d }) => !!docSel[activeCat]?.[d.code]);
+  const toggleAllDocs = () => {
     setDocSel(prev => {
+      const cat = activeCat;
       const next = { ...prev, [cat]: { ...(prev[cat] ?? {}) } };
-      const every = catData[cat].length > 0 && catData[cat].every(d => !!next[cat]![d.code]);
-      if (every) next[cat] = {};
-      else for (const d of catData[cat]) { if (!next[cat]![d.code]) next[cat]![d.code] = 'M'; }
+      const every = visibleDocs.length > 0 && visibleDocs.every(({ d }) => !!next[cat]![d.code]);
+      if (every) for (const { d } of visibleDocs) delete next[cat]![d.code];
+      else for (const { d } of visibleDocs) { if (!next[cat]![d.code]) next[cat]![d.code] = 'M'; }
       return next;
     });
   };
@@ -1018,30 +1043,54 @@ function SegmentRuleModal(props: {
               </div>
 
               <div className="dcp-doc-card" style={{ marginTop: 8, border: '1.5px solid rgba(6,182,212,.15)', borderRadius: 14, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', background: 'linear-gradient(110deg, #0891b2, #0e7490)', color: '#fff' }}>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.25px' }}>{CAT_LABELS[activeCat]} Documents</div>
-                    <div style={{ fontSize: 9.5, opacity: .7 }}>{catData[activeCat].length} documents available to configure</div>
+                <div className="dcp-doc-head" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'linear-gradient(110deg, #0891b2, #0e7490)', color: '#fff' }}>
+                  <div className="dcp-doc-head-left" style={{ flexShrink: 0 }}>
+                    {/* Mandatory / Optional counts sit inline with the title so the
+                        right edge is left to the search + Add pair. */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '-.25px' }}>{CAT_LABELS[activeCat]} Documents</div>
+                      {mandCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(6,182,212,.25)', color: '#fff', border: '1px solid rgba(255,255,255,.28)' }}>Mandatory · {mandCount(activeCat)}</span>}
+                      {optCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(251,191,36,.28)', color: '#fff', border: '1px solid rgba(251,191,36,.35)' }}>Optional · {optCount(activeCat)}</span>}
+                    </div>
+                    <div style={{ fontSize: 9.5, opacity: .7 }}>
+                      {activeQuery
+                        ? `${visibleDocs.length} of ${catData[activeCat].length} documents match "${docSearch[activeCat]}"`
+                        : `${catData[activeCat].length} documents available to configure`}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {mandCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(6,182,212,.25)', color: '#fff', border: '1px solid rgba(255,255,255,.28)' }}>Mandatory · {mandCount(activeCat)}</span>}
-                    {optCount(activeCat) > 0 && <span className="clm-badge" style={{ background: 'rgba(251,191,36,.28)', color: '#fff', border: '1px solid rgba(251,191,36,.35)' }}>Optional · {optCount(activeCat)}</span>}
-                    <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 13px', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                      Add {CAT_SHORT[activeCat]}
-                    </button>
+                  {/* Per-tab search — each category keeps its own query so the
+                      KYC filter doesn't follow you into Due Diligence. Pushed
+                      right by the auto margin so it sits beside the Add button. */}
+                  <div className="dcp-doc-search" style={{ marginLeft: 'auto' }}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" style={{ flexShrink: 0, opacity: .85 }}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                    <input
+                      type="text"
+                      value={docSearch[activeCat] ?? ''}
+                      placeholder={`Search ${CAT_SHORT[activeCat]} documents…`}
+                      aria-label={`Search ${CAT_LABELS[activeCat]} documents`}
+                      onChange={e => setDocSearch(prev => ({ ...prev, [activeCat]: e.target.value }))}
+                    />
+                    {!!(docSearch[activeCat] ?? '') && (
+                      <button type="button" className="dcp-doc-search-clear" aria-label="Clear search"
+                        onClick={() => setDocSearch(prev => ({ ...prev, [activeCat]: '' }))}>×</button>
+                    )}
                   </div>
+                  <button type="button" onClick={openAddDoc} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, padding: '5px 13px', borderRadius: 8, background: '#fff', color: '#0e7490', border: 'none', fontFamily: 'inherit', fontSize: 11, fontWeight: 800, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,.12)' }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add {CAT_SHORT[activeCat]}
+                  </button>
                 </div>
                 <div style={{ maxHeight: 360, overflowY: 'auto' }}>
                   <table className="clm-table">
                     <thead>
                       <tr className="dcp-thead-row" style={{ background: 'linear-gradient(110deg,#f0fdff,#e8f9fd)', borderBottom: '1.5px solid rgba(6,182,212,.12)' }}>
                         <th style={{ width: 36, padding: '9px 4px 9px 14px', textAlign: 'center' }}>
-                          {catData[activeCat].length > 0 && (() => {
-                            const all = allSel(activeCat), some = someSel(activeCat);
+                          {visibleDocs.length > 0 && (() => {
+                            const all = allSel(), some = someSel();
+                            const scope = activeQuery ? 'matching documents' : 'this tab';
                             return (
-                              <label className="clm-doc-check" title={all ? 'Clear all in this tab' : 'Select all in this tab'}>
-                                <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = some && !all; }} onChange={() => toggleAllDocs(activeCat)} />
+                              <label className="clm-doc-check" title={all ? `Clear all ${scope}` : `Select all ${scope}`}>
+                                <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = some && !all; }} onChange={() => toggleAllDocs()} />
                                 <span className={`clm-doc-check-box${some && !all ? ' is-indet' : ''}`}>
                                   {all && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                                   {some && !all && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3.4" strokeLinecap="round"><line x1="6" y1="12" x2="18" y2="12"/></svg>}
@@ -1058,7 +1107,16 @@ function SegmentRuleModal(props: {
                       </tr>
                     </thead>
                     <tbody>
-                      {catData[activeCat].map((d, i) => {
+                      {visibleDocs.length === 0 && (
+                        <tr>
+                          <td colSpan={6} style={{ padding: '26px 16px', textAlign: 'center', fontSize: 11.5, color: '#94a3b8' }}>
+                            {catData[activeCat].length === 0
+                              ? <>No {CAT_LABELS[activeCat]} documents yet — use “+ Add {CAT_SHORT[activeCat]}” to create one.</>
+                              : <>No {CAT_LABELS[activeCat]} document matches “{docSearch[activeCat]}”.</>}
+                          </td>
+                        </tr>
+                      )}
+                      {visibleDocs.map(({ d, srNo }) => {
                         const sel = docSel[activeCat]?.[d.code];
                         const isM = sel === 'M', isO = sel === 'O';
                         const checked = isM || isO;
@@ -1078,7 +1136,7 @@ function SegmentRuleModal(props: {
                                 </span>
                               </label>
                             </td>
-                            <td className="clm-td-num">{String(i + 1).padStart(2, '0')}</td>
+                            <td className="clm-td-num">{String(srNo).padStart(2, '0')}</td>
                             <td style={{ width: 100 }}><span className="clm-code-pill">{d.code}</span></td>
                             {(() => {
                               // Truncate the document name at 25 chars; the full
@@ -1152,6 +1210,55 @@ function SegmentRuleModal(props: {
 
 /* ─── Per-page CSS for count/total buttons ─── */
 const DCP_PAGE_CSS = `
+/* Stage 2 per-tab document search. Sits on the card's cyan gradient header, so
+   it wears a translucent-white skin instead of the page-level .clm-search
+   (white on white would disappear against that strip). */
+.dcp-doc-search {
+  display: flex; align-items: center; gap: 7px;
+  flex: 0 1 300px; min-width: 150px;
+  height: 30px; padding: 0 10px;
+  border-radius: 8px;
+  background: rgba(255,255,255,.16);
+  border: 1.5px solid rgba(255,255,255,.30);
+  color: #fff;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.dcp-doc-search:focus-within {
+  background: rgba(255,255,255,.24);
+  border-color: rgba(255,255,255,.62);
+  box-shadow: 0 0 0 3px rgba(255,255,255,.14);
+}
+.dcp-doc-search input {
+  flex: 1; min-width: 0;
+  border: none; outline: none; background: transparent;
+  font-family: inherit; font-size: 11.5px; color: #fff;
+}
+.dcp-doc-search input::placeholder { color: rgba(255,255,255,.62); }
+.dcp-doc-search-clear {
+  flex-shrink: 0; width: 16px; height: 16px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: 50%; cursor: pointer; line-height: 1; font-size: 13px;
+  background: rgba(255,255,255,.26); color: #fff;
+}
+.dcp-doc-search-clear:hover { background: rgba(255,255,255,.42); }
+/* Chrome paints autofilled / previously-searched inputs with a pale fill that
+   would override the translucent bg — repaint it to match the header. */
+.dcp-doc-search input:-webkit-autofill,
+.dcp-doc-search input:-webkit-autofill:hover,
+.dcp-doc-search input:-webkit-autofill:focus {
+  -webkit-text-fill-color: #fff;
+  caret-color: #fff;
+  -webkit-box-shadow: 0 0 0 1000px #0b7f9c inset !important;
+  box-shadow: 0 0 0 1000px #0b7f9c inset !important;
+  transition: background-color 9999s ease-in-out 0s;
+}
+/* Narrow modal / phone — the title block claims a full row so the search and
+   the Add button drop onto a shared second row instead of colliding. */
+@media (max-width: 720px) {
+  .dcp-doc-head { flex-wrap: wrap; }
+  .dcp-doc-head-left { flex: 1 1 100%; }
+  .dcp-doc-search { flex: 1 1 auto; min-width: 120px; margin-left: 0 !important; }
+}
 .clm-count-btn {
   display: inline-flex; align-items: center; justify-content: center;
   min-width: 30px; height: 26px; padding: 0 9px;

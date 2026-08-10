@@ -1105,7 +1105,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   /* Has the Full & Final settlement actually been paid? This gates the
      document release: the relieving letter and experience certificate go out
      only after the employee has their money, which is why F&F now sits BEFORE
-     Exit Documents in the stage order. Mirrored server-side in ExitController. */
+     Exit Documents in the stage order. Mirrored server-side in ExitController.
+
+     This is only a truthful signal because markFnfPaid() is the sole writer of
+     payStatus = 'Paid' — the Payment Status select deliberately does not offer
+     it (see that field). Anything that makes 'Paid' settable by hand again
+     re-opens the hole where the UI reports a settled, locked F&F that was never
+     validated, never recorded server-side and never completed the stage. */
   const fnfPaid = fnfMeta.payStatus === 'Paid';
   const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfNet = useMemo(() => {
@@ -2156,6 +2162,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const uploadFnfDoc = async (file: File | null) => {
     if (!file || !employee || fnfDocUploading) return;
 
+    /* The label is already inert once paid; this is the guard that holds. The
+       document is what the settlement was approved and paid against, so it is
+       evidence from that moment on — not a field. */
+    if (fnfPaid) {
+      toast.info('Document locked',
+        'The Full & Final has been paid against this document, so it can no longer be replaced.');
+      return;
+    }
+
     const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
     if (!FNF_DOC_EXTS.includes(ext)) {
       toast.error(
@@ -2769,9 +2784,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   Earnings &amp; Deductions
                   {duesLoading && <span style={{ marginLeft: 8, fontWeight: 400, textTransform: 'none' }}>· loading dues…</span>}
                 </div>
+                {/* Every editable figure below carries `readOnly={fnfPaid}`.
+                    Once the settlement is paid the whole stage is the RECORD of
+                    a payment that has left the building — changing a line after
+                    the fact would leave the stored net disagreeing with the
+                    money actually transferred, with nothing to reconcile the
+                    two. */}
                 <div className="ep-fnf">
                   <FnfRow label="Salary for the Exit Month (earned up to the last working day)"
                           value={fnfLines.basic}       onChange={v => setFnfLines(s => ({ ...s, basic: v }))}
+                          readOnly={fnfPaid}
                           /* Show the payroll BREAKDOWN, not just a day count —
                              this figure is now produced by the payroll engine
                              (structure components, attendance-driven paid days,
@@ -2797,8 +2819,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             parts.push(`gross ${fmtMoney(b.gross_earnings)} − deductions ${fmtMoney(b.total_deductions)}`);
                             return `${parts.join(' · ')}. Computed on the payroll basis — this employee was skipped in that cycle's run.`;
                           })()} />
-                  <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} />
-                  <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} />
+                  <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} readOnly={fnfPaid} />
+                  <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} readOnly={fnfPaid} />
 
                   {/* Pulled from the Expense module — approved claims never
                       disbursed. Read-only here: the claim is the source. */}
@@ -2847,6 +2869,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   )}
 
                   <FnfRow label="Other Recovery"               value={fnfLines.loan}        onChange={v => setFnfLines(s => ({ ...s, loan: v }))} deduction
+                          readOnly={fnfPaid}
                           hint="Anything not pulled automatically — loans, asset damage, notice shortfall settled elsewhere." />
                   <div className="ep-fnf-net">
                     <span>Net FnF Payable</span>
@@ -2866,36 +2889,53 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <div className="ep-approval-card ep-details-card mb-2">
                   <Row className="g-2">
                     <Col md={6}>
-                      <EpField label="Finance Controller Approval" required invalid={fnfMeta.approval !== 'Approved'}>
+                      {/* Frozen once paid, like every other field on this stage —
+                          this is the approval the payment was made under, so it
+                          is history from that point, not a setting. `invalid` is
+                          dropped too: a locked field can't be corrected, so
+                          flagging it red would be a dead end. */}
+                      <EpField label="Finance Controller Approval" required invalid={!fnfPaid && fnfMeta.approval !== 'Approved'}>
                         <EpSelect value={fnfMeta.approval} onChange={v => setFnfMeta(s => ({ ...s, approval: v }))}
-                          options={['Pending', 'Approved', 'Rejected']} />
+                          options={['Pending', 'Approved', 'Rejected']} disabled={fnfPaid} />
                       </EpField>
                     </Col>
                     <Col md={6}>
                       <EpField label="Payment Status" required>
-                        {/* Locked once paid. This select is the switch the
-                            "Mark F&F Paid" button keys off, so leaving it open
-                            would let a settled F&F be dropped back to Pending
-                            and paid a second time — the button would simply
-                            reappear. */}
+                        {/* "Paid" is an OUTCOME of "Mark F&F Paid", never an
+                            input. `fnfPaid` reads this field, so offering Paid
+                            in the list let anyone select it and land straight in
+                            the fully-settled, locked UI — the settled banner,
+                            every figure frozen, the document sealed and the
+                            Exit Documents release unblocked — while none of it
+                            had actually happened: markFnfPaid()'s checks
+                            (finance approval, payment date, F&F document,
+                            outstanding advances) were skipped, no payment was
+                            written to the server and the stage was never
+                            completed. It is listed only once the settlement is
+                            genuinely paid, where the select is disabled anyway
+                            and merely reports the state.
+
+                            Keeping the select disabled after payment also stops
+                            a settled F&F dropping back to Pending and being
+                            paid twice — the button would simply reappear. */}
                         <EpSelect value={fnfMeta.payStatus} onChange={v => setFnfMeta(s => ({ ...s, payStatus: v }))}
-                          options={['Pending', 'Processing', 'Paid']} disabled={fnfPaid} />
-                        {fnfPaid && (
-                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            Settled — a Full &amp; Final is paid only once.
-                          </div>
-                        )}
+                          options={fnfPaid ? ['Pending', 'Processing', 'Paid'] : ['Pending', 'Processing']} disabled={fnfPaid} />
+                        <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
+                          {fnfPaid
+                            ? <>Settled — a Full &amp; Final is paid only once, and this record is now locked.</>
+                            : <>Set to Paid automatically when you click &ldquo;Mark F&amp;F Paid&rdquo; below.</>}
+                        </div>
                       </EpField>
                     </Col>
                     <Col md={6}>
                       <EpField label="Payment Mode" required>
                         <EpSelect value={fnfMeta.payMode} onChange={v => setFnfMeta(s => ({ ...s, payMode: v }))}
-                          options={['Bank Transfer (NEFT)', 'Bank Transfer (RTGS)', 'IMPS', 'UPI', 'Cheque']} />
+                          options={['Bank Transfer (NEFT)', 'Bank Transfer (RTGS)', 'IMPS', 'UPI', 'Cheque']} disabled={fnfPaid} />
                       </EpField>
                     </Col>
                     <Col md={6}>
-                      <EpField label="Payment Date" required invalid={!fnfMeta.payDate}>
-                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} />
+                      <EpField label="Payment Date" required invalid={!fnfPaid && !fnfMeta.payDate}>
+                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid} />
                       </EpField>
                     </Col>
                   </Row>
@@ -2905,14 +2945,21 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   <div className="ep-section-label" style={{ marginTop: 14 }}>
                     Full &amp; Final Document <span style={{ color: '#b91c1c' }}>*</span>
                   </div>
-                  <label className={`ep-fnf-drop${fnfDoc ? ' has-file' : ''}`}>
+                  {/* Sealed once the settlement is paid. The uploaded file is
+                      the evidence the payment was made against, so swapping it
+                      afterwards would leave the record pointing at a document
+                      nobody approved — and it is also the gate `markFnfPaid()`
+                      checks, so a replaceable file is a second way back into a
+                      settlement that is meant to happen once. Download stays
+                      available; only replacing is closed off. */}
+                  <label className={`ep-fnf-drop${fnfDoc ? ' has-file' : ''}${fnfPaid ? ' is-locked' : ''}`}>
                     {/* PDF / JPG / PNG only — the signed F&F is evidence, so an
                         editable Word or Excel file is not accepted. `accept` is
                         only a picker hint (the user can switch to "All files"),
                         which is why uploadFnfDoc re-checks and the server
                         validates the real file type as well. */}
                     <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                      disabled={fnfDocUploading}
+                      disabled={fnfDocUploading || fnfPaid}
                       onChange={e => {
                         const input = e.target as HTMLInputElement;
                         uploadFnfDoc(input.files?.[0] ?? null);
@@ -2928,7 +2975,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         {fnfDocUploading ? 'Uploading…' : fnfDoc ? fnfDoc.name : 'Click to upload the signed F&F sheet / payment advice'}
                       </span>
                       <span className="ep-fnf-drop-t2">
-                        {fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 10 MB · required'}
+                        {fnfPaid
+                          ? 'Locked — the settlement has been paid against this document'
+                          : fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 10 MB · required'}
                       </span>
                     </span>
                     {/* Download, not View (#59). Legacy attachments predate the

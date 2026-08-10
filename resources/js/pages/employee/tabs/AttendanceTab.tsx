@@ -6,6 +6,7 @@ import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
 import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
 import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
 import AttendanceLogsView, { type AttLog } from './AttendanceLogsView';
+import WorklistPager from '../../../components/ui/WorklistPager';
 
 interface AttendancePanelPunch {
   id: number;
@@ -85,6 +86,10 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const [regDate, setRegDate]     = useState<string>('');
   const [regPunches, setRegPunches] = useState<RegPrefillPunch[]>([]);
   const [myRegs, setMyRegs]       = useState<ApiRegularization[]>([]);
+  // Pagination for "My Regularization Requests" — same WorklistPager and the
+  // same 5-per-page default as the Logs & Requests table above it.
+  const [regPageSize, setRegPageSize] = useState(5);
+  const [regPage, setRegPage]         = useState(1);
   const numericEmployeeId = data?.employee?.id ?? null;
 
   useEffect(() => {
@@ -179,6 +184,15 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     return history.find(r => r.attendance_date.slice(0, 10) === iso) || null;
   };
   const onRegularizeDate = (iso: string) => openReg(recForIso(iso), iso);
+
+  // Regularization list paging. safePage is clamped rather than reset in state
+  // so a shrinking list (or a page-size bump) can't strand the table on an
+  // out-of-range page showing zero rows.
+  const regTotalPages = Math.max(1, Math.ceil(myRegs.length / regPageSize));
+  const regSafePage   = Math.min(regPage, regTotalPages);
+  const regPageStart  = (regSafePage - 1) * regPageSize;
+  const visibleRegs   = myRegs.slice(regPageStart, regPageStart + regPageSize);
+
   const G_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
   const G_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
   const G_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
@@ -199,7 +213,9 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
       {/* Today + Timeline side-by-side */}
       <Row className="g-3 mb-3 align-items-stretch flex-grow-1">
         <Col xl={6}>
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-emerald">
+          {/* No ep-ct-* accent class — these two cards deliberately skip the
+              3px coloured top strip and keep the plain 1px card border. */}
+          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
             <div
               className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-emerald"
             >
@@ -263,7 +279,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
         </Col>
 
         <Col xl={6}>
-          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column ep-ct-indigo">
+          <div className="ep-section-card-flat ep-section-card h-100 d-flex flex-column">
             <div
               className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-indigo"
             >
@@ -364,7 +380,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {myRegs.map(rg => {
+                      {visibleRegs.map(rg => {
                         const punches = (rg.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
                         const tone =
                           rg.status === 'Approved' ? { bg: '#dcfce7', fg: '#15803d' } :
@@ -388,6 +404,14 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                     </tbody>
                   </table>
                 </div>
+
+                <WorklistPager
+                  total={myRegs.length}
+                  page={regSafePage}
+                  pageSize={regPageSize}
+                  onPage={setRegPage}
+                  onPageSize={(n) => { setRegPageSize(n); setRegPage(1); }}
+                />
               </CardBody>
             </Card>
           </Col>
@@ -404,7 +428,8 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
           shiftName={data?.shift ?? null}
           initialPunches={regPunches}
           onClose={() => setRegOpen(false)}
-          onSubmitted={() => loadRegs()}
+          // Jump back to page 1 — the new request lands at the top of the list.
+          onSubmitted={() => { setRegPage(1); loadRegs(); }}
         />
       )}
     </div>

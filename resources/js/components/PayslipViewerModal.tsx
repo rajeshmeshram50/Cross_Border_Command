@@ -43,14 +43,25 @@ export interface PayslipViewerModalProps {
   overtimeHours?: number;
   /** Payable OT, already priced as hourly × multiplier × hours upstream. */
   overtimeAmount?: number;
-  /** Hours the ATTENDANCE shows past the shift end. Differs from the paid
-   *  hours whenever OT hasn't been approved as an adjustment yet — the KPI
-   *  shows these (the real worked hours), the allowance shows what's payable. */
+  /** Hours the ATTENDANCE shows past the shift end, recomputed LIVE. Differs
+   *  from the paid hours when an adjustment overrode them, or when attendance
+   *  changed after the run was generated. Never price off this — see
+   *  `overtimePricedHours`. */
   overtimeDetectedHours?: number;
-  /** OT rate multiplier from the employee's Overtime (OT) policy, e.g. 1.5. */
-  overtimeMultiplier?: number;
-  /** Effective per-hour OT rate (hourly × multiplier) — shown as the workings. */
-  overtimeRate?: number;
+  /** The hours the stored amount was ACTUALLY priced on, captured when the run
+   *  was generated. This is the only hour count that multiplies out to the
+   *  allowance, so it is what the workings quote. */
+  overtimePricedHours?: number;
+  /** OT rate multiplier from the employee's Overtime (OT) policy, e.g. 1.5.
+   *  Null on older slips whose run didn't store the split. */
+  overtimeMultiplier?: number | null;
+  /** Base per-hour rate BEFORE the multiplier (gross ÷ working days ÷ shift
+   *  hours). Null when unknown. */
+  overtimeHourly?: number | null;
+  /** EFFECTIVE per-hour OT rate — the multiplier is already inside it, so
+   *  `overtimeRate × hours` is the amount. Never multiply it by the multiplier
+   *  again. */
+  overtimeRate?: number | null;
   overtimeRateName?: string | null;
   recentMonths?: PayslipRecentEntry[];
   companyName?: string;
@@ -115,8 +126,10 @@ export default function PayslipViewerModal({
   overtimeApplicable = false,
   overtimeHours = 0,
   overtimeDetectedHours = 0,
+  overtimePricedHours,
   overtimeAmount = 0,
   overtimeMultiplier,
+  overtimeHourly,
   overtimeRate,
   overtimeRateName,
   recentMonths = [],
@@ -258,27 +271,52 @@ export default function PayslipViewerModal({
      detected hours are paid directly, so the allowance normally matches. The
      zero-state only survives for a slip generated BEFORE that change, or one
      whose run is locked and can't recompute. */
-  const otKpiHours = overtimeDetectedHours > 0 ? overtimeDetectedHours : overtimeHours;
   const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, ''));
+
+  /* THE hour count the allowance was priced on. The KPI below may show a
+     different, live figure; this one is what the money is built from, so it is
+     the only one the workings may quote. Older slips that predate the stored
+     breakdown fall back to the run's own overtime_hours. */
+  const otPaidHours = overtimePricedHours ?? overtimeHours;
+  /* The KPI reports hours WORKED, which is what "OT Hours" means to someone
+     reading a payslip — live attendance when we have it, else the paid hours. */
+  const otKpiHours = overtimeDetectedHours > 0 ? overtimeDetectedHours : otPaidHours;
   const otHoursLabel = num(otKpiHours);
 
-  /* Overtime is NOT approval-gated — detected hours are paid. When a slip
-     carries hours but no amount (generated before that rule, or in a locked
-     run that can't recompute), price them here from the same inputs the engine
-     uses rather than telling HR to regenerate the run: the allowance is what
-     they came to see, and a prompt to re-run payroll is a chore, not an answer.
-     Falls back to the stored amount whenever the engine already priced it. */
+  /* When a slip carries hours but no amount (a locked run that can't
+     recompute), price them here rather than telling HR to re-run payroll.
+     `overtimeRate` is the EFFECTIVE rate — the multiplier is already inside it.
+     This previously multiplied by `overtimeMultiplier` as well, paying 1.5× too
+     much on that path. Falls back to the stored amount whenever the engine
+     already priced it, which is the normal case. */
   const otPricedAmount = overtimeAmount > 0
     ? overtimeAmount
-    : Math.round(otKpiHours * (overtimeRate || 0) * (overtimeMultiplier || 1) * 100) / 100;
+    : Math.round(otPaidHours * (overtimeRate || 0) * 100) / 100;
   const showOt = overtimeApplicable && !hasOtLine && (otPricedAmount > 0 || otKpiHours > 0);
 
-  // Spell the pricing out next to the line so the figure is checkable by hand.
-  const otWorkings = [
-    overtimeRate ? `₹${overtimeRate.toLocaleString('en-IN')}/hr` : null,
-    overtimeMultiplier ? `${overtimeMultiplier}×${overtimeRateName ? ` ${overtimeRateName}` : ''}` : null,
-    `${otHoursLabel} hr`,
-  ].filter(Boolean).join(' · ');
+  /* Workings that reproduce the amount: hours × effective rate. The base hourly
+     and the multiplier are shown as a parenthetical derivation of that rate,
+     never as extra factors to multiply — printing "₹494.07/hr · 1.5× · 10.05 hr"
+     invited exactly that, and none of those three numbers priced the figure
+     beside them. */
+  /* Only when the priced hours are actually known. The employee-profile viewer
+     renders the same modal without any OT props, where this would otherwise
+     print a bare "0 hr" under a real allowance. */
+  const otWorkings = otPaidHours > 0
+    ? [
+        overtimeRate ? `${num(otPaidHours)} hr × ₹${overtimeRate.toLocaleString('en-IN')}/hr` : `${num(otPaidHours)} hr`,
+        overtimeHourly && overtimeMultiplier
+          ? `(₹${overtimeHourly.toLocaleString('en-IN')}/hr × ${num(overtimeMultiplier)}${overtimeRateName ? ` ${overtimeRateName}` : ''})`
+          : null,
+      ].filter(Boolean).join(' ')
+    : null;
+
+  /* Attendance has moved since the run was generated (or an adjustment
+     overrode it). Saying so is the difference between a payslip that looks
+     wrong and one that explains itself. */
+  const otHoursDiffer = overtimeDetectedHours > 0
+    && otPaidHours > 0
+    && Math.abs(overtimeDetectedHours - otPaidHours) >= 0.01;
 
   const shownEarnings = showOt
     ? [...earnings, { label: 'Overtime Allowance', amount: otPricedAmount }]
@@ -475,7 +513,10 @@ export default function PayslipViewerModal({
                       </thead>
                       <tbody>
                         {shownEarnings.map(r => {
-                          const isOt = r.label === 'Overtime Allowance';
+                          // Matched loosely, like `hasOtLine`: an OT adjustment
+                          // carries HR's own label, and the workings have to
+                          // stay attached to whatever the line ended up called.
+                          const isOt = /overtime/i.test(r.label);
                           return (
                             <tr key={r.label}>
                               <td>
@@ -483,6 +524,12 @@ export default function PayslipViewerModal({
                                 {isOt && otWorkings && (
                                   <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', marginTop: 1 }}>
                                     {otWorkings}
+                                  </div>
+                                )}
+                                {isOt && otHoursDiffer && (
+                                  <div style={{ fontSize: 10.5, color: '#b45309', marginTop: 1 }}>
+                                    Attendance now shows {num(overtimeDetectedHours)} hr — this slip was priced on
+                                    {' '}{num(otPaidHours)} hr when the run was generated.
                                   </div>
                                 )}
                               </td>

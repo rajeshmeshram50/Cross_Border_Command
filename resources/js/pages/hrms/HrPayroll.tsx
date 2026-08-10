@@ -288,8 +288,8 @@ export default function HrPayroll() {
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
   const [payslipOt, setPayslipOt] = useState<{
-    applicable: boolean; hours: number; detectedHours: number; amount: number;
-    multiplier?: number; rate?: number; rateName?: string | null;
+    applicable: boolean; hours: number; detectedHours: number; pricedHours?: number; amount: number;
+    multiplier?: number; hourly?: number; rate?: number; rateName?: string | null;
   } | null>(null);
 
   const loadPayslipDetail = (payslipId?: number) => {
@@ -315,8 +315,12 @@ export default function HrPayroll() {
           applicable: true,
           hours:      Number(d.overtimeHours) || 0,
           detectedHours: Number(d.overtimeDetectedHours) || 0,
+          // Hours the stored amount was priced on — the workings quote these,
+          // NOT the live detected hours.
+          pricedHours: typeof d.overtimePricedHours === 'number' ? d.overtimePricedHours : undefined,
           amount:     Number(d.overtimeAmount) || 0,
           multiplier: typeof d.overtimeMultiplier === 'number' ? d.overtimeMultiplier : undefined,
+          hourly:     typeof d.overtimeHourly === 'number' ? d.overtimeHourly : undefined,
           rate:       typeof d.overtimeRate === 'number' ? d.overtimeRate : undefined,
           rateName:   d.overtimeRateName ?? null,
         } : null);
@@ -1906,8 +1910,10 @@ export default function HrPayroll() {
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
             overtimeDetectedHours={payslipOt?.detectedHours ?? 0}
+            overtimePricedHours={payslipOt?.pricedHours}
             overtimeAmount={payslipOt?.amount ?? 0}
             overtimeMultiplier={payslipOt?.multiplier}
+            overtimeHourly={payslipOt?.hourly}
             overtimeRate={payslipOt?.rate}
             overtimeRateName={payslipOt?.rateName}
             isFinal={payslipFinal}

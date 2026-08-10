@@ -2325,7 +2325,29 @@
   color: var(--vt-subtab-color);
   border: none;
   box-shadow: var(--vt-subtab-shadow);
+  /* Bootstrap's `.btn:hover` sets `color: var(--bs-btn-hover-color)`, but the
+     base `.btn` never DEFINES that variable — only the colour variants do. On a
+     plain `.btn` the declaration is invalid at computed-value time, so `color`
+     falls back to the inherited body colour: hovering the active tab flipped
+     its white label to dark grey on the dark violet gradient, i.e. unreadable.
+     `.btn:hover` also outranks `.vt-subtab-btn` on specificity, so overriding
+     `color` here wouldn't help. Point Bootstrap's own variables at our values
+     instead — the hover/focus/active states then resolve to the tab's real
+     colour and nothing has to win a specificity fight. */
+  --bs-btn-color: var(--vt-subtab-color);
+  --bs-btn-hover-color: var(--vt-subtab-color);
+  --bs-btn-active-color: var(--vt-subtab-color);
+  --bs-btn-hover-bg: transparent;
+  --bs-btn-active-bg: transparent;
+  --bs-btn-hover-border-color: transparent;
+  --bs-btn-active-border-color: transparent;
+  --bs-btn-active-shadow: none;
+  transition: filter .15s ease;
 }
+/* Hover affordance that doesn't touch the text colour: the active tab lifts
+   slightly, the inactive one picks up a faint tint of the card surface. */
+.vt-subtab-btn:hover { filter: brightness(1.06); }
+.vt-subtab-btn:active { filter: brightness(0.97); }
 .vt-subtab-icon { font-size: 12px; }
 .vt-subtab-badge {
   font-size: 10px;
@@ -2337,6 +2359,33 @@
 .vt-subtab-badge-shim { background: var(--vt-subtab-badge-shim-bg); opacity: 0.5; }
 .vt-head-title { font-size: 12px; }
 .vt-head-sub { font-size: 11px; }
+/* Host for the DataTable search box, portaled onto a vault card's header. The
+   toolbar strip that used to carry it collapses away, so this is what gives the
+   field its width and keeps it level with the count block. `.dt-search` is
+   sized for a toolbar (38px, flex 0 8 320px) — here it must fill the host
+   instead, at a height that matches the two-line title block beside it. */
+.vt-head-search { display: flex; align-items: center; width: 280px; flex-shrink: 0; }
+.vt-head-search .dt-search {
+  flex: 1 1 auto; min-width: 0; max-width: none;
+  height: 36px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+}
+/* Restated rather than inherited: DataTable.css's own dark rule matches at the
+   same specificity, so which one wins would come down to stylesheet order. */
+[data-bs-theme="dark"] .vt-head-search .dt-search,
+[data-layout-mode="dark"] .vt-head-search .dt-search {
+  background: rgba(255, 255, 255, .06);
+  box-shadow: none;
+}
+.vt-head-search .dt-search input { font-size: 12.5px; }
+@media (max-width: 991.98px) { .vt-head-search { width: 190px; } }
+/* Below this the header has no room for a 3-across row — let it wrap so the
+   search drops to its own full-width line instead of crushing the title. */
+@media (max-width: 575.98px) {
+  .vt-uploaded-head { flex-wrap: wrap; }
+  .vt-head-search { width: 100%; order: 3; }
+}
 .vt-count-shim { margin-bottom: 4px; }
 .vt-count-violet { color: #5a3fd1; font-size: 22px; line-height: 1; }
 .vt-count-green { color: #16a34a; font-size: 22px; line-height: 1; }

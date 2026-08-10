@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo,
   type ReactNode,
   type RefObject,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   flexRender,
   getCoreRowModel,
@@ -55,6 +56,14 @@ export interface DataTableProps<T> {
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
   searchDebounce?: number;
+  /**
+   * Render the search box into this element instead of the toolbar. Lets a
+   * caller lift the search into its own card header without the table losing
+   * ownership of the query — filtering, clearing and debounce all still live
+   * here. When set (and it's the only toolbar item) the toolbar row is dropped
+   * entirely rather than left as an empty strip.
+   */
+  searchHost?: HTMLElement | null;
   onFilterClick?: () => void;
   activeFilterCount?: number;
   filterLabel?: string;
@@ -144,6 +153,7 @@ export default function DataTable<T extends object>({
   onSearchChange,
   searchPlaceholder = 'Search…',
   searchDebounce = 300,
+  searchHost,
   onFilterClick,
   activeFilterCount = 0,
   filterLabel = 'Filter',
@@ -379,7 +389,30 @@ export default function DataTable<T extends object>({
     };
   }, [autoFitRows, fitRows, loading, children]);
 
-  const showToolbar = !!(tabs?.length || searchable || onFilterClick || toolbarActions);
+  /* The search box, built once and either left in the toolbar or portaled into
+     the caller's `searchHost`. Same node either way, so query state, the clear
+     button and the debounce behave identically in both placements. */
+  const searchBox = searchable ? (
+    // When portaled out of .dt-root the box can no longer inherit the accent
+    // custom properties, so the modifier class re-declares them from
+    // `data-accent` (see the palette blocks in DataTable.css).
+    <div className={`dt-search${searchHost ? ' dt-search--detached' : ''}`} data-accent={accent}>
+      <i className="ri-search-line dt-search-icon" />
+      <input
+        type="text"
+        placeholder={searchPlaceholder}
+        value={inputValue}
+        onChange={e => onInput(e.target.value)}
+      />
+      {inputValue && (
+        <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => onInput('')}>
+          <i className="ri-close-line" />
+        </button>
+      )}
+    </div>
+  ) : null;
+  const searchInToolbar = searchable && !searchHost;
+  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions);
   const start = pageIndex * pageSize;
   const shownFrom = filteredCount === 0 ? 0 : start + 1;
   const shownTo = paginate ? Math.min(start + pageSize, filteredCount) : filteredCount;
@@ -426,26 +459,13 @@ export default function DataTable<T extends object>({
             </button>
           )}
 
-          {searchable && (
-            <div className="dt-search">
-              <i className="ri-search-line dt-search-icon" />
-              <input
-                type="text"
-                placeholder={searchPlaceholder}
-                value={inputValue}
-                onChange={e => onInput(e.target.value)}
-              />
-              {inputValue && (
-                <button type="button" className="dt-search-clear" aria-label="Clear search" onClick={() => onInput('')}>
-                  <i className="ri-close-line" />
-                </button>
-              )}
-            </div>
-          )}
+          {searchInToolbar && searchBox}
 
           {toolbarActions && <div className="dt-toolbar-actions">{toolbarActions}</div>}
         </div>
       )}
+
+      {searchHost && searchBox && createPortal(searchBox, searchHost)}
 
       {/* Applied filters, each removable — a filtered table that looks empty is
           otherwise read as "there is no data". */}

@@ -6069,6 +6069,14 @@
 }
 .ep-fnf-drop:hover { border-color: #7c3aed; background: rgba(124,58,237,0.05); }
 .ep-fnf-drop.has-file { border-style: solid; border-color: #a7f3d0; background: #ecfdf5; }
+/* Sealed after the settlement is paid — the document is evidence from that
+   point, not an editable field. It keeps its "has-file" green (the file is
+   still there and still downloadable); only the affordance to swap it goes:
+   no pointer, no hover lift. The download button inside re-enables its own
+   pointer, since reading the record stays allowed. */
+.ep-fnf-drop.is-locked { cursor: default; }
+.ep-fnf-drop.is-locked:hover { border-color: #a7f3d0; background: #ecfdf5; }
+.ep-fnf-drop.is-locked .ep-fnf-drop-view { cursor: pointer; }
 .ep-fnf-drop-ico {
   flex: none; width: 38px; height: 38px; border-radius: 10px; font-size: 19px;
   display: flex; align-items: center; justify-content: center;

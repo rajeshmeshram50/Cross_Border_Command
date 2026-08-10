@@ -68,7 +68,17 @@ class ExitController extends Controller
         $wasReleased    = (bool) $row->documents_released;
         $storedLwd      = $row->last_working_day;   // captured BEFORE fill()
         $storedCase     = (string) ($row->exit_case_status ?? 'Open');
+        /* A PAID Full & Final is frozen — captured before fill() and restored
+           after it. Once the money has gone out, the blob is the record of what
+           was paid: amend a line or the payment mode afterwards and the stored
+           net no longer matches the transfer, with nothing to reconcile them.
+           The SPA locks every field on that stage; this is the server-side twin,
+           so a stale tab opened before the payment can't post over it. */
+        $lockedFnf      = $row->exists && $this->isFnfPaid($row) ? $row->fnf : null;
         $row->fill($data);
+        if ($lockedFnf !== null) {
+            $row->fnf = $lockedFnf;
+        }
 
         /* Closing the case is complete()'s job ALONE — that is what stamps the
            terminal employee status, kills the login and disables the employee
@@ -160,7 +170,13 @@ class ExitController extends Controller
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             $lockedType = $this->lockedExitType($row);
             $storedLwd  = $row->last_working_day;   // captured BEFORE fill()
+            // Same freeze as upsert(): completing the exit must not be a way to
+            // rewrite an F&F that has already been paid.
+            $lockedFnf  = $row->exists && $this->isFnfPaid($row) ? $row->fnf : null;
             $row->fill($data);
+            if ($lockedFnf !== null) {
+                $row->fnf = $lockedFnf;
+            }
             $this->assertExitTypeUnchanged($lockedType, $row);
             $this->assertLastWorkingDayWithinNotice($row, $employee, $storedLwd);
             $row->employee_id          = $employee->id;
@@ -268,6 +284,19 @@ class ExitController extends Controller
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
+
+        /* Sealed once the settlement is paid. This document is what finance
+         * approved and paid AGAINST, so replacing it afterwards would leave the
+         * payment record pointing at paperwork nobody signed off. The UI locks
+         * the picker, but the endpoint has to refuse on its own — a stale tab
+         * left open before the payment would otherwise still post here. */
+        $paidRow = EmployeeExit::where('employee_id', $employee->id)->first();
+        if ($paidRow && $this->isFnfPaid($paidRow)) {
+            return response()->json([
+                'message' => 'This Full & Final has already been paid — its document can no longer be replaced.',
+                'errors'  => ['attachment' => ['The settlement is already paid.']],
+            ], 422);
+        }
 
         /* PDF or image only. The F&F attachment is the SIGNED sheet / payment
          * advice — a piece of evidence, not a working document. A spreadsheet
