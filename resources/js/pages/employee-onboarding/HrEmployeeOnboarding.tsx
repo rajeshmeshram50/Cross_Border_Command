@@ -1,4 +1,4 @@
-﻿import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
@@ -32,20 +32,20 @@ const ONB_LOCATION     = OPT('Pune HQ', 'Mumbai', 'Bengaluru');
 
 /* Same sentinel shape as ONB_CUSTOM_NOTICE, and for the same reason: the two
    forms write the same column, so a custom value typed in one has to round-trip
-   through the other. Employee had "Set Custom Probationâ€¦" and onboarding did
-   not â€” a 4-month probation could only be recorded by creating the employee
+   through the other. Employee had "Set Custom Probation…" and onboarding did
+   not — a 4-month probation could only be recorded by creating the employee
    here and then editing them there. */
 const ONB_CUSTOM_PROBATION = '__custom_probation__';
 const ONB_PROBATION    = [
   ...OPT('Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation'),
-  { value: ONB_CUSTOM_PROBATION, label: 'Set Custom Probationâ€¦' },
+  { value: ONB_CUSTOM_PROBATION, label: 'Set Custom Probation…' },
 ];
-/* Same sentinel string HrEmployees uses â€” the two forms write the same column,
+/* Same sentinel string HrEmployees uses — the two forms write the same column,
    so a value typed in one has to round-trip through the other. */
 const ONB_CUSTOM_NOTICE = '__custom_notice__';
 const ONB_NOTICE = [
   ...OPT('Default Notice Period', 'No Notice Period', '15 Days', '30 Days', '60 Days', '90 Days'),
-  { value: ONB_CUSTOM_NOTICE, label: 'Set Custom Notice Periodâ€¦' },
+  { value: ONB_CUSTOM_NOTICE, label: 'Set Custom Notice Period…' },
 ];
 
 /* Which saved values are ordinary dropdown picks (everything else means the
@@ -54,8 +54,8 @@ const ONB_NOTICE = [
  * DERIVED from the option lists on purpose. These used to be hand-written
  * copies, and the copy fell behind: 'No Notice Period' was added to
  * ONB_NOTICE but never to the preset list, so onboarding read a perfectly
- * normal pick as "custom" â€” the dropdown flipped to "Set Custom Notice
- * Periodâ€¦" with the words "No Notice Period" sitting in the text box, and
+ * normal pick as "custom" — the dropdown flipped to "Set Custom Notice
+ * Period…" with the words "No Notice Period" sitting in the text box, and
  * validation then demanded a number from it. The Employee form was fine
  * because it never derives this; it tracks the sentinel in its own state.
  * Deriving means the two can no longer drift. */
@@ -64,10 +64,10 @@ const presetValues = (opts: { value: string }[], custom: string) =>
 const ONB_NOTICE_PRESETS    = presetValues(ONB_NOTICE, ONB_CUSTOM_NOTICE);
 const ONB_PROBATION_PRESETS = presetValues(ONB_PROBATION, ONB_CUSTOM_PROBATION);
 
-/* No ONB_HOLIDAY / ONB_SHIFT constants â€” Holiday List is fed by the Holiday
+/* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
    Master (/holiday-groups) and Shift by the branch's configured Shift Details
    (/branch-shifts). Never hardcode either list. */
-/* Weekly-off patterns. These four strings are the CONTRACT with the backend â€”
+/* Weekly-off patterns. These four strings are the CONTRACT with the backend —
    App\Support\WeekOff::normalise() maps each one to a rule, so changing the
    wording here silently changes which days are off. Keep them in step.
    "Week Off Policy" and a bare "Rotational" used to sit in this list: neither
@@ -77,14 +77,14 @@ const ONB_PROBATION_PRESETS = presetValues(ONB_PROBATION, ONB_CUSTOM_PROBATION);
 const ONB_WEEKLY_OFF   = OPT(
   'Sunday Only',
   'Saturday & Sunday',
-  'Rotational â€” 1st & 3rd Saturday',
-  'Rotational â€” 2nd & 4th Saturday',
+  'Rotational — 1st & 3rd Saturday',
+  'Rotational — 2nd & 4th Saturday',
 );
 
 const ONB_TIME_TRACK   = OPT('Manual', 'Biometric');
 const ONB_PENALIZE     = OPT('Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty');
 // Overtime options now come from the Overtime (OT) Master (fetched at runtime),
-// gated behind an "Overtime Applicable" Yes/No toggle â€” see overtimeRateOpts.
+// gated behind an "Overtime Applicable" Yes/No toggle — see overtimeRateOpts.
 const ONB_EXPENSE      = OPT('Applicable', 'Not Applicable');
 const ONB_YES_NO       = OPT('No', 'Yes');
 const ONB_ACCESS_CARD  = OPT('Not Issued', 'Issued');
@@ -110,7 +110,7 @@ const VAULT_STATUS_COLOR: Record<VaultStatus, 'success' | 'danger' | 'warning' |
   'Not Generated': 'secondary',
 };
 
-// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Types ────────────────────────────────────────────────────────────────────
 type OnboardStatus =
   | 'Document Pending'
   | 'In Progress'
@@ -127,7 +127,7 @@ interface OnboardRow {
   accent: string;
   photoUrl?: string | null;
   joinDate: string;
-  /** Raw yyyy-mm-dd â€” joinDate is display text and cannot be compared. */
+  /** Raw yyyy-mm-dd — joinDate is display text and cannot be compared. */
   joinDateIso: string;
   department: string;
   designation: string;
@@ -143,16 +143,16 @@ interface OnboardRow {
    *  Initiate Onboarding modal can mark Stage 1 (Employee Onboarding Setup)
    *  as Completed once all 4 wizard steps are saved. */
   wizardStep?: number;
-  /** DB primary key â€” used by the Initiate Onboarding modal to PUT
+  /** DB primary key — used by the Initiate Onboarding modal to PUT
    *  edits back to /api/employees/{id}. */
   dbId?: number;
-  /** Raw ApiEmployee row â€” carries every field the Stage 1 form needs to
+  /** Raw ApiEmployee row — carries every field the Stage 1 form needs to
    *  pre-fill (work_country_id, gender, dob, addresses, payroll, etc.).
    *  Typed loosely because the modal reads many ad-hoc fields. */
   raw?: any;
 }
 
-// â”€â”€ Helpers â€” bridge API rows to the OnboardRow shape this page expects â”€â”€â”€â”€
+// ── Helpers — bridge API rows to the OnboardRow shape this page expects ────
 const ACCENT_PALETTE = ['#0ab39c','#7c5cfc','#f7b84b','#0ea5e9','#e83e8c','#299cdb','#f06548','#405189','#d63384','#108548'];
 const _hash = (s: string): number => {
   let h = 0;
@@ -161,15 +161,15 @@ const _hash = (s: string): number => {
 };
 const _accent = (s: string) => ACCENT_PALETTE[_hash(s) % ACCENT_PALETTE.length];
 const _initials = (s: string) =>
-  s.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || 'â€”';
+  s.split(/\s+/).filter(Boolean).slice(0, 2).map(p => p[0]?.toUpperCase() || '').join('') || '—';
 const _formatDate = (iso: string | null | undefined): string => {
-  if (!iso) return 'â€”';
+  if (!iso) return '—';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return String(iso).slice(0, 10);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-/** YYYY-MM-DD for today â€” used as max bound on date pickers that must
+/** YYYY-MM-DD for today — used as max bound on date pickers that must
  *  refer to past events (previous-employment start/end, etc.). Recomputed
  *  per call rather than memoized so a long-lived modal still resolves to
  *  "right now" when the user opens the picker. */
@@ -181,10 +181,10 @@ const _todayIso = (): string => {
 
 /* Today shifted by N years, as YYYY-MM-DD. Module-level so every component
  * (Initiate modal AND the public previous-employment section) can use it for
- * date-picker min/max bounds â€” a local copy lived only inside the Initiate
+ * date-picker min/max bounds — a local copy lived only inside the Initiate
  * modal and threw "_shiftYears is not defined" when used elsewhere. */
 /* An ISO date shifted by N days. Used to cap previous-employment dates at the
- * day BEFORE this employer's joining date â€” the two jobs cannot overlap. */
+ * day BEFORE this employer's joining date — the two jobs cannot overlap. */
 const _shiftIsoDays = (iso: string, days: number): string => {
   const d = new Date(`${iso}T00:00:00`);
   if (isNaN(d.getTime())) return iso;
@@ -192,16 +192,16 @@ const _shiftIsoDays = (iso: string, days: number): string => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-/* â”€â”€ Stage 3 asset slots â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Stage 3 asset slots ────────────────────────────────────────────────────
  * "Laptop Assigned" / "Mobile Assigned" are required questions, and "No" is a
- * complete answer to them â€” plenty of hires get neither.
+ * complete answer to them — plenty of hires get neither.
  *
  * The Stage 3 progress meter used to score a slot only when the answer was
  * *Yes with a device picked*, so an admin who correctly answered "No" watched
  * the stage sit at 0% with nothing left to fill in. Worse, the selects render
  * `value={flag || 'No'}`: an UNANSWERED slot displays the word "No" while the
  * state behind it is still empty, so the screen said answered and the meter
- * said not â€” exactly "status is not updated correctly".
+ * said not — exactly "status is not updated correctly".
  *
  * Answered = an explicit No, or a Yes with the device actually chosen. */
 const assetSlotAnswered = (flag?: string, assetId?: string): boolean =>
@@ -218,7 +218,7 @@ const EMAIL_INVALID = (v: string | null | undefined): boolean =>
 /* Addresses are stored and compared lower-case.
  *
  * The DOMAIN half is case-insensitive by spec, and every mail provider this
- * app talks to treats the LOCAL half that way too â€” so "Test@Gmail.com" and
+ * app talks to treats the LOCAL half that way too — so "Test@Gmail.com" and
  * "test@gmail.com" are one mailbox. Storing both spellings gives duplicate
  * employees that the uniqueness check cannot see, and a login typed in the
  * other case that fails to match. Normalising as the user types keeps one
@@ -254,7 +254,7 @@ const validateOfficialEmail = (raw: string | null | undefined): string => {
 
 /** Server-enforced cap for ANY uploaded document. Drives both the
  *  per-doc "max X MB" hint shown in the catalogue and the client-side
- *  guard in triggerUpload() â€” keeping them sourced from one constant
+ *  guard in triggerUpload() — keeping them sourced from one constant
  *  means a future bump only needs to change this one line. Mirrors
  *  EmployeeDocumentController::MAX_MB on the backend. */
 const DOC_MAX_MB = 8;
@@ -273,24 +273,24 @@ const DOC_ACCEPTED_EXTS  = ['pdf', 'jpg', 'jpeg', 'png', 'webp'] as const;
 const DOC_ACCEPT_ATTR    = DOC_ACCEPTED_MIMES.join(',');
 
 /* Uploaded file names ride in the document row's meta line, and a long one
- * (scanner output like "Quotation-QT_2026-27_10-unsigned-final-v3â€¦.pdf") pushes
+ * (scanner output like "Quotation-QT_2026-27_10-unsigned-final-v3….pdf") pushes
  * the status pill and the View / Replace / Delete buttons out of the row. Cut at
  * 90 characters; callers pair this with a tooltip so the full name is still
  * readable on hover. */
 const MAX_DOC_NAME_CHARS = 90;
 const truncateDocName = (name: string): string =>
-  name.length > MAX_DOC_NAME_CHARS ? `${name.slice(0, MAX_DOC_NAME_CHARS)}â€¦` : name;
+  name.length > MAX_DOC_NAME_CHARS ? `${name.slice(0, MAX_DOC_NAME_CHARS)}…` : name;
 
 /**
  * Map the wizard's progress + employee status to one of the existing
- * OnboardStatus pill values. The page already styles all of these â€” we
+ * OnboardStatus pill values. The page already styles all of these — we
  * just route to the right one based on real server state instead of
  * hard-coded mock entries.
  *
- *   wizard_step = 4 + status='Active'         â†’ Completed
- *   wizard_step = 4 + status='Inactive' (etc) â†’ Document Pending  (waiting for admin to activate)
- *   wizard_step = 1-3                          â†’ In Progress
- *   wizard_step = 0                            â†’ Not Started
+ *   wizard_step = 4 + status='Active'         → Completed
+ *   wizard_step = 4 + status='Inactive' (etc) → Document Pending  (waiting for admin to activate)
+ *   wizard_step = 1-3                          → In Progress
+ *   wizard_step = 0                            → Not Started
  */
 const _mapOnboardStatus = (raw: any): OnboardStatus => {
   const step  = Number(raw?.wizard_step_completed ?? 0);
@@ -303,16 +303,16 @@ const _mapOnboardStatus = (raw: any): OnboardStatus => {
 };
 
 const apiToOnboardRow = (e: any): OnboardRow => {
-  const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || 'â€”';
+  const name = (e.display_name || `${e.first_name ?? ''} ${e.last_name ?? ''}`).trim() || '—';
   const accent = _accent(name);
-  /* Manager â€” prefer the Employee-side relation, fall back to the
+  /* Manager — prefer the Employee-side relation, fall back to the
    * User-side relation (a login User like a Branch admin assigned as
    * manager but not onboarded as an Employee). */
   const mgr = e.reporting_manager;
   const mgrName = mgr?.display_name
     || (mgr ? [mgr.first_name, mgr.last_name].filter(Boolean).join(' ').trim() : '')
     || e.reporting_manager_user?.name
-    || 'â€”';
+    || '—';
   return {
     id: e.emp_code || `EMP-${e.id}`,
     empId: e.emp_code || `EMP-${e.id}`,
@@ -322,9 +322,9 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     photoUrl: (e as any).photo_url || null,
     joinDate: _formatDate(e.date_of_joining),
     joinDateIso: e.date_of_joining ? String(e.date_of_joining).slice(0, 10) : '',
-    department: e.department?.name || 'â€”',
-    designation: e.designation?.name || 'â€”',
-    primaryRole: e.primary_role?.name || 'â€”',
+    department: e.department?.name || '—',
+    designation: e.designation?.name || '—',
+    primaryRole: e.primary_role?.name || '—',
     ancillaryRole: e.ancillary_role?.name || '',
     ancillaryRoles: (Array.isArray(e.ancillary_roles_resolved) && e.ancillary_roles_resolved.length > 0)
       ? e.ancillary_roles_resolved.map((r: any) => r.name)
@@ -333,7 +333,7 @@ const apiToOnboardRow = (e: any): OnboardRow => {
     managerInitials: _initials(mgrName),
     managerAccent: _accent(mgrName || 'manager'),
     // Profile % = field-based completeness from the server's
-    // `profile_completion` accessor â€” so an employee with real profile data
+    // `profile_completion` accessor — so an employee with real profile data
     // shows a meaningful % even before the onboarding wizard advances (the
     // onboarding STAGE is tracked separately by the Status column). Falls
     // back to the legacy stage-based estimate only if the field is absent.
@@ -384,7 +384,7 @@ function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; pr
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
 }
 
-// Five KPI cards on top â€” colored top strip + subtle icon tile
+// Five KPI cards on top — colored top strip + subtle icon tile
 const KPI_CARDS = [
   { key: 'total',     label: 'Total Employees',           icon: 'ri-team-line',          tint: '#ece6ff', fg: '#7c5cfc', strip: '#7c5cfc', grad: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
   { key: 'progress',  label: 'Onboarding In Progress',    icon: 'ri-time-line',          tint: '#dceefe', fg: '#0c63b0', strip: '#3b82f6', grad: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
@@ -393,7 +393,7 @@ const KPI_CARDS = [
   { key: 'missing',   label: 'Missing Profile Details',   icon: 'ri-error-warning-line', tint: '#fdd9d6', fg: '#b1401d', strip: '#f06548', grad: 'linear-gradient(135deg,#f06548,#f8a08a)' },
 ] as const;
 
-// â”€â”€ Checklist data (matches the modal in the second image) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Checklist data (matches the modal in the second image) ───────────────────
 type CheckpointBadgeKind =
   | 'REQUIRED'
   | 'HOD REQUIRED'
@@ -475,7 +475,7 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
       { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
       { title: 'College ID / enrollment letter uploaded',        desc: 'Current semester enrollment proof from college/university',                       badges: ['INTERN REQUIRED'] },
-      { title: 'NOC from college / faculty submitted',           desc: 'If required by institution â€” No Objection Certificate for internship',            badges: ['INTERN OPTIONAL'] },
+      { title: 'NOC from college / faculty submitted',           desc: 'If required by institution — No Objection Certificate for internship',            badges: ['INTERN OPTIONAL'] },
     ],
   },
   {
@@ -505,11 +505,11 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Policies & Agreements',
     subtitle: 'Document generation, signing & digital acknowledgement',
     checkpoints: [
-      { title: 'NDA generated & signed',                  desc: 'Employee â†’ HR Manager â†’ Legal Â· Must be completed before Day 1',                         badges: ['REQUIRED', 'ALL'] },
-      { title: 'Internship agreement signed',             desc: 'Duration, deliverables, stipend, IP ownership, NDA â€” all parties signed',                badges: ['INTERN REQUIRED'] },
-      { title: 'Code of Conduct Policy acknowledged',     desc: 'Employee â†’ HR Manager Â· Digital acknowledgement',                                        badges: ['REQUIRED', 'ALL'] },
+      { title: 'NDA generated & signed',                  desc: 'Employee → HR Manager → Legal · Must be completed before Day 1',                         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Internship agreement signed',             desc: 'Duration, deliverables, stipend, IP ownership, NDA — all parties signed',                badges: ['INTERN REQUIRED'] },
+      { title: 'Code of Conduct Policy acknowledged',     desc: 'Employee → HR Manager · Digital acknowledgement',                                        badges: ['REQUIRED', 'ALL'] },
       { title: 'Leave & Attendance Policy acknowledged',  desc: 'Sign-off on leave types, attendance tracking & WFH policy',                              badges: ['REQUIRED', 'ALL'] },
-      { title: 'Confidentiality Agreement signed',        desc: 'Employee â†’ HR Manager Â· Binding throughout employment duration',                         badges: ['REQUIRED', 'ALL'] },
+      { title: 'Confidentiality Agreement signed',        desc: 'Employee → HR Manager · Binding throughout employment duration',                         badges: ['REQUIRED', 'ALL'] },
     ],
   },
   {
@@ -517,14 +517,14 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
     title: 'Final Verification & Activation',
     subtitle: 'HR review, stage validation & employee activation',
     checkpoints: [
-      { title: 'All 5 stages verified by HR',  desc: 'Setup, Documents, Provisioning, Payroll, Policies â€” each confirmed Verified',                       badges: ['REQUIRED', 'ALL'] },
-      { title: 'HR final sign-off obtained',   desc: 'Onboarding Coordinator / HR Manager final approval â€” no pending issues',                            badges: ['REQUIRED', 'ALL'] },
-      { title: 'Employee activated in system', desc: 'Status set to Active Â· Reporting manager notified Â· Full system access granted',                    badges: ['REQUIRED', 'ALL'] },
+      { title: 'All 5 stages verified by HR',  desc: 'Setup, Documents, Provisioning, Payroll, Policies — each confirmed Verified',                       badges: ['REQUIRED', 'ALL'] },
+      { title: 'HR final sign-off obtained',   desc: 'Onboarding Coordinator / HR Manager final approval — no pending issues',                            badges: ['REQUIRED', 'ALL'] },
+      { title: 'Employee activated in system', desc: 'Status set to Active · Reporting manager notified · Full system access granted',                    badges: ['REQUIRED', 'ALL'] },
     ],
   },
 ];
 
-// â”€â”€ Filter option lists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Filter option lists ──────────────────────────────────────────────────────
 const DEPT_OPTIONS = [
   { value: 'All',          label: 'All' },
   { value: 'Engineering',  label: 'Engineering' },
@@ -562,7 +562,7 @@ const EMPLOYEE_TYPES = [
   { id: 'non_it', label: 'Non-IT Employee',  icon: 'ri-book-2-line' },
 ] as const;
 
-// â”€â”€ Page â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrEmployeeOnboarding() {
   // Redirects to /hr/employees with a hint so the destination page can
   // open the full 4-step wizard for the chosen row.
@@ -574,12 +574,12 @@ export default function HrEmployeeOnboarding() {
   const [statusFilter, setStatusFilter] = useState<string>('All');
   const [checklistOpen, setChecklistOpen] = useState(false);
 
-  // â”€â”€ Live employee rows (replaces the old PENDING / COMPLETED mocks) â”€â”€
+  // ── Live employee rows (replaces the old PENDING / COMPLETED mocks) ──
   // Fetched once on mount; split into pending vs completed below based on
   // wizard progress + status. Empty array on error so the page still
   // renders (shows zero counts + empty table) instead of crashing.
   const [apiRows, setApiRows] = useState<OnboardRow[]>([]);
-  // True until the first /employees response settles â€” drives the
+  // True until the first /employees response settles — drives the
   // shimmer skeleton on the onboarding table.
   const [loadingRows, setLoadingRows] = useState(true);
   const reloadApiRows = () => {
@@ -587,7 +587,7 @@ export default function HrEmployeeOnboarding() {
       .then(r => {
         // Drop soft-deleted (disabled) employees. The /employees endpoint
         // returns trashed rows by default so the HR Employees "Disabled"
-        // tab can render them â€” but the Onboarding page is strictly a
+        // tab can render them — but the Onboarding page is strictly a
         // forward-motion surface, so showing a disabled employee here
         // led to the admin clicking "Initiate Onboarding" on an account
         // that can't even sign in. Filter at the boundary so every
@@ -621,7 +621,7 @@ export default function HrEmployeeOnboarding() {
     return { pending, completed };
   }, [apiRows]);
 
-  // Evidence Vault modal â€” opened from the Action column on the Completed tab
+  // Evidence Vault modal — opened from the Action column on the Completed tab
   const [vaultOpen, setVaultOpen] = useState(false);
   const [vaultEmp,  setVaultEmp]  = useState<OnboardRow | null>(null);
   const [vaultTab,  setVaultTab]  = useState<'employee' | 'organizational'>('employee');
@@ -632,20 +632,20 @@ export default function HrEmployeeOnboarding() {
   };
   const closeVault = () => { setVaultOpen(false); setVaultEmp(null); };
 
-  // Initiate Onboarding form â€” multi-stage flow (6 stages, Stage 1 has 4 steps)
+  // Initiate Onboarding form — multi-stage flow (6 stages, Stage 1 has 4 steps)
   const [initiateOpen, setInitiateOpen] = useState(false);
   const [initiateRow,  setInitiateRow]  = useState<OnboardRow | null>(null);
   const openInitiate = (row: OnboardRow) => { setInitiateRow(row); setInitiateOpen(true); };
   const closeInitiate = () => {
     setInitiateOpen(false);
     setInitiateRow(null);
-    // Reconcile the list once on close â€” stage-to-stage navigation now saves
+    // Reconcile the list once on close — stage-to-stage navigation now saves
     // silently (no per-step full reload), so refresh here to pick up the final
     // profile %, status and stage progress.
     reloadApiRows();
   };
 
-  // Edit Employee modal â€” opened from the Action column pencil button
+  // Edit Employee modal — opened from the Action column pencil button
   const [editOpen, setEditOpen] = useState(false);
   const [editRow,  setEditRow]  = useState<OnboardRow | null>(null);
   // Edit redirects to the HR Employees list with a navigation-state hint
@@ -669,7 +669,7 @@ export default function HrEmployeeOnboarding() {
   };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
 
-  // Pagination â€” mirrors the Employee page (rows-per-page dropdown, default 10).
+  // Pagination — mirrors the Employee page (rows-per-page dropdown, default 10).
   /* Paging lives in <DataTable> now. */
 
   // Reset the status filter + search when tabbing across (DataTable resets its
@@ -742,7 +742,7 @@ export default function HrEmployeeOnboarding() {
               </div>
             )}
             <div className="min-w-0">
-              {/* Long names clip to the column width â€” hover shows the full one. */}
+              {/* Long names clip to the column width — hover shows the full one. */}
               <Tooltip label={r.name} maxWidth={360}>
                 <div className="text-truncate" style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>{r.name}</div>
               </Tooltip>
@@ -760,7 +760,7 @@ export default function HrEmployeeOnboarding() {
       accessorKey: 'primaryRole',
       meta: { width: '9%' },
       /* Long role names ellipsise inside the pill and reveal on hover instead
-         of spilling under the next column â€” same contract as Designation. */
+         of spilling under the next column — same contract as Designation. */
       cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
     },
     {
@@ -783,10 +783,10 @@ export default function HrEmployeeOnboarding() {
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
-        /* Plain dash when there is no manager â€” rendering an avatar with a dash
+        /* Plain dash when there is no manager — rendering an avatar with a dash
          * inside (the old path) made the row taller than its neighbours and
          * pulled the column out of alignment with the header. */
-        if (r.managerName === 'â€”') return <span style={{ fontSize: 13 }} className="text-muted">â€”</span>;
+        if (r.managerName === '—') return <span style={{ fontSize: 13 }} className="text-muted">—</span>;
         return (
           <div className="d-flex align-items-center gap-2">
             <div
@@ -873,7 +873,7 @@ export default function HrEmployeeOnboarding() {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      /* 16% â‰ˆ 240px at the table's 1500px floor, which is what the Edit square
+      /* 16% ≈ 240px at the table's 1500px floor, which is what the Edit square
          (34) + gap (8) + the Initiate pill actually measure. At 13% the pair
          was wider than its own cell, so `justify-content:center` overflowed it
          evenly past both column edges (wrap:true leaves overflow visible) and
@@ -891,13 +891,13 @@ export default function HrEmployeeOnboarding() {
             </Tooltip>
           );
         }
-        /* Both buttons are flex-shrink:0 â€” without it the row's flex box
+        /* Both buttons are flex-shrink:0 — without it the row's flex box
            squeezed the 30px Edit square into a sliver and pushed the Initiate
            pill past the column edge. The Initiate button runs in its compact
            size here (`is-compact`) so the pair fits the Action column instead
            of overflowing into the page margin. */
-        /* Compared as yyyy-mm-dd strings, which sort correctly and â€” unlike a
-           Date â€” carry no time component, so "joins today" is not off by hours. */
+        /* Compared as yyyy-mm-dd strings, which sort correctly and — unlike a
+           Date — carry no time component, so "joins today" is not off by hours. */
         const notJoinedYet = !!r.joinDateIso && r.joinDateIso > new Date().toISOString().slice(0, 10);
         return (
           <div className="d-flex align-items-center justify-content-center gap-2 flex-nowrap">
@@ -908,11 +908,11 @@ export default function HrEmployeeOnboarding() {
             </Tooltip>
             {/* Onboarding cannot start before the person has actually joined.
                 A December joiner belongs on this list from the day they are
-                created â€” HR needs to see them coming â€” but starting the wizard
+                created — HR needs to see them coming — but starting the wizard
                 then would stamp joining-day paperwork months early. Enabled ON
                 the joining date, not after it. */}
             <Tooltip label={notJoinedYet
-              ? `Joins on ${r.joinDate} â€” onboarding opens that day`
+              ? `Joins on ${r.joinDate} — onboarding opens that day`
               : 'Start the onboarding wizard for this employee'}>
               <span className="d-inline-flex">
                 <button
@@ -941,7 +941,7 @@ export default function HrEmployeeOnboarding() {
 
       <div className="onb-page">
 
-      {/* â”€â”€ Header strip â€” same shape as the Clients / Branches headers. â”€â”€ */}
+      {/* ── Header strip — same shape as the Clients / Branches headers. ── */}
       <div className="frm-cstrip mb-3">
         <span className="frm-cstrip-accent" />
         <div className="frm-cstrip-left">
@@ -960,7 +960,7 @@ export default function HrEmployeeOnboarding() {
         </Button>
       </div>
 
-      {/* â”€â”€ KPI cards (own row, each its own card) â”€â”€ */}
+      {/* ── KPI cards (own row, each its own card) ── */}
       <Row className="g-3 mb-3 align-items-stretch">
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
@@ -1001,7 +1001,7 @@ export default function HrEmployeeOnboarding() {
         ))}
       </Row>
 
-      {/* Shared list table (components/ui/DataTable) â€” the tabs, search,
+      {/* Shared list table (components/ui/DataTable) — the tabs, search,
           sortable headers, rows-per-page pager and the fill-the-viewport
           sizing all live in the component now. */}
       <DataTable<OnboardRow>
@@ -1015,7 +1015,7 @@ export default function HrEmployeeOnboarding() {
         loading={loadingRows}
         searchValue={q}
         onSearchChange={setQ}
-        searchPlaceholder="Search name, ID, departmentâ€¦"
+        searchPlaceholder="Search name, ID, department…"
         tabs={[
           { key: 'pending',   label: 'Onboarding Pending (New Joiners)', icon: 'ri-time-line',            count: counts.pending },
           { key: 'completed', label: 'Onboarding Completed',             icon: 'ri-checkbox-circle-line', count: counts.completed },
@@ -1032,10 +1032,10 @@ export default function HrEmployeeOnboarding() {
 
       </div>{/* /.onb-page */}
 
-      {/* â”€â”€ Onboarding Checklist Modal â”€â”€ */}
+      {/* ── Onboarding Checklist Modal ── */}
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
 
-      {/* â”€â”€ Evidence Vault Modal â”€â”€ */}
+      {/* ── Evidence Vault Modal ── */}
       {/* The shared vault (components/EvidenceVaultModal) — one component for
           Onboarding, HR > Employees and Exit Management. It keys everything off
           the employee's db id, so an unsaved row (no dbId) has no vault. */}
@@ -1051,14 +1051,14 @@ export default function HrEmployeeOnboarding() {
         initialTab={vaultTab}
       />
 
-      {/* â”€â”€ Initiate Onboarding Form â”€â”€ */}
+      {/* ── Initiate Onboarding Form ── */}
       <InitiateOnboardingModal
         isOpen={initiateOpen}
         onClose={closeInitiate}
         emp={initiateRow}
         onSaved={() => {
           // Refresh ONLY the employee being edited (was reloading the entire
-          // /employees list on every save â€” the heavy part of the stage-nav
+          // /employees list on every save — the heavy part of the stage-nav
           // lag, BUG-030). Fetch the single row and patch it into both the
           // background list and the open modal's snapshot.
           const dbId = initiateRow?.dbId;
@@ -1071,7 +1071,7 @@ export default function HrEmployeeOnboarding() {
         }}
       />
 
-      {/* â”€â”€ Edit Employee Modal â”€â”€ */}
+      {/* ── Edit Employee Modal ── */}
       <EditEmployeeModal
         isOpen={editOpen}
         onClose={closeEdit}
@@ -1081,13 +1081,13 @@ export default function HrEmployeeOnboarding() {
   );
 }
 
-// â”€â”€ Edit Employee modal â€” opens from the pencil icon in the Action column â”€â”€
+// ── Edit Employee modal — opens from the pencil icon in the Action column ──
 const EDIT_DEPT_OPTIONS = DEPT_OPTIONS.filter(o => o.value !== 'All');
 const EDIT_STATUS_OPTIONS = OPT('Active', 'On Probation', 'Inactive');
 const EDIT_WORK_TYPE_OPTIONS = OPT('Full Time', 'Part Time', 'Contract', 'Intern');
 
 function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose: () => void; emp: OnboardRow | null }) {
-  // Local form state â€” derived from emp on open and reset on close.
+  // Local form state — derived from emp on open and reset on close.
   const [firstName, setFirstName]     = useState('');
   const [lastName,  setLastName]      = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -1139,7 +1139,7 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
 
       <ModalBody className="p-0">
         <div className="onb-ee-header">
-          {/* No top-right X â€” footer has Cancel; one dismiss path. */}
+          {/* No top-right X — footer has Cancel; one dismiss path. */}
           <div className="d-flex align-items-center gap-3">
             <span className="onb-ee-icon"><i className="ri-user-3-line" style={{ fontSize: 20 }} /></span>
             <div className="min-w-0">
@@ -1232,13 +1232,13 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
   );
 }
 
-/* â”€â”€ Signed documents archive â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Signed documents archive ──────────────────────────────────────────────
  * Shared by the Evidence Vault's Organizational tab and the onboarding
  * wizard's Stage 5, both of which otherwise list only templates the
  * /hr-document-templates/match endpoint still returns for the employee's
- * CURRENT department Ã— designation Ã— trigger point. A signed document has to
+ * CURRENT department × designation × trigger point. A signed document has to
  * outlive all three: the employee moves department, the template is renamed
- * or deprecated, the run came from another module (Exit Management) â€” and the
+ * or deprecated, the run came from another module (Exit Management) — and the
  * signed copy is still the evidence. This section reads the signing runs
  * directly, so anything the employee actually signed shows up.
  */
@@ -1280,7 +1280,7 @@ const fmtSignedStamp = (iso?: string | null): string => {
 };
 
 export function SignedDocumentsSection({ runs, emptyHint }: {
-  /** Raw /hr-document-signatures rows â€” filtered to Completed in here. */
+  /** Raw /hr-document-signatures rows — filtered to Completed in here. */
   runs: SignedDocRun[];
   emptyHint?: string;
 }) {
@@ -1382,21 +1382,21 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                     )}
                     {older.length > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
-                        Â· {older.length} earlier cop{older.length === 1 ? 'y' : 'ies'}
+                        · {older.length} earlier cop{older.length === 1 ? 'y' : 'ies'}
                       </span>
                     )}
                   </h6>
                   <p className="onb-pol-doc-sub">
                     {docType}
-                    {' Â· '}{signerCount} signer{signerCount === 1 ? '' : 's'}
-                    {when ? ` Â· Signed ${fmtSignedStamp(when)}` : ''}
+                    {' · '}{signerCount} signer{signerCount === 1 ? '' : 's'}
+                    {when ? ` · Signed ${fmtSignedStamp(when)}` : ''}
                   </p>
                 </div>
                 <span className="onb-pol-doc-status" style={{ color: '#10b981' }}>
                   <span className="dot" style={{ background: '#10b981' }} />
                   Signed
                 </span>
-                {/* View â€” the run's frozen HTML already has each signer's PNG
+                {/* View — the run's frozen HTML already has each signer's PNG
                     merged in, so this IS the signed document, not a re-render
                     of the blank template. */}
                 <button
@@ -1416,7 +1416,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                   title="Download the signed PDF (all signatures embedded)"
                   style={{ marginLeft: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', border: 0, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}
                 >
-                  <i className={busy ? 'ri-loader-4-line onb-spin' : 'ri-file-pdf-2-line'} /> {busy ? 'Downloadingâ€¦' : 'Download'}
+                  <i className={busy ? 'ri-loader-4-line onb-spin' : 'ri-file-pdf-2-line'} /> {busy ? 'Downloading…' : 'Download'}
                 </button>
                 <span
                   className="onb-pol-doc-chev"
@@ -1450,7 +1450,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                           )}
                           {s.acted_at && (
                             <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 500, marginTop: 1 }}>
-                              Signed Â· {fmtSignedStamp(s.acted_at)}
+                              Signed · {fmtSignedStamp(s.acted_at)}
                             </span>
                           )}
                         </span>
@@ -1477,7 +1477,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                           <i className="ri-file-pdf-2-line" style={{ color: '#0e7490' }} />
                           <span style={{ flex: 1, minWidth: 0 }}>
                             {o.code || `Run #${o.id}`}
-                            <span style={{ color: 'var(--vz-secondary-color)' }}> Â· {fmtSignedStamp(signedRunAt(o))}</span>
+                            <span style={{ color: 'var(--vz-secondary-color)' }}> · {fmtSignedStamp(signedRunAt(o))}</span>
                           </span>
                           <button type="button" onClick={(e) => { e.stopPropagation(); setViewRun(o); }}
                             style={{ background: 'transparent', border: 0, color: 'var(--vz-secondary-color)', cursor: 'pointer', fontSize: 12 }}>
@@ -1499,7 +1499,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
         })}
       </div>
 
-      {/* Signed-copy viewer â€” the run's frozen HTML in the page chrome */}
+      {/* Signed-copy viewer — the run's frozen HTML in the page chrome */}
       <Modal isOpen={!!viewRun} toggle={() => setViewRun(null)} size="lg" centered
         contentClassName="border-0" modalClassName="vault-preview-modal" backdrop="static">
         <ModalBody className="p-0">
@@ -1514,8 +1514,8 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                     {viewRun?.template?.name || viewRun?.code || 'Signed Document'}
                   </h5>
                   <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
-                    Signed copy{viewRun?.code ? ` Â· ${viewRun.code}` : ''}
-                    {viewRun && signedRunAt(viewRun) ? ` Â· ${fmtSignedStamp(signedRunAt(viewRun))}` : ''}
+                    Signed copy{viewRun?.code ? ` · ${viewRun.code}` : ''}
+                    {viewRun && signedRunAt(viewRun) ? ` · ${fmtSignedStamp(signedRunAt(viewRun))}` : ''}
                   </div>
                 </div>
               </div>
@@ -1554,7 +1554,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
                 className="tpl-prev-btn"
                 style={{ padding: '7px 14px', background: 'linear-gradient(135deg,#0891b2,#0e7490)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: downloadingId === viewRun.id ? 'wait' : 'pointer' }}>
                 <i className={downloadingId === viewRun.id ? 'ri-loader-4-line onb-spin me-1' : 'ri-file-pdf-2-line me-1'} />
-                {downloadingId === viewRun.id ? 'Downloadingâ€¦' : 'Download PDF'}
+                {downloadingId === viewRun.id ? 'Downloading…' : 'Download PDF'}
               </button>
             )}
           </div>
@@ -1565,7 +1565,7 @@ export function SignedDocumentsSection({ runs, emptyHint }: {
 }
 
 
-// Small helper â€” renders a compact preview of the template's configured
+// Small helper — renders a compact preview of the template's configured
 // signing workflow inside the Send confirmation modal. Pulls signers from
 // the template row so the user sees the exact chain before they hit Send.
 function SendWorkflowPreview({ templateId }: { templateId: number | null }) {
@@ -1611,7 +1611,7 @@ const menuItemStyle: React.CSSProperties = {
   fontSize: 13, color: 'var(--vz-body-color, #374151)', cursor: 'pointer',
 };
 
-// â”€â”€ Checklist modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Checklist modal ──────────────────────────────────────────────────────────
 function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [level, setLevel] = useState<string>('all');
   const [empType, setEmpType] = useState<string>('all');
@@ -1673,7 +1673,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
             <div className="min-w-0">
               <h5 className="onb-cl-title">Employee Onboarding Checklist</h5>
               <div className="onb-cl-sub">
-                {CHECKLIST_STAGES.length} stages Â· {CHECKLIST_STAGES.reduce((a, s) => a + s.checkpoints.length, 0)} checkpoints Â· Filtered by Designation &amp; Employee Type
+                {CHECKLIST_STAGES.length} stages · {CHECKLIST_STAGES.reduce((a, s) => a + s.checkpoints.length, 0)} checkpoints · Filtered by Designation &amp; Employee Type
               </div>
             </div>
           </div>
@@ -1711,7 +1711,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
               ))}
             </div>
             <span className="onb-cl-summary">
-              {levelLabel} Â· {typeLabel === 'All' ? 'All Types' : `${typeLabel}s`}
+              {levelLabel} · {typeLabel === 'All' ? 'All Types' : `${typeLabel}s`}
             </span>
           </div>
         </div>
@@ -1725,7 +1725,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
                   <i className="ri-user-line" style={{ fontSize: 14 }} />
                 </span>
                 <div className="min-w-0">
-                  <p className="onb-stage-title">Stage {s.num} â€” {s.title}</p>
+                  <p className="onb-stage-title">Stage {s.num} — {s.title}</p>
                   <p className="onb-stage-sub">{s.subtitle}</p>
                 </div>
                 <span className="onb-stage-count">{s.checkpoints.length} checkpoints</span>
@@ -1761,7 +1761,7 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
 
         {/* Footer */}
         <div className="onb-cl-footer">
-          <span className="hint">{levelLabel} Â· {typeLabel} Â· {totalCheckpoints} checkpoints visible</span>
+          <span className="hint">{levelLabel} · {typeLabel} · {totalCheckpoints} checkpoints visible</span>
           <button type="button" className="onb-cl-close" onClick={onClose}>Close</button>
         </div>
       </ModalBody>
@@ -1769,8 +1769,8 @@ function ChecklistModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => v
   );
 }
 
-// â”€â”€ Initiate Onboarding form modal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// 6 stages â€” the 1st two are fully laid out (Setup with 4 sub-steps,
+// ── Initiate Onboarding form modal ──────────────────────────────────────────
+// 6 stages — the 1st two are fully laid out (Setup with 4 sub-steps,
 // Documents with file-upload sections); the rest are placeholders.
 type StageStatus = 'Completed' | 'In Progress' | 'Pending';
 const ONB_STAGES: { num: number; key: string; label: string; stage: string; sub: string; icon: string; status: StageStatus; progress: number }[] = [
@@ -1782,8 +1782,8 @@ const ONB_STAGES: { num: number; key: string; label: string; stage: string; sub:
   { num: 6, key: 'verify',    label: 'Verify',    stage: 'Final Verification & Activation',sub: 'Final review and activation of employee record', icon: 'ri-checkbox-circle-line', status: 'Pending', progress: 0 },
 ];
 
-// â”€â”€ Stage 2 â€” Document catalogue (matches the screenshots) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Per-doc size standards (in MB) â€” capped at DOC_MAX_MB (the absolute
+// ── Stage 2 — Document catalogue (matches the screenshots) ──────────────────
+// Per-doc size standards (in MB) — capped at DOC_MAX_MB (the absolute
 // ceiling the backend will accept). Lower numbers mirror what govt /
 // HR portals typically allow, which is also what employees expect:
 //   - Photos:           2 MB
@@ -1807,31 +1807,31 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   {
     id: 'identity', title: 'Identity Documents', icon: 'ri-profile-line', tint: '#ece6ff', fg: '#5a3fd1',
     docs: [
-      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image Â· max 2 MB', maxMb: 2, status: 'Pending' },
-      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image Â· max 2 MB', maxMb: 2, status: 'Pending' },
-      { id: 'photo',      name: 'Passport-size Photograph',    sub: 'JPG / PNG Â· max 2 MB',    maxMb: 2, status: 'Pending' },
+      { id: 'aadhaar',    name: 'Aadhaar Card (Front & Back)', sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'pan',        name: 'PAN Card',                    sub: 'PDF or Image · max 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'photo',      name: 'Passport-size Photograph',    sub: 'JPG / PNG · max 2 MB',    maxMb: 2, status: 'Pending' },
     ],
   },
   {
     id: 'address', title: 'Address Proof', icon: 'ri-map-pin-line', tint: '#dceefe', fg: '#0c63b0',
     docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement â€” max 6 months old Â· 2 MB', maxMb: 2, status: 'Pending' },
-      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof Â· max 2 MB',                    maxMb: 2, status: 'Pending' },
+      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 2 MB',                    maxMb: 2, status: 'Pending' },
     ],
   },
   {
     id: 'education', title: 'Education Documents', icon: 'ri-graduation-cap-line', tint: '#d3f0ee', fg: '#0a716a',
     docs: [
-      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet Â· max 2 MB',         maxMb: 2, status: 'Pending'  },
-      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet Â· max 2 MB',         maxMb: 2, status: 'Pending'  },
-      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate Â· 2 MB', maxMb: 2, status: 'Pending'  },
-      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable Â· max 2 MB',                          maxMb: 2, status: 'Optional' },
+      { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
+      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
+      { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate · 2 MB', maxMb: 2, status: 'Pending'  },
+      { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable · max 2 MB',                          maxMb: 2, status: 'Optional' },
     ],
   },
   {
     id: 'bank', title: 'Bank Details', icon: 'ri-money-dollar-circle-line', tint: '#d6f4e3', fg: '#108548',
     docs: [
-      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible Â· max 2 MB', maxMb: 2, status: 'Pending' },
+      { id: 'cheque', name: 'Cancelled Cheque', sub: 'Cancelled cheque leaf with account number & IFSC clearly visible · max 2 MB', maxMb: 2, status: 'Pending' },
     ],
   },
 ];
@@ -1894,13 +1894,13 @@ function InitiateOnboardingModal({
           api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } }),
         ]);
         if (cancelled) return;
-        // Same list Stage5Policies renders â€” it drops leave/attendance
+        // Same list Stage5Policies renders — it drops leave/attendance
         // templates, and counting a document here that the stage never shows
         // made the sidebar % disagree with the rows on screen.
         const tpls: any[] = (Array.isArray(tplRes.data?.templates) ? tplRes.data.templates : [])
           .filter((t: any) => !/\b(leave|attendance)\b/i.test(t.name || ''));
         const runs: any[] = Array.isArray(runRes.data) ? runRes.data : [];
-        // Latest run per template_id (highest id wins) â€” a 'Completed' run = signed.
+        // Latest run per template_id (highest id wins) — a 'Completed' run = signed.
         const latest = new Map<number, any>();
         runs.forEach(r => { const t = r.template_id; if (t == null) return; const p = latest.get(t); if (!p || r.id > p.id) latest.set(t, r); });
         setStage5Total(tpls.length);
@@ -1914,7 +1914,7 @@ function InitiateOnboardingModal({
      modal opens, so signing a document mid-session left the sidebar at 0%
      even though Stage 5 already showed the row as "Signed". Stage5Policies
      refetches its runs after every send/sign, so let it drive these counts
-     while it's mounted. Stable identity â€” it's an onProgress dependency. */
+     while it's mounted. Stable identity — it's an onProgress dependency. */
   const handleStage5Progress = useCallback((p: { signed: number; total: number }) => {
     setStage5Signed(p.signed);
     setStage5Total(p.total);
@@ -1922,7 +1922,7 @@ function InitiateOnboardingModal({
 
   // The employee's SAVED salary structure (the exact components HR entered in
   // the employee form). The salary breakup prefers these real figures and only
-  // falls back to a 50/30/20 auto-split when nothing has been saved yet â€” so
+  // falls back to a 50/30/20 auto-split when nothing has been saved yet — so
   // editing the breakup in the employee form reflects here too.
   const [savedBreakup, setSavedBreakup] = useState<{ earnings: any[]; deductions: any[]; pf: boolean } | null>(null);
   useEffect(() => {
@@ -1955,10 +1955,10 @@ function InitiateOnboardingModal({
   // Reset to stage 1 each time a new employee opens
   useEffect(() => { if (isOpen) setActiveStage(1); }, [isOpen, emp?.id]);
 
-  // Validation errors state â€” tracks which fields have errors
+  // Validation errors state — tracks which fields have errors
   // const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 
-  // â”€â”€ Master data â€” fetched once when the modal first opens. Everything
+  // ── Master data — fetched once when the modal first opens. Everything
   //    Stage 1 needs to populate its dropdowns: countries (work + nationality),
   //    departments, designations, roles, legal entities, eligible managers.
   //    All scoped server-side to the inviting tenant.
@@ -1966,13 +1966,13 @@ function InitiateOnboardingModal({
   const [mDepts, setMDepts]               = useState<{ id: number; name: string }[]>([]);
   const [mDesignations, setMDesignations] = useState<{ id: number; name: string }[]>([]);
   const [mRoles, setMRoles]               = useState<{ id: number; name: string }[]>([]);
-  /* Legal entities = the client's BRANCHES â€” the branch carries the GST/PAN/CIN
+  /* Legal entities = the client's BRANCHES — the branch carries the GST/PAN/CIN
      and bank accounts, so that is what an employee is hired into. `location`
      (city + country) is composed server-side so every form that offers this
      picker fills the Location field identically. */
   const [mLegalEntities, setMLegalEntities] = useState<{ id: number; name: string; city?: string | null; country?: string | null; location?: string }[]>([]);
   const [managerOpts, setManagerOpts]       = useState<{ value: string; label: string; deptId?: string; isHod?: boolean }[]>([]);
-  // Leave plans need to come from the API (admin-defined per branch) â€” the
+  // Leave plans need to come from the API (admin-defined per branch) — the
   // Add Employee form stores the plan id as the saved value, so a hardcoded
   // ["Leave Policy"] list would leave the onboarding dropdown blank for
   // every employee assigned a real plan.
@@ -1980,8 +1980,8 @@ function InitiateOnboardingModal({
   // Overtime rate options sourced from the Overtime (OT) Master. Only Active
   // rates are offered; the picker appears once "Overtime Applicable" = Yes.
   const [overtimeRateOpts, setOvertimeRateOpts] = useState<{ value: string; label: string }[]>([]);
-  /* Re-readable so the picker's onOpen can refresh it â€” an edit in
-     Master â€º Overtime (OT) then shows up without a page reload. Only ACTIVE
+  /* Re-readable so the picker's onOpen can refresh it — an edit in
+     Master › Overtime (OT) then shows up without a page reload. Only ACTIVE
      rows are ever offered. `isStale` lets the mount-time effect abort. */
   const reloadOvertimeRates = useCallback((isStale: () => boolean = () => false) =>
     api.get('/master/overtime_rates').then(r => {
@@ -1994,11 +1994,11 @@ function InitiateOnboardingModal({
       );
     }).catch(() => { if (!isStale()) setOvertimeRateOpts([]); }), []);
   // Explicit Yes/No toggle. Derived from the saved `overtime` value on
-  // hydrate (a stored rate â‡’ Yes) but kept as its own state so toggling to
+  // hydrate (a stored rate ⇒ Yes) but kept as its own state so toggling to
   // Yes before a rate is picked still reveals the picker.
   const [overtimeApplicable, setOvertimeApplicable] = useState('No');
-  // Holiday groups come from the Holiday Master (HR â€º Holiday â€º Groups), same
-  // source as the Add Employee form â€” which stores the GROUP ID, so a
+  // Holiday groups come from the Holiday Master (HR › Holiday › Groups), same
+  // source as the Add Employee form — which stores the GROUP ID, so a
   // hardcoded name list would leave this dropdown blank for every employee
   // already assigned a real group.
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
@@ -2010,7 +2010,7 @@ function InitiateOnboardingModal({
   // While the master fetch below is in flight the async dropdowns shimmer
   // instead of flashing the saved raw id (work country showed "101" until
   // /master/countries landed, then swapped to the name). Starts true so the
-  // very first paint after opening â€” before the fetch effect commits â€”
+  // very first paint after opening — before the fetch effect commits —
   // already shimmers.
   const [mastersLoading, setMastersLoading] = useState(true);
   useEffect(() => {
@@ -2025,7 +2025,7 @@ function InitiateOnboardingModal({
       api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
       api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
-      // Branches, not the legal-entities master â€” see the mLegalEntities note.
+      // Branches, not the legal-entities master — see the mLegalEntities note.
       api.get('/branch-legal-entities')
         .then(r => { if (!cancelled) setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []); })
         .catch(() => { if (!cancelled) setMLegalEntities([]); }),
@@ -2036,7 +2036,7 @@ function InitiateOnboardingModal({
           ...((r?.data?.login_users ?? []) as any[]),
         ];
         // Strip the row currently being onboarded out of the manager
-        // list â€” an employee can never report to themselves. Matches
+        // list — an employee can never report to themselves. Matches
         // by kind+id so we don't accidentally remove a login_user
         // that happens to share a numeric id with this employee.
         const selfId = emp?.dbId ?? null;
@@ -2048,7 +2048,7 @@ function InitiateOnboardingModal({
       api.get('/leave-plans').then(r => {
         if (cancelled) return;
         const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        // Only surface plans whose quota setup is fully complete â€” draft /
+        // Only surface plans whose quota setup is fully complete — draft /
         // unconfigured plans must not be assignable to an employee.
         setLeavePlanOpts(
           plans
@@ -2056,7 +2056,7 @@ function InitiateOnboardingModal({
             .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
         );
       }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
-      // Overtime (OT) Master â€” active rate names for the Overtime picker.
+      // Overtime (OT) Master — active rate names for the Overtime picker.
       reloadOvertimeRates(() => cancelled),
       api.get('/holiday-groups')
         .then(r => { if (!cancelled) setMHolidayGroups(Array.isArray(r.data) ? r.data : []); })
@@ -2070,7 +2070,7 @@ function InitiateOnboardingModal({
             .map((s: any) => ({
               value: s.name,
               // Timing beside the name so the picker is self-explanatory.
-              label: s.start && s.end ? `${s.name} (${s.start}â€“${s.end})` : s.name,
+              label: s.start && s.end ? `${s.name} (${s.start}–${s.end})` : s.name,
             })));
         })
         .catch(() => { if (!cancelled) setBranchShiftOpts([]); }),
@@ -2081,25 +2081,25 @@ function InitiateOnboardingModal({
   const countryOpts     = mCountries.map(c => ({ value: String(c.id), label: c.name }));
   const departmentOpts  = mDepts.map(d => ({ value: String(d.id), label: d.name }));
   // 'Director / CEO' is the Branch User's role (the branch director), not an
-  // assignable employee designation â€” keep it out of the picker (mirrors the
+  // assignable employee designation — keep it out of the picker (mirrors the
   // Add Employee form).
   const designationOpts = mDesignations
     .filter(d => d?.name !== 'Director / CEO')
     .map(d => ({ value: String(d.id), label: d.name }));
-  // Id of the "Head of Department (HOD)" designation â€” an HOD must report to a
+  // Id of the "Head of Department (HOD)" designation — an HOD must report to a
   // Branch User (Director / CEO); this gates the manager picker + validation.
   const hodDesignationId = (() => {
     const h = mDesignations.find(d => d?.name === 'Head of Department (HOD)');
     return h ? String(h.id) : '';
   })();
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
-  /* Holiday List â€” only ACTIVE groups are assignable. A group that was
+  /* Holiday List — only ACTIVE groups are assignable. A group that was
      deactivated after this employee was assigned to it is appended (flagged
      "Inactive") so the saved value still renders instead of showing blank. */
   const holidayGroupOpts = mHolidayGroups
     .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
     .map(g => ({ value: String(g.id), label: g.name }));
-  // (`holidayGroupSelectOpts` â€” which folds in the saved-but-inactive group â€”
+  // (`holidayGroupSelectOpts` — which folds in the saved-but-inactive group —
   // is built below, once the `s1` form state exists.)
   /* Legal Entity is auto-fetched, not picked: an onboardee is always hired into
      the branch the form is filled under. `autoLegalEntity` is the single branch
@@ -2108,8 +2108,8 @@ function InitiateOnboardingModal({
      field stays empty until a branch is chosen. */
   const autoLegalEntity = mLegalEntities.length === 1 ? mLegalEntities[0] : null;
 
-  // â”€â”€ Asset pickers (Step 3) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Three independent lists â€” Laptop / Mobile / Other. We fetch the
+  // ── Asset pickers (Step 3) ─────────────────────────────────────────
+  // Three independent lists — Laptop / Mobile / Other. We fetch the
   // available pool from the server so devices already booked by other
   // employees stay out, but the asset currently on THIS employee's
   // row (exclude_employee_id=...) remains visible so the admin can
@@ -2120,12 +2120,12 @@ function InitiateOnboardingModal({
   const [laptopAssets, setLaptopAssets] = useState<AssetOpt[]>([]);
   const [mobileAssets, setMobileAssets] = useState<AssetOpt[]>([]);
   const [otherAssets, setOtherAssets]   = useState<AssetOpt[]>([]);
-  // Same shimmer treatment as mastersLoading â€” a saved asset FK must not
+  // Same shimmer treatment as mastersLoading — a saved asset FK must not
   // flash as a raw id while the available-assets fetch is in flight.
   const [assetsLoading, setAssetsLoading] = useState(true);
   /* Re-runnable: the free-asset list goes stale the moment ANOTHER user (or
      another tab) claims a device, and this was fetched once when the modal
-     opened. A taken asset then still showed in the picker â€” it couldn't
+     opened. A taken asset then still showed in the picker — it couldn't
      actually be saved (the server rejects a double-booking), but offering it
      and failing on save is a bad way to find out. The pickers call this on
      open so the list is current at the moment of choosing.
@@ -2139,7 +2139,7 @@ function InitiateOnboardingModal({
         value: String(a.id),
         label: a.label || a.asset_name,
         /* Device still linked to this slot but re-categorised in the Asset
-           master since (Laptop â†’ Mobile). Without this row the select had no
+           master since (Laptop → Mobile). Without this row the select had no
            option matching the saved id and fell back to printing the raw id. */
         ...(a.stale_category
           ? { badge: { text: 'Category changed', tone: 'red' as const } }
@@ -2160,7 +2160,7 @@ function InitiateOnboardingModal({
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId, reloadAssets]);
 
-  // â”€â”€ Stage 1 form state â€” every field that maps to a column on
+  // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
   //    modal opens for a new employee so the inputs always reflect what
   //    the server actually has. Save Draft pushes the diff back via PUT.
@@ -2184,13 +2184,13 @@ function InitiateOnboardingModal({
     primary_role_id:  '',
     /* Ancillary roles are MULTI-valued (`employees.ancillary_role_ids`); the
        scalar `ancillary_role_id` is a legacy mirror of the first one. This
-       form used to bind the scalar, which both displayed one role and â€” on
-       save â€” made the backend collapse the array to that single id, wiping
+       form used to bind the scalar, which both displayed one role and — on
+       save — made the backend collapse the array to that single id, wiping
        the rest. Bind the array. */
     ancillary_role_ids: [] as string[],
     legal_entity_id:  '',
     location:         '',
-    // Composite "kind:id" â€” picker stores employee:{id} or {kind}:{id}.
+    // Composite "kind:id" — picker stores employee:{id} or {kind}:{id}.
     // Save handler unpacks and only commits the FK when kind === 'employee'.
     reporting_manager: '',
     date_of_joining:  '',
@@ -2201,9 +2201,9 @@ function InitiateOnboardingModal({
     attendance_number: '', time_tracking: '', penalization_policy: '',
     overtime: '', expense_policy: '',
     // Legacy free-text asset fields kept for backwards-compat hydration
-    // only â€” UI now drives the FK columns below.
+    // only — UI now drives the FK columns below.
     laptop_assigned: '', laptop_asset_id: '', mobile_device: '', other_assets: '',
-    // Stage 1 Step 3 â€” asset FK assignments. `laptop_master_asset_id` /
+    // Stage 1 Step 3 — asset FK assignments. `laptop_master_asset_id` /
     // `mobile_master_asset_id` are single ids (string for select binding),
     // `other_master_asset_ids` is an array of ids. `mobile_assigned`
     // mirrors `laptop_assigned` so we can show/hide the picker.
@@ -2211,8 +2211,8 @@ function InitiateOnboardingModal({
     mobile_assigned: '',
     mobile_master_asset_id: '',
     other_master_asset_ids: [] as string[],
-    // Stage 3 â€” Physical Setup & Identification. Status fields start blank so
-    // HR must consciously pick a value (bugs #36/#37 â€” a pre-selected default
+    // Stage 3 — Physical Setup & Identification. Status fields start blank so
+    // HR must consciously pick a value (bugs #36/#37 — a pre-selected default
     // let wrong info save silently).
     biometric_status:    '',
     desk_workstation_no: '',
@@ -2223,12 +2223,12 @@ function InitiateOnboardingModal({
     pay_group: '', annual_salary: '', salary_frequency: 'Per annum',
     salary_effective_from: '', salary_structure: '', tax_regime: '',
     bonus_in_annual: false, pf_eligible: false, detailed_breakup: false,
-    pf_type: 'Statutory',   // 'Statutory' (â‚¹15k cap) | 'Standard' (full basic)
+    pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
   /* Notice period: is the free-text box showing?
    *
-   * Two ways it opens â€” the user picks "Set Custom Notice Periodâ€¦", or an
+   * Two ways it opens — the user picks "Set Custom Notice Period…", or an
    * EXISTING employee already holds a value that is not one of the presets
    * (e.g. "45 Days" typed on the Employee form). The second case matters
    * because both forms write the same column: without it, reopening
@@ -2254,7 +2254,7 @@ function InitiateOnboardingModal({
     return opts;
   })();
 
-  /* Shift options as rendered. Branch-configured shifts are the ONLY source â€”
+  /* Shift options as rendered. Branch-configured shifts are the ONLY source —
      no hardcoded fallback, so an unconfigured branch shows an empty list with
      a hint rather than misleading defaults. The employee's already-saved shift
      is kept at the top (flagged "current") so editing never blanks an older
@@ -2271,7 +2271,7 @@ function InitiateOnboardingModal({
     : 'Select shift';
 
   /* Overtime rate options as rendered. Only ACTIVE rows from the Overtime (OT)
-     Master are offered â€” same rule as every other master-backed picker here.
+     Master are offered — same rule as every other master-backed picker here.
      An employee already saved against a rate that has since been deactivated
      keeps it visible (flagged) so opening the form can't silently blank their
      policy on the next save; it is never offered to anyone else. */
@@ -2282,13 +2282,13 @@ function InitiateOnboardingModal({
       value: saved,
       label: `${saved} (inactive)`,
       disabled: true,
-      disabledReason: 'This rate is no longer Active in Master â€º Overtime (OT). Pick a current rate.',
+      disabledReason: 'This rate is no longer Active in Master › Overtime (OT). Pick a current rate.',
     }];
   })();
 
   // Snapshot of the name as last persisted on the server. Drives the
   // read-only "Employee Actual Name" field so the legal name stays
-  // pinned to the saved value while the HR is editing first/middle/last â€”
+  // pinned to the saved value while the HR is editing first/middle/last —
   // only the Display Name preview moves with live input.
   const [actualNameSnapshot, setActualNameSnapshot] = useState('');
 
@@ -2304,17 +2304,17 @@ useEffect(() => {
     gender:      String(x.gender ?? ''),
     date_of_birth: x.date_of_birth ? String(x.date_of_birth).slice(0, 10) : '',
     // Blood group is captured on the wizard but not yet on the employees
-    // table â€” UI-only for now. If/when a column is added the same key
+    // table — UI-only for now. If/when a column is added the same key
     // will flow through the existing saveStage1 payload.
     blood_group: String(x.blood_group ?? ''),
     nationality_country_id: x.nationality_country_id ? String(x.nationality_country_id) : '',
     work_country_id:        x.work_country_id        ? String(x.work_country_id)        : '',
-    // Work email â€” MUST hydrate from the server value. After Save Draft /
+    // Work email — MUST hydrate from the server value. After Save Draft /
     // Next Stage the parent reloads /employees, which gives us a fresh
     // emp.raw reference and re-fires this effect. If we leave email blank
     // here the user's typed value disappears the moment they navigate
-    // away and back. Official email mirrors the work email by default â€”
-    // they're the same address â€” but stays editable on Stage 3 so HR can
+    // away and back. Official email mirrors the work email by default —
+    // they're the same address — but stays editable on Stage 3 so HR can
     // override it if the company issues a separate alias.
     email:       String(x.email ?? ''),
     official_email: String(x.official_email ?? x.email ?? ''),
@@ -2330,7 +2330,7 @@ useEffect(() => {
       : (x.ancillary_role_id ? [String(x.ancillary_role_id)] : []),
     legal_entity_id:  x.legal_entity_id  ? String(x.legal_entity_id)  : '',
     location:         String(x.location ?? ''),
-    /* Reporting manager picker stores "kind:id" â€” rebuild from whichever
+    /* Reporting manager picker stores "kind:id" — rebuild from whichever
      * column the backend filled. reporting_manager_user is eager-loaded
      * by EmployeeController so we know its user_type and can produce
      * the right kind prefix. Without this fallback the field was empty
@@ -2360,10 +2360,10 @@ useEffect(() => {
     mobile_device:       String(x.mobile_device       ?? ''),
     other_assets:        String(x.other_assets        ?? ''),
     laptop_master_asset_id: x.laptop_master_asset_id ? String(x.laptop_master_asset_id) : '',
-    // No legacy free-text "Mobile Assigned" column â€” derive Yes/No
+    // No legacy free-text "Mobile Assigned" column — derive Yes/No
     // from whether a mobile asset is currently selected.
     /* Stored flag first; the old derivation is only a fallback for rows saved
-       before the column existed. Deriving it was the bug â€” "Yes" with no device
+       before the column existed. Deriving it was the bug — "Yes" with no device
        chosen had nowhere to live and came back as "No". */
     mobile_assigned:     String(x.mobile_assigned ?? '') || (x.mobile_master_asset_id || x.mobile_device ? 'Yes' : ''),
     mobile_master_asset_id: x.mobile_master_asset_id ? String(x.mobile_master_asset_id) : '',
@@ -2387,15 +2387,15 @@ useEffect(() => {
     pf_type:               String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory',
     detailed_breakup:      !!x.detailed_breakup,
   });
-  // Pin the actual-name display to whatever the server currently has â€”
+  // Pin the actual-name display to whatever the server currently has —
   // typing into first/middle/last after this point only moves the
   // Display Name preview, not the legal name.
   setActualNameSnapshot(
     [x.first_name, x.middle_name, x.last_name]
       .filter(Boolean).join(' ').trim() || emp.name || ''
   );
-  // Derive the Overtime Applicable toggle from the saved value â€” any real
-  // stored rate â‡’ Yes; blank / legacy "Not applicable" â‡’ No.
+  // Derive the Overtime Applicable toggle from the saved value — any real
+  // stored rate ⇒ Yes; blank / legacy "Not applicable" ⇒ No.
   const ot = String(x.overtime ?? '').trim();
   setOvertimeApplicable(ot && ot.toLowerCase() !== 'not applicable' ? 'Yes' : 'No');
 }, [isOpen, emp?.id, emp?.raw]);
@@ -2419,19 +2419,19 @@ useEffect(() => {
     || (emp?.raw as any)?.legal_entity?.name
     || '';
 
-  // â”€â”€ Form validation state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Form validation state ──────────────────────────────────────────
 const [s1Errors, setS1Errors] = useState<Record<string, string>>({});
 const [nextLoading, setNextLoading] = useState(false);
 
   // Freeze the whole stage form while an EXPLICIT save (Save Draft / Next
-  // Stage) is in flight â€” previously the fields stayed editable during the
+  // Stage) is in flight — previously the fields stayed editable during the
   // PUT, so users could keep typing mid-save and the form looked saved while
   // holding unsaved edits. Silent background saves fired by stage navigation
   // (goToStage) deliberately do NOT lock, preserving the BUG-030
   // fire-and-forget navigation speed.
   const [formLocked, setFormLocked] = useState(false);
 
-  // â”€â”€ Reporting-manager rule (org hierarchy: employee â†’ dept HOD â†’ Branch User).
+  // ── Reporting-manager rule (org hierarchy: employee → dept HOD → Branch User).
   // A non-HOD hire reports to their department's HOD when one exists; until then
   // to a Branch User (the backend re-parents them to the HOD once it's added).
   // An HOD reports to a Branch User (the branch Director / CEO).
@@ -2442,7 +2442,7 @@ const [nextLoading, setNextLoading] = useState(false);
   // Non-HOD hire: Branch User(s) are always eligible; employees are scoped to the
   // SELECTED department, so the list reacts to the chosen department instead of
   // listing the whole company. The department's HOD is one of those employees
-  // and is auto-selected below. HOD hire â†’ Branch User(s) only.
+  // and is auto-selected below. HOD hire → Branch User(s) only.
   let reportingMgrOpts = isHodSelected
     ? branchUserMgrOpts
     : selectedDeptId
@@ -2454,7 +2454,7 @@ const [nextLoading, setNextLoading] = useState(false);
   if (savedMgrOpt && !reportingMgrOpts.some(o => o.value === savedMgrOpt.value)) {
     reportingMgrOpts = [savedMgrOpt, ...reportingMgrOpts];
   }
-  // Auto-point a non-HOD hire at the department HOD once one exists â€” but only
+  // Auto-point a non-HOD hire at the department HOD once one exists — but only
   // when nothing is set or the current pick is the "temporary" Branch User the
   // HOD now supersedes; never override a manager deliberately chosen.
   useEffect(() => {
@@ -2477,7 +2477,7 @@ const [completeNotes, setCompleteNotes] = useState('');
 // the user doesn't see red borders from a previous attempt.
 useEffect(() => { if (isOpen) setS1Errors({}); }, [isOpen, emp?.id]);
 
-// â”€â”€ Date-field bounds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Date-field bounds ─────────────────────────────────────────────
 // Computed once per render. Each MasterDatePicker hides days outside
 // its [minDate, maxDate] window so the user can't even click on, say,
 // 2012 for a salary-effective-from. validateStage1 also re-checks the
@@ -2496,12 +2496,12 @@ const dobMax = _shiftYears(-18);
  *
  * Mirrors the Add/Edit Employee form, which already refuses a past joining
  * date. Onboarding allowed anything back to 5 years, so the same employee
- * could be given a past start here that the Employee form would reject â€”
+ * could be given a past start here that the Employee form would reject —
  * two forms writing one column under two different rules.
  *
  * The escape hatch is the same one the Employee form uses: a date the record
  * ALREADY holds stays valid. Every employee mid-onboarding whose start day has
- * since passed would otherwise be frozen â€” Stage 1 would refuse to advance
+ * since passed would otherwise be frozen — Stage 1 would refuse to advance
  * until someone falsified their real joining date. So the floor is today, or
  * the stored date when that is older; only a NEWLY chosen past date is
  * rejected. */
@@ -2523,7 +2523,7 @@ const salaryMax = _shiftYears(1);
 // probation-completion email job reads it directly. Read-only in the UI.
 const onbProbation = resolveProbation(s1.probation_policy, s1.date_of_joining);
 
-// Ordered list of required field keys â€” drives both validation and
+// Ordered list of required field keys — drives both validation and
 // scroll-to-first-error so the user lands on the topmost missing field
 // in form order rather than alphabetical map order.
 const STAGE1_FIELD_ORDER = [
@@ -2570,19 +2570,19 @@ const scrollToFirstError = (errors: Record<string, string>) => {
   if (first) scrollToField(first);
 };
 
-/* â”€â”€ Bank name â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/* ── Bank name ──────────────────────────────────────────────────────────────
  * Real bank names are words, optionally with punctuation: "HDFC Bank",
  * "Bank of Baroda", "HDFC Bank Ltd.", "Kotak & Co.", "St. George's".
  * A purely numeric entry is almost always the ACCOUNT NUMBER typed into the
- * wrong box â€” worse than a blank field, because the stage looks filled in and
+ * wrong box — worse than a blank field, because the stage looks filled in and
  * the payroll handoff carries a garbage payee name.
  *
  * Two separate questions, deliberately kept apart so the message can say which
  * one failed:
- *   bankNameHasLetters â€” is there a word in it at all?
- *   BANK_NAME_RE       â€” is every character one we allow?
+ *   bankNameHasLetters — is there a word in it at all?
+ *   BANK_NAME_RE       — is every character one we allow?
  * Both must hold. Exported as one helper so the Save gate, the readiness
- * checks and the pending-issues list can never drift apart again â€” the
+ * checks and the pending-issues list can never drift apart again — the
  * readiness gate only tested `.trim()`, which is why "12456789999()555" still
  * showed 4/4 green. */
 const BANK_NAME_RE = /^[A-Za-z0-9\s'&.\-(),/]+$/;
@@ -2599,10 +2599,10 @@ const validateStage1 = (): boolean => {
   // Personal Information - Required
   if (!s1.first_name?.trim()) errors.first_name = 'First name is required';
   if (!s1.last_name?.trim()) errors.last_name = 'Last name is required';
-  // Work Country is required â€” drives tax / compliance / leave defaults
+  // Work Country is required — drives tax / compliance / leave defaults
   // downstream, so we can't let the wizard advance without it.
   if (!s1.work_country_id?.toString().trim()) errors.work_country_id = 'Work country is required';
-  // Date of Birth â€” required + age 18 sanity check. The picker already
+  // Date of Birth — required + age 18 sanity check. The picker already
   // hides invalid days, but a user could paste an ISO string into the
   // bound state from hydration, so we re-check here.
   const dob = s1.date_of_birth?.trim() ?? '';
@@ -2626,7 +2626,7 @@ const validateStage1 = (): boolean => {
     if (msg) errors.email = msg.replace('Official email', 'Work email');
   }
 
-  /* Asset pickers â€” required only while the matching "Assigned" answer is Yes.
+  /* Asset pickers — required only while the matching "Assigned" answer is Yes.
      The Employee form has enforced this from the start; onboarding let the
      picker be left empty, so an employee could be onboarded marked as holding a
      laptop that the asset register never linked to anyone. */
@@ -2646,19 +2646,19 @@ const validateStage1 = (): boolean => {
   if (!mobile) {
     errors.mobile = 'Mobile number is required';
   } else if (mobileDigits.length < 6 || mobileDigits.length > 15) {
-    // Match the Add Employee form (HrEmployees.tsx): 6â€“15 digits covers
+    // Match the Add Employee form (HrEmployees.tsx): 6–15 digits covers
     // every reasonable international format (E.164 max is 15). Anything
     // saved by Add Employee must pass this validator too, otherwise
     // existing rows fail re-save in the onboarding wizard.
-    errors.mobile = 'Mobile must be 6â€“15 digits';
+    errors.mobile = 'Mobile must be 6–15 digits';
   }
 
-  // Joining date â€” required + bounded (no 1990 entries, no 2050 entries).
+  // Joining date — required + bounded (no 1990 entries, no 2050 entries).
   const doj = s1.date_of_joining?.trim() ?? '';
   if (!doj) {
     errors.date_of_joining = 'Joining date is required';
   } else if (doj < joinTodayIso && doj !== joinDateOrig) {
-    errors.date_of_joining = 'Joining date canâ€™t be in the past';
+    errors.date_of_joining = 'Joining date can’t be in the past';
   } else if (doj > joinMax) {
     errors.date_of_joining = 'Joining date cannot be more than a year in the future';
   }
@@ -2667,7 +2667,7 @@ const validateStage1 = (): boolean => {
   // Postgres numeric(14, 2) max is 999,999,999,999.99. Anything larger
   // overflows the column and surfaces as a 500 from the server. Guard
   // here so the user gets a friendly inline error instead.
-  // Only enforce the salary fields when payroll is enabled â€” mirrors the
+  // Only enforce the salary fields when payroll is enabled — mirrors the
   // employee form, which skips all Compensation validation when the "Enable
   // payroll" toggle is off (salary details don't apply then).
   if (s1.enable_payroll !== false) {
@@ -2689,17 +2689,17 @@ const validateStage1 = (): boolean => {
     }
   }
 
-  // Job Details â€” Department / Designation / Primary Role are required.
+  // Job Details — Department / Designation / Primary Role are required.
   if (!s1.department_id?.toString().trim())   errors.department_id   = 'Department is required';
   if (!s1.designation_id?.toString().trim())  errors.designation_id  = 'Designation is required';
   if (!s1.primary_role_id?.toString().trim()) errors.primary_role_id = 'Primary role is required';
   /* Custom notice period is free text ("45 Days", "2 months"), so the number is
-     read out of it. Nothing checked it at all here, so "0" was accepted â€” and a
+     read out of it. Nothing checked it at all here, so "0" was accepted — and a
      zero-day notice period is an immediate exit dressed up as one.
      Same rule as the Employee form's step 2. */
   if (probationIsCustom) {
     const n = parseInt(String(s1.probation_policy ?? ''), 10);
-    if (!String(s1.probation_policy ?? '').trim()) errors.probation_policy = 'Please enter the probation months (1â€“12)';
+    if (!String(s1.probation_policy ?? '').trim()) errors.probation_policy = 'Please enter the probation months (1–12)';
     else if (!Number.isInteger(n) || n < 1 || n > 12) errors.probation_policy = 'Probation months must be between 1 and 12';
   }
   if (noticeIsCustom) {
@@ -2717,15 +2717,15 @@ const validateStage1 = (): boolean => {
   // A role can't be both Primary and Ancillary for the same employee.
   else if ((s1.ancillary_role_ids ?? []).some((id: string) => String(id) === String(s1.primary_role_id))) errors.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
 
-  // Organisational Details â€” Legal Entity + Reporting Manager are required.
-  // Auto-fetched â€” empty only when no single branch resolved ("All Branches").
-  if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Pick a branch in the branch switcher â€” the legal entity is taken from it';
+  // Organisational Details — Legal Entity + Reporting Manager are required.
+  // Auto-fetched — empty only when no single branch resolved ("All Branches").
+  if (!s1.legal_entity_id?.toString().trim()) errors.legal_entity_id = 'Pick a branch in the branch switcher — the legal entity is taken from it';
   if (!s1.reporting_manager?.toString().trim()) errors.reporting_manager = 'Reporting manager is required';
   else if (hodDesignationId && String(s1.designation_id) === hodDesignationId
            && !String(s1.reporting_manager).startsWith('branch_user:'))
     errors.reporting_manager = 'An HOD must report to a Branch User (Director / CEO).';
 
-  // Work Details â€” Expense Policy is required (marked * in the form).
+  // Work Details — Expense Policy is required (marked * in the form).
   if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
 
   setS1Errors(errors);
@@ -2755,7 +2755,7 @@ const validateStage1 = (): boolean => {
   // };
 
   /** Push the current Stage 1 form values to the backend as a PUT. The
-   *  server already accepts partial PATCHes â€” fields the wizard hasn't
+   *  server already accepts partial PATCHes — fields the wizard hasn't
    *  saved yet stay null on the row. wizard_step_completed gets bumped
    *  by the controller's high-watermark logic only if we send a higher
    *  value, so passing 4 here marks the wizard fully done. */
@@ -2764,7 +2764,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // Skip Stage-1 specific validation when called from later stages
   // (e.g. Stage 3 re-uses saveStage1 to persist its asset/provisioning
   // fields). Without this escape, an employee with any missing Stage 1
-  // field â€” even one the user already saved â€” would silently block
+  // field — even one the user already saved — would silently block
   // Stage 3 saves, and the user's just-typed Stage 3 data would
   // disappear on modal close.
   if (!skipValidate && !validateStage1()) return false;
@@ -2777,8 +2777,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     };
     // Reporting manager uses a composite "kind:id" so the picker can host
     // both employees and login users in one list. The backend has two
-    // columns â€” reporting_manager_id (FK â†’ employees) and
-    // reporting_manager_user_id (FK â†’ users) â€” and only one is populated
+    // columns — reporting_manager_id (FK → employees) and
+    // reporting_manager_user_id (FK → users) — and only one is populated
     // per record. Split the picker value and route to the correct
     // column; explicit-null the other side so reassignments wipe the
     // previous link.
@@ -2796,7 +2796,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       department_id:    intOrNull(s1.department_id),
       designation_id:   intOrNull(s1.designation_id),
       primary_role_id:  intOrNull(s1.primary_role_id),
-      // Send the ARRAY â€” the controller normalises it and mirrors the first
+      // Send the ARRAY — the controller normalises it and mirrors the first
       // entry into the legacy `ancillary_role_id` column. Sending the scalar
       // instead made it collapse the array to one id (data loss).
       ancillary_role_ids: (s1.ancillary_role_ids ?? [])
@@ -2810,7 +2810,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // the legacy `holiday_list` name column in sync (same as Add Employee).
       holiday_group_id: intOrNull(s1.holiday_list),
       holiday_list:     mHolidayGroups.find(g => String(g.id) === String(s1.holiday_list))?.name || null,
-      // PF type â†’ backend expects lowercase; only meaningful when PF applies.
+      // PF type → backend expects lowercase; only meaningful when PF applies.
       pf_type:     s1.pf_eligible ? String(s1.pf_type).toLowerCase() : null,
       // Empty strings to null for nullable string columns
       first_name:  s1.first_name.trim() || null,
@@ -2830,7 +2830,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       probation_months:   onbProbation.months,
       probation_end_date: onbProbation.endIso || null,
     };
-    // Strip the composite picker key â€” backend doesn't know about it.
+    // Strip the composite picker key — backend doesn't know about it.
     delete payload.reporting_manager;
     // mobile_assigned is a real column now (same as laptop_assigned), so it
     // travels with the rest of the payload instead of being stripped.
@@ -2844,12 +2844,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // save / close so the background list stays in sync.
       if (!silent) {
         onSaved?.();
-        // Success feedback â€” `markComplete` means the wizard finished Stage 1
+        // Success feedback — `markComplete` means the wizard finished Stage 1
         // entirely; otherwise it's a partial save (Stage 3 advance, etc).
         if (markComplete) {
           toast.success('Stage 1 saved', 'Setup details persisted.');
         } else if (skipValidate) {
-          // Save Draft path â€” partial save without marking the stage complete.
+          // Save Draft path — partial save without marking the stage complete.
           toast.success('Draft saved', 'Your changes have been saved. You can finish the rest later.');
         } else {
           toast.success('Saved', 'Your changes have been persisted.');
@@ -2867,7 +2867,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const msg = firstFieldMsg
         || err?.response?.data?.message
         || err?.message
-        || 'Could not save changes â€” please try again.';
+        || 'Could not save changes — please try again.';
       toast.error('Save failed', String(msg));
       console.error('saveStage1 failed', err?.response?.data || err);
       return false;
@@ -2877,11 +2877,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
   };
 
-  // â”€â”€ Stage 2 â€” document state lifted to the modal scope â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Stage 2 — document state lifted to the modal scope ──────────────
   // MUST run on every render (not after the `if (!emp) return null` early
   // exit below). Hooks have to be in the same order across renders or
   // React fires the "change in the order of Hooks" warning we hit when
-  // emp went from null â†’ populated.
+  // emp went from null → populated.
   const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
   useEffect(() => {
     if (!isOpen || !emp?.dbId) return;
@@ -2892,11 +2892,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
 
-  // â”€â”€ Stage 4 â€” Payroll & Finance Setup state (lifted to modal so the
+  // ── Stage 4 — Payroll & Finance Setup state (lifted to modal so the
   //    sidebar progress + footer gating + Save Draft button can read it).
   const [s4Saving, setS4Saving] = useState(false);
   // Flipped true when the user tries to advance/save Stage 4 with missing or
-  // invalid required fields â€” drives the red `is-invalid` highlight so they can
+  // invalid required fields — drives the red `is-invalid` highlight so they can
   // see exactly which fields the "complete required fields" toast refers to.
   const [s4ShowErrors, setS4ShowErrors] = useState(false);
   const [s4, setS4] = useState({
@@ -2923,7 +2923,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     const x = emp.raw;
     const mode = String(x.salary_payment_mode ?? 'bank').toLowerCase();
     setS4({
-      // Cash is no longer offered â€” a legacy `cash` record falls back to Bank
+      // Cash is no longer offered — a legacy `cash` record falls back to Bank
       // Transfer so the radio group never loads with nothing selected.
       salary_payment_mode: mode === 'cheque' ? 'cheque' : 'bank',
       bank_name:           String(x.bank_name           ?? ''),
@@ -2940,7 +2940,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       gratuity_nominee_name: String(x.gratuity_nominee_name ?? ''),
       // Agreed CTC mirrors the Stage 1 annual salary (read-only). Derive it
       // straight from the saved annual_salary here so it shows IMMEDIATELY on
-      // open â€” seeding from the (often-null) saved agreed_ctc_lpa left it blank
+      // open — seeding from the (often-null) saved agreed_ctc_lpa left it blank
       // until the salary was edited/re-saved, and this init re-running on an
       // emp.raw refresh clobbered the mirror effect's value (bug #42).
       agreed_ctc_lpa:      (() => {
@@ -2951,15 +2951,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     });
   }, [isOpen, emp?.id, emp?.raw]);
 
-  // Stage 4 "Agreed CTC (LPA)" mirrors the Stage 1 annual salary (â‚¹ â†’ lakhs
-  // per annum) â€” read-only here, so always keep it in sync.
+  // Stage 4 "Agreed CTC (LPA)" mirrors the Stage 1 annual salary (₹ → lakhs
+  // per annum) — read-only here, so always keep it in sync.
   useEffect(() => {
     const annual = Number(s1.annual_salary);
     const lpa = annual > 0 ? String(+(annual / 100000).toFixed(2)) : '';
     setS4(p => (p.agreed_ctc_lpa === lpa ? p : { ...p, agreed_ctc_lpa: lpa }));
   }, [s1.annual_salary]);
 
-  // Stage 4 "PF Type" (held in pf_deduction) mirrors the Stage 1 PF Type â€”
+  // Stage 4 "PF Type" (held in pf_deduction) mirrors the Stage 1 PF Type —
   // read-only here, so always keep it in sync.
   useEffect(() => {
     const t = s1.pf_type || 'Statutory';
@@ -2968,7 +2968,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   /** PUT s4 fields back to the employee row. `markComplete` stamps
    *  `stage4_completed_at` so the sidebar marks Stage 4 done and Next
-   *  Stage gets unblocked. We never clear the timestamp from here â€” once
+   *  Stage gets unblocked. We never clear the timestamp from here — once
    *  Stage 4 is complete, edits keep the row marked complete (matches
    *  the wizard_step_completed high-watermark behaviour). */
 //  const validateStage1 = (): boolean => {
@@ -3000,13 +3000,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
    *   Draft / Next Stage but wrong for the Previous button and the sidebar:
    *   clicking Previous fired "Bank details required" at a user who was
    *   walking BACK, not forward. In that mode an incomplete stage simply is
-   *   not persisted â€” silently, with nothing written and nothing said. The
+   *   not persisted — silently, with nothing written and nothing said. The
    *   typed values stay in `s4` for as long as the modal is open.
    */
   const saveStage4 = async (markComplete: boolean, silent = false, skipValidate = false): Promise<boolean> => {
     if (!emp?.dbId || s4Saving) return false;
 
-    /* Hard validation â€” when salary mode is "bank" the full bank
+    /* Hard validation — when salary mode is "bank" the full bank
      * details block is required before the row can be persisted at
      * all (not just before marking the stage complete). Previously
      * Save Draft + Next happily wrote the row with blank bank fields
@@ -3022,7 +3022,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (!s4.bank_name.trim())            missing.push('Bank Name');
       else if (!isValidBankName(s4.bank_name)) missing.push('Bank Name (letters, not just digits)');
       if (!acc)                            missing.push('Account Number');
-      else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9â€“18 digits)');
+      else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9–18 digits)');
       if (!ifsc)                           missing.push('IFSC Code');
       else if (!IFSC_RE.test(ifsc))        missing.push('IFSC Code (e.g. HDFC0000350)');
       if (!s4.account_holder_name.trim())  missing.push('Account Holder Name');
@@ -3040,7 +3040,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       }
     }
 
-    // PAN format hard-block â€” a malformed PAN (wrong length / pattern, e.g.
+    // PAN format hard-block — a malformed PAN (wrong length / pattern, e.g.
     // 'ABCD1234E' or '12345ABCDE') must be REJECTED before the save, not just
     // flagged with an inline hint. Mirrors the AAAAA9999A rule the backend
     // also enforces, so the user gets a clear message instead of a raw 422.
@@ -3048,7 +3048,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (panVal && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(panVal)) {
       if (skipValidate) return false;
       setS4ShowErrors(true);   // highlight the PAN field
-      toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A â€” 5 letters, 4 digits, then 1 letter.');
+      toast.error('Invalid PAN', 'PAN must be in the format AAAAA9999A — 5 letters, 4 digits, then 1 letter.');
       return false;
     }
 
@@ -3102,7 +3102,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     }
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
-      setS4ShowErrors(false);   // saved cleanly â€” drop any error highlight
+      setS4ShowErrors(false);   // saved cleanly — drop any error highlight
       onSaved?.();
       return true;
     } catch (err: any) {
@@ -3113,7 +3113,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const msg = firstFieldMsg
         || err?.response?.data?.message
         || err?.message
-        || 'Could not save changes â€” please try again.';
+        || 'Could not save changes — please try again.';
       toast.error('Save failed', String(msg));
       console.error('saveStage4 failed', err?.response?.data || err);
       return false;
@@ -3140,7 +3140,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
    *  validation. Drives BOTH the Next button and the sidebar
    *  `goToStage` so forward navigation is impossible until the
    *  mandatory fields on the active stage are filled. Backward jumps
-   *  ignore this â€” already-visited stages can be revisited freely. */
+   *  ignore this — already-visited stages can be revisited freely. */
   const canAdvanceFromActiveStage = (): { ok: boolean; reason?: string } => {
     if (activeStage === 1) {
       return validateStage1()
@@ -3148,8 +3148,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         : { ok: false, reason: 'Fill in every required field on Onboarding Setup before continuing.' };
     }
     if (activeStage === 2) {
-      // Stage 2's ref-exposed validate() reports WHY it failed â€” read `.ok`,
-      // never the object itself (it is always truthy) â€” and reuse its message
+      // Stage 2's ref-exposed validate() reports WHY it failed — read `.ok`,
+      // never the object itself (it is always truthy) — and reuse its message
       // so this tooltip matches the toast the user gets on Next Stage.
       const v = stage2Ref.current?.validate?.() ?? { ok: true };
       return v.ok
@@ -3163,7 +3163,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         : { ok: false, reason: emailErr };
     }
     if (activeStage === 4) {
-      // Mirrors the readiness checks rendered inside Stage4Payroll â€”
+      // Mirrors the readiness checks rendered inside Stage4Payroll —
       // bank block valid for the chosen payment mode + PAN + UAN
       // format + agreed CTC + PF deduction.
       if (stage4Pass === stage4Total4 && stage4UanOk) return { ok: true };
@@ -3171,7 +3171,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       return {
         ok: false,
         reason: stage4Problems.length
-          ? `${stage4Problems.map(x => x.label).join(', ')} â€” ${stage4Problems[0].message}`
+          ? `${stage4Problems.map(x => x.label).join(', ')} — ${stage4Problems[0].message}`
           : 'Bank details, PAN, CTC and PF deduction must all be valid before moving on.',
       };
     }
@@ -3187,14 +3187,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   };
 
   /** Navigate to a different stage without losing in-flight edits.
-   *  Stages 1, 3, 4 have bound state â€” flush them to the backend first
+   *  Stages 1, 3, 4 have bound state — flush them to the backend first
    *  (skipValidate so a partially-filled stage doesn't block the save
    *  call), then switch. Used by both the Previous button and the
    *  sidebar stage cards so clicking around the wizard never silently
    *  drops user input.
    *
    *  Forward jumps (target > activeStage) are gated on
-   *  canAdvanceFromActiveStage() â€” previously the sidebar let users
+   *  canAdvanceFromActiveStage() — previously the sidebar let users
    *  click any stage card regardless of validation, so they hopped
    *  past required fields and only hit errors at final submission.
    *  Backward jumps stay free. */
@@ -3223,12 +3223,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // Persist any typed-but-unblurred Previous-Employment rows so
       // the user doesn't lose Company Name / Job Title / dates on
       // navigation. onBlur fires the same persistCompany under the
-      // hood â€” flushing here just kicks any rows that haven't been.
+      // hood — flushing here just kicks any rows that haven't been.
       void stage2Ref.current?.flush();
     } else if (from === 3) {
       void saveStage1(false, true, true);
     } else if (from === 4) {
-      void saveStage4(false, true, true);   // silent + skipValidate â€” this is navigation
+      void saveStage4(false, true, true);   // silent + skipValidate — this is navigation
     }
   };
 
@@ -3243,16 +3243,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   // Per-stage status. Stage 1 is special: it represents the 4-step wizard
   // we already persist on /api/employees, so its progress comes straight
-  // from `emp.wizardStep` (0-4 â†’ 0-100%) and stays Completed once the
-  // wizard is fully saved â€” even if the user navigates back to Stage 1
+  // from `emp.wizardStep` (0-4 → 0-100%) and stays Completed once the
+  // wizard is fully saved — even if the user navigates back to Stage 1
   // to review. Stages 2-6 keep the old "based on user navigation" logic
   // because they don't have backend persistence yet.
   const wizardStep = Math.max(0, Math.min(4, Number(emp.wizardStep ?? 0)));
-  // Live Stage 1 progress â€” derived from how many of the 7 required Stage 1
+  // Live Stage 1 progress — derived from how many of the 7 required Stage 1
   // fields the user has filled in s1 right now. This makes the sidebar bar
   // move every time the user types/selects, instead of jumping in 25%
   // chunks only after Save Draft. Once the wizard is fully saved on the
-  // server, lock at 100% (server is authoritative â€” covers cases where
+  // server, lock at 100% (server is authoritative — covers cases where
   // the form is empty on reopen for a Completed employee).
   // Mirror the validateStage1 required set so the sidebar % / 100%-gate match
   // exactly what blocks "Next Stage" (Job + Organisational details included).
@@ -3283,8 +3283,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     : Math.max(stage1LivePct, wizardStep * 25);
 
   // Stage 2 progress is anchored to the document upload count. Counts
-  // BOTH catalogue docs (Aadhaar, PAN, â€¦) AND per-company docs (one set
-  // of 4 per persisted previous-employment row). Required-only â€” Optional
+  // BOTH catalogue docs (Aadhaar, PAN, …) AND per-company docs (one set
+  // of 4 per persisted previous-employment row). Required-only — Optional
   // catalogue rows are excluded from `total` so an "Optional" never
   // permanently caps the percentage below 100%.
   const stage2RequiredCatalogueKeys = STAGE2_CATEGORIES.flatMap(cat =>
@@ -3322,13 +3322,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage2Pct = stage2Total ? Math.round((stage2Uploaded / stage2Total) * 100) : 0;
   const stage2Done = stage2Total > 0 && stage2Uploaded >= stage2Total;
 
-  // Stage 3 progress â€” mirrored from the same `tasksDone / 4` calculation
+  // Stage 3 progress — mirrored from the same `tasksDone / 4` calculation
   // inside Stage3Provisioning, but computed here so the sidebar reflects
   // it without the user having to navigate to Stage 3. Each "task" maps
   // to one of the four provisioning areas (laptop, mobile, other-assets,
   // physical security like biometric/desk/ID card).
   /* Two REQUIRED slots only. Other Assets is labelled "(optional)" and the
-     Physical Setup fields carry no `*`, yet both used to be worth 25% each â€”
+     Physical Setup fields carry no `*`, yet both used to be worth 25% each —
      so a stage with every required question answered still read 50% and could
      never reach Completed without filling optional fields. A progress meter
      that counts optional work can't ever show done. */
@@ -3337,12 +3337,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     (assetSlotAnswered(s1.laptop_assigned, s1.laptop_master_asset_id) ? 1 : 0)
     + (assetSlotAnswered(s1.mobile_assigned, s1.mobile_master_asset_id) ? 1 : 0);
   const stage3Pct = Math.round((stage3TasksDone / stage3TasksTotal) * 100);
-  // Stage 3 is "Done" once the server has stamped it (macro stage â‰¥ 3) OR
+  // Stage 3 is "Done" once the server has stamped it (macro stage ≥ 3) OR
   // every task is filled in the current session.
   const stage3MacroDone = Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 3;
   const stage3Done = stage3MacroDone || stage3TasksDone === stage3TasksTotal;
 
-  // Stage 4 readiness â€” same shape as the four checks rendered inside
+  // Stage 4 readiness — same shape as the four checks rendered inside
   // `Stage4Payroll`, derived from the live s4 form state. Bank check
   // auto-passes for cheque since no account is needed.
   const PAN_RE  = /^[A-Z]{5}[0-9]{4}[A-Z]$/i;
@@ -3350,10 +3350,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const UAN_RE  = /^\d{12}$/;
   const stage4BankOk =
     s4.salary_payment_mode !== 'bank' || (
-      // Not just "is it filled" â€” a numeric bank name is the account number in
+      // Not just "is it filled" — a numeric bank name is the account number in
       // the wrong box, and it used to turn this check green.
       isValidBankName(s4.bank_name) &&
-      // Account number must be 9â€“18 digits (matches the inline hint on
+      // Account number must be 9–18 digits (matches the inline hint on
       // the input). Without this, a single-digit or 30-character entry
       // would still flip the readiness check green.
       /^\d{9,18}$/.test(s4.bank_account_number.trim()) &&
@@ -3363,24 +3363,24 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     );
   const stage4PanOk = PAN_RE.test(s4.pan_number.trim());
   /* Does Provident Fund apply at all? Set on Stage 1 (Compensation). When it
-     doesn't, the PF-only fields are hidden on Stage 4 â€” so their readiness
+     doesn't, the PF-only fields are hidden on Stage 4 — so their readiness
      checks must not be able to block the stage either (a stale UAN typed
      before PF was switched off would otherwise gate an invisible field). */
   const stage4PfApplicable = s1.enable_payroll !== false && !!s1.pf_eligible;
-  /* UAN is REQUIRED once PF applies â€” it is the number the PF contribution is
+  /* UAN is REQUIRED once PF applies — it is the number the PF contribution is
      filed against, so an employee enrolled in PF without one cannot actually be
      remitted for. It used to be optional-but-well-formed ("12 digits, or leave
      it blank"), which let a PF-enrolled employee through with no UAN at all.
-     Still ignored entirely when PF does not apply â€” the field is hidden then,
+     Still ignored entirely when PF does not apply — the field is hidden then,
      and a stale value must not gate an invisible input. */
   const stage4UanOk = !stage4PfApplicable || UAN_RE.test(s4.uan_number.trim());
   // Salary structure check passes once Stage 4's Agreed CTC is set. We
-  // don't couple this to Stage 1's annual_salary â€” admins often record
+  // don't couple this to Stage 1's annual_salary — admins often record
   // a negotiated CTC at Stage 4 that's distinct from the wizard's
   // initial salary input, and gating on both made the pill stay
   // Pending after a clean fill.
   const stage4SalaryOk = Number(s4.agreed_ctc_lpa) > 0;
-  // PF not applicable â†’ the PF readiness check auto-passes; there is nothing
+  // PF not applicable → the PF readiness check auto-passes; there is nothing
   // to configure and no field on screen to configure it with.
   const stage4PfOk = !stage4PfApplicable || !!s4.pf_deduction.trim();
   const stage4Checks = [stage4BankOk, stage4PanOk, stage4SalaryOk, stage4PfOk];
@@ -3389,7 +3389,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
   /* Exactly WHICH field is blocking Stage 4, and what to do about it.
      The old toast just recited all four categories ("Bank details, PAN, CTC
-     and PF deductionâ€¦") while the offending field sat below the fold â€” so the
+     and PF deduction…") while the offending field sat below the fold — so the
      screen looked complete and there was nothing to act on. Two of these
      (Agreed CTC, PF Type) are read-only mirrors of Stage 1, so their message
      has to send the user back to Stage 1 rather than point at a field they
@@ -3398,7 +3398,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
      Plain const, NOT useMemo: everything in this block sits after the
      `if (!emp) return null` guard above, so a hook here renders a different
      number of hooks on the null pass ("Rendered fewer hooks than expected").
-     It's a handful of regex tests per render â€” cheap. */
+     It's a handful of regex tests per render — cheap. */
   const stage4Problems = (() => {
     const p: { field: string; label: string; message: string; onStage1?: boolean }[] = [];
 
@@ -3406,7 +3406,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const acct = s4.bank_account_number.trim();
       const ifsc = s4.ifsc_code.trim();
       /* A bank name has to contain letters. Only the empty case was checked, so
-         "123456" passed â€” and a numeric bank name is almost always the account
+         "123456" passed — and a numeric bank name is almost always the account
          number typed into the wrong box, which is worse than a blank field
          because it looks filled in.
          Apostrophes, hyphens, ampersands and full stops are all legitimate
@@ -3417,14 +3417,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         p.push({ field: 'bank_name', label: 'Bank Name', message: 'Enter the bank name.' });
       } else if (!bankNameHasLetters(bank)) {
         p.push({ field: 'bank_name', label: 'Bank Name',
-          message: 'Bank name must contain letters â€” this looks like a number.' });
+          message: 'Bank name must contain letters — this looks like a number.' });
       } else if (!BANK_NAME_RE.test(bank)) {
         p.push({ field: 'bank_name', label: 'Bank Name',
-          message: 'Bank name can use letters, numbers and â€™ - & . , ( ) / only.' });
+          message: 'Bank name can use letters, numbers and ’ - & . , ( ) / only.' });
       }
       if (!/^\d{9,18}$/.test(acct)) {
         p.push({ field: 'bank_account_number', label: 'Account Number',
-          message: acct ? 'Account number must be 9â€“18 digits.' : 'Enter the account number.' });
+          message: acct ? 'Account number must be 9–18 digits.' : 'Enter the account number.' });
       }
       if (!IFSC_RE.test(ifsc)) {
         p.push({ field: 'ifsc_code', label: 'IFSC Code',
@@ -3456,7 +3456,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!stage4SalaryOk) {
       /* Two very different causes, and telling them apart matters: an unset
          salary needs a value, whereas a salary that IS set but is smaller
-         than â‚¹1,00,000 divides down to "0.00" LPA and reads as unset â€” the
+         than ₹1,00,000 divides down to "0.00" LPA and reads as unset — the
          real mistake there is entering the figure in lakhs (12) instead of
          rupees (1200000). Saying "not set" for that case sends the user
          looking for an empty field they already filled. */
@@ -3464,15 +3464,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       p.push({
         field: 'agreed_ctc_lpa', label: 'Agreed CTC', onStage1: true,
         message: annual > 0
-          ? `Stage 1 annual salary is â‚¹${annual.toLocaleString('en-IN')}, which works out to ${(annual / 100000).toFixed(2)} LPA. Annual Salary is entered in RUPEES per year â€” e.g. 1200000 for â‚¹12 LPA. Fix it on Stage 1 â†’ Compensation.`
-          : 'Agreed CTC is read-only here â€” it mirrors the Stage 1 annual salary. Set Annual Salary on Stage 1 â†’ Compensation.',
+          ? `Stage 1 annual salary is ₹${annual.toLocaleString('en-IN')}, which works out to ${(annual / 100000).toFixed(2)} LPA. Annual Salary is entered in RUPEES per year — e.g. 1200000 for ₹12 LPA. Fix it on Stage 1 → Compensation.`
+          : 'Agreed CTC is read-only here — it mirrors the Stage 1 annual salary. Set Annual Salary on Stage 1 → Compensation.',
       });
     }
-    // Only reachable while PF applies â€” stage4PfOk auto-passes otherwise, so
+    // Only reachable while PF applies — stage4PfOk auto-passes otherwise, so
     // this can never point the user at a field that isn't rendered.
     if (!stage4PfOk) {
       p.push({ field: 'pf_deduction', label: 'PF Type', onStage1: true,
-        message: 'PF Type is read-only here â€” set it on Stage 1 â†’ Compensation.' });
+        message: 'PF Type is read-only here — set it on Stage 1 → Compensation.' });
     }
     return p;
   })();
@@ -3483,26 +3483,26 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const stage4Done    = stage4Stamped || (stage4Pass === stage4Total4 && stage4UanOk);
   const stage4Pct     = stage4Stamped ? 100 : Math.round((stage4Pass / stage4Total4) * 100);
 
-  // Server-side macro stage watermark â€” used as the floor for every
+  // Server-side macro stage watermark — used as the floor for every
   // stage's % so finished stages don't visually regress when the user
-  // navigates back. e.g. macro=4 â†’ Stages 1-4 always show â‰¥ 100%.
+  // navigates back. e.g. macro=4 → Stages 1-4 always show ≥ 100%.
   const macroCompleted = Number(emp?.raw?.onboarding_stage_completed ?? 0);
   // Per-stage completion flags, computed once and reused both for the
   // sidebar pills below AND for the Stage-6 gate. Each stage's "done"
   // mixes its live readiness signal with the server's macro watermark
   // (so finished stages don't visually regress before re-hydration). The
   // exception is Stage 2, which requires BOTH all docs uploaded AND the
-  // macro watermark to have moved past 2 â€” see comment on the original
+  // macro watermark to have moved past 2 — see comment on the original
   // change for why the OR was a false positive.
   // Stage 1 is only "done" when EVERY required field is actually filled. The
-  // macro watermark alone must not mark it 100% â€” e.g. if annual salary was
+  // macro watermark alone must not mark it 100% — e.g. if annual salary was
   // cleared on re-edit, the sidebar should drop below 100% and block Stage 6.
   const stage1AllRequiredFilled = stage1Filled === stage1RequiredFields.length;
   const stage1IsDone = (stage1Done || macroCompleted >= 1) && stage1AllRequiredFilled;
   const stage2IsDone = stage2Done && macroCompleted >= 2;
   const stage3IsDone = stage3Done || macroCompleted >= 3;
   const stage4IsDone = stage4Done || macroCompleted >= 4;
-  // "Done" only when EVERY matched agreement has a completed signing run â€”
+  // "Done" only when EVERY matched agreement has a completed signing run —
   // not just because HR advanced past the stage. If the employee has no
   // matched agreements, fall back to the macro watermark.
   const stage5SignedAll = stage5Total > 0 ? stage5Signed >= stage5Total : macroCompleted >= 5;
@@ -3510,7 +3510,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // Stage 6 represents the HR final-approval / activation step. Used to
   // flip Completed the moment the activate API returned, even when
   // earlier stages were still Pending (the screenshot bug). Now we
-  // additionally require every prior stage to be done â€” activation by
+  // additionally require every prior stage to be done — activation by
   // itself is no longer enough to mark the wizard as Completed.
   const allPriorStagesDone =
     stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
@@ -3536,9 +3536,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       status   = stage4IsDone ? 'Completed' : (stage4Pass > 0 ? 'In Progress' : 'Pending');
     } else if (s.num === 5) {
       // Reflect real signing progress (signed / total agreements). 100% only
-      // when all are signed; "sent â€” awaiting sign" stays In Progress, so the
+      // when all are signed; "sent — awaiting sign" stays In Progress, so the
       // stage no longer shows Completed just because it was sent.
-      /* 0 documents assigned means 0% â€” there is nothing to have done.
+      /* 0 documents assigned means 0% — there is nothing to have done.
          This used to fall through to a flat 35% whenever the stage was merely
          OPEN, so a stage with no policy or agreement at all reported itself a
          third complete and dragged the overall onboarding figure up with it.
@@ -3547,7 +3547,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
          denominator, so it reports the real fraction. */
       progress = stage5IsDone ? 100
         : (stage5Total > 0 ? Math.round((stage5Signed / stage5Total) * 100) : 0);
-      /* Opening the stage no longer marks it In Progress on its own â€” with
+      /* Opening the stage no longer marks it In Progress on its own — with
          nothing assigned there is no work in progress to report. */
       status = stage5IsDone ? 'Completed'
         : (stage5Total === 0 ? 'Pending'
@@ -3558,12 +3558,12 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
-    /* 100% is reserved for Completed â€” one rule, applied to every stage.
+    /* 100% is reserved for Completed — one rule, applied to every stage.
      *
      * Each branch above computes its own percentage, and several of them could
      * reach 100 while the stage was still In Progress. Stage 2 is the one QA
      * caught: the bar counts uploaded documents, so the moment the last
-     * required file lands it reads 100% â€” but `stage2IsDone` also requires the
+     * required file lands it reads 100% — but `stage2IsDone` also requires the
      * server's macro watermark to have moved past stage 2, which only happens
      * when HR actually advances the stage. Uploading is not the same as HR
      * signing off, so that extra condition is deliberate and stays; what was
@@ -3573,7 +3573,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
      * had the same gap.
      *
      * Capping at 99 keeps the meaning honest: everything countable is done,
-     * one step remains â€” and it is the step the user is looking at. */
+     * one step remains — and it is the step the user is looking at. */
     if (status !== 'Completed') progress = Math.min(progress, 99);
     return { ...s, status, progress };
   });
@@ -3623,7 +3623,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <span className="onb-init-pill">Onboarding In Progress</span>
                 </div>
                 <div className="onb-init-sub">
-                  {emp.empId} Â· {emp.department} Â· {emp.designation}
+                  {emp.empId} · {emp.department} · {emp.designation}
                 </div>
               </div>
             </div>
@@ -3633,7 +3633,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             </div>
           </div>
 
-          {/* Header stepper removed â€” the left sidebar already shows
+          {/* Header stepper removed — the left sidebar already shows
               every stage with its status, so the duplicate pill strip
               here was redundant noise. */}
         </div>
@@ -3647,7 +3647,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               looked saved while still holding unsaved changes. */}
           {formLocked && (
             <div
-              title="Savingâ€¦"
+              title="Saving…"
               style={{ position: 'absolute', inset: 0, zIndex: 30, cursor: 'wait', background: 'rgba(255,255,255,0.35)' }}
             />
           )}
@@ -3684,8 +3684,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           {/* Main */}
           <div className="onb-init-main">
             {/* Zero-styled fieldset: disabling it disables every native input /
-                select / textarea / button inside â€” including the field that had
-                focus when Save was clicked â€” for the duration of the save. */}
+                select / textarea / button inside — including the field that had
+                focus when Save was clicked — for the duration of the save. */}
             <fieldset disabled={formLocked} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
             {/* Stage banner */}
             <div className="onb-init-stage-banner">
@@ -3702,7 +3702,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               </span>
             </div>
 
-            {/* Per-stage progress banner removed â€” the sidebar already
+            {/* Per-stage progress banner removed — the sidebar already
                 shows overall + per-stage progress, so this was redundant
                 and visually noisy on top of every stage. */}
             {activeStage === 1 && Object.keys(s1Errors).length > 0 && (
@@ -3756,7 +3756,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
             {activeStage === 1 && (
             <>
-            {/* â”€â”€ Step 1 â€” Basic Details â”€â”€ */}
+            {/* ── Step 1 — Basic Details ── */}
             <div className="onb-init-section">
               <div className="onb-init-section-head">
                 <span className="onb-init-section-num basic">1</span>
@@ -3870,7 +3870,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     onChange={e => {
       const next = normaliseEmail(e.target.value);
       setS1(p => {
-        // Auto-mirror Work Email â†’ Official Email (Stage 3) for as long
+        // Auto-mirror Work Email → Official Email (Stage 3) for as long
         // as the HR hasn't manually overridden the official one. The
         // "still mirroring" heuristic: official is empty OR equal to the
         // previous work email. Once the HR types a different value into
@@ -3885,7 +3885,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         };
       });
       // Re-validate inline so the error clears the moment it becomes valid,
-      // and use the SAME validator as Official Email â€” the two used to
+      // and use the SAME validator as Official Email — the two used to
       // disagree, so a value the work field accepted was rejected two stages
       // later by the official one.
       setS1Errors(p => ({
@@ -3923,7 +3923,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4}>
                     <label className="onb-init-label">Employee ID <span className="auto">AUTO</span></label>
                     {/* Value is the code ALONE. The "auto-assigned" note lives
-                        in the label badge above â€” having it inside the input
+                        in the label badge above — having it inside the input
                         too made the field read "EMP-011 (auto-assigned)", as
                         if the suffix were part of the code. */}
                     <input className="onb-init-input is-autofilled" readOnly value={emp.empId} />
@@ -3934,7 +3934,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   </Col>
                   <Col md={4}>
                     <label className="onb-init-label">Blood Group</label>
-                    {/* Static eight-option list (not a master-API call) â€”
+                    {/* Static eight-option list (not a master-API call) —
                         blood groups are universal, no need for a server
                         round-trip. Pattern matches ONB_GENDER / ONB_NATIONALITY. */}
                     <MasterSelect
@@ -3948,7 +3948,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               </div>
             </div>
 
-            {/* â”€â”€ Step 2 â€” Job Details â”€â”€ */}
+            {/* ── Step 2 — Job Details ── */}
             <div className="onb-init-section">
               <div className="onb-init-section-head">
                 <span className="onb-init-section-num job">2</span>
@@ -3979,7 +3979,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
                   <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
                   {/* Primary & Ancillary share the same list, but a role can't be
-                      both â€” exclude the other side's pick from each dropdown. */}
+                      both — exclude the other side's pick from each dropdown. */}
                   <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts.filter(o => !(s1.ancillary_role_ids ?? []).includes(o.value))} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v, ancillary_role_ids: (p.ancillary_role_ids ?? []).filter((id: string) => id !== v) })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
                   {/* Multi-select (was a single picker, so only the first of
                       several assigned roles ever showed). Collapses to 3 chips
@@ -3991,7 +3991,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <p className="onb-init-subgroup">Organisational Details</p>
                 <Row className="g-3">
                   {/* Legal Entity + Location are both auto-fetched from the
-                      branch this onboardee is being hired into â€” no picker.
+                      branch this onboardee is being hired into — no picker.
                       Editing either created free-text drift between the branch
                       record and the employee row, which then failed validation
                       on save. */}
@@ -4001,8 +4001,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       className="onb-init-input is-autofilled"
                       readOnly
                       value={legalEntityLabel}
-                      placeholder={mastersLoading ? 'Loadingâ€¦' : 'Select a branch to auto-fetch'}
-                      title="The branch this employee is hired into â€” switch branch to change it"
+                      placeholder={mastersLoading ? 'Loading…' : 'Select a branch to auto-fetch'}
+                      title="The branch this employee is hired into — switch branch to change it"
                     />
                     {s1Errors.legal_entity_id && <div className="onb-error-msg">{s1Errors.legal_entity_id}</div>}
                   </Col>
@@ -4012,7 +4012,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       className="onb-init-input is-autofilled"
                       readOnly
                       value={s1.location}
-                      placeholder={s1.legal_entity_id ? 'â€”' : 'Auto-fetched with the legal entity'}
+                      placeholder={s1.legal_entity_id ? '—' : 'Auto-fetched with the legal entity'}
                       title="The legal entity's city and country"
                     />
                   </Col>
@@ -4026,7 +4026,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     <MasterSelect
                       options={ONB_PROBATION}
                       value={probationIsCustom ? ONB_CUSTOM_PROBATION : s1.probation_policy}
-                      placeholder="Select months (1â€“12)"
+                      placeholder="Select months (1–12)"
                       invalid={!!s1Errors.probation_policy}
                       onChange={(v) => {
                         setProbationCustomOpen(v === ONB_CUSTOM_PROBATION);
@@ -4042,7 +4042,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         className="onb-init-input"
                         style={{ marginTop: 8 }}
                         type="number" min={1} max={12}
-                        placeholder="Months (1â€“12)"
+                        placeholder="Months (1–12)"
                         value={s1.probation_policy}
                         onChange={(e) => { setS1(p => ({ ...p, probation_policy: e.target.value })); setS1Errors(p => ({ ...p, probation_policy: '' })); }}
                       />
@@ -4055,7 +4055,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     {/* Custom option mirrored from the Employee form. Without it
                         an onboarding could only record one of the four presets,
                         so a 45-day or "2 months" notice had to be fixed later by
-                        editing the employee â€” the same field, two different sets
+                        editing the employee — the same field, two different sets
                         of allowed answers. */}
                     <MasterSelect
                       options={ONB_NOTICE}
@@ -4089,7 +4089,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               </div>
             </div>
 
-            {/* â”€â”€ Step 3 â€” Work Details â”€â”€ */}
+            {/* ── Step 3 — Work Details ── */}
             <div className="onb-init-section">
               <div className="onb-init-section-head">
                 <span className="onb-init-section-num work">3</span>
@@ -4102,14 +4102,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan â€” finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups â€” create in HR â€º Holiday â€º Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime Applicable</label><MasterSelect options={ONB_YES_NO} value={overtimeApplicable} placeholder="Select" onChange={(v) => { setOvertimeApplicable(v); if (v !== 'Yes') setS1(p => ({ ...p, overtime: '' })); }} /></Col>
                   {overtimeApplicable === 'Yes' && (
-                    <Col md={4}><label className="onb-init-label">Overtime Rate</label><MasterSelect options={overtimeRateSelectOpts} loading={mastersLoading} value={s1.overtime} onOpen={() => reloadOvertimeRates()} placeholder={overtimeRateOpts.length ? 'Select overtime rate' : 'No rates â€” add in Master â€º Overtime (OT)'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
+                    <Col md={4}><label className="onb-init-label">Overtime Rate</label><MasterSelect options={overtimeRateSelectOpts} loading={mastersLoading} value={s1.overtime} onOpen={() => reloadOvertimeRates()} placeholder={overtimeRateOpts.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} onChange={(v) => setS1(p => ({ ...p, overtime: v }))} /></Col>
                   )}
                   <Col md={4} data-field="expense_policy"><label className="onb-init-label">Expense Policy<span className="req">*</span></label><MasterSelect options={ONB_EXPENSE} placeholder="Select expense policy" value={s1.expense_policy} invalid={!!s1Errors.expense_policy} onChange={(v) => { setS1(p => ({ ...p, expense_policy: v })); setS1Errors(p => ({ ...p, expense_policy: '' })); }} />{s1Errors.expense_policy && <div className="onb-error-msg">{s1Errors.expense_policy}</div>}</Col>
                 </Row>
@@ -4128,8 +4128,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 
                 <p className="onb-init-subgroup">Assets &amp; Security</p>
                 <Row className="g-3">
-                  {/* Laptop â€” Yes/No flag + (when Yes) device picker.
-                      The picker label shows "Serial Number â€” Asset Name"
+                  {/* Laptop — Yes/No flag + (when Yes) device picker.
+                      The picker label shows "Serial Number — Asset Name"
                       and only lists devices not already issued to another
                       employee. */}
                   <Col md={4} data-field="laptop_assigned">
@@ -4158,7 +4158,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   </Col>
                   {s1.laptop_assigned === 'Yes' && (
                     <Col md={4} data-field="laptop_master_asset_id">
-                      {/* Required once "Laptop Assigned" is Yes â€” same rule the
+                      {/* Required once "Laptop Assigned" is Yes — same rule the
                           Employee form enforces. Saying a laptop was issued
                           without naming WHICH one leaves the asset register
                           unable to show who holds the device. */}
@@ -4167,7 +4167,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         options={laptopAssets}
                         onOpen={() => reloadAssets()}
                         loading={assetsLoading}
-                        placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial â€” Name)'}
+                        placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                         value={s1.laptop_master_asset_id}
                         invalid={!!s1Errors.laptop_master_asset_id}
                         onChange={(v) => {
@@ -4182,7 +4182,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     </Col>
                   )}
 
-                  {/* Mobile â€” same Yes/No + picker pattern. */}
+                  {/* Mobile — same Yes/No + picker pattern. */}
                   <Col md={4} data-field="mobile_assigned">
                     <label className="onb-init-label">Mobile Assigned<span className="req">*</span></label>
                     <MasterSelect
@@ -4210,7 +4210,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         options={mobileAssets}
                         onOpen={() => reloadAssets()}
                         loading={assetsLoading}
-                        placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial â€” Name)'}
+                        placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                         value={s1.mobile_master_asset_id}
                         invalid={!!s1Errors.mobile_master_asset_id}
                         onChange={(v) => {
@@ -4225,7 +4225,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     </Col>
                   )}
 
-                  {/* Other Assets â€” multi-select, optional. Lists every
+                  {/* Other Assets — multi-select, optional. Lists every
                       master asset NOT in the Laptop / Mobile system
                       categories and not already booked by another
                       employee. */}
@@ -4255,7 +4255,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               </div>
             </div>
 
-            {/* â”€â”€ Step 4 â€” Compensation â”€â”€ */}
+            {/* ── Step 4 — Compensation ── */}
             <div className="onb-init-section">
               <div className="onb-init-section-head">
                 <span className="onb-init-section-num comp">4</span>
@@ -4281,7 +4281,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
                 <Row className="g-3">
                   {/* Compensation - Annual Salary.
-                      Backed by Postgres numeric(14, 2) â€” max value
+                      Backed by Postgres numeric(14, 2) — max value
                       999,999,999,999.99 (12 whole digits + 2 decimal).
                       We cap on input so the user can't type a 30-digit
                       number that JS would silently convert to scientific
@@ -4300,7 +4300,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       // Strip everything that isn't a digit or a dot. Collapse multiple
       // dots to the first one. Cap whole part at 12 digits, fractional
       // part at 2 digits. Result is always a valid representation of a
-      // value â‰¤ 999,999,999,999.99 â€” no further client-side coercion
+      // value ≤ 999,999,999,999.99 — no further client-side coercion
       // needed before sending.
       let raw = e.target.value.replace(/[^0-9.]/g, '');
       const firstDot = raw.indexOf('.');
@@ -4333,9 +4333,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
-                  {/* PF setup â€” lives here with the salary so the amount can be
-                      previewed in the breakup below. Applicable â†’ on/off gate;
-                      Type â†’ Statutory (â‚¹15k cap) vs Standard (full basic). */}
+                  {/* PF setup — lives here with the salary so the amount can be
+                      previewed in the breakup below. Applicable → on/off gate;
+                      Type → Statutory (₹15k cap) vs Standard (full basic). */}
                   {s1.enable_payroll !== false && (
                     <Col md={4} data-field="pf_applicable">
                       <label className="onb-init-label">PF Applicable</label>
@@ -4364,7 +4364,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       <i className="ri-grid-line" style={{ color: '#7c3aed' }} />
                       Salary Breakup
                     </span>
-                    {/* Detailed Breakup toggle â€” when on, the monthly component
+                    {/* Detailed Breakup toggle — when on, the monthly component
                         split (Basic / HRA / Special + PF) replaces the simple
                         Regular + Bonus summary. Bound to s1.detailed_breakup,
                         which round-trips through the saveStage1 payload. */}
@@ -4400,18 +4400,18 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   <div className="onb-init-breakup-body">
                     <p className="onb-init-breakup-sub">Salary Effective From</p>
                     <div className="text-muted mb-2" style={{ fontSize: 12 }}>
-                      {s1.salary_effective_from ? new Date(s1.salary_effective_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'â€”'}
+                      {s1.salary_effective_from ? new Date(s1.salary_effective_from).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                     </div>
                     {/* Salary breakup is computed live from the entered
                         Annual Salary. Bonus stays 0 until the "+ Add Bonus"
-                        flow captures real bonus components â€” when the
+                        flow captures real bonus components — when the
                         "Bonus included in annual salary" flag is on, we
                         treat the annual figure as the full CTC and split
                         ~10% as bonus for the visual; everything else stays
                         regular salary. Refine when real bonus inputs land. */}
                     {(() => {
                       // Respect the Period: 'Per month' means the entered figure
-                      // is the MONTHLY amount â†’ annual = Ã—12. Any other period is
+                      // is the MONTHLY amount → annual = ×12. Any other period is
                       // treated as the annual figure. Mirrors HrEmployees'
                       // monthlyGrossFromSalary so both screens show the same gross.
                       const entered = s1.annual_salary === '' ? 0 : Number(s1.annual_salary);
@@ -4421,7 +4421,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       const total = regular + bonus;
                       const fmt = (n: number) => `INR ${(Number.isFinite(n) ? n : 0).toLocaleString('en-IN')}`;
 
-                      // Simple view â€” Regular + Bonus = Total CTC (annual).
+                      // Simple view — Regular + Bonus = Total CTC (annual).
                       if (!s1.detailed_breakup) {
                         return (
                           <div className="onb-init-breakup-grid">
@@ -4434,7 +4434,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         );
                       }
 
-                      // Detailed view â€” PREFER the employee's SAVED salary
+                      // Detailed view — PREFER the employee's SAVED salary
                       // structure (the exact components HR entered/edited in the
                       // employee form). Only fall back to a 50/30/20 auto-split
                       // from the salary when nothing has been saved yet, so a
@@ -4455,7 +4455,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       const basic = useSaved
                         ? Number(savedBreakup!.earnings.find((c: any) => c.code === 'basic')?.amount ?? earnLines[0]?.value ?? 0)
                         : (earnLines[0]?.value ?? 0);
-                      // Statutory caps basic at the â‚¹15k EPF ceiling; Standard uses full basic.
+                      // Statutory caps basic at the ₹15k EPF ceiling; Standard uses full basic.
                       const pf = s1.pf_eligible
                         ? Math.round((s1.pf_type === 'Standard' ? basic : Math.min(basic, 15000)) * 0.12)
                         : 0;
@@ -4472,16 +4472,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         <div>
                           <p className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
                             {useSaved
-                              ? "Monthly component breakup â€” the employee's saved salary structure."
+                              ? "Monthly component breakup — the employee's saved salary structure."
                               : 'Monthly component breakup (auto-split from the annual salary).'}
                           </p>
                           {/* How the split + PF are derived, so anyone reading
                               the breakup understands the figures. */}
                           <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 10 }}>
-                            <li><strong>Basic Salary</strong> â€” 50% of the monthly gross (statutory minimum, Code on Wages 2019).</li>
-                            <li><strong>House Rent Allowance (HRA)</strong> â€” 30% of the monthly gross.</li>
-                            <li><strong>Special Allowance</strong> â€” the remaining balance after Basic + HRA.</li>
-                            <li><strong>PF Deduction</strong> â€” 12% of basic; capped at <strong>â‚¹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
+                            <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum, Code on Wages 2019).</li>
+                            <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
+                            <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+                            <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
                           </ul>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
                             <div style={{ flex: '1 1 240px', minWidth: 220 }}>
@@ -4495,7 +4495,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                                 {/* PF on/off is now the "PF Applicable" field above. */}
                                 {s1.pf_eligible && (
                                   <span style={{ fontSize: 11, fontWeight: 600, color: '#6d28d9' }}>
-                                    PF: {s1.pf_type === 'Standard' ? 'Standard (full basic)' : 'Statutory (â‚¹15k cap)'}
+                                    PF: {s1.pf_type === 'Standard' ? 'Standard (full basic)' : 'Statutory (₹15k cap)'}
                                   </span>
                                 )}
                               </div>
@@ -4511,7 +4511,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       );
                     })()}
                     {/* Static placeholders that follow are no longer needed
-                        â€” the live grid above replaces the hard-coded
+                        — the live grid above replaces the hard-coded
                         "INR 0" cells. Kept as inert markup below to
                         preserve the existing closing tags + spacing. */}
                     <div style={{ display: 'none' }}>
@@ -4532,15 +4532,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         <div className="onb-init-footer">
           <span className="onb-init-footer-meta">
             <i className="ri-information-line" />
-            Stage {activeStage} of 6 â€” {ONB_STAGES[activeStage - 1].stage}
+            Stage {activeStage} of 6 — {ONB_STAGES[activeStage - 1].stage}
             {activeStage === 2 && (
               <span style={{ marginLeft: 10, fontSize: 11.5, color: stage2Done ? '#0a8a78' : '#a4661c' }}>
-                Â· {stage2Uploaded}/{stage2Total} required documents {stage2Done ? 'âœ“' : ''}
+                · {stage2Uploaded}/{stage2Total} required documents {stage2Done ? '✓' : ''}
               </span>
             )}
             {activeStage === 4 && (
               <span style={{ marginLeft: 10, fontSize: 11.5, color: stage4Done ? '#0a8a78' : '#a4661c' }}>
-                Â· {stage4Pass}/{stage4Total4} readiness checks {stage4Done ? 'âœ“' : ''}
+                · {stage4Pass}/{stage4Total4} readiness checks {stage4Done ? '✓' : ''}
               </span>
             )}
           </span>
@@ -4558,7 +4558,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     <i className="ri-arrow-left-s-line" /> Previous
   </button>
   
-  {/* Save Draft â€” Stage 1 saves the wizard payload + bumps
+  {/* Save Draft — Stage 1 saves the wizard payload + bumps
       wizard_step_completed to 4. Stage 4 saves the finance
       payload + stamps stage4_completed_at when all readiness
       checks pass. Other stages have no bound state yet, so
@@ -4572,7 +4572,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     // persist. Without this the greyed button gave no reason on hover.
     title={
       (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
-        ? 'Nothing to save as a draft on this stage â€” use the actions above, then Next Stage / Complete Onboarding.'
+        ? 'Nothing to save as a draft on this stage — use the actions above, then Next Stage / Complete Onboarding.'
         : 'Save your progress so far without marking the stage complete.'
     }
     disabled={
@@ -4584,13 +4584,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     onClick={() => {
       /* Save Draft = "persist whatever the user has typed so far, even
        * if incomplete." Bypassing validation here is intentional:
-       *   - skipValidate=true â†’ required-field gates don't block the PUT
-       *   - markComplete=false â†’ wizard_step_completed is NOT bumped,
+       *   - skipValidate=true → required-field gates don't block the PUT
+       *   - markComplete=false → wizard_step_completed is NOT bumped,
        *     so the row still shows In Progress and the user has to
        *     hit Next Stage (which runs full validation) to mark Stage 1
        *     officially done.
        * Previously Save Draft called saveStage1(true), which forced full
-       * validation â€” if any required field was empty the PUT never fired
+       * validation — if any required field was empty the PUT never fired
        * and the user's partial input disappeared on close. */
       if (activeStage === 1) return saveStage1(false, true);
       // Stage 3 saves the asset edits too (no wizard bump). skipValidate
@@ -4599,9 +4599,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (activeStage === 4) return saveStage4(stage4Pass === stage4Total4);
     }}
   >
-    {activeStage === 1 ? (s1Saving ? 'Savingâ€¦' : 'Save Draft')
-      : activeStage === 3 ? (s1Saving ? 'Savingâ€¦' : 'Save Draft')
-      : activeStage === 4 ? (s4Saving ? 'Savingâ€¦' : 'Save Draft')
+    {activeStage === 1 ? (s1Saving ? 'Saving…' : 'Save Draft')
+      : activeStage === 3 ? (s1Saving ? 'Saving…' : 'Save Draft')
+      : activeStage === 4 ? (s4Saving ? 'Saving…' : 'Save Draft')
       : 'Save Draft'}
   </button>
   
@@ -4632,7 +4632,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       if (activeStage === 4) {
         if (stage4Pass !== stage4Total4 || !stage4UanOk) {
           setS4ShowErrors(true);   // light up the missing/invalid fields
-          // Name the field(s) actually at fault and scroll to the first one â€”
+          // Name the field(s) actually at fault and scroll to the first one —
           // the offending input is usually below the fold, so a generic
           // "complete required fields" left nothing visible to act on.
           const probs = stage4Problems;
@@ -4656,22 +4656,22 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         if (!ok) return;
       }
 
-      // Stage 3 â€” the provisioning fields (official_email, laptop /
+      // Stage 3 — the provisioning fields (official_email, laptop /
       // mobile / other-asset assignments, biometric_status, etc.) all
       // live on the same `s1` state that saveStage1 persists. Without
       // an explicit save here, anything the user typed on Stage 3
-      // vanished when the modal closed â€” saveStage1 didn't get called
+      // vanished when the modal closed — saveStage1 didn't get called
       // since the user wasn't on Stage 1. Re-using saveStage1 keeps
       // the PUT payload identical (so the existing validator on the
       // backend handles everything correctly).
       if (activeStage === 3) {
-        // Official email is mandatory on Stage 3 â€” it's what the rest
+        // Official email is mandatory on Stage 3 — it's what the rest
         // of the platform (notifications, account provisioning, signing
         // flows) uses to reach the employee. Validate before saving so
         // the user gets immediate feedback instead of a backend error.
         const emailErr = validateOfficialEmail(s1.official_email);
         if (emailErr) {
-          toast.error('Official email â€” fix this first', emailErr);
+          toast.error('Official email — fix this first', emailErr);
           setS1Errors(p => ({ ...p, official_email: emailErr }));
           const el = document.getElementById('field-official-email') as HTMLInputElement | null;
           el?.focus();
@@ -4679,7 +4679,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           return;
         }
         setNextLoading(true);
-        // skipValidate=true â€” we don't want to re-run Stage 1's required-
+        // skipValidate=true — we don't want to re-run Stage 1's required-
         // field checks here; the user is on Stage 3 and might be editing
         // an employee record whose Stage 1 has gaps. The backend
         // validator still gates per-field correctness on the PUT.
@@ -4690,42 +4690,42 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         toast.success('Stage 3 saved', 'Provisioning & asset details persisted.');
       }
 
-      // For stages 2, 5 â€” bump the server-side macro watermark so
+      // For stages 2, 5 — bump the server-side macro watermark so
       // profile% climbs (formula reads onboarding_stage_completed) and
-      // every stage â‰¤ N flips to "Completed" via the macroCompleted
+      // every stage ≤ N flips to "Completed" via the macroCompleted
       // floor in stagesView. Without this, the wizard advanced visually
       // but the backend stayed stuck at macro=1, so the user saw
       // "Profile: 17% complete" even after walking through every step.
       if (activeStage === 2 || activeStage === 5) {
-        // Stage 2 â€” Yes/No on previous employment is mandatory. We
+        // Stage 2 — Yes/No on previous employment is mandatory. We
         // gate the advance here (not in flush) so the user gets a
         // clear "pick one" prompt + red highlight on the radio group
         // instead of silently progressing on a half-answered form.
         if (activeStage === 2) {
           const v = stage2Ref.current?.validate() ?? { ok: true };
           if (!v.ok) {
-            // Message comes from validate() â€” it knows which of the four
+            // Message comes from validate() — it knows which of the four
             // blockers actually fired.
             toast.error(
-              v.title   || 'Previous employment â€” incomplete',
+              v.title   || 'Previous employment — incomplete',
               v.message || 'Complete the previous employment section before moving to the next stage.',
             );
             return;
           }
         }
-        // Stage 5 â€” every policy must be acknowledged. Block the
+        // Stage 5 — every policy must be acknowledged. Block the
         // advance to verification otherwise; the user would just hit
         // the same blocker at final submission.
         // if (activeStage === 5 && !stage5IsDone) {
         //   toast.error(
-        //     'Policies â€” acknowledge to continue',
+        //     'Policies — acknowledge to continue',
         //     'Tick every policy checkbox before moving to verification.',
         //   );
         //   return;
         // }
         setNextLoading(true);
         // Flush any typed-but-unblurred Previous-Employment rows before
-        // we advance â€” same fix as the Previous / sidebar navigation.
+        // we advance — same fix as the Previous / sidebar navigation.
         if (activeStage === 2) {
           await stage2Ref.current?.flush();
         }
@@ -4751,7 +4751,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 ) : (
   (() => {
     // Gate on the same per-stage flags the sidebar uses to render
-    // "Completed". If any of Stage 1â€“5 is still Pending / In Progress
+    // "Completed". If any of Stage 1–5 is still Pending / In Progress
     // (typically Stage 2 because required docs are missing), block the
     // completion modal and tell the HR which stage(s) to finish first.
     const pending: string[] = [];
@@ -4773,7 +4773,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         }
         title={
           blocked
-            ? `Cannot complete â€” finish: ${pending.join(', ')}`
+            ? `Cannot complete — finish: ${pending.join(', ')}`
             : undefined
         }
         onClick={() => {
@@ -4806,7 +4806,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         </div>
       </ModalBody>
 
-      {/* Confirmation popup â€” stamps macro stage at 6, which is hard to
+      {/* Confirmation popup — stamps macro stage at 6, which is hard to
           reverse without a manual DB edit. Two-step click guards against
           accidental completion, with an optional notes field captured
           alongside the completion event. */}
@@ -4819,14 +4819,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         keyboard={!nextLoading}
         contentClassName="onb-complete-confirm"
       >
-        {/* Header strip â€” green-to-emerald gradient with white checkmark */}
+        {/* Header strip — green-to-emerald gradient with white checkmark */}
         <div className="occ-head">
           <div className="occ-icon"><i className="ri-checkbox-circle-line" /></div>
           <div className="occ-titles">
             <h5 className="occ-title">Complete onboarding</h5>
-            <p className="occ-sub">All stages signed off â€” confirm to lock in completion</p>
+            <p className="occ-sub">All stages signed off — confirm to lock in completion</p>
           </div>
-          {/* No top-right X â€” Cancel button below is the single
+          {/* No top-right X — Cancel button below is the single
               dismissal path; two close affordances was redundant. */}
         </div>
 
@@ -4834,7 +4834,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
         <div className="occ-body">
           <p className="occ-summary">
             <strong>{emp?.name}</strong>
-            <span className="occ-summary-sub"> Â· {emp?.empId}</span>
+            <span className="occ-summary-sub"> · {emp?.empId}</span>
           </p>
           <p className="occ-warning">
             <i className="ri-information-line" /> Profile completion will lock at 100% and the wizard will close.
@@ -4846,7 +4846,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
           <textarea
             id="occ-notes"
             className="occ-textarea"
-            placeholder="Add a note about this completion â€” handover details, special instructions, anything worth remembering."
+            placeholder="Add a note about this completion — handover details, special instructions, anything worth remembering."
             value={completeNotes}
             onChange={(e) => setCompleteNotes(e.target.value)}
             rows={3}
@@ -4876,7 +4876,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               try {
                 // Notes are sent in the PUT payload alongside the macro
                 // bump. The backend currently strips them at validation
-                // (no column yet) â€” that's intentional; the field is here
+                // (no column yet) — that's intentional; the field is here
                 // so the UX is in place when we wire persistence later.
                 if (emp?.dbId) {
                   try {
@@ -4903,7 +4903,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             {nextLoading ? (
               <>
                 <span className="spinner-border spinner-border-sm" style={{ width: 13, height: 13 }} />
-                Completingâ€¦
+                Completing…
               </>
             ) : (
               <>
@@ -5023,7 +5023,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   );
 }
 
-// â”€â”€ Stage 2 â€” Document Management view (used inside InitiateOnboardingModal)
+// ── Stage 2 — Document Management view (used inside InitiateOnboardingModal)
 /** Server-side document row returned by /api/employees/{id}/documents. */
 interface ApiDocument {
   id: number;
@@ -5040,7 +5040,7 @@ interface ApiDocument {
   url: string | null;
 }
 
-/** Map server status â†’ existing UI pill tone key (case difference + Optional fallback). */
+/** Map server status → existing UI pill tone key (case difference + Optional fallback). */
 const _serverStatusToUi = (s: string): DocStatus => {
   switch (s) {
     case 'verified': return 'Verified';
@@ -5056,7 +5056,7 @@ const DOC_ACCEPTED_MIME = new Set<string>(DOC_ACCEPTED_MIMES);
 
 /** Imperative API the parent calls before navigating away from Stage 2.
  *  flush() persists any company rows the user typed into but never blurred
- *  out of â€” without this, clicking Next or a sidebar stage chip with focus
+ *  out of — without this, clicking Next or a sidebar stage chip with focus
  *  still inside Company Name silently dropped the row. */
 export interface Stage2DocumentsHandle {
   flush: () => Promise<void>;
@@ -5081,7 +5081,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
 
   /* Latest date a PREVIOUS employment may run to: the day before this employer's
      joining date. The pickers were capped at today instead, which let a joiner
-     dated 02-Jun-2026 record a previous job running 01-Aug â†’ 06-Aug-2026 â€”
+     dated 02-Jun-2026 record a previous job running 01-Aug → 06-Aug-2026 —
      employment at the old company after they had already started here.
      Falls back to today when the joining date is not on file yet. Note this is
      NOT clamped to today: a future joiner may legitimately still be serving out
@@ -5091,7 +5091,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     ? _shiftIsoDays(joiningIso, -1)
     : _todayIso();
 
-  // â”€â”€ Previous Employment Companies â€” backed by /api/employees/{id}/previous-employments
+  // ── Previous Employment Companies — backed by /api/employees/{id}/previous-employments
   // Each row owns its own server id (or `null` while it's a draft the
   // user is still typing into; we persist via POST when company_name is
   // entered, then PATCH on subsequent edits). This keeps the UX feeling
@@ -5150,7 +5150,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     const required = Math.max(prevCompanies.length, 1) * reqDocs.length;
     let uploaded = 0;
     for (const c of prevCompanies) {
-      if (c.id == null) continue; // unsaved draft â†’ no docs uploaded yet
+      if (c.id == null) continue; // unsaved draft → no docs uploaded yet
       for (const d of reqDocs) {
         const up = d.id === 'salary_slips'
           ? Object.entries(docsByKey).some(([k, v]) =>
@@ -5174,8 +5174,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // re-mounts on revisit, so a per-mount fetch keeps the form in sync
   // with the server (previous bug: when the same emp.dbId remounted,
   // the useEffect didn't re-trigger and the local state was the
-  // initial empty array â€” entered companies appeared "lost"). Adding
-  // `prevCompanies.length` to the dep list isn't right either â€” we
+  // initial empty array — entered companies appeared "lost"). Adding
+  // `prevCompanies.length` to the dep list isn't right either — we
   // explicitly want this to run once per mount.
   useEffect(() => {
     if (!emp?.dbId) { setPrevLoading(false); return; }
@@ -5184,8 +5184,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       try {
         // Fetch the company list AND a FRESH copy of the employee in parallel.
         // emp.raw is captured once when the modal opens and is never refreshed,
-        // so reading has_prior_experience off it returned a stale value â€” a
-        // "No â€” fresher" pick (which saves no company rows) reset to unanswered
+        // so reading has_prior_experience off it returned a stale value — a
+        // "No — fresher" pick (which saves no company rows) reset to unanswered
         // on every revisit. Pull the flag from the live record instead.
         const [r, empFresh] = await Promise.all([
           api.get(`/employees/${emp.dbId}/previous-employments`),
@@ -5198,16 +5198,16 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         if (list.length === 0) {
           setPrevCompanies([]);
           // Default to "No" unless the server explicitly recorded prior
-          // experience â€” never leave it unset.
+          // experience — never leave it unset.
           setHasExperience(flag === true ? 'yes' : 'no');
           return;
         }
         // The server returned previous-employment rows, so the answer is
-        // unambiguously "Yes" â€” do NOT defer to the (possibly stale) prop flag.
+        // unambiguously "Yes" — do NOT defer to the (possibly stale) prop flag.
         // Earlier this read `flag === false ? 'no' : 'yes'`, so when emp.raw
         // still carried an old has_prior_experience=false, the toggle flipped
         // back to "No" on revisit and the rows (gated on hasExperience==='yes')
-        // were hidden â€” making saved companies + docs look lost.
+        // were hidden — making saved companies + docs look lost.
         setHasExperience('yes');
         setPrevCompanies(list.map(p => ({
           id: p.id,
@@ -5229,8 +5229,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   }, [emp?.dbId]);
 
   // Keep an always-fresh snapshot of prevCompanies so the imperative
-  // flush() below â€” AND the deferred persistCompany() calls fired from date
-  // pickers â€” see the latest typed value. Updated SYNCHRONOUSLY here (not via
+  // flush() below — AND the deferred persistCompany() calls fired from date
+  // pickers — see the latest typed value. Updated SYNCHRONOUSLY here (not via
   // a post-render effect) so a setTimeout(0) persist that runs before React
   // re-renders still reads the just-changed end_date (BUG-093: the end date
   // wasn't being saved because persist read a stale snapshot).
@@ -5255,7 +5255,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   useEffect(() => { prevCompaniesRef.current = prevCompanies; }, [prevCompanies]);
 
   /** PATCH/POST a single company row to the server. Called onBlur from
-   *  every input so the user never has to click "Save" â€” typing alone
+   *  every input so the user never has to click "Save" — typing alone
    *  persists once company_name is non-empty. Returns the canonical
    *  server id (existing or freshly assigned) so callers like the upload
    *  flow can chain on it without waiting for the next React render. */
@@ -5281,8 +5281,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       toast.error('Invalid date range', 'End date cannot be before start date.');
       return row.id ?? null;
     }
-    // Phone â€” accept blank (it's optional) but reject anything outside
-    // the ITU-T E.164 7â€“15 digit window so we don't ship junk like
+    // Phone — accept blank (it's optional) but reject anything outside
+    // the ITU-T E.164 7–15 digit window so we don't ship junk like
     // "asas11111111" to the BGV vendor.
     if (row.contact_number.trim()) {
       const phoneDigits = row.contact_number.replace(/\D/g, '');
@@ -5321,7 +5321,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   };
 
   /** Flush every typed-but-unsaved company row to the backend. Called by
-   *  the parent before navigating away from Stage 2 â€” onBlur alone isn't
+   *  the parent before navigating away from Stage 2 — onBlur alone isn't
    *  enough because (a) the user may click Next while a field still has
    *  focus, (b) date pickers blur synchronously but the persist is a
    *  microtask, and (c) any in-flight POST needs to finish so the next
@@ -5335,7 +5335,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         .map(c => persistCompany(c._localKey));
       await Promise.all(work);
       /* Persist the Yes/No answer onto the employee row so the radio
-       * group rehydrates on revisit. Without this, a "No â€” first job"
+       * group rehydrates on revisit. Without this, a "No — first job"
        * pick had nowhere to live (no previous_employments rows would be
        * created) and the radio reset to unanswered every time the wizard
        * was reopened. */
@@ -5344,12 +5344,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           await api.put(`/employees/${emp.dbId}`, {
             has_prior_experience: hasExperience === 'yes',
           });
-        } catch { /* non-fatal â€” keep the in-memory state */ }
+        } catch { /* non-fatal — keep the in-memory state */ }
       }
     },
     /* Returns WHY it failed, not just that it did. The caller used to show a
        single catch-all toast ("Complete the highlighted fields & documents
-       (or pick Yes / No)â€¦") for four different problems, so it never told the
+       (or pick Yes / No)…") for four different problems, so it never told the
        user what to actually do. */
     validate: () => {
       if (hasExperience === null) {
@@ -5363,14 +5363,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         }, 50);
         return {
           ok: false,
-          title: 'Previous employment â€” answer required',
+          title: 'Previous employment — answer required',
           message: 'Select whether this employee has previous employment (Yes or No) before moving to the next stage.',
         };
       }
 
       // Yes path: at least one company, each fully filled, HR Email 1 set, and
       // the mandatory doc (Last 3 Months Salary Slips) uploaded. The Previous
-      // Offer Letter is OPTIONAL (Bug #39) â€” it must not block saving. Freshers
+      // Offer Letter is OPTIONAL (Bug #39) — it must not block saving. Freshers
       // ('no') skip all of this.
       if (hasExperience === 'yes') {
         const companies = prevCompaniesRef.current;
@@ -5386,7 +5386,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         const isUp = (s?: string) => s === 'uploaded' || s === 'verified';
         const docUploaded = (c: PrevCompanyRow, key: string) => {
           if (!c.id) return false;
-          // Salary slips are multi-file (prev_{id}_salary_slips[, _2, _3â€¦]) â€”
+          // Salary slips are multi-file (prev_{id}_salary_slips[, _2, _3…]) —
           // satisfied if ANY slip is uploaded.
           if (key === 'salary_slips') {
             return Object.entries(docsByKey).some(([k, v]) =>
@@ -5400,7 +5400,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           if (!c.job_title.trim())    errs[`${k}:job_title`]    = 'Job title is required';
           if (!c.start_date)          errs[`${k}:start_date`]   = 'Start date is required';
           if (!c.end_date)            errs[`${k}:end_date`]     = 'End date is required';
-          /* Catches rows saved before the pickers were bounded â€” tightening a
+          /* Catches rows saved before the pickers were bounded — tightening a
              maxDate does not re-validate what is already stored. */
           if (c.end_date && c.end_date > prevEmpMaxIso) {
             errs[`${k}:end_date`] = joiningIso
@@ -5412,7 +5412,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           }
           if (!c.hr_email_1.trim())   errs[`${k}:hr_email_1`]   = 'HR Email ID 1 is required';
           else if (EMAIL_INVALID(c.hr_email_1)) errs[`${k}:hr_email_1`] = 'Enter a valid email address';
-          // Previous Offer Letter is optional â€” only the salary slips are required.
+          // Previous Offer Letter is optional — only the salary slips are required.
           if (!docUploaded(c, 'salary_slips')) errs[`${k}:doc`] = 'Upload the Last 3 Months Salary Slips';
         });
         if (Object.keys(errs).length) {
@@ -5421,7 +5421,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
             const firstKey = Object.keys(errs)[0].split(':')[0];
             document.querySelector(`[data-comp="${firstKey}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 50);
-          // Separate the two failure kinds â€” "fill this in" and "upload this"
+          // Separate the two failure kinds — "fill this in" and "upload this"
           // need different actions, and lumping them together is what made the
           // old message useless.
           const keys      = Object.keys(errs);
@@ -5432,7 +5432,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           if (fieldKeys.length && !docKeys.length) {
             return {
               ok: false,
-              title: 'Previous employment â€” incomplete details',
+              title: 'Previous employment — incomplete details',
               message: `Fill in the ${n(fieldKeys.length, 'highlighted field')} on the previous employment record${companies.length === 1 ? '' : 's'}.`,
             };
           }
@@ -5445,7 +5445,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           }
           return {
             ok: false,
-            title: 'Previous employment â€” incomplete',
+            title: 'Previous employment — incomplete',
             message: `Fill in the ${n(fieldKeys.length, 'highlighted field')} and upload the salary slips for ${n(docKeys.length, 'employer')}.`,
           };
         }
@@ -5456,7 +5456,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   }), [emp?.dbId, hasExperience, docsByKey]);
 
   /** Upload a document for a previous-employment row. Auto-persists the
-   *  company first if it's an unsaved draft â€” otherwise users who type a
+   *  company first if it's an unsaved draft — otherwise users who type a
    *  company name and immediately click Upload (without blurring out of
    *  the name field first) would never see an API call because c.id is
    *  still null and the upload key would be malformed. */
@@ -5483,7 +5483,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     triggerUpload(`prev_${pid}_${docId}`, docName, DOC_ACCEPT_ATTR, maxMb);
   };
 
-  // â”€â”€ Delete-confirmation modal target â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Delete-confirmation modal target ─────────────────────────────────
   // A single shared DeleteModal handles both flows (doc remove + company
   // remove). The `kind` discriminates so the confirm handler knows which
   // backend call to make.
@@ -5496,7 +5496,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   const removeCompany = (key: string) => {
     const row = prevCompanies.find(c => c._localKey === key);
     if (!row) return;
-    // Empty draft â€” drop straight away; nothing to confirm. Allow the
+    // Empty draft — drop straight away; nothing to confirm. Allow the
     // list to actually become empty so freshers can clear the section.
     if (!row.id && !row.company_name.trim()) {
       setPrevCompanies(prev => prev.filter(c => c._localKey !== key));
@@ -5516,7 +5516,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         try {
           await api.delete(`/documents/${deleteTarget.id}`);
           await reloadDocs();
-          toast.success(`${deleteTarget.name} removed`, 'You can upload a fresh copy whenever youâ€™re ready.');
+          toast.success(`${deleteTarget.name} removed`, 'You can upload a fresh copy whenever you’re ready.');
         } catch (err: any) {
           const msg = err?.response?.data?.message || err?.message || 'Delete failed';
           toast.error(`${deleteTarget.name} could not be removed`, String(msg));
@@ -5531,7 +5531,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
             return;
           }
         }
-        // Same here â€” let the list become empty so the user can sit in a
+        // Same here — let the list become empty so the user can sit in a
         // valid "fresher / no previous employer" state after deleting.
         setPrevCompanies(prev => prev.filter(c => c._localKey !== deleteTarget.key));
       }
@@ -5541,14 +5541,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     }
   };
 
-  // â”€â”€ Server-backed document state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Server-backed document state ─────────────────────────────────────
   // (docsByKey moved above the useImperativeHandle so validate() can list it
   // as a dependency without hitting a temporal-dead-zone ReferenceError.)
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
   /* Returns the refreshed key->document map, or null when the refresh itself
    * failed. Callers need that answer: the upload toast used to fire
    * unconditionally after this ran, so a failed refresh left the row still
-   * showing "Upload" with no file while a green "â€¦ uploaded" toast claimed
+   * showing "Upload" with no file while a green "… uploaded" toast claimed
    * otherwise. A success message that isn't checked against what the server
    * actually returned is just a guess. */
   const reloadDocs = async (): Promise<Record<string, ApiDocument> | null> => {
@@ -5575,10 +5575,10 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
    *  ID cards). The backend's ceiling still applies (currently 8 MB). */
   const triggerUpload = (docKey: string, docName: string, accept: string, maxMb?: number) => {
     if (!emp?.dbId) {
-      toast.error('Cannot upload', 'Save the employee first â€” no record id yet.');
+      toast.error('Cannot upload', 'Save the employee first — no record id yet.');
       return;
     }
-    // Per-doc cap, clamped to the backend ceiling â€” never let a doc
+    // Per-doc cap, clamped to the backend ceiling — never let a doc
     // demand more than the server can actually accept.
     const cap = Math.min(maxMb ?? DOC_MAX_MB, DOC_MAX_MB);
     const input = document.createElement('input');
@@ -5590,7 +5590,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       try { document.body.removeChild(input); } catch { /* already removed */ }
       if (!file) return;
 
-      // â”€â”€ Client-side validation (mirrors backend) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ── Client-side validation (mirrors backend) ──────────────────
       const maxBytes = cap * 1024 * 1024;
       if (file.size > maxBytes) {
         toast.error(
@@ -5602,7 +5602,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       // The browser-supplied MIME isn't 100% reliable; fall back to
       // extension when blank. Both the picker `accept` and this
       // validator pull from the same DOC_ACCEPTED_* constants so they
-      // can't drift apart. Either signal matching is enough â€” file
+      // can't drift apart. Either signal matching is enough — file
       // pickers on some platforms strip the MIME, so requiring both
       // would reject legit files.
       const mime = (file.type || '').toLowerCase();
@@ -5634,14 +5634,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         });
         // Only announce success once the refreshed list actually contains the
         // document. Anything else and the row would still read "Upload" while
-        // the toast said the file was in â€” the exact mismatch QA reported.
+        // the toast said the file was in — the exact mismatch QA reported.
         const fresh = await reloadDocs();
         if (fresh && fresh[docKey]) {
           toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
         } else {
           toast.warning(
             `${docName} sent, but not confirmed`,
-            'The upload went through â€” reload the stage to see it. If it is still missing, upload again.',
+            'The upload went through — reload the stage to see it. If it is still missing, upload again.',
           );
         }
       } catch (err: any) {
@@ -5664,11 +5664,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     setDeleteTarget({ kind: 'doc', id: docId, name: docName });
   };
 
-  /** All catalogue keys (across categories + prev-company docs) â€” drives totals. */
-  // â”€â”€ Total / uploaded counts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Catalogue docs (always 10) + per-company docs (4 Ã— companies that
+  /** All catalogue keys (across categories + prev-company docs) — drives totals. */
+  // ── Total / uploaded counts ────────────────────────────────────────
+  // Catalogue docs (always 10) + per-company docs (4 × companies that
   // are persisted on the server). Draft companies (no id yet) don't add
-  // to the total because their docs can't be uploaded yet â€” they'd
+  // to the total because their docs can't be uploaded yet — they'd
   // permanently bring the % down through no fault of the user.
   const catalogueKeys: string[] = [
     ...STAGE2_CATEGORIES.flatMap(cat => cat.docs.map(d => d.id)),
@@ -5684,7 +5684,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
     .filter(s => s === 'uploaded' || s === 'verified').length;
   const pct = totalDocs ? Math.round((uploadedDocs / totalDocs) * 100) : 0;
 
-  // Initial-load skeleton â€” unique to Stage 2 (animated category cards) so the
+  // Initial-load skeleton — unique to Stage 2 (animated category cards) so the
   // documents/previous-employment UI doesn't render against un-fetched data.
   if (docsLoading || prevLoading) {
     return (
@@ -5712,7 +5712,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
 
   return (
     <>
-      {/* Per-stage progress banner removed â€” sidebar already shows this. */}
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Status legend */}
       <div className="onb-doc-legend">
@@ -5749,7 +5749,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               <span className="onb-doc-cat-pct">{catPct}%</span>
             </div>
             {cat.docs.map(d => {
-              // Effective status â€” server row wins, falls back to the
+              // Effective status — server row wins, falls back to the
               // catalogue's intrinsic state ("Optional" rows stay Optional
               // until uploaded; everything else defaults to Pending).
               const srv = docsByKey[d.id];
@@ -5760,7 +5760,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               // Cheque: images + PDF. Everything else: every accepted
               // type (PDF / JPG / PNG / WEBP). Previously this used
               // "image/*" which let the OS dialog show BMP / GIF /
-              // HEIC / SVG â€” the user could pick one, and the backend
+              // HEIC / SVG — the user could pick one, and the backend
               // would reject with "Only PDF / JPG / PNG / WEBP files
               // are allowed" because no client guard had caught it yet.
               const accept = /^photo$/i.test(d.id)
@@ -5779,13 +5779,13 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     </h6>
                     <p className="onb-doc-row-sub">
                       {d.sub}
-                      {/* Uploaded file name â€” capped at 90 chars, and the sub
+                      {/* Uploaded file name — capped at 90 chars, and the sub
                           line is nowrap + ellipsis in CSS so it can never wrap
                           onto a second row. Full name on hover via `title`. */}
                       {srv?.original_name && (
-                        <> Â· <strong title={srv.original_name}>{truncateDocName(srv.original_name)}</strong></>
+                        <> · <strong title={srv.original_name}>{truncateDocName(srv.original_name)}</strong></>
                       )}
-                      {srv?.rejection_reason && <> Â· <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
+                      {srv?.rejection_reason && <> · <span style={{ color: '#b1401d' }}>Reason: {srv.rejection_reason}</span></>}
                     </p>
                   </div>
                   <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
@@ -5803,7 +5803,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       </a>
                     </Tooltip>
                   )}
-                  <Tooltip label={isBusy ? 'Uploadingâ€¦' : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)}>
+                  <Tooltip label={isBusy ? 'Uploading…' : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)}>
                     <button
                       type="button"
                       className="onb-doc-upload-btn"
@@ -5812,7 +5812,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
                     >
                       <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
-                      {isBusy ? 'Uploadingâ€¦' : (srv ? 'Replace' : 'Upload')}
+                      {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
                   </Tooltip>
                   {srv && (
@@ -5833,7 +5833,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         );
       })}
 
-      {/* Previous Employment Documents â€” optional. A fresher with no
+      {/* Previous Employment Documents — optional. A fresher with no
           prior employer simply leaves this section empty. Red-outlined when
           the stage-advance validation flags it (mirrors the toast). */}
       <div
@@ -5856,7 +5856,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           </span>
         </div>
 
-        {/* â”€â”€ Yes / No selector â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        {/* ── Yes / No selector ─────────────────────────────────────────
             Drives whether the experience form renders or the section
             collapses into a fresher confirmation. The two-button radio
             mirrors patterns already used elsewhere in the wizard. */}
@@ -5866,13 +5866,13 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           </p>
           <div className="d-flex gap-2 flex-wrap" role="radiogroup" aria-label="Has previous experience" aria-required="true" aria-invalid={hasExperienceError}>
             {([
-              { v: 'yes' as const, label: 'Yes â€” they have prior experience', icon: 'ri-briefcase-line' },
-              { v: 'no'  as const, label: 'No â€” this is their first job',     icon: 'ri-graduation-cap-line' },
+              { v: 'yes' as const, label: 'Yes — they have prior experience', icon: 'ri-briefcase-line' },
+              { v: 'no'  as const, label: 'No — this is their first job',     icon: 'ri-graduation-cap-line' },
             ]).map(opt => {
               const active = hasExperience === opt.v;
               const errored = hasExperienceError && !active;
               // Once a previous company is saved (i.e. the HR picked "Yes" and
-              // advanced), they can't flip back to "No â€” first job" â€” that would
+              // advanced), they can't flip back to "No — first job" — that would
               // orphan recorded experience. Remove the companies to unlock.
               const locked = opt.v === 'no' && hasExperience === 'yes' && prevCompanies.some(c => c.id);
               return (
@@ -5882,15 +5882,15 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   role="radio"
                   aria-checked={active}
                   aria-disabled={locked}
-                  title={locked ? 'Remove the previous companies first to switch to â€œfirst jobâ€.' : undefined}
+                  title={locked ? 'Remove the previous companies first to switch to “first job”.' : undefined}
                   onClick={() => {
                     if (locked) {
-                      toast.warning('Locked', 'Previous experience is already recorded â€” remove the companies first to switch to â€œfirst jobâ€.');
+                      toast.warning('Locked', 'Previous experience is already recorded — remove the companies first to switch to “first job”.');
                       return;
                     }
                     setHasExperience(opt.v);
                     setHasExperienceError(false);
-                    // Picking "Yes" with an empty list â€” pre-seed a draft
+                    // Picking "Yes" with an empty list — pre-seed a draft
                     // row so the user has somewhere to type immediately.
                     if (opt.v === 'yes' && prevCompanies.length === 0) {
                       addCompany();
@@ -5950,7 +5950,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           )}
         </div>
 
-        {/* â”€â”€ Fresher confirmation banner â€” shown when user picked "No" */}
+        {/* ── Fresher confirmation banner — shown when user picked "No" */}
         {hasExperience === 'no' && (
           <div
             className="onb-doc-bgv-banner"
@@ -5964,17 +5964,17 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           </div>
         )}
 
-        {/* Experience form (companies + docs) â€” rendered only when the
+        {/* Experience form (companies + docs) — rendered only when the
             user has explicitly answered Yes. */}
         {hasExperience === 'yes' && prevCompanies.map((c, idx) => {
-          // Per-company doc upload key â€” namespaced so each row has its
+          // Per-company doc upload key — namespaced so each row has its
           // own slots in the employee_documents table without colliding
           // with the catalogue keys.
           const docKeyFor = (k: string) => c.id ? `prev_${c.id}_${k}` : '';
           const compDocsTotal = STAGE2_COMPANY_DOCS.length;
           const compDocsUploaded = c.id
             ? STAGE2_COMPANY_DOCS.filter(d => {
-                // Salary slips: multi-file â€” count the slot done if ANY slip exists.
+                // Salary slips: multi-file — count the slot done if ANY slip exists.
                 if (d.id === 'salary_slips') {
                   return Object.entries(docsByKey).some(([k, v]) =>
                     (k === `prev_${c.id}_salary_slips` || k.startsWith(`prev_${c.id}_salary_slips_`)) &&
@@ -5990,7 +5990,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
               <span className="onb-doc-comp-num">{idx + 1}</span>
               <h6 className="onb-doc-comp-name">{c.company_name || `Previous Company ${idx + 1}`}</h6>
               <span className="onb-doc-comp-count">{compDocsUploaded}/{compDocsTotal} Docs</span>
-              {/* Always-visible remove button â€” the user is allowed to
+              {/* Always-visible remove button — the user is allowed to
                   clear every previous-employer row (e.g. fresher who
                   added a company by mistake). The list is now allowed
                   to be empty. */}
@@ -6038,7 +6038,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     placeholder="Select start date"
                     value={c.start_date}
                     invalid={!!compErrors[`${c._localKey}:start_date`]}
-                    // Previous employment must have already started â€” cap at
+                    // Previous employment must have already started — cap at
                     // today; floor at 5 years ago so the captured experience
                     // can't exceed the allowed 5-year window (BUG-034).
                     minDate={_shiftYears(-5)}
@@ -6072,8 +6072,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                 </div>
               )}
               {STAGE2_COMPANY_DOCS.map(d => {
-                // â”€â”€ Salary slips: multi-file slot. Upload several (one per
-                //    month); list them, and after 3 the list scrolls. â”€â”€â”€â”€â”€â”€
+                // ── Salary slips: multi-file slot. Upload several (one per
+                //    month); list them, and after 3 the list scrolls. ──────
                 if (d.id === 'salary_slips') {
                   const slips = c.id
                     ? Object.entries(docsByKey)
@@ -6101,11 +6101,11 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                           disabled={busyAny || c._busy || !c.id}
                           onClick={() => uploadForCompany(c._localKey, nextDocId(), d.name, d.maxMb)}
                         >
-                          <i className={busyAny ? 'ri-loader-4-line onb-spin' : 'ri-add-line'} /> {busyAny ? 'Uploadingâ€¦' : 'Add Slip'}
+                          <i className={busyAny ? 'ri-loader-4-line onb-spin' : 'ri-add-line'} /> {busyAny ? 'Uploading…' : 'Add Slip'}
                         </button>
                       </div>
                       {slips.length === 0 ? (
-                        <div className="onb-doc-row-sub" style={{ marginTop: 6 }}>No salary slips yet â€” add one per month (last 3 months).</div>
+                        <div className="onb-doc-row-sub" style={{ marginTop: 6 }}>No salary slips yet — add one per month (last 3 months).</div>
                       ) : (
                         <div style={{ marginTop: 8, maxHeight: 150, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2 }}>
                           {slips.map((s, si) => {
@@ -6143,7 +6143,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     <h6 className="onb-doc-comp-doc-name">
                       {d.name}
                       {d.status === 'Optional' && <span className="onb-doc-tag">Optional</span>}
-                      {srv?.original_name && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>Â· {srv.original_name}</span>}
+                      {srv?.original_name && <span style={{ marginLeft: 8, fontSize: 11, color: '#6b7280' }}>· {srv.original_name}</span>}
                     </h6>
                     <span className={`onb-doc-status-pill onb-doc-status-pill--${String(effective).toLowerCase()}`}>
                       {effective}
@@ -6163,7 +6163,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     <Tooltip
                       label={
                         isBusy
-                          ? 'Uploadingâ€¦'
+                          ? 'Uploading…'
                           : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
                       }
                     >
@@ -6175,7 +6175,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                         style={(isBusy || c._busy) ? { opacity: 0.6, cursor: 'progress' } : undefined}
                       >
                         <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
-                        {isBusy ? 'Uploadingâ€¦' : (srv ? 'Replace' : 'Upload')}
+                        {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                       </button>
                     </Tooltip>
                     {srv && (
@@ -6249,16 +6249,16 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                     onBlur={() => persistCompany(c._localKey)}
                     disabled={c._busy}
                   />
-                  {/* Inline length hint â€” only shown once the user has
+                  {/* Inline length hint — only shown once the user has
                       typed something but the digit count is outside
-                      the 7â€“15 ITU-T window. Stays silent while empty
+                      the 7–15 ITU-T window. Stays silent while empty
                       so it isn't visual noise for fresh rows. */}
                   {(() => {
                     const d = c.contact_number.replace(/\D/g, '');
                     if (d.length === 0 || (d.length >= 7 && d.length <= 15)) return null;
                     return (
                       <small style={{ color: '#dc2626', fontSize: 11.5 }}>
-                        Enter 7â€“15 digits
+                        Enter 7–15 digits
                       </small>
                     );
                   })()}
@@ -6268,7 +6268,7 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
           </div>
         );})}
 
-        {/* Add button â€” only when the user is in Yes mode. Hidden for
+        {/* Add button — only when the user is in Yes mode. Hidden for
             Fresher so the "No" answer feels final, not half-complete. */}
         {hasExperience === 'yes' && (
           <button type="button" className="onb-doc-add-comp" onClick={addCompany}>
@@ -6299,8 +6299,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
 });
 Stage2Documents.displayName = 'Stage2Documents';
 
-// â”€â”€ Stage 3 â€” Provisioning & Asset Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-/** Stage 3 â€” Provisioning. Reads/writes the SAME `s1` state as the
+// ── Stage 3 — Provisioning & Asset Setup ────────────────────────────────────
+/** Stage 3 — Provisioning. Reads/writes the SAME `s1` state as the
  *  Stage 1 wizard so the asset selections stay in lock-step (the row's
  *  `laptop_master_asset_id` / `mobile_master_asset_id` / `other_master_asset_ids`
  *  are the only persisted FK columns). Saving Stage 3 reuses
@@ -6316,18 +6316,18 @@ function Stage3Provisioning({
   laptopAssets: { value: string; label: string }[];
   mobileAssets: { value: string; label: string }[];
   otherAssets:  { value: string; label: string }[];
-  /* True while the available-assets fetch is in flight â€” the pickers shimmer
+  /* True while the available-assets fetch is in flight — the pickers shimmer
    * instead of flashing a saved FK as a raw id. */
   assetsLoading?: boolean;
-  /* Re-fetch the free-asset lists when a picker opens â€” another user may
+  /* Re-fetch the free-asset lists when a picker opens — another user may
      have claimed a device since this stage was mounted. */
   onAssetsOpen?: () => void;
 }) {
-  // Cosmetic progress meter â€” counts each provisioning area that has
+  // Cosmetic progress meter — counts each provisioning area that has
   // at least one filled value. Keeps the banner moving as the admin
   // works through the section.
-  // Must stay identical to the parent's stage3TasksDone â€” same helper, same
-  // total â€” or the banner here and the sidebar there disagree about the stage.
+  // Must stay identical to the parent's stage3TasksDone — same helper, same
+  // total — or the banner here and the sidebar there disagree about the stage.
   const tasksTotal = 2;
   const tasksDone  =
     (assetSlotAnswered(s1.laptop_assigned, s1.laptop_master_asset_id) ? 1 : 0)
@@ -6336,7 +6336,7 @@ function Stage3Provisioning({
 
   /* The "EDITABLE" badge was removed: it sat on eight fields that are all
      plainly editable inputs, so it stated the obvious and added chip noise to
-     every label. "AUTO GENERATED" stays â€” that one tells the user something
+     every label. "AUTO GENERATED" stays — that one tells the user something
      they can't see from the control itself (Employee Code comes from the
      number series and cannot be typed). */
   const autoGenLabel = (
@@ -6359,7 +6359,7 @@ function Stage3Provisioning({
 
   return (
     <>
-      {/* Per-stage progress banner removed â€” sidebar already shows this. */}
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* System & Email Access */}
       <div className="onb-prov-section">
@@ -6384,7 +6384,7 @@ function Stage3Provisioning({
     placeholder="firstname.lastname@company.com"
     value={s1.official_email}
     onChange={e => {
-      // Strip whitespace as the user types â€” pasted emails often
+      // Strip whitespace as the user types — pasted emails often
       // arrive with stray spaces and the SMTP gateway rejects them.
       const v = normaliseEmail(e.target.value);
       setS1((p: any) => ({ ...p, official_email: v }));
@@ -6411,7 +6411,7 @@ function Stage3Provisioning({
         </div>
       </div>
 
-      {/* Device & Asset Allocation â€” fully editable. Bound to the same
+      {/* Device & Asset Allocation — fully editable. Bound to the same
           `s1` state used by the Stage 1 wizard, so changes here ride
           along on the next Save Draft / Next Stage. The pickers come
           from /employees/available-assets (booked devices on other
@@ -6451,7 +6451,7 @@ function Stage3Provisioning({
                   options={laptopAssets}
                   onOpen={onAssetsOpen}
                   loading={assetsLoading}
-                  placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial â€” Name)'}
+                  placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                   value={s1.laptop_master_asset_id}
                   invalid={!!s1Errors?.laptop_master_asset_id}
                   onChange={(v) => {
@@ -6492,7 +6492,7 @@ function Stage3Provisioning({
                   options={mobileAssets}
                   onOpen={onAssetsOpen}
                   loading={assetsLoading}
-                  placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial â€” Name)'}
+                  placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                   value={s1.mobile_master_asset_id}
                   invalid={!!s1Errors?.mobile_master_asset_id}
                   onChange={(v) => {
@@ -6524,7 +6524,7 @@ function Stage3Provisioning({
         </div>
       </div>
 
-      {/* Physical Setup & Identification â€” bound to s1 so saves ride
+      {/* Physical Setup & Identification — bound to s1 so saves ride
           along with the rest of the wizard / Stage 3 PUT. */}
       <div className="onb-prov-section">
         <div className="onb-prov-section-head">
@@ -6578,11 +6578,11 @@ function Stage3Provisioning({
   );
 }
 
-// â”€â”€ Stage 4 â€” Payroll & Finance Setup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 4 — Payroll & Finance Setup ──────────────────────────────────────
 /** Bound to the modal-level `s4` state so all Stage 4 progress, check-pills,
  *  Save Draft button, and Next-Stage gating share one source of truth. */
 type S4State = {
-  /* Cash payout was retired â€” onboarding offers Bank Transfer or Cheque only. */
+  /* Cash payout was retired — onboarding offers Bank Transfer or Cheque only. */
   salary_payment_mode: 'bank' | 'cheque';
   bank_name: string;
   bank_account_number: string;
@@ -6608,13 +6608,13 @@ function Stage4Payroll({
   showErrors: boolean;
   pass: number;
   total: number;
-  /* Why Agreed CTC is blocking, worded for the actual cause â€” "not entered"
+  /* Why Agreed CTC is blocking, worded for the actual cause — "not entered"
      and "entered but too small to register as 1 LPA" need different fixes.
      Empty when CTC is fine. Resolved by the modal, which owns Stage 1's
      annual salary. */
   ctcProblem?: string;
-  /* Whether Provident Fund applies to this employee (Stage 1 â†’ Compensation).
-     When false the PF-only fields (UAN, PF Type) are hidden â€” they have no
+  /* Whether Provident Fund applies to this employee (Stage 1 → Compensation).
+     When false the PF-only fields (UAN, PF Type) are hidden — they have no
      meaning, and offering them implies PF will be deducted. */
   pfApplicable?: boolean;
 }) {
@@ -6627,7 +6627,7 @@ function Stage4Payroll({
   const pct = total ? Math.round((pass / total) * 100) : 0;
   const allDone = pass === total;
 
-  // Per-field invalidity â€” only surfaced after a failed advance/save
+  // Per-field invalidity — only surfaced after a failed advance/save
   // (showErrors). Bank fields apply only in `bank` mode; PAN/CTC/PF always.
   const bankMode = s4.salary_payment_mode === 'bank';
   const invalid = {
@@ -6639,14 +6639,14 @@ function Stage4Payroll({
     pan_number:          showErrors && !/^[A-Z]{5}[0-9]{4}[A-Z]$/i.test(s4.pan_number.trim()),
     pf_deduction:        showErrors && !s4.pf_deduction.trim(),
     agreed_ctc_lpa:      showErrors && !(Number(s4.agreed_ctc_lpa) > 0),
-    // Required whenever the field is VISIBLE â€” it is only rendered when PF
+    // Required whenever the field is VISIBLE — it is only rendered when PF
     // applies, and PF without a UAN cannot be filed.
     uan_number:          showErrors && !!pfApplicable && !/^\d{12}$/.test(s4.uan_number.trim()),
   };
 
   return (
     <>
-      {/* Per-stage progress banner removed â€” sidebar already shows this. */}
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
       {/* Salary Payment Mode */}
       <div className="onb-pay-section">
@@ -6675,11 +6675,11 @@ function Stage4Payroll({
         </div>
       </div>
 
-      {/* Bank Details â€” only collected for `bank` mode. Cheque skips
+      {/* Bank Details — only collected for `bank` mode. Cheque skips
           straight to Tax & Statutory since no account is needed. This also
           matches the validation + readiness checks, which require bank details
           ONLY when the mode is `bank` (showing them for Cheque was misleading
-          since they were never validated/required â€” QA bug). */}
+          since they were never validated/required — QA bug). */}
       {s4.salary_payment_mode === 'bank' && (
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
@@ -6703,7 +6703,7 @@ function Stage4Payroll({
                 onChange={e =>
                   setS4(p => ({
                     // Digits only, capped at 18 chars (Indian banking standard
-                    // is 9â€“18 digits; we accept anything in that band here and
+                    // is 9–18 digits; we accept anything in that band here and
                     // surface the inline hint when it's out of range).
                     ...p,
                     bank_account_number: e.target.value.replace(/\D/g, '').slice(0, 18),
@@ -6712,7 +6712,7 @@ function Stage4Payroll({
               />
               {s4.bank_account_number && (s4.bank_account_number.length < 9 || s4.bank_account_number.length > 18) && (
                 <small style={{ color: '#dc2626', fontSize: 11.5 }}>
-                  Account number must be 9â€“18 digits
+                  Account number must be 9–18 digits
                 </small>
               )}
             </Col>
@@ -6728,7 +6728,7 @@ function Stage4Payroll({
                 value={s4.ifsc_code}
                 onChange={e =>
                   setS4(p => ({
-                    // Strip anything that isn't Aâ€“Z / 0â€“9 on the way in so
+                    // Strip anything that isn't A–Z / 0–9 on the way in so
                     // stray whitespace or symbols (common when typing fast
                     // or after autofill) never reach the regex. Cap at 11
                     // chars in case the browser bypasses maxLength on paste.
@@ -6756,7 +6756,7 @@ function Stage4Payroll({
               <label className="onb-init-label">Account Type</label>
               <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
             </Col>
-            {/* UAN moved OUT of this section â€” see Tax & Statutory Details.
+            {/* UAN moved OUT of this section — see Tax & Statutory Details.
                 It sat inside Bank Details, which only renders for "Bank
                 Transfer", so choosing "Payment by Cheque" hid a field that
                 validation still demanded: the stage reported "UAN is required
@@ -6791,19 +6791,19 @@ function Stage4Payroll({
               <label className="onb-init-label">Tax Regime</label>
               <MasterSelect options={ONB_TAX_REGIME} value={s4.tax_regime || 'New Regime (115BAC)'} onChange={(v) => setS4(p => ({ ...p, tax_regime: v }))} />
             </Col>
-            {/* Same rule as UAN â€” a PF Type reading "Statutory" under
+            {/* Same rule as UAN — a PF Type reading "Statutory" under
                 PF Applicable = No is misleading, so hide it too. */}
             {pfApplicable && (
               <Col data-field="pf_deduction" md={4}>
                 <label className="onb-init-label">PF Type</label>
-                <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only â€” set in Stage 1 */ }} disabled />
+                <MasterSelect options={ONB_PF_TYPE} value={s4.pf_deduction || 'Statutory'} onChange={() => { /* read-only — set in Stage 1 */ }} disabled />
                 {/* Read-only mirror of Stage 1. When it's blank the readiness
-                    check fails and there is nothing to type here â€” say where to
+                    check fails and there is nothing to type here — say where to
                     go instead of leaving a dead required field. */}
                 <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.pf_deduction ? '#dc2626' : '#9ca3af' }}>
                   {invalid.pf_deduction
-                    ? 'Not set â€” choose PF Type on Stage 1 (Compensation).'
-                    : 'Set in Stage 1 (Compensation) â€” read-only here.'}
+                    ? 'Not set — choose PF Type on Stage 1 (Compensation).'
+                    : 'Set in Stage 1 (Compensation) — read-only here.'}
                 </small>
               </Col>
             )}
@@ -6811,7 +6811,7 @@ function Stage4Payroll({
                 the account the PF contribution is filed against, and that is
                 true whether salary goes out by transfer or by cheque. So it
                 lives here with PAN / PF Type / ESI and is gated ONLY by whether
-                PF applies â€” the same condition its validation uses. */}
+                PF applies — the same condition its validation uses. */}
             {pfApplicable && (
               <Col data-field="uan_number" md={4}>
                 <label className="onb-init-label">UAN Number (PF) <span className="req">*</span></label>
@@ -6842,7 +6842,7 @@ function Stage4Payroll({
               <label className="onb-init-label">Agreed CTC (LPA) <span className="req">*</span></label>
               <input
                 className={`onb-init-input${invalid.agreed_ctc_lpa ? ' is-invalid' : ''}`}
-                placeholder="â€”"
+                placeholder="—"
                 value={s4.agreed_ctc_lpa}
                 readOnly
                 style={{ background: 'var(--vz-light, #f3f3f9)', cursor: 'not-allowed' }}
@@ -6852,8 +6852,8 @@ function Stage4Payroll({
                   than leaving a field the user cannot fill. */}
               <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: invalid.agreed_ctc_lpa ? '#dc2626' : '#9ca3af' }}>
                 {invalid.agreed_ctc_lpa
-                  ? (ctcProblem || 'Not set â€” enter Annual Salary on Stage 1 (Compensation) and it will fill in here.')
-                  : 'From the Stage 1 salary â€” read-only here.'}
+                  ? (ctcProblem || 'Not set — enter Annual Salary on Stage 1 (Compensation) and it will fill in here.')
+                  : 'From the Stage 1 salary — read-only here.'}
               </small>
             </Col>
           </Row>
@@ -6869,7 +6869,7 @@ function Stage4Payroll({
         <div className="onb-pay-section-body">
           {checkRows.map(c => {
             // Bank details aren't applicable for a Cheque payout. The
-            // readiness check auto-passes them in that mode â€” but rendering
+            // readiness check auto-passes them in that mode — but rendering
             // that as a green "Verified" wrongly implied bank info was entered
             // (QA bug). Show a neutral "Not required" row instead; it still
             // counts toward stage completion since no account is needed.
@@ -6903,7 +6903,7 @@ function Stage4Payroll({
   );
 }
 
-// â”€â”€ Stage 5 â€” Policies & Agreements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 5 — Policies & Agreements ────────────────────────────────────────
 function Stage5Policies({ emp, onProgress }: {
   emp: OnboardRow;
   /* Fires whenever the signed/total counts change, so the wizard sidebar can
@@ -6917,7 +6917,7 @@ function Stage5Policies({ emp, onProgress }: {
     doc_type: string | null;
     status: 'Active' | 'Draft' | 'Deprecated';
     /* JSON column on hr_document_templates carrying the configured
-     * signing pipeline (Reporting Manager â†’ Employee â†’ Client CEO â€¦).
+     * signing pipeline (Reporting Manager → Employee → Client CEO …).
      * Each entry holds at least { role_name, designation_name, action,
      * days }. Already shipped by the /match endpoint thanks to the
      * model's `signers => array` cast. */
@@ -6927,7 +6927,7 @@ function Stage5Policies({ emp, onProgress }: {
   const toast = useToast();
   const [templates, setTemplates] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(false);
-  // Per-template readiness â€” the Generate button stays disabled until that
+  // Per-template readiness — the Generate button stays disabled until that
   // template's detail (content + custom-field tokens) has been fetched, so a
   // user can't open Generate before its custom fields are known. Clicking
   // while still loading shows a toast.
@@ -6935,7 +6935,7 @@ function Stage5Policies({ emp, onProgress }: {
   // Whether each template actually references any registered custom field
   // (scanned from its content_html). Drives the "no custom fields" toast.
   const [tplHasFields, setTplHasFields] = useState<Record<number, boolean>>({});
-  // Generate modal â€” custom-field fill â†’ preview â†’ download / send for signature.
+  // Generate modal — custom-field fill → preview → download / send for signature.
   const [genTpl, setGenTpl] = useState<Tpl | null>(null);
   /* Click-to-expand: the row a user has clicked, revealing the
    * signing-workflow stepper underneath. Single-row open at a time so
@@ -6944,7 +6944,7 @@ function Stage5Policies({ emp, onProgress }: {
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
   /* Parse the signers column off a template. Mirrors the helper inside
-   * the Evidence Vault component above â€” the cast usually returns an
+   * the Evidence Vault component above — the cast usually returns an
    * array, but a stale serializer can leave it as a JSON string. */
   const parseSigners = (raw: any): Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }> => {
     if (Array.isArray(raw)) return raw;
@@ -6954,12 +6954,12 @@ function Stage5Policies({ emp, onProgress }: {
     return [];
   };
 
-  /* Fetch matched onboarding templates â€” same endpoint the Evidence
+  /* Fetch matched onboarding templates — same endpoint the Evidence
    * Vault tab uses (/hr-document-templates/match with trigger_keyword
    * = onboarding), so a template configured once in HR > Document
    * Templates surfaces on both surfaces without double bookkeeping.
    * Leave / Attendance templates are filtered out client-side because
-   * those belong to the HR > Leave & Attendance module â€” letting them
+   * those belong to the HR > Leave & Attendance module — letting them
    * also appear here would double-prompt the employee to acknowledge
    * the same policy. */
   useEffect(() => {
@@ -7019,11 +7019,11 @@ function Stage5Policies({ emp, onProgress }: {
     return () => { cancelled = true; };
   }, [templates]);
 
-  // â”€â”€ Signing runs â€” the SAME workflow Exit Management uses. "Send" creates
+  // ── Signing runs — the SAME workflow Exit Management uses. "Send" creates
   // a row in hr_document_signatures with the template's configured signers;
   // each signer then signs in-app sequentially. We list the runs for this
   // employee so the row reflects the LIVE signing status (Awaiting / Signed)
-  // instead of the old hardcoded "Not Generated". No third-party â€” fully
+  // instead of the old hardcoded "Not Generated". No third-party — fully
   // internal (Zoho is only for CLM trade agreements, not HR docs).
   type RunSigner = {
     name?: string | null; role_name?: string | null; action?: string | null;
@@ -7038,23 +7038,23 @@ function Stage5Policies({ emp, onProgress }: {
     template_id: number; signers: RunSigner[]; current_index: number;
     created_at?: string | null;
     updated_at?: string | null;
-    /* Frozen copy of the document as signed â€” the signers' PNGs are merged
+    /* Frozen copy of the document as signed — the signers' PNGs are merged
        into this HTML as each {{SignerNSign}} token is filled, so rendering it
        IS the signed document. Same field the Evidence Vault previews. */
     content_html?: string | null;
     header_config?: HeaderConfig | null;
     footer_config?: FooterConfig | null;
     template?: { id: number; code: string; name: string; doc_type: string | null } | null;
-    /* Which module started the run (Onboarding / Exit Management / â€¦). The
+    /* Which module started the run (Onboarding / Exit Management / …). The
        signed archive below spans every trigger, so each row is labelled. */
     trigger_point_name?: string | null;
     trigger_keyword?: string | null;
   };
   const [runs, setRuns] = useState<SignatureRun[]>([]);
   const [sendingId, setSendingId] = useState<number | null>(null);
-  // Which row's â‹® (previous signed copies) menu is open.
+  // Which row's ⋮ (previous signed copies) menu is open.
   const [menuTplId, setMenuTplId] = useState<number | null>(null);
-  // Rich "Send for Signing" modal (workflow preview) â€” replaces the plain
+  // Rich "Send for Signing" modal (workflow preview) — replaces the plain
   // confirm so this matches the Evidence Vault send experience.
   const [sendForTpl, setSendForTpl] = useState<Tpl | null>(null);
   // Download the final signed PDF (all signatures embedded) for a completed run.
@@ -7091,7 +7091,7 @@ function Stage5Policies({ emp, onProgress }: {
   }, [emp?.dbId]);
   useEffect(() => { fetchRuns(); }, [fetchRuns]);
 
-  // Latest run per template (highest id wins) â†’ drives each row's status pill.
+  // Latest run per template (highest id wins) → drives each row's status pill.
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();
     for (const r of runs) {
@@ -7101,9 +7101,9 @@ function Stage5Policies({ emp, onProgress }: {
     return m;
   }, [runs]);
 
-  // All COMPLETED runs per template, newest first â†’ [0] is the current signed
+  // All COMPLETED runs per template, newest first → [0] is the current signed
   // copy; the rest are previous signed copies (from earlier re-sends) shown
-  // behind the â‹® menu.
+  // behind the ⋮ menu.
   const completedRunsByTpl = useMemo(() => {
     const m = new Map<number, SignatureRun[]>();
     for (const r of runs) {
@@ -7119,7 +7119,7 @@ function Stage5Policies({ emp, onProgress }: {
 
   /* Report the LIVE counts up to the modal so the sidebar percentage tracks
      them. The parent used to fetch its own copy of exactly this, once, keyed
-     on [isOpen, employee] â€” so signing a document while the wizard was open
+     on [isOpen, employee] — so signing a document while the wizard was open
      left Stage 5 reading "0%" next to a row already showing "Signed". Two
      sources of the same truth; now there is one, and this component already
      refetches after every send / sign action. */
@@ -7158,7 +7158,7 @@ function Stage5Policies({ emp, onProgress }: {
         <span className="onb-pol-legend-item"><span className="dot" style={{ background: '#7c5cfc' }} /> Awaiting</span>
       </div>
 
-      {/* Organizational documents â€” pulled from HR > Document Templates */}
+      {/* Organizational documents — pulled from HR > Document Templates */}
       <div className="onb-pol-section">
         <div className="onb-pol-section-head">
           <span className="onb-pol-section-icon"><i className="ri-shield-check-line" /></span>
@@ -7201,11 +7201,11 @@ function Stage5Policies({ emp, onProgress }: {
           const run = runByTemplateId.get(tpl.id) || null;
           const isSending = sendingId === tpl.id;
           const runActive = !!run && (run.status === 'Pending' || run.status === 'In Progress');
-          // Once signed (Completed) the document is final â€” Resend must be
+          // Once signed (Completed) the document is final — Resend must be
           // disabled (a signed offer letter can't be re-sent). Rejected /
           // cancelled runs are NOT signed, so they stay re-sendable.
           // Latest signed copy (stays downloadable even while a re-send is in
-          // progress); previous signed copies live behind the â‹® menu.
+          // progress); previous signed copies live behind the ⋮ menu.
           const signedRuns = completedRunsByTpl.get(tpl.id) || [];
           const latestSigned = signedRuns[0] || null;
           // Status pill text/colour derived from the run.
@@ -7215,9 +7215,9 @@ function Stage5Policies({ emp, onProgress }: {
                            : runActive                    ? { label: 'Awaiting Sign', color: '#7c5cfc' }
                            :                                 { label: 'Not Sent',    color: '#9ca3af' };
           return (
-            /* Whole CARD is the toggle target â€” used to be just the
+            /* Whole CARD is the toggle target — used to be just the
              * inner row, so clicking on the grey "Generate this document
-             * firstâ€¦" help-strip (still inside the card visually) did
+             * first…" help-strip (still inside the card visually) did
              * nothing. Moving the onClick up here means the entire patti
              * the user sees is one click-zone. Clicks on the Generate
              * button still bubble-stop so they don't toggle the panel. */
@@ -7244,7 +7244,7 @@ function Stage5Policies({ emp, onProgress }: {
                     {tpl.status === 'Draft' && <span className="onb-doc-tag" style={{ marginLeft: 6 }}>Draft</span>}
                     {signers.length > 0 && (
                       <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
-                        Â· {signers.length} signer{signers.length === 1 ? '' : 's'}
+                        · {signers.length} signer{signers.length === 1 ? '' : 's'}
                       </span>
                     )}
                   </h6>
@@ -7261,19 +7261,19 @@ function Stage5Policies({ emp, onProgress }: {
                     is final and shows no action at all (Bug #40). */}
                 {(() => {
                   // Once every signer has signed (run Completed) the document is
-                  // final â€” no Resend action at all (Bug #40). The "Signed" status
-                  // pill + the â‹® download menu remain. Rejected / cancelled runs
+                  // final — no Resend action at all (Bug #40). The "Signed" status
+                  // pill + the ⋮ download menu remain. Rejected / cancelled runs
                   // are NOT signed, so those still stay re-sendable below.
                   if (run?.status === 'Completed') return null;
                   const fieldsReady = readyTpls.has(tpl.id);
                   const hasFields = !!tplHasFields[tpl.id];
                   const sendBlocked = tpl.status !== 'Active' || !emp.dbId || isSending || runActive || !fieldsReady;
-                  const sendLabel = isSending ? 'Sendingâ€¦'
+                  const sendLabel = isSending ? 'Sending…'
                     : runActive ? 'Awaiting Sign'
                     : run       ? 'Resend'
                     :             'Send for Signature';
-                  /* onb-spin: the loader icon has to actually rotate â€” a static
-                     spinner glyph next to "Sendingâ€¦" read as a stuck button. */
+                  /* onb-spin: the loader icon has to actually rotate — a static
+                     spinner glyph next to "Sending…" read as a stuck button. */
                   const sendIcon = (isSending || (!runActive && !fieldsReady)) ? 'ri-loader-4-line onb-spin'
                     : runActive ? 'ri-time-line'
                     : 'ri-send-plane-line';
@@ -7288,9 +7288,9 @@ function Stage5Policies({ emp, onProgress }: {
                         if (!emp.dbId) { toast.warning('Save first', 'Save the employee before sending documents.'); return; }
                         if (isSending) return;
                         if (runActive) { toast.info('Already sent', 'This document is already out for signing.'); return; }
-                        if (!fieldsReady) { toast.info('Loading templateâ€¦', 'Please wait a moment while the template loads, then try again.'); return; }
+                        if (!fieldsReady) { toast.info('Loading template…', 'Please wait a moment while the template loads, then try again.'); return; }
                         // Always open the preview/fill modal so the document is
-                        // reviewed before sending â€” even with no custom fields we
+                        // reviewed before sending — even with no custom fields we
                         // don't want a blind "send unread". The modal previews
                         // the rendered PDF and sends from there.
                         setGenTpl(tpl);
@@ -7298,8 +7298,8 @@ function Stage5Policies({ emp, onProgress }: {
                       title={
                         tpl.status !== 'Active' ? 'Only Active templates can be sent'
                         : !emp.dbId        ? 'Save the employee first'
-                        : runActive        ? 'Already sent â€” signing in progress'
-                        : !fieldsReady     ? 'Loading templateâ€¦'
+                        : runActive        ? 'Already sent — signing in progress'
+                        : !fieldsReady     ? 'Loading template…'
                         : hasFields        ? 'Fill custom fields, then send for signing'
                         : 'Send through the configured signing workflow'
                       }
@@ -7315,7 +7315,7 @@ function Stage5Policies({ emp, onProgress }: {
                     </button>
                   );
                 })()}
-                {/* Signed â†’ download the current (latest) signed PDF. */}
+                {/* Signed → download the current (latest) signed PDF. */}
                 {latestSigned && (
                   <button
                     type="button"
@@ -7325,10 +7325,10 @@ function Stage5Policies({ emp, onProgress }: {
                     title="Download the latest signed PDF (all signatures)"
                     style={{ marginLeft: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', border: 0, cursor: downloadingRunId === latestSigned.id ? 'wait' : 'pointer', opacity: downloadingRunId === latestSigned.id ? 0.7 : 1 }}
                   >
-                    <i className={downloadingRunId === latestSigned.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === latestSigned.id ? 'Downloadingâ€¦' : 'Download'}
+                    <i className={downloadingRunId === latestSigned.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === latestSigned.id ? 'Downloading…' : 'Download'}
                   </button>
                 )}
-                {/* Previous signed copies (from earlier re-sends) â†’ â‹® menu. */}
+                {/* Previous signed copies (from earlier re-sends) → ⋮ menu. */}
                 {(() => {
                   const older = signedRuns.slice(1);
                   if (older.length === 0) return null;
@@ -7391,13 +7391,13 @@ function Stage5Policies({ emp, onProgress }: {
                 </span>
               </div>
 
-              {/* Signing-workflow stepper â€” same .ep-signing / .ep-signer
+              {/* Signing-workflow stepper — same .ep-signing / .ep-signer
                   classes Exit Management and the Evidence Vault use.
                   recruitment.css is already imported at the top of this
                   file so they resolve here too. No live signing-run yet
                   in Stage 5, so we always render the PREVIEW pipeline
                   with each signer in 'Pending' and step 1 as the
-                  active one â€” matches the "who will sign" affordance. */}
+                  active one — matches the "who will sign" affordance. */}
               {isExpanded && (
                 (run || signers.length > 0) ? (
                   <div className="ep-signing" style={{ margin: '4px 16px 12px' }}>
@@ -7416,13 +7416,13 @@ function Stage5Policies({ emp, onProgress }: {
                           title="Download the signed PDF"
                           style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#0e7490', background: '#cffafe', border: '1px solid #a5f3fc', borderRadius: 7, padding: '3px 9px', cursor: downloadingRunId === run.id ? 'wait' : 'pointer' }}
                         >
-                          <i className={downloadingRunId === run.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === run.id ? 'Downloadingâ€¦' : 'Download signed PDF'}
+                          <i className={downloadingRunId === run.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === run.id ? 'Downloading…' : 'Download signed PDF'}
                         </button>
                       )}
                     </div>
                     <div className="ep-signing-flow">
-                      {/* When SENT â†’ live per-signer status from the run; else
-                          â†’ preview the template's configured signers. Same as
+                      {/* When SENT → live per-signer status from the run; else
+                          → preview the template's configured signers. Same as
                           Exit Management / Evidence Vault. */}
                       {(run
                         ? run.signers.map((s, i) => ({
@@ -7451,10 +7451,10 @@ function Stage5Policies({ emp, onProgress }: {
                                 ({sg.action})
                               </span>
                             )}
-                            {/* Signing tracker â€” who signed & when. */}
+                            {/* Signing tracker — who signed & when. */}
                             {sg.state === 'Completed' && sg.at && (
                               <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 500, marginTop: 1 }}>
-                                Signed Â· {fmtSignedAt(sg.at)}
+                                Signed · {fmtSignedAt(sg.at)}
                               </span>
                             )}
                           </span>
@@ -7466,7 +7466,7 @@ function Stage5Policies({ emp, onProgress }: {
                 ) : (
                   <p className="onb-pol-doc-help" style={{ paddingLeft: 16 }}>
                     <i className="ri-information-line" />
-                    No signers configured on this template â€” open it in
+                    No signers configured on this template — open it in
                     <strong> HR &rsaquo; Document Templates</strong> and add a Signing Workflow.
                   </p>
                 )
@@ -7476,9 +7476,9 @@ function Stage5Policies({ emp, onProgress }: {
                 <p className="onb-pol-doc-help">
                   <i className="ri-information-line" />
                   {runActive
-                    ? 'Sent â€” waiting on the signers. Expand to see who\'s next.'
+                    ? 'Sent — waiting on the signers. Expand to see who\'s next.'
                     : run?.status === 'Completed'
-                    ? 'All signers have signed. âœ“'
+                    ? 'All signers have signed. ✓'
                     : 'Click Send to start the signing workflow and notify the signers.'}
                 </p>
               )}
@@ -7492,7 +7492,7 @@ function Stage5Policies({ emp, onProgress }: {
           this employee has signed. */}
       <SignedDocumentsSection runs={runs} />
 
-      {/* Generate Document â€” custom-field fill â†’ preview â†’ download / send for signature */}
+      {/* Generate Document — custom-field fill → preview → download / send for signature */}
       <DocGenerateModal
         isOpen={!!genTpl}
         onClose={() => setGenTpl(null)}
@@ -7504,12 +7504,12 @@ function Stage5Policies({ emp, onProgress }: {
         onSent={fetchRuns}
       />
 
-      {/* Send-for-signing â€” rich workflow modal (matches the Evidence Vault) */}
+      {/* Send-for-signing — rich workflow modal (matches the Evidence Vault) */}
       <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
         <style>{`
           .send-sign-modal .modal-dialog { max-width: 600px; }
           .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
-          /* Body surface â€” the inline var(--vz-card-bg) falls back to white
+          /* Body surface — the inline var(--vz-card-bg) falls back to white
              inside the portalled modal, so dark mode showed a white body.
              Pin explicit surfaces (a stylesheet !important beats the inline
              var). Text + footer border re-pinned for the dark surface too. */
@@ -7565,7 +7565,7 @@ function Stage5Policies({ emp, onProgress }: {
             </button>
             <button type="button" onClick={confirmSend} disabled={!!sendingId}
               className="ss-send" style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: sendingId ? 'wait' : 'pointer', opacity: sendingId ? 0.8 : 1, boxShadow: '0 4px 14px rgba(124,58,237,0.40)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <i className={sendingId ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-fill'} />{sendingId ? 'Sendingâ€¦' : 'Send Document'}
+              <i className={sendingId ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-fill'} />{sendingId ? 'Sending…' : 'Send Document'}
             </button>
           </div>
         </ModalBody>
@@ -7574,7 +7574,7 @@ function Stage5Policies({ emp, onProgress }: {
   );
 }
 
-// â”€â”€ Stage 6 â€” Final Verification & Activation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Stage 6 — Final Verification & Activation ─────────────────────────────
 // The Flag Issue and Activate Employee modals that lived here were removed
 // along with the Stage 6 "HR Final Action" card that was their only trigger.
 // Completion runs through the footer's guarded "Complete Onboarding" flow.
@@ -7586,18 +7586,18 @@ function Stage6Verify({
   /** Live per-stage status computed in the parent. Stage 6 reads
    *  `status === 'Completed'` for each row to decide Verified vs Pending,
    *  so the summary updates the moment the user advances/finishes any
-   *  earlier stage â€” no hardcoded `verified: true` anymore. */
+   *  earlier stage — no hardcoded `verified: true` anymore. */
   stagesView: { num: number; status: 'Completed' | 'In Progress' | 'Pending' }[];
   onActivated?: () => void;
 }) {
   // Has this employee already been activated? Read straight from the server
-  // row now â€” the local `justActivated` optimistic flag went with the Activate
+  // row now — the local `justActivated` optimistic flag went with the Activate
   // button that set it; the footer's Complete Onboarding closes the wizard and
   // refetches, so there is no in-between frame left to paper over.
   //
   // The HR Final Approval row's "Verified" pill stays gated by the STRICTER
   // check below (activated AND every prior stage Completed). Activation on its
-  // own is not enough: a row that slipped through with stages 2â€“5 pending
+  // own is not enough: a row that slipped through with stages 2–5 pending
   // would otherwise make the wizard mis-report 6/6 Verified.
   const isActivated =
     String(emp?.raw?.status ?? '').toLowerCase() === 'active'
@@ -7608,11 +7608,11 @@ function Stage6Verify({
     isStageDone(1) && isStageDone(2) && isStageDone(3) && isStageDone(4) && isStageDone(5);
   const hrFinalVerified = isActivated && allPriorStagesDone;
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
-    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation Â· Stage 1', icon: 'ri-user-line',                cls: 's1', verified: isStageDone(1) },
-    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs Â· Stage 2',  icon: 'ri-file-list-3-line',         cls: 's2', verified: isStageDone(2) },
-    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access Â· Stage 3',       icon: 'ri-computer-line',            cls: 's3', verified: isStageDone(3) },
-    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure Â· Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: isStageDone(4) },
-    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing Â· Stage 5',    icon: 'ri-shield-check-line',        cls: 's5', verified: isStageDone(5) },
+    { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',                cls: 's1', verified: isStageDone(1) },
+    { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',         cls: 's2', verified: isStageDone(2) },
+    { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',            cls: 's3', verified: isStageDone(3) },
+    { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: isStageDone(4) },
+    { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line',        cls: 's5', verified: isStageDone(5) },
     { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',           cls: 's6', verified: hrFinalVerified },
   ];
   const verifiedCount = stageRows.filter(s => s.verified).length;
@@ -7620,9 +7620,9 @@ function Stage6Verify({
 
   return (
     <>
-      {/* Per-stage progress banner removed â€” sidebar already shows this. */}
+      {/* Per-stage progress banner removed — sidebar already shows this. */}
 
-      {/* Top info row â€” employee, role, profile completion */}
+      {/* Top info row — employee, role, profile completion */}
       <div className="onb-ver-info-row">
         <div className="onb-ver-info-card">
           <div className="onb-ver-info-avatar" style={{ background: `linear-gradient(135deg, ${emp.accent}, ${emp.accent}cc)` }}>
@@ -7635,7 +7635,7 @@ function Stage6Verify({
         </div>
         <div className="onb-ver-info-card">
           <div className="min-w-0 flex-grow-1">
-            <p className="onb-ver-info-label">Department Â· Role</p>
+            <p className="onb-ver-info-label">Department · Role</p>
             <h6 className="onb-ver-info-name">{emp.department}</h6>
             <div className="onb-ver-info-sub">{emp.designation}</div>
           </div>
@@ -7679,8 +7679,8 @@ function Stage6Verify({
           point: the footer's "Complete Onboarding", which refuses to run
           while any stage is still pending and asks for confirmation first.
           The card's Activate button was a second, UNGUARDED path to the same
-          irreversible transition â€” it could stamp the employee Active while
-          stages 2â€“5 were still Pending, after which the summary mis-reported
+          irreversible transition — it could stamp the employee Active while
+          stages 2–5 were still Pending, after which the summary mis-reported
           6/6 Verified. Two routes to one irreversible action is the bug. */}
     </>
   );
