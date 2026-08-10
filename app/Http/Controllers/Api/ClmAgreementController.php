@@ -20,6 +20,7 @@ use App\Support\MasterVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -543,6 +544,17 @@ class ClmAgreementController extends Controller
             $consignee ? ['party' => 'consignee', 'model' => $consignee] : null,
         ]));
 
+        /* The deal's own answer per document, keyed "kind:id".
+         * Loaded once here rather than per row: the loop below runs per segment
+         * AND per party, so a lookup inside it would re-query the same handful
+         * of rows for every document on screen. */
+        $needs = [];
+        if (Schema::hasTable('clm_lead_doc_needs')) {
+            foreach (DB::table('clm_lead_doc_needs')->where('lead_id', $lead->id)->get() as $n) {
+                $needs[$n->doc_kind . ':' . $n->doc_id] = (bool) $n->needed;
+            }
+        }
+
         // Build the per-segment agreement list.
         $segmentsOut = [];
         foreach ($segments as $seg) {
@@ -577,7 +589,11 @@ class ClmAgreementController extends Controller
                 ->filter(fn (ClmAgreementLibrary $a) => $this->partyForBuyerConsignee($a->party)[0])
                 ->values();
 
-            $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement) {
+            /* $needs must be captured too — a closure sees only what it imports, and
+               without it every agreement reported null however it had been marked.
+               It failed quietly: `$needs[...] ?? null` swallows the undefined
+               variable, so the field was always present and always empty. */
+            $agreementsOut = $agreements->map(function (ClmAgreementLibrary $a) use ($latestPerAgreement, $needs) {
                 $req = $latestPerAgreement[$a->id] ?? null;
                 $sigOut = null;
                 if ($req) {
@@ -605,6 +621,10 @@ class ClmAgreementController extends Controller
                     'regulatory'     => $a->regulatory,
                     'segment'        => $a->segment,
                     'required'       => $a->regulatory === 'highly' ? 'REQ' : 'OPT',
+                    /* null = the deal has not answered yet. Kept distinct from
+                       false so the UI can show "not decided" rather than
+                       claiming the user marked it unnecessary. */
+                    'needed'         => $needs['agreement:' . $a->id] ?? null,
                     'updated_at'     => optional($a->updated_at)->toDateString(),
                     'signature_request' => $sigOut,
                     /* Send-for-Signature editor seed — body HTML + saved
@@ -627,7 +647,7 @@ class ClmAgreementController extends Controller
                 // Trade documents required for THIS segment, for both the
                 // customer and the consignee — moved here from the per-party
                 // Evidence Vault so they're surfaced segment-wise.
-                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc),
+                'trade_documents' => $this->segmentTradeDocs($seg, (int) $user->client_id, $partyOwners, $latestPerTradeDoc, $needs),
             ];
         }
 
@@ -740,7 +760,44 @@ class ClmAgreementController extends Controller
      * @param  array<int,array{party:string,model:Model}>  $partyOwners
      * @return array<int,array<string,mixed>>
      */
-    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = []): array
+    /**
+     * Record whether a document is needed for THIS deal.
+     *
+     * Upsert rather than insert: the popup is a toggle, so the same row is
+     * flipped repeatedly and appending would leave the newest answer
+     * indistinguishable from the first.
+     */
+    public function setLeadDocNeed(Request $request, int $leadId)
+    {
+        $user = $request->user(); if (!$user) abort(401);
+
+        $data = $request->validate([
+            'items'             => ['required', 'array', 'min:1'],
+            'items.*.doc_kind'  => ['required', 'in:trade_doc,agreement'],
+            'items.*.doc_id'    => ['required', 'integer'],
+            'items.*.needed'    => ['required', 'boolean'],
+        ]);
+
+        // Tenant guard — the lead must belong to the caller's client.
+        $lead = Lead::where('client_id', $user->client_id)->findOrFail($leadId);
+
+        foreach ($data['items'] as $it) {
+            DB::table('clm_lead_doc_needs')->updateOrInsert(
+                ['lead_id' => $lead->id, 'doc_kind' => $it['doc_kind'], 'doc_id' => (int) $it['doc_id']],
+                [
+                    'client_id'  => $user->client_id,
+                    'needed'     => (bool) $it['needed'],
+                    'decided_by' => $user->id,
+                    'updated_at' => now(),
+                    'created_at' => now(),
+                ],
+            );
+        }
+
+        return response()->json(['status' => true, 'saved' => count($data['items'])]);
+    }
+
+    private function segmentTradeDocs($seg, int $cid, array $partyOwners, array $latestPerTradeDoc = [], array $needs = []): array
     {
         // Trade documents now carry their own `regulatory` + `segment` (CSV)
         // columns — exactly like the Agreement Library — instead of being
@@ -827,6 +884,8 @@ class ClmAgreementController extends Controller
                 // Highly-regulated trade docs read as required (REQ); less-reg
                 // as optional — same convention as agreements.
                 'requirement'      => $seg->regulatory_status === 'highly' ? 'M' : 'O',
+                // See the agreement row above — null means "not decided yet".
+                'needed'           => $needs['trade_doc:' . $m->id] ?? null,
                 'applicable_party' => (string) ($m->party ?? ''),
                 'for_buyer'        => $forBuyer,
                 'for_consignee'    => $forConsignee,
