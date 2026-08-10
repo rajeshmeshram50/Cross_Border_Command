@@ -560,6 +560,10 @@ class PayrollService
     public function eligibleEmployees(PayrollPeriod $period): Collection
     {
         $q = Employee::query()
+            // Branch carries the shift windows AND the late-mark policy, both
+            // read per employee inside computeForEmployee() — eager-load to
+            // keep a 400-employee run from firing 800 queries.
+            ->with('branch:id,shifts,late_mark_policy')
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             // Only fully-onboarded staff belong in payroll. Half-onboarded /
             // in-progress employees (onboarding_stage_completed < 6) don't have
@@ -1012,16 +1016,44 @@ class PayrollService
                 "{$sandwichLop} off-day(s) sandwiched inside unpaid leave charged as loss of pay.");
         }
 
-        // Rule 2 (BR-01) — LOP accrues in 0.5-day steps for every completed block
-        // of 3 late marks: 3→0.5, 6→1, 9→1.5, 12→2, and +0.5 per extra 3.
-        // Fewer than 3 late marks never deducts. Flag for HR review rather than
-        // silently docking (exception: late-sitting may have covered the hours;
-        // HR can hold/waive on review).
-        $lateLopDays = intdiv(max(0, $lateMarks), 3) * 0.5;
+        /* Rule 2 (BR-01) — LOP for late marks, per the EMPLOYEE'S BRANCH policy
+         * (Branch → Attendance Policy: "every N late marks = half / full day").
+         * LOP accrues once per completed block: with the default 3 / half day,
+         * 3→0.5, 6→1, 9→1.5; fewer than N late marks never deducts.
+         *
+         * A branch that was never configured falls back to that legacy 3 → half
+         * day rule inside Branch::lateMarkPolicy(), so old runs stay reproducible.
+         * Flagged for HR review rather than silently docked — late sitting may
+         * have covered the hours, and HR can hold/waive on review. */
+        $lateBranch  = $employee->relationLoaded('branch') ? $employee->getRelation('branch') : $employee->branch;
+        // An employee with no branch (or a soft-deleted one) still has to be
+        // paid — normalize(null) hands back the legacy 3 → half day defaults.
+        $latePolicy  = $lateBranch
+            ? $lateBranch->lateMarkPolicy()
+            : \App\Models\Branch::normalizeLateMarkPolicy(null);
+        $lateLopDays = \App\Models\Branch::lateMarkLopFor($latePolicy, (int) $lateMarks);
+        $lateUnit    = $latePolicy['deduction'] === 'full_day' ? 'full day' : 'half day';
         if ($lateLopDays > 0) {
             $lopDays += $lateLopDays;
+            // Spelled out in words HR can check against the branch setting.
+            // Pluralised because "every 1 late marks = full day" read like a bug
+            // report of its own on the review screen.
+            $lateBlock = $latePolicy['count'] === 1 ? 'late mark' : 'late marks';
+            $lateDays  = $this->trimNum($lateLopDays);
             $exceptions = $this->withException($exceptions, 'warning',
-                "{$lateMarks} late marks → {$lateLopDays} day LOP (verify hours covered before approving).");
+                "{$lateMarks} late marks → {$lateDays} day" . ($lateLopDays == 1 ? '' : 's') . " LOP "
+                . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
+                . "verify hours covered before approving).");
+        } elseif ($lateMarks > 0) {
+            /* Late but nothing deducted — say why, as INFO so it never holds the
+             * run. Without this the row reads clean: a branch with deduction
+             * switched off produced no message at all, and a branch that does
+             * deduct produced none for someone sitting just under the threshold.
+             * Both cases had HR looking at a non-zero Late Marks column with no
+             * explanation of why the pay was untouched. */
+            $exceptions = $this->withException($exceptions, 'info', $latePolicy['enabled']
+                ? "{$lateMarks} late mark(s) — under this branch's threshold of {$latePolicy['count']}, no pay deducted."
+                : "{$lateMarks} late mark(s) — this branch does not deduct pay for late marks.");
         }
         $lopDays = min($effectiveWorkingDays, $lopDays);
         $paidDays = max(0, round($effectiveWorkingDays - $lopDays, 2));
@@ -1073,16 +1105,19 @@ class PayrollService
             ];
         }
         /* Overtime, priced as
-             (gross ÷ working days ÷ shift hours) × OT multiplier × hours.
-           Computed off the FULL monthly gross + the period's working days, so
-           the hourly rate doesn't move with a mid-month join or with absence.
+             (BASIC ÷ working days ÷ shift hours) × OT multiplier × hours.
+           Basic, not gross: allowances pay for costs that don't scale with an
+           extra hour worked, so pricing OT off the gross paid every allowance
+           a second time for each OT hour. Computed off the FULL monthly basic
+           + the period's working days, so the hourly rate doesn't move with a
+           mid-month join or with absence.
 
            Overtime is NO LONGER approval-gated: hours the attendance shows past
            the shift end are paid directly. An explicitly recorded adjustment
            still WINS when one exists, so HR can override the detected figure
            (a negotiated number, or OT that never made it onto a punch); the
            detected hours are the fallback when they haven't. */
-        $ot = $this->overtimeForCycle($employee, $period, $gross, (float) $period->working_days);
+        $ot = $this->overtimeForCycle($employee, $period, $basic, (float) $period->working_days);
         foreach ($ot['exceptions'] as $otEx) {
             $exceptions = $this->withException($exceptions, $otEx['type'], $otEx['reason']);
         }
@@ -1090,7 +1125,7 @@ class PayrollService
         $otDetected = $this->overtimeHoursFromAttendance($employee, $winStart, $winEnd);
 
         if ($ot['hours'] <= 0 && $ot['amount'] <= 0 && $otDetected['hours'] > 0) {
-            $rate   = $this->overtimeRate($employee, $gross, (float) $period->working_days);
+            $rate   = $this->overtimeRate($employee, $basic, (float) $period->working_days);
             $hours  = (float) $otDetected['hours'];
             $amount = round($hours * $rate['effective_rate_exact'], 2);
             $ot = [
@@ -1134,6 +1169,16 @@ class PayrollService
                 $otDetected['days'],
                 $this->trimNum($ot['hours']),
             ));
+        }
+
+        /* Overtime is priced off basic, so a structure that carries a gross but
+         * no basic component prices every OT hour at ₹0. Silently paying
+         * nothing for hours the attendance clearly shows is the worst outcome —
+         * flag it as blocking so the structure is fixed before the run is paid,
+         * rather than after someone notices a missing allowance. */
+        if (($ot['hours'] > 0 || $otDetected['hours'] > 0) && $basic <= 0 && $gross > 0) {
+            $exceptions = $this->withException($exceptions, 'blocking',
+                'Overtime hours recorded but this employee has no Basic component — overtime is priced off basic, so it computes to ₹0. Fix the salary structure before paying.');
         }
 
         if ($otDetected['capped_days'] > 0) {
@@ -2095,26 +2140,40 @@ class PayrollService
      * The employee's overtime pricing for a cycle — the breakdown behind
      * "OT Amount = Hourly Salary × Multiplier × Approved OT Hours".
      *
-     * $gross is the FULL monthly gross and $workingDays the PERIOD's working
-     * days, deliberately NOT the join/exit pro-rated figures: an hour of
-     * overtime is worth the same whether the employee joined on the 1st or the
-     * 20th. `effective_rate` is rounded to paise so a payslip's
-     * hours × rate always reproduces the amount exactly.
+     * $base is the monthly **BASIC** salary, not the gross. Overtime is priced
+     * off basic only: allowances (HRA, conveyance, special) compensate for
+     * living/travel costs that do not scale with an extra hour worked, so
+     * pricing an OT hour off the full gross overpaid every allowance again for
+     * each extra hour. This mirrors the statutory "ordinary rate of wages"
+     * basis used for OT.
+     *
+     * $workingDays is the PERIOD's working days, deliberately NOT the
+     * join/exit pro-rated figure: an hour of overtime is worth the same
+     * whether the employee joined on the 1st or the 20th. `effective_rate` is
+     * rounded to paise so a payslip's hours × rate always reproduces the
+     * amount exactly.
      */
-    public function overtimeRate(Employee $employee, float $gross, float $workingDays): array
+    public function overtimeRate(Employee $employee, float $base, float $workingDays): array
     {
         $shiftHours = $this->shiftHours($employee);
         $days       = $workingDays > 0 ? $workingDays : 1.0;
+        // A negative basic is corrupt data, not a discount — floored at 0 so it
+        // can never turn overtime into a deduction from take-home pay.
+        $base       = max(0.0, $base);
         // Hourly Salary is rounded to paise — the spec's own worked example
-        // carries ₹128.21 forward, not the unrounded ₹128.2051.
-        $hourly     = round($shiftHours > 0 ? $gross / $days / $shiftHours : 0.0, 2);
+        // carries ₹64.10 forward, not the unrounded ₹64.1025.
+        $hourly     = round($shiftHours > 0 ? $base / $days / $shiftHours : 0.0, 2);
         $policy     = $this->overtimeMultiplier($employee);
 
         return [
             'rate_name'      => $policy['name'],
             'multiplier'     => $policy['multiplier'],
             'rate_found'     => $policy['found'],
-            'gross'          => round($gross, 2),
+            // What the hourly was derived FROM. Named `base` rather than
+            // `gross` so a future reader can't mistake it for the gross again;
+            // `basis` labels it for the payslip working.
+            'base'           => round($base, 2),
+            'basis'          => 'basic',
             'working_days'   => $days,
             'shift_hours'    => $shiftHours,
             'hourly'         => $hourly,
@@ -2285,11 +2344,12 @@ class PayrollService
 
         $exceptions = [];
         $structure  = $this->activeStructure($employee, $end);
-        [$gross] = $this->resolveCompensation($employee, $structure, $exceptions);
+        // Index 1 is BASIC — overtime is priced off basic, not the gross at [0].
+        [, $basic] = $this->resolveCompensation($employee, $structure, $exceptions);
 
         return $this->overtimeRate(
             $employee,
-            (float) $gross,
+            (float) $basic,
             (float) ($workingDays ?: $this->defaultWorkingDays($start, $end)),
         );
     }
@@ -2306,7 +2366,7 @@ class PayrollService
      * at all pay their stored flat `amount`, so adjustments recorded before
      * this rule existed are never silently zeroed.
      */
-    public function overtimeForCycle(Employee $employee, PayrollPeriod $period, float $gross, float $workingDays): array
+    public function overtimeForCycle(Employee $employee, PayrollPeriod $period, float $base, float $workingDays): array
     {
         $empty = ['hours' => 0.0, 'amount' => 0.0, 'lines' => [], 'exceptions' => []];
         $rows  = $this->approvedOvertimeRows($employee->id, $period);
@@ -2314,7 +2374,7 @@ class PayrollService
             return $empty;
         }
 
-        $rate       = $this->overtimeRate($employee, $gross, $workingDays);
+        $rate       = $this->overtimeRate($employee, $base, $workingDays);
         $exceptions = [];
         $hours      = 0.0;
         $amount     = 0.0;
@@ -2368,8 +2428,8 @@ class PayrollService
             // figure without recomputing it by hand. 'info' never changes the
             // payslip status.
             $exceptions[] = ['type' => 'info', 'reason' => sprintf(
-                'Overtime: ₹%s gross ÷ %s working days ÷ %s shift hrs = ₹%s/hr × %s%s × %s hr = ₹%s.',
-                number_format($rate['gross'], 2),
+                'Overtime: ₹%s basic ÷ %s working days ÷ %s shift hrs = ₹%s/hr × %s%s × %s hr = ₹%s.',
+                number_format($rate['base'], 2),
                 $this->trimNum($rate['working_days']),
                 $this->trimNum($rate['shift_hours']),
                 number_format($rate['hourly'], 2),

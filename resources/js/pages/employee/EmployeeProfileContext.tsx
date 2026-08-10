@@ -34,10 +34,12 @@ export interface EmployeeProfileCtx {
   setPwOpen: (v: boolean) => void;
 
   // ── Vault tab ──
-  vaultTab: 'employee' | 'organizational';
-  setVaultTab: (v: 'employee' | 'organizational') => void;
+  vaultTab: 'employee' | 'organizational' | 'exit';
+  setVaultTab: (v: 'employee' | 'organizational' | 'exit') => void;
   signedDocs: any[];
   uploadedDocs: any[];
+  organizationalDocs: any[];
+  exitDocs: any[];
   signedLoading: boolean;
   uploadedLoading: boolean;
   vaultCounts: any;
@@ -46,6 +48,7 @@ export interface EmployeeProfileCtx {
   setSignedPreview: (d: any) => void;
   downloadSignedPdf: (docId: number, code: string | null) => Promise<void>;
   downloadingDocId: number | null;
+  exitDocCount: number;
 
   // ── Payroll tab ──
   payrollTab: 'summary' | 'details';

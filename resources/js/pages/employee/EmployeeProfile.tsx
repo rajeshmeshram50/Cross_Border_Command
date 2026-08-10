@@ -121,7 +121,7 @@ const nextMonthFirst = (iso?: string | null): string => {
   return `${ny}-${String(nm).padStart(2, '0')}-01`;
 };
 type PayrollTab = 'summary' | 'details';
-type VaultTab = 'employee' | 'organizational';
+type VaultTab = 'employee' | 'organizational' | 'exit';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
 export default function EmployeeProfile({ employeeId, employee, onBack }: Props) {
   const initials = employee?.initials
@@ -394,7 +394,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     (async () => {
       try {
         setSignedLoading(true);
-        const { data } = await api.get(`/employees/${encodeURIComponent(employeeId)}/signed-documents`);
+        const { data } = await api.get('/hr-document-signatures', { params: { employee_id: Number(employeeId) || employeeId } });
         if (!cancelled) setSignedDocs(Array.isArray(data) ? data : []);
       } catch {
         if (!cancelled) setSignedDocs([]);
@@ -2040,9 +2040,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const pendingUploadedCount  = uploadedDocs.filter(d => d.status !== 'verified').length;
   const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
   const employeeDocCount       = uploadedDocs.length;
-  const organizationalDocCount = signedDocs.length;
+
+  const exitDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() === 'exit');
+  const organizationalDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() !== 'exit');
+
+  const organizationalDocCount = organizationalDocs.length;
+  const exitDocCount = exitDocs.length;
   const vaultCounts = {
-    total:    employeeDocCount + organizationalDocCount,
+    total:    employeeDocCount + organizationalDocCount + exitDocCount,
     verified: verifiedUploadedCount,
     pending:  pendingUploadedCount,
     signed:   signedCompletedCount,
@@ -2312,7 +2317,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
     profilePhotoInputRef, setFaceRegOpen, setPwOpen,
     // Vault tab
-    vaultTab, setVaultTab, signedDocs, uploadedDocs, signedLoading, uploadedLoading,
+    vaultTab, setVaultTab, signedDocs, uploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading,
     vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     // Payroll tab
     payrollTab, setPayrollTab, salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
@@ -2336,7 +2341,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // Hiring tab
     hiringRequests, hiringLoading, setRaiseHiringOpen, setHiringEditing, setHiringViewing, teamSize,
     // Other shared (Profile/Vault/Expense)
-    resetPwForm, employeeDocCount, organizationalDocCount,
+    resetPwForm, employeeDocCount, organizationalDocCount, exitDocCount,
     runProfileExport, readSavedDrafts, filteredAdvances,
   };
 

@@ -398,6 +398,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/p2p/sourcing-targets/{target}/products/{product}/suppliers', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'mapSupplier'])->whereNumber('product');
     Route::put   ('/p2p/sourcing-targets/{target}/products/{product}/suppliers/{supplier}', [\App\Http\Controllers\Api\P2p\SourcingController::class, 'updateSupplier'])->whereNumber('product')->whereNumber('supplier');
     Route::get   ('/clm/leads/{leadId}/agreement-applicable',    [ClmAgreementController::class, 'applicableForLead'])->whereNumber('leadId');
+    // Per-deal "is this document needed?" answers for the trade-doc / agreement popup.
+    Route::post  ('/clm/leads/{leadId}/doc-needs',               [ClmAgreementController::class, 'setLeadDocNeed'])->whereNumber('leadId');
     Route::get   ('/clm/buyer-profile',                          [ClmBuyerProfileController::class, 'index']);
     Route::get   ('/clm/supplier-profile',                       [ClmSupplierProfileController::class, 'index']);
 

@@ -26,6 +26,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -1054,9 +1055,25 @@ class SegmentDocUploadController extends Controller
         $tdBuyer = []; $tdCons = []; $agrBuyer = []; $agrCons = [];
         $seen = ['td' => ['Customer' => [], 'Consignee' => []], 'agr' => ['Customer' => [], 'Consignee' => []]];
 
+        /* Only what THIS deal marked Necessary in the Sales-Matrix popup.
+         * The vault used to list every segment-applicable document, so a deal
+         * that had already decided it needs three of twelve still showed all
+         * twelve here — two screens describing the same deal differently.
+         * Keyed "kind:id", loaded once: the loop runs per segment AND per
+         * party, so a lookup inside it would re-read the same handful of rows
+         * for every document on screen. */
+        $needs = [];
+        if (Schema::hasTable('clm_lead_doc_needs')) {
+            foreach (DB::table('clm_lead_doc_needs')->where('lead_id', $lead->id)->get() as $n) {
+                $needs[$n->doc_kind . ':' . $n->doc_id] = (bool) $n->needed;
+            }
+        }
+
         foreach ($segments as $seg) {
             // Agreements applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmAgreementLibrary::query(), $cid, $seg, 'agr_status') as $a) {
+                // Not marked Necessary for this deal → not this deal's document.
+                if (($needs['agreement:' . $a->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($a->party);
                 $name = $a->title ?: $a->code;
                 // Trade docs + agreements are mandatory documents for the deal.
@@ -1075,6 +1092,8 @@ class SegmentDocUploadController extends Controller
 
             // Trade documents applicable to this segment.
             foreach ($this->matchSegmentLibrary(ClmTradeDocLibrary::query(), $cid, $seg, 'status') as $m) {
+                // Same rule as agreements above.
+                if (($needs['trade_doc:' . $m->id] ?? null) !== true) continue;
                 [$forBuyer, $forCons] = $this->partyFlags($m->party);
                 $name = $m->title ?: ($m->name ?: $m->code);
                 // Trade docs + agreements are mandatory documents for the deal.

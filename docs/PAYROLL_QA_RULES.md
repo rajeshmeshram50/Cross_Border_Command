@@ -166,9 +166,16 @@ $lopDays  = max(0, round($effectiveWorkingDays - $paidDays, 2));
 Amount is **derived**, not typed:
 
 ```
-Hourly Salary = Gross Salary ÷ Total Working Days in Payroll Month ÷ Shift Working Hours
+Hourly Salary = BASIC Salary ÷ Total Working Days in Payroll Month ÷ Shift Working Hours
 OT Amount     = Hourly Salary × Multiplier × Approved OT Hours
 ```
+
+> **Changed 2026-08-10:** the hourly used to be derived from the **gross**. It is
+> now the **basic**. Allowances (HRA, conveyance, special) cover costs that don't
+> scale with an extra hour worked, so pricing OT off the gross paid every
+> allowance a second time per OT hour. On the standard 50/30/20 split this
+> halves the OT rate. Payslips already generated in an OPEN run recompute on the
+> next save/recompute; locked and paid runs keep the figure they were paid at.
 
 **Code:**
 - `overtimeForCycle()` — [PayrollService.php](../app/Services/PayrollService.php) — prices every approved OT row, returns hours + amount + earning lines + exceptions.
@@ -181,7 +188,7 @@ OT Amount     = Hourly Salary × Multiplier × Approved OT Hours
 
 | Term | Source | Notes |
 |---|---|---|
-| Gross Salary | active `SalaryStructure.monthly_gross`, else `annual_salary ÷ 12` | **FULL monthly gross** — never the join/exit pro-rated figure |
+| Basic Salary | active `SalaryStructure::basicAmount()`, else `annual_salary ÷ 12 × 50%` | **FULL monthly basic** — never the join/exit pro-rated figure, and never the gross. No basic component + OT hours = **blocking exception** |
 | Total Working Days | `payroll_periods.working_days` | resolved per payroll month, **never a fixed 26**; month-level, not the pro-rated `effectiveWorkingDays`. See the caveat below |
 | Shift Working Hours | employee's shift window (end − start) | night shift wraps midnight; unparseable shift → **9h** default (09:30–18:30) |
 | Multiplier | `master_overtime_rates.multiplier` matched by name to `employees.overtime` | Active rows only; tenant row beats a same-named global; unassigned/unknown/Inactive → **1.0 + warning** |
@@ -242,13 +249,15 @@ The divisor is read from `payroll_periods.working_days`, resolved **per payroll 
 1. Add OT, leave **Pending** → Run → `overtime_amount = 0`.
 2. Approve OT → recompute → OT appears as its own earning line.
 3. Reject a previously-approved OT → recompute removes it from draft/generated slips.
-4. **Spec worked example** — Gross ₹30,000 · 26 working days · 9h shift · "Time and a Half" (1.5) · **2 hrs**
-   → hourly `30000 ÷ 26 ÷ 9 = ₹128.21` → **amount `128.21 × 1.5 × 2 = ₹384.63`**.
-   ⚠️ Rounding: the amount is rounded **once, at the end**. Pricing off the rounded ₹192.32/hr rate would give ₹384.64 — one paisa out. The `effective_rate` field is display-only; `effective_rate_exact` is the math input.
-   Same inputs at **10 hrs** → `128.21 × 1.5 × 10 = ₹1,923.15`, `overtime_hours = 10`.
-5. Same employee with **no** OT rate assigned → paid at 1× (`₹1,282.10`) **plus a warning**, slip → Pending Review.
+4. **Worked example** — Gross ₹30,000 → **Basic ₹15,000** (50% split) · 26 working days · 9h shift · "Time and a Half" (1.5) · **2 hrs**
+   → hourly `15000 ÷ 26 ÷ 9 = ₹64.10` → **amount `64.10 × 1.5 × 2 = ₹192.30`**.
+   ⚠️ Rounding: the amount is rounded **once, at the end**. Pricing off the rounded ₹96.15/hr rate would give ₹192.30 too, but at other inputs it drifts a paisa — the `effective_rate` field is display-only; `effective_rate_exact` is the math input.
+   Same inputs at **10 hrs** → `64.10 × 1.5 × 10 = ₹961.50`, `overtime_hours = 10`.
+   *(Pre-2026-08-10 this priced off gross and gave ₹384.63 / ₹1,923.15 — exactly double. Old locked payslips still show those figures; that is not a regression.)*
+5. Same employee with **no** OT rate assigned → paid at 1× (`₹641.00` for 10 hrs) **plus a warning**, slip → Pending Review.
 6. Employee's rate set to an **Inactive** master row → same 1× fallback + warning.
-7. Change the shift to an 8h window → rate rises (`30000/26/8 = 144.23`); change working days on the period → rate moves inversely.
+7. Change the shift to an 8h window → rate rises (`15000/26/8 = ₹72.12`); change working days on the period → rate moves inversely.
+9. **Structure with gross but no Basic component** + OT hours → OT prices to ₹0 and the slip gets a **blocking** exception ("no Basic component"). Fix the structure, don't pay through it.
 8. Night shift `22:00–06:00` → 8h, not a negative/zero rate.
 
 ---
@@ -832,25 +841,27 @@ Clean full-month expected (no leave/LOP/OT):
 
 | TC | Input | Steps | Expected Result | Result |
 |---|---|---|---|---|
-Baseline for D1–D2 and D7–D12: gross **₹30,000**, period **26 working days**, shift **09:30–18:30 (9h)** → hourly **₹128.21**.
+Baseline for D1–D2 and D7–D12: gross **₹30,000** → **basic ₹15,000**, period **26 working days**, shift **09:30–18:30 (9h)** → hourly **₹64.10** (basic ÷ 26 ÷ 9 — **not** gross).
 
 | TC | Input | Steps | Expected Result | Result |
 |---|---|---|---|---|
 | D1 | OT `hours=10`, **Pending** | Run | `overtime_amount=0`, `overtime_hours=0` (excluded) | ☐ |
-| D2 | Same OT, **Approved**, rate "Time and a Half" (1.5) | Approve → recompute | `128.21 × 1.5 × 10` → OT line **₹1,923.15**, `overtime_hours=10` | ☐ |
-| D2a | **Spec example** — 2 approved hrs, rate 1.5 | Run | **₹384.63** exactly (not ₹384.64 — rounded once at the end) | ☐ |
+| D2 | Same OT, **Approved**, rate "Time and a Half" (1.5) | Approve → recompute | `64.10 × 1.5 × 10` → OT line **₹961.50**, `overtime_hours=10` | ☐ |
+| D2a | 2 approved hrs, rate 1.5 | Run | **₹192.30** (rounded once at the end) | ☐ |
+| D2b | **Basis check** — read the OT info exception on the slip | Run | Reads "₹15,000.00 **basic** ÷ 26 …" — never the ₹30,000 gross | ☐ |
+| D2c | Structure with gross but **Basic = 0** + OT hours | Run | OT = ₹0 **and** a **blocking** exception naming the missing Basic | ☐ |
 | D3 | Bonus ₹5,000, **Pending** | Run | `bonus_amount=0` | ☐ |
 | D4 | Incentive ₹3,000, **Approved** | Approve | Added to `bonus_amount` line | ☐ |
 | D5 | Approved OT then **Rejected** | Reject → recompute | Removed from draft/generated slips | ☐ |
 | D6 | One-off **deduction** adjustment ₹1,000, approved | Run | Full ₹1,000 deducted (not pro-rated) | ☐ |
-| D7 | OT `hours=10`, employee has **no OT rate** assigned | Approve → Run | 1× fallback **₹1,282.10** + warning; slip **Pending Review** | ☐ |
+| D7 | OT `hours=10`, employee has **no OT rate** assigned | Approve → Run | 1× fallback **₹641.00** + warning; slip **Pending Review** | ☐ |
 | D8 | Employee's OT rate row set to **Inactive** in the master | Run | Same 1× fallback + warning | ☐ |
-| D9 | Rate "Double Time" (2.0), `hours=10` | Run | rate ₹256.42/hr → **₹2,564.20** | ☐ |
-| D10 | Shift changed to **10:00–18:00** (8h), rate 1.5, `hours=10` | Run | hourly ₹144.23 → `144.23 × 1.5 × 10` = **₹2,163.45** | ☐ |
+| D9 | Rate "Double Time" (2.0), `hours=10` | Run | rate ₹128.20/hr → **₹1,282.00** | ☐ |
+| D10 | Shift changed to **10:00–18:00** (8h), rate 1.5, `hours=10` | Run | hourly ₹72.12 → `72.12 × 1.5 × 10` = **₹1,081.80** | ☐ |
 | D10a | Same month in a 27-working-day calendar instead of 26 | Run | divisor follows the payroll month — rate drops, no fixed 26 anywhere | ☐ |
 | D11 | Adjustment posted with an explicit `rate=500`, `hours=2` | Run | Override honoured → **₹1,000** regardless of package/multiplier | ☐ |
 | D12 | Legacy row: `hours` **null**, `amount=1500`, approved | Run | Pays **₹1,500**, contributes **0** to `overtime_hours` | ☐ |
-| D13 | Approve OT, then **revise the salary** upward, re-run | Run | OT re-priced at the new gross (rate is not frozen at entry time) | ☐ |
+| D13 | Approve OT, then **revise the salary** upward, re-run | Run | OT re-priced at the new basic (rate is not frozen at entry time) | ☐ |
 
 **Shift-end detection (shift 09:30–18:30 → OT starts 18:30):**
 
