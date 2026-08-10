@@ -32,6 +32,14 @@ const empty = {
      validator still guards against is now unreachable from this form.
      Converted to 1/0 at submit. */
   sandwich_policy: 'no',
+  /* Late-mark deduction rule for this office. Seeded with the rule payroll
+     used to hardcode (every 3 late marks = half day) so an admin who never
+     touches this section gets exactly the old behaviour. Half day / full day
+     are the only choices — payroll settles in 0.5-day steps.
+     Submitted as the late_mark_policy object, not as three loose fields. */
+  late_mark_enabled: 'yes',
+  late_mark_count: '3',
+  late_mark_deduction: 'half_day',
   gst_number: '', pan_number: '', registration_number: '',
   // Letterhead / export-house compliance fields — all optional, surface
   // on the Quotation/PI PDF letterhead block when populated.
@@ -375,6 +383,10 @@ export default function BranchForm({ onBack, editId }: Props) {
   // and simply dropped on save.
   type ShiftErr = { name?: boolean; start?: boolean; end?: boolean };
   const [shiftErrors, setShiftErrors] = useState<Record<number, ShiftErr>>({});
+  // Late Mark Policy — only the count can be wrong (the other two are selects),
+  // so one message is enough. Blank only becomes an error once "Deduct for Late
+  // Marks" is Yes; on No the field isn't rendered and nothing is validated.
+  const [lateMarkError, setLateMarkError] = useState('');
   /* shift name -> employees currently on it, from GET /branches/{id}.
      Deleting an in-use shift orphans those employees (employees.shift stores
      the NAME, so nothing cascades), which is why the row's delete is locked
@@ -675,6 +687,11 @@ export default function BranchForm({ onBack, editId }: Props) {
       const b = res.data.branch;
       setShiftUsage(res.data.shift_usage || {});
       const u = res.data.branch_user;
+      // Late-mark rule — null on branches created before the column, which is
+      // exactly the legacy 3 → half day the backend also falls back to.
+      const rawLate = typeof b.late_mark_policy === 'string'
+        ? (() => { try { return JSON.parse(b.late_mark_policy); } catch { return null; } })()
+        : b.late_mark_policy;
       setForm({
         name: b.name || '', code: b.code || '', email: b.email || '',
         phone: b.phone || '', website: b.website || '',
@@ -684,6 +701,9 @@ export default function BranchForm({ onBack, editId }: Props) {
         // to the unanswered '' state — an edit must not be blocked by a field
         // the branch was created before.
         sandwich_policy: b.sandwich_policy ? 'yes' : 'no',
+        late_mark_enabled: rawLate && rawLate.enabled === false ? 'no' : 'yes',
+        late_mark_count: String(rawLate?.count ?? 3),
+        late_mark_deduction: rawLate?.deduction === 'full_day' ? 'full_day' : 'half_day',
         industry: b.industry || '', description: b.description || '',
         gst_number: b.gst_number || '', pan_number: b.pan_number || '',
         registration_number: b.registration_number || '',
@@ -773,6 +793,18 @@ export default function BranchForm({ onBack, editId }: Props) {
       return;
     }
     setShiftErrors({});
+    /* Late Mark Policy — the count only has to make sense when the branch
+       actually deducts. On "No" the fields aren't even rendered, so there is
+       nothing to complete and the rule is saved as disabled. */
+    if (form.late_mark_enabled !== 'no') {
+      const n = parseInt(form.late_mark_count, 10);
+      if (!String(form.late_mark_count).trim() || isNaN(n) || n < 1 || n > 31) {
+        setLateMarkError('Enter how many late marks trigger a deduction (1–31).');
+        toast.error('Late Mark Policy', 'Enter the late marks count, or set "Deduct for Late Marks" to No.');
+        return;
+      }
+    }
+    setLateMarkError('');
     setServerErrors({}); setSaving(true);
     try {
       const payload: Record<string, any> = { ...form };
@@ -804,6 +836,17 @@ export default function BranchForm({ onBack, editId }: Props) {
       // already passed the inline editor's validation, so nothing to re-check
       // here; the backend still normalises and drops nameless rows.
       const cleanBanks = bankAccounts.filter(b => String(b?.bank_name || '').trim());
+      /* Late-mark rule — the three form fields collapse into one object, and
+         the loose fields are dropped so they don't hit the branches table as
+         unknown columns. Travels as a JSON string on multipart, like shifts. */
+      const latePolicy = {
+        enabled: form.late_mark_enabled !== 'no',
+        count: Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3)),
+        deduction: form.late_mark_deduction === 'full_day' ? 'full_day' : 'half_day',
+      };
+      delete payload.late_mark_enabled;
+      delete payload.late_mark_count;
+      delete payload.late_mark_deduction;
 
       if (isEdit) {
         if (logoFile || profilePhotoFile || signatureFile) {
@@ -813,12 +856,13 @@ export default function BranchForm({ onBack, editId }: Props) {
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           fd.append('shifts', JSON.stringify(cleanShifts));
           fd.append('bank_accounts', JSON.stringify(cleanBanks));
+          fd.append('late_mark_policy', JSON.stringify(latePolicy));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           await api.post(`/branches/${editId}?_method=PUT`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          await api.put(`/branches/${editId}`, { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks });
+          await api.put(`/branches/${editId}`, { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks, late_mark_policy: latePolicy });
         }
         toast.success('Branch Updated', 'Branch details have been updated successfully');
       } else {
@@ -828,12 +872,13 @@ export default function BranchForm({ onBack, editId }: Props) {
           Object.keys(payload).forEach(k => { if (payload[k] !== null && payload[k] !== undefined) fd.append(k, String(payload[k])); });
           fd.append('shifts', JSON.stringify(cleanShifts));
           fd.append('bank_accounts', JSON.stringify(cleanBanks));
+          fd.append('late_mark_policy', JSON.stringify(latePolicy));
           if (logoFile)         fd.append('logo', logoFile);
           if (profilePhotoFile) fd.append('profile_photo', profilePhotoFile);
           if (signatureFile)    fd.append('signature_path', signatureFile);
           createRes = await api.post('/branches', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         } else {
-          createRes = await api.post('/branches', { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks });
+          createRes = await api.post('/branches', { ...payload, shifts: cleanShifts, bank_accounts: cleanBanks, late_mark_policy: latePolicy });
         }
         toast.success('Branch Created', 'New branch has been created with login credentials');
         // Surface the welcome-email outcome — if it couldn't be sent (e.g.
@@ -1742,6 +1787,103 @@ export default function BranchForm({ onBack, editId }: Props) {
                 </div>
               ))}
             </div>
+
+            {/* Late Mark Policy.
+                Sits with Shift Details because a late mark is defined against
+                the shift start time above. Payroll used to hardcode "every 3
+                late marks = half day"; this makes the block size and the cut
+                per-branch, because offices genuinely differ.
+
+                Only Half Day and Full Day are offered — payroll settles paid
+                days in 0.5-day steps, so a finer cut would round away. The
+                worked example under the fields spells out the arithmetic for
+                the numbers actually typed, so the consequence is visible here
+                rather than in someone's payslip. */}
+            {(() => {
+              const enabled = form.late_mark_enabled !== 'no';
+              const count   = Math.min(31, Math.max(1, parseInt(form.late_mark_count, 10) || 3));
+              const perCut  = form.late_mark_deduction === 'full_day' ? 1 : 0.5;
+
+              return (
+                <div className="mb-3" style={{ border: '1px solid var(--vz-border-color)', borderRadius: 12, padding: '14px 16px', background: 'var(--vz-light, rgba(0,0,0,0.015))' }}>
+                  <div className="fw-semibold mb-1" style={{ fontSize: 12.5 }}>
+                    <i className="ri-timer-flash-line me-1" /> Late Mark Policy
+                  </div>
+                  <div className="text-muted mb-3" style={{ fontSize: 11.5 }}>
+                    How many late marks cost how much pay in this branch. Applied by payroll on every run.
+                  </div>
+
+                  {/* "Deduct for Late Marks" is the master switch for this whole
+                      block. On No, the two rule fields are REMOVED rather than
+                      greyed out — a disabled input still reads as a setting that
+                      matters, and an empty-looking count next to an active "Full
+                      Day" invited the question "so what is it actually doing?".
+                      Nothing applies when the answer is No, so nothing shows. */}
+                  <Row className="g-3">
+                    <Col md={enabled ? 4 : 12}>
+                      <Lbl>Deduct for Late Marks <span style={{ color: '#dc2626' }}>*</span></Lbl>
+                      <Input type="select" style={css.input} value={form.late_mark_enabled}
+                        onChange={e => {
+                          set('late_mark_enabled', e.target.value);
+                          // Coming back to Yes with a blank count would fail the
+                          // save for a field the admin never saw; restore the
+                          // default so the rule is always complete.
+                          if (e.target.value === 'yes' && !String(form.late_mark_count).trim()) {
+                            set('late_mark_count', '3');
+                          }
+                          setLateMarkError('');
+                        }}>
+                        {/* Plain Yes / No. The consequence of each answer is
+                            already spelled out in the summary line below, so
+                            the option labels don't repeat it. */}
+                        <option value="yes">Yes</option>
+                        <option value="no">No</option>
+                      </Input>
+                    </Col>
+                    {enabled && (
+                      <>
+                        <Col md={4}>
+                          <Lbl>Late Marks Count <span style={{ color: '#dc2626' }}>*</span></Lbl>
+                          <Input type="number" min={1} max={31} style={css.input}
+                            invalid={!!lateMarkError}
+                            placeholder="e.g. 3"
+                            value={form.late_mark_count}
+                            onChange={e => { set('late_mark_count', e.target.value); setLateMarkError(''); }} />
+                          <div className={lateMarkError ? 'text-danger' : 'text-muted'} style={{ fontSize: 11 }}>
+                            {lateMarkError || 'Number of late marks that trigger one deduction.'}
+                          </div>
+                        </Col>
+                        <Col md={4}>
+                          <Lbl>Leave Cut <span style={{ color: '#dc2626' }}>*</span></Lbl>
+                          <Input type="select" style={css.input}
+                            value={form.late_mark_deduction}
+                            onChange={e => set('late_mark_deduction', e.target.value)}>
+                            <option value="half_day">Half Day (0.5)</option>
+                            <option value="full_day">Full Day (1)</option>
+                          </Input>
+                          <div className="text-muted" style={{ fontSize: 11 }}>How much is cut each time that count is reached.</div>
+                        </Col>
+                      </>
+                    )}
+                  </Row>
+
+                  <div className="mt-3" style={{ fontSize: 11.5, borderTop: '1px dashed var(--vz-border-color)', paddingTop: 10 }}>
+                    {enabled ? (
+                      <span>
+                        <span className="fw-semibold">Example:</span>{' '}
+                        {count} late marks = <span className="fw-semibold">{perCut === 1 ? '1 day' : 'half day'}</span> cut,{' '}
+                        {count * 2} late marks = <span className="fw-semibold">{perCut * 2} day{perCut * 2 === 1 ? '' : 's'}</span> cut.
+                        Fewer than {count} late marks in the period cost nothing.
+                      </span>
+                    ) : (
+                      <span className="text-muted">
+                        No pay is cut for late marks. They are still counted and shown to HR on the payroll row.
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Sandwich Leave Policy.
                 Placed under Shift Details because both describe how this

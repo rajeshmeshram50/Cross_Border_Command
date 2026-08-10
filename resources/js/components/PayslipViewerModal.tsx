@@ -55,7 +55,7 @@ export interface PayslipViewerModalProps {
   /** OT rate multiplier from the employee's Overtime (OT) policy, e.g. 1.5.
    *  Null on older slips whose run didn't store the split. */
   overtimeMultiplier?: number | null;
-  /** Base per-hour rate BEFORE the multiplier (gross ÷ working days ÷ shift
+  /** Base per-hour rate BEFORE the multiplier (BASIC ÷ working days ÷ shift
    *  hours). Null when unknown. */
   overtimeHourly?: number | null;
   /** EFFECTIVE per-hour OT rate — the multiplier is already inside it, so
