@@ -793,7 +793,7 @@ function ActionModal({
                 for Review & Acknowledge. Colour cues match the meaning of
                 the button so the decision is unambiguous. */}
             <button type="button" onClick={onSubmit}
-              disabled={submitting || !consent || (isSign && (!actionName.trim() || !drawnSignature))}
+              disabled={submitting}
               title={!consent ? `Tick the consent box to enable ${item.action}` : undefined}
               style={{
                 padding: '7px 16px',

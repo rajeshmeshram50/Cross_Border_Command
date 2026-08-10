@@ -195,6 +195,10 @@ export default function Inbox() {
   // Informed-consent tick for Sign steps. Deliberately NOT remembered between
   // documents — it must be given per document, so openAction resets it.
   const [consent, setConsent] = useState(false);
+  /* Set when a submit is refused for missing consent. The toast alone lives in
+     the screen corner, far from the tick it is talking about — this marks the
+     box itself so the answer is where the question is. */
+  const [consentError, setConsentError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const load = async () => {
@@ -346,6 +350,7 @@ export default function Inbox() {
     setActionNote('');
     setDrawnSignature(null);
     setConsent(false);   // consent is per-document, never carried over
+    setConsentError(false);
   };
 
   const submitDecision = async (verdict: 'approve' | 'reject') => {
@@ -406,6 +411,7 @@ export default function Inbox() {
     }
     // Consent applies to every action, not just Sign.
     if (!consent) {
+      setConsentError(true);
       toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
       return;
     }
@@ -1211,11 +1217,11 @@ export default function Inbox() {
                     Approve, Acknowledge). The action button stays disabled
                     until this is ticked, and the API rejects an unconsented
                     action too. */}
-                <label className="ib-consent">
+                <label className={`ib-consent${consentError ? ' is-invalid' : ''}`}>
                   <input
                     type="checkbox"
                     checked={consent}
-                    onChange={e => setConsent(e.target.checked)}
+                    onChange={e => { setConsent(e.target.checked); if (e.target.checked) setConsentError(false); }}
                     className="ib-consent-box"
                   />
                   <span>
@@ -1223,6 +1229,9 @@ export default function Inbox() {
                     <span className="ib-req"> *</span>
                   </span>
                 </label>
+                {consentError && (
+                  <div className="ib-consent-err">Please tick this box before you can {String(current?.action ?? 'continue').toLowerCase()}.</div>
+                )}
                 <label className={`inbox-input-label ib-input-label${isSign ? ' ib-input-label--mt' : ''}`}>Remark</label>
                 <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
                   placeholder="Add a remark — optional when approving, REQUIRED when rejecting (describe what should change)."
@@ -1249,8 +1258,15 @@ export default function Inbox() {
                   className="inbox-btn-ghost ib-btn-ghost">
                   Cancel
                 </button>
+                {/* Only the in-flight case disables this. Blocking it on consent
+                    made the button dead: a click did nothing at all, so the
+                    checks below — which already say exactly what is missing —
+                    never got to run. A disabled control cannot explain itself,
+                    and "nothing happened" is the worst answer a form can give.
+                    submitDecision() is the single gate for consent, name and
+                    signature, and it is also enforced server-side. */}
                 <button type="button" onClick={() => submitDecision('approve')}
-                  disabled={submitting || !consent || (isSign && (!actionName.trim() || !drawnSignature))}
+                  disabled={submitting}
                   title={!consent ? `Tick the consent box to enable ${current?.action}` : undefined}
                   className={`ib-btn-submit ${current?.action === 'Approve' ? 'ib-btn-submit--approve' : isSign ? 'ib-btn-submit--sign' : 'ib-btn-submit--ack'}`}>
                   <i className={`${isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} ib-btn-submit-icon`} />

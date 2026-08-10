@@ -64,7 +64,14 @@ class OnboardingController extends Controller
         // to this invite's client_id: the same email living in a DIFFERENT
         // client must NOT block an invite here. Case-insensitive so "RD@x.com"
         // and "rd@x.com" are treated as the same login within the tenant.
-        $existingUser = User::whereRaw('LOWER(email) = ?', [mb_strtolower($data['invitee_email'])])
+        /* Normalised once, here, so everything downstream stores and compares the
+         * same string. The duplicate check below already lower-cased for its
+         * comparison but the ORIGINAL casing was what got saved and mailed — so
+         * "DFSD@FDGDFG.COM" went out shouted, and the same person entered twice
+         * with different casing passed the check and became two invitees. */
+        $data['invitee_email'] = mb_strtolower(trim($data['invitee_email']));
+
+        $existingUser = User::whereRaw('LOWER(email) = ?', [$data['invitee_email']])
             ->where('client_id', $clientId)
             ->whereNull('deleted_at')->first();
         if ($existingUser) {

@@ -48,6 +48,23 @@ const ONB_NOTICE = [
   ...OPT('Default Notice Period', 'No Notice Period', '15 Days', '30 Days', '60 Days', '90 Days'),
   { value: ONB_CUSTOM_NOTICE, label: 'Set Custom Notice Period…' },
 ];
+
+/* Which saved values are ordinary dropdown picks (everything else means the
+ * admin typed a custom one, so the free-text box opens).
+ *
+ * DERIVED from the option lists on purpose. These used to be hand-written
+ * copies, and the copy fell behind: 'No Notice Period' was added to
+ * ONB_NOTICE but never to the preset list, so onboarding read a perfectly
+ * normal pick as "custom" — the dropdown flipped to "Set Custom Notice
+ * Period…" with the words "No Notice Period" sitting in the text box, and
+ * validation then demanded a number from it. The Employee form was fine
+ * because it never derives this; it tracks the sentinel in its own state.
+ * Deriving means the two can no longer drift. */
+const presetValues = (opts: { value: string }[], custom: string) =>
+  new Set(opts.map(o => o.value).filter(v => v !== custom));
+const ONB_NOTICE_PRESETS    = presetValues(ONB_NOTICE, ONB_CUSTOM_NOTICE);
+const ONB_PROBATION_PRESETS = presetValues(ONB_PROBATION, ONB_CUSTOM_PROBATION);
+
 /* No ONB_HOLIDAY / ONB_SHIFT constants — Holiday List is fed by the Holiday
    Master (/holiday-groups) and Shift by the branch's configured Shift Details
    (/branch-shifts). Never hardcode either list. */
@@ -176,6 +193,21 @@ const _shiftIsoDays = (iso: string, days: number): string => {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
+/* ── Stage 3 asset slots ────────────────────────────────────────────────────
+ * "Laptop Assigned" / "Mobile Assigned" are required questions, and "No" is a
+ * complete answer to them — plenty of hires get neither.
+ *
+ * The Stage 3 progress meter used to score a slot only when the answer was
+ * *Yes with a device picked*, so an admin who correctly answered "No" watched
+ * the stage sit at 0% with nothing left to fill in. Worse, the selects render
+ * `value={flag || 'No'}`: an UNANSWERED slot displays the word "No" while the
+ * state behind it is still empty, so the screen said answered and the meter
+ * said not — exactly "status is not updated correctly".
+ *
+ * Answered = an explicit No, or a Yes with the device actually chosen. */
+const assetSlotAnswered = (flag?: string, assetId?: string): boolean =>
+  flag === 'No' || (flag === 'Yes' && !!String(assetId ?? '').trim());
+
 const _shiftYears = (years: number): string => {
   const d = new Date();
   d.setFullYear(d.getFullYear() + years);
@@ -2700,11 +2732,24 @@ export function VaultModal({
                       }}>
                         {auditRun.code || `Run #${auditRun.id}`} · Signature Workflow
                       </div>
+                      {/* Template names are user-entered and can be a single
+                          unbroken run of characters, which has no break
+                          opportunity and shot straight past the header edge
+                          (see the "rrrrr…" title in the same screenshot).
+                          `anywhere` lets it wrap mid-word; the clamp keeps a
+                          long name from pushing the progress ring off. */}
                       <div style={{
                         fontSize: 18, fontWeight: 800,
                         letterSpacing: '-0.01em',
                         lineHeight: 1.2,
-                      }}>
+                        overflowWrap: 'anywhere',
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                      }}
+                        title={auditRun.template?.name || undefined}
+                      >
                         {auditRun.template?.name || 'Document Timeline'}
                       </div>
                       <div style={{ fontSize: 12, opacity: 0.85, marginTop: 3 }}>
@@ -2720,6 +2765,18 @@ export function VaultModal({
                       const r = 26;
                       const C = 2 * Math.PI * r;
                       const offset = C - (progressPct / 100) * C;
+                      /* At 100% the arc must be a PLAIN circle — no dash
+                         pattern at all.
+                         `strokeDasharray={C}` means "dash C, then gap C", and C
+                         is the mathematical circumference 2πr. The browser
+                         measures the rendered path (a Bézier approximation of a
+                         circle) and gets a marginally different length, so the
+                         last sliver of the ring falls into the gap half of the
+                         pattern: a hairline notch that reads as "not finished"
+                         precisely when the label says 100%. Asking a dashed
+                         stroke to draw a complete circle is the mistake — a
+                         complete circle has no dashes in it. */
+                      const isComplete = progressPct >= 100;
                       return (
                         <div style={{
                           position: 'relative',
@@ -2740,9 +2797,13 @@ export function VaultModal({
                               fill="none"
                               stroke="#ffffff"
                               strokeWidth="6"
-                              strokeLinecap="round"
-                              strokeDasharray={C}
-                              strokeDashoffset={offset}
+                              // Round caps shape the two ENDS of a partial arc.
+                              // A closed ring has no ends, and the round cap
+                              // then bulges back over the start as a visible
+                              // lump — so drop it once the circle is whole.
+                              strokeLinecap={isComplete ? 'butt' : 'round'}
+                              strokeDasharray={isComplete ? undefined : C}
+                              strokeDashoffset={isComplete ? undefined : offset}
                               style={{ transition: 'stroke-dashoffset .6s ease-out' }}
                             />
                           </svg>
@@ -3030,8 +3091,10 @@ export function VaultModal({
                       style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
                       Cancel
                     </button>
+                    {/* Only the in-flight case disables this — submitAction()
+                        reports whatever is missing. */}
                     <button type="button" onClick={submitAction}
-                      disabled={actionSubmitting || !actionConsent || (isSign && !actionName.trim())}
+                      disabled={actionSubmitting}
                       title={!actionConsent ? `Tick the consent box to enable ${current?.action}` : undefined}
                       style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
                       <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
@@ -3597,7 +3660,9 @@ function InitiateOnboardingModal({
   // employees stay out, but the asset currently on THIS employee's
   // row (exclude_employee_id=...) remains visible so the admin can
   // keep their selection on edit.
-  type AssetOpt = { value: string; label: string };
+  // `badge` flags a device whose Asset-master category no longer matches the
+  // slot it is linked to (see `stale_category` on /employees/available-assets).
+  type AssetOpt = { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet' } };
   const [laptopAssets, setLaptopAssets] = useState<AssetOpt[]>([]);
   const [mobileAssets, setMobileAssets] = useState<AssetOpt[]>([]);
   const [otherAssets, setOtherAssets]   = useState<AssetOpt[]>([]);
@@ -3616,7 +3681,16 @@ function InitiateOnboardingModal({
     setAssetsLoading(true);
     const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
     const put = (setter: (o: AssetOpt[]) => void) => (r: any) => {
-      if (!isStale()) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name })));
+      if (!isStale()) setter((r.data ?? []).map((a: any) => ({
+        value: String(a.id),
+        label: a.label || a.asset_name,
+        /* Device still linked to this slot but re-categorised in the Asset
+           master since (Laptop → Mobile). Without this row the select had no
+           option matching the saved id and fell back to printing the raw id. */
+        ...(a.stale_category
+          ? { badge: { text: 'Category changed', tone: 'red' as const } }
+          : {}),
+      })));
     };
     return Promise.allSettled([
       api.get(url('laptop')).then(put(setLaptopAssets)),
@@ -3706,12 +3780,10 @@ function InitiateOnboardingModal({
    * because both forms write the same column: without it, reopening
    * onboarding would show an empty dropdown and silently drop the value on
    * the next save. */
-  const ONB_NOTICE_PRESETS = new Set(['Default Notice Period', '15 Days', '30 Days', '60 Days', '90 Days']);
   const [noticeCustomOpen, setNoticeCustomOpen] = useState(false);
   const noticeIsCustom = noticeCustomOpen
     || (!!s1.notice_period && !ONB_NOTICE_PRESETS.has(s1.notice_period));
 
-  const ONB_PROBATION_PRESETS = new Set(['Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation']);
   const [probationCustomOpen, setProbationCustomOpen] = useState(false);
   const probationIsCustom = probationCustomOpen
     || (!!s1.probation_policy && !ONB_PROBATION_PRESETS.has(s1.probation_policy));
@@ -3966,9 +4038,25 @@ const todayIso = _toIso(new Date());
 // DOB: employee must be at least 18 today, and not older than 100.
 const dobMin = _shiftYears(-100);
 const dobMax = _shiftYears(-18);
-// Joining: up to 5 years back (retro-joins) and 1 year ahead (planned starts).
-const joinMin = _shiftYears(-5);
+/* Joining: no back-dating, up to 1 year ahead (planned starts).
+ *
+ * Mirrors the Add/Edit Employee form, which already refuses a past joining
+ * date. Onboarding allowed anything back to 5 years, so the same employee
+ * could be given a past start here that the Employee form would reject —
+ * two forms writing one column under two different rules.
+ *
+ * The escape hatch is the same one the Employee form uses: a date the record
+ * ALREADY holds stays valid. Every employee mid-onboarding whose start day has
+ * since passed would otherwise be frozen — Stage 1 would refuse to advance
+ * until someone falsified their real joining date. So the floor is today, or
+ * the stored date when that is older; only a NEWLY chosen past date is
+ * rejected. */
 const joinMax = _shiftYears(1);
+const joinTodayIso = _shiftYears(0);
+const joinDateOrig = emp?.raw?.date_of_joining
+  ? String(emp.raw.date_of_joining).slice(0, 10)
+  : '';
+const joinMin = (joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
 // Salary effective from: anchored to joining date when set, otherwise
 // allow up to 1 year before today. Hard cap at 1 year ahead so an
 // admin can schedule a near-future increment but not type "2012" or
@@ -3999,6 +4087,12 @@ const STAGE1_FIELD_ORDER = [
   'reporting_manager',
   'annual_salary',
   'salary_effective_from',
+  // Assets & Security sits at the bottom of step 3; listed last so
+  // scrollToFirstError still jumps to the earliest field on the form.
+  'laptop_assigned',
+  'laptop_master_asset_id',
+  'mobile_assigned',
+  'mobile_master_asset_id',
 ] as const;
 
 /** Bring the first errored field into view + focus it so the user sees
@@ -4020,6 +4114,28 @@ const scrollToField = (field: string) => {
 const scrollToFirstError = (errors: Record<string, string>) => {
   const first = STAGE1_FIELD_ORDER.find(k => errors[k]);
   if (first) scrollToField(first);
+};
+
+/* ── Bank name ──────────────────────────────────────────────────────────────
+ * Real bank names are words, optionally with punctuation: "HDFC Bank",
+ * "Bank of Baroda", "HDFC Bank Ltd.", "Kotak & Co.", "St. George's".
+ * A purely numeric entry is almost always the ACCOUNT NUMBER typed into the
+ * wrong box — worse than a blank field, because the stage looks filled in and
+ * the payroll handoff carries a garbage payee name.
+ *
+ * Two separate questions, deliberately kept apart so the message can say which
+ * one failed:
+ *   bankNameHasLetters — is there a word in it at all?
+ *   BANK_NAME_RE       — is every character one we allow?
+ * Both must hold. Exported as one helper so the Save gate, the readiness
+ * checks and the pending-issues list can never drift apart again — the
+ * readiness gate only tested `.trim()`, which is why "12456789999()555" still
+ * showed 4/4 green. */
+const BANK_NAME_RE = /^[A-Za-z0-9\s'&.\-(),/]+$/;
+const bankNameHasLetters = (v: string) => /[A-Za-z]/.test(v);
+const isValidBankName = (v: string) => {
+  const s = v.trim();
+  return !!s && bankNameHasLetters(s) && BANK_NAME_RE.test(s);
 };
 
 /** Validate Stage 1 required fields before allowing navigation. */
@@ -4060,10 +4176,14 @@ const validateStage1 = (): boolean => {
      The Employee form has enforced this from the start; onboarding let the
      picker be left empty, so an employee could be onboarded marked as holding a
      laptop that the asset register never linked to anyone. */
-  if (s1.laptop_assigned === 'Yes' && !String(s1.laptop_master_asset_id || '').trim()) {
+  if (!s1.laptop_assigned) {
+    errors.laptop_assigned = 'Answer whether a laptop is assigned';
+  } else if (s1.laptop_assigned === 'Yes' && !String(s1.laptop_master_asset_id || '').trim()) {
     errors.laptop_master_asset_id = 'Laptop Device is required';
   }
-  if (s1.mobile_assigned === 'Yes' && !String(s1.mobile_master_asset_id || '').trim()) {
+  if (!s1.mobile_assigned) {
+    errors.mobile_assigned = 'Answer whether a mobile is assigned';
+  } else if (s1.mobile_assigned === 'Yes' && !String(s1.mobile_master_asset_id || '').trim()) {
     errors.mobile_master_asset_id = 'Mobile Device is required';
   }
 
@@ -4083,8 +4203,8 @@ const validateStage1 = (): boolean => {
   const doj = s1.date_of_joining?.trim() ?? '';
   if (!doj) {
     errors.date_of_joining = 'Joining date is required';
-  } else if (doj < joinMin) {
-    errors.date_of_joining = 'Joining date is too far in the past';
+  } else if (doj < joinTodayIso && doj !== joinDateOrig) {
+    errors.date_of_joining = 'Joining date can’t be in the past';
   } else if (doj > joinMax) {
     errors.date_of_joining = 'Joining date cannot be more than a year in the future';
   }
@@ -4441,6 +4561,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const ifsc = s4.ifsc_code.trim();
       const missing: string[] = [];
       if (!s4.bank_name.trim())            missing.push('Bank Name');
+      else if (!isValidBankName(s4.bank_name)) missing.push('Bank Name (letters, not just digits)');
       if (!acc)                            missing.push('Account Number');
       else if (!/^\d{9,18}$/.test(acc))    missing.push('Account Number (9–18 digits)');
       if (!ifsc)                           missing.push('IFSC Code');
@@ -4747,17 +4868,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // it without the user having to navigate to Stage 3. Each "task" maps
   // to one of the four provisioning areas (laptop, mobile, other-assets,
   // physical security like biometric/desk/ID card).
-  const stage3TasksTotal = 4;
+  /* Two REQUIRED slots only. Other Assets is labelled "(optional)" and the
+     Physical Setup fields carry no `*`, yet both used to be worth 25% each —
+     so a stage with every required question answered still read 50% and could
+     never reach Completed without filling optional fields. A progress meter
+     that counts optional work can't ever show done. */
+  const stage3TasksTotal = 2;
   const stage3TasksDone =
-    (s1.laptop_assigned === 'Yes' && s1.laptop_master_asset_id ? 1 : 0)
-    + (s1.mobile_assigned === 'Yes' && s1.mobile_master_asset_id ? 1 : 0)
-    + ((s1.other_master_asset_ids?.length ?? 0) > 0 ? 1 : 0)
-    + (
-      (s1.biometric_status && s1.biometric_status !== 'Not Registered') ||
-      !!s1.desk_workstation_no?.trim() ||
-      (s1.id_card_status && s1.id_card_status !== 'Not Printed')
-        ? 1 : 0
-    );
+    (assetSlotAnswered(s1.laptop_assigned, s1.laptop_master_asset_id) ? 1 : 0)
+    + (assetSlotAnswered(s1.mobile_assigned, s1.mobile_master_asset_id) ? 1 : 0);
   const stage3Pct = Math.round((stage3TasksDone / stage3TasksTotal) * 100);
   // Stage 3 is "Done" once the server has stamped it (macro stage ≥ 3) OR
   // every task is filled in the current session.
@@ -4772,7 +4891,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const UAN_RE  = /^\d{12}$/;
   const stage4BankOk =
     s4.salary_payment_mode !== 'bank' || (
-      !!s4.bank_name.trim() &&
+      // Not just "is it filled" — a numeric bank name is the account number in
+      // the wrong box, and it used to turn this check green.
+      isValidBankName(s4.bank_name) &&
       // Account number must be 9–18 digits (matches the inline hint on
       // the input). Without this, a single-digit or 30-character entry
       // would still flip the readiness check green.
@@ -4835,10 +4956,10 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       const bank = s4.bank_name.trim();
       if (!bank) {
         p.push({ field: 'bank_name', label: 'Bank Name', message: 'Enter the bank name.' });
-      } else if (!/[A-Za-z]/.test(bank)) {
+      } else if (!bankNameHasLetters(bank)) {
         p.push({ field: 'bank_name', label: 'Bank Name',
           message: 'Bank name must contain letters — this looks like a number.' });
-      } else if (!/^[A-Za-z0-9\s'&.\-(),/]+$/.test(bank)) {
+      } else if (!BANK_NAME_RE.test(bank)) {
         p.push({ field: 'bank_name', label: 'Bank Name',
           message: 'Bank name can use letters, numbers and ’ - & . , ( ) / only.' });
       }
@@ -4978,6 +5099,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     } else if (s.num < activeStage)      { status = 'Completed';   progress = 100; }
     else if (s.num === activeStage) { status = 'In Progress'; progress = s.progress || 35; }
     else                           { status = 'Pending';     progress = 0;   }
+    /* 100% is reserved for Completed — one rule, applied to every stage.
+     *
+     * Each branch above computes its own percentage, and several of them could
+     * reach 100 while the stage was still In Progress. Stage 2 is the one QA
+     * caught: the bar counts uploaded documents, so the moment the last
+     * required file lands it reads 100% — but `stage2IsDone` also requires the
+     * server's macro watermark to have moved past stage 2, which only happens
+     * when HR actually advances the stage. Uploading is not the same as HR
+     * signing off, so that extra condition is deliberate and stays; what was
+     * wrong is a bar claiming 100% while the pill said In Progress and no
+     * green check appeared. Stage 1 (all required fields typed but the wizard
+     * not finished) and Stage 5 (every agreement signed, stage not stamped)
+     * had the same gap.
+     *
+     * Capping at 99 keeps the meaning honest: everything countable is done,
+     * one step remains — and it is the step the user is looking at. */
+    if (status !== 'Completed') progress = Math.min(progress, 99);
     return { ...s, status, progress };
   });
   const overallPct = Math.round(stagesView.reduce((a, s) => a + s.progress, 0) / stagesView.length);
@@ -5535,18 +5673,29 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       The picker label shows "Serial Number — Asset Name"
                       and only lists devices not already issued to another
                       employee. */}
-                  <Col md={4}>
-                    <label className="onb-init-label">Laptop Assigned</label>
+                  <Col md={4} data-field="laptop_assigned">
+                    <label className="onb-init-label">Laptop Assigned<span className="req">*</span></label>
+                    {/* No `|| 'No'` fallback: an unanswered slot used to DISPLAY
+                        "No" while holding '', so it read as answered to the user
+                        and unanswered to the progress meter. */}
                     <MasterSelect
                       options={ONB_YES_NO}
-                      value={s1.laptop_assigned || 'No'}
-                      onChange={(v) => setS1(p => ({
-                        ...p,
-                        laptop_assigned: v,
-                        // Drop the FK when the admin flips back to No.
-                        laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
-                      }))}
+                      placeholder="Select Yes or No"
+                      value={s1.laptop_assigned}
+                      invalid={!!s1Errors.laptop_assigned}
+                      onChange={(v) => {
+                        setS1(p => ({
+                          ...p,
+                          laptop_assigned: v,
+                          // Drop the FK when the admin flips back to No.
+                          laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                        }));
+                        setS1Errors(p => ({ ...p, laptop_assigned: '' }));
+                      }}
                     />
+                    {s1Errors.laptop_assigned && (
+                      <div className="onb-error-msg">{s1Errors.laptop_assigned}</div>
+                    )}
                   </Col>
                   {s1.laptop_assigned === 'Yes' && (
                     <Col md={4} data-field="laptop_master_asset_id">
@@ -5575,17 +5724,25 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   )}
 
                   {/* Mobile — same Yes/No + picker pattern. */}
-                  <Col md={4}>
-                    <label className="onb-init-label">Mobile Assigned</label>
+                  <Col md={4} data-field="mobile_assigned">
+                    <label className="onb-init-label">Mobile Assigned<span className="req">*</span></label>
                     <MasterSelect
                       options={ONB_YES_NO}
-                      value={s1.mobile_assigned || 'No'}
-                      onChange={(v) => setS1(p => ({
-                        ...p,
-                        mobile_assigned: v,
-                        mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
-                      }))}
+                      placeholder="Select Yes or No"
+                      value={s1.mobile_assigned}
+                      invalid={!!s1Errors.mobile_assigned}
+                      onChange={(v) => {
+                        setS1(p => ({
+                          ...p,
+                          mobile_assigned: v,
+                          mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                        }));
+                        setS1Errors(p => ({ ...p, mobile_assigned: '' }));
+                      }}
                     />
+                    {s1Errors.mobile_assigned && (
+                      <div className="onb-error-msg">{s1Errors.mobile_assigned}</div>
+                    )}
                   </Col>
                   {s1.mobile_assigned === 'Yes' && (
                     <Col md={4} data-field="mobile_master_asset_id">
@@ -6929,8 +7086,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   // (docsByKey moved above the useImperativeHandle so validate() can list it
   // as a dependency without hitting a temporal-dead-zone ReferenceError.)
   const [uploadingKey, setUploadingKey] = useState<string | null>(null);
-  const reloadDocs = async () => {
-    if (!emp?.dbId) { setDocsLoading(false); return; }
+  /* Returns the refreshed key->document map, or null when the refresh itself
+   * failed. Callers need that answer: the upload toast used to fire
+   * unconditionally after this ran, so a failed refresh left the row still
+   * showing "Upload" with no file while a green "… uploaded" toast claimed
+   * otherwise. A success message that isn't checked against what the server
+   * actually returned is just a guess. */
+  const reloadDocs = async (): Promise<Record<string, ApiDocument> | null> => {
+    if (!emp?.dbId) { setDocsLoading(false); return null; }
     try {
       const r = await api.get(`/employees/${emp.dbId}/documents`);
       const list: ApiDocument[] = Array.isArray(r.data) ? r.data : [];
@@ -6940,7 +7103,8 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       // Bubble the list up so the modal's Stage 2 rail progress + count
       // header refresh together.
       onDocsChanged?.(list.map(d => ({ document_key: d.document_key, status: d.status })));
-    } catch { /* keep stale on error */ }
+      return map;
+    } catch { /* keep stale on error */ return null; }
     finally { setDocsLoading(false); }
   };
   useEffect(() => { reloadDocs(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [emp?.dbId]);
@@ -7009,8 +7173,18 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
         await api.post(`/employees/${emp.dbId}/documents`, fd, {
           headers: { 'Content-Type': undefined as unknown as string },
         });
-        await reloadDocs();
-        toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
+        // Only announce success once the refreshed list actually contains the
+        // document. Anything else and the row would still read "Upload" while
+        // the toast said the file was in — the exact mismatch QA reported.
+        const fresh = await reloadDocs();
+        if (fresh && fresh[docKey]) {
+          toast.success(`${docName} uploaded`, 'Awaiting HR verification.');
+        } else {
+          toast.warning(
+            `${docName} sent, but not confirmed`,
+            'The upload went through — reload the stage to see it. If it is still missing, upload again.',
+          );
+        }
       } catch (err: any) {
         const msg = err?.response?.data?.message
           || (err?.response?.data?.errors?.file?.[0])
@@ -7693,17 +7867,12 @@ function Stage3Provisioning({
   // Cosmetic progress meter — counts each provisioning area that has
   // at least one filled value. Keeps the banner moving as the admin
   // works through the section.
-  const tasksTotal = 4;
+  // Must stay identical to the parent's stage3TasksDone — same helper, same
+  // total — or the banner here and the sidebar there disagree about the stage.
+  const tasksTotal = 2;
   const tasksDone  =
-    (s1.laptop_assigned === 'Yes' && s1.laptop_master_asset_id ? 1 : 0)
-    + (s1.mobile_assigned === 'Yes' && s1.mobile_master_asset_id ? 1 : 0)
-    + ((s1.other_master_asset_ids?.length ?? 0) > 0 ? 1 : 0)
-    + (
-      (s1.biometric_status && s1.biometric_status !== 'Not Registered') ||
-      !!s1.desk_workstation_no?.trim() ||
-      (s1.id_card_status && s1.id_card_status !== 'Not Printed')
-        ? 1 : 0
-    );
+    (assetSlotAnswered(s1.laptop_assigned, s1.laptop_master_asset_id) ? 1 : 0)
+    + (assetSlotAnswered(s1.mobile_assigned, s1.mobile_master_asset_id) ? 1 : 0);
   const pct = Math.round((tasksDone / tasksTotal) * 100);
 
   /* The "EDITABLE" badge was removed: it sat on eight fields that are all
@@ -7797,55 +7966,85 @@ function Stage3Provisioning({
           <p className="onb-prov-subgroup"><i className="ri-computer-line" /> Assets &amp; Security</p>
           <Row className="g-3">
             <Col md={4}>
-              <label className="onb-init-label">Laptop Assigned</label>
+              <label className="onb-init-label">Laptop Assigned<span className="req">*</span></label>
               <MasterSelect
                 options={ONB_YES_NO}
-                value={s1.laptop_assigned || 'No'}
-                onChange={(v) => setS1((p: any) => ({
-                  ...p,
-                  laptop_assigned: v,
-                  laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
-                }))}
+                placeholder="Select Yes or No"
+                value={s1.laptop_assigned}
+                invalid={!!s1Errors?.laptop_assigned}
+                onChange={(v) => {
+                  setS1((p: any) => ({
+                    ...p,
+                    laptop_assigned: v,
+                    laptop_master_asset_id: v === 'Yes' ? p.laptop_master_asset_id : '',
+                  }));
+                  setS1Errors?.((p: any) => ({ ...p, laptop_assigned: '' }));
+                }}
               />
+              {s1Errors?.laptop_assigned && (
+                <div className="onb-error-msg">{s1Errors.laptop_assigned}</div>
+              )}
             </Col>
             {s1.laptop_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Laptop Device</label>
+                <label className="onb-init-label">Laptop Device<span className="req">*</span></label>
                 <MasterSelect
                   options={laptopAssets}
                   onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={laptopAssets.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
                   value={s1.laptop_master_asset_id}
-                  onChange={(v) => setS1((p: any) => ({ ...p, laptop_master_asset_id: v }))}
+                  invalid={!!s1Errors?.laptop_master_asset_id}
+                  onChange={(v) => {
+                    setS1((p: any) => ({ ...p, laptop_master_asset_id: v }));
+                    setS1Errors?.((p: any) => ({ ...p, laptop_master_asset_id: '' }));
+                  }}
                   disabled={!assetsLoading && laptopAssets.length === 0}
                 />
+                {s1Errors?.laptop_master_asset_id && (
+                  <div className="onb-error-msg">{s1Errors.laptop_master_asset_id}</div>
+                )}
               </Col>
             )}
             <Col md={4}>
-              <label className="onb-init-label">Mobile Assigned</label>
+              <label className="onb-init-label">Mobile Assigned<span className="req">*</span></label>
               <MasterSelect
                 options={ONB_YES_NO}
-                value={s1.mobile_assigned || 'No'}
-                onChange={(v) => setS1((p: any) => ({
-                  ...p,
-                  mobile_assigned: v,
-                  mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
-                }))}
+                placeholder="Select Yes or No"
+                value={s1.mobile_assigned}
+                invalid={!!s1Errors?.mobile_assigned}
+                onChange={(v) => {
+                  setS1((p: any) => ({
+                    ...p,
+                    mobile_assigned: v,
+                    mobile_master_asset_id: v === 'Yes' ? p.mobile_master_asset_id : '',
+                  }));
+                  setS1Errors?.((p: any) => ({ ...p, mobile_assigned: '' }));
+                }}
               />
+              {s1Errors?.mobile_assigned && (
+                <div className="onb-error-msg">{s1Errors.mobile_assigned}</div>
+              )}
             </Col>
             {s1.mobile_assigned === 'Yes' && (
               <Col md={4}>
-                <label className="onb-init-label">Mobile Device</label>
+                <label className="onb-init-label">Mobile Device<span className="req">*</span></label>
                 <MasterSelect
                   options={mobileAssets}
                   onOpen={onAssetsOpen}
                   loading={assetsLoading}
                   placeholder={mobileAssets.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
                   value={s1.mobile_master_asset_id}
-                  onChange={(v) => setS1((p: any) => ({ ...p, mobile_master_asset_id: v }))}
+                  invalid={!!s1Errors?.mobile_master_asset_id}
+                  onChange={(v) => {
+                    setS1((p: any) => ({ ...p, mobile_master_asset_id: v }));
+                    setS1Errors?.((p: any) => ({ ...p, mobile_master_asset_id: '' }));
+                  }}
                   disabled={!assetsLoading && mobileAssets.length === 0}
                 />
+                {s1Errors?.mobile_master_asset_id && (
+                  <div className="onb-error-msg">{s1Errors.mobile_master_asset_id}</div>
+                )}
               </Col>
             )}
             <Col md={12}>
@@ -8098,28 +8297,11 @@ function Stage4Payroll({
               <label className="onb-init-label">Account Type</label>
               <MasterSelect options={ONB_ACCOUNT_TYPE} value={s4.bank_account_type} onChange={(v) => setS4(p => ({ ...p, bank_account_type: v }))} />
             </Col>
-            {/* UAN is a Provident Fund number — meaningless when PF doesn't
-                apply to this employee, so the field is hidden rather than
-                offered and then ignored. PF applicability is set on Stage 1
-                (Compensation). */}
-            {pfApplicable && (
-              <Col data-field="uan_number" md={4}>
-                <label className="onb-init-label">UAN Number (PF) <span className="req">*</span></label>
-                <input
-                  className={`onb-init-input is-required${invalid.uan_number ? ' is-invalid' : ''}`}
-                  placeholder="12-digit UAN"
-                  maxLength={12}
-                  value={s4.uan_number}
-                  onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
-                />
-                {s4.uan_number && s4.uan_number.length !== 12 && (
-                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
-                )}
-                {invalid.uan_number && !s4.uan_number.trim() && (
-                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN is required because PF applies</small>
-                )}
-              </Col>
-            )}
+            {/* UAN moved OUT of this section — see Tax & Statutory Details.
+                It sat inside Bank Details, which only renders for "Bank
+                Transfer", so choosing "Payment by Cheque" hid a field that
+                validation still demanded: the stage reported "UAN is required
+                because PF applies" with nowhere to type it. */}
           </Row>
         </div>
       </div>
@@ -8164,6 +8346,29 @@ function Stage4Payroll({
                     ? 'Not set — choose PF Type on Stage 1 (Compensation).'
                     : 'Set in Stage 1 (Compensation) — read-only here.'}
                 </small>
+              </Col>
+            )}
+            {/* UAN is a Provident Fund number, not a banking one: it identifies
+                the account the PF contribution is filed against, and that is
+                true whether salary goes out by transfer or by cheque. So it
+                lives here with PAN / PF Type / ESI and is gated ONLY by whether
+                PF applies — the same condition its validation uses. */}
+            {pfApplicable && (
+              <Col data-field="uan_number" md={4}>
+                <label className="onb-init-label">UAN Number (PF) <span className="req">*</span></label>
+                <input
+                  className={`onb-init-input is-required${invalid.uan_number ? ' is-invalid' : ''}`}
+                  placeholder="12-digit UAN"
+                  maxLength={12}
+                  value={s4.uan_number}
+                  onChange={e => setS4(p => ({ ...p, uan_number: e.target.value.replace(/\D/g, '') }))}
+                />
+                {s4.uan_number && s4.uan_number.length !== 12 && (
+                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN must be exactly 12 digits</small>
+                )}
+                {invalid.uan_number && !s4.uan_number.trim() && (
+                  <small style={{ color: '#dc2626', fontSize: 11.5 }}>UAN is required because PF applies</small>
+                )}
               </Col>
             )}
             <Col md={4}>
@@ -8888,230 +9093,9 @@ function Stage5Policies({ emp, onProgress }: {
 }
 
 // ── Stage 6 — Final Verification & Activation ─────────────────────────────
-// ── Flag Issue modal — opens from Stage 6 "Flag Issue" button ───────────────
-const FLAG_STAGE_OPTIONS = [
-  { value: 'stage1', label: 'Stage 1 — Employee Onboarding Setup' },
-  { value: 'stage2', label: 'Stage 2 — Document Management' },
-  { value: 'stage3', label: 'Stage 3 — Provisioning & Asset Setup' },
-  { value: 'stage4', label: 'Stage 4 — Payroll & Finance Setup' },
-  { value: 'stage5', label: 'Stage 5 — Policies & Agreements' },
-  { value: 'stage6', label: 'Stage 6 — HR Final Approval' },
-];
-const FLAG_ISSUE_TYPES = ['Missing Documents', 'Verification Failed', 'Approval Pending', 'Other'] as const;
-type FlagIssueType = typeof FLAG_ISSUE_TYPES[number];
-
-function FlagIssueModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const [stage, setStage] = useState<string>('stage1');
-  const [issueType, setIssueType] = useState<FlagIssueType | ''>('');
-  const [description, setDescription] = useState<string>('');
-
-  const handleSubmit = () => {
-    if (!description.trim()) return;
-    // In real wiring, dispatch to API. For now just close.
-    onClose();
-    setIssueType('');
-    setDescription('');
-    setStage('stage1');
-  };
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      toggle={onClose}
-      centered
-      contentClassName="onb-flag-content"
-      modalClassName="onb-flag-modal"
-      backdrop="static"
-      keyboard
-    >
-      <ModalBody className="p-0">
-        <div className="onb-flag-header">
-          <button type="button" className="close-btn" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" style={{ fontSize: 14 }} />
-          </button>
-          <span className="onb-flag-icon">
-            <i className="ri-error-warning-line" style={{ fontSize: 22 }} />
-          </span>
-          <h5 className="onb-flag-title">Flag Issue</h5>
-          <p className="onb-flag-sub">Raise a concern to block employee activation until resolved</p>
-        </div>
-
-        <div className="onb-flag-body">
-          <div className="onb-flag-section">
-            <p className="onb-flag-label">Issue Stage</p>
-            <MasterSelect value={stage} onChange={setStage} options={FLAG_STAGE_OPTIONS} />
-          </div>
-
-          <div className="onb-flag-section">
-            <p className="onb-flag-label">Issue Type</p>
-            <div className="onb-flag-types">
-              {FLAG_ISSUE_TYPES.map(t => (
-                <label key={t} className={`onb-flag-type${issueType === t ? ' is-active' : ''}`}>
-                  <input
-                    type="radio"
-                    name="flag-issue-type"
-                    checked={issueType === t}
-                    onChange={() => setIssueType(t)}
-                  />
-                  {t}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="onb-flag-section">
-            <p className="onb-flag-label">Issue Description <span className="onb-flag-req">*</span></p>
-            <textarea
-              className="onb-flag-textarea"
-              placeholder="Describe the issue clearly — e.g. PAN number mismatch, documents not uploaded, bank details incomplete..."
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-            />
-          </div>
-        </div>
-
-        <div className="onb-flag-footer">
-          <button type="button" className="onb-flag-cancel" onClick={onClose}>Cancel</button>
-          <button type="button" className="onb-flag-submit" onClick={handleSubmit} disabled={!description.trim()}>
-            <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Submit Flag
-          </button>
-        </div>
-      </ModalBody>
-    </Modal>
-  );
-}
-
-function ActivateEmployeeModal({
-  isOpen, onClose, emp, onActivated,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  emp: OnboardRow;
-  /** Fires after a successful activate so the parent can refresh the
-   *  onboarding list (status pill rolls over to Completed). */
-  onActivated?: () => void;
-}) {
-  const toast = useToast();
-  const [activating, setActivating] = useState(false);
-
-  // Reset busy state whenever the modal closes / reopens for a new emp.
-  useEffect(() => { if (!isOpen) setActivating(false); }, [isOpen]);
-
-  const handleConfirm = async () => {
-    if (activating || !emp?.dbId) return;
-    setActivating(true);
-    try {
-      await api.put(`/employees/${emp.dbId}`, {
-        // Backend whitelist (EmployeeController validation) is Title-Cased:
-        // 'Active' / 'Inactive' / 'On Leave' / 'Probation' / 'Notice Period'
-        // / 'Resigned' / 'Terminated'. Lowercase 'active' is for the related
-        // users table, not the employees row — sending it here returns
-        // "The selected status is invalid."
-        status: 'Active',
-        // Stamp macro stage 6 too so a row activated directly from
-        // Stage 6 reaches 100% even if the user skipped clicking
-        // "Complete Onboarding" first.
-        onboarding_stage_completed: 6,
-      });
-      toast.success(
-        'Employee activated',
-        `${emp.name} now has full system access. Reporting manager has been notified.`,
-      );
-      onActivated?.();
-      onClose();
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || err?.message || 'Activation failed';
-      toast.error('Could not activate employee', String(msg));
-    } finally {
-      setActivating(false);
-    }
-  };
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      toggle={() => { if (!activating) onClose(); }}
-      centered
-      contentClassName="onb-act-content"
-      modalClassName="onb-act-modal"
-      backdrop="static"
-      keyboard={!activating}
-    >
-      <ModalBody className="p-0">
-        <div className="onb-act-header">
-          <button
-            type="button"
-            className="close-btn"
-            onClick={onClose}
-            disabled={activating}
-            aria-label="Close"
-          >
-            <i className="ri-close-line" style={{ fontSize: 14 }} />
-          </button>
-          <span className="onb-act-icon">
-            <i className="ri-user-follow-line" style={{ fontSize: 22 }} />
-          </span>
-          <h5 className="onb-act-title">Activate Employee</h5>
-          <p className="onb-act-sub">This action is final — please confirm all stages are complete</p>
-        </div>
-
-        <div className="onb-act-body">
-          <div className="onb-act-empcard">
-            <span className="onb-act-empcheck"><i className="ri-check-line" style={{ fontSize: 20 }} /></span>
-            <div className="min-w-0">
-              <h6 className="onb-act-empname">{emp.name}</h6>
-              <p className="onb-act-empmeta">
-                {emp.department} · {emp.designation}<br />
-                Joined: {emp.joinDate}
-              </p>
-            </div>
-          </div>
-
-          <ul className="onb-act-list">
-            <li><i className="ri-checkbox-circle-fill" /> Employee status will be set to <b style={{ marginLeft: 4 }}>Active / Completed</b></li>
-            <li><i className="ri-checkbox-circle-fill" /> Reporting Manager will be notified via email</li>
-            <li><i className="ri-checkbox-circle-fill" /> Full system access will be granted</li>
-            <li><i className="ri-checkbox-circle-fill" /> Evidence Vault will be marked as Ready</li>
-          </ul>
-        </div>
-
-        <div className="onb-act-footer">
-          <button
-            type="button"
-            className="onb-act-cancel"
-            onClick={onClose}
-            disabled={activating}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="onb-act-confirm"
-            onClick={handleConfirm}
-            disabled={activating}
-            style={activating ? { opacity: 0.8, cursor: 'progress' } : undefined}
-          >
-            {activating ? (
-              <>
-                <span
-                  className="spinner-border spinner-border-sm"
-                  role="status"
-                  aria-hidden="true"
-                  style={{ width: '0.85rem', height: '0.85rem' }}
-                />
-                Activating…
-              </>
-            ) : (
-              <>
-                <i className="ri-check-line" style={{ fontSize: 16 }} /> Confirm Activate
-              </>
-            )}
-          </button>
-        </div>
-      </ModalBody>
-    </Modal>
-  );
-}
+// The Flag Issue and Activate Employee modals that lived here were removed
+// along with the Stage 6 "HR Final Action" card that was their only trigger.
+// Completion runs through the footer's guarded "Complete Onboarding" flow.
 
 function Stage6Verify({
   emp, stagesView, onActivated,
@@ -9124,31 +9108,17 @@ function Stage6Verify({
   stagesView: { num: number; status: 'Completed' | 'In Progress' | 'Pending' }[];
   onActivated?: () => void;
 }) {
-  const [flagOpen, setFlagOpen] = useState(false);
-  const [activateOpen, setActivateOpen] = useState(false);
-  // Local flag flipped the instant the activate API succeeds — gives us
-  // an immediate "Activated" UI without waiting for the parent's
-  // /employees refresh round-trip (~100–500ms). Without this, the user
-  // saw the success toast + the still-active Activate button for a
-  // moment because emp.raw was stale.
-  const [justActivated, setJustActivated] = useState(false);
-  // Already-activated guard. Stage 6's Activate button is the entry
-  // point to a one-way transition (status → Active, macro stage → 6).
-  // Once that's true, re-clicking the button would just open the modal
-  // again and re-fire the same PUT — annoying at best, error-prone at
-  // worst. We swap the action area for a "completed" card so the user
-  // can see the result and move on.
-  // `isActivated` still drives the action banner / button toggle below
-  // (activation is irreversible — once it happened, we acknowledge it
-  // even if earlier stages slipped through). But the HR Final Approval
-  // row's "Verified" pill is now gated by a stricter check: the employee
-  // must have been activated AND every prior stage must be Completed in
-  // `stagesView`. Without that, a user could activate while stages 2–5
-  // were still Pending and the wizard would mis-report Onboarding as
-  // 6/6 Verified — see screenshot bug.
+  // Has this employee already been activated? Read straight from the server
+  // row now — the local `justActivated` optimistic flag went with the Activate
+  // button that set it; the footer's Complete Onboarding closes the wizard and
+  // refetches, so there is no in-between frame left to paper over.
+  //
+  // The HR Final Approval row's "Verified" pill stays gated by the STRICTER
+  // check below (activated AND every prior stage Completed). Activation on its
+  // own is not enough: a row that slipped through with stages 2–5 pending
+  // would otherwise make the wizard mis-report 6/6 Verified.
   const isActivated =
-    justActivated
-    || String(emp?.raw?.status ?? '').toLowerCase() === 'active'
+    String(emp?.raw?.status ?? '').toLowerCase() === 'active'
     || Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
   const isStageDone = (num: number): boolean =>
     !!stagesView.find(s => s.num === num && s.status === 'Completed');
@@ -9222,45 +9192,14 @@ function Stage6Verify({
         ))}
       </div>
 
-      {/* HR Final Action */}
-      <div className="onb-ver-section">
-        <div className="onb-ver-section-head">
-          <span className="onb-ver-section-icon action"><i className="ri-user-star-line" /></span>
-          <h6 className="onb-ver-section-title">HR Final Action</h6>
-        </div>
-        <div style={{ padding: '14px 16px' }}>
-          {isActivated ? null : (
-            <div className="onb-ver-action-buttons">
-              <button type="button" className="onb-ver-flag-btn" onClick={() => setFlagOpen(true)}>
-                <i className="ri-error-warning-line" style={{ fontSize: 16 }} /> Flag Issue
-              </button>
-              <button type="button" className="onb-ver-activate-btn" onClick={() => setActivateOpen(true)}>
-                <i className="ri-checkbox-circle-line" style={{ fontSize: 16 }} /> Activate Employee
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <FlagIssueModal isOpen={flagOpen} onClose={() => setFlagOpen(false)} />
-      {/* Confirmation popup intact — clicking Activate Employee still
-          opens this modal first ("Activate Employee · This action is
-          final — please confirm all stages are complete" with Cancel
-          and Confirm Activate buttons). Only after the user clicks
-          Confirm Activate does the PUT actually fire. */}
-      <ActivateEmployeeModal
-        isOpen={activateOpen}
-        onClose={() => setActivateOpen(false)}
-        emp={emp}
-        onActivated={() => {
-          // Flip the local guard immediately so the action area
-          // switches to the success card without waiting for the
-          // parent's /employees refetch, then forward to the parent
-          // so the listing page picks up the new status too.
-          setJustActivated(true);
-          onActivated?.();
-        }}
-      />
+      {/* The "HR Final Action" card that used to sit here (Flag Issue +
+          Activate Employee) is gone. Activation now has exactly ONE entry
+          point: the footer's "Complete Onboarding", which refuses to run
+          while any stage is still pending and asks for confirmation first.
+          The card's Activate button was a second, UNGUARDED path to the same
+          irreversible transition — it could stamp the employee Active while
+          stages 2–5 were still Pending, after which the summary mis-reported
+          6/6 Verified. Two routes to one irreversible action is the bug. */}
     </>
   );
 }

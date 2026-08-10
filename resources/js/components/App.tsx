@@ -499,8 +499,14 @@ function ProfileRouter() {
   // Use the EMP- code as the URL slug — matches the convention HrEmployees
   // uses, so EmployeeProfile's existing employee_code lookup path runs the
   // same way for both /profile and /hr/employees/:id/profile.
+  //
+  // The code MUST come from `/me`'s `employee_code`, never be synthesised as
+  // `EMP-${employee_id}`: emp_code is a per-client sequence, not the DB id, so
+  // the fabricated string was a DIFFERENT (and wrong) id that flashed under the
+  // name until the /employees fetch landed and replaced it. When /me has no
+  // code, show nothing rather than a guess — EmployeeProfile renders "—".
   const fallback = {
-    id: stateEmp?.id || `EMP-${user!.employee_id}`,
+    id: stateEmp?.id || user!.employee_code || '',
     name: user!.name,
     email: user!.email,
     // /me already carries the employee passport photo, so the hero shows it
@@ -509,7 +515,7 @@ function ProfileRouter() {
   };
   return (
     <EmployeeProfile
-      employeeId={stateEmp?.id || String(user!.employee_id)}
+      employeeId={stateEmp?.id || user!.employee_code || String(user!.employee_id)}
       employee={stateEmp || fallback}
       onBack={() => navigateFn('dashboard')}
     />

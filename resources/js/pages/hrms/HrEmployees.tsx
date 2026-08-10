@@ -757,7 +757,9 @@ export default function HrEmployees() {
   const [eMobileAssigned,      setEMobileAssigned]      = useState('No');
   const [eMobileMasterAssetId, setEMobileMasterAssetId] = useState('');
   const [eOtherMasterAssetIds, setEOtherMasterAssetIds] = useState<string[]>([]);
-  type AssetOpt = { value: string; label: string };
+  // `badge` flags a device whose Asset-master category no longer matches the
+  // slot it is linked to (see `stale_category` on /employees/available-assets).
+  type AssetOpt = { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet' } };
   const [laptopAssetOpts, setLaptopAssetOpts] = useState<AssetOpt[]>([]);
   const [mobileAssetOpts, setMobileAssetOpts] = useState<AssetOpt[]>([]);
   const [otherAssetOpts,  setOtherAssetOpts]  = useState<AssetOpt[]>([]);
@@ -968,7 +970,10 @@ export default function HrEmployees() {
   const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
   const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
   const [eEsiApplicable, setEEsiApplicable]      = useState(false);
-  const [ePtApplicable, setEPtApplicable]        = useState(true);
+  /* Both start UNCHECKED. PT defaulted to true, so every new employee arrived
+     with a Professional Tax deduction row nobody had asked for — and it is not
+     universal (it is state-levied, and several states do not charge it). */
+  const [ePtApplicable, setEPtApplicable]        = useState(false);
   const [eBreakupLoading, setEBreakupLoading]    = useState(false);
   const breakupLoadedForRef = useRef<number | 'new' | null>(null);
   const breakupBaselineRef  = useRef<string | null>(null);
@@ -1006,7 +1011,7 @@ export default function HrEmployees() {
     setEEnablePayroll(true); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
-    setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(true);
+    setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(false);
     setEBreakupLoading(false);
     breakupLoadedForRef.current = null;
     breakupBaselineRef.current = null;
@@ -1044,8 +1049,12 @@ export default function HrEmployees() {
     const seedFresh = () => {
       setEEarnings(seedBreakup(monthlyGross));
       setEDeductions([]);
-      setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
-      setEPtApplicable(true);
+      /* Neither is auto-ticked. ESI eligibility is a wage-ceiling RULE, not a
+         decision the form should make silently, and PT is state-levied — some
+         states do not charge it at all. Both were arriving pre-enabled, which
+         put deduction rows on the payslip that nobody chose. */
+      setEEsiApplicable(false);
+      setEPtApplicable(false);
       breakupBaselineRef.current = null;
       breakupDirtyRef.current = false; // fresh auto-split → may re-seed on salary change
     };
@@ -1094,6 +1103,13 @@ export default function HrEmployees() {
 
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
   const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
+  /* Fixed deductions EXCLUDING the PF row, for the summary line that already
+     reports PF on its own. PF is now a row in the list, so adding it to the
+     "Fixed Deductions" figure would show the same rupee twice on screen. */
+  const breakupDedExPf = useMemo(
+    () => eDeductions.filter(c => c.code !== 'pf').reduce((s, c) => s + (Number(c.amount) || 0), 0),
+    [eDeductions],
+  );
   // Live monthly PF estimate off the basic component — Statutory caps the
   // basic at the ₹15k EPF ceiling, Standard uses the full basic. Updates
   // whenever the PF Type / Applicable / basic figure changes.
@@ -1109,9 +1125,10 @@ export default function HrEmployees() {
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
   // auto-computed — they're added as editable rows in Fixed Deductions
   // (so they're part of breakupDed when present), filled by HR / accounts.
+  /* PF is inside breakupDed now — subtracting it again here took it twice. */
   const breakupNet = useMemo(
-    () => Math.max(0, breakupGross - (ePfEligible ? breakupPf : 0) - breakupDed),
-    [breakupGross, ePfEligible, breakupPf, breakupDed],
+    () => Math.max(0, breakupGross - breakupDed),
+    [breakupGross, breakupDed],
   );
 
   // Compare the breakup's annualised gross (Monthly Gross × 12) against the
@@ -1135,10 +1152,28 @@ export default function HrEmployees() {
       };
       sync(eEsiApplicable, 'esi', 'ESI');
       sync(ePtApplicable,  'pt',  'Professional Tax');
+
+      /* PF joins the same list — it was only ever a note under the totals.
+         ESI and PT already appeared as deduction rows, so a reader saw two of
+         the three statutory deductions in the section and the third somewhere
+         else, and the section did not add up to what was actually deducted.
+         Unlike those two it is COMPUTED (12% of basic, capped for Statutory),
+         so the row is kept in step with that figure rather than left for
+         someone to type. */
+      const pfIdx = next.findIndex(d => d.code === 'pf');
+      if (ePfEligible) {
+        const row = { code: 'pf', label: 'Provident Fund (PF)', amount: breakupPf };
+        if (pfIdx < 0) next = [...next, row];
+        else if (Number(next[pfIdx].amount) !== breakupPf) {
+          next = next.map((d, i) => (i === pfIdx ? { ...d, ...row } : d));
+        }
+      } else if (pfIdx >= 0) {
+        next = next.filter(d => d.code !== 'pf');
+      }
       return next === prev ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eEsiApplicable, ePtApplicable]);
+  }, [eEsiApplicable, ePtApplicable, ePfEligible, breakupPf]);
 
   const breakupErrors = useMemo(() => {
     const earnings: Record<number, string> = {};
@@ -1368,7 +1403,14 @@ export default function HrEmployees() {
     const exclude = editingDbId ? `&exclude_employee_id=${editingDbId}` : '';
     const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
       api.get(`/employees/available-assets?category=${cat}${exclude}`)
-        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({ value: String(a.id), label: a.label || a.asset_name }))); })
+        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({
+          value: String(a.id),
+          label: a.label || a.asset_name,
+          /* Device still linked to this slot but re-categorised in the Asset
+             master since (Laptop -> Mobile). Without this row the select had no
+             option matching the saved id and fell back to printing the raw id. */
+          ...(a.stale_category ? { badge: { text: 'Category changed', tone: 'red' as const } } : {}),
+        }))); })
         .catch(() => { if (!cancelled) setter([]); });
     Promise.allSettled([
       fetchCat('laptop', setLaptopAssetOpts),
@@ -1792,6 +1834,13 @@ export default function HrEmployees() {
     if (!eShift)              e.shift               = 'Shift is required';
     if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
     if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
+    /* Answering "Overtime Applicable = Yes" and leaving the rate blank saved an
+       employee marked for overtime with nothing to pay it at — payroll then
+       computes OT hours it cannot price. The field already appears only when
+       the answer is Yes; it just was not required. */
+    if (eOvertimeApplicable === 'Yes' && !eOvertime) {
+      e.overtime = 'Overtime rate is required when overtime is applicable';
+    }
 
     if (!eAadharFile && !existing['aadhaar']) {
       e.doc_aadhaar = 'Aadhar Card upload is required';
@@ -1807,7 +1856,8 @@ export default function HrEmployees() {
     }
     return e;
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
-      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy]);
+      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
+      eOvertimeApplicable, eOvertime]);
 
   const salaryEffectiveCap = useMemo(() => {
     if (!eJoinDate) return '';
@@ -1870,7 +1920,7 @@ export default function HrEmployees() {
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
       { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
       { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
+      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','expense_policy','overtime','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
       { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from','salary_breakup']) },
     ];
     for (const s of STEP_KEYS) {
@@ -2861,7 +2911,13 @@ export default function HrEmployees() {
                       className={`onb-input${onbErrors.email ? ' is-invalid' : ''}`}
                       placeholder="name@company.com"
                       value={onbEmail}
-                      onChange={e => { setOnbEmail(e.target.value); clearOnbError('email'); }}
+                      /* Lower-cased as it is typed. Email local parts are
+                         case-insensitive in practice and every mailbox here is
+                         addressed in lower case, so "DFSD@FDGDFG.COM" was going
+                         out on the invite exactly as shouted — and the same
+                         person typed twice with different casing looked like two
+                         different invitees. */
+                      onChange={e => { setOnbEmail(e.target.value.toLowerCase()); clearOnbError('email'); }}
                     />
                     {onbErrors.email && (
                       <div className="onb-error"><i className="ri-error-warning-line" />{onbErrors.email}</div>
@@ -3877,8 +3933,9 @@ export default function HrEmployees() {
                     </Col>
                     {eOvertimeApplicable === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Overtime Rate</label>
-                        <MasterSelect value={eOvertime} onChange={setEOvertime} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
+                        <label className="emp-label">Overtime Rate<span className="req">*</span></label>
+                        <MasterSelect value={eOvertime} onChange={(v) => { setEOvertime(v); clearEErr('overtime'); }} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} invalid={!!eErrors.overtime} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
+                        {eErrors.overtime && <small className="emp-err">{eErrors.overtime}</small>}
                       </Col>
                     )}
                     <Col md={4}>
@@ -4188,7 +4245,7 @@ export default function HrEmployees() {
                   {eEnablePayroll && (
                     <Row className="g-3 mt-0">
                       <Col md={6}>
-                        <label className="emp-label">PF Applicable</label>
+                        <label className="emp-label">PF Applicable<span className="req">*</span></label>
                         <MasterSelect
                           value={ePfEligible ? 'Yes' : 'No'}
                           onChange={(v) => setEPfEligible(v === 'Yes')}
@@ -4356,10 +4413,10 @@ export default function HrEmployees() {
                               <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
                             </div>
                           )}
-                          {breakupDed > 0 && (
+                          {breakupDedExPf > 0 && (
                             <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                               <span className="text-muted">Fixed Deductions</span>
-                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupDed.toLocaleString('en-IN')}/mo</span>
+                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupDedExPf.toLocaleString('en-IN')}/mo</span>
                             </div>
                           )}
                           <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3"
@@ -4370,7 +4427,7 @@ export default function HrEmployees() {
                                 ₹{breakupNet.toLocaleString('en-IN')}
                               </div>
                               <div className="text-muted" style={{ fontSize: 11.5 }}>
-                                Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDed > 0 ? ` − Deductions ₹${breakupDed.toLocaleString('en-IN')}` : ''}
+                                Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
                               </div>
                             </div>
                           </div>

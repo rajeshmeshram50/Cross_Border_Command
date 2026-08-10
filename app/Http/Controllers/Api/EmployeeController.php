@@ -759,9 +759,8 @@ class EmployeeController extends Controller
                 // scanning every client's employees was pure waste.
                 ->when($u && !$u->isSuperAdmin() && $u->client_id,
                     fn ($q) => $q->where('client_id', $u->client_id));
-            if ($excludeEmployeeId) {
-                $bookingQ->where('id', '!=', (int) $excludeEmployeeId);
-            }
+            // NOTE: the employee being edited is deliberately NOT excluded from
+            // this scan — see the slot-scoped exemption below.
             $rows = $bookingQ->select(['id', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])->get();
             foreach ($rows as $r) {
                 if ($r->laptop_master_asset_id) $bookedIds->push((int) $r->laptop_master_asset_id);
@@ -773,10 +772,71 @@ class EmployeeController extends Controller
         }
         $bookedSet = $bookedIds->unique()->flip();
 
+        /* Slot-scoped self-exemption.
+         *
+         * `exclude_employee_id` exists so the device THIS employee already holds
+         * stays visible in the picker instead of vanishing as "booked". But it
+         * used to drop the employee from the booking scan ENTIRELY, which
+         * exempted all three of their slots at once — so a device they hold as
+         * their laptop was also offered as a free MOBILE on the same form, and
+         * one physical device could be booked into two slots of one person.
+         *
+         * QA hit this by changing an asset's category from Laptop to Mobile in
+         * the Asset master: the device was still linked in the employee's laptop
+         * slot, yet showed up as assignable in the mobile dropdown.
+         *
+         * So exempt only the holding that belongs to the slot being asked about.
+         */
+        $ownSlotIds = [];
+        if ($excludeEmployeeId) {
+            $self = Employee::withTrashed()
+                ->when($u && !$u->isSuperAdmin() && $u->client_id,
+                    fn ($q) => $q->where('client_id', $u->client_id))
+                ->whereKey((int) $excludeEmployeeId)
+                ->first(['id', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids']);
+            if ($self) {
+                if ($category === 'laptop' && $self->laptop_master_asset_id) {
+                    $ownSlotIds[] = (int) $self->laptop_master_asset_id;
+                } elseif ($category === 'mobile' && $self->mobile_master_asset_id) {
+                    $ownSlotIds[] = (int) $self->mobile_master_asset_id;
+                } elseif ($category === 'other') {
+                    foreach ((array) ($self->other_master_asset_ids ?? []) as $aid) {
+                        $ownSlotIds[] = (int) $aid;
+                    }
+                }
+            }
+            foreach ($ownSlotIds as $aid) {
+                $bookedSet->forget($aid);
+            }
+        }
+
+        /* The saved device may no longer be in the requested category at all —
+         * exactly the Laptop→Mobile edit above. It then falls out of `$assets`
+         * (the category filter is correct and must stay), leaving the picker
+         * with a selected id it cannot resolve, which the UI rendered as a bare
+         * number: "the asset ID is displayed in laptop field".
+         *
+         * Append it, flagged, so the field shows the device's NAME plus a
+         * "Category changed" badge. That is the honest state — the slot is
+         * pointing at something that is no longer a laptop — and it lets the
+         * admin see what happened and re-pick, instead of staring at an id. */
+        $presentIds = $assets->pluck('id')->map(fn ($i) => (int) $i)->flip();
+        $staleIds = array_values(array_filter($ownSlotIds, fn ($aid) => !$presentIds->has($aid)));
+        if (!empty($staleIds)) {
+            $stale = \App\Models\Masters\Assets::query()
+                ->when($u && !$u->isSuperAdmin(), function ($w) use ($u) {
+                    $w->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $u->client_id));
+                })
+                ->whereIn('id', $staleIds)
+                ->get();
+            $assets = $assets->concat($stale);
+        }
+        $staleSet = collect($staleIds)->flip();
+
         return response()->json(
             $assets
                 ->reject(fn($a) => $bookedSet->has($a->id))
-                ->map(function ($a) {
+                ->map(function ($a) use ($staleSet) {
                     // Label format: "AST-#### — Asset Name". Prefer the
                     // auto-generated `code` (the public asset ID shown
                     // in the master table); fall back to `asset_number`
@@ -789,6 +849,10 @@ class EmployeeController extends Controller
                         'asset_number'  => $a->asset_number,
                         'code'          => $a->code,
                         'label'         => $label,
+                        // True only for a device still linked to this slot whose
+                        // category has since been changed elsewhere. The picker
+                        // badges it so the mismatch is visible rather than silent.
+                        'stale_category' => $staleSet->has((int) $a->id),
                     ];
                 })
                 ->values(),

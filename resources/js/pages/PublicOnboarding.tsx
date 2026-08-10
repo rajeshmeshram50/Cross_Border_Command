@@ -354,15 +354,24 @@ export default function PublicOnboarding() {
     else if (!isValidPincode(curPin)) e.pincode = 'Pincode must be 6 digits';
     // Permanent address (only when NOT mirroring current). City, if provided,
     // follows the same name rule; pincode format is checked when present.
+    /* Permanent address is REQUIRED, same as current — it was optional, so an
+       employee could finish onboarding with no permanent address on record at
+       all. "Same as Current Address" is the shortcut for when they match; it
+       fills these from the current one, so requiring them costs nothing there.
+       Country / State join the list too: a pincode without them is not an
+       address anyone can post to. */
     if (!sameAsCurrent) {
-      if (permAddr1.trim() && !isValidAddress(permAddr1))
-        e.perm_address_line1 = ADDRESS_MSG;
+      if (!permAddr1.trim())  e.perm_address_line1 = 'Address Line 1 is required';
+      else if (!isValidAddress(permAddr1)) e.perm_address_line1 = ADDRESS_MSG;
       if (permAddr2.trim() && !isValidAddress(permAddr2))
         e.perm_address_line2 = ADDRESS_MSG;
-      if (permCity.trim() && !nameRe.test(permCity.trim()))
+      if (!permCity.trim())   e.perm_city = 'City is required';
+      else if (!nameRe.test(permCity.trim()))
         e.perm_city = 'Enter a valid city name (letters only — no numbers or special characters)';
-      if (permPin.trim() && !isValidPincode(permPin))
-        e.perm_pincode = 'Pincode must be 6 digits';
+      if (!permCountry)       e.perm_country_id = 'Country is required';
+      if (!permState)         e.perm_state_id   = 'State is required';
+      if (!permPin.trim())    e.perm_pincode = 'Pincode is required';
+      else if (!isValidPincode(permPin)) e.perm_pincode = 'Pincode must be 6 digits';
     }
     return e;
   };
@@ -409,7 +418,7 @@ export default function PublicOnboarding() {
       setErrs(e);
       // Jump to the earliest step with an error.
       const step1Keys = ['first_name','last_name','gender','date_of_birth','nationality_country_id','work_country_id','mobile'];
-      const step2Keys = ['address_line1','address_line2','city','country_id','state_id','pincode','perm_address_line1','perm_address_line2','perm_city','perm_pincode'];
+      const step2Keys = ['address_line1','address_line2','city','country_id','state_id','pincode','perm_address_line1','perm_address_line2','perm_city','perm_country_id','perm_state_id','perm_pincode'];
       if (step1Keys.some(k => e[k])) setStep(1);
       else if (step2Keys.some(k => e[k])) setStep(2);
       const n = Object.keys(e).length;
@@ -1883,7 +1892,7 @@ export default function PublicOnboarding() {
               </div>
               <div className="onb-hgrid">
                 <div className="onb-hrow">
-                  <label className="emp-label">Address Line 1</label>
+                  <label className="emp-label">Address Line 1<span className="req">*</span></label>
                   <div className="onb-hrow-input">
                     <input className={`emp-input${errs.perm_address_line1 ? ' is-invalid' : ''}`} value={permAddr1} onChange={e => { setPermAddr1(e.target.value); clearErr('perm_address_line1'); }} disabled={sameAsCurrent} />
                     {errs.perm_address_line1 && <small className="emp-err">{errs.perm_address_line1}</small>}
@@ -1897,26 +1906,28 @@ export default function PublicOnboarding() {
                   </div>
                 </div>
                 <div className="onb-hrow">
-                  <label className="emp-label">City</label>
+                  <label className="emp-label">City<span className="req">*</span></label>
                   <div className="onb-hrow-input">
                     <input className={`emp-input${errs.perm_city ? ' is-invalid' : ''}`} value={permCity} onChange={e => { setPermCity(e.target.value); clearErr('perm_city'); }} disabled={sameAsCurrent} />
                     {errs.perm_city && <small className="emp-err">{errs.perm_city}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">
-                  <label className="emp-label">Country</label>
+                  <label className="emp-label">Country<span className="req">*</span></label>
                   <div className="onb-hrow-input">
-                    <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} />
+                    <MasterSelect value={permCountry} onChange={v => { setPermCountry(v); if (permState) setPermState(''); clearErr('perm_country_id'); clearErr('perm_state_id'); }} options={countryOpts} placeholder="Select country" disabled={sameAsCurrent} invalid={!!errs.perm_country_id} />
+                    {errs.perm_country_id && <small className="emp-err">{errs.perm_country_id}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">
-                  <label className="emp-label">State</label>
+                  <label className="emp-label">State<span className="req">*</span></label>
                   <div className="onb-hrow-input">
-                    <MasterSelect value={permState} onChange={setPermState} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} />
+                    <MasterSelect value={permState} onChange={v => { setPermState(v); clearErr('perm_state_id'); }} options={permStates.map(s => ({ value: String(s.id), label: s.name }))} placeholder={permCountry ? 'Select state' : 'Pick country first'} disabled={sameAsCurrent || !permCountry} invalid={!!errs.perm_state_id} />
+                    {errs.perm_state_id && <small className="emp-err">{errs.perm_state_id}</small>}
                   </div>
                 </div>
                 <div className="onb-hrow">
-                  <label className="emp-label">Pincode</label>
+                  <label className="emp-label">Pincode<span className="req">*</span></label>
                   <div className="onb-hrow-input">
                     <input
                       className={`emp-input${errs.perm_pincode ? ' is-invalid' : ''}`}

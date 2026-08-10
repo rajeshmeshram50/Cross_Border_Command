@@ -381,6 +381,10 @@
 }
 .ib-consent:has(.ib-consent-box:checked) { background: #eef2ff; border-color: #c7d2fe; }
 .ib-consent-box { margin-top: 2px; width: 15px; height: 15px; flex-shrink: 0; cursor: pointer; }
+/* Shown only after a submit was refused for it — the tick is far enough from
+   the toast that the corner message alone read as nothing having happened. */
+.ib-consent.is-invalid { background: #fef2f2; border-color: #fca5a5; }
+.ib-consent-err { margin-top: 6px; font-size: 11.5px; font-weight: 600; color: #b91c1c; }
 [data-bs-theme="dark"] .ib-consent,
 [data-layout-mode="dark"] .ib-consent {
   background: rgba(251, 146, 60, 0.12); border-color: rgba(251, 146, 60, 0.35); color: #e5e7eb;
