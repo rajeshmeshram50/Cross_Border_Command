@@ -3,6 +3,10 @@
 // offers Resume / Discard. Extracted from EmployeeProfile.tsx.
 import type { ReactNode } from 'react';
 
+// Expense titles are free text — a long, unbroken one overflows the draft
+// card (QA #121). Clip it for display; the full title stays in the tooltip.
+const clipTitle = (t: string): string => (t.length > 40 ? t.slice(0, 40) + '…' : t);
+
 const fmtSavedAt = (iso: string | null): string => {
   if (!iso) return 'Saved earlier';
   const d = new Date(iso);
@@ -117,8 +121,8 @@ export default function DraftListView({
               </span>
               <div className="min-w-0 flex-grow-1">
                 <div className="d-flex align-items-center gap-2 flex-wrap">
-                  <strong className="ep-fs-13">
-                    {lineCount > 1 ? `Expense Draft · ${lineCount} claims` : (lines[0].title || 'Untitled claim')}
+                  <strong className="ep-fs-13 text-truncate dlv-flex-280" title={lineCount > 1 ? undefined : (lines[0].title || 'Untitled claim')}>
+                    {lineCount > 1 ? `Expense Draft · ${lineCount} claims` : clipTitle(lines[0].title || 'Untitled claim')}
                   </strong>
                   <span className="badge rounded-pill dlv-badge-draft">DRAFT</span>
                 </div>
@@ -135,7 +139,7 @@ export default function DraftListView({
                           {lineCount > 1 && (
                             <span className="badge rounded-pill text-bg-light border">Claim {i + 1}</span>
                           )}
-                          <strong className="ep-fs-115">{ln.title || 'Untitled claim'}</strong>
+                          <strong className="ep-fs-115 text-truncate dlv-flex-280" title={ln.title || 'Untitled claim'}>{clipTitle(ln.title || 'Untitled claim')}</strong>
                         </div>
                         <div className="text-muted mt-1 ep-fs-115">
                           {ln.amount ? <>₹{Number(String(ln.amount).replace(/[^\d.]/g, '') || 0).toLocaleString('en-IN')}</> : '—'}

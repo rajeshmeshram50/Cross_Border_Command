@@ -162,6 +162,15 @@ class AdvanceRequestController extends Controller
         // right base even if the client omits or fakes it.
         $minRecoveryStart = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
 
+        // The browser normalises <textarea> newlines to CRLF when serialising
+        // multipart/form-data, so a reason the employee typed as 492 chars (each
+        // line break counted once on-screen) arrives with an extra character per
+        // line and can trip max:500 even though the counter is within limit
+        // (QA #89). Fold CRLF back to LF so the server counts what the user saw.
+        if ($request->has('reason')) {
+            $request->merge(['reason' => str_replace("\r\n", "\n", (string) $request->input('reason'))]);
+        }
+
         $data = $request->validate([
             'advance_type'        => ['required', 'string', 'in:' . implode(',', self::ADVANCE_TYPES)],
             // Only meaningful when advance_type='Other'. The frontend already
@@ -480,6 +489,15 @@ class AdvanceRequestController extends Controller
                 $row->deduction_reason  = $deductionRows
                     ? implode(' · ', array_map(fn ($d) => number_format($d['amount'], 2) . ': ' . $d['reason'], $deductionRows))
                     : null;
+                // The recovery EMI was computed off the REQUESTED amount at
+                // request time. HR may sanction a different net (additions /
+                // deductions), so recompute the per-cycle instalment against the
+                // sanctioned amount over the SAME number of cycles — otherwise
+                // payroll keeps recovering the old EMI and the schedule is wrong
+                // (QA #108). Self-advance EMI/bi-monthly only; lump-sum has none.
+                if (in_array($row->recovery_mode, ['emi', 'bimonthly'], true) && (int) $row->recovery_months > 0) {
+                    $row->monthly_emi = round($sanctioned / (int) $row->recovery_months, 2);
+                }
             }
             $row->save();
         });

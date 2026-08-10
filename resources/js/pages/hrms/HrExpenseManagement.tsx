@@ -9,7 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
 import BatchPaymentModal from '../../components/BatchPaymentModal';
-import { advanceRequestColumns, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
+import { advanceRequestColumns, DeclineReasonModal, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
 import { useChartTheme } from '../../hooks/useChartTheme';
@@ -144,6 +144,8 @@ export default function HrExpenseManagement() {
   // Advance whose Record-Payment / Review modal is open (same flow as claims).
   const [settleAdvId, setSettleAdvId] = useState<number | null>(null);
   const [reviewAdvId, setReviewAdvId] = useState<number | null>(null);
+  // Advance whose "Decline reason" popup is open (rejected rows' Remark).
+  const [remarkAdv, setRemarkAdv] = useState<AdvanceRequestRow | null>(null);
   // Advance Used-For view — Self used / Company used (Advance Requests only).
   const [advUsedFor, setAdvUsedFor] = useState<'self' | 'company'>('self');
 
@@ -454,8 +456,11 @@ export default function HrExpenseManagement() {
     'Supplier', 'Project', 'Payment Method',
     'Status', 'Manager Status', 'Manager Acted', 'Manager Comment',
     'HR Status', 'HR User', 'HR Acted', 'HR Comment',
+    'Payment Status', 'Zoho Sync',
     'Created By', 'Created At',
   ];
+  const ZOHO_LABEL: Record<string, string> = { completed: 'Completed', partial: 'Partial', pending: 'Pending', na: 'N/A' };
+  const PAY_LABEL: Record<string, string> = { paid: 'Completed', partial: 'Partial', unpaid: 'Pending' };
 
   /* Export date formatting (CBC #94/#95/#96).
    *
@@ -492,6 +497,8 @@ export default function HrExpenseManagement() {
     r.vendor, r.project, r.payment_method,
     r.status, r.manager_status, fmtExportDateTime(r.manager_acted_at), r.manager_comment,
     r.hr_status, r.hr_user_name, fmtExportDateTime(r.hr_acted_at), r.hr_comment,
+    PAY_LABEL[r.settlement_status ?? 'unpaid'] ?? (r.settlement_status ?? ''),
+    ZOHO_LABEL[r.zoho_sync ?? 'na'] ?? '',
     r.creator_name, fmtExportDateTime(r.created_at),
   ];
 
@@ -685,7 +692,7 @@ export default function HrExpenseManagement() {
     [canHrApprove, user?.employee_id],
   );
   const advanceColumns = useMemo(
-    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => { if (payGate(row)) setSettleAdvId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewAdvId(row.id); } }),
+    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => { if (payGate(row)) setSettleAdvId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewAdvId(row.id); }, onShowRemark: setRemarkAdv }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id, advUsedFor],
   );
@@ -1146,6 +1153,8 @@ export default function HrExpenseManagement() {
         onDone={refreshAdvances}
         onGoToInbox={() => { window.location.href = '/inbox'; }}
       />
+      {/* Full decline reason for a rejected advance (Remark column / audit "View all"). */}
+      <DeclineReasonModal row={remarkAdv} onClose={() => setRemarkAdv(null)} />
     </>
   );
 }

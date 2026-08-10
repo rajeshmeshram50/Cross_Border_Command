@@ -225,6 +225,14 @@ class ExpenseClaimController extends Controller
         // beyond policy or file a future-dated expense.
         $minExpenseDate = now()->subDays(30)->toDateString();
 
+        // The browser normalises <textarea> newlines to CRLF when serialising
+        // multipart/form-data, so a purpose the employee typed within the 500
+        // on-screen limit arrives with an extra character per line and can trip
+        // max:500 (QA #89). Fold CRLF back to LF so the count matches the UI.
+        if ($request->has('purpose')) {
+            $request->merge(['purpose' => str_replace("\r\n", "\n", (string) $request->input('purpose'))]);
+        }
+
         $data = $request->validate([
             'category_id'    => ['nullable', 'integer'],
             'currency'       => ['nullable', 'string', 'max:8'],
@@ -1508,6 +1516,15 @@ class ExpenseClaimController extends Controller
             'zoho_all_synced'   => (function () use ($row) {
                 $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
                 return $payments->isNotEmpty() && $payments->every(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced');
+            })(),
+            // Zoho sync state for the list column: na (no payments) | pending
+            // (none synced) | partial (some) | completed (all).
+            'zoho_sync'         => (function () use ($row) {
+                $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
+                if ($payments->isEmpty()) return 'na';
+                $synced = $payments->filter(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced')->count();
+                if ($synced === 0) return 'pending';
+                return $synced === $payments->count() ? 'completed' : 'partial';
             })(),
             // Remaining to pay against the sanctioned amount (once sanctioned is set).
             'remaining_amount'  => $row->sanctioned_amount !== null

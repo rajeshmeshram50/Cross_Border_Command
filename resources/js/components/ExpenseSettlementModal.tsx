@@ -185,13 +185,29 @@ export default function ExpenseSettlementModal({
 }) {
   const toast = useToast();
   const open = claimId != null;
-  // Lock background page scroll while the modal is open — the body scrolled
-  // behind the overlay (QA #99). Restored to its prior value on close/unmount.
+  // Lock background page scroll while the modal is open — the page scrolled
+  // behind the overlay (QA #99, #115). The app layout scrolls inside its
+  // <main> container (overflow-y:auto), NOT <body>/<html>, so locking those
+  // alone did nothing on the Inbox. Lock the scrollable <main> too and restore
+  // every element on close/unmount.
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    const html = document.documentElement;
+    const body = document.body;
+    const main = document.querySelector('main') as HTMLElement | null;
+    const prev = {
+      html: html.style.overflow,
+      body: body.style.overflow,
+      main: main?.style.overflow ?? '',
+    };
+    html.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+    if (main) main.style.overflow = 'hidden';
+    return () => {
+      html.style.overflow = prev.html;
+      body.style.overflow = prev.body;
+      if (main) main.style.overflow = prev.main;
+    };
   }, [open]);
   const isAdvance = kind === 'advance';
   // Noun for user-facing copy — an advance is a "advance"/"payout", an expense
@@ -1069,7 +1085,7 @@ export default function ExpenseSettlementModal({
                     <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.title || ''}>{summary.title || '—'}</div></div>
                     {/* Vendor / Project are expense-only; an advance has neither. */}
                     <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.purpose || ''}>{summary.purpose || '—'}</div></div>
-                    {!isAdvance && <div className="esm-ro c4"><label>VENDOR</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
+                    {!isAdvance && <div className="esm-ro c4"><label>SUPPLIER</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
                     {!isAdvance && <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>}
                     {/* Salary-recovery schedule — self advance only. */}
                     {isAdvance && (summary.used_for ?? 'self') !== 'company' && summary.recovery_mode && (() => {
