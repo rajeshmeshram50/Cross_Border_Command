@@ -148,6 +148,7 @@ export default function ExpenseSettlementModal({
   basePath = '/expense-claims', kind = 'expense', allowSettle = false,
   canApproveSettle = false,
   onRaiseReimbursement,
+  onGoToInbox,
 }: {
   claimId: number | null;
   onClose: () => void;
@@ -175,9 +176,23 @@ export default function ExpenseSettlementModal({
    *  Expense Claim form (pre-filled + amount-capped) instead of auto-creating.
    *  Provided by the Employee Profile where that form lives. */
   onRaiseReimbursement?: (info: { advanceId: number; balance: number; advanceNo: string }) => void;
+  /** When set, a claim still at the REPORTING-MANAGER stage is not actionable
+   *  here — the modal shows a "approve it in your Inbox" redirect instead of the
+   *  manager approve/reject. Passed by the HR Expense page (manager-stage
+   *  approvals are Inbox-only); the Inbox itself does NOT pass it, so manager
+   *  approval works there. */
+  onGoToInbox?: () => void;
 }) {
   const toast = useToast();
   const open = claimId != null;
+  // Lock background page scroll while the modal is open — the body scrolled
+  // behind the overlay (QA #99). Restored to its prior value on close/unmount.
+  useEffect(() => {
+    if (!open) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
   const isAdvance = kind === 'advance';
   // Noun for user-facing copy — an advance is a "advance"/"payout", an expense
   // claim is a "claim"/"reimbursement".
@@ -225,6 +240,12 @@ export default function ExpenseSettlementModal({
         'Unsupported file type',
         `“${f.name}” can’t be used as proof of payment. Attach a PDF, JPG, JPEG or PNG.`,
       );
+      return null;
+    }
+    // 2 MB cap — reject early with a clear message instead of the server's
+    // cryptic "The proof failed to upload" (QA #100).
+    if (f.size > 2 * 1024 * 1024) {
+      toast.error('File too large', `“${f.name}” is ${(f.size / 1024 / 1024).toFixed(1)} MB — proof must be 2 MB or smaller.`);
       return null;
     }
     return f;
@@ -365,6 +386,9 @@ export default function ExpenseSettlementModal({
   // The review gate used throughout the render. After an inline HR approval it
   // goes false so the SAME modal shows the payment view (Record / Add Payment).
   const inReview = review && !approvedInline;
+  // Manager-stage rows opened from the HR Expense page aren't actionable here —
+  // the reporting-manager approval is Inbox-only, so show a redirect instead.
+  const managerStageRedirect = managerReview && !!onGoToInbox;
   // Deductions are editable only before the first payment, not view-only, and
   // never in a manager review (the manager can't deduct — only approve/reject).
   const editDeductions = firstPayment && !readOnly && !managerReview;
@@ -998,10 +1022,29 @@ export default function ExpenseSettlementModal({
               </div>
               )}
 
+              {/* Manager-stage row opened from the HR Expense page — the
+                  reporting-manager approval is Inbox-only, so redirect there. */}
+              {managerStageRedirect && (
+                <div className="esm-sec">
+                  <div className="esm-sec-body" style={{ textAlign: 'center', padding: '28px 20px' }}>
+                    <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#eef2ff', color: '#3730a3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                      <i className="ri-inbox-archive-line" style={{ fontSize: 24 }} />
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: '#1f2937', marginBottom: 6 }}>Awaiting reporting-manager approval</div>
+                    <div style={{ fontSize: 12.5, color: '#6b7280', maxWidth: 440, margin: '0 auto 16px', lineHeight: 1.5 }}>
+                      This {noun} is still at the <strong>Reporting Manager</strong> stage, so it can't be actioned here. If you're the reporting manager, approve it from your <strong>Inbox</strong>; once approved it comes back here for the HR / Finance stage and payout.
+                    </div>
+                    <button type="button" className="esm-btn-approve" style={{ background: 'linear-gradient(135deg,#4F46E5,#7C3AED)' }} onClick={() => { onGoToInbox?.(); onClose(); }}>
+                      <i className="ri-inbox-archive-line" style={{ marginRight: 6 }} /> Go to Inbox
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Claim Details — shown in a manager review (the Adjustments &
                   Payment History sections are hidden) so the manager has full
                   context to approve or reject. */}
-              {managerReview && (
+              {managerReview && !managerStageRedirect && (
                 <div className="esm-sec">
                   <div className="esm-sec-hd">
                     <div className="esm-sec-l">
@@ -1709,7 +1752,16 @@ export default function ExpenseSettlementModal({
         </div>
 
         {/* ── Footer ── */}
-        {inReview ? (
+        {managerStageRedirect ? (
+          // Manager-stage row on the HR Expense page — not actionable here.
+          <div className="esm-foot">
+            <div className="esm-foot-hint"><i className="ri-information-line" /> Reporting-manager approval is done from the Inbox.</div>
+            <div className="esm-foot-r">
+              <button className="esm-btn-approve" style={{ background: 'linear-gradient(135deg,#4F46E5,#7C3AED)' }} onClick={() => { onGoToInbox?.(); onClose(); }}><i className="ri-inbox-archive-line" style={{ marginRight: 6 }} /> Go to Inbox</button>
+              <button className="esm-btn-ghost" onClick={onClose}>Close</button>
+            </div>
+          </div>
+        ) : inReview ? (
           <div className="esm-foot">
             <div className="esm-foot-hint"><i className="ri-information-line" /> {managerReview ? `Review the ${noun}, then approve or reject.` : `Set adjustments (if any), then approve — net payable ${inr(sanctioned)}.`}</div>
             <div className="esm-foot-r">

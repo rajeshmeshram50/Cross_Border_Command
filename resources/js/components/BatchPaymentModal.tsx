@@ -143,8 +143,18 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
   return createPortal(
     <>
       <style>{BPW_CSS}</style>
-      <div style={backdrop} onMouseDown={onClose}>
-        <div style={card} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+      <div style={backdrop} onMouseDown={saving ? undefined : onClose}>
+        <div style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+          {/* Full-modal blocking loader while the payment is processing — no
+              other control (close, reupload, pay again) is clickable until it
+              finishes. (QA #112) */}
+          {saving && (
+            <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+              <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+              <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490' }}>Processing payment…</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Please don’t close this window.</div>
+            </div>
+          )}
           {/* Header */}
           <div style={header}>
             <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
@@ -322,7 +332,23 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                   </div>
                   <div>
                     <label style={lbl}>Proof of payment <span style={req}>*</span></label>
-                    <input ref={proofInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx" style={{ display: 'none' }} onChange={e => setProof(e.target.files?.[0] ?? null)} />
+                    <input ref={proofInputRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" style={{ display: 'none' }} onChange={e => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (f) {
+                        // Proof must be a receipt/image — no Excel/Word (QA #111).
+                        const ext = (f.name.split('.').pop() || '').toLowerCase();
+                        if (!['pdf', 'jpg', 'jpeg', 'png', 'webp'].includes(ext)) {
+                          toast.error('Unsupported file', 'Proof of payment must be a PDF, JPG, PNG or WEBP file.');
+                          e.target.value = ''; return;
+                        }
+                        if (f.size > 2 * 1024 * 1024) {
+                          toast.error('File too large', 'Proof must be 2 MB or smaller.');
+                          e.target.value = ''; return;
+                        }
+                      }
+                      setProof(f);
+                      e.target.value = '';
+                    }} />
                     {proof ? (
                       <div style={proofBox}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -456,6 +482,8 @@ const chipDark: React.CSSProperties = { display: 'inline-block', padding: '3px 9
 
 /* Boxed wizard stepper — mirrors the Return-payment flow's stepper, teal-themed. */
 const BPW_CSS = `
+@keyframes bpwSpin{to{transform:rotate(360deg);}}
+.bpw-spin{animation:bpwSpin .8s linear infinite;transform-origin:center;}
 .bpw-stepper{display:flex;align-items:center;gap:0;max-width:640px;}
 .bpw-connector{flex:0 0 28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .bpw-line{height:3px;width:100%;border-radius:2px;background:#e2e8f0;}

@@ -41,12 +41,18 @@ class AdvanceRequestController extends Controller
                 // withTrashed so a disabled (soft-deleted) employee's name still
                 // resolves instead of the row collapsing to "#<id>".
                 'employee' => fn ($r) => $r->withTrashed()
-                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'department_id'),
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'reporting_manager_user_id', 'department_id'),
                 'employee.department:id,name',
+                // Branch-user manager (when the employee reports to a branch user).
+                'employee.reportingManagerUser:id,name',
                 'manager' => fn ($r) => $r->withTrashed()
                     ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
+                // Who acted at the manager stage (named in the audit log).
+                'managerActor:id,name',
+                // Payout list for the audit log (payer name + amount + date).
+                'payments' => fn ($r) => $r->with('payer:id,name'),
             ])
             ->orderByDesc('id');
 
@@ -186,11 +192,14 @@ class AdvanceRequestController extends Controller
             'monthly_emi'         => ['nullable', 'numeric', 'min:0', 'max:9999999999999.99'],
             // Capped at 500 chars so a long reason can't break the table layout.
             'reason'              => ['required', 'string', 'max:500'],
-            // Supporting documents are optional for advances, but when present
-            // must be PDF/JPG/PNG up to 2 MB each (mirrors the client picker).
-            'files'               => ['nullable', 'array'],
+            // A supporting document / proof is MANDATORY for an advance request
+            // (financial request), enforced server-side so a direct API call
+            // can't bypass it. PDF/JPG/PNG up to 2 MB each (mirrors the picker).
+            'files'               => ['required', 'array', 'min:1'],
             'files.*'             => ['file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ], [
+            'files.required'                 => 'An attachment / proof is required to submit an advance request.',
+            'files.min'                      => 'An attachment / proof is required to submit an advance request.',
             'files.*.max'                    => 'Each file must be 2 MB or smaller.',
             'files.*.mimes'                  => 'Files must be PDF, JPG or PNG.',
             'requested_date.after_or_equal'  => 'Requested date must be today (the request creation date).',
@@ -237,14 +246,17 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        // Auto-clear the manager stage when no reporting manager is assigned
-        // — same behaviour as expense-claim so the audit log surfaces an
-        // explicit "no manager" note instead of looking like a phantom
-        // approval.
-        $hasManager      = !empty($employee->reporting_manager_id);
-        $managerStatus   = $hasManager ? 'pending'  : 'approved';
-        $managerActedAt  = $hasManager ? null       : now();
-        $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
+        // Manager stage always starts PENDING. When no EMPLOYEE reporting
+        // manager is assigned, the BRANCH ADMIN is the de-facto reporting
+        // manager and approves it explicitly in their Inbox — no more silent
+        // "auto-approved · no reporting manager" phantom approval. This gives a
+        // two-step audit trail (Manager approved by the branch admin, then
+        // HR/Finance). Unassigned manager-stage rows are routed to branch
+        // admins in MyTeamController::approvals. (QA: manager approve must be
+        // an explicit Inbox step.)
+        $managerStatus   = 'pending';
+        $managerActedAt  = null;
+        $managerComment  = null;
 
         $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user, $isCompany) {
             return AdvanceRequest::create([
@@ -351,8 +363,20 @@ class AdvanceRequestController extends Controller
         $this->ensureTenantAccess($row, $user);
 
         $myEmployeeId = $this->currentEmployeeId($user);
-        if ($user->user_type !== 'super_admin' && $row->manager_id !== $myEmployeeId) {
-            abort(403, 'You are not the assigned reporting manager for this advance request.');
+        // No self-approval: an approver can't act on their OWN request — their
+        // reporting manager (the branch user) does the approval/payment.
+        if ($user->user_type !== 'super_admin' && $myEmployeeId !== null && (int) $row->employee_id === (int) $myEmployeeId) {
+            abort(403, 'You cannot approve your own advance request — your reporting manager (branch user) will approve it.');
+        }
+        $isAssignedManager = $myEmployeeId !== null && (int) $row->manager_id === (int) $myEmployeeId;
+        if ($user->user_type !== 'super_admin' && !$isAssignedManager) {
+            // No assigned EMPLOYEE manager → the branch admin is the de-facto
+            // reporting manager and does this approval (needs HR-approve rights).
+            if ($row->manager_id === null) {
+                $this->guardHrPermission($user, 'can_approve');
+            } else {
+                abort(403, 'You are not the assigned reporting manager for this advance request.');
+            }
         }
         if ($row->manager_status !== 'pending') {
             abort(409, 'This advance request has already been actioned by the manager.');
@@ -364,6 +388,9 @@ class AdvanceRequestController extends Controller
 
         $row->manager_status   = $verdict;
         $row->manager_acted_at = now();
+        // Record the exact logged-in user who acted, so the audit log names them
+        // whoever they are — assigned manager, branch admin, or anyone else.
+        $row->manager_acted_by = $user->id;
         $row->manager_comment  = $data['comment'] ?? null;
         if ($verdict === 'rejected') {
             $row->status = 'rejected';
@@ -392,6 +419,11 @@ class AdvanceRequestController extends Controller
         $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
+        // No self-approval — the branch user (reporting manager) approves it.
+        $myEmp = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
+            abort(403, 'You cannot approve your own advance request — your reporting manager (branch user) will approve it.');
+        }
 
         if ($verdict === 'approved' && $row->manager_status !== 'approved') {
             abort(409, 'Manager must approve this advance request before HR / Finance can approve it.');
@@ -676,6 +708,22 @@ class AdvanceRequestController extends Controller
             ? ($manager->display_name
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
             : null;
+        // No EMPLOYEE manager, but the employee reports to a BRANCH USER
+        // (reporting_manager_user_id) — surface that user's name so a PENDING
+        // stage reads "Awaiting <de-facto manager>" instead of "manager review".
+        if (!$managerName && $employee && $employee->reporting_manager_user_id) {
+            $managerName = $employee->relationLoaded('reportingManagerUser')
+                ? $employee->reportingManagerUser?->name
+                : \App\Models\User::whereKey($employee->reporting_manager_user_id)->value('name');
+        }
+        // Once acted, prefer the ACTUAL approver — whoever logged in and approved
+        // or rejected the manager stage (assigned manager, branch admin, anyone).
+        if ($row->manager_status !== 'pending' && $row->manager_acted_by) {
+            $actorName = $row->relationLoaded('managerActor')
+                ? $row->managerActor?->name
+                : \App\Models\User::whereKey($row->manager_acted_by)->value('name');
+            if ($actorName) $managerName = $actorName;
+        }
         // What payroll has recovered so far on each stream, so the list's Settle
         // column can show "Recovered" once recovery is complete (not forever
         // "Recovering"). Self target = advance amount; return target = balance.
@@ -775,6 +823,16 @@ class AdvanceRequestController extends Controller
                 'proof_name'=> $it['proof_name'] ?? null,
                 'proof_url' => !empty($it['proof_path']) ? url("/api/advance-requests/{$row->id}/settle-proof/{$i}") : null,
             ])->all(),
+            // Compact payout list for the Approval Audit Log (payer + amount + date).
+            'payments'             => (function () use ($row) {
+                $ps = $row->relationLoaded('payments') ? $row->payments : $row->payments()->with('payer')->get();
+                return $ps->map(fn ($p) => [
+                    'amount'       => (float) $p->amount,
+                    'method'       => $p->method ?? null,
+                    'paid_by_name' => $p->payer?->name,
+                    'paid_at'      => optional($p->paid_at ?? $p->created_at)->toIso8601String(),
+                ])->values()->all();
+            })(),
         ];
     }
 
@@ -817,7 +875,7 @@ class AdvanceRequestController extends Controller
             'items.*.reason' => ['required', 'string', 'max:500'],
             'items.*.method' => ['required', 'string', 'max:40'],
             'proofs'         => ['nullable', 'array'],
-            'proofs.*'       => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            'proofs.*'       => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
             'note'           => ['nullable', 'string', 'max:500'],
             'finalize'       => ['nullable', 'boolean'],
             'declared_type'  => ['nullable', 'in:equal,minimum,maximum'],
@@ -1091,10 +1149,11 @@ class AdvanceRequestController extends Controller
             }
         }
 
-        $hasManager     = !empty($employee->reporting_manager_id);
-        $managerStatus  = $hasManager ? 'pending' : 'approved';
-        $managerActedAt = $hasManager ? null : now();
-        $managerComment = $hasManager ? null : 'Auto-approved · no reporting manager assigned';
+        // Manager stage starts pending; a no-employee-manager row is approved by
+        // the branch admin in the Inbox (see the advance store() note).
+        $managerStatus  = 'pending';
+        $managerActedAt = null;
+        $managerComment = null;
 
         $claim = DB::transaction(function () use ($row, $employee, $balance, $attachments, $managerStatus, $managerActedAt, $managerComment, $user) {
             $newClaim = \App\Models\ExpenseClaim::create([
@@ -1190,7 +1249,7 @@ class AdvanceRequestController extends Controller
             'mode'   => ['required', 'in:direct,payroll'],
             'amount' => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
             'method' => ['nullable', 'string', 'max:40'],
-            'proof'  => ['nullable', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            'proof'  => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
             'note'   => ['nullable', 'string', 'max:500'],
         ]);
 
@@ -1805,6 +1864,11 @@ class AdvanceRequestController extends Controller
         $row  = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
+        // No self-payment — the branch user (reporting manager) records it.
+        $myEmp = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
+            abort(403, 'You cannot record a payout for your own advance — your reporting manager (branch user) will do it.');
+        }
 
         if ($row->status !== 'approved') {
             abort(409, 'Only an approved advance can be paid. Approve it first.');
@@ -1825,7 +1889,14 @@ class AdvanceRequestController extends Controller
             'amount'              => ['required', 'numeric', 'min:0.01'],
             'payment_type'        => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
             'note'                => ['required', 'string', 'max:500'],
-            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            // Proof capped at 2 MB (2048 KB) — matches the attachment limits and
+            // stays under PHP's upload cap so it never fails with the cryptic
+            // "The proof failed to upload." (QA #100)
+            'proof'               => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+        ], [
+            'proof.max'      => 'The proof must be 2 MB or smaller.',
+            'proof.uploaded' => 'The proof must be 2 MB or smaller.',
+            'proof.mimes'    => 'Proof must be a PDF, image or document file.',
         ]);
 
         $deductionRows = []; $deduction = 0.0;
