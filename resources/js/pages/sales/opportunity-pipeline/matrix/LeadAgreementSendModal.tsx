@@ -54,6 +54,8 @@ export type AgreementRow = {
   regulatory: 'highly' | 'less';
   segment: string | null;
   required: 'REQ' | 'OPT';
+  /** This deal's answer — see SegmentTradeDoc.needed. */
+  needed?: boolean | null;
   updated_at: string | null;
   signature_request: AgreementRowSig;
   /* Send-for-Signature editor seed fields — body HTML + saved page-
@@ -79,6 +81,10 @@ export type SegmentTradeDoc = {
   reference: string;
   doc_code: string;
   requirement: 'M' | 'O';
+  /* This DEAL's answer, not the catalogue's. null = nobody has decided yet, and
+     that is deliberately distinct from false: "not decided" must not read as
+     "the user marked it unnecessary". */
+  needed?: boolean | null;
   applicable_party: string;
   for_buyer: boolean;
   for_consignee: boolean;
@@ -154,6 +160,70 @@ const VIEW_META = {
   trade:      { title: 'Trade Documents', sub: 'Segment-applicable trade documents for this PI’s products' },
   agreements: { title: 'Agreements',      sub: 'Segment-applicable agreements for this PI’s products'      },
 } as const;
+
+/* Rewrite one document's `needed` inside the nested payload.
+   The answer lives on rows two levels down (segment -> agreements / trade
+   documents), so this walks rather than spreads the top level. */
+function applyNeed(p: ApplicablePayload | null, kind: 'trade_doc' | 'agreement', docId: number, needed: boolean | null): ApplicablePayload | null {
+  if (!p) return p;
+  return {
+    ...p,
+    segments: (p.segments ?? []).map(seg => ({
+      ...seg,
+      agreements: kind === 'agreement'
+        ? (seg.agreements ?? []).map(a => (a.id === docId ? { ...a, needed } : a))
+        : seg.agreements,
+      trade_documents: kind === 'trade_doc'
+        ? (seg.trade_documents ?? []).map(t => (t.db_id === docId ? { ...t, needed } : t))
+        : seg.trade_documents,
+    })),
+  } as ApplicablePayload;
+}
+
+/* Needed / Not needed, with an explicit undecided state.
+   A plain checkbox cannot say "nobody has looked at this yet", and that was the
+   whole complaint — the old REQ/OPT pill came from the segment's regulatory
+   tier, so every row under one segment carried the same label and the screen
+   never said which ones this deal should send. */
+/* The column normally just STATES the answer; the choice appears once the row
+   is ticked.
+   Two Yes/No pills on every row read as a grid of switches and pulled the eye
+   away from the document names, when most rows never need touching. Ticking a
+   row is already the "I am dealing with this one" gesture, so the control rides
+   on that. */
+function NeedToggle({ value, busy, selected, onSet }: {
+  value: boolean | null | undefined;
+  busy: boolean;
+  selected: boolean;
+  onSet: (needed: boolean) => void;
+}) {
+  if (!selected) {
+    if (value === true)  return <span className="lasm-need-tag is-yes">Necessary</span>;
+    if (value === false) return <span className="lasm-need-tag is-no">Not necessary</span>;
+    // Never decided. Reads as the default state rather than as a warning —
+    // the send gate is what enforces it, this only reports.
+    return <span className="lasm-need-tag is-none">Not necessary</span>;
+  }
+  const btn = (on: boolean, label: string, active: boolean, tone: string) => (
+    <button
+      type="button" disabled={busy}
+      onClick={e => { e.stopPropagation(); onSet(on); }}
+      className="lasm-need-btn"
+      style={{
+        background: active ? tone : 'transparent',
+        color: active ? '#fff' : '#64748b',
+        borderColor: active ? tone : '#e2e8f0',
+        cursor: busy ? 'wait' : 'pointer',
+      }}
+    >{label}</button>
+  );
+  return (
+    <div className="lasm-need-row">
+      {btn(true,  'Yes', value === true,  '#0ab39c')}
+      {btn(false, 'No',  value === false, '#94a3b8')}
+    </div>
+  );
+}
 
 export default function LeadAgreementSendModal({ open, leadId, view, onClose, data, onSent }: Props) {
   const toast = useToast();
@@ -397,6 +467,14 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const [tdSendIds, setTdSendIds]   = useState<number[] | null>(null);
   // Clear the selection when the popup opens or the tab flips.
   useEffect(() => { setTdSelected(new Set()); }, [open, view, tdTab]);
+  /* Ticked AND marked Necessary — the set the Send button really acts on. */
+  const tdSendableSelected = useMemo(
+    () => (payload?.segments ?? [])
+      .flatMap(sg => sg.trade_documents ?? [])
+      .filter(t => t.db_id != null && tdSelected.has(t.db_id) && t.needed === true)
+      .map(t => t.db_id as number),
+    [payload, tdSelected],
+  );
 
   /* Escape-to-close mirrors the rest of the matrix modals. */
   useEffect(() => {
@@ -418,15 +496,68 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * unless the parent already supplied it. */
   useEffect(() => {
     if (!open || !leadId) { setPayload(null); setActiveSegId(null); return; }
-    if (data) { setPayload(data); return; }
+    /* `data` is the parent's copy, fetched once when the stage page loaded. It
+       paints instantly, so it is used as the FIRST frame — but it is not the
+       last word: anything decided since (the Necessary answers, a signature
+       status) is missing from it, and returning here meant reopening the popup
+       silently reverted every mark to how the page found them.
+       So it seeds the view and a fresh read replaces it. */
     let cancelled = false;
-    setLoading(true);
+    if (data) setPayload(data);
+    else setLoading(true);
     api.get(`/clm/leads/${leadId}/agreement-applicable`)
       .then(r => { if (!cancelled) setPayload((r.data?.data ?? null) as ApplicablePayload | null); })
-      .catch(() => { if (!cancelled) setPayload(null); })
+      // A failed refresh keeps the seeded copy rather than blanking the popup —
+      // stale beats empty when the user already has it open.
+      .catch(() => { if (!cancelled && !data) setPayload(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open, leadId, data]);
+
+  /* Saving the deal's answer for one document.
+     Written straight through rather than batched on close: the popup is the
+     only place this decision is made, and a user who closes it after ticking
+     would otherwise lose the lot. `busy` is per document so one row saving
+     never freezes the others. */
+  const [needBusy, setNeedBusy] = useState<string[]>([]);
+  /* Same decision for a whole checked set.
+     One request rather than N: the endpoint already takes an items[] array, so
+     marking eight documents is one round trip and one optimistic repaint
+     instead of eight of each. */
+  const setNeedBulk = async (kind: 'trade_doc' | 'agreement', docIds: number[], needed: boolean) => {
+    if (!leadId || !docIds.length) return;
+    const keys = docIds.map(id => `${kind}:${id}`);
+    setNeedBusy(b => [...b, ...keys]);
+    setPayload(p => docIds.reduce((acc, id) => applyNeed(acc, kind, id, needed), p));
+    try {
+      await api.post(`/clm/leads/${leadId}/doc-needs`, {
+        items: docIds.map(id => ({ doc_kind: kind, doc_id: id, needed })),
+      });
+      toast.success(`${docIds.length} marked ${needed ? 'Necessary' : 'Not needed'}`, '');
+    } catch {
+      setPayload(p => docIds.reduce((acc, id) => applyNeed(acc, kind, id, null), p));
+      toast.error('Could not save', 'The decisions were not recorded — please try again.');
+    } finally {
+      setNeedBusy(b => b.filter(k => !keys.includes(k)));
+    }
+  };
+
+  const setNeed = async (kind: 'trade_doc' | 'agreement', docId: number, needed: boolean) => {
+    if (!leadId) return;
+    const key = `${kind}:${docId}`;
+    setNeedBusy(b => [...b, key]);
+    // Optimistic: the toggle answers instantly and rolls back only on failure.
+    setPayload(p => applyNeed(p, kind, docId, needed));
+    try {
+      await api.post(`/clm/leads/${leadId}/doc-needs`, { items: [{ doc_kind: kind, doc_id: docId, needed }] });
+    } catch {
+      setPayload(p => applyNeed(p, kind, docId, null));
+      toast.error('Could not save', 'The decision was not recorded — please try again.');
+    } finally {
+      setNeedBusy(b => b.filter(k => k !== key));
+    }
+  };
+
 
   // Every PI-derived segment carrying the chosen document type, across both
   // regulatory tiers — drives the High / Less tier-tab counts.
@@ -566,6 +697,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
    * so this side just supplies the picked agreements and waits for
    * its `onSent` callback to refresh our row statuses. */
   const handleSend = (agreements: AgreementRow[]) => {
+    /* One gate for the row button and the bulk footer alike. Filtering the list
+       here rather than disabling each control keeps the two paths honest with
+       each other — a rule enforced in only one of them is a rule that leaks. */
+    const skipped = agreements.filter(a => a.needed !== true);
+    agreements = agreements.filter(a => a.needed === true);
+    if (!agreements.length) {
+      toast.warning('Nothing marked Needed',
+        'Mark an agreement as Needed before sending it for signature.');
+      return;
+    }
+    if (skipped.length) {
+      toast.info(`${skipped.length} skipped`, 'Only agreements marked Needed were sent.');
+    }
     if (!leadId || agreements.length === 0) return;
     setSsfAgreements(agreements);
   };
@@ -997,7 +1141,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           <th style={{ width: 56 }}>Sr No.</th>
                           <th>Document</th>
                           <th style={{ width: 180 }}>Segment</th>
-                          <th style={{ width: 90 }}>Required</th>
+                          <th style={{ width: 150 }}>Necessary</th>
                           <th style={{ width: 130 }}>Status</th>
                           <th style={{ width: 160 }}>Actions</th>
                         </tr>
@@ -1013,7 +1157,17 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           const tdResend    = !!tdSigStatus && ['declined', 'rejected', 'recalled', 'expired'].includes(tdSigStatus);
                           const tdRemind    = tdSigStatus === 'inprogress';
                           const tdIsRemind  = !!tdSig && reminderId === tdSig.id;
-                          const sendable = td.db_id != null && !!tdSignCustomer && !tdSent;
+                          /* Only documents this deal marked Needed can go for
+                             signature. Undecided is not treated as yes — that
+                             silent default is what made the list unusable. */
+                          /* Selectable and sendable are different questions.
+                             `needed` was folded into this one flag, and the
+                             checkbox reads it — so a row could not be ticked
+                             until it was marked Necessary, while the Yes/No
+                             control only appears once a row IS ticked. Nothing
+                             could ever be marked. */
+                          const selectable = td.db_id != null && !tdSent;
+                          const sendable = selectable && !!tdSignCustomer && td.needed === true;
                           const checked  = td.db_id != null && tdSelected.has(td.db_id);
                           return (
                           <tr key={`${td.doc_code}-${td.segmentCode}-${i}`} className={checked ? 'lasm-row-selected' : ''}>
@@ -1022,8 +1176,8 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 type="checkbox"
                                 aria-label={`Select ${td.title || td.name}`}
                                 checked={checked}
-                                disabled={!sendable}
-                                title={tdSent ? `Already ${tdSigStatus}` : (sendable ? 'Add to bulk send' : 'This document has no template to send')}
+                                disabled={!selectable}
+                                title={tdSent ? `Already ${tdSigStatus}` : 'Select to mark Necessary or send'}
                                 onChange={() => td.db_id != null && toggleOne(td.db_id)}
                               />
                             </td>
@@ -1036,7 +1190,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               {(() => { const seg = td.segmentName ?? ''; const long = seg.length > 30; return <Tooltip label={seg} disabled={!long}><div className="lasm-doc-name">{long ? seg.slice(0, 30) + '…' : seg}</div></Tooltip>; })()}
                               <div className="lasm-doc-sub">{td.segmentCode}</div>
                             </td>
-                            <td><span className={`lasm-pill ${td.requirement === 'M' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{td.requirement === 'M' ? 'REQ' : 'OPT'}</span></td>
+                            <td>
+                              {/* db_id is null for a catalogue entry the tenant
+                                  has not created a document row for yet — there
+                                  is nothing to record an answer against. */}
+                              {td.db_id == null
+                                ? <span className="lasm-need-undecided">—</span>
+                                : <NeedToggle
+                                    value={td.needed}
+                                    selected={tdSelected.has(td.db_id)}
+                                    busy={needBusy.includes(`trade_doc:${td.db_id}`)}
+                                    onSet={n => setNeed('trade_doc', td.db_id as number, n)}
+                                  />}
+                            </td>
                             <td>
                               {/* Signature status (Sent / Signed) once it's been
                                   sent for e-signature; otherwise the upload state. */}
@@ -1127,6 +1293,47 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     </table>
                     </div>
 
+                    {/* Bulk send bar — one Zoho request for every checked doc,
+                        all signed by the active tab's party. */}
+                    {tdSelected.size > 0 && (
+                      <div className="lasm-bulk-bar">
+                        <div className="lasm-bulk-info">
+                          <strong>{tdSelected.size}</strong> selected
+                          {/* The signer is already named in the header card, and
+                              repeating it here crowded the bar. */}
+                          <button type="button" className="lasm-bulk-clear" title="Clear selection"
+                            aria-label="Clear selection" onClick={() => setTdSelected(new Set())}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                          </button>
+                        </div>
+                        {/* Marking is separate from sending: the checked set is
+                            usually decided on first, and only then sent. */}
+                        <div className="lasm-bulk-need">
+                          <button type="button" className="lasm-need-btn lasm-need-bulk is-yes"
+                            onClick={() => setNeedBulk('trade_doc', Array.from(tdSelected), true)}>
+                            Mark Necessary
+                          </button>
+                          <button type="button" className="lasm-need-btn lasm-need-bulk"
+                            onClick={() => setNeedBulk('trade_doc', Array.from(tdSelected), false)}>
+                            Mark Not necessary
+                          </button>
+                        </div>
+                        {/* Counts what will ACTUALLY be sent, not what is
+                            ticked. It read the checked set, so "Send Selected
+                            (3)" appeared over two Necessary rows and one that
+                            the gate would silently drop. */}
+                        <button
+                          type="button"
+                          className="lasm-bulk-send"
+                          disabled={!tdSignCustomer || tdSendableSelected.length === 0}
+                          onClick={() => setTdSendIds(tdSendableSelected)}
+                        >
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                          {`Send Selected (${tdSendableSelected.length})`}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Pagination footer — same WorklistPager (Rows-per-page +
                         page/total + arrows) used on the Customer / master lists. */}
                     {rows.length > 0 && (
@@ -1139,26 +1346,6 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                         pageSizeOptions={[5, 10, 25, 50]}
                         className="lasm-pager"
                       />
-                    )}
-
-                    {/* Bulk send bar — one Zoho request for every checked doc,
-                        all signed by the active tab's party. */}
-                    {tdSelected.size > 0 && (
-                      <div className="lasm-bulk-bar">
-                        <div className="lasm-bulk-info">
-                          <strong>{tdSelected.size}</strong> selected · signer <em>{tdSignerLabel}</em>
-                          <button type="button" className="lasm-bulk-clear" onClick={() => setTdSelected(new Set())}>Clear</button>
-                        </div>
-                        <button
-                          type="button"
-                          className="lasm-bulk-send"
-                          disabled={!tdSignCustomer}
-                          onClick={() => setTdSendIds(Array.from(tdSelected))}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                          {`Send Selected (${tdSelected.size})`}
-                        </button>
-                      </div>
                     )}
                   </>)}
                 </div>
@@ -1276,7 +1463,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                       <th style={{ width: 56 }}>Sr No.</th>
                       <th>Document</th>
                       <th style={{ width: 140 }}>Applicable Party</th>
-                      <th style={{ width: 110 }}>Required</th>
+                      <th style={{ width: 150 }}>Necessary</th>
                       <th style={{ width: 130 }}>Updated On</th>
                       <th style={{ width: 130 }}>Status</th>
                       <th style={{ width: 210 }}>Actions</th>
@@ -1378,7 +1565,12 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                             </div>
                           </td>
                           <td>
-                            <span className={`lasm-pill ${a.required === 'REQ' ? 'lasm-pill-req' : 'lasm-pill-opt'}`}>{a.required}</span>
+                            <NeedToggle
+                              value={a.needed}
+                              selected={selectedIds.has(a.id)}
+                              busy={needBusy.includes(`agreement:${a.id}`)}
+                              onSet={n => setNeed('agreement', a.id, n)}
+                            />
                           </td>
                           <td className="lasm-mono">{fmtDmyLong(a.updated_at)}</td>
                           <td>
@@ -1387,15 +1579,25 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           <td>
                             <div className="lasm-actions">
                               {!sentAlready && (
-                                <Tooltip label={agResend ? 'Re-send for signature' : 'Send for signature'}>
+                                /* Disabled until the deal marks it Necessary.
+                                   handleSend already refuses these, but a button
+                                   that looks live and then argues back is worse
+                                   than one that plainly cannot be pressed —
+                                   the trade-doc side has always disabled it. */
+                                <Tooltip label={a.needed !== true
+                                  ? 'Mark this agreement Necessary before sending'
+                                  : (agResend ? 'Re-send for signature' : 'Send for signature')}>
+                                  <span className="d-inline-flex">
                                   <button
                                     type="button"
+                                    disabled={a.needed !== true}
                                     className={`lasm-btn-send${agResend ? ' lasm-td-resend' : ''}`}
                                     onClick={() => handleSend([a])}
                                   >
                                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                                     {agResend ? 'Resend' : 'Send'}
                                   </button>
+                                  </span>
                                 </Tooltip>
                               )}
                               {showReminder && (() => {
@@ -1496,8 +1698,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
               {selectedIds.size > 0 && (
                 <div className="lasm-bulk-bar">
                   <div className="lasm-bulk-info">
-                    <strong>{selectedIds.size}</strong> selected · party-locked to <em>{selectedPartyKey ?? '—'}</em>
-                    <button type="button" className="lasm-bulk-clear" onClick={() => setSelectedIds(new Set())}>Clear</button>
+                    <strong>{selectedIds.size}</strong> selected
+                    <button type="button" className="lasm-bulk-clear" title="Clear selection"
+                      aria-label="Clear selection" onClick={() => setSelectedIds(new Set())}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  <div className="lasm-bulk-need">
+                    <button type="button" className="lasm-need-btn lasm-need-bulk is-yes"
+                      onClick={() => setNeedBulk('agreement', Array.from(selectedIds), true)}>
+                      Mark Necessary
+                    </button>
+                    <button type="button" className="lasm-need-btn lasm-need-bulk"
+                      onClick={() => setNeedBulk('agreement', Array.from(selectedIds), false)}>
+                      Mark Not necessary
+                    </button>
                   </div>
                   <button
                     type="button"
@@ -1505,7 +1720,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     onClick={() => handleSend(selectedAgreementRows)}
                   >
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-                    {`Send Selected (${selectedIds.size})`}
+                    {`Send Selected (${selectedAgreementRows.filter(a => a.needed === true).length})`}
                   </button>
                 </div>
               )}
@@ -1890,17 +2105,36 @@ const LASM_CSS = `
 
 .lasm-row-selected td { background: rgba(124,58,237,.06) !important; }
 
-.lasm-bulk-bar { position: sticky; bottom: 0; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between;
-  gap: 14px; padding: 12px 22px; background: linear-gradient(110deg,#f5f3ff,#ede9fe);
-  border-top: 1.5px solid rgba(124,58,237,.32); box-shadow: 0 -6px 14px rgba(15,23,42,.05); }
-.lasm-bulk-info { font-size: 12px; color: #4c1d95; display: inline-flex; align-items: center; gap: 12px; }
-.lasm-bulk-info em { font-style: normal; font-family: 'Geist Mono', ui-monospace, monospace; color: #6d28d9; padding: 1px 7px; background: #fff; border-radius: 4px; border: 1px solid #c4b5fd; }
-.lasm-bulk-clear { background: transparent; border: 1px solid rgba(124,58,237,.32); color: #6d28d9;
-  font-family: inherit; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
-.lasm-bulk-clear:hover { background: #fff; }
-.lasm-bulk-send { display: inline-flex; align-items: center; gap: 7px; padding: 9px 18px; border-radius: 9px;
-  background: linear-gradient(135deg,#8b5cf6,#6d28d9); color: #fff; border: none;
-  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: transform .15s ease, box-shadow .15s ease; }
+/* Same floating pill as My Workplace's lead bar (.lwp-bulk-bar).
+   It was a pale sticky strip welded to the modal's bottom edge, which read as
+   part of the table's chrome rather than as "you have a selection open". The
+   floating bar says a selection exists and is dismissable — and one selection
+   pattern across the app means it does not have to be re-learned per screen. */
+.lasm-bulk-bar {
+  position: sticky; bottom: 8px; z-index: 5; flex-shrink: 0;
+  margin: 6px auto 10px; width: fit-content; max-width: calc(100% - 24px);
+  display: flex; align-items: center; gap: 12px; white-space: nowrap;
+  padding: 11px 18px; border-radius: 16px;
+  background: linear-gradient(135deg, #4c1d95, #7c3aed);
+  box-shadow: 0 12px 40px rgba(124,58,237,.45), 0 4px 14px rgba(0,0,0,.18);
+  animation: lasmBulkIn .22s cubic-bezier(.22,1,.36,1);
+}
+@keyframes lasmBulkIn { from { opacity: 0; transform: translateY(14px); } }
+.lasm-bulk-info { font-size: 12.5px; font-weight: 700; color: #fff; display: inline-flex; align-items: center; gap: 10px; }
+.lasm-bulk-info strong { font-size: 13px; }
+.lasm-bulk-info em { font-style: normal; font-family: 'Geist Mono', ui-monospace, monospace;
+  color: #fff; padding: 2px 8px; background: rgba(255,255,255,.16); border-radius: 6px; border: 1px solid rgba(255,255,255,.25); }
+.lasm-bulk-clear { display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  background: rgba(255,255,255,.14); border: 1.5px solid rgba(255,255,255,.25); color: #fff;
+  border-radius: 8px; cursor: pointer; transition: background .15s; }
+.lasm-bulk-clear:hover { background: rgba(255,255,255,.22); }
+.lasm-bulk-send { display: inline-flex; align-items: center; gap: 7px; padding: 8px 18px; border-radius: 10px;
+  background: #fff; color: #7c3aed; border: none; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; transition: background .15s, transform .15s ease; }
+.lasm-bulk-send:hover:not(:disabled) { background: #f5f3ff; }
+.lasm-bulk-send:disabled { opacity: .5; cursor: not-allowed; }
+.lasm-btn-send:disabled { opacity: .45; cursor: not-allowed; }
 .lasm-bulk-send:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(124,58,237,.30); }
 .lasm-bulk-send:disabled { opacity: .55; cursor: not-allowed; }
 
@@ -1949,6 +2183,37 @@ const LASM_CSS = `
 [data-bs-theme="dark"] .lasm-mono { color: #94a3b8; }
 [data-bs-theme="dark"] .lasm-doc-name { color: #c4b5fd; }
 [data-bs-theme="dark"] .lasm-doc-sub  { color: #94a3b8; }
+.lasm-need-row { display: flex; align-items: center; gap: 5px; flex-wrap: nowrap; }
+.lasm-need-tag {
+  display: inline-block; padding: 3px 10px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .03em; white-space: nowrap;
+}
+.lasm-need-tag.is-yes  { background: #d9f5f0; color: #0a8a78; }
+.lasm-need-tag.is-no   { background: #eef1f5; color: #64748b; }
+.lasm-need-tag.is-none { background: #eef1f5; color: #94a3b8; }
+.lasm-need-btn {
+  min-width: 42px; padding: 4px 12px; white-space: nowrap;
+  border-radius: 999px; border: 1px solid #e2e8f0;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .03em; line-height: 1.5;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.lasm-need-btn:disabled { opacity: .6; }
+/* Shown only while the answer is still null. Wording matters: the row is not
+   "optional", nobody has decided about it yet. */
+.lasm-bulk-need { display: inline-flex; align-items: center; gap: 6px; margin-right: 8px; }
+.lasm-need-bulk { min-width: 0; padding: 7px 14px; font-size: 11px; border-radius: 10px;
+  background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.25); color: #fff; }
+/* White, like the reference bar's primary. Marking is the action people come
+   to this bar for; sending is what they do after. */
+.lasm-need-bulk.is-yes { background: #fff; border-color: #fff; color: #7c3aed; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.lasm-need-bulk.is-yes:hover { background: #f5f3ff; }
+.lasm-need-bulk:not(.is-yes):hover { background: rgba(255,255,255,.24); }
+
+.lasm-need-undecided {
+  font-size: 9.5px; font-weight: 700; color: #b45309;
+  background: #fef3c7; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+
 /* REQ / OPT pills — bump the tinted backgrounds and brighten the text
  * so they read against the dark row instead of looking like washed-out
  * pastel patches. */

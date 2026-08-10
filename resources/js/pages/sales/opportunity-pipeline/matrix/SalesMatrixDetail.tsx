@@ -706,13 +706,22 @@ export default function SalesMatrixDetail() {
     // "done" flag, unioned across segments (done in ANY segment ⇒ done).
     const agrSeen = new Map<string, boolean>();
     const tdSeen  = new Map<string, boolean>();
+    // Everything the segments offer, regardless of the deal's answer.
+    const agrAny  = new Set<string>();
+    const tdAny   = new Set<string>();
     for (const s of segs) {
       for (const a of s.agreements) {
         // buyer == consignee → count ONLY pure buyer agreements (the Consignee
         // and Buyer+Consignee categories are redundant for a single party).
         // Must match activeAgreements in the send popup.
         if (buyerEqualsConsignee && partyBucket(a.party) !== 'buyer') continue;
+        /* Only what THIS deal marked Necessary. The card counted every
+           segment-applicable document, so it read "0 of 12" while the popup's
+           send gate would only ever act on the handful actually needed — the
+           progress bar was measuring work nobody had asked for. */
         const key  = a.id != null ? `id:${a.id}` : `code:${a.code ?? ''}|title:${a.title ?? ''}`;
+        agrAny.add(key);
+        if (a.needed !== true) continue;
         const done = a.signature_request?.status === 'completed';
         agrSeen.set(key, (agrSeen.get(key) ?? false) || done);
       }
@@ -727,15 +736,24 @@ export default function SalesMatrixDetail() {
         // for_buyer, drop pure consignee-only, so a "both" doc still counts once.
         if (buyerEqualsConsignee && !td.for_buyer) continue;
         const key  = td.db_id != null ? `id:${td.db_id}` : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`;
+        tdAny.add(key);
+        // Same rule as agreements above — Necessary only.
+        if (td.needed !== true) continue;
         const done = td.status === 'Verified' || td.signature_request?.status === 'completed';
         tdSeen.set(key, (tdSeen.get(key) ?? false) || done);
       }
     }
+    /* Two different questions, and conflating them locked the user out:
+       `agrTotal` is what this deal marked Necessary — the progress figure.
+       `agrAny` is what the segment offers at all — whether the popup has
+       anything to show. Marking the last document Not necessary drove the
+       first to 0, and the card then refused to open the very screen where the
+       decision could be undone. */
     const agrTotal = agrSeen.size;
     const agrDone  = Array.from(agrSeen.values()).filter(Boolean).length;
     const tdTotal  = tdSeen.size;
     const tdDone   = Array.from(tdSeen.values()).filter(Boolean).length;
-    return { agrTotal, agrDone, tdTotal, tdDone };
+    return { agrTotal, agrDone, tdTotal, tdDone, agrAny: agrAny.size, tdAny: tdAny.size };
   }, [agreementApplicable]);
 
   /* "Marked as key" is sourced live from the server (leads.key_opportunity)
@@ -1323,13 +1341,13 @@ export default function SalesMatrixDetail() {
                   tone="emerald"
                   title="Trade Documents"
                   sub={segDocTallies.tdTotal < 1
-                    ? 'No trade documents'
+                    ? (segDocTallies.tdAny > 0 ? 'None marked necessary' : 'No trade documents')
                     : `${segDocTallies.tdDone} of ${segDocTallies.tdTotal} uploaded`}
                   progress={segDocTallies.tdTotal > 0
                     ? Math.round((segDocTallies.tdDone / segDocTallies.tdTotal) * 100)
                     : 0}
                   onClick={() => {
-                    if (segDocTallies.tdTotal < 1) {
+                    if (segDocTallies.tdAny < 1) {
                       toast.warning('No trade documents', 'No product on this PI maps to a segment with trade documents.');
                       return;
                     }
@@ -1343,13 +1361,13 @@ export default function SalesMatrixDetail() {
                   tone="rose"
                   title="Agreements"
                   sub={segDocTallies.agrTotal < 1
-                    ? 'No agreements'
+                    ? (segDocTallies.agrAny > 0 ? 'None marked necessary' : 'No agreements')
                     : `${segDocTallies.agrDone} of ${segDocTallies.agrTotal} signed`}
                   progress={segDocTallies.agrTotal > 0
                     ? Math.round((segDocTallies.agrDone / segDocTallies.agrTotal) * 100)
                     : 0}
                   onClick={() => {
-                    if (segDocTallies.agrTotal < 1) {
+                    if (segDocTallies.agrAny < 1) {
                       toast.warning('No agreements', 'No product on this PI maps to a segment with agreements to send.');
                       return;
                     }
