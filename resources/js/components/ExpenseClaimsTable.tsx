@@ -66,6 +66,8 @@ export type ExpenseClaimRow = {
   total_paid?: number;
   settlement_status?: 'unpaid' | 'partial' | 'paid';
   remaining_amount?: number | null;
+  // Zoho Books push state across this claim's payments.
+  zoho_sync?: 'na' | 'pending' | 'partial' | 'completed';
   // Recorded payouts — surfaced as Payment entries in the audit log.
   payments?: { amount: number; method?: string | null; paid_by_name: string | null; paid_at: string | null }[];
   zoho_all_synced?: boolean;
@@ -345,6 +347,28 @@ export function expenseClaimColumns({
       },
     },
     {
+      header: () => <div className="text-center">Zoho Sync</div>,
+      id: 'zoho_sync',
+      enableSorting: false,
+      accessorFn: (c: ExpenseClaimRow) => c.zoho_sync ?? 'na',
+      meta: { width: '9%', align: 'center' },
+      cell: info => {
+        const z = info.row.original.zoho_sync ?? 'na';
+        if (z === 'na') return <span className="text-muted">—</span>;
+        const tone: Record<'pending' | 'partial' | 'completed', { bg: string; fg: string; icon: string; label: string }> = {
+          completed: { bg: '#d6f4e3', fg: '#108548', icon: 'ri-checkbox-circle-line', label: 'Completed' },
+          partial:   { bg: '#e0e7ff', fg: '#3730a3', icon: 'ri-loader-4-line',        label: 'Partial'   },
+          pending:   { bg: '#fde8c4', fg: '#a4661c', icon: 'ri-time-line',            label: 'Pending'   },
+        };
+        const t = tone[z];
+        return (
+          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
+            <i className={t.icon} /> {t.label}
+          </span>
+        );
+      },
+    },
+    {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
@@ -560,7 +584,9 @@ function ExpenseActionCell({
             style={{
               width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
               cursor: canEmail ? 'pointer' : 'not-allowed',
-              opacity: canEmail ? 1 : 0.5,
+              // Disabled state is conveyed by the muted grey gradient, NOT
+              // element opacity — CSS opacity also dims the ::after tooltip pill,
+              // which made the tooltip render faint on the disabled button.
               background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
                 : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
                 : 'linear-gradient(135deg,#6366f1,#4f46e5)',
@@ -957,6 +983,7 @@ function AuditLogTrigger({
 /** Three-row timeline: Created → Manager → HR/Finance. */
 function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewerMode?: 'mine' | 'team' | 'hr' }) {
   const c = claim;
+  const [showFull, setShowFull] = useState(false);
   const stages: {
     label: string;
     icon: string;
@@ -992,10 +1019,16 @@ function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewer
         || (c.manager_id ? `Manager #${c.manager_id}` : 'No manager assigned · skipped'),
       pendingHint: c.manager_name ? `Awaiting ${c.manager_name}` : 'Awaiting manager review',
       at: c.manager_acted_at,
-      // Manager's remark is private — hidden from an HR/Finance viewer (QA #103).
-      comment: viewerMode === 'hr' ? null : c.manager_comment,
+      // A manager's APPROVAL remark is private — an HR/Finance viewer doesn't
+      // see it (QA #103). But a REJECTION reason is the terminal decision and
+      // must be visible to everyone who can see the claim, including the branch
+      // user acting as HR/Finance.
+      comment: (viewerMode === 'hr' && c.manager_status !== 'rejected') ? null : c.manager_comment,
     },
-    {
+    // Rejected at the manager stage → the workflow stops there; HR never
+    // reviews it, so the HR/Finance step is omitted entirely rather than
+    // shown as a dangling "pending" (QA #106 refinement).
+    ...(c.manager_status === 'rejected' ? [] : [{
       label: 'HR / Finance Manager',
       icon: 'ri-shield-check-line',
       state: c.hr_status,
@@ -1003,7 +1036,7 @@ function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewer
       pendingHint: 'Awaiting HR / Finance review',
       at: c.hr_acted_at,
       comment: c.hr_comment,
-    },
+    }]),
     // One Payment entry per recorded payout — who paid, how much, when.
     ...(c.payments ?? []).map((p, i) => ({
       label: (c.payments && c.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
@@ -1069,24 +1102,106 @@ function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewer
                       ? <span style={{ color: 'var(--vz-body-color, #1f2937)' }}>{s.pendingHint}</span>
                       : (s.actor || '—')}
                 </div>
-                {s.comment && (
-                  <div
-                    className="mt-1"
-                    style={{
-                      fontSize: 11, padding: '4px 8px', borderRadius: 6,
-                      background: 'var(--vz-secondary-bg, #f3f4f6)', color: 'var(--vz-body-color, #1f2937)',
-                      border: '1px solid var(--vz-border-color)',
-                    }}
-                  >
-                    {s.comment}
-                  </div>
-                )}
+                {s.comment && (() => {
+                  // Long remarks (a rejection reason) are clamped to two lines
+                  // so one entry can't flood the log; "View all" opens the full
+                  // text in the Decline-reason popup.
+                  const isLong = s.comment.length > 90 || s.comment.includes('\n');
+                  return (
+                    <>
+                      <div
+                        className="mt-1"
+                        style={{
+                          fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                          background: 'var(--vz-secondary-bg, #f3f4f6)', color: 'var(--vz-body-color, #1f2937)',
+                          border: '1px solid var(--vz-border-color)',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden', wordBreak: 'break-word',
+                        }}
+                      >
+                        {s.comment}
+                      </div>
+                      {isLong && (
+                        <button
+                          type="button"
+                          onClick={() => setShowFull(true)}
+                          className="p-0 border-0 bg-transparent fw-semibold mt-1"
+                          style={{ fontSize: 10.5, color: '#b91c1c', cursor: 'pointer' }}
+                        >
+                          View all
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );
         })}
       </div>
+      <DeclineReasonModal claim={showFull ? claim : null} onClose={() => setShowFull(false)} />
     </div>
+  );
+}
+
+/** "Decline reason" popup — the full rejection remark for a rejected claim.
+ *  The reason lives on whichever stage rejected it (manager or HR/Finance). */
+function DeclineReasonModal({ claim, onClose }: { claim: ExpenseClaimRow | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!claim) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [claim, onClose]);
+  if (!claim) return null;
+  const reason = (
+    (claim.manager_status === 'rejected' ? claim.manager_comment : claim.hr_comment)
+    || claim.hr_comment || claim.manager_comment || ''
+  ).trim();
+  return createPortal(
+    <div
+      onMouseDown={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 7000,
+        background: 'rgba(15,23,42,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div
+        onMouseDown={e => e.stopPropagation()}
+        style={{
+          width: 'min(560px, 100%)', maxHeight: '80vh', overflow: 'hidden',
+          background: '#fff', borderRadius: 12, boxShadow: '0 24px 60px rgba(0,0,0,0.28)',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        <div
+          className="d-flex align-items-center justify-content-between"
+          style={{ background: '#dc2626', color: '#fff', padding: '12px 18px' }}
+        >
+          <span className="fw-bold" style={{ fontSize: 14 }}>Decline reason</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="d-inline-flex align-items-center justify-content-center"
+            style={{ width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.22)', color: '#fff', cursor: 'pointer', fontSize: 14 }}
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+        <div style={{ padding: '16px 18px', overflowY: 'auto' }}>
+          <div className="mb-2" style={{ fontSize: 11, color: '#6b7280' }}>
+            {claim.claim_no || `#${claim.id}`}
+            {claim.employee_name ? ` · ${claim.employee_name}` : ''}
+          </div>
+          {reason
+            ? <div style={{ fontSize: 13, color: '#1f2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>{reason}</div>
+            : <div className="text-muted fst-italic" style={{ fontSize: 13 }}>No reason was provided.</div>}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

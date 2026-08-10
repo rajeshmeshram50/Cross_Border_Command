@@ -87,6 +87,8 @@ type Props = {
   onSettle?: (row: AdvanceRequestRow) => void;
   /** Open the reimbursement claim form directly for an over-spent settled advance. */
   onRaiseReimbursement?: (row: AdvanceRequestRow) => void;
+  /** Internal: open the "Decline reason" popup for a rejected row. */
+  onShowRemark?: (row: AdvanceRequestRow) => void;
 };
 
 /* Payout status pill — only meaningful once an advance is approved. */
@@ -171,7 +173,7 @@ function withAuthToken(url: string): string {
 export function advanceRequestColumns({
   accent = '#6366f1', fallbackName, fallbackInitials,
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self', onAct,
-  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
+  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement, onShowRemark,
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<AdvanceRequestRow>[] {
   return [
     {
@@ -335,6 +337,11 @@ export function advanceRequestColumns({
       accessorFn: (r: AdvanceRequestRow) => paymentStatusOf(r) ?? '',
       meta: { width: '10%', align: 'center' },
       cell: info => {
+        // A rejected request is never paid — read "N/A" rather than a bare "—"
+        // so it looks intentional, not like a missing value (QA #122).
+        if (info.row.original.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         const ps = paymentStatusOf(info.row.original);
         if (!ps) return <span className="text-muted">—</span>;
         const t = PAY_TONE[ps];
@@ -358,6 +365,10 @@ export function advanceRequestColumns({
       meta: { width: '10%', align: 'center' },
       cell: info => {
         const r = info.row.original;
+        // A rejected request is never settled — "N/A" instead of a bare "—" (QA #122).
+        if (r.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         const isCompany = (r.used_for || 'self') === 'company';
         const pillEl = (icon: string, label: string, bg: string, fg: string) => (
           <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
@@ -426,6 +437,7 @@ export function advanceRequestColumns({
           onReview={onReview}
           onSettle={onSettle}
           onRaiseReimbursement={onRaiseReimbursement}
+          onShowRemark={onShowRemark}
         />
       ),
     },
@@ -438,13 +450,15 @@ export default function AdvanceRequestsTable({
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self',
   onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
 }: Props) {
+  const [remarkRow, setRemarkRow] = useState<AdvanceRequestRow | null>(null);
   const columns = useMemo(
-    () => advanceRequestColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement }),
+    () => advanceRequestColumns({ accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement, onShowRemark: setRemarkRow }),
     [accent, fallbackName, fallbackInitials, mode, currentEmployeeId, canHrApprove, usedFor, onAct, onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement],
   );
   return (
     <>
       <style>{BADGE_DARK_CSS}</style>
+      <DeclineReasonModal row={remarkRow} onClose={() => setRemarkRow(null)} />
       {/* Search/paging off: callers own their sub-tabs, filters and pager and
           pass the page slice in. */}
       <DataTable<AdvanceRequestRow>
@@ -466,12 +480,74 @@ export default function AdvanceRequestsTable({
   );
 }
 
+/** "Decline reason" popup — the full rejection remark for a rejected request.
+ *  The reason lives on whichever stage rejected it (manager or HR/Finance).
+ *  Exported so pages that build columns directly (e.g. HrExpenseManagement)
+ *  can render it alongside their own DataTable. */
+export function DeclineReasonModal({ row, onClose }: { row: AdvanceRequestRow | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!row) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [row, onClose]);
+  if (!row) return null;
+  const reason =
+    (row.manager_status === 'rejected' ? row.manager_comment : row.hr_comment)
+    || row.hr_comment || row.manager_comment || '';
+  return createPortal(
+    <div
+      onMouseDown={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 7000,
+        background: 'rgba(15,23,42,0.45)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+      }}
+    >
+      <div
+        onMouseDown={e => e.stopPropagation()}
+        style={{
+          width: 'min(560px, 100%)', maxHeight: '80vh', overflow: 'hidden',
+          background: '#fff', borderRadius: 12, boxShadow: '0 24px 60px rgba(0,0,0,0.28)',
+          display: 'flex', flexDirection: 'column',
+        }}
+      >
+        <div
+          className="d-flex align-items-center justify-content-between"
+          style={{ background: '#dc2626', color: '#fff', padding: '12px 18px' }}
+        >
+          <span className="fw-bold" style={{ fontSize: 14 }}>Decline reason</span>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="d-inline-flex align-items-center justify-content-center"
+            style={{ width: 26, height: 26, borderRadius: '50%', border: 'none', background: 'rgba(255,255,255,0.22)', color: '#fff', cursor: 'pointer', fontSize: 14 }}
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+        <div style={{ padding: '16px 18px', overflowY: 'auto' }}>
+          <div className="mb-2" style={{ fontSize: 11, color: '#6b7280' }}>
+            {row.advance_no || `#${row.id}`}
+            {row.employee_name ? ` · ${row.employee_name}` : ''}
+          </div>
+          {reason
+            ? <div style={{ fontSize: 13, color: '#1f2937', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: 1.5 }}>{reason}</div>
+            : <div className="text-muted fst-italic" style={{ fontSize: 13 }}>No reason was provided.</div>}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 /** Action cell — inline manager/HR approve-reject when the viewer may act on
  *  this row, plus the 3-dot audit-log popover. Owns the confirm-modal state,
  *  so it has to be a component: one instance per row. */
 function AdvanceActionCell({
   row: r, mode, currentEmployeeId, canHrApprove, onAct,
-  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement,
+  onRecordPayment, onViewPayments, onReview, onSettle, onRaiseReimbursement, onShowRemark,
 }: {
   row: AdvanceRequestRow;
   mode: 'mine' | 'team' | 'hr';
@@ -483,6 +559,7 @@ function AdvanceActionCell({
   onReview?: Props['onReview'];
   onSettle?: Props['onSettle'];
   onRaiseReimbursement?: Props['onRaiseReimbursement'];
+  onShowRemark?: Props['onShowRemark'];
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   type Confirm = { stage: 'manager' | 'hr'; verdict: 'approve' | 'reject' };
@@ -637,7 +714,7 @@ function AdvanceActionCell({
             </button>
           )
         )}
-        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} viewerMode={mode} />
+        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} viewerMode={mode} onShowRemark={onShowRemark} />
       </div>
 
       <AdvanceConfirmModal
@@ -662,7 +739,7 @@ function AdvanceActionCell({
 
 /* ── Audit log popover ──────────────────────────────────────────────── */
 function AuditLogTrigger({
-  open, setOpen, row, viewerMode,
+  open, setOpen, row, viewerMode, onShowRemark,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -670,6 +747,7 @@ function AuditLogTrigger({
   /** The table's mode — an HR/Finance viewer ('hr') doesn't see the reporting
    *  manager's private remark (QA #103). */
   viewerMode?: 'mine' | 'team' | 'hr';
+  onShowRemark?: Props['onShowRemark'];
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -772,7 +850,7 @@ function AuditLogTrigger({
             overflowY: 'auto',
           }}
         >
-          <AuditLogPopover row={row} viewerMode={viewerMode} />
+          <AuditLogPopover row={row} viewerMode={viewerMode} onShowRemark={onShowRemark} />
         </div>,
         document.body,
       )}
@@ -780,7 +858,7 @@ function AuditLogTrigger({
   );
 }
 
-function AuditLogPopover({ row, viewerMode }: { row: AdvanceRequestRow; viewerMode?: 'mine' | 'team' | 'hr' }) {
+function AuditLogPopover({ row, viewerMode, onShowRemark }: { row: AdvanceRequestRow; viewerMode?: 'mine' | 'team' | 'hr'; onShowRemark?: Props['onShowRemark'] }) {
   const r = row;
   const stages: Array<{
     label: string; icon: string;
@@ -808,23 +886,24 @@ function AuditLogPopover({ row, viewerMode }: { row: AdvanceRequestRow; viewerMo
         || (r.manager_id ? `Manager #${r.manager_id}` : 'No manager assigned · skipped'),
       pendingHint: r.manager_name ? `Awaiting ${r.manager_name}` : 'Awaiting manager review',
       at: r.manager_acted_at,
-      // Manager's remark is private to the manager/employee — an HR/Finance
-      // viewer doesn't see it (QA #103).
-      comment: viewerMode === 'hr' ? null : r.manager_comment,
+      // A manager's APPROVAL remark is private — an HR/Finance viewer doesn't
+      // see it (QA #103). But a REJECTION reason is the terminal decision and
+      // must be visible to everyone who can see the row, including the branch
+      // user acting as HR/Finance (so it isn't visible only to the manager).
+      comment: (viewerMode === 'hr' && r.manager_status !== 'rejected') ? null : r.manager_comment,
     },
-    {
+    // Rejected at the manager stage → the workflow stops there; HR never
+    // reviews it, so the HR/Finance step is omitted entirely rather than
+    // shown as a dangling "pending" (QA #106 refinement).
+    ...(r.manager_status === 'rejected' ? [] : [{
       label: 'HR / Finance Manager',
       icon: 'ri-shield-check-line',
       state: r.hr_status,
       actor: r.hr_user_name,
-      // Rejected at the manager stage → the workflow stops; HR never reviews it,
-      // so this reads "Not required" instead of an active "awaiting" step (#106).
-      pendingHint: r.manager_status === 'rejected'
-        ? 'Not required — rejected at the manager stage'
-        : 'Awaiting HR / Finance review',
+      pendingHint: 'Awaiting HR / Finance review',
       at: r.hr_acted_at,
       comment: r.hr_comment,
-    },
+    }]),
     // One Payment entry per recorded payout — who paid, how much, when.
     ...(r.payments ?? []).map((p, i) => ({
       label: (r.payments && r.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
@@ -889,18 +968,38 @@ function AuditLogPopover({ row, viewerMode }: { row: AdvanceRequestRow; viewerMo
                       ? <span style={{ color: 'var(--vz-body-color, #1f2937)' }}>{s.pendingHint}</span>
                       : (s.actor || '—')}
                 </div>
-                {s.comment && (
-                  <div
-                    className="mt-1"
-                    style={{
-                      fontSize: 11, padding: '4px 8px', borderRadius: 6,
-                      background: 'var(--vz-secondary-bg, #f3f4f6)', color: 'var(--vz-body-color, #1f2937)',
-                      border: '1px solid var(--vz-border-color)',
-                    }}
-                  >
-                    {s.comment}
-                  </div>
-                )}
+                {s.comment && (() => {
+                  // Long remarks (a rejection reason) are clamped to two lines
+                  // here so one entry can't flood the log; "View all" opens the
+                  // full text in the Decline-reason popup.
+                  const isLong = s.comment.length > 90 || s.comment.includes('\n');
+                  return (
+                    <>
+                      <div
+                        className="mt-1"
+                        style={{
+                          fontSize: 11, padding: '4px 8px', borderRadius: 6,
+                          background: 'var(--vz-secondary-bg, #f3f4f6)', color: 'var(--vz-body-color, #1f2937)',
+                          border: '1px solid var(--vz-border-color)',
+                          display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden', wordBreak: 'break-word',
+                        }}
+                      >
+                        {s.comment}
+                      </div>
+                      {isLong && onShowRemark && (
+                        <button
+                          type="button"
+                          onClick={() => onShowRemark(r)}
+                          className="p-0 border-0 bg-transparent fw-semibold mt-1"
+                          style={{ fontSize: 10.5, color: '#b91c1c', cursor: 'pointer' }}
+                        >
+                          View all
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </div>
           );

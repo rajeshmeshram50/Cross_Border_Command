@@ -3033,7 +3033,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <MasterSelect
                       value={claimPayment}
                       placeholder="Select payment method"
-                      options={['UPI','PhonePe','Cash','Cheque','Bank Transfer'].map(o => ({ value: o, label: o }))}
+                      options={['UPI','PhonePe','Cheque','Bank Transfer'].map(o => ({ value: o, label: o }))}
                       onChange={(v) => { setClaimPayment(v); clearClaimErr('payment'); }}
                       invalid={!!claimErrors.payment}
                     />
