@@ -99,7 +99,7 @@ class PayrollAdjustmentController extends Controller
 
         // Overtime pricing (Rule 4) — the per-hour rate is DERIVED from the
         // employee's package and OT policy:
-        //   hourly = gross ÷ working days ÷ shift hours;  rate = hourly × multiplier
+        //   hourly = BASIC ÷ working days ÷ shift hours;  rate = hourly × multiplier
         //   amount = rate × approved hours
         // `rate` is persisted ONLY when the request supplies one, because a
         // stored rate means "manual override" to the engine. Leaving it NULL is
