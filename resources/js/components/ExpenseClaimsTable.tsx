@@ -66,6 +66,8 @@ export type ExpenseClaimRow = {
   total_paid?: number;
   settlement_status?: 'unpaid' | 'partial' | 'paid';
   remaining_amount?: number | null;
+  // Recorded payouts — surfaced as Payment entries in the audit log.
+  payments?: { amount: number; method?: string | null; paid_by_name: string | null; paid_at: string | null }[];
   zoho_all_synced?: boolean;
   reimbursement_emailed_at?: string | null;
 };
@@ -442,6 +444,13 @@ function ExpenseActionCell({
     && c.hr_status === 'pending'
     && !!onAct;
 
+  // On the HR page a branch admin gets the Review & Approve button on ANY
+  // pending claim — including a manager-stage row, where clicking it nudges
+  // them to the Inbox (manager approval is Inbox-only). Without this the button
+  // only showed at HR stage, so a manager-stage row had no click target.
+  const canHrReview =
+    mode === 'hr' && canHrApprove && c.status === 'pending' && !!onReview;
+
   // Record Payment / View history (settlement) — available on any approved claim.
   // When it's already fully paid the button flips to a "view history" affordance
   // (still opens the same modal) so the payment record stays reachable.
@@ -494,15 +503,23 @@ function ExpenseActionCell({
         className="d-inline-flex align-items-center justify-content-end gap-1"
         style={{ minWidth: mode === 'hr' ? 216 : undefined }}
       >
-        {(canManagerAct || canHrAct) && onReview ? (
-          <button
-            type="button"
-            onClick={() => onReview(c)}
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
-            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap' }}
-          >
-            <i className="ri-eye-line" /> Review &amp; Approve
-          </button>
+        {(canManagerAct || canHrReview) && onReview ? (
+          (() => {
+            // The viewer's OWN claim isn't self-approvable — show the button
+            // greyed (still clickable so onReview can toast the reason).
+            const isOwn = mode === 'hr' && currentEmployeeId != null && Number(c.employee_id) === Number(currentEmployeeId);
+            return (
+              <button
+                type="button"
+                onClick={() => onReview(c)}
+                title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
+                className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
+                style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
+              >
+                <i className="ri-eye-line" /> Review &amp; Approve
+              </button>
+            );
+          })()
         ) : (
           <>
             {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
@@ -566,7 +583,7 @@ function ExpenseActionCell({
             <i className="ri-history-line" />
           </button>
         )}
-        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} />
+        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} viewerMode={mode} />
       </div>
 
       <ExpenseConfirmModal
@@ -771,6 +788,7 @@ function ExpenseClaimRowView({
             open={menuOpen}
             setOpen={setMenuOpen}
             claim={c}
+            viewerMode={mode}
           />
         </div>
 
@@ -802,11 +820,13 @@ function ExpenseClaimRowView({
  * doesn't fall off the right edge of the page.
  */
 function AuditLogTrigger({
-  open, setOpen, claim,
+  open, setOpen, claim, viewerMode,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
   claim: ExpenseClaimRow;
+  /** HR/Finance viewer ('hr') doesn't see the reporting manager's remark (QA #103). */
+  viewerMode?: 'mine' | 'team' | 'hr';
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -926,7 +946,7 @@ function AuditLogTrigger({
             overflowY: 'auto',
           }}
         >
-          <AuditLogPopover claim={claim} />
+          <AuditLogPopover claim={claim} viewerMode={viewerMode} />
         </div>,
         document.body,
       )}
@@ -935,7 +955,7 @@ function AuditLogTrigger({
 }
 
 /** Three-row timeline: Created → Manager → HR/Finance. */
-function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
+function AuditLogPopover({ claim, viewerMode }: { claim: ExpenseClaimRow; viewerMode?: 'mine' | 'team' | 'hr' }) {
   const c = claim;
   const stages: {
     label: string;
@@ -969,10 +989,11 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
       icon: 'ri-user-star-line',
       state: c.manager_status,
       actor: c.manager_name
-        || (c.manager_id ? `Manager #${c.manager_id}` : (c.manager_comment || 'No manager assigned · skipped')),
+        || (c.manager_id ? `Manager #${c.manager_id}` : 'No manager assigned · skipped'),
       pendingHint: c.manager_name ? `Awaiting ${c.manager_name}` : 'Awaiting manager review',
       at: c.manager_acted_at,
-      comment: c.manager_comment,
+      // Manager's remark is private — hidden from an HR/Finance viewer (QA #103).
+      comment: viewerMode === 'hr' ? null : c.manager_comment,
     },
     {
       label: 'HR / Finance Manager',
@@ -983,6 +1004,15 @@ function AuditLogPopover({ claim }: { claim: ExpenseClaimRow }) {
       at: c.hr_acted_at,
       comment: c.hr_comment,
     },
+    // One Payment entry per recorded payout — who paid, how much, when.
+    ...(c.payments ?? []).map((p, i) => ({
+      label: (c.payments && c.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
+      icon: 'ri-bank-card-line',
+      state: 'approved' as const,
+      actor: p.paid_by_name ? `By ${p.paid_by_name}` : null,
+      at: p.paid_at,
+      comment: `₹${Number(p.amount || 0).toLocaleString('en-IN')}${p.method ? ' · ' + p.method : ''}`,
+    })),
   ];
 
   return (

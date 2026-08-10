@@ -287,12 +287,27 @@ class MyTeamController extends Controller
                     });
                 }
                 if ($canHrApprove) {
+                    // No assigned employee manager → the branch admin is the
+                    // de-facto reporting manager and does the manager-stage
+                    // approval here (explicit two-step, not auto-approved).
+                    $w->orWhere(function ($wm) {
+                        $wm->whereNull('manager_id')
+                           ->where('manager_status', 'pending');
+                    });
                     $w->orWhere(function ($wh) {
                         $wh->where('manager_status', 'approved')
                            ->where('hr_status', 'pending');
                     });
                 }
             });
+
+        // Never surface a user's OWN request in their approvals queue — you
+        // can't approve/pay your own; the branch user (reporting manager) does.
+        // (A branch user has no employee record, so myEmployeeId is null and
+        // this doesn't hide anything from them.)
+        if ($myEmployeeId !== null) {
+            $q->where('employee_id', '!=', $myEmployeeId);
+        }
 
         $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
 
@@ -302,6 +317,11 @@ class MyTeamController extends Controller
             if ($myEmployeeId
                 && (int) $row->manager_id === (int) $myEmployeeId
                 && $row->manager_status === 'pending') {
+                $stage = 'manager';
+            } elseif ($canHrApprove
+                && $row->manager_id === null
+                && $row->manager_status === 'pending') {
+                // Branch admin acting as the de-facto reporting manager.
                 $stage = 'manager';
             } elseif ($canHrApprove
                 && $row->manager_status === 'approved'
@@ -465,12 +485,27 @@ class MyTeamController extends Controller
                     });
                 }
                 if ($canHrApprove) {
+                    // No assigned employee manager → the branch admin is the
+                    // de-facto reporting manager and does the manager-stage
+                    // approval here (explicit two-step, not auto-approved).
+                    $w->orWhere(function ($wm) {
+                        $wm->whereNull('manager_id')
+                           ->where('manager_status', 'pending');
+                    });
                     $w->orWhere(function ($wh) {
                         $wh->where('manager_status', 'approved')
                            ->where('hr_status', 'pending');
                     });
                 }
             });
+
+        // Never surface a user's OWN request in their approvals queue — you
+        // can't approve/pay your own; the branch user (reporting manager) does.
+        // (A branch user has no employee record, so myEmployeeId is null and
+        // this doesn't hide anything from them.)
+        if ($myEmployeeId !== null) {
+            $q->where('employee_id', '!=', $myEmployeeId);
+        }
 
         $this->applyExpenseTenantScope($q, $user, $myEmployeeId);
 
@@ -480,6 +515,11 @@ class MyTeamController extends Controller
             if ($myEmployeeId
                 && (int) $row->manager_id === (int) $myEmployeeId
                 && $row->manager_status === 'pending') {
+                $stage = 'manager';
+            } elseif ($canHrApprove
+                && $row->manager_id === null
+                && $row->manager_status === 'pending') {
+                // Branch admin acting as the de-facto reporting manager.
                 $stage = 'manager';
             } elseif ($canHrApprove
                 && $row->manager_status === 'approved'

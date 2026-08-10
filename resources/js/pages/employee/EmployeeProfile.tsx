@@ -730,12 +730,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const blankDraft = (): ClaimDraft => ({
     employee: employeeId,
     category: '',
-    // Currency, payment, and date all start empty so every field reads
-    // as "untouched" with its placeholder visible. Previously currency/
-    // payment defaulted to INR/UPI and date defaulted to today —
-    // people submitted with wrong defaults assuming they'd been filled
-    // in deliberately. Force an explicit choice on each.
-    currency: '',
+    // Payment and date start empty so each reads as "untouched" with its
+    // placeholder visible. Currency, however, is fixed to INR (the only
+    // configured currency) and shown read-only, so it defaults to INR.
+    currency: 'INR',
     project: '',
     payment: '',
     title: '',
@@ -902,12 +900,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     if (claimMode === 'advance') {
       const hasInput = !!(advType.trim() || String(advAmount).replace(/[^\d.]/g, '') || advReason.trim() || advTypeOther.trim());
       if (!hasInput) {
-        toast.warning('Nothing to save', 'Enter an advance type, amount, or reason before saving a draft.');
+        // Not just a toast — highlight the required fields inline so the user
+        // sees exactly what to fill before the draft can be saved (QA #97).
+        setAdvErrors({
+          type:   'Advance type is required',
+          amount: 'Amount is required',
+          reason: 'Reason / purpose is required',
+        });
+        toast.warning('Nothing to save', 'Fill at least the advance type, amount, or reason before saving a draft.');
         return;
       }
     } else {
       const hasInput = claimDrafts.some(d => d.title.trim() || String(d.amount).replace(/[^\d.]/g, ''));
       if (!hasInput) {
+        // Highlight the required claim fields inline as well as the toast.
+        setClaimErrors({
+          title:  'Expense title is required',
+          amount: 'Amount must be greater than 0',
+        });
         toast.warning('Nothing to save', 'Add at least an expense title or amount before saving a draft.');
         return;
       }
@@ -988,7 +998,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const claimCategory = draft.category;
   const setClaimCategory = (v: string) => updateDraft({ category: v });
   const claimCurrency = draft.currency;
-  const setClaimCurrency = (v: string) => updateDraft({ currency: v });
   const claimProject = draft.project;
   const setClaimProject = (v: string) => updateDraft({ project: v });
   const claimPayment = draft.payment;
@@ -1113,6 +1122,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
     }
     if (!advReason.trim())     { errs.reason = 'Reason / purpose is required';    summary.push('Reason / purpose is required'); }
+    // Attachment / proof is mandatory for an advance request (QA #84).
+    if (!(advFiles && advFiles.length > 0)) {
+      errs.files = 'An attachment / proof is required to submit an advance request';
+      summary.push('An attachment / proof is required to submit an advance request');
+    }
     if (Object.keys(errs).length > 0) {
       setAdvErrors(errs);
       toast.error('Fix the highlighted issues', summary.slice(0, 3).join('. '));
@@ -2994,12 +3008,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </Col>
                   <Col md={6}>
                     <div className="ep-claim-label">Currency</div>
-                    <MasterSelect
-                      value={claimCurrency}
-                      placeholder="Select currency"
-                      options={[{ value: 'INR', label: '₹ INR' }]}
-                      onChange={setClaimCurrency}
-                    />
+                    {/* Only INR is configured, so currency is fixed — shown
+                        read-only instead of a one-option dropdown. */}
+                    <input className="ep-claim-input" value="₹ INR" readOnly tabIndex={-1} style={{ background: '#f8fafc', color: '#374151', cursor: 'default' }} />
                   </Col>
                 </Row>
                 <Row className="g-3 mb-4">
@@ -3449,8 +3460,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <Col lg={6}>
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> Supporting Documents
+                  <span className="text-danger ms-1">*</span>
                 </div>
-                <label className="ep-claim-upload mb-2 d-block ep-claim-upload-indigo">
+                <label className={`ep-claim-upload mb-2 d-block ep-claim-upload-indigo${advErrors.files ? ' is-invalid' : ''}`}>
                   <input
                     type="file"
                     multiple
@@ -3460,7 +3472,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       const picked = Array.from(e.target.files || []);
                       const { accepted, errors } = filterValidUploads(picked, advFiles);
                       if (errors.length) toast.error('Some files were not added', errors.slice(0, 3).join(' · '));
-                      if (accepted.length) setAdvFiles(prev => [...prev, ...accepted]);
+                      if (accepted.length) { setAdvFiles(prev => [...prev, ...accepted]); clearAdvErr('files'); }
                       e.target.value = '';
                     }}
                   />
@@ -3470,6 +3482,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="fw-semibold ep-claim-upload-title-indigo">Attach documents (bank letter, itinerary…)</div>
                   <small className="text-muted ep-fs-115">PDF, JPG, PNG · Multiple files allowed · Max 2 MB per file · 5 MB total per claim</small>
                 </label>
+                {advErrors.files && (
+                  <div className="ep-claim-err mb-2"><i className="ri-error-warning-line" />{advErrors.files}</div>
+                )}
                 {advFiles.length > 0 && (
                   <div className="ep-claim-file-list mb-4">
                     {advFiles.map((f, i) => (

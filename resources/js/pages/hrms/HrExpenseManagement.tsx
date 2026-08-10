@@ -653,13 +653,39 @@ export default function HrExpenseManagement() {
 
   /* Columns come from the shared row components, so an expense row looks the
      same here and on the employee profile's Expense tab. */
+  // Review & Approve on the HR page only handles the HR / Finance stage. A row
+  // still at the reporting-manager stage isn't actionable here — the manager
+  // approval is Inbox-only — so nudge the branch admin there with a toast
+  // instead of opening the modal. (QA: "you are the reporting manager, approve
+  // in the inbox first, then make deduction and payment".)
+  const myEmpId = user?.employee_id ?? null;
+  // A row belonging to the LOGGED-IN user is their own request — an HR/HOD
+  // approver must NOT review, approve, deduct or pay their own advance/claim
+  // (self-approval). Their reporting manager (the branch user) does all of it.
+  const isOwnRow = (row: { employee_id?: number | null }): boolean =>
+    myEmpId != null && row.employee_id != null && Number(row.employee_id) === Number(myEmpId);
+  const ownToast = () => toast.info('Handled by your reporting manager',
+    'This is your own request — you can’t review, approve, set deductions or pay it. Your reporting manager (the branch user) will do the approval and payment.');
+  const reviewGate = (row: { employee_id?: number | null; manager_status?: string | null }): boolean => {
+    if (isOwnRow(row)) { ownToast(); return false; }
+    if ((row.manager_status ?? 'pending') !== 'approved') {
+      toast.info('Approve as reporting manager first',
+        'You are the reporting manager for this — approve it in your Inbox as reporting manager. Then come back here to set deductions and record the payment.');
+      return false;
+    }
+    return true;
+  };
+  const payGate = (row: { employee_id?: number | null }): boolean => {
+    if (isOwnRow(row)) { ownToast(); return false; }
+    return true;
+  };
   const claimColumns = useMemo(
-    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => setSettleClaimId(row.id), onReview: (row) => setReviewClaimId(row.id), onEmailReimbursement: (row) => emailReimbursement(row.id) }),
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => { if (payGate(row)) setSettleClaimId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewClaimId(row.id); }, onEmailReimbursement: (row) => emailReimbursement(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id],
   );
   const advanceColumns = useMemo(
-    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => setSettleAdvId(row.id), onReview: (row) => setReviewAdvId(row.id) }),
+    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => { if (payGate(row)) setSettleAdvId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewAdvId(row.id); } }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id, advUsedFor],
   );
@@ -1096,6 +1122,7 @@ export default function HrExpenseManagement() {
         review
         onClose={() => setReviewClaimId(null)}
         onDone={refresh}
+        onGoToInbox={() => { window.location.href = '/inbox'; }}
       />
 
       {/* Advance settlement + review — SAME modal, driven off the advance endpoints.
@@ -1117,6 +1144,7 @@ export default function HrExpenseManagement() {
         canApproveSettle={canHrApprove}
         onClose={() => { setReviewAdvId(null); refreshAdvances(); }}
         onDone={refreshAdvances}
+        onGoToInbox={() => { window.location.href = '/inbox'; }}
       />
     </>
   );
