@@ -20,9 +20,9 @@ const VAULT_STATUS_TONE: Record<string, { bg: string; fg: string; dot: string }>
 export default function VaultTab() {
   const {
     employee, employeeId, vaultTab, setVaultTab,
-    signedDocs, uploadedDocs, signedLoading, uploadedLoading, vaultCounts,
+    signedDocs, uploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading, vaultCounts,
     prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
-    employeeDocCount, organizationalDocCount,
+    employeeDocCount, organizationalDocCount, exitDocCount,
   } = useEmployeeProfile();
 
   /* Host element for the Uploaded Documents search box — held in state rather
@@ -243,8 +243,9 @@ export default function VaultTab() {
                 className="d-flex vt-subtab-bar"
               >
                 {[
-                  { key: 'employee'       as const, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line',     activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
-                  { key: 'organizational' as const, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line', activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'employee'       as const, label: 'Employee Documents',      count: employeeDocCount,      icon: 'ri-user-line',       activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'organizational' as const, label: 'Organizational Documents', count: organizationalDocCount, icon: 'ri-building-line',   activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'exit'           as const, label: 'Exit Documents',           count: exitDocCount,          icon: 'ri-door-open-line',   activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
                 ].map(t => {
                   const on = vaultTab === t.key;
                   return (
@@ -380,14 +381,14 @@ export default function VaultTab() {
                   <div className="text-end">
                     {signedLoading
                       ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                      : <h4 className="mb-0 fw-bold vt-count-violet">{signedDocs.length}</h4>}
+                      : <h4 className="mb-0 fw-bold vt-count-violet">{vaultTab === 'exit' ? exitDocs.length : organizationalDocs.length}</h4>}
                     <small className="text-muted text-uppercase vt-count-label">Documents</small>
                   </div>
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
                 <DataTable
-                  data={signedDocs}
+                  data={organizationalDocs}
                   columns={signedColumns}
                   serial={{ header: 'SR' }}
                   accent="violet"
@@ -400,6 +401,56 @@ export default function VaultTab() {
                     <>
                       <i className="ri-inbox-line vt-empty-icon" />
                       No signed documents yet. Completed workflows will land here automatically.
+                    </>
+                  }
+                />
+              </div>
+            </div>
+          )}
+
+          {vaultTab === 'exit' && (
+            <div
+              className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
+            >
+              <div
+                className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
+              >
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ep-section-icon ep-icon-violet">
+                    <i className="ri-door-open-line" />
+                  </span>
+                  <div>
+                    <h6 className="mb-0 fw-bold vt-head-title">Exit Documents</h6>
+                    <small className="text-muted vt-head-sub">
+                      Documents signed as part of exit workflows — final clearances and separation agreements.
+                    </small>
+                  </div>
+                </div>
+                <div className="d-flex align-items-center gap-3">
+                  <div className="vt-head-search" ref={setSignedSearchHost} />
+                  <div className="text-end">
+                    {signedLoading
+                      ? <Shimmer height={20} width={28} className="vt-count-shim" />
+                      : <h4 className="mb-0 fw-bold vt-count-violet">{exitDocs.length}</h4>}
+                    <small className="text-muted text-uppercase vt-count-label">Documents</small>
+                  </div>
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
+                <DataTable
+                  data={exitDocs}
+                  columns={signedColumns}
+                  serial={{ header: 'SR' }}
+                  accent="violet"
+                  pageSize={10}
+                  minWidth={1030}
+                  loading={signedLoading}
+                  searchHost={signedSearchHost}
+                  searchPlaceholder="Search document, code, signer…"
+                  emptyMessage={
+                    <>
+                      <i className="ri-inbox-line vt-empty-icon" />
+                      No exit documents yet. Completed workflows with 'exit' trigger will appear here.
                     </>
                   }
                 />

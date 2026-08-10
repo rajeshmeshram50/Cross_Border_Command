@@ -21,7 +21,8 @@ use Illuminate\Validation\Rule;
 class HrDocumentSignatureController extends Controller
 {
     private const WITH = [
-        'template:id,code,name,doc_type,signing_mode',
+        'template:id,code,name,doc_type,signing_mode,trigger_point_id',
+        'template.triggerPoint:id,module_name',
         'employee:id,first_name,last_name,display_name,emp_code,department_id,designation_id,reporting_manager_id,reporting_manager_user_id,user_id',
         'employee.department:id,name',
         'employee.designation:id,name,level',
@@ -58,7 +59,15 @@ class HrDocumentSignatureController extends Controller
         if ($status = $request->query('status'))          $q->where('status', $status);
         if ($tplId  = $request->integer('template_id'))   $q->where('template_id', $tplId);
 
-        return response()->json($q->orderByDesc('id')->get());
+        $rows = $q->orderByDesc('id')->get();
+        return response()->json($rows->map(function ($row) {
+            $triggerPointName = $row->template?->triggerPoint?->module_name ?? null;
+            $triggerKeyword = $this->inferTriggerKeyword($triggerPointName, $row->template?->doc_type);
+
+            $row->setAttribute('trigger_point_name', $triggerPointName);
+            $row->setAttribute('trigger_keyword', $triggerKeyword);
+            return $row;
+        }));
     }
 
     /**
@@ -573,7 +582,38 @@ class HrDocumentSignatureController extends Controller
         if ($status !== 'all') $q->where('status', $status);
 
         $this->applyScope($q, $request->user());
-        return response()->json($q->orderByDesc('id')->get());
+        $rows = $q->orderByDesc('id')->get();
+
+        return response()->json($rows->map(function ($row) {
+            $triggerPointName = $row->template?->triggerPoint?->module_name
+                                 ?? $row->template?->trigger_point_name
+                                 ?? null;
+            $triggerKeyword = $this->inferTriggerKeyword($triggerPointName, $row->template?->doc_type);
+
+            $row->setAttribute('trigger_point_name', $triggerPointName);
+            $row->setAttribute('trigger_keyword', $triggerKeyword);
+            return $row;
+        }));
+    }
+
+    private function inferTriggerKeyword(?string $triggerPointName, ?string $docType): ?string
+    {
+        $source = strtolower(trim((string) ($triggerPointName ?: $docType ?: '')));
+        if ($source === '') {
+            return null;
+        }
+
+        if (str_contains($source, 'onboarding')) {
+            return 'onboarding';
+        }
+        if (str_contains($source, 'exit')) {
+            return 'exit';
+        }
+        if (str_contains($source, 'employee')) {
+            return 'employee';
+        }
+
+        return null;
     }
 
     /**

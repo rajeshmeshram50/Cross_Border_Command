@@ -396,7 +396,23 @@ class HrDocumentTemplateController extends Controller
         ]);
 
         $emp = Employee::with(['department:id,name', 'designation:id,name,level'])
-            ->findOrFail((int) $request->query('employee_id'));
+            ->find((int) $request->query('employee_id'));
+
+        // If the employee row is missing (deleted or wrong id), return an
+        // empty template set rather than allowing a ModelNotFoundException
+        // to bubble up and convert into a 404. The SPA expects an empty
+        // `templates` array when no matching templates are found.
+        if (!$emp) {
+            return response()->json([
+                'employee_category'  => null,
+                'role_type'          => null,
+                'department_name'    => null,
+                'designation_name'   => null,
+                'trigger_point_name' => null,
+                'trigger_keyword'    => null,
+                'templates'          => [],
+            ]);
+        }
 
         $category = $this->mapDepartmentToCategory($emp->department?->name);
         $level    = $emp->designation?->level;  // 'Director / CEO' | 'Head of Department (HOD)' | …

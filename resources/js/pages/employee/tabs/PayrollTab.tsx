@@ -51,7 +51,12 @@ export default function PayrollTab() {
   const emptyPay = { amount: '', payment_mode: 'UPI', bank_name: '', utr_cheque_number: '', payment_date: '', employee_note: '' };
   const [payForm, setPayForm] = useState<Record<string, string>>(emptyPay);
   const [payFile, setPayFile] = useState<File | null>(null);
-
+/* A submission awaiting HR verification still leaves `outstanding` > 0, so the
+   amount alone can't gate the button — a second, duplicate row could be filed
+   while the first is under review. Rejected rows must stay resubmittable. */
+const pendingPayment = (np?.payments || [])
+  .find((p: any) => String(p.status).toLowerCase() === 'pending') ?? null;
+const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPayment;
   const loadNoticePayment = useCallback(() => {
     if (!empDetail?.id) return;
     api.get(`/employees/${empDetail.id}/notice-payment`)
@@ -62,15 +67,27 @@ export default function PayrollTab() {
   useEffect(() => { loadNoticePayment(); }, [loadNoticePayment]);
 
   const openPayModal = () => {
-    setPayForm({ ...emptyPay, amount: String(np?.outstanding ?? np?.amount_due ?? '') });
-    setPayFile(null);
-    setPayOpen(true);
-  };
+  if (pendingPayment) {
+    toast.warning(
+      'Payment already submitted',
+      'Your previous payment is awaiting HR verification. You can submit again only if it is rejected.',
+    );
+    return;
+  }
+  setPayForm({ ...emptyPay, amount: String(np?.outstanding ?? np?.amount_due ?? '') });
+  setPayFile(null);
+  setPayOpen(true);
+};
   const setPayField = (k: string, v: string) => setPayForm(p => ({ ...p, [k]: v }));
 
   const submitPayment = async () => {
     if (!empDetail?.id || paying) return;
-    const missing: string[] = [];
+    if (pendingPayment) {
+    toast.warning('Payment already submitted', 'A payment is already awaiting HR verification.');
+    setPayOpen(false);
+    return;
+  }
+  const missing: string[] = [];
     if (!Number(payForm.amount)) missing.push('Amount Paid');
     if (!payForm.payment_mode)   missing.push('Payment Mode');
     if (!payForm.bank_name.trim()) missing.push('Bank Name');
@@ -433,11 +450,20 @@ export default function PayrollTab() {
                         </div>
                       )}
                     </div>
-                    {np.outstanding > 0 && (
-                      <button type="button" className="npay-btn" onClick={openPayModal}>
-                        <i className="ri-bank-card-line" />Do Payment
-                      </button>
-                    )}
+                    {Number(np.outstanding) > 0 && (
+                        <button
+                          type="button"
+                          className="npay-btn"
+                          onClick={openPayModal}
+                          disabled={!canPay}
+                          title={pendingPayment
+                            ? 'A payment is already awaiting HR verification'
+                            : 'Record your notice-period payment'}
+                        >
+                          <i className={pendingPayment ? 'ri-time-line' : 'ri-bank-card-line'} />
+                          {pendingPayment ? 'Awaiting Verification' : 'Do Payment'}
+                        </button>
+                      )}
                   </div>
 
                   {/* Every submission, newest first — a rejected one has to be

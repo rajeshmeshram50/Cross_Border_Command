@@ -2639,9 +2639,6 @@ export default function HrEmployees() {
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
-                      // No top border: the accent strip below is positioned at
-                      // top:0 of the padding box, so a 1px top border renders
-                      // as a white gap above the coloured line.
                       borderTopWidth: 0,
                       padding: '11px 15px',
                       position: 'relative',
@@ -2670,12 +2667,7 @@ export default function HrEmployees() {
               ))}
             </Row>
 
-            {/* Shared list table (components/ui/DataTable) — tabs, search,
-                sortable headers, dynamic rows-per-page and the viewport-fit
-                page sizing all live in the component now, so this page only
-                declares its columns and hands over the filtered rows.
-                Search stays controlled here because `filtered` also feeds the
-                Excel export, which must respect the same query. */}
+    
             <DataTable<EmployeeRow>
               data={filtered}
               columns={employeeColumns}

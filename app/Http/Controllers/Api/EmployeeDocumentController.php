@@ -29,8 +29,17 @@ class EmployeeDocumentController extends Controller
     ];
     private const EXT_ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
 
-    public function index(Request $request, Employee $employee)
+    public function index(Request $request, $employeeId)
     {
+        // Defensive: if the employee doesn't exist (deleted or wrong id),
+        // return an empty array instead of letting implicit binding throw
+        // a 404. This prevents the SPA from breaking when it asks for
+        // documents for a removed/unknown employee.
+        $employee = Employee::withTrashed()->find($employeeId);
+        if (!$employee) {
+            return response()->json([]);
+        }
+
         $this->authorizeEmployeeAccess($request, $employee);
 
         $rows = EmployeeDocument::where('employee_id', $employee->id)
