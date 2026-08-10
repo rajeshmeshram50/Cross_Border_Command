@@ -92,14 +92,20 @@ class ExpenseClaimController extends Controller
                 // resolves — otherwise the relation is null and the row shows
                 // "#<id>" instead of the name.
                 'employee' => fn ($r) => $r->withTrashed()
-                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'department_id'),
+                    ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code', 'reporting_manager_id', 'reporting_manager_user_id', 'department_id'),
                 'employee.department:id,name',
+                // Branch-user manager (when the employee reports to a branch user).
+                'employee.reportingManagerUser:id,name',
                 'manager' => fn ($r) => $r->withTrashed()
                     ->select('id', 'first_name', 'middle_name', 'last_name', 'display_name', 'emp_code'),
                 'category:id,name,code',
                 'creator:id,name,user_type',
                 'hrUser:id,name,user_type',
                 'reimbursedAdvance:id,advance_no,settle_reimbursement_claim_id',
+                // Who acted at the manager stage (named in the audit log).
+                'managerActor:id,name',
+                // Payout list for the audit log (payer name + amount + date).
+                'payments' => fn ($r) => $r->with('payer:id,name'),
             ])
             ->orderByDesc('id');
 
@@ -324,15 +330,14 @@ class ExpenseClaimController extends Controller
             }
         }
 
-        // When the employee has no reporting manager assigned, auto-clear
-        // the manager-approval stage at create time so the claim flows
-        // straight to whoever holds HR / Finance approval rights. The
-        // audit log surfaces this with an explicit "no manager" note so
-        // it doesn't look like a phantom approval.
-        $hasManager      = !empty($employee->reporting_manager_id);
-        $managerStatus   = $hasManager ? 'pending'  : 'approved';
-        $managerActedAt  = $hasManager ? null       : now();
-        $managerComment  = $hasManager ? null       : 'Auto-approved · no reporting manager assigned';
+        // Manager stage always starts PENDING. When no EMPLOYEE reporting
+        // manager is assigned, the BRANCH ADMIN is the de-facto reporting
+        // manager and approves it explicitly in the Inbox (two-step audit
+        // trail) instead of a silent auto-approval. Unassigned manager-stage
+        // rows are routed to branch admins in MyTeamController::approvals.
+        $managerStatus   = 'pending';
+        $managerActedAt  = null;
+        $managerComment  = null;
 
         // Wrap claim_no allocation + insert in a single transaction so the
         // lockForUpdate inside nextClaimNo() actually holds: two concurrent
@@ -621,14 +626,23 @@ class ExpenseClaimController extends Controller
         $this->applyTenantScope($q, $user, $request->integer('branch_id') ?: null);
 
         return response()->json([
-            'data' => $q->orderBy('id')->get()->map(fn ($c) => [
+            'data' => $q->orderBy('id')->get()->map(function ($c) {
+                // Batch pays the REMAINING payable, not the full claim — a
+                // partially-paid claim only owes (sanctioned − already paid).
+                $payableBase = (float) ($c->sanctioned_amount ?? $c->amount);
+                $remaining   = round($payableBase - (float) $c->total_paid, 2);
+                return [
                 'id'            => $c->id,
                 'exp_no'        => $this->expNo($c),
                 'title'         => $c->title,
                 'category_id'   => $c->category_id,
                 'category_name' => $c->category?->name ?? $c->category_name,
                 'expense_date'  => optional($c->expense_date)->format('Y-m-d'),
-                'amount'        => (float) $c->amount,
+                // `amount` = remaining payable (what the batch will pay). The
+                // full claim + already-paid are exposed for display.
+                'amount'        => max(0, $remaining),
+                'claim_amount'  => $payableBase,
+                'paid'          => (float) $c->total_paid,
                 'note'          => $c->purpose ?: $c->title,
                 'attachments'   => collect($c->attachments ?? [])->count(),
                 'status'        => $c->status,          // approved | pending
@@ -640,7 +654,8 @@ class ExpenseClaimController extends Controller
                 'pending_stage'  => $c->status === 'approved'
                     ? null
                     : (($c->manager_status ?? 'pending') !== 'approved' ? 'manager' : 'hr'),
-            ])->values(),
+                ];
+            })->values(),
         ]);
     }
 
@@ -759,7 +774,12 @@ class ExpenseClaimController extends Controller
             'payment_type'     => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
             'expense_type'     => ['required', 'string', 'in:Goods,Service'],
             'note'             => ['nullable', 'string', 'max:500'],
-            'proof'            => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            // Proof must be a receipt/image — no Excel/Word (QA #111); 2 MB cap.
+            'proof'            => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp'],
+        ], [
+            'proof.max'      => 'Proof of payment must be 2 MB or smaller.',
+            'proof.uploaded' => 'Proof of payment must be 2 MB or smaller.',
+            'proof.mimes'    => 'Proof of payment must be a PDF, JPG, PNG or WEBP file.',
         ]);
 
         $employeeId = $this->resolveEmployeeId($data['employee_id'], $request->input('employee_code'), $user);
@@ -786,14 +806,18 @@ class ExpenseClaimController extends Controller
             }
         }
 
-        $total = round($claims->sum(fn ($c) => (float) $c->amount), 2);
+        // Pay the REMAINING per claim (handles partially-paid claims): payable
+        // base is the sanctioned amount if set, else the claim amount, minus
+        // what's already been paid. (QA #114)
+        $remainingOf = fn ($c) => round((float) ($c->sanctioned_amount ?? $c->amount) - (float) $c->total_paid, 2);
+        $total = round($claims->sum($remainingOf), 2);
 
         // Shared proof of payment (one file for the whole batch).
         $f = $request->file('proof');
         $proofName = $f->getClientOriginalName();
         $proofPath = $f->store('expense_batch_payments', 'public');
 
-        $batch = DB::transaction(function () use ($user, $employeeId, $claims, $data, $total, $proofPath, $proofName) {
+        $batch = DB::transaction(function () use ($user, $employeeId, $claims, $data, $total, $proofPath, $proofName, $remainingOf) {
             $batch = \App\Models\ExpenseBatchPayment::create([
                 'client_id'        => $claims->first()->client_id,
                 'branch_id'        => $claims->first()->branch_id,
@@ -809,7 +833,8 @@ class ExpenseClaimController extends Controller
             ]);
 
             foreach ($claims as $c) {
-                $amt = (float) $c->amount;
+                $amt = $remainingOf($c);   // remaining payable, not the full claim
+                if ($amt <= 0) continue;   // nothing left to pay on this one
                 \App\Models\ExpenseClaimPayment::create([
                     'client_id'        => $c->client_id,
                     'branch_id'        => $c->branch_id,
@@ -826,8 +851,9 @@ class ExpenseClaimController extends Controller
                     'paid_by'          => $user->id,
                     'paid_at'          => now(),
                 ]);
-                // No batch-time deductions — the full approved amount is paid.
-                if ($c->sanctioned_amount === null) $c->sanctioned_amount = $amt;
+                // No batch-time deductions — the sanctioned (or claim) amount is
+                // the payable base; the remaining is paid here.
+                if ($c->sanctioned_amount === null) $c->sanctioned_amount = (float) $c->amount;
                 $c->total_paid = round((float) $c->total_paid + $amt, 2);
                 $c->settlement_status = 'paid';
                 $c->settled_at = now();
@@ -1032,9 +1058,21 @@ class ExpenseClaimController extends Controller
         $this->ensureTenantAccess($row, $user);
 
         $myEmployeeId = $this->currentEmployeeId($user);
-        // Only the assigned manager (or super_admin) may act.
-        if ($user->user_type !== 'super_admin' && $row->manager_id !== $myEmployeeId) {
-            abort(403, 'You are not the assigned reporting manager for this claim.');
+        // No self-approval: an approver can't act on their OWN claim — their
+        // reporting manager (the branch user) does the approval/payment.
+        if ($user->user_type !== 'super_admin' && $myEmployeeId !== null && (int) $row->employee_id === (int) $myEmployeeId) {
+            abort(403, 'You cannot approve your own expense claim — your reporting manager (branch user) will approve it.');
+        }
+        $isAssignedManager = $myEmployeeId !== null && (int) $row->manager_id === (int) $myEmployeeId;
+        // Only the assigned manager (or super_admin) may act — EXCEPT a row with
+        // no assigned employee manager, which the branch admin approves as the
+        // de-facto reporting manager (needs HR-approve rights).
+        if ($user->user_type !== 'super_admin' && !$isAssignedManager) {
+            if ($row->manager_id === null) {
+                $this->guardHrPermission($user, 'can_approve');
+            } else {
+                abort(403, 'You are not the assigned reporting manager for this claim.');
+            }
         }
         if ($row->manager_status !== 'pending') {
             abort(409, 'This claim has already been actioned by the manager.');
@@ -1050,6 +1088,9 @@ class ExpenseClaimController extends Controller
 
         $row->manager_status   = $verdict;
         $row->manager_acted_at = now();
+        // Record the exact logged-in user who acted, so the audit log names them
+        // whoever they are — assigned manager, branch admin, or anyone else.
+        $row->manager_acted_by = $user->id;
         $row->manager_comment  = $data['comment'] ?? null;
         // Rejection at the manager stage closes the claim.
         if ($verdict === 'rejected') {
@@ -1081,6 +1122,11 @@ class ExpenseClaimController extends Controller
         $row = ExpenseClaim::findOrFail($id);
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
+        // No self-approval — the branch user (reporting manager) approves it.
+        $myEmp = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
+            abort(403, 'You cannot approve your own expense claim — your reporting manager (branch user) will approve it.');
+        }
 
         if ($verdict === 'approved' && $row->manager_status !== 'approved') {
             abort(409, 'Manager must approve this claim before HR / Finance can approve it.');
@@ -1387,6 +1433,22 @@ class ExpenseClaimController extends Controller
             ? ($manager->display_name
                 ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')))
             : null;
+        // No EMPLOYEE manager, but the employee reports to a BRANCH USER
+        // (reporting_manager_user_id) — surface that user's name so a PENDING
+        // stage reads "Awaiting <de-facto manager>" instead of "manager review".
+        if (!$managerName && $employee && $employee->reporting_manager_user_id) {
+            $managerName = $employee->relationLoaded('reportingManagerUser')
+                ? $employee->reportingManagerUser?->name
+                : \App\Models\User::whereKey($employee->reporting_manager_user_id)->value('name');
+        }
+        // Once acted, prefer the ACTUAL approver — whoever logged in and approved
+        // or rejected the manager stage (assigned manager, branch admin, anyone).
+        if ($row->manager_status !== 'pending' && $row->manager_acted_by) {
+            $actorName = $row->relationLoaded('managerActor')
+                ? $row->managerActor?->name
+                : \App\Models\User::whereKey($row->manager_acted_by)->value('name');
+            if ($actorName) $managerName = $actorName;
+        }
         return [
             'id'              => $row->id,
             'claim_no'        => $row->claim_no,
@@ -1451,6 +1513,17 @@ class ExpenseClaimController extends Controller
             'remaining_amount'  => $row->sanctioned_amount !== null
                 ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
                 : null,
+            // Compact payout list for the Approval Audit Log — one entry per
+            // recorded payment: how much, by whom, and when.
+            'payments'          => (function () use ($row) {
+                $ps = $row->relationLoaded('payments') ? $row->payments : $row->payments()->with('payer')->get();
+                return $ps->map(fn ($p) => [
+                    'amount'       => (float) $p->amount,
+                    'method'       => $p->method ?? null,
+                    'paid_by_name' => $p->payer?->name,
+                    'paid_at'      => optional($p->paid_at ?? $p->created_at)->toIso8601String(),
+                ])->values()->all();
+            })(),
         ];
     }
 
@@ -1644,6 +1717,11 @@ class ExpenseClaimController extends Controller
         $this->ensureTenantAccess($row, $user);
         // Same right as HR approval for now (may be split into can_settle later).
         $this->guardHrPermission($user, 'can_approve');
+        // No self-payment — the branch user (reporting manager) records it.
+        $myEmp = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && $myEmp !== null && (int) $row->employee_id === (int) $myEmp) {
+            abort(403, 'You cannot record a payment for your own claim — your reporting manager (branch user) will do it.');
+        }
 
         if ($row->status !== 'approved') {
             abort(409, 'Only an approved claim can be paid. Approve it first.');
@@ -1673,9 +1751,13 @@ class ExpenseClaimController extends Controller
             // A receipt document or a photo of one only: spreadsheets and Word
             // files are not evidence of a payment, and the picker used to let a
             // .xlsx through (CBC #77). Mirrors PROOF_EXTS on the client.
-            'proof'               => ['required', 'file', 'max:10240', 'mimes:pdf,jpg,jpeg,png'],
+            // 2 MB cap (matches attachments + stays under PHP's upload limit, so
+            // it never fails with the cryptic "The proof failed to upload"). QA #100
+            'proof'               => ['required', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png'],
         ], [
-            'proof.mimes' => 'Proof of payment must be a PDF, JPG, JPEG or PNG file.',
+            'proof.max'      => 'Proof of payment must be 2 MB or smaller.',
+            'proof.uploaded' => 'Proof of payment must be 2 MB or smaller.',
+            'proof.mimes'    => 'Proof of payment must be a PDF, JPG, JPEG or PNG file.',
         ]);
 
         // Normalise deductions + additions (first payment only). Net payable =

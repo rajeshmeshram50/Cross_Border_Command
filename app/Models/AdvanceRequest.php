@@ -22,7 +22,7 @@ class AdvanceRequest extends Model
         'amount', 'used_for', 'requested_date', 'recovery_start', 'expected_use_date',
         'recovery_mode', 'recovery_months', 'monthly_emi',
         'reason', 'attachments',
-        'status', 'manager_status', 'manager_acted_at', 'manager_comment',
+        'status', 'manager_status', 'manager_acted_at', 'manager_acted_by', 'manager_comment',
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
         // Settlement (post-approval payout) — mirrors ExpenseClaim.
@@ -97,6 +97,13 @@ class AdvanceRequest extends Model
     public function hrUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'hr_user_id');
+    }
+
+    /** The user who acted at the reporting-manager stage (any logged-in
+     *  approver — assigned manager, branch admin, etc.). */
+    public function managerActor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_acted_by');
     }
 
     public function client(): BelongsTo

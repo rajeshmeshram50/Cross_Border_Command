@@ -46,6 +46,8 @@ export type AdvanceRequestRow = {
   total_paid?: number;
   settlement_status?: 'unpaid' | 'partial' | 'paid';
   remaining_amount?: number | null;
+  // Recorded payouts — surfaced as Payment entries in the audit log.
+  payments?: { amount: number; method?: string | null; paid_by_name: string | null; paid_at: string | null }[];
   // Employee "Settle" — set on a fully-paid Company advance by the employee.
   employee_settled_at?: string | null;
   // Follow-through status (drives the action button when settlement is done).
@@ -501,6 +503,11 @@ function AdvanceActionCell({
     && r.hr_status === 'pending'
     && !!onAct;
 
+  // HR page: show Review & Approve on ANY pending advance (incl. manager-stage
+  // rows, where clicking it nudges to the Inbox — manager approval is Inbox-only).
+  const canHrReview =
+    mode === 'hr' && canHrApprove && r.status === 'pending' && !!onReview;
+
   // HR "Record Payment" / "View history" — available on any approved advance.
   const canSettle = mode === 'hr' && canHrApprove && r.status === 'approved' && !!onRecordPayment;
   const settleDone = (r.settlement_status ?? 'unpaid') === 'paid';
@@ -539,15 +546,23 @@ function AdvanceActionCell({
     <>
       <div className="d-inline-flex align-items-center gap-1 justify-content-center flex-nowrap">
         {/* Manager / HR act via the same Review & Approve popup as expense claims. */}
-        {(canManagerAct || canHrAct) && onReview ? (
-          <button
-            type="button"
-            onClick={() => onReview(r)}
-            className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
-            style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap' }}
-          >
-            <i className="ri-eye-line" /> Review &amp; Approve
-          </button>
+        {(canManagerAct || canHrReview) && onReview ? (
+          (() => {
+            // The viewer's OWN advance isn't self-approvable — greyed but still
+            // clickable so onReview can toast the reason.
+            const isOwn = mode === 'hr' && currentEmployeeId != null && Number(r.employee_id) === Number(currentEmployeeId);
+            return (
+              <button
+                type="button"
+                onClick={() => onReview(r)}
+                title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
+                className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill"
+                style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
+              >
+                <i className="ri-eye-line" /> Review &amp; Approve
+              </button>
+            );
+          })()
         ) : (
           <>
             {canManagerAct && <>{verdictBtn('manager', 'approve')}{verdictBtn('manager', 'reject')}</>}
@@ -622,7 +637,7 @@ function AdvanceActionCell({
             </button>
           )
         )}
-        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} />
+        <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} row={r} viewerMode={mode} />
       </div>
 
       <AdvanceConfirmModal
@@ -647,11 +662,14 @@ function AdvanceActionCell({
 
 /* ── Audit log popover ──────────────────────────────────────────────── */
 function AuditLogTrigger({
-  open, setOpen, row,
+  open, setOpen, row, viewerMode,
 }: {
   open: boolean;
   setOpen: (v: boolean) => void;
   row: AdvanceRequestRow;
+  /** The table's mode — an HR/Finance viewer ('hr') doesn't see the reporting
+   *  manager's private remark (QA #103). */
+  viewerMode?: 'mine' | 'team' | 'hr';
 }) {
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -754,7 +772,7 @@ function AuditLogTrigger({
             overflowY: 'auto',
           }}
         >
-          <AuditLogPopover row={row} />
+          <AuditLogPopover row={row} viewerMode={viewerMode} />
         </div>,
         document.body,
       )}
@@ -762,7 +780,7 @@ function AuditLogTrigger({
   );
 }
 
-function AuditLogPopover({ row }: { row: AdvanceRequestRow }) {
+function AuditLogPopover({ row, viewerMode }: { row: AdvanceRequestRow; viewerMode?: 'mine' | 'team' | 'hr' }) {
   const r = row;
   const stages: Array<{
     label: string; icon: string;
@@ -787,20 +805,35 @@ function AuditLogPopover({ row }: { row: AdvanceRequestRow }) {
       icon: 'ri-user-star-line',
       state: r.manager_status,
       actor: r.manager_name
-        || (r.manager_id ? `Manager #${r.manager_id}` : (r.manager_comment || 'No manager assigned · skipped')),
+        || (r.manager_id ? `Manager #${r.manager_id}` : 'No manager assigned · skipped'),
       pendingHint: r.manager_name ? `Awaiting ${r.manager_name}` : 'Awaiting manager review',
       at: r.manager_acted_at,
-      comment: r.manager_comment,
+      // Manager's remark is private to the manager/employee — an HR/Finance
+      // viewer doesn't see it (QA #103).
+      comment: viewerMode === 'hr' ? null : r.manager_comment,
     },
     {
       label: 'HR / Finance Manager',
       icon: 'ri-shield-check-line',
       state: r.hr_status,
       actor: r.hr_user_name,
-      pendingHint: 'Awaiting HR / Finance review',
+      // Rejected at the manager stage → the workflow stops; HR never reviews it,
+      // so this reads "Not required" instead of an active "awaiting" step (#106).
+      pendingHint: r.manager_status === 'rejected'
+        ? 'Not required — rejected at the manager stage'
+        : 'Awaiting HR / Finance review',
       at: r.hr_acted_at,
       comment: r.hr_comment,
     },
+    // One Payment entry per recorded payout — who paid, how much, when.
+    ...(r.payments ?? []).map((p, i) => ({
+      label: (r.payments && r.payments.length > 1) ? `Payment ${i + 1}` : 'Payment',
+      icon: 'ri-bank-card-line',
+      state: 'approved' as const,
+      actor: p.paid_by_name ? `By ${p.paid_by_name}` : null,
+      at: p.paid_at,
+      comment: `₹${Number(p.amount || 0).toLocaleString('en-IN')}${p.method ? ' · ' + p.method : ''}`,
+    })),
   ];
 
   return (
