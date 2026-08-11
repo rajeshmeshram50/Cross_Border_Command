@@ -930,6 +930,28 @@ function normaliseStageStatus(raw: any): Record<string, StageStatus> {
   return out;
 }
 
+/* ── Calendar-date helpers ─────────────────────────────────────────────────
+   Deliberately LOCAL-date only. These used to go through
+   `new Date(iso + 'T00:00:00').toISOString().slice(0, 10)`, which parses the
+   string as local midnight and then formats it in UTC — so on any zone ahead
+   of UTC (IST, +5:30) every result came back a day EARLY, and on any zone
+   behind UTC it didn't. That made the notice-period end date, "tomorrow" and
+   even "today" depend on the viewer's timezone: `addDaysIso(d, 1)` returned
+   `d` itself in IST, and before 05:30 IST `todayIso` was still yesterday.
+   Formatting from the local Y/M/D parts keeps every date the one the user
+   sees on their own calendar. */
+const isoOf = (d: Date): string => {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
+const addDaysIso = (iso: string, days: number): string => {
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  return isoOf(d);
+};
+
 function ExitProcessModal({ employee, onClose, onCompleted }: { employee: EmployeeRow | null; onClose: () => void; onCompleted?: () => void }) {
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<string, StageStatus>>({});
@@ -961,14 +983,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
+  /* The notice START DATE is day 1 of the notice, so an N-day notice ends on
+     `notice date + N − 1`: a 1-day notice served from today ends today, and a
+     30-day notice from 10 Aug ends 8 Sep. `days served` below counts the same
+     way (inclusive), and so do the two server-side rules — the ceiling in
+     ExitController::assertLastWorkingDayWithinNotice and the settlement in
+     ExitNoticePaymentController. All four must move together or a fully served
+     notice reads as one day short and bills the employee for it. */
   const noticePeriodEnd = useMemo(() => {
     if (noticeWaived) return '';   // probation / early resignation → no notice
-    const days = employee?.noticePeriodDays;
-    if (!noticeDate || days == null || !Number.isFinite(days)) return '';
-    const d = new Date(noticeDate + 'T00:00:00');
-    if (isNaN(d.getTime())) return '';
-    d.setDate(d.getDate() + Number(days));
-    return d.toISOString().slice(0, 10);
+    const days = Number(employee?.noticePeriodDays);
+    if (!noticeDate || employee?.noticePeriodDays == null || !Number.isFinite(days) || days <= 0) return '';
+    return addDaysIso(noticeDate, days - 1);
   }, [noticeDate, employee?.noticePeriodDays, noticeWaived]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
@@ -1055,8 +1081,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const dayMs = 86400000;
     let served = 0;
     if (noticeDate && lwd) {
+      // Inclusive of the notice start day — working the notice date itself is
+      // one day served, so LWD == notice date is 1, not 0. Matches
+      // `noticePeriodEnd` (start + N − 1) and the two server-side rules.
       const d = Math.round((new Date(lwd + 'T00:00:00').getTime() - new Date(noticeDate + 'T00:00:00').getTime()) / dayMs);
-      served = Math.max(0, Math.min(required, d));
+      served = d < 0 ? 0 : Math.max(0, Math.min(required, d + 1));
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
@@ -1151,14 +1180,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   });
   const [advancingStage, setAdvancingStage] = useState(false);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const addDaysIso = (iso: string, days: number) => {
-    const d = new Date(iso + 'T00:00:00');
-    if (isNaN(d.getTime())) return iso;
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  const tomorrowIso = addDaysIso(todayIso, 1);
+  const todayIso = isoOf(new Date());
   const fmtDateShort = (iso: string) => {
     try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return iso; }
@@ -1173,8 +1195,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      point of the non-standard types is that the notice period is NOT served:
 
        Resignation            the notice IS served, so the last working day is
-                              on/after the notice period end and must be a
-                              future date.
+                              on/after the notice period end. There is NO extra
+                              "must be in the future" rule: for a short notice
+                              period the end date can be today (or, on a case
+                              reopened later, already past), and today is then
+                              a perfectly valid last working day. That extra
+                              rule contradicted this floor and made a 1-day
+                              notice impossible to close (bug #71).
        Resignation w/o notice the employee is leaving early — that's exactly
                               what is recovered from them — so the notice-end
                               floor doesn't apply and TODAY is a valid last day.
@@ -1190,8 +1217,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the type impossible to actually express. An already-saved value is still
      accepted as-is so reopening a case never invalidates it. */
   const noticeServed = !noticeWaived && settlement === 'served';
+  /* With no derivable end date (the employee record carries no notice period)
+     there is no notice length to hold them to, so the floor is simply the
+     notice start — you cannot stop working before you resign. It used to be
+     start + 1, which was the old "must be a future date" rule in disguise. */
   const lwdMin = noticeServed
-    ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
+    ? (noticePeriodEnd || noticeDate || todayIso)
     : (noticeDate || todayIso);
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
@@ -1205,10 +1236,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      no notice period, and there is nothing to cap against in those cases. */
   const lwdMax = noticePeriodEnd || '';
   const lwdOverEnd = !!lwd && !!lwdMax && lwd > lwdMax;
-  // "Must be a future date" is part of serving notice, so it is waived for the
-  // types that don't serve one — they can be relieved today.
+  /* One floor for every type: `lwdMin`. Served notice used to carry a second,
+     independent "must be a future date" test, which is what rejected a last
+     working day of today even when the notice period had already ended by then
+     — the two rules disagreed, and the cruder one won. lwdMin already keeps the
+     date far enough out whenever the notice genuinely still has days to run. */
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && ((noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin) || lwdOverEnd);
+    && (lwd < lwdMin || lwdOverEnd);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1772,7 +1806,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return 0;
   };
 
+  /* Has the wizard actually got to this stage? A stage counts as reached once
+     HR is on it or past it, or it carries a status saved in an earlier session.
+
+     Stages that DERIVE their completion from data which is already settled
+     before HR arrives would otherwise report 100% from the moment the modal
+     opens: a probation exit owes no notice recovery, so Notice Period Payment
+     measured "nothing outstanding" and sat there as Completed / 100% while
+     Stage 1 was still an empty form. The percentage is meant to describe work
+     HR has done, so a stage nobody has opened yet reads Pending / 0% however
+     satisfied its own measure happens to be. Reaching it flips it to whatever
+     the measure genuinely says — including straight to 100%. */
+  const reachedStage = (n: StageKey): boolean => {
+    const num = stages.find(s => s.key === n)?.num ?? 1;
+    return num <= stage || !!stageStatus[n];
+  };
+
   const effStatusOf = (n: StageKey): StageStatus => {
+    if (!reachedStage(n)) return 'Pending';
     // Clearance & Handover — only complete when EVERY clearance is approved AND
     // EVERY assigned asset is handed over. A stale persisted "Completed" must
     // not show 100% while clearances/assets are still pending.
@@ -1824,6 +1875,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === currentKey || rawStagePct(n) > 0
         || stageStatus[n] === 'In Progress' || stageStatus[n] === 'Completed') return 'In Progress';
     return 'Pending';
+  };
+
+  /* Percentage as SHOWN in the stepper. Same gate as the status above: a stage
+     the wizard hasn't reached reads 0%, not its pre-satisfied measure. */
+  const stagePctOf = (n: StageKey): number => {
+    if (!reachedStage(n)) return 0;
+    return effStatusOf(n) === 'Completed' ? 100 : rawStagePct(n);
   };
 
   const completed = stages.filter(s => effStatusOf(s.key) === 'Completed').length;
@@ -2018,7 +2076,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           // The last-working-day rule depends on whether a notice is served,
           // so the message has to say the right thing for each exit type.
           const lwdMsg = noticeServed
-            ? 'the last working day must be a future date on/after the notice period end date'
+            ? 'the last working day must be on/after the notice period end date'
             : settlement === 'pay_in_lieu'
               ? 'the last working day cannot be before the termination date'
               : 'the last working day cannot be before the notice start date';
@@ -2325,7 +2383,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           <aside className="ep-sidebar">
             {stages.map(s => {
               const st = effStatusOf(s.key);
-              const stagePct = st === 'Completed' ? 100 : rawStagePct(s.key);
+              const stagePct = stagePctOf(s.key);
               return (
                 <button
                   key={s.key}
@@ -2451,7 +2509,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           : earlyResignation
                             ? `Not applicable — resigned within ${EARLY_EXIT_DAYS} days of joining${earlyTenure != null ? ` (${earlyTenure} day(s))` : ''}. No notice period is served, the exit can be effective immediately, and this employee is not included in payroll processing.`
                             : (employee?.noticePeriodDays != null
-                                ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                                ? 'Auto-calculated — the notice start date counts as day 1, so the notice ends on start + notice period − 1.'
                                 : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
                       </div>
                     </EpField>
@@ -2482,8 +2540,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.');
                               }
-                            } else if (v <= todayIso) {
-                              toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
                             } else if (v < lwdMin) {
                               toast.warning(
                                 'Invalid last working day',
@@ -2508,11 +2564,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 ? (settlement === 'pay_in_lieu'
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.')
-                                : (lwd <= todayIso
-                                    ? 'Last working day cannot be today or a past date.'
-                                    : (noticePeriodEnd
-                                        ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
-                                        : 'Last working day must be after the notice start date.')))
+                                : (noticePeriodEnd
+                                    ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                    : 'Last working day must be after the notice start date.'))
                             : 'Last working day is required.'}
                         </div>
                       )}

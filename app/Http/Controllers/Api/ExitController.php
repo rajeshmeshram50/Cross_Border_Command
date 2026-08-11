@@ -751,7 +751,11 @@ class ExitController extends Controller
             return;
         }
 
-        $end = \Carbon\Carbon::parse($row->notice_date)->startOfDay()->addDays($days);
+        // Inclusive of the notice start day: an N-day notice served from the
+        // notice date ends on notice date + N − 1 (a 1-day notice ends the day
+        // it starts). Same basis as the wizard's Notice Period End Date and as
+        // ExitNoticePaymentController's days-served count.
+        $end = \Carbon\Carbon::parse($row->notice_date)->startOfDay()->addDays($days - 1);
         if (\Carbon\Carbon::parse($lwd)->startOfDay()->gt($end)) {
             abort(422, 'Last working day cannot be after the notice period end date ('
                 . $end->format('j M Y') . '). It may be the same day, or earlier.');
