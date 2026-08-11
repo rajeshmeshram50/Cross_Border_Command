@@ -69,13 +69,20 @@ const CATEGORIES: { value: EmployeeCategory; label: string; icon: string }[] = [
 // Designation levels — mirrors master_designations.level so the chip strip
 // here always matches what the master shows. Keep these labels byte-identical
 // to the controller's ROLE_TYPES constant.
-export const ROLE_TYPES: { value: RoleType; label: string; icon: string; tone: { bg: string; fg: string; border: string } }[] = [
-  { value: 'Director / CEO',           label: 'Director / CEO',           icon: '👔', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
-  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', icon: '🎯', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
-  { value: 'Team Leader',              label: 'Team Leader',              icon: '👥', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
-  { value: 'Executive',                label: 'Executive',                icon: '💼', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
-  { value: 'Employee',                 label: 'Employee',                 icon: '👤', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
-  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
+/* `short` is display-only, for tight strips like the level tab rail. It is NOT
+   a second name for the role: `value` is what the column stores and what the
+   controller validates against, and `label` stays the full descriptive form for
+   pickers, where there is room and the reader is choosing rather than scanning.
+   Only HOD differs — "Head of Department (HOD)" is nearly three times the width
+   of every other tab and pushed the rail onto a second line. The short form
+   matches the controller's own ROLE_SHORT map, which already codes it HOD. */
+export const ROLE_TYPES: { value: RoleType; label: string; short: string; icon: string; tone: { bg: string; fg: string; border: string } }[] = [
+  { value: 'Director / CEO',           label: 'Director / CEO',           short: 'Director / CEO',   icon: '👔', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
+  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', short: 'HOD',              icon: '🎯', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
+  { value: 'Team Leader',              label: 'Team Leader',              short: 'Team Leader',      icon: '👥', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
+  { value: 'Executive',                label: 'Executive',                short: 'Executive',        icon: '💼', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
+  { value: 'Employee',                 label: 'Employee',                 short: 'Employee',         icon: '👤', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
+  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         short: 'Intern / Trainee', icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
 ];
 
 /* Inline so the button keeps its own text colour — a spinner that hard-codes a

@@ -24,7 +24,6 @@ const STATUS_TONES: Record<DocStatus, { bg: string; fg: string; dot: string }> =
 };
 
 interface Stats { total: number; active: number; draft: number; deprecated: number; by_category: Record<string, number>; }
-const ZERO_STATS: Stats = { total: 0, active: 0, draft: 0, deprecated: 0, by_category: { 'IT': 0, 'Non-IT': 0, 'Legal': 0 } };
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrDocumentTemplates() {
@@ -32,7 +31,6 @@ export default function HrDocumentTemplates() {
   const navigate = useNavigate();
 
   const [rows, setRows] = useState<TemplateRow[]>([]);
-  const [stats, setStats] = useState<Stats>(ZERO_STATS);
   const [loading, setLoading] = useState(true);
 
   const [category, setCategory] = useState<EmployeeCategory>('IT');
@@ -53,19 +51,16 @@ export default function HrDocumentTemplates() {
   const fetchAll = async () => {
     try {
       setLoading(true);
-      const [listRes, statsRes, tpRes] = await Promise.all([
+      const [listRes, tpRes] = await Promise.all([
         api.get('/hr-document-templates'),
-        api.get('/hr-document-templates/stats').catch(() => ({ data: ZERO_STATS })),
         api.get('/master/trigger_point').catch(() => ({ data: [] })),
       ]);
       setRows(Array.isArray(listRes.data) ? listRes.data : []);
-      setStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
       const tps: any[] = Array.isArray(tpRes.data) ? tpRes.data : [];
       setTriggerPoints(tps.map(r => ({ id: r.id, module_name: r.module_name })));
     } catch (err: any) {
       toast.error('Could not load templates', err?.response?.data?.message || 'Please try again.');
       setRows([]);
-      setStats(ZERO_STATS);
     } finally {
       setLoading(false);
     }
@@ -73,6 +68,40 @@ export default function HrDocumentTemplates() {
   useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // Filtered view — category + role + search + filter dropdowns
+  /* KPI + category-tab counts, derived from `rows` rather than fetched.
+   *
+   * They used to come from /hr-document-templates/stats, called with NO
+   * parameters — so the tiles counted EVERY category and EVERY level while the
+   * table below showed one category and one level. Sitting on "IT · Intern /
+   * Trainee" (2 templates) the strip still read Total 10 / Active 3 /
+   * Deprecated 6, which describes nothing on screen.
+   *
+   * The endpoint does accept employee_category + role_type, so passing them was
+   * an option — but /hr-document-templates already returns every row under the
+   * same scope, unpaginated, so counting locally is exact, needs no round-trip
+   * per tab click, and makes it impossible for the tiles and the table to
+   * disagree. If that list ever starts paginating, this has to move back to the
+   * server.
+   *
+   * Scoped to the CATEGORY, not the level: the category tabs sit above the
+   * tiles and the level tabs below with their own badges, so KPI Total now
+   * always equals the number on the active category tab. */
+  const catRows = useMemo(() => rows.filter(r => r.employee_category === category), [rows, category]);
+  const stats = useMemo<Stats>(() => {
+    const count = (st: DocStatus) => catRows.filter(r => r.status === st).length;
+    const byCat: Record<string, number> = { 'IT': 0, 'Non-IT': 0, 'Legal': 0 };
+    for (const r of rows) {
+      if (r.employee_category in byCat) byCat[r.employee_category] += 1;
+    }
+    return {
+      total: catRows.length,
+      active: count('Active'),
+      draft: count('Draft'),
+      deprecated: count('Deprecated'),
+      by_category: byCat,
+    };
+  }, [rows, catRows]);
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows
@@ -440,57 +469,6 @@ export default function HrDocumentTemplates() {
               The level tabs pass no `icon`: the per-level emoji added colour
               noise across six tabs and the label alone is unambiguous. Each
               carries its own count badge instead. */}
-          {/* Only present while something is picked, so the table looks
-              untouched until the user actually starts a bulk action. */}
-          {selected.size > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-              margin: '0 0 10px', padding: '9px 14px', borderRadius: 10,
-              background: 'rgba(124,92,252,.08)', border: '1px solid rgba(124,92,252,.28)',
-            }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
-                {selected.size} selected
-              </span>
-              {/* Counts come from the selection itself, so a button is only
-                  offered when it has something to do — no more pressing
-                  Deprecate to be told there was nothing to deprecate. */}
-              {selCounts.active > 0 && (
-                <button
-                  type="button" onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 13px', borderRadius: 8, border: '1px solid #fca5a5',
-                    background: bulkBusy ? '#fee2e2' : '#fff', color: '#b91c1c',
-                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
-                  }}>
-                  <i className="ri-forbid-2-line" />
-                  {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
-                </button>
-              )}
-              {selCounts.deprecated > 0 && (
-                <button
-                  type="button" onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 13px', borderRadius: 8, border: '1px solid #6ee7b7',
-                    background: bulkBusy ? '#d1fae5' : '#fff', color: '#047857',
-                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
-                  }}>
-                  <i className="ri-checkbox-circle-line" />
-                  {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
-                </button>
-              )}
-              <button
-                type="button" onClick={() => setSelected(new Set())} disabled={bulkBusy}
-                style={{
-                  padding: '6px 11px', borderRadius: 8, border: '1px solid #e5e7eb',
-                  background: '#fff', color: '#6b7280', fontSize: 11.5, fontWeight: 600,
-                  cursor: 'pointer',
-                }}>
-                Clear
-              </button>
-            </div>
-          )}
           <DataTable<TemplateRow>
             data={filtered}
             leading={leading}
@@ -506,7 +484,7 @@ export default function HrDocumentTemplates() {
             autoFitRows
             minWidth={1250}
             loading={loading}
-            tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.label, count: levelCounts[r.value] || 0 }))}
+            tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.short, count: levelCounts[r.value] || 0 }))}
             activeTab={roleType}
             onTabChange={k => setRoleType(k as RoleType)}
             searchValue={search}
@@ -549,6 +527,46 @@ export default function HrDocumentTemplates() {
               </>
             }
           />
+          {/* Bulk bar sits BELOW the table, like the Trade Documents popup.
+              Above the table it pushed the whole list down the moment a row
+              was ticked, so the rows you were selecting jumped away from the
+              cursor. Under it, the table stays put and the bar grows into
+              empty space. */}
+          {selected.size > 0 && (
+            <div className="hdt-bulk-bar">
+              <div className="hdt-bulk-info">
+                <strong>{selected.size}</strong> selected
+                {/* Round X, not a "Clear" word — same as the Trade Documents
+                    bar. Clearing is a dismissal, and a labelled button next to
+                    two real actions competes with them for attention. */}
+                <button
+                  type="button" className="hdt-bulk-clear" title="Clear selection"
+                  aria-label="Clear selection" disabled={bulkBusy}
+                  onClick={() => setSelected(new Set())}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+              {/* Counts come from the selection itself, so a button is only
+                  offered when it has something to do — no more pressing
+                  Deprecate to be told there was nothing to deprecate. */}
+              {selCounts.active > 0 && (
+                <button
+                  type="button" className="hdt-bulk-btn is-danger"
+                  onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}>
+                  <i className="ri-forbid-2-line" />
+                  {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
+                </button>
+              )}
+              {selCounts.deprecated > 0 && (
+                <button
+                  type="button" className="hdt-bulk-btn is-primary"
+                  onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}>
+                  <i className="ri-checkbox-circle-line" />
+                  {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       </Col>
 
@@ -581,6 +599,50 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
+      /* Bulk-action bar — same floating pill the Trade Documents / Agreements
+         popup uses (.lasm-bulk-bar). It used to be a pale lavender strip with
+         outline buttons stretched across the full width, which read as part of
+         the toolbar rather than as a thing that appeared because you selected
+         rows. Deliberately in flow (not sticky) and centred, so it pushes the
+         table down instead of covering the rows it acts on. */
+      .hdt-bulk-bar {
+        position: relative; z-index: 5; flex-shrink: 0;
+        margin: 12px auto 2px; width: fit-content; max-width: calc(100% - 24px);
+        display: flex; align-items: center; gap: 12px; white-space: nowrap;
+        padding: 11px 18px; border-radius: 16px;
+        background: linear-gradient(135deg, #4c1d95, #7c3aed);
+        box-shadow: 0 12px 40px rgba(124,58,237,.45), 0 4px 14px rgba(0,0,0,.18);
+        animation: hdtBulkIn .22s cubic-bezier(.22,1,.36,1);
+      }
+      @keyframes hdtBulkIn { from { opacity: 0; transform: translateY(10px); } }
+      .hdt-bulk-info { font-size: 12.5px; font-weight: 700; color: #fff; display: inline-flex; align-items: center; gap: 10px; }
+      .hdt-bulk-info strong { font-size: 13px; }
+      .hdt-bulk-clear {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; padding: 0;
+        background: rgba(255,255,255,.14); border: 1.5px solid rgba(255,255,255,.25); color: #fff;
+        border-radius: 8px; cursor: pointer; transition: background .15s;
+      }
+      .hdt-bulk-clear:hover:not(:disabled) { background: rgba(255,255,255,.22); }
+      .hdt-bulk-clear:disabled { opacity: .5; cursor: not-allowed; }
+      .hdt-bulk-btn {
+        display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 10px;
+        border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff;
+        font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+        transition: background .15s, transform .15s ease, box-shadow .15s ease;
+      }
+      .hdt-bulk-btn:hover:not(:disabled) { background: rgba(255,255,255,.24); transform: translateY(-1px); }
+      /* Activate is the constructive action, so it gets the solid white
+         treatment the reference bar reserves for its primary. Deprecate stays
+         translucent — destructive, and it should not be the easiest thing to
+         hit on a bar you opened by ticking boxes. */
+      .hdt-bulk-btn.is-primary {
+        background: #fff; border-color: #fff; color: #7c3aed; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+      }
+      .hdt-bulk-btn.is-primary:hover:not(:disabled) { background: #f5f3ff; box-shadow: 0 6px 14px rgba(124,58,237,.30); }
+      .hdt-bulk-btn.is-danger { color: #fecdd3; border-color: rgba(254,205,211,.45); }
+      .hdt-bulk-btn.is-danger:hover:not(:disabled) { background: rgba(254,205,211,.22); }
+      .hdt-bulk-btn:disabled { opacity: .55; cursor: wait; transform: none; }
       /* Category tab strip lives inline (Expense-module recipe) and the Level
          tabs are the DataTable toolbar's own pill rail, so neither needs page
          CSS here. */
