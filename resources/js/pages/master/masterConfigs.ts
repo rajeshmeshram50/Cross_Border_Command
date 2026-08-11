@@ -102,6 +102,19 @@ export type MasterConfig = {
   cols: string[];
   colL: string[];
   uFields?: string[];
+  /**
+   * Extra columns quoted back in the duplicate-row error so the message points
+   * at the row that actually caused it.
+   *
+   * Needed wherever the list is sliced into tabs by a column that ISN'T part of
+   * uFields: the clash can then sit on a tab the user isn't looking at, and a
+   * bare "already exists" reads as if the data on screen is wrong. Roles is the
+   * case that surfaced it (QA #68) — names are unique across the master, but
+   * the page splits into Primary / Ancillary by role_type, so "Manager" as an
+   * Ancillary role blocked adding it from the Primary tab with nothing visible
+   * to explain why. Naming the type + code sends the user straight to the row.
+   */
+  uContext?: string[];
   // When true, this is a fixed-vocabulary master — no rows can be added.
   // Backend also rejects POST. Used for things like address_types where
   // the product defines the closed set (Warehouse / Registered Address /
@@ -342,6 +355,10 @@ const C: Record<string, MasterConfig> = {
     cols: ['code', 'name', 'role_type', 'department_id', 'role_category', 'status'],
     colL: ['Code', 'Role Name', 'Role Type', 'Department', 'Category', 'Status'],
     uFields: ['name'],
+    // Role names are unique across the whole master, but the page is split into
+    // Primary / Ancillary tabs by role_type — so quote the clashing row's type
+    // and code, or the message contradicts the (filtered) list on screen.
+    uContext: ['role_type', 'code'],
     data: [
       { id: 1, name: 'Admin',         code: 'ROL-01', role_type: 'Administrative', role_category: 'Management',  status: 'Active' },
       { id: 2, name: 'HR',            code: 'ROL-02', role_type: 'Functional',     role_category: 'HR',          status: 'Active' },

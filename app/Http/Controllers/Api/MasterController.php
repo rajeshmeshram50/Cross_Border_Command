@@ -89,7 +89,13 @@ class MasterController extends Controller
         'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Bank Name may only contain letters (no numbers or special characters).'], ['n' => 'account_holder', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Account Holder may only contain letters.'], ['n' => 'account_number', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{9,18}$/', 'patternMessage' => 'Account Number must be 9 to 18 digits.'], ['n' => 'ifsc_code', 't' => 'text', 'r' => true, 'normalize' => 'upper', 'pattern' => '/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/', 'patternMessage' => 'Enter a valid 11-character IFSC code.'], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{14}$/', 'patternMessage' => 'AD Code must be exactly 14 digits.'], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
         // `uEach` — department name and code each independently unique.
         'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'parent_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'head', 't' => 'select'], ['n' => 'email', 't' => 'email'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code'], 'tenantScoped' => true],
-        'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
+        // `dupContext` — role names are unique across the whole master, but the
+        // Role Master page splits into Primary / Ancillary tabs by role_type.
+        // A bare "already registered" therefore contradicted the (filtered)
+        // list on screen: "Manager" held as an Ancillary role blocked adding it
+        // from the Primary tab with nothing visible to explain it (QA #68).
+        // Quoting the clashing row's type + code points the user at it.
+        'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name'], 'dupContext' => ['role_type', 'code']],
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'level', 't' => 'select', 'r' => true, 'opts' => ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee']], ['n' => 'reports_to_id', 't' => 'select', 'ref' => 'designations'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'kpis' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'role_id', 't' => 'select', 'r' => true, 'ref' => 'roles'], ['n' => 'target_type', 't' => 'select', 'r' => true, 'opts' => ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating']], ['n' => 'priority', 't' => 'select', 'r' => true, 'opts' => ['Critical', 'High', 'Medium', 'Low']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         // `uEach` (not `uFields`) — entity_name and CIN must EACH be
@@ -840,6 +846,11 @@ class MasterController extends Controller
         // Nullable fields with an empty value skip the unique check via
         // Laravel's `nullable` rule.
         $uEach = $schema['uEach'] ?? [];
+        // `dupContext` names extra columns quoted back in the duplicate message
+        // so it identifies the offending ROW, not just the value. Matters where
+        // the UI slices the list by a column outside the unique key — the clash
+        // then sits on a tab the user isn't looking at (see the roles schema).
+        $dupContext = $schema['dupContext'] ?? [];
         $modelClass = $this->resolveModel($slug);
         $table = (new $modelClass)->getTable();
         $isComposite = count($uFields) > 1;
@@ -1024,7 +1035,9 @@ class MasterController extends Controller
                 ? $query->whereNull('branch_id')
                 : $query->where('branch_id', $tenantBranchId);
 
-            if ($query->exists()) {
+            // Keep the row rather than a boolean so `dupContext` can quote it.
+            $clash = $query->first();
+            if ($clash) {
                 // Pretty per-field labels for the duplicate message — falls
                 // back to a humanized version of the column name.
                 $labels = [
@@ -1042,8 +1055,17 @@ class MasterController extends Controller
                     'title' => 'Title',
                 ];
                 $label = $labels[$colName] ?? ucfirst(str_replace('_', ' ', $colName));
+                $ctx = [];
+                foreach ($dupContext as $ctxCol) {
+                    if ($ctxCol === $colName) continue;
+                    $ctxVal = trim((string) ($clash->{$ctxCol} ?? ''));
+                    if ($ctxVal === '') continue;
+                    $ctxLabel = $labels[$ctxCol] ?? ucfirst(str_replace('_', ' ', $ctxCol));
+                    $ctx[] = "{$ctxLabel}: {$ctxVal}";
+                }
+                $suffix = $ctx ? ' (' . implode(', ', $ctx) . ')' : '';
                 throw ValidationException::withMessages([
-                    $colName => "This {$label} is already registered. Please use a different value.",
+                    $colName => "This {$label} is already registered{$suffix}. Please use a different value.",
                 ]);
             }
 
