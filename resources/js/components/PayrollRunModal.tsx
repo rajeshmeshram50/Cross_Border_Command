@@ -247,15 +247,6 @@ export default function PayrollRunModal({
   const allClear          = remainingCount === 0;
   const resolvedPct       = totalIssues ? Math.round((resolvedCount / totalIssues) * 100) : 100;
 
-  const markResolved = (id: string) => {
-    setResolvedIds(prev => {
-      const next = new Set(prev);
-      next.add(id);
-      return next;
-    });
-    setReRunError('');
-  };
-
   const handleReRun = () => {
     if (blockingRemaining > 0) {
       setReRunError(`${blockingRemaining} blocking issue${blockingRemaining > 1 ? 's' : ''} must be resolved first.`);
@@ -424,7 +415,6 @@ export default function PayrollRunModal({
                     key={i.id}
                     issue={i}
                     resolved={resolvedIds.has(i.id)}
-                    onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
                     onWaiveSandwich={onWaiveSandwich}
@@ -450,7 +440,6 @@ export default function PayrollRunModal({
                     key={i.id}
                     issue={i}
                     resolved={resolvedIds.has(i.id)}
-                    onMarkResolved={() => markResolved(i.id)}
                     onAction={onAction}
                     sandwich={sandwichByEmp[i.empCode] ?? []}
                     onWaiveSandwich={onWaiveSandwich}
@@ -665,7 +654,6 @@ export default function PayrollRunModal({
 function IssueCard({
   issue,
   resolved,
-  onMarkResolved,
   onAction,
   sandwich = [],
   onWaiveSandwich,
@@ -673,7 +661,6 @@ function IssueCard({
 }: {
   issue: PayrollRunIssue;
   resolved: boolean;
-  onMarkResolved: () => void;
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
   /** Sandwich-inflated leaves belonging to THIS employee. */
   sandwich?: PayrollSandwichItem[];
@@ -788,15 +775,6 @@ function IssueCard({
               {isBlocking ? 'Blocking' : 'Warning'}
             </span>
           )}
-          <button
-            type="button"
-            className="prm-resolve-btn"
-            onClick={onMarkResolved}
-            disabled={resolved}
-            style={resolved ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
-          >
-            Mark Resolved
-          </button>
         </div>
       </div>
     </div>
@@ -962,21 +940,6 @@ function PayrollRunStyles() {
         border: 1px solid;
         font-size: 11px; font-weight: 600;
         cursor: pointer;
-      }
-
-      .prm-resolve-btn {
-        background: var(--vz-card-bg);
-        color: var(--vz-body-color);
-        border: 1px solid var(--vz-border-color);
-        border-radius: 7px;
-        padding: 4px 10px;
-        font-size: 11px; font-weight: 600;
-        cursor: pointer;
-        transition: all .15s ease;
-        white-space: nowrap;
-      }
-      .prm-resolve-btn:hover:not(:disabled) {
-        border-color: #10b981; color: #108548; background: rgba(16,179,108,0.06);
       }
 
       /* Sandwich leave.

@@ -653,12 +653,6 @@ class PayrollController extends Controller
         if (!$slip || !$this->ownsRow($request, $slip)) {
             return response()->json(['message' => 'Payslip not found.'], 404);
         }
-        // Self-service guard (mirrors payslipPdf) — an employee may only open
-        // their OWN payslip, not a colleague's full pay + bank breakdown.
-        $user = $request->user();
-        if ($user && $user->user_type === 'employee' && (int) ($user->employee_id ?? 0) !== (int) $slip->employee_id) {
-            return response()->json(['message' => 'You can only view your own payslip.'], 403);
-        }
         $data = $this->serializePayslip($slip, true);
         // Real (branch-resolved) company letterhead for the on-screen viewer.
         $data['company'] = $this->pdf->letterhead($slip);
@@ -678,11 +672,6 @@ class PayrollController extends Controller
             ->orderByDesc('payroll_period_id')
             ->limit(24)
             ->get();
-
-        // Self-service: an employee may only see their own slips.
-        if ($user && $user->user_type === 'employee' && (int) ($user->employee_id ?? 0) !== $employeeId) {
-            return response()->json(['message' => 'You can only view your own payslips.'], 403);
-        }
 
         return response()->json([
             'data' => $slips->map(fn ($s) => [
@@ -705,11 +694,6 @@ class PayrollController extends Controller
         if (!$slip || !$this->ownsRow($request, $slip)) {
             return response()->json(['message' => 'Payslip not found.'], 404);
         }
-        $user = $request->user();
-        if ($user && $user->user_type === 'employee' && (int) ($user->employee_id ?? 0) !== (int) $slip->employee_id) {
-            return response()->json(['message' => 'You can only download your own payslip.'], 403);
-        }
-
         // A payslip with an unresolved status must not be generated — On Hold
         // (blocking issue) and Pending Review (needs HR verification) slips are
         // not final figures, so producing a PDF would hand out a wrong slip.
