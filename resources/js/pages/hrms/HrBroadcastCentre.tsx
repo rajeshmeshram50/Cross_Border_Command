@@ -8,6 +8,30 @@ import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
 import '../../../css/recruitment.css';
 
+/* ── Length limits ──────────────────────────────────────────────────────────
+   Capped at the input, not at publish. TITLE_MAX matches the server's
+   `max:191` on announcements.title, so the field can never build a value the
+   API will reject. DESC_MAX is the product cap on the body — the column is
+   `text`, but an announcement is a notice, not a document, and an uncapped
+   paste of thousands of characters broke every surface that renders it (the
+   Review & Publish card scrolled sideways, the inbox row and the email body
+   ran on). Mirrored server-side in AnnouncementController::rules(). */
+const TITLE_MAX = 191;
+const DESC_MAX  = 2000;
+
+/* How much of each is shown before "Read more" in the Review & Publish card. */
+const REVIEW_TITLE_PREVIEW = 120;
+const REVIEW_DESC_PREVIEW  = 300;
+
+/* Icon buttons on the attachment row (View / Replace / Delete). */
+const attachBtn: React.CSSProperties = {
+  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  background: 'var(--vz-card-bg, #fff)',
+  border: '1px solid var(--vz-border-color, #e5e7eb)',
+  fontSize: 15, cursor: 'pointer',
+};
+
 // ── Types ────────────────────────────────────────────────────────────────────
 type AnnType    = 'General' | 'Policy' | 'Urgent';
 type AnnPriority = 'Normal' | 'High' | 'Critical';
@@ -160,11 +184,42 @@ export default function HrBroadcastCentre() {
         const r = info.row.original;
         return (
           <>
-            <div className="fw-bold fs-13">{r.title}</div>
+            {/* Clamped to two lines. `wrap: true` on this column (for the
+                attachment link underneath) means the cell does NOT truncate on
+                its own, so a long title — or one unbroken pasted string, which
+                has nowhere to wrap — stretched the column and pushed Type,
+                Priority and the row actions off the right of the table.
+                The full title is in the tooltip: the same portal-based
+                <Tooltip> the row's Edit / Publish / Delete buttons use, capped
+                so a 2,000-character paste can't become a full-screen pill. */}
+            <Tooltip label={r.title} maxWidth={420} position="bottom">
+              <div
+                className="fw-bold fs-13"
+                style={{
+                  overflowWrap: 'anywhere', wordBreak: 'break-word',
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                }}
+              >
+                {r.title}
+              </div>
+            </Tooltip>
             {r.attachment_url && (
-              <a href={r.attachment_url} target="_blank" rel="noreferrer" className="d-inline-flex align-items-center gap-1 mt-1" style={{ fontSize: 11.5, color: '#0c63b0' }}>
-                <i className="ri-attachment-line" />{r.attachment_original_name || 'attachment'}
-              </a>
+              <Tooltip label={r.attachment_original_name || 'attachment'} maxWidth={420} position="bottom">
+                <a
+                  href={r.attachment_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="d-inline-flex align-items-center gap-1 mt-1"
+                  style={{ fontSize: 11.5, color: '#0c63b0', maxWidth: '100%' }}
+                >
+                  <i className="ri-attachment-line flex-shrink-0" />
+                  {/* Truncation lives on the span: text-overflow does nothing on
+                      a flex container, so the anchor itself can't ellipsis. */}
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {r.attachment_original_name || 'attachment'}
+                  </span>
+                </a>
+              </Tooltip>
             )}
           </>
         );
@@ -471,9 +526,6 @@ const STEPS: Array<{ key: number; label: string; sub: string }> = [
   { key: 4, label: 'Review & Publish', sub: 'Final confirmation' },
 ];
 const TOTAL_STEPS = STEPS.length;
-// Mirrors the server rule `title => max:191` so the over-length error is caught
-// instantly on Step 1's "Save & Next" instead of failing at publish.
-const TITLE_MAX = 191;
 
 function CreateAnnouncementModal({
   isOpen, editing, onClose, onSaved, onSilentSave,
@@ -497,6 +549,10 @@ function CreateAnnouncementModal({
   const [type, setType] = useState<AnnType>('General');
   const [priority, setPriority] = useState<AnnPriority>('High');
   const [attachment, setAttachment] = useState<File | null>(null);
+  /* Delete pressed on an attachment that is already SAVED on the row. The file
+     itself only goes when the announcement is saved, so the flag rides along
+     with the next payload; picking a replacement clears it. */
+  const [removeAttachment, setRemoveAttachment] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   // Step 2
@@ -546,6 +602,7 @@ function CreateAnnouncementModal({
     setErrors({});
     setSaving(null);
     setAttachment(null);
+    setRemoveAttachment(false);
     setSavedId(editing?.id ?? null);
     // Existing row → all values are real, show them. New → only Priority starts
     // blank; Audience + Notify reflect their real defaults immediately (#25/#26).
@@ -660,6 +717,9 @@ function CreateAnnouncementModal({
       if (!title.trim()) e.title = 'Title is required';
       else if (title.trim().length > TITLE_MAX) e.title = `Title must be ${TITLE_MAX} characters or fewer (currently ${title.trim().length}).`;
       if (!description.trim()) e.description = 'Description is required';
+      // Same guard as the title's: the input caps typing, but an edit loaded
+      // from a row saved before the cap existed can still be over it.
+      else if (description.trim().length > DESC_MAX) e.description = `Description must be ${DESC_MAX} characters or fewer (currently ${description.trim().length}).`;
     }
     if (s === 2) {
       // BUG-121 / BUG-122: Role-Based / Designation-Based must pick at least
@@ -709,6 +769,10 @@ function CreateAnnouncementModal({
 
     if (forceStatus === 'Draft') fd.append('status', 'Draft');
     if (attachment) fd.append('attachment', attachment);
+    /* Removing a SAVED attachment is its own instruction: leaving the file out
+       of the payload means "unchanged", not "delete it". Only sent when no
+       replacement was picked — a new file supersedes the old one anyway. */
+    else if (removeAttachment) fd.append('remove_attachment', '1');
     return fd;
   };
 
@@ -729,6 +793,11 @@ function CreateAnnouncementModal({
         // Keep the modal open; remember the id so the next save updates this
         // same record instead of inserting another draft.
         setSavedId(data.id);
+        /* The pick is deliberately KEPT after a draft save. `editing` is the
+           row the modal opened with and isn't refreshed by a silent save, so
+           clearing it here would blank the attachment row for a file that had
+           just been uploaded. Re-sending the same file on the next Save Draft
+           is harmless — the server replaces it and unlinks the old copy. */
         onSilentSave(data);
       } else {
         onSaved(data);
@@ -855,6 +924,7 @@ function CreateAnnouncementModal({
                 priority={priority} setPriority={(v: AnnPriority) => { setPriority(v); setTouched(t => ({ ...t, priority: true })); }}
                 attachment={attachment} setAttachment={setAttachment}
                 fileRef={fileRef}
+                removeAttachment={removeAttachment} setRemoveAttachment={setRemoveAttachment}
                 existingName={editing?.attachment_original_name || null}
                 existingUrl={editing?.attachment_url || null}
                 readOnly={readOnly}
@@ -901,8 +971,42 @@ function CreateAnnouncementModal({
               {/* wordBreak + overflowWrap so a long title/description (esp. a
                   pasted no-space string) wraps inside the preview card instead
                   of spilling past its right edge. */}
-              <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{title || 'Announcement Title'}</div>
-              <div style={{ fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18, wordBreak: 'break-word', overflowWrap: 'anywhere' }}>{description || 'Description appears here…'}</div>
+              {/* Line-clamped as well as wrapped: this is a PREVIEW CARD, and
+                  a 2,000-character description turned it into a page-long
+                  column that pushed the status box below the fold. The full
+                  text is one step away, in Review & Publish. */}
+              <Tooltip label={title} disabled={!title} maxWidth={420} position="left">
+                <div
+                  className="fw-bold"
+                  style={{
+                    fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))',
+                    wordBreak: 'break-word', overflowWrap: 'anywhere',
+                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                  }}
+                >
+                  {title || 'Announcement Title'}
+                </div>
+              </Tooltip>
+              {/* The description can run to DESC_MAX (2,000) characters, and a
+                  420px pill of that is taller than the viewport — the tooltip
+                  shows the opening of it. The full text is right there in the
+                  Step 1 textarea, and expandable in Review & Publish. */}
+              <Tooltip
+                label={description.length > 400 ? `${description.slice(0, 400).trimEnd()}…` : description}
+                disabled={!description}
+                maxWidth={420}
+                position="left"
+              >
+                <div
+                  style={{
+                    fontSize: 12, color: 'var(--vz-secondary-color, #475569)', minHeight: 18,
+                    wordBreak: 'break-word', overflowWrap: 'anywhere', whiteSpace: 'pre-wrap',
+                    display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                  }}
+                >
+                  {description || 'Description appears here…'}
+                </div>
+              </Tooltip>
               <div className="d-flex align-items-center justify-content-between mt-2">
                 <span style={{ fontSize: 11, color: 'var(--vz-body-color, #0c63b0)' }}>{audienceLabel}</span>
                 <span className="rec-pill" style={{ background: TYPE_TONES[type].bg, color: TYPE_TONES[type].fg, ['--pill-fg' as any]: TYPE_TONES[type].fg, fontSize: 10.5 }}>{type}</span>
@@ -973,7 +1077,9 @@ function CreateAnnouncementModal({
 function Step1Basic({
   title, setTitle, description, setDescription,
   type, setType, priority, setPriority,
-  attachment, setAttachment, fileRef, existingName, existingUrl, readOnly, errors,
+  attachment, setAttachment, fileRef,
+  removeAttachment, setRemoveAttachment,
+  existingName, existingUrl, readOnly, errors,
 }: any) {
   // Client-side guard for the 20 MB attachment cap — the input only restricts
   // file type, so without this an oversize file was silently accepted.
@@ -985,19 +1091,80 @@ function Step1Basic({
   // than letting it fail at publish with a generic wrapper.
   const ALLOWED_EXTS = ['png', 'jpg', 'jpeg', 'pdf'];
   const [fileError, setFileError] = useState('');
+
+  /* Preview for a file that hasn't been uploaded yet: it exists only in the
+     browser, so there is no URL to open until the announcement is saved.
+     An object URL gives View something to open right after picking, which is
+     the whole point — checking you attached the right file BEFORE publishing.
+     Revoked when the pick changes or the step unmounts, or the blob leaks for
+     the life of the tab. */
+  const [pickedUrl, setPickedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!attachment) { setPickedUrl(null); return; }
+    const url = URL.createObjectURL(attachment);
+    setPickedUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attachment]);
+
+  // What the file row is describing: the fresh pick wins over a saved file,
+  // and a saved file that has been marked for deletion is already gone as far
+  // as this screen is concerned.
+  const showExisting = !attachment && !!existingName && !removeAttachment;
+  const shownName    = attachment ? attachment.name : (showExisting ? existingName : '');
+  const shownUrl     = attachment ? pickedUrl : (showExisting ? existingUrl : null);
+  const hasFile      = !!attachment || showExisting;
+
+  const openFile = () => { if (shownUrl) window.open(shownUrl, '_blank', 'noopener,noreferrer'); };
+  const clearFile = () => {
+    setFileError('');
+    if (attachment) {
+      setAttachment(null);                 // just drop the pick
+    } else {
+      setRemoveAttachment(true);           // saved file — deleted on next save
+    }
+    if (fileRef.current) fileRef.current.value = '';
+  };
   return (
     <>
       <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-checkbox-blank-line" /> Basic Details
       </div>
+      {/* Both fields are LENGTH-CAPPED at the input, with a live counter, so a
+          pasted wall of text is stopped where it is typed rather than at the
+          review step (or, for the title, by a 422 from the server's max:191).
+          The counter turns amber near the cap so it isn't a surprise. */}
       <div className="mb-3">
-        <label className="rec-form-label">Announcement Title<span className="req">*</span></label>
-        <input type="text" className={`rec-input${errors.title ? ' is-invalid' : ''}`} placeholder="Enter a clear, concise title…" value={title} onChange={e => setTitle(e.target.value)} />
+        <label className="rec-form-label d-flex align-items-center justify-content-between">
+          <span>Announcement Title<span className="req">*</span></span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: title.length >= TITLE_MAX ? '#b45309' : 'var(--vz-secondary-color, #9ca3af)' }}>
+            {title.length} / {TITLE_MAX}
+          </span>
+        </label>
+        <input
+          type="text"
+          className={`rec-input${errors.title ? ' is-invalid' : ''}`}
+          placeholder="Enter a clear, concise title…"
+          value={title}
+          maxLength={TITLE_MAX}
+          onChange={e => setTitle(e.target.value.slice(0, TITLE_MAX))}
+        />
         {errors.title && <div className="rec-error"><i className="ri-error-warning-line" />{errors.title}</div>}
       </div>
       <div className="mb-3">
-        <label className="rec-form-label">Description<span className="req">*</span></label>
-        <textarea rows={5} className={`rec-input rec-textarea${errors.description ? ' is-invalid' : ''}`} placeholder="Describe this announcement in detail…" value={description} onChange={e => setDescription(e.target.value)} />
+        <label className="rec-form-label d-flex align-items-center justify-content-between">
+          <span>Description<span className="req">*</span></span>
+          <span style={{ fontSize: 11, fontWeight: 500, color: description.length >= DESC_MAX ? '#b45309' : 'var(--vz-secondary-color, #9ca3af)' }}>
+            {description.length} / {DESC_MAX}
+          </span>
+        </label>
+        <textarea
+          rows={5}
+          className={`rec-input rec-textarea${errors.description ? ' is-invalid' : ''}`}
+          placeholder="Describe this announcement in detail…"
+          value={description}
+          maxLength={DESC_MAX}
+          onChange={e => setDescription(e.target.value.slice(0, DESC_MAX))}
+        />
         {errors.description && <div className="rec-error"><i className="ri-error-warning-line" />{errors.description}</div>}
       </div>
       <Row className="g-3">
@@ -1034,39 +1201,85 @@ function Step1Basic({
       </Row>
       <div className="mt-3">
         <label className="rec-form-label">Attachment (Optional)</label>
+        {/* Once a file is attached the drop zone becomes a FILE ROW: name plus
+            View / Replace / Delete. Before this the picked file was just a
+            filename in a dashed box — nothing to open, so the only way to check
+            you'd attached the right document was to publish it and look at the
+            list. The whole row is no longer a click-to-replace target either;
+            that would have made the icon buttons ambiguous. */}
+        {hasFile ? (
+          <div
+            className="d-flex align-items-center gap-2"
+            style={{
+              border: '1px solid rgba(99,102,241,0.35)', borderRadius: 10,
+              padding: '10px 12px', background: 'rgba(99,102,241,0.10)',
+            }}
+          >
+            <i className={/\.pdf$/i.test(shownName) ? 'ri-file-pdf-2-line' : 'ri-image-line'}
+               style={{ fontSize: 20, color: '#4338ca', flexShrink: 0 }} />
+            <Tooltip label={shownName} maxWidth={420} position="bottom">
+              <span
+                className="fw-semibold"
+                style={{ fontSize: 13, color: 'var(--vz-body-color)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {shownName}
+              </span>
+            </Tooltip>
+            {attachment && (
+              <span className="rec-pill" style={{ fontSize: 10.5, flexShrink: 0 }}>
+                {(attachment.size / (1024 * 1024)).toFixed(2)} MB · not yet saved
+              </span>
+            )}
+            {/* pointerEvents:auto keeps View usable inside the read-only
+                (disabled) fieldset — viewing is not editing. */}
+            <Tooltip label={shownUrl ? 'View' : 'Preview available once saved'} position="top">
+              <button
+                type="button"
+                onClick={openFile}
+                aria-label="View attachment"
+                aria-disabled={!shownUrl}
+                style={{ ...attachBtn, color: '#0c63b0', pointerEvents: 'auto', opacity: shownUrl ? 1 : 0.45, cursor: shownUrl ? 'pointer' : 'not-allowed' }}
+              >
+                <i className="ri-eye-line" />
+              </button>
+            </Tooltip>
+            {!readOnly && (
+              <>
+                <Tooltip label="Replace" position="top">
+                  <button type="button" onClick={() => fileRef.current?.click()} aria-label="Replace attachment"
+                          style={{ ...attachBtn, color: '#6366f1' }}>
+                    <i className="ri-refresh-line" />
+                  </button>
+                </Tooltip>
+                <Tooltip label="Delete" position="top">
+                  <button type="button" onClick={clearFile} aria-label="Delete attachment"
+                          style={{ ...attachBtn, color: '#dc2626' }}>
+                    <i className="ri-delete-bin-line" />
+                  </button>
+                </Tooltip>
+              </>
+            )}
+          </div>
+        ) : (
         <div
           onClick={() => { if (!readOnly) fileRef.current?.click(); }}
           style={{
             border: '1px dashed rgba(99,102,241,0.45)', borderRadius: 10,
             padding: '20px', textAlign: 'center', cursor: readOnly ? 'default' : 'pointer',
-            background: (attachment || existingName) ? 'rgba(99,102,241,0.12)' : 'var(--vz-secondary-bg, #fafafa)',
+            background: 'var(--vz-secondary-bg, #fafafa)',
           }}
         >
           <i className="ri-upload-cloud-line" style={{ fontSize: 24, color: '#6366f1' }} />
           <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4, color: 'var(--vz-body-color)' }}>
-            {attachment ? (
-              attachment.name
-            ) : existingName ? (
-              existingUrl ? (
-                // pointerEvents:auto re-enables the link inside the read-only
-                // (disabled) fieldset so the file stays openable when viewing.
-                <a href={existingUrl} target="_blank" rel="noreferrer"
-                   onClick={e => e.stopPropagation()}
-                   className="d-inline-flex align-items-center gap-1"
-                   style={{ color: '#4338ca', pointerEvents: 'auto' }}>
-                  <i className="ri-attachment-line" />{existingName}
-                </a>
-              ) : (
-                <span className="d-inline-flex align-items-center gap-1">
-                  <i className="ri-attachment-line" />{existingName}
-                </span>
-              )
-            ) : (
-              'Click to upload (PNG, JPG, PDF · max 20MB)'
-            )}
+            {removeAttachment && existingName
+              ? 'Attachment removed — save to confirm, or upload a new file'
+              : 'Click to upload (PNG, JPG, PDF · max 20MB)'}
           </div>
-          {!attachment && !existingName && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>}
-          {!attachment && existingName && !readOnly && <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>Click to replace</div>}
+          <div style={{ fontSize: 11, color: 'var(--vz-secondary-color, #6b7280)' }}>or drag and drop here</div>
+        </div>
+        )}
+        {/* The input lives outside both branches so Replace can reach it. */}
+        <div style={{ display: 'contents' }}>
           <input
             ref={fileRef}
             type="file"
@@ -1091,6 +1304,8 @@ function Step1Basic({
               }
               setFileError('');
               setAttachment(f);
+              // A replacement supersedes the pending removal of the old file.
+              setRemoveAttachment(false);
             }}
           />
         </div>
@@ -1360,14 +1575,54 @@ function Step4Review({
       <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>{value || <span className="text-muted">—</span>}</div>
     </div>
   );
+  /* Long text used to run off the side of this card: an unbroken paste (no
+     spaces to wrap at) forced the card wider than the modal, so the step got a
+     horizontal scrollbar and the text read as one unreadable line. Two fixes,
+     both needed —
+       · `overflowWrap: anywhere` breaks mid-"word", which is the only thing
+         that wraps a 500-character run of 'v's;
+       · a character-count truncation with Read more / Show less, so a long but
+         legitimate announcement doesn't push the Type / Priority / Audience
+         summary off the screen at the step whose job is to summarise. */
+  const [showFullText, setShowFullText] = useState(false);
+  const wrapStyle: React.CSSProperties = {
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    whiteSpace: 'pre-wrap',
+    maxWidth: '100%',
+  };
+  const fullTitle = String(title || '');
+  const fullDesc  = String(description || '');
+  const longTitle = fullTitle.length > REVIEW_TITLE_PREVIEW;
+  const longDesc  = fullDesc.length  > REVIEW_DESC_PREVIEW;
+  const shownTitle = showFullText || !longTitle ? fullTitle : `${fullTitle.slice(0, REVIEW_TITLE_PREVIEW).trimEnd()}…`;
+  const shownDesc  = showFullText || !longDesc  ? fullDesc  : `${fullDesc.slice(0, REVIEW_DESC_PREVIEW).trimEnd()}…`;
+
   return (
     <>
       <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
         <i className="ri-file-text-line" /> Review & Publish
       </div>
-      <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
-        <div className="fw-bold" style={{ fontSize: 16 }}>{title || '—'}</div>
-        <div className="text-muted mb-3" style={{ fontSize: 13 }}>{description || '—'}</div>
+      <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 16, maxWidth: '100%', overflow: 'hidden' }}>
+        <Tooltip label={fullTitle} disabled={!longTitle} maxWidth={420} position="bottom">
+          <div className="fw-bold" style={{ fontSize: 16, ...wrapStyle }}>
+            {shownTitle || '—'}
+          </div>
+        </Tooltip>
+        <div className="text-muted" style={{ fontSize: 13, ...wrapStyle }}>{shownDesc || '—'}</div>
+        {(longTitle || longDesc) && (
+          <button
+            type="button"
+            onClick={() => setShowFullText(v => !v)}
+            className="p-0 mt-1"
+            style={{ background: 'none', border: 0, color: '#0ea5e9', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+          >
+            {showFullText
+              ? 'Show less'
+              : `Read more (${(fullTitle.length + fullDesc.length).toLocaleString()} characters)`}
+          </button>
+        )}
+        <div className="mb-3" />
         <Row className="g-2">
           <Col md={3}><Field label="Type" value={type} /></Col>
           <Col md={3}><Field label="Priority" value={priority} /></Col>

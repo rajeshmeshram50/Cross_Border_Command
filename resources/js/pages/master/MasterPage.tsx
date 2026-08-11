@@ -44,6 +44,16 @@ function MasterPageInner({
   navigate: ReturnType<typeof useNavigate>;
 }) {
   const { user, refresh } = useAuth();
+  /* Back target. A master that belongs to another module (cfg.parent — e.g.
+     Trigger Point Master, which lives in the HR sidebar) returns to THAT
+     module's page; everything else belongs to the Master Control Center and
+     returns there. A fixed parent, deliberately, not history: the same call HR
+     > Custom Fields makes, because navigate(-1) drops the user on whatever
+     page they happened to come from rather than the module that owns this
+     master. */
+  const backTo    = cfg.parent?.path ?? '/master';
+  const backLabel = cfg.parent ? 'Back' : 'Back to Master list';
+  const backTitle = cfg.parent ? `Back to ${cfg.parent.label}` : 'Back to Master list';
 
   // Refresh user perms on every master page mount. Without this, a branch user
   // whose client admin just changed their permissions in another tab still uses
@@ -1717,8 +1727,8 @@ function MasterPageInner({
                 You don't have permission to view <strong>{cfg.title}</strong>.
                 Please contact your administrator if you need access.
               </p>
-              <Button color="light" onClick={() => navigate('/master')}>
-                <i className="ri-arrow-left-line me-1"></i>Back to Master
+              <Button color="light" onClick={() => navigate(backTo)}>
+                <i className="ri-arrow-left-line me-1"></i>{backLabel}
               </Button>
             </CardBody>
           </Card>
@@ -1907,10 +1917,38 @@ function MasterPageInner({
       `}</style>
 
 
-      {/* Page header — the Supplier Management strip (.sup-fig .cstrip in
+      {/* A master that belongs to another module (cfg.parent) wears THAT
+          module's header instead — the .frm-cstrip strip HR > Custom Fields
+          uses — with a Back button to its fixed parent page. Trigger Point
+          Master sits in the HR sidebar beside Document Templates and Custom
+          Fields, so opening it should not feel like leaving HRMS. */}
+      {cfg.parent ? (
+        <div className="frm-cstrip mb-3">
+          <span className="frm-cstrip-accent" />
+          <div className="frm-cstrip-left">
+            <div className="frm-cstrip-icon"><i className={cfg.icon} /></div>
+            <div className="min-w-0">
+              <div className="d-flex align-items-center gap-2 flex-wrap">
+                <span className="frm-cstrip-title">{cfg.title}</span>
+              </div>
+              <div className="frm-cstrip-sub">{cfg.desc}</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="frm-cstrip-back flex-shrink-0"
+            onClick={() => navigate(backTo)}
+            title={backTitle}
+          >
+            <i className="ri-arrow-left-line" />
+            Back
+          </button>
+        </div>
+      ) : (
+      /* Page header — the Supplier Management strip (.sup-fig .cstrip in
           p2p/.../supplier-management.css): violet gradient wash, accent rail,
           glow + sheen, 38px icon tile with an online dot, action on the right.
-          Every master renders it, so all ~50 pages open identically. */}
+          Every other master renders it, so those pages open identically. */
       <div className="mp-cstrip mb-3">
         <span className="mp-cstrip__accent" />
         <span className="mp-cstrip__glow" />
@@ -1963,12 +2001,13 @@ function MasterPageInner({
           </div>
         </div>
         <div className="mp-cstrip__right">
-          <button type="button" className="mp-cstrip__back" onClick={() => navigate('/master')} title="Back to Master list">
+          <button type="button" className="mp-cstrip__back" onClick={() => navigate(backTo)} title={backTitle}>
             <i className="ri-arrow-left-line" />
-            Back to Master list
+            {backLabel}
           </button>
         </div>
       </div>
+      )}
 
       {/* "What you are doing here" guide — fully retired. Departments now uses
           the same rich client-style header + search-row Add as every other
