@@ -24,7 +24,6 @@ const STATUS_TONES: Record<DocStatus, { bg: string; fg: string; dot: string }> =
 };
 
 interface Stats { total: number; active: number; draft: number; deprecated: number; by_category: Record<string, number>; }
-const ZERO_STATS: Stats = { total: 0, active: 0, draft: 0, deprecated: 0, by_category: { 'IT': 0, 'Non-IT': 0, 'Legal': 0 } };
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function HrDocumentTemplates() {
@@ -32,7 +31,6 @@ export default function HrDocumentTemplates() {
   const navigate = useNavigate();
 
   const [rows, setRows] = useState<TemplateRow[]>([]);
-  const [stats, setStats] = useState<Stats>(ZERO_STATS);
   const [loading, setLoading] = useState(true);
 
   const [category, setCategory] = useState<EmployeeCategory>('IT');
@@ -53,19 +51,16 @@ export default function HrDocumentTemplates() {
   const fetchAll = async () => {
     try {
       setLoading(true);
-      const [listRes, statsRes, tpRes] = await Promise.all([
+      const [listRes, tpRes] = await Promise.all([
         api.get('/hr-document-templates'),
-        api.get('/hr-document-templates/stats').catch(() => ({ data: ZERO_STATS })),
         api.get('/master/trigger_point').catch(() => ({ data: [] })),
       ]);
       setRows(Array.isArray(listRes.data) ? listRes.data : []);
-      setStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
       const tps: any[] = Array.isArray(tpRes.data) ? tpRes.data : [];
       setTriggerPoints(tps.map(r => ({ id: r.id, module_name: r.module_name })));
     } catch (err: any) {
       toast.error('Could not load templates', err?.response?.data?.message || 'Please try again.');
       setRows([]);
-      setStats(ZERO_STATS);
     } finally {
       setLoading(false);
     }
@@ -73,6 +68,40 @@ export default function HrDocumentTemplates() {
   useEffect(() => { fetchAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // Filtered view — category + role + search + filter dropdowns
+  /* KPI + category-tab counts, derived from `rows` rather than fetched.
+   *
+   * They used to come from /hr-document-templates/stats, called with NO
+   * parameters — so the tiles counted EVERY category and EVERY level while the
+   * table below showed one category and one level. Sitting on "IT · Intern /
+   * Trainee" (2 templates) the strip still read Total 10 / Active 3 /
+   * Deprecated 6, which describes nothing on screen.
+   *
+   * The endpoint does accept employee_category + role_type, so passing them was
+   * an option — but /hr-document-templates already returns every row under the
+   * same scope, unpaginated, so counting locally is exact, needs no round-trip
+   * per tab click, and makes it impossible for the tiles and the table to
+   * disagree. If that list ever starts paginating, this has to move back to the
+   * server.
+   *
+   * Scoped to the CATEGORY, not the level: the category tabs sit above the
+   * tiles and the level tabs below with their own badges, so KPI Total now
+   * always equals the number on the active category tab. */
+  const catRows = useMemo(() => rows.filter(r => r.employee_category === category), [rows, category]);
+  const stats = useMemo<Stats>(() => {
+    const count = (st: DocStatus) => catRows.filter(r => r.status === st).length;
+    const byCat: Record<string, number> = { 'IT': 0, 'Non-IT': 0, 'Legal': 0 };
+    for (const r of rows) {
+      if (r.employee_category in byCat) byCat[r.employee_category] += 1;
+    }
+    return {
+      total: catRows.length,
+      active: count('Active'),
+      draft: count('Draft'),
+      deprecated: count('Deprecated'),
+      by_category: byCat,
+    };
+  }, [rows, catRows]);
+
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return rows
@@ -320,9 +349,9 @@ export default function HrDocumentTemplates() {
       enableSorting: false,
       meta: { align: 'center', width: '15%' },
       cell: info => (
-        <button type="button" onClick={() => handleGenerate(info.row.original)}
+        <button type="button" className="dtm-gen-btn" onClick={() => handleGenerate(info.row.original)}
           style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-          <i className="ri-play-fill" /> Generate Document
+          <i className="ri-play-fill" /> Generate<span className="dtm-gen-word"> Document</span>
         </button>
       ),
     },
@@ -440,57 +469,6 @@ export default function HrDocumentTemplates() {
               The level tabs pass no `icon`: the per-level emoji added colour
               noise across six tabs and the label alone is unambiguous. Each
               carries its own count badge instead. */}
-          {/* Only present while something is picked, so the table looks
-              untouched until the user actually starts a bulk action. */}
-          {selected.size > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
-              margin: '0 0 10px', padding: '9px 14px', borderRadius: 10,
-              background: 'rgba(124,92,252,.08)', border: '1px solid rgba(124,92,252,.28)',
-            }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#5b21b6' }}>
-                {selected.size} selected
-              </span>
-              {/* Counts come from the selection itself, so a button is only
-                  offered when it has something to do — no more pressing
-                  Deprecate to be told there was nothing to deprecate. */}
-              {selCounts.active > 0 && (
-                <button
-                  type="button" onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 13px', borderRadius: 8, border: '1px solid #fca5a5',
-                    background: bulkBusy ? '#fee2e2' : '#fff', color: '#b91c1c',
-                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
-                  }}>
-                  <i className="ri-forbid-2-line" />
-                  {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
-                </button>
-              )}
-              {selCounts.deprecated > 0 && (
-                <button
-                  type="button" onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 6,
-                    padding: '6px 13px', borderRadius: 8, border: '1px solid #6ee7b7',
-                    background: bulkBusy ? '#d1fae5' : '#fff', color: '#047857',
-                    fontSize: 11.5, fontWeight: 700, cursor: bulkBusy ? 'wait' : 'pointer',
-                  }}>
-                  <i className="ri-checkbox-circle-line" />
-                  {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
-                </button>
-              )}
-              <button
-                type="button" onClick={() => setSelected(new Set())} disabled={bulkBusy}
-                style={{
-                  padding: '6px 11px', borderRadius: 8, border: '1px solid #e5e7eb',
-                  background: '#fff', color: '#6b7280', fontSize: 11.5, fontWeight: 600,
-                  cursor: 'pointer',
-                }}>
-                Clear
-              </button>
-            </div>
-          )}
           <DataTable<TemplateRow>
             data={filtered}
             leading={leading}
@@ -506,7 +484,7 @@ export default function HrDocumentTemplates() {
             autoFitRows
             minWidth={1250}
             loading={loading}
-            tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.label, count: levelCounts[r.value] || 0 }))}
+            tabs={ROLE_TYPES.map(r => ({ key: r.value, label: r.short, count: levelCounts[r.value] || 0 }))}
             activeTab={roleType}
             onTabChange={k => setRoleType(k as RoleType)}
             searchValue={search}
@@ -548,6 +526,47 @@ export default function HrDocumentTemplates() {
                 </button>
               </>
             }
+              /* The bar belongs to the ROWS, so it renders inside the table card
+                 between the last row and the pager. Above the table it pushed the
+                 list down as soon as a row was ticked; after <DataTable> it sat
+                 under the pager, detached from the card entirely. */
+              belowRows={selected.size > 0 ? (
+                <div className="dt-below-rows">
+                <div className="hdt-bulk-bar">
+                  <div className="hdt-bulk-info">
+                    <strong>{selected.size}</strong> selected
+                    {/* Round X, not a "Clear" word — same as the Trade Documents
+                        bar. Clearing is a dismissal, and a labelled button next to
+                        two real actions competes with them for attention. */}
+                    <button
+                      type="button" className="hdt-bulk-clear" title="Clear selection"
+                      aria-label="Clear selection" disabled={bulkBusy}
+                      onClick={() => setSelected(new Set())}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  {/* Counts come from the selection itself, so a button is only
+                      offered when it has something to do — no more pressing
+                      Deprecate to be told there was nothing to deprecate. */}
+                  {selCounts.active > 0 && (
+                    <button
+                      type="button" className="hdt-bulk-btn is-danger"
+                      onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}>
+                      <i className="ri-forbid-2-line" />
+                      {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
+                    </button>
+                  )}
+                  {selCounts.deprecated > 0 && (
+                    <button
+                      type="button" className="hdt-bulk-btn is-primary"
+                      onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}>
+                      <i className="ri-checkbox-circle-line" />
+                      {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
+                    </button>
+                  )}
+                </div>
+                </div>
+              ) : null}
           />
         </div>
       </Col>
@@ -581,6 +600,68 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
+      /* Bulk-action bar — same floating pill the Trade Documents / Agreements
+         popup uses (.lasm-bulk-bar). It used to be a pale lavender strip with
+         outline buttons stretched across the full width, which read as part of
+         the toolbar rather than as a thing that appeared because you selected
+         rows. Deliberately in flow (not sticky) and centred, so it pushes the
+         table down instead of covering the rows it acts on. */
+      /* Slot between the last row and the pager. Padded so the pill never
+         touches either, and it does not stretch — the pill sizes to itself. */
+      /* Page gutters, copied from Supplier Management (.sup-fig in
+         p2p/.../supplier-management.css), which is the reference:
+
+             .sup-fig { margin: -6px 0 0; }
+
+         Note what it does NOT do: no horizontal negative margin. It keeps the
+         container's own side padding, so the card stays inset with page
+         background either side. My earlier guesses pulled the sides out to
+         -1.5rem, which ran the card edge to edge — a different layout, not a
+         tighter one. Vertically it only trims 6px; the rest of the gap is the
+         shell's, and every page lives with it. */
+      .dtm-page { margin: -6px 0 0; padding: 0; }
+      @media (max-width: 640px) { .dtm-page { margin: -2px 0 0; } }
+
+      .dtm-page .dt-below-rows { flex-shrink: 0; padding: 10px 12px 2px; }
+
+      .hdt-bulk-bar {
+        position: relative; z-index: 5; flex-shrink: 0;
+        margin: 0 auto; width: fit-content; max-width: calc(100% - 24px);
+        display: flex; align-items: center; gap: 12px; white-space: nowrap;
+        padding: 11px 18px; border-radius: 16px;
+        background: linear-gradient(135deg, #4c1d95, #7c3aed);
+        box-shadow: 0 12px 40px rgba(124,58,237,.45), 0 4px 14px rgba(0,0,0,.18);
+        animation: hdtBulkIn .22s cubic-bezier(.22,1,.36,1);
+      }
+      @keyframes hdtBulkIn { from { opacity: 0; transform: translateY(10px); } }
+      .hdt-bulk-info { font-size: 12.5px; font-weight: 700; color: #fff; display: inline-flex; align-items: center; gap: 10px; }
+      .hdt-bulk-info strong { font-size: 13px; }
+      .hdt-bulk-clear {
+        display: inline-flex; align-items: center; justify-content: center;
+        width: 26px; height: 26px; padding: 0;
+        background: rgba(255,255,255,.14); border: 1.5px solid rgba(255,255,255,.25); color: #fff;
+        border-radius: 8px; cursor: pointer; transition: background .15s;
+      }
+      .hdt-bulk-clear:hover:not(:disabled) { background: rgba(255,255,255,.22); }
+      .hdt-bulk-clear:disabled { opacity: .5; cursor: not-allowed; }
+      .hdt-bulk-btn {
+        display: inline-flex; align-items: center; gap: 7px; padding: 8px 16px; border-radius: 10px;
+        border: 1.5px solid rgba(255,255,255,.25); background: rgba(255,255,255,.14); color: #fff;
+        font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
+        transition: background .15s, transform .15s ease, box-shadow .15s ease;
+      }
+      .hdt-bulk-btn:hover:not(:disabled) { background: rgba(255,255,255,.24); transform: translateY(-1px); }
+      /* Activate is the constructive action, so it gets the solid white
+         treatment the reference bar reserves for its primary. Deprecate stays
+         translucent — destructive, and it should not be the easiest thing to
+         hit on a bar you opened by ticking boxes. */
+      .hdt-bulk-btn.is-primary {
+        background: #fff; border-color: #fff; color: #7c3aed; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+      }
+      .hdt-bulk-btn.is-primary:hover:not(:disabled) { background: #f5f3ff; box-shadow: 0 6px 14px rgba(124,58,237,.30); }
+      .hdt-bulk-btn.is-danger { color: #fecdd3; border-color: rgba(254,205,211,.45); }
+      .hdt-bulk-btn.is-danger:hover:not(:disabled) { background: rgba(254,205,211,.22); }
+      .hdt-bulk-btn:disabled { opacity: .55; cursor: wait; transform: none; }
       /* Category tab strip lives inline (Expense-module recipe) and the Level
          tabs are the DataTable toolbar's own pill rail, so neither needs page
          CSS here. */
@@ -591,7 +672,7 @@ function DtmDarkStyles() {
          The search field is the control people actually use here, and the
          Trigger picker sat taller than everything beside it — so the strip read
          as mismatched heights with a small search box wedged in. */
-      .dtm-page .dt-search { flex: 0 4 400px; max-width: 400px; }
+      .dtm-page .dt-search { flex: 0 4 320px; max-width: 320px; }
       .dtm-page .master-select-toggle { min-height: 34px; height: 34px; padding-top: 0; padding-bottom: 0; }
       /* The Trigger picker is capped inline at 150px, which read as a cramped
          afterthought beside a 400px search. Overridden rather than edited in
@@ -629,6 +710,27 @@ function DtmDarkStyles() {
       .dtm-page .dt-tabrail { overflow-x: auto; scrollbar-width: none; }
       .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
       .dtm-page .dt-tabs { flex-wrap: nowrap; }
+      /* The pill hugs its tabs; only the RAIL takes the full line.
+         DataTable's own @media (max-width: 1100px) sets .dt-tabs to
+         flex:1 1 100% so the tabs claim their own row when the toolbar gets
+         cramped — but that stretches the PILL, not just the row, leaving a wide
+         empty white slab to the right of the last tab. The rail above already
+         takes the line (flex: 1 0 100% at <=1500px), so the pill only needs to
+         be as wide as its tabs.
+         Above 760px only: on a phone the shared rule makes it full-width and
+         centred, which is the right call there. */
+      @media (min-width: 761px) {
+        .dtm-page .dt-toolbar .dt-tabs { flex: 0 0 auto; width: fit-content; max-width: 100%; }
+      }
+      /* ...but NOT the category rail in the header strip. Sideways scrolling
+         suits the six Level tabs, where any one of them is a short word. These
+         three are sentences ("Non IT Employee Documents (Operations)"), so the
+         rail was always wider than the card: it clipped the active tab mid-word
+         and hid the third one off the right edge, with no scrollbar to say so.
+         Three tabs wrap onto a second line perfectly well. */
+      .dtm-page .frm-cstrip .dt-tabrail { overflow-x: visible; max-width: 100%; }
+      .dtm-page .frm-cstrip .dt-tabs { flex-wrap: wrap; }
+      .dtm-page .frm-cstrip .dt-tab { white-space: normal; text-align: left; }
       /* DataTable keeps the toolbar on ONE line above 1200px, on the assumption
          that the tab rail will wrap its tabs INSIDE itself to give up width.
          Six role tabs scrolling on a single line cannot do that, so everything
@@ -649,7 +751,8 @@ function DtmDarkStyles() {
            card's rounded edge instead of scrolling inside it. */
         .dtm-page .frm-cstrip > * { min-width: 0; }
         .dtm-page .dt-tabrail { width: 100%; max-width: 100%; }
-        .dtm-page .dtm-kpi-num { font-size: 19px; }
+        /* Same inline-style override as the height rules below. */
+        .dtm-page .dtm-kpi-num { font-size: 19px !important; }
         /* The table body is flex:1 + min-height:0 inside a shell that gets its
            height from the viewport-fit calc. On a phone that calc leaves nothing
            over, so the rows collapsed to zero height — the pager still read
@@ -657,9 +760,115 @@ function DtmDarkStyles() {
         .dtm-page .dt-table-wrap { min-height: 260px; }
         .dtm-page .dt-scroll { min-height: 200px; }
       }
-      /* Two KPI tiles per row rather than four crushed ones. */
-      @media (min-width: 576px) and (max-width: 767.98px) {
+      /* Two KPI tiles per row rather than four crushed ones. Also below 576px:
+         Bootstrap's col-sm-6 stops applying there, so all four went full width
+         and ate ~320px of a phone screen before the table even started. Four
+         one-line counters read perfectly well two-up. */
+      @media (max-width: 767.98px) {
         .dtm-page .row > [class*='col-md-3'] { flex: 0 0 50%; max-width: 50%; }
+      }
+
+      /* ── Bulk bar ──
+         width:fit-content + white-space:nowrap keeps the pill tight on a
+         desktop, but on a narrow screen "2 selected · Deprecate 2 · Activate 2"
+         is wider than the card and simply overflowed it. Let it wrap and take
+         the full width instead — it is a bar, not a badge. */
+      @media (max-width: 575.98px) {
+        .dtm-page .hdt-bulk-bar {
+          width: 100%; max-width: 100%;
+          flex-wrap: wrap; white-space: normal;
+          justify-content: center; row-gap: 8px; padding: 10px 12px;
+        }
+        .dtm-page .hdt-bulk-btn { flex: 1 1 auto; justify-content: center; }
+      }
+
+      /* ── Generate button ──
+         "Generate Document" is the widest cell in the row. Below 992px the word
+         "Document" is dropped: the green play button in the Generate column
+         cannot mean anything else, and the 90px it frees is what keeps Status
+         and Actions on screen instead of pushing them into a scroll. */
+      @media (max-width: 991.98px) {
+        .dtm-page .dtm-gen-word { display: none; }
+        .dtm-page .dtm-gen-btn { padding: 6px 10px !important; }
+      }
+
+      /* ── Toolbar on phones ──
+         Search, the Trigger picker and Add Template shared one row and each was
+         squeezed to a stub. Search takes its own line; the other two split the
+         next one. */
+      @media (max-width: 575.98px) {
+        .dtm-page .dt-search { flex: 1 1 100%; max-width: 100%; }
+        .dtm-page .dt-toolbar { row-gap: 8px; }
+        .dtm-page .dtm-add-tpl-btn { flex: 1 1 auto; justify-content: center; }
+      }
+
+      /* ── Toolbar: shrink to fit rather than wrap ──
+         Six level tabs + search + the Trigger picker + Add Template is a lot
+         for one row. Past the point where they stop fitting, the toolbar was
+         wrapping and dropping Trigger + Add Template onto a second line, pinned
+         right, which reads as two unrelated strips.
+         Between 1200px and 1700px everything shrinks instead: smaller tab text,
+         tighter padding, a narrower search and Trigger. Nothing is hidden or
+         moved — it just gets smaller, and one row survives.
+         Below 1200px shrinking is no longer enough, so the existing rule takes
+         over and gives the rail a line of its own. */
+      @media (min-width: 1200px) and (max-width: 1699.98px) {
+        .dtm-page .dt-toolbar { flex-wrap: nowrap; }
+        .dtm-page .dt-tabrail { flex: 0 1 auto; min-width: 0; }
+        .dtm-page .dt-tab { padding-left: 10px; padding-right: 10px; font-size: 11.5px; }
+        .dtm-page .dt-tab-count { min-width: 17px; height: 17px; font-size: 9.5px; padding: 0 4px; }
+        .dtm-page .dt-search { flex: 0 3 240px; max-width: 240px; }
+        .dtm-page .dtm-filter-label { font-size: 10px; }
+        .dtm-page .dtm-filter-label + div { min-width: 130px !important; max-width: 150px !important; }
+        .dtm-page .dtm-add-tpl-btn { padding: 7px 10px !important; font-size: 11.5px !important; }
+      }
+
+      /* ── Density by viewport HEIGHT ──
+         Everything above was about width. What actually breaks this page is
+         height: zoom in, or use a laptop panel, and the viewport shrinks while
+         the KPI tiles, the two tab rails, the toolbar and the row height all
+         stay the same — so the table is left a sliver and the row count drops
+         to its floor with the last row still clipped.
+         Below 900px tall the chrome gives up a few pixels everywhere; below
+         740px it gives up more. Nothing is hidden — the same page, tighter, so
+         more rows fit instead of fewer. */
+      @media (max-height: 900px) {
+        .dtm-page .frm-cstrip { min-height: 56px; padding: 9px 16px; }
+        .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
+        .dtm-page .frm-cstrip-title { font-size: 16px; }
+        .dtm-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
+        .dtm-page .dtm-kpi-tile .d-flex { padding: 8px 12px !important; }
+        /* !important throughout this block: the tiles and the Generate button
+           carry INLINE styles (fontSize / padding on the JSX), and an inline
+           declaration beats any stylesheet rule short of !important. Without
+           it these rules parse fine, ship fine and do nothing. */
+        .dtm-page .dtm-kpi-num { font-size: 18px !important; }
+        .dtm-page .dtm-kpi-label { font-size: 9.5px !important; }
+        .dtm-page .dt-table tbody td { padding: 5px 9px; }
+        .dtm-page .dt-table thead th { padding: 7px 9px; }
+        .dtm-page .dt-toolbar { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+      }
+      @media (max-height: 740px) {
+        /* The KPI row is the biggest single block that is not the table. It
+           keeps its numbers, on one line, at half the height. */
+        .dtm-page .dtm-kpi-tile .d-flex { padding: 6px 10px !important; }
+        .dtm-page .dtm-kpi-num { font-size: 16px !important; }
+        .dtm-page .dtm-kpi-tile > div:first-child { height: 3px !important; }
+        .dtm-page .frm-cstrip-sub { display: none; }
+        .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
+        .dtm-page .dt-tab { padding-top: 5px; padding-bottom: 5px; }
+        .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
+        .dtm-page .dtm-gen-btn { padding: 4px 9px !important; font-size: 11px !important; }
+      }
+
+      /* ── Header strip on phones ──
+         The title block and the category rail sit side by side and both refuse
+         to shrink, so the rail was pushed past the card's rounded edge. Stacked,
+         each gets the full width and the rail scrolls inside it. */
+      @media (max-width: 575.98px) {
+        .dtm-page .frm-cstrip { flex-direction: column; align-items: stretch; }
+        .dtm-page .frm-cstrip-title { font-size: 16px; }
+        .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
       }
 
       .dtm-page .dtm-kpi-tile {

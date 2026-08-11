@@ -290,8 +290,15 @@ class ExitNoticePaymentController extends Controller
         $required = (int) ($exit->notice_days_required ?? $this->noticeDays($employee));
         $served   = (int) ($exit->notice_days_served ?? 0);
         if (!$exit->notice_days_served && $exit->notice_date && $exit->last_working_day) {
-            $served = max(0, min($required, Carbon::parse($exit->notice_date)
-                ->diffInDays(Carbon::parse($exit->last_working_day), false)));
+            // Inclusive of the notice start day — working the notice date
+            // itself is one day served, so a last working day equal to the
+            // notice date counts 1, not 0. Without the +1 a notice served in
+            // full (last working day == notice date + N − 1, which is what the
+            // wizard's ceiling enforces) came out one day short and billed the
+            // employee a day's recovery they didn't owe.
+            $diff = Carbon::parse($exit->notice_date)
+                ->diffInDays(Carbon::parse($exit->last_working_day), false);
+            $served = $diff < 0 ? 0 : max(0, min($required, $diff + 1));
         }
         $unserved = (int) ($exit->notice_days_unserved ?? max(0, $required - $served));
 

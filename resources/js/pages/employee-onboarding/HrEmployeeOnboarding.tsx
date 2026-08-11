@@ -4,8 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
-import { useAuth } from '../../contexts/AuthContext';
-import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
@@ -17,9 +15,10 @@ import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
-import { consentLabel } from '../../components/ui/SignaturePad';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { resolveProbation } from '../../utils/probation';
+import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import './HrEmployeeOnboarding.css';
 
 import '../../../css/recruitment.css';
@@ -1037,12 +1036,19 @@ export default function HrEmployeeOnboarding() {
       <ChecklistModal isOpen={checklistOpen} onClose={() => setChecklistOpen(false)} />
 
       {/* ── Evidence Vault Modal ── */}
-      <VaultModal
-        isOpen={vaultOpen}
+      {/* The shared vault (components/EvidenceVaultModal) — one component for
+          Onboarding, HR > Employees and Exit Management. It keys everything off
+          the employee's db id, so an unsaved row (no dbId) has no vault. */}
+      <EvidenceVaultModal
+        employee={vaultOpen && vaultEmp?.dbId ? {
+          id: vaultEmp.dbId,
+          empId: vaultEmp.empId,
+          name: vaultEmp.name,
+          department: vaultEmp.department,
+          designation: vaultEmp.designation,
+        } : null}
         onClose={closeVault}
-        emp={vaultEmp}
-        tab={vaultTab}
-        onTabChange={setVaultTab}
+        initialTab={vaultTab}
       />
 
       {/* ── Initiate Onboarding Form ── */}
@@ -1226,1301 +1232,294 @@ function EditEmployeeModal({ isOpen, onClose, emp }: { isOpen: boolean; onClose:
   );
 }
 
-// ── Evidence Vault modal ────────────────────────────────────────────────────
-// Exported so the HR Employees directory can reuse the exact same vault
-// (live employee uploads + matched HR Document Templates with the signing
-// workflow) instead of maintaining a second mock copy. The `triggerKeyword`
-// prop scopes which document templates the Organizational tab surfaces:
-// the Onboarding page passes 'onboarding'; pass null to list every template
-// matched to the employee regardless of trigger point.
-export function VaultModal({
-  isOpen, onClose, emp, tab, onTabChange, triggerKeyword = 'onboarding', signedOnly = false,
-}: {
-  isOpen: boolean;
-  onClose: () => void;
-  emp: OnboardRow | null;
-  tab: 'employee' | 'organizational';
-  onTabChange: (t: 'employee' | 'organizational') => void;
-  triggerKeyword?: string | null;
-  // When true (the standalone Employee Evidence Vault) the Organizational tab
-  // becomes a read-only archive of FULLY-SIGNED documents only, exposing just
-  // View + Download. When false (Onboarding / Exit workflow pages) it lists
-  // every matched template with the full Generate / Send / track workflow.
-  signedOnly?: boolean;
+/* ── Signed documents archive ──────────────────────────────────────────────
+ * Shared by the Evidence Vault's Organizational tab and the onboarding
+ * wizard's Stage 5, both of which otherwise list only templates the
+ * /hr-document-templates/match endpoint still returns for the employee's
+ * CURRENT department × designation × trigger point. A signed document has to
+ * outlive all three: the employee moves department, the template is renamed
+ * or deprecated, the run came from another module (Exit Management) — and the
+ * signed copy is still the evidence. This section reads the signing runs
+ * directly, so anything the employee actually signed shows up.
+ */
+export type SignedDocRun = {
+  id: number;
+  code: string | null;
+  status: string;
+  template_id: number;
+  template?: { id: number; code: string; name: string; doc_type: string | null } | null;
+  trigger_point_name?: string | null;
+  signers?: Array<{
+    name?: string | null; role_name?: string | null; action?: string | null;
+    status?: string; acted_at?: string | null; signed_name?: string | null;
+    signature_url?: string | null;
+  }> | null;
+  content_html?: string | null;
+  header_config?: HeaderConfig | null;
+  footer_config?: FooterConfig | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+/* When the document was signed = the LAST signer's action. updated_at is the
+   fallback for legacy runs whose signers carry no acted_at. */
+const signedRunAt = (r: SignedDocRun): string | null => {
+  const acted = (r.signers || []).map(s => s.acted_at).filter(Boolean) as string[];
+  if (acted.length) return acted.slice().sort()[acted.length - 1];
+  return r.updated_at || r.created_at || null;
+};
+
+const fmtSignedStamp = (iso?: string | null): string => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  const day   = String(d.getDate()).padStart(2, '0');
+  const month = d.toLocaleDateString('en-GB', { month: 'short' });
+  const time  = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  return `${day} ${month} ${d.getFullYear()}, ${time}`;
+};
+
+export function SignedDocumentsSection({ runs, emptyHint }: {
+  /** Raw /hr-document-signatures rows — filtered to Completed in here. */
+  runs: SignedDocRun[];
+  emptyHint?: string;
 }) {
-  const { theme: vaultTheme } = useTheme();
-  const vaultDark = vaultTheme === 'dark';
-  // ── Organizational documents (Document Templates) — pulled from the API.
-  // The Document Template Master classifies templates by employee_category
-  // (IT / Non-IT / Legal) × role_type (designation level). The Vault's
-  // Organizational tab fetches just the templates that match THIS employee.
-  type MatchedTemplate = {
-    id: number; code: string; name: string; doc_type: string | null;
-    status: 'Active' | 'Draft' | 'Deprecated';
-    trigger_point?: { id: number; module_name: string } | null;
-    /* JSON column on hr_document_templates — already serialized into
-     * the /match endpoint response thanks to the `signers => array`
-     * cast on the Eloquent model. Each entry holds at least
-     * { role_name, designation_name, action, days } as authored in
-     * the template builder. Defensive `any` because legacy rows
-     * occasionally arrive as the raw JSON string before the cast
-     * materialises. */
-    signers?: any;
-    signing_mode?: 'Sequential' | 'Parallel' | string | null;
-  };
-  /* Parse the signers column off a template. Mirrors HrExitManagement
-   * — the cast normally returns an array, but a stale serializer can
-   * leave it as a JSON string. Tolerate both, return [] otherwise. */
-  const parseSigners = (raw: any): Array<{ role_name?: string | null; designation_name?: string | null; action?: string | null }> => {
-    if (Array.isArray(raw)) return raw;
-    if (typeof raw === 'string' && raw.trim()) {
-      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
-    }
-    return [];
-  };
-  const [orgTemplates, setOrgTemplates] = useState<MatchedTemplate[]>([]);
-  const [orgMeta, setOrgMeta] = useState<{ employee_category: string; role_type: string | null; department_name: string | null; designation_name: string | null } | null>(null);
-  const [orgLoading, setOrgLoading] = useState(false);
   const toast = useToast();
-  const { user: authUser } = useAuth();
-  const currentUserId = authUser?.id ?? null;
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [viewRun, setViewRun] = useState<SignedDocRun | null>(null);
+  const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-  useEffect(() => {
-    // Only fetch when the modal opens for a specific employee. We refetch on
-    // every open so tweaks to the template master are picked up immediately.
-    if (!isOpen || !emp?.dbId) { setOrgTemplates([]); setOrgMeta(null); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        setOrgLoading(true);
-        // Onboarding-stage page → only fetch templates whose trigger
-        // point's name contains "onboarding". Substring keyword match
-        // because branch users name their trigger rows freely
-        // ("Onboarding point", "Pre-onboarding", etc.) — we can't lock
-        // to a single literal title. The Employees directory passes
-        // triggerKeyword=null to list every matched template instead.
-        const { data } = await api.get('/hr-document-templates/match', {
-          params: {
-            employee_id: emp.dbId,
-            ...(triggerKeyword ? { trigger_keyword: triggerKeyword } : {}),
-          },
-        });
-        if (cancelled) return;
-        setOrgTemplates(Array.isArray(data?.templates) ? data.templates : []);
-        setOrgMeta({
-          employee_category: data?.employee_category ?? 'Non-IT',
-          role_type:         data?.role_type ?? null,
-          department_name:   data?.department_name ?? null,
-          designation_name:  data?.designation_name ?? null,
-        });
-      } catch {
-        if (!cancelled) { setOrgTemplates([]); setOrgMeta(null); }
-      } finally {
-        if (!cancelled) setOrgLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId, triggerKeyword]);
-
-  // ── In-modal preview state ────────────────────────────────────────────────
-  // Click "View" → fetch resolved HTML + header/footer JSON, render inside
-  // the same fixed-height page-style chrome the template editor uses.
-  const [previewOpen, setPreviewOpen]   = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [previewTpl, setPreviewTpl]     = useState<MatchedTemplate | null>(null);
-  const [previewHtml, setPreviewHtml]   = useState<string>('');
-  const [previewHeader, setPreviewHeader] = useState<HeaderConfig>(DEFAULT_HEADER);
-  const [previewFooter, setPreviewFooter] = useState<FooterConfig>(DEFAULT_FOOTER);
-  const [previewMissing, setPreviewMissing] = useState<string[]>([]);
-
-  const handleView = async (tpl: MatchedTemplate) => {
-    if (!emp?.dbId) return;
-    setPreviewTpl(tpl);
-    setPreviewOpen(true);
-
-    // If a signing run already exists for this template, prefer its frozen
-    // content_html. For a Completed / In Progress run the signers' actual
-    // signatures have been merged into that HTML (each {{SignerNSign}} token
-    // is replaced as the signer acts), so View shows the signed copy instead
-    // of the raw template with un-substituted {{SignerNSign}} placeholders.
-    const run = runByTemplateId.get(tpl.id) || null;
-    if (run && run.content_html && (run.status === 'Completed' || run.status === 'In Progress')) {
-      setPreviewHtml(run.content_html);
-      setPreviewHeader({ ...DEFAULT_HEADER, ...(run.header_config || {}) } as HeaderConfig);
-      setPreviewFooter({ ...DEFAULT_FOOTER, ...(run.footer_config || {}) } as FooterConfig);
-      // Only flag genuinely unresolved tokens. While a run is In Progress the
-      // remaining {{SignerNSign}}/{{SignerNDate}} slots are expected (later
-      // signers fill them), so we don't surface those as "unfilled".
-      const remaining = Array.from(new Set((run.content_html.match(/\{\{\s*([^}]+?)\s*\}\}/g) || [])
-        .map(t => t.replace(/^\{\{\s*|\s*\}\}$/g, ''))));
-      const stillMissing = run.status === 'Completed'
-        ? remaining
-        : remaining.filter(t => !/^Signer\d+(Sign|Date)$/.test(t));
-      setPreviewMissing(stillMissing);
-      setPreviewLoading(false);
-      return;
-    }
-
-    setPreviewLoading(true);
-    try {
-      const { data } = await api.get(`/hr-document-templates/${tpl.id}/preview`, {
-        params: { employee_id: emp.dbId },
-      });
-      setPreviewHtml((data?.content_html as string) || '<p style="color:#9ca3af;font-style:italic;">(empty template)</p>');
-      setPreviewHeader({ ...DEFAULT_HEADER, ...(data?.header_config || {}) } as HeaderConfig);
-      setPreviewFooter({ ...DEFAULT_FOOTER, ...(data?.footer_config || {}) } as FooterConfig);
-      setPreviewMissing(Array.isArray(data?.tokens_missing) ? data.tokens_missing : []);
-    } catch (err: any) {
-      toast.error('Could not load preview', err?.response?.data?.message || 'Please try again.');
-      setPreviewOpen(false);
-    } finally {
-      setPreviewLoading(false);
-    }
-  };
-
-  /**
-   * Audit-trail timestamp — "04-AUG-2026, 03:57 PM".
-   *
-   * These used to render with a bare `toLocaleString()`, which follows the
-   * BROWSER's locale: the same signature read "8/4/2026" on one machine and
-   * "4/8/2026" on another. On a signed-document trail that ambiguity is not
-   * cosmetic — 8 April and 4 August are both plausible readings of the same
-   * row. A spelled-out month cannot be misread whatever the viewer's locale.
-   */
-  const fmtAuditStamp = (raw?: string | null): string => {
-    if (!raw) return '—';
-    const d = new Date(raw);
-    if (isNaN(d.getTime())) return String(raw);
-    const day   = String(d.getDate()).padStart(2, '0');
-    const month = d.toLocaleDateString('en-GB', { month: 'short' }).toUpperCase();
-    const time  = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-    return `${day}-${month}-${d.getFullYear()}, ${time}`;
-  };
-
-  // ── Signature runs (signing workflow runtime) ────────────────────────────
-  type SignerState = {
-    index: number; role_name: string; action: string; days: number;
-    user_id: number | null; name: string;
-    status: 'Pending' | 'Done' | 'Rejected' | 'Skipped';
-    acted_at: string | null; signed_name: string | null; note: string | null;
-  };
-  type AuditEvent = { at: string; actor_id: number | null; actor_name: string; action: string; message: string };
-  type SignatureRun = {
-    id: number; code: string | null; status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
-    template_id: number; template?: { id: number; code: string; name: string; doc_type: string | null } | null;
-    employee_id: number;
-    content_html: string | null;
-    header_config: HeaderConfig | null;
-    footer_config: FooterConfig | null;
-    signers: SignerState[];
-    current_index: number;
-    audit_log: AuditEvent[];
-    created_at: string;
-  };
-
-  // Existing runs for this employee — drives the 3-dot menu + audit trail link
-  // on each template row. We list runs once on open and re-fetch after any
-  // action so badges (e.g. "1 active run") stay in sync.
-  const [runs, setRuns] = useState<SignatureRun[]>([]);
-  const fetchRuns = async () => {
-    if (!emp?.dbId) { setRuns([]); return; }
-    try {
-      const { data } = await api.get('/hr-document-signatures', { params: { employee_id: emp.dbId } });
-      setRuns(Array.isArray(data) ? data : []);
-    } catch {
-      setRuns([]);
-    }
-  };
-  useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setRuns([]); return; }
-    fetchRuns();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, emp?.dbId]);
-
-  /* Re-fetch the signing runs when the user returns to this tab/window while
-     the vault is open — covers the case where a signer just signed the
-     document from their Inbox (a separate view) and comes back here. Without
-     this the vault kept showing the stale "Awaiting" state until it was
-     closed and reopened. */
-  useEffect(() => {
-    if (!isOpen || !emp?.dbId) return;
-    const refresh = () => { if (document.visibilityState === 'visible') fetchRuns(); };
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, emp?.dbId]);
-
-  // Latest run per template_id — handy to surface a status pill alongside the template.
-  const runByTemplateId = useMemo(() => {
-    const m = new Map<number, SignatureRun>();
+  /* One row per DOCUMENT, not per run: re-sending an already-signed template
+     produces a second completed run, and two identical rows read as a bug.
+     The newest signed copy is the row; earlier ones hang off its expanded
+     panel so they stay reachable. */
+  const groups = useMemo(() => {
+    const byTpl = new Map<number, SignedDocRun[]>();
     for (const r of runs) {
-      const existing = m.get(r.template_id);
-      if (!existing || r.id > existing.id) m.set(r.template_id, r);
+      if (r.status !== 'Completed') continue;
+      const arr = byTpl.get(r.template_id) || [];
+      arr.push(r);
+      byTpl.set(r.template_id, arr);
     }
-    return m;
+    const out: { latest: SignedDocRun; older: SignedDocRun[] }[] = [];
+    for (const arr of byTpl.values()) {
+      arr.sort((a, b) => b.id - a.id);
+      out.push({ latest: arr[0], older: arr.slice(1) });
+    }
+    return out.sort((a, b) => {
+      const da = signedRunAt(a.latest) || '', db = signedRunAt(b.latest) || '';
+      if (da !== db) return da < db ? 1 : -1;
+      return b.latest.id - a.latest.id;
+    });
   }, [runs]);
 
-  // ── Employee Documents — live from /employees/{id}/documents ─────────────
-  // The Vault used to render a hardcoded VAULT_EMPLOYEE_DOCS catalogue. Now
-  // we pull the actual uploads for THIS employee and group them back into
-  // the same Identity / Address / Education / Bank sections by looking each
-  // document_key up in STAGE2_CATEGORIES. `prev_<companyId>_<docId>` keys
-  // become a Previous Employment section (company_name comes from
-  // /previous-employments). Unknown keys fall into "Other Documents" with
-  // the file's original_name so nothing the user uploaded ever disappears
-  // from the archive.
-  type EmpDocApi = {
-    id: number;
-    document_key: string;
-    status: 'pending' | 'uploaded' | 'verified' | 'rejected';
-    original_name: string | null;
-    mime_type: string | null;
-    size_bytes: number | null;
-    uploaded_at: string | null;
-    url: string | null;
-  };
-  type EmpDocLive = {
-    key: string;
-    name: string;
-    desc: string;
-    icon: string;
-    tint: string;
-    fg: string;
-    category: string;
-    status: VaultStatus;
-    url: string | null;
-    docId?: number;
-  };
-  const [empDocs, setEmpDocs] = useState<EmpDocApi[]>([]);
-  const [prevCompanies, setPrevCompanies] = useState<{ id: number; company_name: string }[]>([]);
-
-  useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setEmpDocs([]); setPrevCompanies([]); return; }
-    let cancelled = false;
-    Promise.all([
-      api.get(`/employees/${emp.dbId}/documents`).catch(() => ({ data: [] })),
-      api.get(`/employees/${emp.dbId}/previous-employments`).catch(() => ({ data: [] })),
-    ]).then(([docRes, prevRes]) => {
-      if (cancelled) return;
-      setEmpDocs(Array.isArray(docRes.data) ? docRes.data : []);
-      setPrevCompanies(Array.isArray(prevRes.data) ? prevRes.data : []);
-    });
-    return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
-
-  const serverStatusToVault = (s: string): VaultStatus => {
-    switch (s) {
-      case 'verified': return 'Verified';
-      case 'uploaded': return 'Uploaded';
-      case 'rejected': return 'Rejected';
-      default:         return 'Pending';
-    }
-  };
-
-  const employeeSections = useMemo(() => {
-    if (empDocs.length === 0) return [] as { title: string; docs: EmpDocLive[] }[];
-    const byKey = new Map(empDocs.map(d => [d.document_key, d]));
-    const used  = new Set<string>();
-    const out: { title: string; docs: EmpDocLive[] }[] = [];
-
-    for (const cat of STAGE2_CATEGORIES) {
-      const docs: EmpDocLive[] = [];
-      for (const d of cat.docs) {
-        const u = byKey.get(d.id);
-        if (!u) continue;
-        used.add(d.id);
-        docs.push({
-          key: d.id,
-          name: d.name,
-          desc: u.original_name || d.sub,
-          icon: cat.icon,
-          tint: cat.tint,
-          fg:   cat.fg,
-          category: cat.title.replace(/ Documents?$/, '').replace(/ Proof$/, ''),
-          status: serverStatusToVault(u.status),
-          url: u.url,
-          docId: u.id,
-        });
-      }
-      if (docs.length) out.push({ title: cat.title, docs });
-    }
-
-    const prevDocs: EmpDocLive[] = [];
-    for (const u of empDocs) {
-      const m = u.document_key.match(/^prev_(\d+)_(.+)$/);
-      if (!m) continue;
-      used.add(u.document_key);
-      const companyId = Number(m[1]);
-      const docId     = m[2];
-      const company   = prevCompanies.find(c => c.id === companyId);
-      const docDef    = STAGE2_COMPANY_DOCS.find(x => x.id === docId);
-      prevDocs.push({
-        key: u.document_key,
-        name: docDef?.name || u.original_name || u.document_key,
-        desc: company ? `${company.company_name}${u.original_name ? ` · ${u.original_name}` : ''}` : (u.original_name || ''),
-        icon: 'ri-briefcase-line',
-        tint: '#fde8c4',
-        fg:   '#a4661c',
-        category: 'Employment',
-        status: serverStatusToVault(u.status),
-        url: u.url,
-        docId: u.id,
-      });
-    }
-    if (prevDocs.length) out.push({ title: 'Previous Employment', docs: prevDocs });
-
-    const other: EmpDocLive[] = [];
-    for (const u of empDocs) {
-      if (used.has(u.document_key)) continue;
-      other.push({
-        key: u.document_key,
-        name: u.original_name || u.document_key,
-        desc: u.document_key,
-        icon: 'ri-file-line',
-        tint: '#eef2f6',
-        fg:   '#5b6478',
-        category: 'Other',
-        status: serverStatusToVault(u.status),
-        url: u.url,
-        docId: u.id,
-      });
-    }
-    if (other.length) out.push({ title: 'Other Documents', docs: other });
-
-    return out;
-  }, [empDocs, prevCompanies]);
-
-  // The Org tab adapts to the caller. In the standalone Employee Evidence Vault
-  // (signedOnly) it's a read-only archive of FULLY-SIGNED documents only — a
-  // template surfaces once its signing run is Completed, with just View +
-  // Download per row. In the Onboarding / Exit workflow pages it lists every
-  // matched template so HR can Generate / Send / track in-flight signings.
-  const completedTemplates = useMemo(
-    () => orgTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed'),
-    [orgTemplates, runByTemplateId],
-  );
-  const completedCount = completedTemplates.length;
-  const signedTemplates = signedOnly ? completedTemplates : orgTemplates;
-
-  const allDocs = employeeSections.flatMap(s => s.docs);
-  const counts = {
-    total:    allDocs.length + signedTemplates.length,
-    verified: allDocs.filter(d => d.status === 'Verified').length,
-    // Uploaded-but-not-yet-verified docs. They count toward vault completion
-    // (the file IS in the vault), even though HR hasn't ticked "Verified" yet.
-    uploaded: allDocs.filter(d => d.status === 'Uploaded').length,
-    // SIGNED KPI = how many of the matched templates the employee has
-    // actually completed signing. Used to read signedTemplates.length,
-    // which is now the WHOLE template list, so the tile was about to
-    // misrepresent every matched-but-unsigned template as "signed".
-    signed:   completedCount,
-    // PENDING = only docs that are NOT yet in the vault (still 'Pending'),
-    // plus matched org templates that haven't been signed. Uploaded docs are
-    // counted under their own KPI now, so an upload moves the doc OUT of
-    // Pending and INTO Uploaded instead of sitting in both.
-    pending:  allDocs.filter(d => d.status === 'Pending').length
-              + (signedTemplates.length - completedCount),
-    notGen:   0,
-  };
-  const empCount = allDocs.length;
-  const orgCount = signedTemplates.length;
-  // Vault completion = everything that's actually in the vault — uploaded OR
-  // verified docs, plus signed org templates — over the total expected. Was
-  // (verified + signed) only, so a vault full of uploaded-but-unverified docs
-  // wrongly read 0% until HR verified each one.
-  const completion = counts.total ? Math.round(((counts.verified + counts.uploaded + counts.signed) / counts.total) * 100) : 0;
-  const sections = tab === 'employee' ? employeeSections : [];  // org tab renders from signedTemplates below
-
-  // 3-dot menu state (which row is open)
-  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
-
-  // Audit trail modal state
-  const [auditRun, setAuditRun] = useState<SignatureRun | null>(null);
-
-  // Action modal state (current signer takes action: Sign / Approve / Acknowledge)
-  const [actionRun, setActionRun] = useState<SignatureRun | null>(null);
-  const [actionSubmitting, setActionSubmitting] = useState(false);
-  const [actionName, setActionName] = useState('');
-  const [actionNote, setActionNote] = useState('');
-  // Informed-consent tick for Sign steps — per document, reset in openAction.
-  const [actionConsent, setActionConsent] = useState(false);
-
-  // Generate modal — custom-field fill → preview → download / send for signature
-  const [genTpl, setGenTpl] = useState<MatchedTemplate | null>(null);
-
-  // Send-confirmation modal
-  const [sendForTpl, setSendForTpl] = useState<MatchedTemplate | null>(null);
-  const [sending, setSending] = useState(false);
-  // Synchronous double-submit guard. `sending` state only disables the button
-  // on the NEXT render, leaving a tiny window where a fast double-click fires
-  // confirmSend twice → two signature runs. The ref flips instantly so the
-  // second call bails before the API fires.
-  const sendingRef = useRef(false);
-
-  const openSend = (tpl: MatchedTemplate) => { setSendForTpl(tpl); };
-  const confirmSend = async () => {
-    if (!sendForTpl || !emp?.dbId || sendingRef.current) return;
-    sendingRef.current = true;
-    setSending(true);
-    try {
-      const { data } = await api.post('/hr-document-signatures', {
-        template_id: sendForTpl.id,
-        employee_id: emp.dbId,
-      });
-      toast.success('Sent for signing', `${data.code || data.template?.code || 'Document'} entered the workflow.`);
-      setSendForTpl(null);
-      fetchRuns();
-    } catch (err: any) {
-      toast.error('Could not send', err?.response?.data?.message || 'Please try again.');
-    } finally {
-      setSending(false);
-      sendingRef.current = false;
-    }
-  };
-
-  const openAudit = (run: SignatureRun) => { setAuditRun(run); setOpenMenuId(null); };
-  /* Send an in-app reminder (Inbox notification) to the CURRENT pending
-   * signer. The doc is already in their Inbox via the polling query —
-   * this just pushes a fresh notification to their bell icon so they
-   * notice it. No email is sent. Backend throttles to 1 reminder per
-   * 6 hours per signer; if HR clicks again too soon the API returns
-   * 429 and we surface that in the toast. */
-  const sendReminder = async (run: SignatureRun) => {
-    const current = run.signers?.[run.current_index];
-    const signerName = current?.name || 'the current signer';
-    const ok = await confirmDialog({
-      title: 'Send Reminder?',
-      message: (
-        <>
-          Nudge <strong>{signerName}</strong> in their Inbox to {current?.action?.toLowerCase() || 'sign'} this document?
-          <br />
-          <span style={{ opacity: 0.75 }}>Reminders are limited to once every 6 hours per signer.</span>
-        </>
-      ),
-      confirmLabel: 'Send Reminder',
-      cancelLabel:  'Cancel',
-      tone:         'info',
-      icon:         'notification-3-line',
-    });
-    if (!ok) return;
-    try {
-      const res = await api.post(`/hr-document-signatures/${run.id}/remind`);
-      toast.success('Reminder sent', `${res?.data?.signer || signerName} will see it in their Inbox.`);
-      fetchRuns();
-    } catch (err: any) {
-      const status = err?.response?.status;
-      const msg = err?.response?.data?.message || 'Please try again.';
-      if (status === 429) {
-        toast.error('Slow down', msg);
-      } else {
-        toast.error('Could not send reminder', msg);
-      }
-    }
-  };
-  const cancelRun = async (run: SignatureRun) => {
-    // Close the row's "•••" menu BEFORE the confirm dialog opens, otherwise
-    // the menu sits there in the background while the modal is up.
-    setOpenMenuId(null);
-    const code = run.code || `run #${run.id}`;
-    const ok = await confirmDialog({
-      title: 'Cancel signing workflow?',
-      message: (
-        <>
-          Cancel the signing workflow for <strong>{code}</strong>?
-          <br />
-          <span style={{ opacity: 0.75 }}>
-            This will halt all pending signatures and cannot be undone.
-          </span>
-        </>
-      ),
-      confirmLabel: 'Yes, cancel workflow',
-      cancelLabel:  'Keep workflow',
-      tone:         'danger',
-      icon:         'close-circle-line',
-    });
-    if (!ok) return;
-    try {
-      await api.post(`/hr-document-signatures/${run.id}/cancel`);
-      toast.success('Cancelled', 'Workflow halted.');
-      fetchRuns();
-    } catch (err: any) {
-      toast.error('Could not cancel', err?.response?.data?.message || 'Please try again.');
-    }
-  };
-
-  // Take Action — opens the SignActionModal with prefilled signer name when
-  // the action type is "Sign" so the signer can confirm or override.
-  const openAction = (run: SignatureRun) => {
-    const current = run.signers[run.current_index];
-    setActionRun(run);
-    setActionName(current?.name || '');
-    setActionNote('');
-    setActionConsent(false);   // consent is per-document, never carried over
-  };
-  const submitAction = async () => {
-    if (!actionRun) return;
-    const current = actionRun.signers[actionRun.current_index];
-    if (!current) return;
-    // Map the wizard's action label to the API enum: "Review & Acknowledge" → "Acknowledge"
-    const apiAction = current.action === 'Sign' ? 'Sign'
-                     : current.action === 'Approve' ? 'Approve'
-                     : 'Acknowledge';
-    if (apiAction === 'Sign' && !actionName.trim()) {
-      toast.error('Signature required', 'Please type your name to sign.');
-      return;
-    }
-    // Consent applies to every action, not just Sign.
-    if (!actionConsent) {
-      toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
-      return;
-    }
-    setActionSubmitting(true);
-    try {
-      const { data } = await api.post(`/hr-document-signatures/${actionRun.id}/action`, {
-        action:      apiAction,
-        signed_name: apiAction === 'Sign' ? actionName.trim() : null,
-        note:        actionNote.trim() || null,
-        consent:     actionConsent,
-      });
-      toast.success(
-        apiAction === 'Sign' ? 'Signed' : apiAction === 'Approve' ? 'Approved' : 'Acknowledged',
-        `${data.code || `Run #${data.id}`} updated.`,
-      );
-      setActionRun(null);
-      fetchRuns();
-    } catch (err: any) {
-      toast.error('Could not record action', err?.response?.data?.message || 'Please try again.');
-    } finally {
-      setActionSubmitting(false);
-    }
-  };
-
-  const confirmDialog = useConfirm();
-  // Same reject path as the MyTeam page — Note field doubles as the
-  // required reason, the controller halts the workflow on the row, and
-  // the sender sees the suggestion in the audit trail.
-  const submitReject = async () => {
-    if (!actionRun) return;
-    const reason = actionNote.trim();
-    if (!reason) {
-      toast.error('Reason required', 'Add a suggestion in the Note field explaining what should change.');
-      return;
-    }
-    // Snapshot the run so we can restore the action modal if the
-    // user cancels the confirmation. We hide the action modal while
-    // the confirm dialog is open so the user sees only one popup at a
-    // time — without this the reject-confirm sits visually on top of
-    // the still-open acknowledge modal, which read like "the modal
-    // popped back up after I clicked reject."
-    const targetRun = actionRun;
-    const runId = targetRun.id;
-    const code  = targetRun.code || 'this document';
-    setActionRun(null);
-    const ok = await confirmDialog({
-      title: 'Reject Document?',
-      message: (
-        <>
-          Reject <strong>{code}</strong>? The workflow will halt and the sender will see your reason.
-        </>
-      ),
-      confirmLabel: 'Yes, Reject',
-      cancelLabel:  'Cancel',
-      tone:         'danger',
-      icon:         'close-circle-line',
-    });
-    if (!ok) {
-      // User backed out — bring the action modal back so they can
-      // edit the reason or take a different action. actionNote /
-      // actionName state was untouched and remains pre-filled.
-      setActionRun(targetRun);
-      return;
-    }
-    setActionSubmitting(true);
-    try {
-      await api.post(`/hr-document-signatures/${runId}/reject`, { reason });
-      toast.success('Rejected', `${code} returned to the sender with your reason.`);
-      fetchRuns();
-    } catch (err: any) {
-      toast.error('Could not reject', err?.response?.data?.message || 'Please try again.');
-      // On API failure, restore the action modal so the user can retry
-      // or adjust their reason — otherwise their input would be lost.
-      setActionRun(targetRun);
-    } finally {
-      setActionSubmitting(false);
-    }
-  };
-
-  // Click "Generate" → backend resolves {{Tokens}} with this employee's
-  // data and streams the filled DOCX back.
-  const handleGenerate = async (tpl: MatchedTemplate) => {
-    if (!emp?.dbId) return;
-    try {
-      const resp = await api.get(`/hr-document-templates/${tpl.id}/generate`, {
-        params: { employee_id: emp.dbId },
-        responseType: 'blob',
-      });
-      const url = URL.createObjectURL(new Blob([resp.data]));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(emp.name || 'employee').replace(/\s+/g, '-')}-${tpl.code || tpl.id}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Document generated', `${tpl.code || tpl.name} downloaded.`);
-    } catch (err: any) {
-      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
-    }
-  };
-
-  /* Download the fully-signed PDF once a run is Completed (all signers done).
-     Hits the same endpoint the Employee Profile "My Signed Documents" tab uses.
-     Tracks the in-flight run id so the button can show a spinner + disable
-     itself while the (potentially slow) PDF render streams back, and so a
-     repeated click can't fire multiple downloads. */
-  const [downloadingRunId, setDownloadingRunId] = useState<number | null>(null);
-  const downloadSignedDoc = async (run: SignatureRun) => {
-    if (downloadingRunId !== null) return; // a download is already in flight
-    setDownloadingRunId(run.id);
+  const download = async (run: SignedDocRun) => {
+    if (downloadingId !== null) return;
+    setDownloadingId(run.id);
     try {
       const resp = await api.get(`/hr-document-signatures/${run.id}/download-pdf`, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
-      a.href = url;
-      a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      a.href = url; a.download = `${run.code || `doc-${run.id}`}-signed.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
       toast.success('Downloaded', 'Signed PDF saved.');
     } catch (err: any) {
       toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
-    } finally {
-      setDownloadingRunId(null);
-    }
+    } finally { setDownloadingId(null); }
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
-      toggle={onClose}
-      centered
-      size="lg"
-      contentClassName="vault-modal-content border-0"
-      modalClassName="vault-modal-wide"
-      backdrop="static"
-      keyboard={false}
-    >
+    <>
+      <div className="onb-pol-section">
+        <div className="onb-pol-section-head">
+          <span className="onb-pol-section-icon" style={{ background: 'linear-gradient(135deg,#059669,#10b981)' }}>
+            <i className="ri-quill-pen-line" />
+          </span>
+          <h6 className="onb-pol-section-title">Signed Documents</h6>
+          <span className="onb-pol-section-pill">{groups.length} signed</span>
+        </div>
 
-      <ModalBody
-        className="p-0 d-flex flex-column"
-        // Fixed height (not maxHeight) so the vault is the SAME size for every
-        // employee — previously it shrank to a stub for 0 docs and stretched
-        // toward full-screen for many, which read as the modal "jumping"
-        // small/big between rows. The document list now scrolls inside this
-        // consistent frame. Capped to 90vh so it still fits short screens.
-        style={{ background: 'var(--vz-card-bg)', height: 'min(90vh, 720px)' }}
-      >
-        <style>{`
-          /* 3-dot row menu (Audit Trail / Cancel Workflow). Inline bg uses the
-             card-scoped --vz-card-bg which doesn't resolve inside this portal
-             (fell back to #fff → white menu). Force a dark surface + readable
-             items in dark mode. */
-          [data-bs-theme="dark"] .vault-kebab-menu {
-            background: var(--vz-secondary-bg) !important;
-            border-color: var(--vz-border-color) !important;
-            box-shadow: 0 10px 26px rgba(0,0,0,0.45) !important;
-          }
-          [data-bs-theme="dark"] .vault-kebab-menu button:hover {
-            background: rgba(255,255,255,0.06) !important;
-          }
-          /* The 3-dot trigger button has the same portal issue — its inline
-             --vz-card-bg fell back to white. Pin a dark surface + readable
-             icon so it matches the rest of the dark vault. */
-          [data-bs-theme="dark"] .vault-kebab-btn {
-            background: var(--vz-secondary-bg) !important;
-            border-color: var(--vz-border-color) !important;
-            color: rgba(255,255,255,0.75) !important;
-          }
-          [data-bs-theme="dark"] .vault-kebab-btn:hover {
-            background: rgba(255,255,255,0.08) !important;
-          }
-        `}</style>
-        {/* Header — indigo gradient with status ring (fixed, non-scrolling) */}
-        <div
-          style={{
-            padding: '22px 26px',
-            background: 'linear-gradient(120deg,#5e4dd6 0%,#7c5cfc 60%,#9b7dff 100%)',
-            color: '#fff',
-            position: 'relative',
-            overflow: 'hidden',
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ position: 'absolute', top: -50, right: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
-          <div className="d-flex align-items-start justify-content-between gap-3" style={{ position: 'relative' }}>
-            <div className="d-flex align-items-start gap-3 min-w-0">
-              <div
-                className="d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{ width: 48, height: 48, borderRadius: 12, background: 'rgba(255,255,255,0.22)' }}
-              >
-                <i className="ri-folder-shield-2-line" style={{ fontSize: 22 }} />
-              </div>
-              <div className="min-w-0">
-                <h5 className="fw-bold mb-1 text-white" style={{ fontSize: 20, letterSpacing: '-0.01em' }}>
-                  Evidence Vault
-                </h5>
-                <div className="mb-2" style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.88)' }}>
-                  Centralized document repository for onboarding, signed organizational, and exit documents
-                </div>
-                {emp && (
-                  <div className="d-flex flex-wrap gap-2">
-                    <span className="vault-pill">{emp.empId}</span>
-                    <span className="vault-pill">{emp.name}</span>
-                    <span className="vault-pill">{emp.department}</span>
-                    <span className="vault-pill">{emp.designation}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="d-flex align-items-start gap-3 flex-shrink-0">
-              <div className="text-center">
-                <div
-                  style={{
-                    width: 64, height: 64, borderRadius: '50%',
-                    background: `conic-gradient(#10b981 ${completion * 3.6}deg, rgba(255,255,255,0.20) 0)`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <div
-                    className="d-flex align-items-center justify-content-center fw-bold"
-                    style={{ width: 50, height: 50, borderRadius: '50%', background: '#5b3fd1', color: '#fff', fontSize: 14 }}
-                  >
-                    {completion}%
-                  </div>
-                </div>
-                <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.06em', color: 'rgba(255,255,255,0.85)', marginTop: 6 }}>
-                  VAULT STATUS
-                </div>
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.85)' }}>
-                  {completion}% Complete
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={onClose}
-                aria-label="Close"
-                className="btn p-0 d-inline-flex align-items-center justify-content-center vault-close-btn"
-                style={{ width: 32, height: 32, borderRadius: 10, border: 'none', color: '#fff' }}
-              >
-                <i className="ri-close-line" style={{ fontSize: 18 }} />
-              </button>
+        {groups.length === 0 && (
+          <div style={{ padding: 22, textAlign: 'center', borderRadius: 10, background: 'var(--vz-light, #f9fafb)', border: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+            <i className="ri-quill-pen-line" style={{ fontSize: 28, display: 'block', marginBottom: 8, color: '#9ca3af' }} />
+            <div style={{ fontSize: 13, color: 'var(--vz-secondary-color, #6b7280)' }}>
+              {emptyHint || <>No signed documents yet. A document lands here once <strong>every</strong> signer in its workflow has signed.</>}
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Body — Organizational Documents tab is now backed by the
-            HR Document Templates API (matched per department × designation
-            level), so the vault is fully interactive. */}
-        <div style={{ padding: '16px 24px 22px', flex: '1 1 auto', overflowY: 'auto', minHeight: 0 }}>
-            {/* KPI strip */}
-            <div style={{ paddingBottom: 16, borderBottom: '1px solid var(--vz-border-color)' }}>
-              <Row className="g-3 align-items-stretch">
-                {[
-                  { key: 'total',    label: 'Total Docs',    value: counts.total,    icon: 'ri-stack-line',           gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)' },
-                  { key: 'uploaded', label: 'Uploaded',      value: counts.uploaded, icon: 'ri-upload-cloud-2-line',  gradient: 'linear-gradient(135deg,#3b82f6,#60a5fa)' },
-                  { key: 'signed',   label: 'Signed',        value: counts.signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg,#5e4dd6,#9b7dff)' },
-                  { key: 'pending',  label: 'Pending',       value: counts.pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)' },
-                  // 'Verified' and 'Not Generated' KPI cards removed per bug 38.
-                ].map(k => (
-                  <Col key={k.key} xl md={4} sm={6} xs={12}>
-                    <div className="vault-kpi-card">
-                      <div className="vault-kpi-strip" style={{ background: k.gradient }} />
-                      <div className="d-flex align-items-start justify-content-between">
-                        <div className="min-w-0">
-                          <p className="vault-kpi-label">{k.label}</p>
-                          <h3 className="vault-kpi-num">{k.value.toLocaleString()}</h3>
-                        </div>
-                        <div className="vault-kpi-icon" style={{ background: k.gradient }}>
-                          <i className={k.icon} />
-                        </div>
-                      </div>
-                    </div>
-                  </Col>
-                ))}
-              </Row>
-            </div>
-
-            {/* Tabs */}
-            <div className="d-flex" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-              <button
-                type="button"
-                className={`vault-tab-btn${tab === 'employee' ? ' is-active' : ''}`}
-                onClick={() => onTabChange('employee')}
-              >
-                <i className="ri-user-line" /> Employee Documents
-                <span className="vault-tab-count">{empCount}</span>
-              </button>
-              <button
-                type="button"
-                className={`vault-tab-btn${tab === 'organizational' ? ' is-active' : ''}`}
-                onClick={() => onTabChange('organizational')}
-              >
-                <i className="ri-building-line" /> Organizational Documents
-                <span className="vault-tab-count">{orgCount}</span>
-              </button>
-            </div>
-
-            {/* Section list */}
-            <div>
-              {/* Employee tab — empty state so the fixed-height vault doesn't
-                  show a blank body when the employee has no uploads yet
-                  (mirrors the Organizational tab's empty state). */}
-              {tab === 'employee' && sections.length === 0 && (
-                <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10, marginTop: 16 }}>
-                  <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-                  <div style={{ fontSize: 13 }}>
-                    No employee documents uploaded yet. Documents added during
-                    onboarding will appear here automatically.
-                  </div>
+        {groups.map(({ latest: run, older }) => {
+          const isOpen = openId === run.id;
+          const toggle = () => setOpenId(prev => prev === run.id ? null : run.id);
+          const title = run.template?.name || run.code || `Document #${run.id}`;
+          const docType = run.template?.doc_type || 'Document';
+          const when = signedRunAt(run);
+          const signerCount = (run.signers || []).length;
+          const busy = downloadingId === run.id;
+          return (
+            <div
+              key={run.id}
+              className={`onb-pol-doc${isOpen ? ' is-expanded' : ''}`}
+              role="button"
+              tabIndex={0}
+              style={{ cursor: 'pointer' }}
+              onClick={toggle}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } }}
+            >
+              <div className="onb-pol-doc-row">
+                <span className="onb-pol-doc-icon" style={{ background: '#d1fae5', color: '#047857' }}>
+                  <i className="ri-file-shield-2-line" />
+                </span>
+                <div className="onb-pol-doc-meta">
+                  <h6 className="onb-pol-doc-name">
+                    {title}{' '}
+                    {run.code && <span className="vault-doc-code">{run.code}</span>}
+                    {run.trigger_point_name && (
+                      <span className="onb-doc-tag" style={{ marginLeft: 6, background: '#eef2ff', color: '#4338ca', borderColor: '#c7d2fe' }}>
+                        {run.trigger_point_name}
+                      </span>
+                    )}
+                    {older.length > 0 && (
+                      <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                        · {older.length} earlier cop{older.length === 1 ? 'y' : 'ies'}
+                      </span>
+                    )}
+                  </h6>
+                  <p className="onb-pol-doc-sub">
+                    {docType}
+                    {' · '}{signerCount} signer{signerCount === 1 ? '' : 's'}
+                    {when ? ` · Signed ${fmtSignedStamp(when)}` : ''}
+                  </p>
                 </div>
-              )}
-              {/* Employee tab — static doc catalogue (Identity / Address / Education / Employment) */}
-              {tab === 'employee' && sections.map(section => (
-                <div key={section.title} style={{ paddingTop: 16 }}>
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <div>
-                      <div className="fw-bold" style={{ fontSize: 14, color: 'var(--vz-heading-color, var(--vz-body-color))' }}>
-                        {section.title}
-                      </div>
-                      <div className="text-muted" style={{ fontSize: 11.5 }}>
-                        {section.docs.length} document{section.docs.length === 1 ? '' : 's'} in this category
-                      </div>
-                    </div>
-                    <span
-                      className="vault-doc-count d-inline-flex align-items-center"
-                      style={{ padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}
-                    >
-                      {section.docs.length} docs
-                    </span>
+                <span className="onb-pol-doc-status" style={{ color: '#10b981' }}>
+                  <span className="dot" style={{ background: '#10b981' }} />
+                  Signed
+                </span>
+                {/* View — the run's frozen HTML already has each signer's PNG
+                    merged in, so this IS the signed document, not a re-render
+                    of the blank template. */}
+                <button
+                  type="button"
+                  className="onb-pol-gen-btn"
+                  onClick={(e) => { e.stopPropagation(); setViewRun(run); }}
+                  title="View the signed document"
+                  style={{ background: 'transparent', border: '1px solid var(--vz-border-color)', color: 'var(--vz-body-color)', cursor: 'pointer' }}
+                >
+                  <i className="ri-eye-line" /> View
+                </button>
+                <button
+                  type="button"
+                  className="onb-pol-gen-btn"
+                  disabled={busy}
+                  onClick={(e) => { e.stopPropagation(); download(run); }}
+                  title="Download the signed PDF (all signatures embedded)"
+                  style={{ marginLeft: 8, background: 'linear-gradient(135deg,#0891b2,#0e7490)', color: '#fff', border: 0, cursor: busy ? 'wait' : 'pointer', opacity: busy ? 0.7 : 1 }}
+                >
+                  <i className={busy ? 'ri-loader-4-line onb-spin' : 'ri-file-pdf-2-line'} /> {busy ? 'Downloading…' : 'Download'}
+                </button>
+                <span
+                  className="onb-pol-doc-chev"
+                  style={{
+                    marginLeft: 6, color: 'var(--vz-secondary-color)', fontSize: 18,
+                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                    transition: 'transform .18s ease',
+                  }}
+                  aria-hidden
+                >
+                  <i className="ri-arrow-down-s-line" />
+                </span>
+              </div>
+
+              {isOpen && (
+                <div className="ep-signing" style={{ margin: '4px 16px 12px' }}>
+                  <div className="ep-signing-head">
+                    <i className="ri-quill-pen-line" />Signature Trail
+                    <span className="ep-signing-pct">{signerCount}/{signerCount} signed</span>
                   </div>
-                  <div>
-                    {section.docs.map(doc => {
-                      const statusColor = VAULT_STATUS_COLOR[doc.status];
-                      const hasFile = !!doc.url;
-                      return (
-                        <div key={doc.key} className="vault-doc-row flex-wrap">
-                          <div className="vault-doc-icon" style={{ background: doc.tint, color: doc.fg }}>
-                            <i className={doc.icon} />
-                          </div>
-                          <div className="vault-doc-meta">
-                            <div className="vault-doc-name">{doc.name}</div>
-                            {/* desc is the uploaded file name when there is one —
-                                same 90-char cut as the Document Management row. */}
-                            <div className="vault-doc-desc" title={doc.desc}>{truncateDocName(doc.desc)}</div>
-                          </div>
-                          {doc.category && (
-                            <span
-                              className="d-inline-flex align-items-center vault-cat-badge"
-                              style={{ padding: '4px 10px', borderRadius: 999, background: '#eef2f6', color: '#475569', fontSize: 11, fontWeight: 600 }}
-                            >
-                              {doc.category}
+                  <div className="ep-signing-flow">
+                    {(run.signers || []).map((s, i) => (
+                      <div key={i} className="ep-signer">
+                        <span className="ep-signer-dot">{i + 1}</span>
+                        <span className="ep-signer-name">
+                          {s.signed_name || s.name || s.role_name || `Signer ${i + 1}`}
+                          {s.role_name && (
+                            <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
+                              ({s.role_name})
                             </span>
                           )}
-                          <span className={`badge rounded-pill vault-status-badge bg-${statusColor}-subtle text-${statusColor} fw-semibold px-3 py-2 fs-13`}>
-                            {doc.status}
+                          {s.acted_at && (
+                            <span style={{ display: 'block', fontSize: 10, color: 'var(--vz-secondary-color)', fontWeight: 500, marginTop: 1 }}>
+                              Signed · {fmtSignedStamp(s.acted_at)}
+                            </span>
+                          )}
+                        </span>
+                        {/* Drawn signature, when that signer used the pad. */}
+                        {s.signature_url && (
+                          <img
+                            src={resolveFileUrl(s.signature_url)}
+                            alt={`Signature of ${s.signed_name || s.name || 'signer'}`}
+                            style={{ maxHeight: 30, maxWidth: 110, objectFit: 'contain', marginRight: 10 }}
+                          />
+                        )}
+                        <span className="ep-signer-state">Signed</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {older.length > 0 && (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px dashed var(--vz-border-color)' }}>
+                      <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', marginBottom: 6 }}>
+                        Earlier signed copies
+                      </div>
+                      {older.map(o => (
+                        <div key={o.id} className="d-flex align-items-center gap-2" style={{ padding: '4px 0', fontSize: 12 }}>
+                          <i className="ri-file-pdf-2-line" style={{ color: '#0e7490' }} />
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            {o.code || `Run #${o.id}`}
+                            <span style={{ color: 'var(--vz-secondary-color)' }}> · {fmtSignedStamp(signedRunAt(o))}</span>
                           </span>
-                          <a
-                            href={hasFile ? doc.url! : undefined}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="vault-action-view"
-                            style={{ opacity: hasFile ? 1 : 0.5, pointerEvents: hasFile ? 'auto' : 'none', textDecoration: 'none' }}
-                            title={hasFile ? 'Open in a new tab' : 'No file available'}
-                          >
+                          <button type="button" onClick={(e) => { e.stopPropagation(); setViewRun(o); }}
+                            style={{ background: 'transparent', border: 0, color: 'var(--vz-secondary-color)', cursor: 'pointer', fontSize: 12 }}>
                             <i className="ri-eye-line" /> View
-                          </a>
+                          </button>
+                          <button type="button" disabled={downloadingId === o.id}
+                            onClick={(e) => { e.stopPropagation(); download(o); }}
+                            style={{ background: 'transparent', border: 0, color: '#0e7490', cursor: downloadingId === o.id ? 'wait' : 'pointer', fontSize: 12 }}>
+                            <i className={downloadingId === o.id ? 'ri-loader-4-line onb-spin' : 'ri-download-2-line'} /> Download
+                          </button>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {/* Organizational tab — pulled from HR Document Templates,
-                  filtered by (department → category) × (designation.level → role_type). */}
-              {tab === 'organizational' && (
-                <div style={{ paddingTop: 16 }}>
-                  {/* Match context banner — surfaces WHY each template is here */}
-                  {orgMeta && (
-                    <div className="vault-match-strip d-flex align-items-center gap-2 flex-wrap mb-3">
-                      <i className="ri-magic-line vault-match-icon" />
-                      <strong className="vault-match-title" style={{ fontSize: 12.5 }}>Matched Templates</strong>
-                      <span className="vault-match-text" style={{ fontSize: 12 }}>
-                        Department <strong>{orgMeta.department_name || '—'}</strong> → Category{' '}
-                        <span className="vault-match-chip">{orgMeta.employee_category}</span>
-                        {orgMeta.role_type && (
-                          <>{' '}· Level{' '}<span className="vault-match-chip">{orgMeta.role_type}</span></>
-                        )}
-                      </span>
+                      ))}
                     </div>
                   )}
-
-                  <div className="d-flex align-items-center justify-content-between mb-2">
-                    <div>
-                      {/* Title + sub-copy adapt to the caller: a signed-only
-                          archive in the Employee Evidence Vault, or the full
-                          matched-template list on the workflow pages. */}
-                      <div className="fw-bold" style={{ fontSize: 14 }}>{signedOnly ? 'Signed Documents' : 'Company Documents'}</div>
-                      <div className="text-muted" style={{ fontSize: 11.5 }}>
-                        {orgLoading ? (signedOnly ? 'Loading signed documents…' : 'Loading matching templates…')
-                          : signedTemplates.length === 0 ? (signedOnly ? 'No signed documents yet.' : 'No templates matched this employee’s department / category.')
-                          : signedOnly ? `${signedTemplates.length} signed document${signedTemplates.length === 1 ? '' : 's'}`
-                          : `${signedTemplates.length} template${signedTemplates.length === 1 ? '' : 's'} · ${completedCount} signed`}
-                      </div>
-                    </div>
-                    <span className="vault-doc-count d-inline-flex align-items-center"
-                      style={{ padding: '4px 12px', borderRadius: 999, fontSize: 11.5, fontWeight: 600 }}>
-                      {signedTemplates.length} docs
-                    </span>
-                  </div>
-
-                  {orgLoading && (
-                    <div className="vault-org-loading" style={{ padding: 18, textAlign: 'center', fontSize: 12.5 }}>
-                      <i className="ri-loader-4-line" style={{ fontSize: 22, display: 'block', marginBottom: 6 }} />
-                      Looking up matching templates…
-                    </div>
-                  )}
-
-                  {!orgLoading && signedTemplates.length === 0 && (
-                    <div className="vault-org-empty" style={{ padding: 22, textAlign: 'center', borderRadius: 10 }}>
-                      <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-                      <div style={{ fontSize: 13 }}>
-                        {signedOnly ? (
-                          <>No fully-signed documents yet. A document appears here once
-                          its signing workflow is <strong>Completed</strong>. Send a
-                          template for signing from <strong>HR &rsaquo; Document Templates</strong>
-                          and it will surface here automatically.</>
-                        ) : (
-                          <>No HR Document Templates matched this employee’s
-                          <strong> Department / Category </strong> rule. Configure
-                          templates under <strong>HR &rsaquo; Document Templates</strong>
-                          and they will surface here automatically.</>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  <div>
-                    {signedTemplates.map(tpl => {
-                      const tplStatusColor: 'primary' | 'warning' | 'secondary' =
-                        tpl.status === 'Active' ? 'primary'
-                        : tpl.status === 'Draft' ? 'warning'
-                        : 'secondary';
-                      const canGenerate = tpl.status === 'Active' && !!emp?.dbId;
-                      const run = runByTemplateId.get(tpl.id) || null;
-                      const currentSigner = run?.signers?.[run.current_index] || null;
-                      const isMyTurn = !!(run && currentSigner
-                        && (run.status === 'Pending' || run.status === 'In Progress')
-                        && currentSigner.user_id === currentUserId);
-                      const runStatusColor: 'success' | 'danger' | 'secondary' | 'warning' | 'info' | null =
-                        run?.status === 'Completed' ? 'success'
-                        : run?.status === 'Rejected' ? 'danger'
-                        : run?.status === 'Cancelled' ? 'secondary'
-                        : run?.status === 'In Progress' ? 'warning'
-                        : run ? 'info'
-                        : null;
-                      // Configured signers for this template (from the
-                      // template builder JSON). Used as the preview when
-                      // no run exists yet so HR sees who *will* sign;
-                      // when a run exists we render run.signers below
-                      // so the live per-step status comes through.
-                      const tplSigners = parseSigners(tpl.signers);
-                      return (
-                        <div key={tpl.id} className="vault-tpl-card">
-                        <div className="vault-doc-row flex-wrap" style={{ position: 'relative' }}>
-                          <div className="vault-doc-icon" style={{ background: '#eef2ff', color: '#4338ca' }}>
-                            <i className="ri-file-text-line" />
-                          </div>
-                          <div className="vault-doc-meta">
-                            <div className="vault-doc-name">
-                              {tpl.name || '(unnamed template)'}{' '}
-                              <span className="vault-doc-code">{tpl.code}</span>
-                              {run && runStatusColor && (
-                                <span className={`badge rounded-pill bg-${runStatusColor}-subtle text-${runStatusColor} fw-semibold ms-2`} style={{ fontSize: 11, padding: '3px 9px' }}>
-                                  <i className="ri-flow-chart" style={{ fontSize: 11, marginRight: 3 }} />{run.status}
-                                </span>
-                              )}
-                            </div>
-                            <div className="vault-doc-desc">
-                              {tpl.doc_type || 'Document'}{tpl.trigger_point?.module_name ? ` · Trigger: ${tpl.trigger_point.module_name}` : ''}
-                              {run && currentSigner && (run.status === 'Pending' || run.status === 'In Progress') && (
-                                <> · Waiting on <strong>{currentSigner.name}</strong> ({currentSigner.action})</>
-                              )}
-                            </div>
-                          </div>
-                          <span className={`badge rounded-pill bg-${tplStatusColor}-subtle text-${tplStatusColor} fw-semibold px-3 py-2 fs-13`}>
-                            {tpl.status}
-                          </span>
-                          {/* View — workflow pages hide it once a run is Completed
-                              (Download takes over); the signed-only Employee
-                              Evidence Vault always shows it (opens the signed copy). */}
-                          {(signedOnly || run?.status !== 'Completed') && (
-                            <button type="button" className="vault-action-view" onClick={() => handleView(tpl)}
-                              data-tooltip={signedOnly ? 'View the signed document' : "Preview with this employee's data"} data-tooltip-pos="bottom" aria-label="View document">
-                              <i className="ri-eye-line" /> View
-                            </button>
-                          )}
-                          {/* If the current user is the next signer, surface
-                              their action button inline so they don't have to
-                              hunt for it. */}
-                          {isMyTurn && run && (
-                            <button type="button"
-                              onClick={() => openAction(run)}
-                              data-tooltip={`Your turn — ${currentSigner!.action} this document`} data-tooltip-pos="bottom" aria-label={currentSigner!.action}
-                              style={{ padding: '6px 12px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', border: 0, borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                              <i className="ri-quill-pen-line me-1" />{currentSigner!.action}
-                            </button>
-                          )}
-                          {/* Generate — fill the template's custom fields, preview
-                              with this employee's data, then download the DOCX or
-                              push it into the signing workflow. Same conditions as
-                              Send (hidden while a run is in flight / completed). */}
-                          {(!run || run.status === 'Rejected' || run.status === 'Cancelled') && (
-                            <button type="button" onClick={() => { if (canGenerate) setGenTpl(tpl); }}
-                              disabled={!canGenerate}
-                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
-                              data-tooltip={canGenerate ? 'Fill custom fields, preview & generate / send for signing' : 'Only Active templates can be generated'} data-tooltip-pos="bottom" aria-label="Generate document">
-                              <i className="ri-file-add-line me-1" /> Generate
-                            </button>
-                          )}
-                          {/* Send for signing — only when there's no active run
-                              (or a previous run was Rejected/Cancelled). While a
-                              run is in flight it's hidden (can't re-send); once
-                              Completed the row shows only Download instead. */}
-                          {(!run || run.status === 'Rejected' || run.status === 'Cancelled') && (
-                            <button type="button" onClick={() => { if (canGenerate) openSend(tpl); }}
-                              disabled={!canGenerate}
-                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: canGenerate ? 'pointer' : 'not-allowed', opacity: canGenerate ? 1 : 0.5 }}
-                              data-tooltip={canGenerate ? 'Send through the signing workflow' : 'Only Active templates can be sent'} data-tooltip-pos="bottom" aria-label="Send for signing">
-                              <i className="ri-send-plane-line me-1" /> Send
-                            </button>
-                          )}
-                          {/* Reminder — visible only on in-flight runs.
-                              Pings the CURRENT pending signer by email.
-                              Backend throttles to 1 reminder / 6 hours
-                              per signer so accidental double-clicks
-                              don't spam. */}
-                          {run && (run.status === 'Pending' || run.status === 'In Progress') && (
-                            <button type="button" onClick={() => sendReminder(run)}
-                              style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#f59e0b,#d97706)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-                              data-tooltip="Email a reminder to the current pending signer" data-tooltip-pos="bottom" aria-label="Send reminder">
-                              <i className="ri-mail-send-line me-1" /> Reminder
-                            </button>
-                          )}
-                          {/* Download signed PDF — icon-only (compact) so the
-                              action row stays uncluttered. Shown only once the
-                              run is fully signed. */}
-                          {run && run.status === 'Completed' && (() => {
-                            const isDownloading = downloadingRunId === run.id;
-                            return (
-                              <button type="button" onClick={() => downloadSignedDoc(run)}
-                                disabled={isDownloading}
-                                aria-label="Download signed document"
-                                style={{ padding: '6px 14px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: isDownloading ? 'wait' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, opacity: isDownloading ? 0.7 : 1 }}
-                                data-tooltip={isDownloading ? 'Preparing the signed PDF…' : 'Download the fully-signed document'} data-tooltip-pos="bottom">
-                                {isDownloading
-                                  ? <><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" /> Downloading…</>
-                                  : <><i className="ri-download-2-line" /> Download</>}
-                              </button>
-                            );
-                          })()}
-
-                          {/* 3-dot menu (audit trail + cancel). Hidden in the
-                              signed-only Employee Evidence Vault, which exposes
-                              just View + Download. */}
-                          {!signedOnly && (
-                          <div style={{ position: 'relative' }}>
-                            <button type="button" className="vault-kebab-btn" onClick={() => setOpenMenuId(openMenuId === tpl.id ? null : tpl.id)}
-                              data-tooltip="More actions" data-tooltip-pos="left" aria-label="More actions"
-                              style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', color: 'var(--vz-secondary-color, #6b7280)', cursor: 'pointer' }}>
-                              <i className="ri-more-2-fill" />
-                            </button>
-                            {openMenuId === tpl.id && (
-                              <div className="vault-kebab-menu" style={{ position: 'absolute', right: 0, top: '110%', minWidth: 180, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10, boxShadow: '0 8px 22px rgba(0,0,0,0.18)', padding: 4, zIndex: 20 }}>
-                                {run ? (
-                                  <button type="button" onClick={() => openAudit(run)}
-                                    style={menuItemStyle}>
-                                    <i className="ri-history-line me-2" />Audit Trail
-                                  </button>
-                                ) : (
-                                  <div style={{ ...menuItemStyle, color: '#9ca3af', cursor: 'default' }}>
-                                    <i className="ri-history-line me-2" />No signing run yet
-                                  </div>
-                                )}
-                                {run && (run.status === 'Pending' || run.status === 'In Progress') && (
-                                  <button type="button" onClick={() => cancelRun(run)}
-                                    style={{ ...menuItemStyle, color: '#b91c1c' }}>
-                                    <i className="ri-close-circle-line me-2" />Cancel Workflow
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          )}
-                        </div>
-
-                        {/* Signing Workflow stepper — renders the same
-                            numbered "Reporting Manager → Employee → …"
-                            pipeline that Exit Management shows under each
-                            template. When a live run exists we pull each
-                            step's name + per-step status from run.signers
-                            (so a Pending / Awaiting / Completed / Rejected
-                            badge appears against the right step). When no
-                            run has been launched yet we preview the
-                            template's configured signers so HR can see who
-                            *will* sign before clicking Send. Same .ep-
-                            signing/.ep-signer classes Exit Management uses
-                            — recruitment.css is now imported at the top of
-                            this file so they resolve. */}
-                        {(tplSigners.length > 0 || run) && (
-                          <div className="ep-signing">
-                            <div className="ep-signing-head">
-                              <i className="ri-shield-check-line" />Signing Workflow
-                              {run ? (
-                                <span className="ep-signing-pct">
-                                  {run.signers.filter((s: any) => s.status === 'Done').length}/{run.signers.length} signed
-                                </span>
-                              ) : (
-                                <span className="ep-signing-pct">Not yet sent</span>
-                              )}
-                            </div>
-                            <div className="ep-signing-flow">
-                              {(run
-                                ? run.signers.map((s: any, i: number) => ({
-                                    name:   s.name || s.role_name || `Signer ${i + 1}`,
-                                    action: s.action,
-                                    status: s.status === 'Done' ? 'Completed'
-                                          : s.status === 'Rejected' ? 'Rejected'
-                                          // Run fully signed → every remaining step reads Completed
-                                          // (fixes the last signer staying on "Awaiting" after the
-                                          // final signature flips the run to Completed).
-                                          : run.status === 'Completed' ? 'Completed'
-                                          // Parallel mode → EVERY unsigned signer can act now, so all
-                                          // read "Awaiting" (not just current_index).
-                                          : (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel' || i === run.current_index) ? 'Awaiting' : 'Pending',
-                                    active: (String((run as any).template?.signing_mode || '').toLowerCase() === 'parallel'
-                                              ? (s.status !== 'Done' && s.status !== 'Rejected')
-                                              : i === run.current_index)
-                                            && (run.status === 'Pending' || run.status === 'In Progress'),
-                                  }))
-                                : tplSigners.map((s, i) => ({
-                                    name:   s.role_name || s.designation_name || `Signer ${i + 1}`,
-                                    action: s.action,
-                                    status: 'Pending' as string,
-                                    active: i === 0,
-                                  }))
-                              ).map((sg, i) => (
-                                <div key={i} className={`ep-signer${sg.active ? ' is-active' : ''}`}>
-                                  <span className="ep-signer-dot">{i + 1}</span>
-                                  <span className="ep-signer-name">
-                                    {sg.name}
-                                    {sg.action && (
-                                      <span style={{ marginLeft: 6, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 500 }}>
-                                        ({sg.action})
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className="ep-signer-state">{sg.status}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        </div>
-                      );
-                    })}
-                  </div>
                 </div>
               )}
             </div>
-        </div>
-      </ModalBody>
+          );
+        })}
+      </div>
 
-      {/* Generate Document — custom-field fill → preview → download / send for signature */}
-      <DocGenerateModal
-        isOpen={!!genTpl}
-        onClose={() => setGenTpl(null)}
-        templateId={genTpl?.id ?? null}
-        templateName={genTpl?.name}
-        templateCode={genTpl?.code}
-        employeeId={emp?.dbId ?? null}
-        employeeName={emp?.name}
-        onSent={fetchRuns}
-      />
-
-      {/* Document preview — opens on top of the vault modal */}
-      <Modal isOpen={previewOpen} toggle={() => setPreviewOpen(false)} size="lg" centered
+      {/* Signed-copy viewer — the run's frozen HTML in the page chrome */}
+      <Modal isOpen={!!viewRun} toggle={() => setViewRun(null)} size="lg" centered
         contentClassName="border-0" modalClassName="vault-preview-modal" backdrop="static">
-        <style>{`
-          /* Dark-mode chrome for the View preview modal. --vz-card-bg is
-             card-scoped and doesn't resolve inside this portal (it fell back to
-             #fff, leaving the footer white); root-level --vz-secondary-bg /
-             --vz-border-color / --vz-body-color resolve everywhere, so we use
-             those plus explicit amber for the "unfilled placeholders" band. */
-          [data-bs-theme="dark"] .vault-preview-modal .modal-content {
-            background: var(--vz-secondary-bg) !important;
-            color: var(--vz-body-color);
-          }
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-foot {
-            background: var(--vz-secondary-bg) !important;
-            border-top-color: var(--vz-border-color) !important;
-            box-shadow: 0 -3px 10px rgba(0,0,0,0.25);
-          }
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-btn--ghost {
-            background: var(--vz-card-bg, #1f2937) !important;
-            border-color: var(--vz-border-color) !important;
-            color: var(--vz-body-color) !important;
-          }
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn {
-            background: rgba(245,158,11,0.15) !important;
-            border-color: rgba(245,158,11,0.40) !important;
-          }
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn,
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn strong,
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn i,
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn div {
-            color: #fcd34d !important;
-          }
-          [data-bs-theme="dark"] .vault-preview-modal .tpl-prev-warn code {
-            background: rgba(0,0,0,0.30) !important;
-            color: #fde68a !important;
-          }
-        `}</style>
         <ModalBody className="p-0">
-          {/* Preview header bar */}
-          <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)', borderRadius: '6px 6px 0 0' }}>
+          <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg,#047857 0%,#059669 60%,#10b981 100%)', borderRadius: '6px 6px 0 0' }}>
             <div className="d-flex align-items-center justify-content-between gap-3">
               <div className="d-flex align-items-center gap-2 min-w-0">
                 <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <i className="ri-file-search-line" style={{ fontSize: 18, color: '#fff' }} />
+                  <i className="ri-file-shield-2-line" style={{ fontSize: 18, color: '#fff' }} />
                 </span>
                 <div className="min-w-0">
                   <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 16, lineHeight: 1.2 }}>
-                    {previewTpl?.name || 'Document Preview'}
+                    {viewRun?.template?.name || viewRun?.code || 'Signed Document'}
                   </h5>
                   <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>
-                    {emp?.name ? `Filled with ${emp.name}'s data` : 'Live preview'}
-                    {previewTpl?.code ? ` · ${previewTpl.code}` : ''}
+                    Signed copy{viewRun?.code ? ` · ${viewRun.code}` : ''}
+                    {viewRun && signedRunAt(viewRun) ? ` · ${fmtSignedStamp(signedRunAt(viewRun))}` : ''}
                   </div>
                 </div>
               </div>
-              <button type="button" onClick={() => setPreviewOpen(false)} aria-label="Close"
-                className="tpl-prev-x"
+              <button type="button" onClick={() => setViewRun(null)} aria-label="Close" className="tpl-prev-x"
                 style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
                 <i className="ri-close-line" style={{ fontSize: 18 }} />
               </button>
@@ -2528,588 +1527,43 @@ export function VaultModal({
           </div>
 
           <div style={{ padding: 16, background: 'var(--vz-secondary-bg, #f9fafb)', maxHeight: '70vh', overflowY: 'auto' }}>
-            {previewLoading ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#6b7280' }}>
-                <i className="ri-loader-4-line" style={{ fontSize: 26, display: 'block', marginBottom: 8 }} />
-                Resolving placeholders…
-              </div>
-            ) : (
-              <>
-                {previewMissing.length > 0 && (
-                  <div className="d-flex align-items-start gap-2 mb-3 tpl-prev-warn"
-                    style={{ padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12 }}>
-                    <i className="ri-error-warning-line" style={{ color: '#b45309', fontSize: 16, marginTop: 1 }} />
-                    <div style={{ color: '#92400e' }}>
-                      <strong>Unfilled placeholders:</strong>{' '}
-                      {previewMissing.map(t => (
-                        <code key={t} style={{ background: '#fff', color: '#7c2d12', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>{`{{${t}}}`}</code>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                <HeaderFooterPanel
-                  header={previewHeader} setHeader={() => {}}
-                  footer={previewFooter} setFooter={() => {}}
-                  readOnly
-                >
-                  <div className="tpl-readonly-preview"
-                    style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
-                    // The server resolveTokens htmlspecialchars-escapes every
-                    // substituted value, so the only HTML reaching this sink
-                    // is whatever the admin saved in the template editor.
-                    dangerouslySetInnerHTML={{ __html: previewHtml }}
-                  />
-                </HeaderFooterPanel>
-              </>
-            )}
+            <HeaderFooterPanel
+              header={{ ...DEFAULT_HEADER, ...(viewRun?.header_config || {}) } as HeaderConfig} setHeader={() => {}}
+              footer={{ ...DEFAULT_FOOTER, ...(viewRun?.footer_config || {}) } as FooterConfig} setFooter={() => {}}
+              readOnly
+            >
+              <div className="tpl-readonly-preview"
+                style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 260 }}
+                /* Server-side resolveTokens htmlspecialchars-escapes every
+                   substituted value, so the only markup reaching this sink is
+                   what the admin authored plus the signature <img>s. */
+                dangerouslySetInnerHTML={{ __html: viewRun?.content_html || '<p style="color:#9ca3af;font-style:italic;">(no stored content for this run)</p>' }}
+              />
+            </HeaderFooterPanel>
           </div>
 
           <div className="tpl-prev-foot" style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-card-bg, #fff)', display: 'flex', justifyContent: 'flex-end', gap: 8, borderRadius: '0 0 6px 6px' }}>
-            <button type="button" onClick={() => setPreviewOpen(false)}
+            <button type="button" onClick={() => setViewRun(null)}
               className="tpl-prev-btn tpl-prev-btn--ghost"
               style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
               Close
             </button>
-            {previewTpl && previewTpl.status === 'Active' && (
-              <button type="button" onClick={() => { handleGenerate(previewTpl); }}
-                className="tpl-prev-btn tpl-prev-btn--download"
-                style={{ padding: '7px 14px', background: 'linear-gradient(135deg,#16a34a,#22c55e)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                <i className="ri-download-2-line me-1" /> Download DOCX
+            {viewRun && (
+              <button type="button" disabled={downloadingId === viewRun.id}
+                onClick={() => download(viewRun)}
+                className="tpl-prev-btn"
+                style={{ padding: '7px 14px', background: 'linear-gradient(135deg,#0891b2,#0e7490)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: downloadingId === viewRun.id ? 'wait' : 'pointer' }}>
+                <i className={downloadingId === viewRun.id ? 'ri-loader-4-line onb-spin me-1' : 'ri-file-pdf-2-line me-1'} />
+                {downloadingId === viewRun.id ? 'Downloading…' : 'Download PDF'}
               </button>
             )}
           </div>
         </ModalBody>
       </Modal>
-
-      {/* Send-for-signing confirmation */}
-      <Modal isOpen={!!sendForTpl} toggle={() => setSendForTpl(null)} size="md" centered contentClassName="border-0" modalClassName="send-sign-modal" backdrop="static">
-        <style>{`
-          .send-sign-modal .modal-dialog { max-width: 600px; }
-          .send-sign-modal .modal-content { border-radius: 16px; overflow: hidden; box-shadow: 0 24px 60px rgba(18,38,63,0.30); }
-          /* Body surface — the inline var(--vz-card-bg) falls back to white
-             inside the portalled modal, so dark mode showed a white body.
-             Pin explicit surfaces (a stylesheet !important beats the inline
-             var). Text + footer border re-pinned for the dark surface too. */
-          .send-sign-modal .modal-body { background: #ffffff !important; }
-          [data-bs-theme="dark"] .send-sign-modal .modal-body { background: #1c2531 !important; }
-          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) { color: #ced4da !important; }
-          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(2) strong { color: #f3f4f6 !important; }
-          [data-bs-theme="dark"] .send-sign-modal .modal-body > div:nth-of-type(3) { border-top-color: rgba(255,255,255,0.10) !important; }
-          .send-sign-modal .ss-warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
-          [data-bs-theme="dark"] .send-sign-modal .ss-warn { background: rgba(245,158,11,0.14); border-color: rgba(245,158,11,0.42); color: #fcd34d; }
-          .send-sign-modal .ss-cancel { background: var(--vz-secondary-bg, #fff); color: var(--vz-body-color, #374151); border: 1px solid var(--vz-border-color, #d1d5db); transition: filter .15s ease; }
-          .send-sign-modal .ss-cancel:hover { filter: brightness(0.97); }
-          [data-bs-theme="dark"] .send-sign-modal .ss-cancel:hover { filter: brightness(1.25); }
-          .send-sign-modal .ss-send { transition: filter .15s ease, transform .15s ease; }
-          .send-sign-modal .ss-send:hover:not(:disabled) { filter: brightness(1.06); transform: translateY(-1px); }
-          .send-sign-modal .ssw-step { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 10px; }
-          .send-sign-modal .ssw-step-num { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; background: #4338ca; color: #fff; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; flex-shrink: 0; }
-          .send-sign-modal .ssw-step-role { font-size: 12px; font-weight: 700; color: #4338ca; line-height: 1.15; }
-          .send-sign-modal .ssw-step-action { font-size: 10px; font-weight: 500; color: #6366f1; }
-          .send-sign-modal .ssw-arrow { color: #9ca3af; font-size: 16px; }
-          [data-bs-theme="dark"] .send-sign-modal .ssw-step { background: rgba(99,102,241,0.16); border-color: rgba(99,102,241,0.40); }
-          [data-bs-theme="dark"] .send-sign-modal .ssw-step-num { background: #6366f1; }
-          [data-bs-theme="dark"] .send-sign-modal .ssw-step-role { color: #c4b5fd; }
-          [data-bs-theme="dark"] .send-sign-modal .ssw-step-action { color: #a5b4fc; }
-          [data-bs-theme="dark"] .send-sign-modal .ssw-arrow { color: #6b7280; }
-        `}</style>
-        <ModalBody className="p-0" style={{ background: 'var(--vz-card-bg, #fff)' }}>
-          <div style={{ padding: '18px 20px', background: 'linear-gradient(135deg,#5a3fd1 0%,#7c3aed 55%,#a855f7 100%)', color: '#fff' }}>
-            <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 40, height: 40, borderRadius: 11, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
-                <i className="ri-send-plane-fill" />
-              </span>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, lineHeight: 1.2 }}>Send for Signing</div>
-                <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Confirm the signing workflow before sending</div>
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: 18, fontSize: 13, color: 'var(--vz-body-color)' }}>
-            <p style={{ marginBottom: 14 }}>
-              Send <strong>{sendForTpl?.name}</strong> for <strong>{emp?.name}</strong>? The document will follow this signing workflow:
-            </p>
-            <SendWorkflowPreview templateId={sendForTpl?.id ?? null} />
-            <div className="ss-warn d-flex align-items-start gap-2" style={{ marginTop: 14, padding: '10px 12px', borderRadius: 10, fontSize: 11.5 }}>
-              <i className="ri-information-line" style={{ marginTop: 1, flexShrink: 0 }} />
-              <span>Placeholders will be locked at send-time using this employee's data.</span>
-            </div>
-          </div>
-          <div style={{ padding: '14px 18px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <button type="button" onClick={() => setSendForTpl(null)} disabled={sending}
-              className="ss-cancel" style={{ padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-              Cancel
-            </button>
-            <button type="button" onClick={confirmSend} disabled={sending}
-              className="ss-send" style={{ padding: '8px 18px', background: 'linear-gradient(135deg,#7c3aed,#a855f7)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: sending ? 'wait' : 'pointer', opacity: sending ? 0.8 : 1, boxShadow: '0 4px 14px rgba(124,58,237,0.40)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <i className={sending ? 'ri-loader-4-line ri-spin' : 'ri-send-plane-fill'} />{sending ? 'Sending…' : 'Send Document'}
-            </button>
-          </div>
-        </ModalBody>
-      </Modal>
-
-      {/* Audit trail modal */}
-      <Modal isOpen={!!auditRun} toggle={() => setAuditRun(null)} size="lg" centered contentClassName="border-0" modalClassName="audit-trail-modal" backdrop="static">
-        <style>{`
-          /* Dark-mode for the Audit Trail / Signature Timeline modal — the
-             body + most text are hardcoded light. Darken the surfaces and lift
-             every text node; the colored status pills (span) keep their own
-             tints, which read fine on the dark body. */
-          [data-bs-theme="dark"] .audit-trail-modal .modal-content,
-          [data-bs-theme="dark"] .audit-trail-modal .audit-body {
-            background: var(--vz-secondary-bg) !important;
-          }
-          [data-bs-theme="dark"] .audit-trail-modal .audit-body div {
-            color: #e5e7eb !important;
-          }
-          [data-bs-theme="dark"] .audit-trail-modal .audit-body code {
-            background: rgba(255,255,255,0.08) !important;
-            color: #cbd5e1 !important;
-          }
-          [data-bs-theme="dark"] .audit-trail-modal .audit-note {
-            background: rgba(239,68,68,0.12) !important;
-            border-color: rgba(239,68,68,0.40) !important;
-          }
-        `}</style>
-        <ModalBody className="p-0">
-          {auditRun && (() => {
-            const signers = auditRun.signers || [];
-            const totalSteps = signers.length;
-            const doneSteps  = signers.filter(s => s.status === 'Done').length;
-            const progressPct = totalSteps > 0 ? (doneSteps / totalSteps) * 100 : 0;
-            return (
-              <>
-                {/* ── Header — violet gradient with icon + workflow code +
-                      title on the LEFT, circular percentage progress on the
-                      RIGHT (matches the "VAULT STATUS" doughnut pattern used
-                      on the Evidence Vault header). ── */}
-                <div style={{
-                  position: 'relative',
-                  padding: '20px 22px',
-                  background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #5b21b6 100%)',
-                  color: '#fff',
-                  borderRadius: '8px 8px 0 0',
-                }}>
-                  {/* Close button — absolute top right so it's always reachable */}
-                  <button
-                    type="button"
-                    onClick={() => setAuditRun(null)}
-                    aria-label="Close"
-                    style={{
-                      position: 'absolute',
-                      top: 12, right: 12,
-                      background: 'rgba(255,255,255,0.18)',
-                      border: 0, color: '#fff',
-                      borderRadius: 10,
-                      width: 32, height: 32,
-                      cursor: 'pointer',
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <i className="ri-close-line" style={{ fontSize: 16 }} />
-                  </button>
-
-                  <div className="d-flex align-items-center" style={{ gap: 16, paddingRight: 48 }}>
-                    {/* Glass icon */}
-                    <div style={{
-                      width: 48, height: 48,
-                      background: 'rgba(255,255,255,0.18)',
-                      borderRadius: 12,
-                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                      flexShrink: 0,
-                      backdropFilter: 'blur(8px)',
-                    }}>
-                      <i className="ri-history-line" style={{ fontSize: 22 }} />
-                    </div>
-
-                    {/* Title block */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 11, fontWeight: 700,
-                        letterSpacing: '0.08em', textTransform: 'uppercase',
-                        opacity: 0.78,
-                        marginBottom: 2,
-                      }}>
-                        {auditRun.code || `Run #${auditRun.id}`} · Signature Workflow
-                      </div>
-                      {/* Template names are user-entered and can be a single
-                          unbroken run of characters, which has no break
-                          opportunity and shot straight past the header edge
-                          (see the "rrrrr…" title in the same screenshot).
-                          `anywhere` lets it wrap mid-word; the clamp keeps a
-                          long name from pushing the progress ring off. */}
-                      <div style={{
-                        fontSize: 18, fontWeight: 800,
-                        letterSpacing: '-0.01em',
-                        lineHeight: 1.2,
-                        overflowWrap: 'anywhere',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                      }}
-                        title={auditRun.template?.name || undefined}
-                      >
-                        {auditRun.template?.name || 'Document Timeline'}
-                      </div>
-                      <div style={{ fontSize: 12, opacity: 0.85, marginTop: 3 }}>
-                        Status · <strong>{auditRun.status}</strong> · {doneSteps} / {totalSteps} signed
-                      </div>
-                    </div>
-
-                    {/* Circular percentage progress — SVG donut chart.
-                        circumference = 2π × r (r=26) ≈ 163.36. dashoffset is
-                        the *unfilled* length, so (1 - pct/100) * circumference
-                        leaves the filled arc visible. */}
-                    {(() => {
-                      const r = 26;
-                      const C = 2 * Math.PI * r;
-                      const offset = C - (progressPct / 100) * C;
-                      /* At 100% the arc must be a PLAIN circle — no dash
-                         pattern at all.
-                         `strokeDasharray={C}` means "dash C, then gap C", and C
-                         is the mathematical circumference 2πr. The browser
-                         measures the rendered path (a Bézier approximation of a
-                         circle) and gets a marginally different length, so the
-                         last sliver of the ring falls into the gap half of the
-                         pattern: a hairline notch that reads as "not finished"
-                         precisely when the label says 100%. Asking a dashed
-                         stroke to draw a complete circle is the mistake — a
-                         complete circle has no dashes in it. */
-                      const isComplete = progressPct >= 100;
-                      return (
-                        <div style={{
-                          position: 'relative',
-                          width: 64, height: 64,
-                          flexShrink: 0,
-                        }}>
-                          <svg width="64" height="64" viewBox="0 0 64 64" style={{ transform: 'rotate(-90deg)' }}>
-                            {/* Track */}
-                            <circle
-                              cx="32" cy="32" r={r}
-                              fill="none"
-                              stroke="rgba(255,255,255,0.20)"
-                              strokeWidth="6"
-                            />
-                            {/* Progress arc */}
-                            <circle
-                              cx="32" cy="32" r={r}
-                              fill="none"
-                              stroke="#ffffff"
-                              strokeWidth="6"
-                              // Round caps shape the two ENDS of a partial arc.
-                              // A closed ring has no ends, and the round cap
-                              // then bulges back over the start as a visible
-                              // lump — so drop it once the circle is whole.
-                              strokeLinecap={isComplete ? 'butt' : 'round'}
-                              strokeDasharray={isComplete ? undefined : C}
-                              strokeDashoffset={isComplete ? undefined : offset}
-                              style={{ transition: 'stroke-dashoffset .6s ease-out' }}
-                            />
-                          </svg>
-                          {/* Centered percentage label */}
-                          <div style={{
-                            position: 'absolute',
-                            inset: 0,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 14,
-                            fontWeight: 800,
-                            color: '#fff',
-                            letterSpacing: '-0.02em',
-                          }}>
-                            {Math.round(progressPct)}%
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-
-                {/* ── Vertical timeline ── */}
-                <div className="audit-body" style={{ padding: '16px 22px 18px', maxHeight: '55vh', overflowY: 'auto', background: '#fff' }}>
-                  <div style={{
-                    fontSize: 11, fontWeight: 800,
-                    color: '#6b7280', letterSpacing: '0.08em',
-                    textTransform: 'uppercase', marginBottom: 14,
-                  }}>
-                    Signature Timeline
-                  </div>
-
-                  {signers.length === 0 && (
-                    <div style={{ fontSize: 13, color: '#9ca3af', fontStyle: 'italic' }}>
-                      No signers configured for this workflow.
-                    </div>
-                  )}
-
-                  {signers.map((s, i) => {
-                    const done = s.status === 'Done';
-                    const rejected = s.status === 'Rejected';
-                    const isCurrent = i === auditRun.current_index
-                      && (auditRun.status === 'Pending' || auditRun.status === 'In Progress');
-                    const isLast = i === signers.length - 1;
-
-                    // Color tokens per state. The circular dot keeps its vivid
-                    // fill in both themes; the status pill gets a translucent
-                    // dark variant so it isn't a light pastel block in dark mode.
-                    const tone = rejected
-                      ? { bg: '#fee2e2', border: '#fca5a5', icon: '#dc2626', pill: vaultDark ? '#fca5a5' : '#dc2626', pillBg: vaultDark ? 'rgba(239,68,68,0.18)' : '#fee2e2', pillBorder: vaultDark ? 'rgba(239,68,68,0.40)' : '#fca5a5', label: 'Rejected', iconClass: 'ri-close-line' }
-                      : done
-                      ? { bg: '#10b981', border: '#10b981', icon: '#fff',    pill: vaultDark ? '#6ee7b7' : '#10b981', pillBg: vaultDark ? 'rgba(16,185,129,0.18)' : '#d1fae5', pillBorder: vaultDark ? 'rgba(16,185,129,0.40)' : '#a7f3d0', label: 'Done',     iconClass: 'ri-check-line' }
-                      : isCurrent
-                      ? { bg: '#7c3aed', border: '#7c3aed', icon: '#fff',    pill: vaultDark ? '#c4b5fd' : '#7c3aed', pillBg: vaultDark ? 'rgba(124,58,237,0.20)' : '#ede9fe', pillBorder: vaultDark ? 'rgba(124,58,237,0.45)' : '#c4b5fd', label: 'Pending you', iconClass: 'ri-time-line' }
-                      : { bg: vaultDark ? 'rgba(255,255,255,0.07)' : '#f3f4f6', border: vaultDark ? 'rgba(255,255,255,0.20)' : '#d1d5db', icon: vaultDark ? 'rgba(255,255,255,0.55)' : '#9ca3af', pill: vaultDark ? '#9ca3af' : '#6b7280', pillBg: vaultDark ? 'rgba(255,255,255,0.06)' : '#f3f4f6', pillBorder: vaultDark ? 'rgba(255,255,255,0.16)' : '#e5e7eb', label: 'Waiting',  iconClass: 'ri-time-line' };
-
-                    return (
-                      <div key={i} style={{ position: 'relative', display: 'flex', gap: 16, paddingBottom: isLast ? 0 : 20 }}>
-                        {/* Vertical connector line behind the dot */}
-                        {!isLast && (
-                          <span style={{
-                            position: 'absolute',
-                            left: 17,
-                            top: 36,
-                            bottom: 0,
-                            width: 2,
-                            background: done ? '#10b981' : (vaultDark ? 'rgba(255,255,255,0.14)' : '#e5e7eb'),
-                            borderRadius: 1,
-                          }} />
-                        )}
-
-                        {/* Circular state icon */}
-                        <div style={{
-                          width: 36, height: 36,
-                          borderRadius: '50%',
-                          background: tone.bg,
-                          border: `2px solid ${tone.border}`,
-                          color: tone.icon,
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 16,
-                          flexShrink: 0,
-                          position: 'relative',
-                          zIndex: 1,
-                          boxShadow: done || isCurrent ? `0 4px 12px ${tone.bg}40` : 'none',
-                        }}>
-                          <i className={tone.iconClass} />
-                        </div>
-
-                        {/* Row content */}
-                        <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-                          <div className="d-flex justify-content-between align-items-start" style={{ gap: 12 }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 14, fontWeight: 700, color: '#111827', lineHeight: 1.3 }}>
-                                {s.name}
-                              </div>
-                              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
-                                {s.action} · Step {i + 1} of {signers.length}
-                              </div>
-                              {s.acted_at && (
-                                <div style={{ fontSize: 11.5, color: '#9ca3af', marginTop: 4 }}>
-                                  <i className="ri-calendar-line" style={{ marginRight: 4 }} />
-                                  {fmtAuditStamp(s.acted_at)}
-                                </div>
-                              )}
-                              {s.note && (
-                                <div className="audit-note" style={{
-                                  fontSize: 11.5, color: '#7f1d1d',
-                                  background: '#fef2f2',
-                                  border: '1px solid #fecaca',
-                                  borderRadius: 6,
-                                  padding: '6px 10px',
-                                  marginTop: 6,
-                                }}>
-                                  <strong>Note:</strong> {s.note}
-                                </div>
-                              )}
-                            </div>
-                            {/* Status pill */}
-                            <span style={{
-                              display: 'inline-flex', alignItems: 'center',
-                              gap: 4,
-                              padding: '4px 10px',
-                              fontSize: 11, fontWeight: 700,
-                              color: tone.pill,
-                              background: tone.pillBg,
-                              border: `1px solid ${tone.pillBorder}`,
-                              borderRadius: 999,
-                              flexShrink: 0,
-                              whiteSpace: 'nowrap',
-                            }}>
-                              {tone.label}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* ── Event log (collapsible-feel section) ── */}
-                  {(auditRun.audit_log && auditRun.audit_log.length > 0) && (
-                    <>
-                      <div style={{
-                        marginTop: 24, paddingTop: 16,
-                        borderTop: `1px solid ${vaultDark ? 'rgba(255,255,255,0.10)' : '#f3f4f6'}`,
-                        fontSize: 11, fontWeight: 800,
-                        color: '#6b7280', letterSpacing: '0.08em',
-                        textTransform: 'uppercase', marginBottom: 12,
-                      }}>
-                        Activity Log
-                      </div>
-                      <div style={{ borderLeft: `2px solid ${vaultDark ? 'rgba(124,92,252,0.40)' : '#ede9fe'}`, paddingLeft: 14, marginLeft: 8 }}>
-                        {/* Oldest first. The list was reversed, so the trail
-                            opened with the signature and ended with the send —
-                            the document appearing to be signed before it was
-                            ever sent out. An audit trail is read as a sequence
-                            of events; it has to run in the order they happened. */}
-                        {auditRun.audit_log.map((ev, i) => (
-                          <div key={i} style={{ position: 'relative', marginBottom: 10 }}>
-                            <span style={{
-                              position: 'absolute',
-                              // Centre the 10px dot (+2px ring) on the 2px guide
-                              // line: line centre sits 15px left of the content
-                              // edge, so the content-box left = -20.
-                              left: -20, top: 4,
-                              width: 10, height: 10,
-                              borderRadius: '50%',
-                              background: '#7c3aed',
-                              // Ring matches the panel background so the dot reads
-                              // as sitting on the line (white ring glared on dark).
-                              border: `2px solid ${vaultDark ? 'var(--vz-secondary-bg, #1c2531)' : '#fff'}`,
-                              boxShadow: `0 0 0 2px ${vaultDark ? 'rgba(124,92,252,0.35)' : '#ede9fe'}`,
-                            }} />
-                            <div style={{ fontSize: 12.5, color: '#1f2937', fontWeight: 600 }}>
-                              {ev.message}
-                            </div>
-                            <div style={{ fontSize: 11, color: '#6b7280', marginTop: 1 }}>
-                              {fmtAuditStamp(ev.at)} · {ev.actor_name}
-                              <code style={{ fontSize: 10, background: '#f3f4f6', padding: '1px 5px', borderRadius: 3, marginLeft: 6 }}>
-                                {ev.action}
-                              </code>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                </div>
-              </>
-            );
-          })()}
-        </ModalBody>
-      </Modal>
-
-      {/* Sign / Approve / Acknowledge modal */}
-      <Modal isOpen={!!actionRun} toggle={() => setActionRun(null)} size="lg" centered contentClassName="border-0" backdrop="static">
-        <ModalBody className="p-0">
-          {actionRun && (() => {
-            const current = actionRun.signers[actionRun.current_index];
-            const isSign = current?.action === 'Sign';
-            return (
-              <>
-                <div style={{ padding: '14px 18px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', color: '#fff', borderRadius: '6px 6px 0 0' }}>
-                  {/* No top-right X — footer has Cancel; one dismiss path. */}
-                  <strong style={{ fontSize: 15 }}><i className="ri-quill-pen-line me-2" />{current?.action}</strong>
-                  <div style={{ fontSize: 11.5, opacity: 0.85 }}>{actionRun.template?.name} · {actionRun.code}</div>
-                </div>
-                <div style={{ padding: 16, maxHeight: '65vh', overflowY: 'auto', background: 'var(--vz-secondary-bg, #f9fafb)' }}>
-                  {/* Render the locked document for context */}
-                  <HeaderFooterPanel
-                    header={{ ...DEFAULT_HEADER, ...(actionRun.header_config || {}) } as HeaderConfig}
-                    setHeader={() => {}}
-                    footer={{ ...DEFAULT_FOOTER, ...(actionRun.footer_config || {}) } as FooterConfig}
-                    setFooter={() => {}}
-                    readOnly
-                  >
-                    <div className="tpl-readonly-preview"
-                      style={{ fontSize: 13.5, lineHeight: 1.65, color: '#374151', minHeight: 220 }}
-                      dangerouslySetInnerHTML={{ __html: actionRun.content_html || '<p>(empty)</p>' }}
-                    />
-                  </HeaderFooterPanel>
-
-                  {/* Action inputs */}
-                  <div style={{ marginTop: 14, padding: 14, background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 10 }}>
-                    {isSign && (
-                      <>
-                        <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>
-                          Type your name to sign <span style={{ color: '#ef4444' }}>*</span>
-                        </label>
-                        <input type="text" value={actionName} onChange={e => setActionName(e.target.value)}
-                          placeholder="Your full name"
-                          style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 14 }} />
-                        {actionName && (
-                          <div style={{ marginTop: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 6, fontSize: 11.5, color: '#6b7280' }}>
-                            Preview: <span style={{ fontFamily: '"Brush Script MT", cursive', fontSize: 22, color: '#1d4ed8', marginLeft: 6 }}>{actionName}</span>
-                            <div style={{ fontSize: 10.5, marginTop: 4 }}>
-                              This will replace every <code>{`{{Signer${(actionRun.current_index ?? 0) + 1}Sign}}`}</code> placeholder in the document.
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {/* Informed consent — mandatory for EVERY action (Sign,
-                        Approve, Acknowledge). The action button stays disabled
-                        until ticked; the API rejects an unconsented action. */}
-                    <label style={{
-                      display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12,
-                      padding: '10px 12px', background: actionConsent ? '#eef2ff' : '#fff7ed',
-                      border: `1px solid ${actionConsent ? '#c7d2fe' : '#fed7aa'}`,
-                      borderRadius: 8, fontSize: 12.5, color: '#374151', cursor: 'pointer',
-                    }}>
-                      <input
-                        type="checkbox"
-                        checked={actionConsent}
-                        onChange={e => setActionConsent(e.target.checked)}
-                        style={{ marginTop: 2, width: 15, height: 15, flexShrink: 0, cursor: 'pointer' }}
-                      />
-                      <span>
-                        {consentLabel(current?.action)}
-                        <span style={{ color: '#ef4444' }}> *</span>
-                      </span>
-                    </label>
-                    <label style={{ fontSize: 10.5, fontWeight: 800, color: '#6b7280', letterSpacing: 0.4, textTransform: 'uppercase', display: 'block', marginBottom: 4, marginTop: isSign ? 12 : 0 }}>
-                      Note / Reason for rejection
-                    </label>
-                    <textarea value={actionNote} onChange={e => setActionNote(e.target.value)}
-                      placeholder="Optional for approval — REQUIRED if you reject. Describe what should change."
-                      rows={3} style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical' }} />
-                    <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
-                      Rejection halts the workflow and returns the document to the sender with your suggestion.
-                    </div>
-                  </div>
-                </div>
-                <div style={{ padding: 12, borderTop: '1px solid var(--vz-border-color, #e5e7eb)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, background: 'var(--vz-card-bg, #fff)', flexWrap: 'wrap' }}>
-                  {/* Reject — sits on the left, separated from the positive
-                      action. Enabled only once a reason has been entered. */}
-                  <button type="button" onClick={submitReject}
-                    disabled={actionSubmitting || !actionNote.trim()}
-                    title={actionNote.trim() ? 'Reject with this reason' : 'Add a reason in the Note field first'}
-                    style={{ padding: '7px 14px', background: actionNote.trim() ? 'linear-gradient(135deg,#dc2626,#ef4444)' : '#fee2e2', color: actionNote.trim() ? '#fff' : '#b91c1c', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: actionNote.trim() ? 'pointer' : 'not-allowed', opacity: actionNote.trim() ? 1 : 0.7 }}>
-                    <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
-                  </button>
-                  <div className="d-flex gap-2">
-                    <button type="button" onClick={() => setActionRun(null)} disabled={actionSubmitting}
-                      style={{ padding: '7px 14px', background: 'var(--vz-card-bg, #fff)', border: '1px solid var(--vz-border-color, #d1d5db)', borderRadius: 8, fontSize: 13, fontWeight: 600, color: 'var(--vz-body-color, #374151)', cursor: 'pointer' }}>
-                      Cancel
-                    </button>
-                    {/* Only the in-flight case disables this — submitAction()
-                        reports whatever is missing. */}
-                    <button type="button" onClick={submitAction}
-                      disabled={actionSubmitting}
-                      title={!actionConsent ? `Tick the consent box to enable ${current?.action}` : undefined}
-                      style={{ padding: '7px 16px', background: 'linear-gradient(135deg,#0ea5e9,#3b82f6)', border: 0, borderRadius: 8, fontSize: 13, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>
-                      <i className={isSign ? 'ri-quill-pen-line' : current?.action === 'Approve' ? 'ri-check-double-line' : 'ri-thumb-up-line'} style={{ marginRight: 6 }} />
-                      {actionSubmitting ? 'Submitting…' : `Confirm ${current?.action}`}
-                    </button>
-                  </div>
-                </div>
-              </>
-            );
-          })()}
-        </ModalBody>
-      </Modal>
-    </Modal>
+    </>
   );
 }
+
 
 // Small helper — renders a compact preview of the template's configured
 // signing workflow inside the Send confirmation modal. Pulls signers from
@@ -8571,12 +7025,30 @@ function Stage5Policies({ emp, onProgress }: {
   // employee so the row reflects the LIVE signing status (Awaiting / Signed)
   // instead of the old hardcoded "Not Generated". No third-party — fully
   // internal (Zoho is only for CLM trade agreements, not HR docs).
-  type RunSigner = { name?: string | null; role_name?: string | null; action?: string | null; status?: string; acted_at?: string | null };
+  type RunSigner = {
+    name?: string | null; role_name?: string | null; action?: string | null;
+    status?: string; acted_at?: string | null; signed_name?: string | null;
+    /* Drawn-signature PNG captured when that signer acted. Present on runs
+       signed through the in-app pad; older runs may only carry a typed name. */
+    signature_url?: string | null;
+  };
   type SignatureRun = {
     id: number; code: string | null;
     status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
     template_id: number; signers: RunSigner[]; current_index: number;
     created_at?: string | null;
+    updated_at?: string | null;
+    /* Frozen copy of the document as signed — the signers' PNGs are merged
+       into this HTML as each {{SignerNSign}} token is filled, so rendering it
+       IS the signed document. Same field the Evidence Vault previews. */
+    content_html?: string | null;
+    header_config?: HeaderConfig | null;
+    footer_config?: FooterConfig | null;
+    template?: { id: number; code: string; name: string; doc_type: string | null } | null;
+    /* Which module started the run (Onboarding / Exit Management / …). The
+       signed archive below spans every trigger, so each row is labelled. */
+    trigger_point_name?: string | null;
+    trigger_keyword?: string | null;
   };
   const [runs, setRuns] = useState<SignatureRun[]>([]);
   const [sendingId, setSendingId] = useState<number | null>(null);
@@ -9014,6 +7486,11 @@ function Stage5Policies({ emp, onProgress }: {
           );
         })}
       </div>
+
+      {/* Signed archive — the SAME section the Evidence Vault's signed list
+          is built from, so Stage 5 and the vault never disagree about what
+          this employee has signed. */}
+      <SignedDocumentsSection runs={runs} />
 
       {/* Generate Document — custom-field fill → preview → download / send for signature */}
       <DocGenerateModal

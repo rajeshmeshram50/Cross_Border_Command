@@ -73,6 +73,9 @@ class NoticePeriodGuard
 
         $row = EmployeeExit::where('employee_id', $employee->id)
             ->whereNotNull('notice_date')
+            // A rehired case is spent, even if it never reached 'Closed' —
+            // someone brought back mid-notice is not serving notice any more.
+            ->whereNull('rehired_at')
             ->where(fn ($q) => $q->whereNull('exit_case_status')->orWhere('exit_case_status', '!=', 'Closed'))
             ->orderByDesc('id')
             ->first();

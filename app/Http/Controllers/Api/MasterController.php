@@ -540,6 +540,69 @@ class MasterController extends Controller
             }
         }
 
+        /* An ASSET currently held by somebody must not be deleted — the device
+           is on a desk, and dropping the master row leaves the employee's
+           record pointing at nothing (their profile, the exit clearance list
+           and the asset-return checklist all resolve the name from here).
+           "Held" matches EmployeeController::assertAssetsNotDoubleBooked
+           exactly, so the picker, the double-booking guard and this rule can
+           never disagree about who has what: disabled employees still hold
+           their kit, employees who have EXITED have returned it. */
+        if ($slug === 'assets') {
+            $holders = \App\Models\Employee::query()
+                ->withTrashed()
+                ->where(function ($w) {
+                    $w->whereNull('status')
+                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                })
+                ->when($row->client_id, fn ($x) => $x->where('client_id', $row->client_id))
+                ->get(['id', 'display_name', 'emp_code', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])
+                /* Compared in PHP, not with whereJsonContains: multipart form
+                   posts store the "other assets" ids as STRINGS (["3"]), so a
+                   JSON containment check for the integer 3 silently misses
+                   them and the asset would delete anyway. */
+                ->filter(function ($e) use ($row) {
+                    $id = (int) $row->id;
+                    if ((int) $e->laptop_master_asset_id === $id) return true;
+                    if ((int) $e->mobile_master_asset_id === $id) return true;
+                    foreach ((array) ($e->other_master_asset_ids ?? []) as $aid) {
+                        if ((int) $aid === $id) return true;
+                    }
+                    return false;
+                })
+                ->values();
+
+            if ($holders->isNotEmpty()) {
+                $names = $holders->take(3)
+                    ->map(fn ($e) => $e->display_name ?: $e->emp_code ?: ('Employee #' . $e->id))
+                    ->implode(', ');
+                $more = $holders->count() - min(3, $holders->count());
+                return response()->json([
+                    'message' => 'This asset is currently assigned to ' . $names
+                        . ($more > 0 ? " and {$more} other" . ($more === 1 ? '' : 's') : '')
+                        . ' and cannot be deleted. Unassign it from the employee record first.',
+                ], 409);
+            }
+        }
+
+        /* An EXPENSE CATEGORY referenced by a claim (or by a line on a claim
+           payment) must not be deleted — those rows keep `category_id` and read
+           the live name from it, so deleting the master leaves settled expense
+           history labelled with nothing. */
+        if ($slug === 'expense_category') {
+            $claimHits   = \App\Models\ExpenseClaim::where('category_id', $row->id)->count();
+            $paymentHits = \App\Models\ExpenseClaimPayment::where('category_id', $row->id)->count();
+            if ($claimHits > 0 || $paymentHits > 0) {
+                $parts = [];
+                if ($claimHits > 0)   $parts[] = $claimHits . ' expense claim' . ($claimHits === 1 ? '' : 's');
+                if ($paymentHits > 0) $parts[] = $paymentHits . ' claim payment line' . ($paymentHits === 1 ? '' : 's');
+                return response()->json([
+                    'message' => 'This expense category cannot be deleted because it is associated with '
+                        . implode(' and ', $parts) . '. Reassign or remove those records first.',
+                ], 409);
+            }
+        }
+
         $row->delete();
 
         // Removing a master must drop it from the cached form-bundle dropdowns.

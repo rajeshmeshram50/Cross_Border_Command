@@ -91,10 +91,6 @@ import ClmAgreementsSentPage from '../pages/clm/operations/ClmAgreementsSentPage
 import ClmAgreementsToApprovePage from '../pages/clm/operations/ClmAgreementsToApprovePage';
 import HrDashboard from '../pages/hrms/HrDashboard';
 import HrOverview from '../pages/hrms/HrOverview';
-// Lazy — this large list page statically imports VaultModal from the
-// employee-onboarding module, so keeping it eager would also drag the whole
-// onboarding page into the main bundle. Splitting both lets that shared code
-// live in its own chunk, out of the initial download.
 const HrEmployees = lazy(() => import('../pages/hrms/HrEmployees'));
 const HrRecruitment = lazy(() => import('../pages/recruitment/HrRecruitment'));
 const HrCandidates = lazy(() => import('../pages/recruitment/HrCandidates'));

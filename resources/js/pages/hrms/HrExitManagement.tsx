@@ -7,6 +7,7 @@ import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
+import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
 /* Every file URL on this page goes through resolveFileUrl, like the rest of the
@@ -57,6 +58,8 @@ interface EmployeeRow {
    *  since the wizard's stage list is derived from it. */
   exitType: string;
   noticeStartIso: string;
+  /** Last working day on the exit — the fallback "as at" date for probation. */
+  lastWorkingIso: string;
   /** Whether the employee was blacklisted as part of the exit case */
   blacklisted?: boolean;
   // Notice period set on the employee at hire (e.g. "30 Days" + 30). Used to
@@ -412,14 +415,13 @@ export default function HrExitManagement() {
              hiring process rather than a one-click reactivation — the button
              stays visible but disabled so the rule is discoverable instead of
              the action just being absent. */
-          const canRehire = e.exitType === 'Resignation';
-          const rehireWhy = canRehire
-            ? 'Reactivate this employee'
-            : e.exitType === 'Termination'
-              ? 'Terminated employees cannot be rehired from here — this needs a fresh hiring process.'
-              : e.exitType
-                ? 'This employee left without serving their notice period — rehiring needs a fresh hiring process.'
-                : 'No exit type on record — rehire is unavailable.';
+          /* One rule for the button and the endpoint — see
+             rehireBlockedReason(), which mirrors the server. The button stays
+             visible but disabled so the "why not" is discoverable in the
+             tooltip instead of the action simply being absent. */
+          const rehireBlocked = rehireBlockedReason(e);
+          const canRehire = !rehireBlocked;
+          const rehireWhy = rehireBlocked ?? 'Reactivate this employee';
           return (
             <div className="exit-action-row">
               <Tooltip label="Open evidence vault" position="left" themed>
@@ -605,7 +607,15 @@ export default function HrExitManagement() {
         onDone={() => { setRehiring(null); loadEmployees(true); }}
       />
 
-      <EvidenceVaultModal employee={vault} onClose={() => setVault(null)} />
+      {/* The shared vault (components/EvidenceVaultModal) — the same modal HR >
+          Employees and Employee Onboarding now open. The LWD chip is still the
+          placeholder this page has always shown; it lives here rather than in
+          the shared component so the other two callers don't inherit it. */}
+      <EvidenceVaultModal
+        employee={vault ? { id: vault.id, empId: vault.empId, name: vault.name, department: vault.department, designation: vault.designation } : null}
+        onClose={() => setVault(null)}
+        extraChips={['LWD: 15 Apr 2026']}
+      />
     </>
   );
 }
@@ -836,6 +846,43 @@ function settlementOf(exitType: string): Settlement {
   return 'served';
 }
 
+/**
+ * Why this exited employee cannot be reactivated — null when they can be.
+ *
+ * MIRROR of ExitController::rehireBlockedReason(); the endpoint enforces the
+ * same rules, so the button and the server can't disagree:
+ *
+ *   · blacklisted                    → never, whatever the exit type
+ *   · Termination                    → never (and blacklisted by default)
+ *   · Absconding / no exit type      → never
+ *   · Resignation                    → yes, unless blacklisted
+ *   · Resignation w/o notice period  → yes, unless blacklisted — EXCEPT when
+ *                                      they left during probation
+ *
+ * Probation is judged as at the EXIT (notice date, else last working day), not
+ * as at today: a probation window that has since run out on paper must not make
+ * a mid-probation walkout look rehirable.
+ */
+function rehireBlockedReason(e: EmployeeRow): string | null {
+  if (e.blacklisted) return 'This employee is blacklisted and cannot be rehired.';
+  const t = String(e.exitType || '').trim();
+  if (!t) return 'No exit type on record — rehire is unavailable.';
+  if (t === 'Termination') {
+    return 'Terminated employees are blacklisted and cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Absconding') {
+    return 'An employee who absconded cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Resignation without notice period') {
+    const asOf = e.noticeStartIso || e.lastWorkingIso || '';
+    // ISO dates compare correctly as strings; `<=` matches the server's lte().
+    if (asOf && e.probationEndIso && asOf <= e.probationEndIso) {
+      return 'This employee resigned during their probation period without serving notice — rehiring needs a fresh hiring process.';
+    }
+  }
+  return null;
+}
+
 /** Badge tint per exit type — same palette as the Exit Type column in the list
  *  so a case reads identically in the table and inside the stage modal. */
 function exitTypeTone(exitType: string): { bg: string; fg: string; bd: string } {
@@ -921,6 +968,28 @@ function normaliseStageStatus(raw: any): Record<string, StageStatus> {
   return out;
 }
 
+/* ── Calendar-date helpers ─────────────────────────────────────────────────
+   Deliberately LOCAL-date only. These used to go through
+   `new Date(iso + 'T00:00:00').toISOString().slice(0, 10)`, which parses the
+   string as local midnight and then formats it in UTC — so on any zone ahead
+   of UTC (IST, +5:30) every result came back a day EARLY, and on any zone
+   behind UTC it didn't. That made the notice-period end date, "tomorrow" and
+   even "today" depend on the viewer's timezone: `addDaysIso(d, 1)` returned
+   `d` itself in IST, and before 05:30 IST `todayIso` was still yesterday.
+   Formatting from the local Y/M/D parts keeps every date the one the user
+   sees on their own calendar. */
+const isoOf = (d: Date): string => {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
+const addDaysIso = (iso: string, days: number): string => {
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  return isoOf(d);
+};
+
 function ExitProcessModal({ employee, onClose, onCompleted }: { employee: EmployeeRow | null; onClose: () => void; onCompleted?: () => void }) {
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<string, StageStatus>>({});
@@ -952,14 +1021,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
+  /* The notice START DATE is day 1 of the notice, so an N-day notice ends on
+     `notice date + N − 1`: a 1-day notice served from today ends today, and a
+     30-day notice from 10 Aug ends 8 Sep. `days served` below counts the same
+     way (inclusive), and so do the two server-side rules — the ceiling in
+     ExitController::assertLastWorkingDayWithinNotice and the settlement in
+     ExitNoticePaymentController. All four must move together or a fully served
+     notice reads as one day short and bills the employee for it. */
   const noticePeriodEnd = useMemo(() => {
     if (noticeWaived) return '';   // probation / early resignation → no notice
-    const days = employee?.noticePeriodDays;
-    if (!noticeDate || days == null || !Number.isFinite(days)) return '';
-    const d = new Date(noticeDate + 'T00:00:00');
-    if (isNaN(d.getTime())) return '';
-    d.setDate(d.getDate() + Number(days));
-    return d.toISOString().slice(0, 10);
+    const days = Number(employee?.noticePeriodDays);
+    if (!noticeDate || employee?.noticePeriodDays == null || !Number.isFinite(days) || days <= 0) return '';
+    return addDaysIso(noticeDate, days - 1);
   }, [noticeDate, employee?.noticePeriodDays, noticeWaived]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
@@ -1046,8 +1119,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const dayMs = 86400000;
     let served = 0;
     if (noticeDate && lwd) {
+      // Inclusive of the notice start day — working the notice date itself is
+      // one day served, so LWD == notice date is 1, not 0. Matches
+      // `noticePeriodEnd` (start + N − 1) and the two server-side rules.
       const d = Math.round((new Date(lwd + 'T00:00:00').getTime() - new Date(noticeDate + 'T00:00:00').getTime()) / dayMs);
-      served = Math.max(0, Math.min(required, d));
+      served = d < 0 ? 0 : Math.max(0, Math.min(required, d + 1));
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
@@ -1142,14 +1218,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   });
   const [advancingStage, setAdvancingStage] = useState(false);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const addDaysIso = (iso: string, days: number) => {
-    const d = new Date(iso + 'T00:00:00');
-    if (isNaN(d.getTime())) return iso;
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  const tomorrowIso = addDaysIso(todayIso, 1);
+  const todayIso = isoOf(new Date());
   const fmtDateShort = (iso: string) => {
     try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return iso; }
@@ -1164,8 +1233,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      point of the non-standard types is that the notice period is NOT served:
 
        Resignation            the notice IS served, so the last working day is
-                              on/after the notice period end and must be a
-                              future date.
+                              on/after the notice period end. There is NO extra
+                              "must be in the future" rule: for a short notice
+                              period the end date can be today (or, on a case
+                              reopened later, already past), and today is then
+                              a perfectly valid last working day. That extra
+                              rule contradicted this floor and made a 1-day
+                              notice impossible to close (bug #71).
        Resignation w/o notice the employee is leaving early — that's exactly
                               what is recovered from them — so the notice-end
                               floor doesn't apply and TODAY is a valid last day.
@@ -1181,8 +1255,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the type impossible to actually express. An already-saved value is still
      accepted as-is so reopening a case never invalidates it. */
   const noticeServed = !noticeWaived && settlement === 'served';
+  /* With no derivable end date (the employee record carries no notice period)
+     there is no notice length to hold them to, so the floor is simply the
+     notice start — you cannot stop working before you resign. It used to be
+     start + 1, which was the old "must be a future date" rule in disguise. */
   const lwdMin = noticeServed
-    ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
+    ? (noticePeriodEnd || noticeDate || todayIso)
     : (noticeDate || todayIso);
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
@@ -1196,10 +1274,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      no notice period, and there is nothing to cap against in those cases. */
   const lwdMax = noticePeriodEnd || '';
   const lwdOverEnd = !!lwd && !!lwdMax && lwd > lwdMax;
-  // "Must be a future date" is part of serving notice, so it is waived for the
-  // types that don't serve one — they can be relieved today.
+  /* One floor for every type: `lwdMin`. Served notice used to carry a second,
+     independent "must be a future date" test, which is what rejected a last
+     working day of today even when the notice period had already ended by then
+     — the two rules disagreed, and the cruder one won. lwdMin already keeps the
+     date far enough out whenever the notice genuinely still has days to run. */
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && ((noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin) || lwdOverEnd);
+    && (lwd < lwdMin || lwdOverEnd);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1483,6 +1564,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      resignation never sees the field and saves null. */
   const [blacklisted, setBlacklisted]         = useState('No');
   const [blacklistReason, setBlacklistReason] = useState('');
+  /* Has the blacklist answer been DECIDED — either loaded off a saved case or
+     chosen by HR here? Until it is, a Termination flips it to Yes on its own
+     (the server does the same on save). Once decided, the type must never
+     overwrite the answer: HR filing a redundancy as a termination and setting
+     No back would otherwise have it snap to Yes again on the next render. */
+  const blacklistDecidedRef = useRef(false);
+  useEffect(() => {
+    if (exitType === 'Termination' && !blacklistDecidedRef.current) setBlacklisted('Yes');
+  }, [exitType]);
+  // A termination blacklists by default, so the REASON is not something HR has
+  // to type before the case can close — the exit type is the reason, and the
+  // server stamps that in words. A blacklist chosen on any other exit type is a
+  // deliberate act and still has to be justified.
+  const autoBlacklist = exitType === 'Termination';
 
   /* Stage 1's progress is measured on what has been SAVED, not on what is
      currently typed into the form.
@@ -1548,7 +1643,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setProfileLock(String(data.profile_lock ?? 'Unlocked'));
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
-        setBlacklisted(String(data.blacklisted ?? 'No') === 'Yes' ? 'Yes' : 'No');
+        /* A saved answer is the decided one. Nothing saved yet → leave it to
+           the termination default below, which is why this only latches the
+           ref when the server actually holds a value. */
+        if (data.blacklisted != null && String(data.blacklisted) !== '') {
+          setBlacklisted(String(data.blacklisted) === 'Yes' ? 'Yes' : 'No');
+          blacklistDecidedRef.current = true;
+        }
         setBlacklistReason(String(data.blacklist_reason ?? ''));
 
         if (data.stage_status && typeof data.stage_status === 'object') {
@@ -1655,7 +1756,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     // 6. Blacklisting someone needs a reason on record — it blocks re-hire, so
     //    a bare "Yes" with no justification must not close the case.
-    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim()) {
+    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim() && !autoBlacklist) {
       items.push('Blacklist reason is required when blacklisting an employee');
     }
 
@@ -1763,7 +1864,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return 0;
   };
 
+  /* Has the wizard actually got to this stage? A stage counts as reached once
+     HR is on it or past it, or it carries a status saved in an earlier session.
+
+     Stages that DERIVE their completion from data which is already settled
+     before HR arrives would otherwise report 100% from the moment the modal
+     opens: a probation exit owes no notice recovery, so Notice Period Payment
+     measured "nothing outstanding" and sat there as Completed / 100% while
+     Stage 1 was still an empty form. The percentage is meant to describe work
+     HR has done, so a stage nobody has opened yet reads Pending / 0% however
+     satisfied its own measure happens to be. Reaching it flips it to whatever
+     the measure genuinely says — including straight to 100%. */
+  const reachedStage = (n: StageKey): boolean => {
+    const num = stages.find(s => s.key === n)?.num ?? 1;
+    return num <= stage || !!stageStatus[n];
+  };
+
   const effStatusOf = (n: StageKey): StageStatus => {
+    if (!reachedStage(n)) return 'Pending';
     // Clearance & Handover — only complete when EVERY clearance is approved AND
     // EVERY assigned asset is handed over. A stale persisted "Completed" must
     // not show 100% while clearances/assets are still pending.
@@ -1815,6 +1933,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === currentKey || rawStagePct(n) > 0
         || stageStatus[n] === 'In Progress' || stageStatus[n] === 'Completed') return 'In Progress';
     return 'Pending';
+  };
+
+  /* Percentage as SHOWN in the stepper. Same gate as the status above: a stage
+     the wizard hasn't reached reads 0%, not its pre-satisfied measure. */
+  const stagePctOf = (n: StageKey): number => {
+    if (!reachedStage(n)) return 0;
+    return effStatusOf(n) === 'Completed' ? 100 : rawStagePct(n);
   };
 
   const completed = stages.filter(s => effStatusOf(s.key) === 'Completed').length;
@@ -2009,7 +2134,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           // The last-working-day rule depends on whether a notice is served,
           // so the message has to say the right thing for each exit type.
           const lwdMsg = noticeServed
-            ? 'the last working day must be a future date on/after the notice period end date'
+            ? 'the last working day must be on/after the notice period end date'
             : settlement === 'pay_in_lieu'
               ? 'the last working day cannot be before the termination date'
               : 'the last working day cannot be before the notice start date';
@@ -2316,7 +2441,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           <aside className="ep-sidebar">
             {stages.map(s => {
               const st = effStatusOf(s.key);
-              const stagePct = st === 'Completed' ? 100 : rawStagePct(s.key);
+              const stagePct = stagePctOf(s.key);
               return (
                 <button
                   key={s.key}
@@ -2442,7 +2567,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           : earlyResignation
                             ? `Not applicable — resigned within ${EARLY_EXIT_DAYS} days of joining${earlyTenure != null ? ` (${earlyTenure} day(s))` : ''}. No notice period is served, the exit can be effective immediately, and this employee is not included in payroll processing.`
                             : (employee?.noticePeriodDays != null
-                                ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                                ? 'Auto-calculated — the notice start date counts as day 1, so the notice ends on start + notice period − 1.'
                                 : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
                       </div>
                     </EpField>
@@ -2473,8 +2598,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.');
                               }
-                            } else if (v <= todayIso) {
-                              toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
                             } else if (v < lwdMin) {
                               toast.warning(
                                 'Invalid last working day',
@@ -2499,11 +2622,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 ? (settlement === 'pay_in_lieu'
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.')
-                                : (lwd <= todayIso
-                                    ? 'Last working day cannot be today or a past date.'
-                                    : (noticePeriodEnd
-                                        ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
-                                        : 'Last working day must be after the notice start date.')))
+                                : (noticePeriodEnd
+                                    ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                    : 'Last working day must be after the notice start date.'))
                             : 'Last working day is required.'}
                         </div>
                       )}
@@ -2740,18 +2861,39 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 {settlement === 'recover' && (
                   <>
                     <div className="ep-section-label">Notice Period — Recovery</div>
-                    <div className={`ep-echo ${effSettleStatus === 'Settled' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
+                    {/* NA is a settled question, not an outstanding one: there
+                        is nothing to recover (probation, an early resignation,
+                        or a notice served in full), so the band read
+                        "₹0.00 recoverable … not settled yet · Pending" over a
+                        stage the sidebar already showed as 100% Completed. It
+                        now says so, and matches the Notice Period Payment
+                        stage's own "Not applicable" wording. */}
+                    <div className={`ep-echo ${effSettleStatus === 'Settled' || effSettleStatus === 'NA' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
                       <i className={effSettleStatus === 'Settled' ? 'ri-check-double-line'
+                        : effSettleStatus === 'NA' ? 'ri-shield-check-line'
                         : effSettleStatus === 'Rejected' ? 'ri-close-circle-line' : 'ri-time-line'} />
                       <span className="ep-echo-txt">
-                        <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
-                        {effSettleStatus === 'Settled' ? 'collected and approved.'
-                          : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
-                          : 'not settled yet.'}
+                        {effSettleStatus === 'NA' ? (
+                          <>
+                            <strong>Nothing to recover</strong> —{' '}
+                            {onProbation ? 'the employee is on probation, so no notice period is served.'
+                              : earlyResignation ? `they resigned within ${EARLY_EXIT_DAYS} days of joining, so no notice period is served.`
+                              : 'the notice period carries no unserved days.'}
+                          </>
+                        ) : (
+                          <>
+                            <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
+                            {effSettleStatus === 'Settled' ? 'collected and approved.'
+                              : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
+                              : 'not settled yet.'}
+                          </>
+                        )}
                         <em> Handled in Stage {stages.find(s => s.key === 'notice_payment')?.num ?? 2} — Notice Period Payment.</em>
                       </span>
                       <span className="ep-echo-pill">
-                        {effSettleStatus === 'Settled' ? 'Settled' : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
+                        {effSettleStatus === 'Settled' ? 'Settled'
+                          : effSettleStatus === 'NA' ? 'Not applicable'
+                          : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
                       </span>
                     </div>
                   </>
@@ -3403,24 +3545,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     <>
                       <Col md={6}>
                         <EpField label="Blacklist Employee">
-                          <EpSelect value={blacklisted} onChange={setBlacklisted} options={['No', 'Yes']} />
-                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            Blocks re-hire — a blacklisted employee cannot be brought back,
-                            whatever the exit type.
+                          <EpSelect
+                            value={blacklisted}
+                            onChange={(v) => { blacklistDecidedRef.current = true; setBlacklisted(v); }}
+                            options={['No', 'Yes']}
+                          />
+                          <div className="ep-hint" style={{ fontSize: 11, color: autoBlacklist ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            {autoBlacklist
+                              ? 'Set automatically — a termination blacklists the employee. Rehiring them needs a fresh hiring process either way; change this to No only if the termination is not a bar on returning.'
+                              : 'Blocks re-hire — a blacklisted employee cannot be brought back, whatever the exit type.'}
                           </div>
                         </EpField>
                       </Col>
                       {blacklisted === 'Yes' && (
                         <Col md={6}>
-                          <EpField label="Blacklist Reason" required invalid={!blacklistReason.trim()}>
+                          <EpField label="Blacklist Reason" required={!autoBlacklist} invalid={!autoBlacklist && !blacklistReason.trim()}>
                             <EpInput
                               value={blacklistReason}
                               onChange={setBlacklistReason}
-                              placeholder="Why this employee is being blacklisted"
+                              placeholder={autoBlacklist ? 'Optional — the termination itself is recorded as the reason' : 'Why this employee is being blacklisted'}
                               maxLength={500}
-                              invalid={!blacklistReason.trim()}
+                              invalid={!autoBlacklist && !blacklistReason.trim()}
                             />
-                            {!blacklistReason.trim() && (
+                            {!autoBlacklist && !blacklistReason.trim() && (
                               <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <i className="ri-error-warning-line" />A reason is required to blacklist.
                               </div>
@@ -3653,78 +3800,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     </Modal>
     </>
   );
-}
-
-function ExitProgressDial({ value }: { value: number }) {
-  const pct = Math.max(0, Math.min(100, value));
-  const RADIUS = 42;
-  const ARC_LEN = (270 / 360) * (2 * Math.PI * RADIUS);
-  const offset = ARC_LEN * (1 - pct / 100);
-  const startAngle = 135;
-  const endAngle = startAngle + (270 * pct) / 100;
-  const endRad = (endAngle * Math.PI) / 180;
-  const dotX = 50 + Math.cos(endRad) * RADIUS;
-  const dotY = 50 + Math.sin(endRad) * RADIUS;
-
-  return (
-    <div className="ep-dial" aria-label={`${pct}% complete`}>
-      <svg width="80" height="80" viewBox="0 0 100 100">
-        <defs>
-          <linearGradient id="ep-dial-arc" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%"   stopColor="#6ee7b7" />
-            <stop offset="55%"  stopColor="#34d399" />
-            <stop offset="100%" stopColor="#10b981" />
-          </linearGradient>
-          <filter id="ep-dial-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="1.8" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        <path
-          d={describeArc(50, 50, RADIUS, 135, 405)}
-          fill="none"
-          stroke="rgba(255,255,255,0.14)"
-          strokeWidth="6"
-          strokeLinecap="round"
-        />
-        <path
-          d={describeArc(50, 50, RADIUS, 135, 405)}
-          fill="none"
-          stroke="url(#ep-dial-arc)"
-          strokeWidth="6"
-          strokeLinecap="round"
-          strokeDasharray={ARC_LEN}
-          strokeDashoffset={offset}
-          filter="url(#ep-dial-glow)"
-          style={{ transition: 'stroke-dashoffset .6s cubic-bezier(.4,0,.2,1)' }}
-        />
-        {pct > 0 && (
-          <>
-            <circle cx={dotX} cy={dotY} r="5.5" fill="rgba(110,231,183,0.55)" />
-            <circle cx={dotX} cy={dotY} r="3"   fill="#ffffff" />
-          </>
-        )}
-      </svg>
-      <div className="ep-dial-text">
-        <div className="ep-dial-num">{pct}%</div>
-        <div className="ep-dial-label">Complete</div>
-      </div>
-    </div>
-  );
-}
-
-function describeArc(cx: number, cy: number, r: number, startAngle: number, endAngle: number): string {
-  const toRad = (a: number) => (a * Math.PI) / 180;
-  const startX = cx + Math.cos(toRad(startAngle)) * r;
-  const startY = cy + Math.sin(toRad(startAngle)) * r;
-  const endX   = cx + Math.cos(toRad(endAngle))   * r;
-  const endY   = cy + Math.sin(toRad(endAngle))   * r;
-  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
-  return `M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${endX} ${endY}`;
 }
 
 /**
@@ -4108,400 +4183,6 @@ function MiniProgressRing({ value }: { value: number }) {
 }
 
 
-type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
-
-type VaultTab = 'employee' | 'organizational' | 'exit';
-
-const DOC_KEY_CATALOGUE: Record<string, { name: string; desc: string; icon: string; iconBg: string; iconFg: string; category: string }> = {
-  aadhaar:     { name: 'Aadhaar Card',           desc: 'Government issued 12-digit unique identity',     icon: 'ri-fingerprint-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Identity'        },
-  pan:         { name: 'PAN Card',               desc: 'Permanent Account Number for taxation',          icon: 'ri-bank-card-2-line',         iconBg: '#fef3c7', iconFg: '#92400e', category: 'Identity'        },
-  p_photo:     { name: 'Passport Photo',         desc: 'Recent passport-size photograph',                icon: 'ri-camera-line',              iconBg: '#fdd9ea', iconFg: '#a02960', category: 'Identity'        },
-  p_copy:      { name: 'Passport Copy',          desc: 'Govt issued travel document (if applicable)',    icon: 'ri-passport-line',            iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Identity'        },
-  cur_addr:    { name: 'Current Address Proof',  desc: 'Utility bill or bank statement (last 3 months)', icon: 'ri-home-4-line',              iconBg: '#dcfce7', iconFg: '#15803d', category: 'Address'         },
-  perm_addr:   { name: 'Permanent Address Proof',desc: 'Aadhaar / Voter ID — permanent address proof',   icon: 'ri-map-pin-line',             iconBg: '#fee2e2', iconFg: '#b91c1c', category: 'Address'         },
-  edu_10:      { name: '10th Marksheet',         desc: 'Secondary school certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
-  edu_12:      { name: '12th Marksheet',         desc: 'Higher secondary certification',                 icon: 'ri-file-text-line',           iconBg: '#fef3c7', iconFg: '#92400e', category: 'Education'       },
-  edu_deg:     { name: 'Graduation Degree',      desc: "Bachelor's degree certificate",                  icon: 'ri-graduation-cap-line',      iconBg: '#dcfce7', iconFg: '#15803d', category: 'Education'       },
-  edu_pg:      { name: 'Post Graduation',        desc: "Master's or postgraduate diploma",               icon: 'ri-award-line',               iconBg: '#dceefe', iconFg: '#0c63b0', category: 'Education'       },
-  rel_letter:  { name: 'Relieving Letter',       desc: 'Final relieving from previous employer',         icon: 'ri-mail-send-line',           iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
-  exp_cert:    { name: 'Experience Letter',      desc: 'Past employment experience certificate',         icon: 'ri-briefcase-4-line',         iconBg: '#ede9fe', iconFg: '#5b3fd1', category: 'Prev. Employment'},
-  pay_slip:    { name: 'Last 3 Pay Slips',       desc: 'Most recent salary slips for reference',         icon: 'ri-money-rupee-circle-line',  iconBg: '#fef3c7', iconFg: '#92400e', category: 'Prev. Employment'},
-};
-const labelForDocKey = (key: string) => DOC_KEY_CATALOGUE[key] || {
-  name: key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-  desc: 'Uploaded document',
-  icon: 'ri-file-text-line',
-  iconBg: '#eef2f6',
-  iconFg: '#475569',
-  category: 'Other',
-};
-
-type EmpDocApiRow = {
-  id: number;
-  document_key: string;
-  status: 'pending' | 'uploaded' | 'verified' | 'rejected';
-  original_name: string | null;
-  url: string | null;
-  uploaded_at: string | null;
-};
-type VaultTemplate = {
-  id: number;
-  code: string | null;
-  name: string | null;
-  doc_type: string | null;
-  status: string | null;
-  trigger_point?: { module_name?: string | null } | null;
-};
-type VaultRun = {
-  id: number;
-  status: 'Pending' | 'In Progress' | 'Completed' | 'Rejected' | 'Cancelled';
-  template_id: number;
-  code?: string | null;
-  trigger_keyword?: string | null;
-  trigger_point_name?: string | null;
-  template?: { name?: string | null; doc_type?: string | null; code?: string | null } | null;
-};
-
-function EvidenceVaultModal({ employee, onClose }: { employee: EmployeeRow | null; onClose: () => void }) {
-  const toast = useToast();
-  const [tab, setTab] = useState<VaultTab>('employee');
-  // Which doc row is mid view/download — drives the spinner + blocks a second
-  // click (multiple concurrent downloads were hanging the UI).
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [busyAction, setBusyAction] = useState<'view' | 'download' | null>(null);
-
-  const [empDocs, setEmpDocs]               = useState<EmpDocApiRow[]>([]);
-  const [orgTemplates, setOrgTemplates]     = useState<VaultTemplate[]>([]);
-  const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
-  const [signingRuns, setSigningRuns]       = useState<VaultRun[]>([]);
-  const [loading, setLoading]               = useState(false);
-
-  useEffect(() => {
-    if (!employee) {
-      setEmpDocs([]); setOrgTemplates([]); setExitTemplates([]); setSigningRuns([]);
-      setTab('employee');
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setTab('employee');
-    Promise.allSettled([
-      api.get(`/employees/${employee.id}/documents`),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'onboarding' } }),
-      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
-      api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
-    ]).then(results => {
-      if (cancelled) return;
-      const [docsR, orgR, exitR, runsR] = results;
-      setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
-      setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
-      setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
-      setSigningRuns(runsR.status === 'fulfilled' && Array.isArray(runsR.value.data) ? runsR.value.data : []);
-    }).finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [employee?.id]);
-
-  const runByTemplateId = useMemo(() => {
-    const m = new Map<number, VaultRun>();
-    for (const r of signingRuns) {
-      const existing = m.get(r.template_id);
-      if (!existing || r.id > existing.id) m.set(r.template_id, r);
-    }
-    return m;
-  }, [signingRuns]);
-
-  if (!employee) return null;
-
-  const empDocsView = empDocs.map(d => {
-    const cat = labelForDocKey(d.document_key);
-    const status: DocStatus =
-      d.status === 'verified' ? 'Verified'
-      : d.status === 'uploaded' ? 'Uploaded'
-      : d.status === 'rejected' ? 'Pending'
-      : 'Pending';
-    return {
-      id: d.id, key: d.document_key, name: cat.name, sub: cat.desc, icon: cat.icon, iconBg: cat.iconBg, iconFg: cat.iconFg,
-      // Resolved once here so both View and Download below get an absolute URL.
-      category: cat.category, status, url: d.url ? resolveFileUrl(d.url) : null,
-    };
-  });
-
-  const empGroups = (() => {
-    const buckets: Record<string, typeof empDocsView> = {};
-    for (const d of empDocsView) {
-      const k = d.category || 'Other';
-      (buckets[k] = buckets[k] || []).push(d);
-    }
-    return Object.entries(buckets).map(([title, docs]) => ({
-      title,
-      icon: docs[0]?.icon || 'ri-folder-line',
-      iconBg: docs[0]?.iconBg || '#eef2f6',
-      iconFg: docs[0]?.iconFg || '#475569',
-      docs,
-    }));
-  })();
-
-  const runStatusToDoc = (run: VaultRun): DocStatus =>
-    run.status === 'Completed'   ? 'Completed'
-    : run.status === 'In Progress' ? 'Sent'
-    : run.status === 'Pending'     ? 'Sent'
-    : run.status === 'Rejected'    ? 'Pending'
-    : 'Not Generated';
-
-  const buildTplGroup = (templates: VaultTemplate[], orphanRuns: VaultRun[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
-    const docs = templates.map(tpl => {
-      const run = runByTemplateId.get(tpl.id) || null;
-      const status: DocStatus =
-        run?.status === 'Completed'   ? 'Completed'
-        : run?.status === 'In Progress' ? 'Sent'
-        : run?.status === 'Pending'     ? 'Sent'
-        : run?.status === 'Rejected'    ? 'Pending'
-        : run?.status === 'Cancelled'   ? 'Not Generated'
-        : tpl.status === 'Active'       ? 'Not Generated'
-        : 'Not Generated';
-      return {
-        id: tpl.id, key: `tpl-${tpl.id}`,
-        name: tpl.name || '(unnamed template)',
-        sub: `${tpl.doc_type || 'Document'}${tpl.code ? ` · ${tpl.code}` : ''}${run ? ` · Run #${run.id}` : ''}`,
-        icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
-        category: tpl.trigger_point?.module_name || 'Template',
-        status,
-        url: null as string | null,
-        // Signed-PDF source once the run is fully signed — View/Download use this
-        // instead of the template /generate endpoint (which 401→login-redirects
-        // when opened directly in a browser tab).
-        runId: run?.status === 'Completed' ? run.id : null,
-      };
-    });
-    // Orphan runs — signing runs whose template no longer matches this employee
-    // (e.g. after they're disabled / exited, /hr-document-templates/match returns
-    // nothing). Without this, completed signed documents would silently vanish
-    // from the vault and the counts would read 0 even though the signed PDFs
-    // exist. Render them straight off the run so they always show.
-    const orphanDocs = orphanRuns.map(run => ({
-      id: run.template_id || run.id, key: `run-${run.id}`,
-      name: run.template?.name || run.code || 'Signed document',
-      sub: `${run.template?.doc_type || 'Document'}${run.code ? ` · ${run.code}` : ''} · Run #${run.id}`,
-      icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
-      category: run.trigger_point_name || 'Document',
-      status: runStatusToDoc(run),
-      url: null as string | null,
-      runId: run.status === 'Completed' ? run.id : null,
-    }));
-    const all = [...docs, ...orphanDocs];
-    return all.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs: all }] : [];
-  };
-
-  // Split runs whose template isn't in the matched set into exit vs. non-exit
-  // (organizational) by their trigger keyword, so they land in the right tab.
-  const exitTplIds = new Set(exitTemplates.map(t => t.id));
-  const orgTplIds  = new Set(orgTemplates.map(t => t.id));
-  const isExitRun  = (r: VaultRun) => String(r.trigger_keyword || '').toLowerCase() === 'exit';
-  const exitOrphanRuns = signingRuns.filter(r =>  isExitRun(r) && !exitTplIds.has(r.template_id));
-  const orgOrphanRuns  = signingRuns.filter(r => !isExitRun(r) && !orgTplIds.has(r.template_id));
-
-  const orgGroups  = buildTplGroup(orgTemplates,  orgOrphanRuns,  'Signed Company Documents', 'ri-file-shield-2-line', '#fef3c7', '#92400e');
-  const exitGroups = buildTplGroup(exitTemplates, exitOrphanRuns, 'Exit Process Documents',   'ri-logout-box-r-line',  '#dcfce7', '#15803d');
-
-  const groups =
-    tab === 'employee'       ? empGroups
-    : tab === 'organizational' ? orgGroups
-    : exitGroups;
-
-  const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
-  const total      = allDocs.length;
-  const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
-  const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
-  const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
-  const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
-
-  const empCount  = empDocsView.length;
-  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
-  const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
-
-  type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null };
-  // View — show the SIGNED PDF inline for completed runs (opens the
-  // authenticated blob in a new tab); falls back to an uploaded file URL.
-  const handleViewRow = async (d: VaultDoc) => {
-    if (busyKey) return;
-    if (d.runId) {
-      setBusyKey(d.key); setBusyAction('view');
-      try {
-        const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
-        const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-        window.open(objUrl, '_blank', 'noopener,noreferrer');
-        setTimeout(() => URL.revokeObjectURL(objUrl), 60000);
-      } catch (err: any) {
-        toast.error('Could not open', err?.response?.data?.message || 'Please try again.');
-      } finally { setBusyKey(null); setBusyAction(null); }
-      return;
-    }
-    if (d.url) { window.open(d.url, '_blank', 'noopener,noreferrer'); return; }
-    toast.info('Not available yet', 'This document has not been generated / signed yet.');
-  };
-  // Download — signed PDF for completed runs; uploaded file otherwise. Shows a
-  // "downloading" toast, a button spinner, and blocks concurrent clicks.
-  const handleDownloadRow = async (d: VaultDoc) => {
-    if (busyKey) return;
-    setBusyKey(d.key); setBusyAction('download');
-    try {
-      if (d.runId) {
-        toast.info('Downloading…', 'Preparing the signed PDF.');
-        const resp = await api.get(`/hr-document-signatures/${d.runId}/download-pdf`, { responseType: 'blob' });
-        const objUrl = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-        const a = document.createElement('a');
-        a.href = objUrl; a.download = `${(d.name || 'document').replace(/\s+/g, '-')}-signed.pdf`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(objUrl);
-        toast.success('Downloaded', 'Signed PDF saved.');
-      } else if (d.url) {
-        // Direct anchor download — NOT fetch(): uploaded files are served from
-        // storage / a different origin, and fetch() trips a CORS error there.
-        // An anchor download works for same-origin files and falls back to
-        // opening the file in a new tab cross-origin (no CORS preflight).
-        const a = document.createElement('a');
-        a.href = d.url;
-        a.download = d.name || 'document';
-        a.target = '_blank';
-        a.rel = 'noopener';
-        document.body.appendChild(a); a.click(); a.remove();
-        toast.success('Downloaded', 'Document saved.');
-      } else {
-        toast.info('Not available yet', 'This document has not been generated / signed yet.');
-      }
-    } catch (err: any) {
-      toast.error('Could not download', err?.response?.data?.message || 'Please try again.');
-    } finally { setBusyKey(null); setBusyAction(null); }
-  };
-
-  return (
-    <Modal isOpen={!!employee} toggle={onClose} centered size="xl" backdrop="static" contentClassName="border-0 ev-modal">
-      <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
-        <div className="ev-head">
-          <span className="ev-head-icon"><i className="ri-archive-2-line" /></span>
-          <div className="ev-head-text">
-            <div className="ev-head-title">Evidence Vault</div>
-            <div className="ev-head-sub">Centralized document repository for onboarding, signed organizational, and exit documents</div>
-            <div className="ev-head-meta">
-              <span className="rec-id-pill">{employee.empId}</span>
-              <span className="rec-id-pill">{employee.name}</span>
-              <span className="rec-id-pill">{employee.department} - {employee.designation}</span>
-              <span className="rec-id-pill">LWD: 15 Apr 2026</span>
-            </div>
-          </div>
-          <div className="ev-head-status">
-            <ExitProgressDial value={completionPct} />
-            <div className="ev-head-status-text">
-              <div className="ev-head-status-label">Vault Status</div>
-              <div className="ev-head-status-num">{completionPct}% Complete</div>
-            </div>
-          </div>
-          <button type="button" className="ev-close" onClick={onClose} aria-label="Close">
-            <i className="ri-close-line" />
-          </button>
-        </div>
-
-        <div className="ev-kpis rec-page-kpis">
-          {[
-            { label: 'Total Docs',      value: total,    icon: 'ri-file-list-3-line',     gradient: 'linear-gradient(135deg, #4338ca 0%, #6366f1 60%, #818cf8 100%)', deep: '#4338ca' },
-            { label: 'Signed',          value: signed,   icon: 'ri-quill-pen-line',       gradient: 'linear-gradient(135deg, #6d28d9 0%, #7c3aed 60%, #a78bfa 100%)', deep: '#6d28d9' },
-            { label: 'Pending',         value: pending,  icon: 'ri-time-line',            gradient: 'linear-gradient(135deg, #c2410c 0%, #f59e0b 60%, #fbbf24 100%)', deep: '#c2410c' },
-          ].map(k => (
-            <div key={k.label} className="rec-kpi-card">
-              <span className="rec-kpi-strip" style={{ background: k.gradient }} />
-              <div className="rec-kpi-text">
-                <span className="rec-kpi-label">{k.label}</span>
-                <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
-              </div>
-              <span className="rec-kpi-icon" style={{ background: k.gradient }}>
-                <i className={k.icon} />
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <div className="ev-tabs">
-          <button type="button" className={`ev-tab${tab === 'employee' ? ' is-active' : ''}`} onClick={() => setTab('employee')}>
-            <i className="ri-user-line" />Employee Documents<span className="ev-tab-badge">{empCount}</span>
-          </button>
-          <button type="button" className={`ev-tab${tab === 'organizational' ? ' is-active' : ''}`} onClick={() => setTab('organizational')}>
-            <i className="ri-briefcase-4-line" />Organizational Documents<span className="ev-tab-badge">{orgCount}</span>
-          </button>
-          <button type="button" className={`ev-tab${tab === 'exit' ? ' is-active' : ''}`} onClick={() => setTab('exit')}>
-            <i className="ri-logout-box-r-line" />Exit Documents<span className="ev-tab-badge">{exitCount}</span>
-          </button>
-        </div>
-
-        <div className="ev-body">
-          {loading ? (
-            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
-              <i className="ri-loader-4-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />
-              Loading vault…
-            </div>
-          ) : groups.length === 0 ? (
-            <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px dashed var(--vz-border-color)', borderRadius: 10, fontSize: 13 }}>
-              <i className="ri-inbox-line" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-              {tab === 'employee'
-                ? 'No documents uploaded yet by this employee.'
-                : tab === 'organizational'
-                  ? 'No onboarding-trigger documents on record. Create templates under HR > Document Templates with trigger “Onboarding”.'
-                  : 'No exit-trigger documents on record. Create templates under HR > Document Templates with trigger “Exit Management”.'}
-            </div>
-          ) : groups.map((g, gi) => (
-            <div key={gi} className="ev-group">
-              <div className="ev-group-head">
-                <span className="ev-group-icon" style={{ background: g.iconBg, color: g.iconFg }}>
-                  <i className={g.icon} />
-                </span>
-                <div className="ev-group-title">{g.title}</div>
-                <span className="ev-group-count">{g.docs.length} docs</span>
-              </div>
-              <div className="ev-doc-list">
-                {g.docs.map(d => {
-                  const status = d.status as DocStatus;
-                  const disabled = status === 'Not Generated' || status === 'Optional';
-                  return (
-                    <div key={d.key} className="ev-doc">
-                      <span className="ev-doc-icon" style={{ background: d.iconBg, color: d.iconFg }}>
-                        <i className={d.icon} />
-                      </span>
-                      <div className="ev-doc-info">
-                        <div className="ev-doc-name">{d.name}</div>
-                        <div className="ev-doc-sub">{d.sub}</div>
-                      </div>
-                      <span className="ev-doc-cat">{d.category}</span>
-                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
-                      <button type="button"
-                        className={`ev-doc-btn ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
-                        disabled={disabled || busyKey === d.key}
-                        onClick={() => handleViewRow(d)}
-                      >
-                        {busyKey === d.key && busyAction === 'view'
-                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Opening…</>
-                          : <><i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}</>}
-                      </button>
-                      <button type="button"
-                        className="ev-doc-btn ev-doc-btn--download"
-                        disabled={disabled || busyKey === d.key}
-                        onClick={() => handleDownloadRow(d)}
-                      >
-                        {busyKey === d.key && busyAction === 'download'
-                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Downloading…</>
-                          : <><i className="ri-download-line" />Download</>}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </ModalBody>
-    </Modal>
-  );
-}
-
-
 
 const _exitAccentPalette = ['#7c5cfc', '#0ab39c', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7', '#10b981', '#f97316', '#ec4899', '#06b6d4'];
 function _exitAccent(name: string): string {
@@ -4549,18 +4230,26 @@ function apiToExitRow(e: any): EmployeeRow {
        · disabled, exit completed    → Exited, as any completed exit is.
 
      The drop for the first case happens in loadEmployees(), which is the only
-     place that can remove a row rather than re-label it. */
-  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
+     place that can remove a row rather than re-label it.
+
+     The terminal-status test is GATED ON THERE BEING AN EXIT CASE for the same
+     reason. `Inactive` is not only set by completing an exit — HR can pick it
+     straight off the employee edit form — and on its own it made a plain
+     switched-off employee, who never resigned and has no exit row, show up
+     under Exited Employees. An exit is the case, not the status column; the
+     status only corroborates one. */
+  const hasExitCase  = !!ex;
+  const statusExited = hasExitCase && ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
   );
 
   let status: ExitStatus;
-  // NOTE: "Exited" here means a completed/closed exit case OR a terminal
-  // employees.status (Resigned / Terminated / Inactive). An Inactive employee
-  // has been deactivated (login disabled) so they're no longer active staff —
-  // they show in the Exited tab, never the Active Employees list.
+  // NOTE: "Exited" means a completed/closed exit case, or an exit case whose
+  // employee also carries a terminal employees.status (Resigned / Terminated /
+  // Inactive). Both halves need the case: being switched off in HR > Employees
+  // is not an exit, and must never put someone in the Exited tab.
   if      (caseClosed || statusExited)                              status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
@@ -4594,6 +4283,7 @@ function apiToExitRow(e: any): EmployeeRow {
     exitInitiated,
     exitType: String(ex?.exit_type ?? ''),
     noticeStartIso: noticeRaw,
+    lastWorkingIso: ex?.last_working_day ? String(ex.last_working_day).slice(0, 10) : '',
     blacklisted: !!ex && (ex.blacklisted === true || String(ex.blacklisted).toLowerCase() === 'yes'),
     // Prefer the explicit integer; fall back to parsing the label ("90 Days")
     // since notice_period_days is often null while notice_period holds "N Days".

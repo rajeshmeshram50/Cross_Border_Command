@@ -14,7 +14,7 @@ import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
-import { VaultModal } from '../employee-onboarding/HrEmployeeOnboarding';
+import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
@@ -4701,21 +4701,18 @@ export default function HrEmployees() {
         </ModalBody>
       </Modal>
 
-      <VaultModal
-        isOpen={vaultOpen}
-        onClose={closeVault}
-        emp={vaultEmp ? ({
-          dbId: (vaultEmp as any)._dbId,
-          id: vaultEmp.id,
+      {/* The shared vault (components/EvidenceVaultModal) — the same modal
+          Onboarding and Exit Management open. */}
+      <EvidenceVaultModal
+        employee={vaultOpen && vaultEmp ? {
+          id: Number((vaultEmp as any)._dbId),
           empId: vaultEmp.id,
           name: vaultEmp.name,
           department: vaultEmp.department,
           designation: vaultEmp.designation,
-        } as any) : null}
-        tab={vaultTab}
-        onTabChange={setVaultTab}
-        triggerKeyword={null}
-        signedOnly
+        } : null}
+        onClose={closeVault}
+        initialTab={vaultTab}
       />
 
       <FaceRegistrationModal

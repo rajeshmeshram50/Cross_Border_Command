@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody } from 'reactstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import Tooltip from '../../../components/ui/Tooltip';
 import api from '../../../api';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { Shimmer } from '../../../components/ui/Shimmer';
@@ -69,13 +70,20 @@ const CATEGORIES: { value: EmployeeCategory; label: string; icon: string }[] = [
 // Designation levels — mirrors master_designations.level so the chip strip
 // here always matches what the master shows. Keep these labels byte-identical
 // to the controller's ROLE_TYPES constant.
-export const ROLE_TYPES: { value: RoleType; label: string; icon: string; tone: { bg: string; fg: string; border: string } }[] = [
-  { value: 'Director / CEO',           label: 'Director / CEO',           icon: '👔', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
-  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', icon: '🎯', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
-  { value: 'Team Leader',              label: 'Team Leader',              icon: '👥', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
-  { value: 'Executive',                label: 'Executive',                icon: '💼', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
-  { value: 'Employee',                 label: 'Employee',                 icon: '👤', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
-  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
+/* `short` is display-only, for tight strips like the level tab rail. It is NOT
+   a second name for the role: `value` is what the column stores and what the
+   controller validates against, and `label` stays the full descriptive form for
+   pickers, where there is room and the reader is choosing rather than scanning.
+   Only HOD differs — "Head of Department (HOD)" is nearly three times the width
+   of every other tab and pushed the rail onto a second line. The short form
+   matches the controller's own ROLE_SHORT map, which already codes it HOD. */
+export const ROLE_TYPES: { value: RoleType; label: string; short: string; icon: string; tone: { bg: string; fg: string; border: string } }[] = [
+  { value: 'Director / CEO',           label: 'Director / CEO',           short: 'Director / CEO',   icon: '👔', tone: { bg: '#fff7ed', fg: '#9a3412', border: '#fdba74' } },
+  { value: 'Head of Department (HOD)', label: 'Head of Department (HOD)', short: 'HOD',              icon: '🎯', tone: { bg: '#f5f3ff', fg: '#6d28d9', border: '#c4b5fd' } },
+  { value: 'Team Leader',              label: 'Team Leader',              short: 'Team Leader',      icon: '👥', tone: { bg: '#eff6ff', fg: '#1d4ed8', border: '#93c5fd' } },
+  { value: 'Executive',                label: 'Executive',                short: 'Executive',        icon: '💼', tone: { bg: '#ecfdf5', fg: '#047857', border: '#6ee7b7' } },
+  { value: 'Employee',                 label: 'Employee',                 short: 'Employee',         icon: '👤', tone: { bg: '#dcfce7', fg: '#15803d', border: '#86efac' } },
+  { value: 'Intern / Trainee',         label: 'Intern / Trainee',         short: 'Intern / Trainee', icon: '🎓', tone: { bg: '#dbeafe', fg: '#1e40af', border: '#93c5fd' } },
 ];
 
 /* Inline so the button keeps its own text colour — a spinner that hard-codes a
@@ -620,11 +628,6 @@ export default function TemplateFormPage() {
         <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div className="d-flex align-items-center gap-3 min-w-0">
-              <button type="button" onClick={() => navigate('/hr/doc-templates')}
-                style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}
-                title="Back to templates">
-                <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
-              </button>
               <span style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-file-text-line" style={{ fontSize: 22, color: '#fff' }} />
               </span>
@@ -635,7 +638,19 @@ export default function TemplateFormPage() {
                 </div>
               </div>
             </div>
-            <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+            {/* Back sits on the RIGHT, with the step pill — the left of the bar
+                is the page's identity (icon, title, step count) and an escape
+                hatch wedged in front of it read as part of that title. */}
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+              <Tooltip label="Back to templates">
+                <button type="button" onClick={() => navigate('/hr/doc-templates')}
+                  style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}
+                  aria-label="Back to templates">
+                  <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
+                </button>
+              </Tooltip>
+            </div>
           </div>
         </div>
 

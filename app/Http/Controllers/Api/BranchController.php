@@ -131,26 +131,31 @@ class BranchController extends Controller
             'sandwich_policy' => 'required|boolean',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
+            /* The branch's legal identity is MANDATORY (QA #5 / #6): these
+               numbers print on quotations, proforma invoices and export
+               paperwork, and gst_state_code decides the CGST+SGST vs IGST
+               split on every one of them. Server-side twin of the SPA rules
+               in BranchForm.tsx — the form can be bypassed, the API can't. */
             'gst_number' => [
-                'nullable', 'string', 'max:20',
+                'required', 'string', 'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
                     ->where(fn ($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
             ],
             'pan_number' => [
-                'nullable', 'string', 'max:20',
+                'required', 'string', 'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
                 Rule::unique('branches', 'pan_number')
                     ->where(fn ($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
             ],
-            'registration_number' => 'nullable|string|max:50',
+            'registration_number' => 'required|string|max:50',
             // Letterhead / export-house compliance fields — all optional,
             // surface on the Quotation/PI PDF when filled.
-            'gst_state_code'   => 'nullable|string|max:10',
-            'cin'              => 'nullable|string|max:30',
-            'iec'              => 'nullable|string|max:30',
+            'gst_state_code'   => 'required|string|max:10',
+            'cin'              => 'required|string|max:30',
+            'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
             'pcpndt_no'        => 'nullable|string|max:60',
             'aeo_code'         => 'nullable|string|max:60',
@@ -205,6 +210,9 @@ class BranchController extends Controller
             'pan_number.unique' => 'This PAN is already registered to another branch.',
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
+
+        // At least one bank account — see assertHasBankAccount().
+        $this->assertHasBankAccount($request);
 
         try {
             return DB::transaction(function () use ($request, $clientId, $user) {
@@ -472,8 +480,9 @@ class BranchController extends Controller
             'sandwich_policy' => 'required|boolean',
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
+            // Mandatory on edit too — see the matching block in store().
             'gst_number' => [
-                'nullable', 'string', 'max:20',
+                'required', 'string', 'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
                     ->ignore($branch->id)
@@ -481,17 +490,17 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'pan_number' => [
-                'nullable', 'string', 'max:20',
+                'required', 'string', 'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
                 Rule::unique('branches', 'pan_number')
                     ->ignore($branch->id)
                     ->where(fn ($q) => $q->where('client_id', $branch->client_id))
                     ->whereNull('deleted_at'),
             ],
-            'registration_number' => 'nullable|string|max:50',
-            'gst_state_code'   => 'nullable|string|max:10',
-            'cin'              => 'nullable|string|max:30',
-            'iec'              => 'nullable|string|max:30',
+            'registration_number' => 'required|string|max:50',
+            'gst_state_code'   => 'required|string|max:10',
+            'cin'              => 'required|string|max:30',
+            'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
             'pcpndt_no'        => 'nullable|string|max:60',
             'aeo_code'         => 'nullable|string|max:60',
@@ -540,6 +549,10 @@ class BranchController extends Controller
             'pan_number.unique' => 'This PAN is already registered to another branch.',
             'pan_number.regex'  => 'Invalid PAN format. Example: AADCI6120M',
         ]);
+
+        // Only when the payload carries the repeater — a partial save that
+        // leaves bank_accounts out keeps whatever the branch already has.
+        $this->assertHasBankAccount($request, true);
 
         try {
             return DB::transaction(function () use ($request, $branch, $branchUser) {
@@ -937,6 +950,30 @@ class BranchController extends Controller
      * Entities master. Only the FIRST row flagged primary keeps the flag, so
      * the data can't end up with two primary accounts.
      */
+    /**
+     * At least one bank account is required on a branch (QA #7).
+     *
+     * Can't be expressed as a validation rule: the repeater arrives as a JSON
+     * STRING on multipart uploads, and "at least one row that actually names a
+     * bank" is exactly what normalizeBankAccounts() already decides — a card
+     * the user opened and never filled in is not an account.
+     *
+     * @param bool $onlyIfPresent  On update, a payload that omits the key is a
+     *                             partial save and leaves the stored accounts
+     *                             alone, so there is nothing to require.
+     */
+    private function assertHasBankAccount(Request $request, bool $onlyIfPresent = false): void
+    {
+        if ($onlyIfPresent && !$request->has('bank_accounts')) {
+            return;
+        }
+        if (empty($this->normalizeBankAccounts($request->input('bank_accounts')))) {
+            throw ValidationException::withMessages([
+                'bank_accounts' => ['Add at least one bank account for this branch.'],
+            ]);
+        }
+    }
+
     private function normalizeBankAccounts($raw): array
     {
         if (is_string($raw)) {
