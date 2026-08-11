@@ -270,6 +270,40 @@ class AdvanceRequestController extends Controller
             }
         }
 
+        // Company advance amount DISTRIBUTION (optional). Rows arrive as a JSON
+        // string in `request_items`; each row's proof_index lines up with the
+        // uploaded files[] order, so we bind the stored proof path to each row.
+        // Rows must sum to the total amount.
+        $requestItems = null;
+        $rawItems = $request->input('request_items');
+        if ($isCompany && $rawItems) {
+            $decoded = is_string($rawItems) ? json_decode($rawItems, true) : $rawItems;
+            if (is_array($decoded) && count($decoded)) {
+                $sum = 0.0;
+                $requestItems = [];
+                foreach ($decoded as $it) {
+                    $amt = round((float) ($it['amount'] ?? 0), 2);
+                    $sum += $amt;
+                    $pi = isset($it['proof_index']) ? (int) $it['proof_index'] : null;
+                    $proof = ($pi !== null && isset($attachments[$pi])) ? $attachments[$pi] : null;
+                    $requestItems[] = [
+                        'amount'       => $amt,
+                        'purpose'      => (string) ($it['purpose'] ?? ''),
+                        'payment_type' => (string) ($it['payment_type'] ?? ''),
+                        'proof_name'   => $proof['name'] ?? null,
+                        'proof_path'   => $proof['path'] ?? null,
+                    ];
+                }
+                if (round($sum, 2) !== round((float) $data['amount'], 2)) {
+                    return response()->json([
+                        'status'  => false,
+                        'message' => 'Distribution rows must total the advance amount ₹' . number_format((float) $data['amount'], 2) . ' — got ₹' . number_format($sum, 2) . '.',
+                        'errors'  => ['request_items' => ['Rows must add up to the advance amount.']],
+                    ], 422);
+                }
+            }
+        }
+
         // Manager stage always starts PENDING. When no EMPLOYEE reporting
         // manager is assigned, the BRANCH ADMIN is the de-facto reporting
         // manager and approves it explicitly in their Inbox — no more silent
@@ -282,7 +316,7 @@ class AdvanceRequestController extends Controller
         $managerActedAt  = null;
         $managerComment  = null;
 
-        $row = DB::transaction(function () use ($employee, $data, $attachments, $managerStatus, $managerActedAt, $managerComment, $user, $isCompany) {
+        $row = DB::transaction(function () use ($employee, $data, $attachments, $requestItems, $managerStatus, $managerActedAt, $managerComment, $user, $isCompany) {
             return AdvanceRequest::create([
                 'client_id'         => $employee->client_id,
                 'branch_id'         => $employee->branch_id,
@@ -303,6 +337,7 @@ class AdvanceRequestController extends Controller
                 'monthly_emi'       => (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)) ? ($data['monthly_emi'] ?? null) : null,
                 'reason'            => $data['reason'],
                 'attachments'       => $attachments ?: null,
+                'request_items'     => $requestItems,
                 'status'            => 'pending',
                 'manager_status'    => $managerStatus,
                 'manager_acted_at'  => $managerActedAt,
@@ -790,6 +825,7 @@ class AdvanceRequestController extends Controller
             'recovery_complete'  => $selfComplete,
             'settle_return_recovered' => $returnRecovered,
             'reason'             => $row->reason,
+            'request_items'      => $row->request_items,
             'attachments'        => collect($row->attachments ?? [])->values()->map(function ($a, $i) use ($row) {
                 return [
                     'name' => $a['name'] ?? null,
@@ -816,6 +852,17 @@ class AdvanceRequestController extends Controller
             'total_paid'         => (float) $row->total_paid,
             'settlement_status'  => $row->settlement_status ?: 'unpaid',
             'settled_at'         => optional($row->settled_at)->toIso8601String(),
+            // Zoho Books sync state for the list column — COMPANY advances only
+            // (a self advance is recovered from salary, never booked in Zoho):
+            // na (n/a or no payouts) | pending (none synced) | partial | completed.
+            'zoho_sync'          => (function () use ($row) {
+                if (($row->used_for ?: 'self') !== 'company') return 'na';
+                $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
+                if ($payments->isEmpty()) return 'na';
+                $synced = $payments->filter(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced')->count();
+                if ($synced === 0) return 'pending';
+                return $synced === $payments->count() ? 'completed' : 'partial';
+            })(),
             'remaining_amount'   => $row->sanctioned_amount !== null
                 ? round((float) $row->sanctioned_amount - (float) $row->total_paid, 2)
                 : null,
@@ -971,40 +1018,43 @@ class AdvanceRequestController extends Controller
             ];
         }
 
-        if (empty($settleItems)) {
+        $hasBills = !empty($settleItems);
+
+        // A bill-less FINALISE is allowed (simplified flow): the employee just
+        // confirms "used exactly the advance" (equal) or "used more" with the
+        // declared amount (maximum → reimburse the extra) — no itemised bills.
+        // Bills are still required for an incremental SAVE (non-finalise).
+        if (!$hasBills && !$finalize) {
             return response()->json([
                 'status'  => false,
                 'message' => 'Add at least one bill before saving.',
                 'errors'  => ['items' => ['Add at least one usage row.']],
             ], 422);
         }
-        if ($finalize && empty($items) && empty($row->settle_items)) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Add at least one bill before finalising.',
-                'errors'  => ['items' => ['Add at least one usage row.']],
-            ], 422);
-        }
 
-        // Cumulative usage vs the sanctioned (paid) amount:
+        // Cumulative usage vs the sanctioned (paid) amount. With no bills, the
+        // declared target IS the amount used:
         //   equal     → 0 balance
         //   return    → total < sanctioned → employee returns the unused part
         //   reimburse → total > sanctioned → company reimburses the extra
-        $total      = round(array_sum(array_map(fn ($it) => (float) $it['amount'], $settleItems)), 2);
+        $total      = $hasBills
+            ? round(array_sum(array_map(fn ($it) => (float) $it['amount'], $settleItems)), 2)
+            : round($target, 2);
         $diff       = round($total - $sanctioned, 2);
-        $settleType = $diff === 0.0 ? 'equal' : ($diff < 0 ? 'return' : 'reimburse');
-        $balance    = abs($diff);
+        $settleType = abs($diff) < 0.005 ? 'equal' : ($diff < 0 ? 'return' : 'reimburse');
+        $balance    = round(abs($diff), 2);
 
-        // The bills may never exceed the declared "amount used"; finalising
-        // requires them to total it exactly.
-        if ($total > $target + 0.005) {
+        // Bills (when present) may never exceed the declared "amount used", and
+        // a bill-based finalise must total it exactly. A bill-less finalise
+        // skips these — the declared target defines the outcome.
+        if ($hasBills && $total > $target + 0.005) {
             return response()->json([
                 'status'  => false,
                 'message' => 'Total used ₹' . number_format($total, 2) . ' exceeds the declared amount used ₹' . number_format($target, 2) . '.',
                 'errors'  => ['items' => ['Total exceeds the declared amount used.']],
             ], 422);
         }
-        if ($finalize && abs($total - $target) > 0.005) {
+        if ($finalize && $hasBills && abs($total - $target) > 0.005) {
             return response()->json([
                 'status'  => false,
                 'message' => 'To finalise, the itemised bills must total the declared amount used ₹' . number_format($target, 2) . ' (currently ₹' . number_format($total, 2) . ').',
@@ -1020,14 +1070,12 @@ class AdvanceRequestController extends Controller
         $row->settle_type          = $settleType;
         $row->settle_balance       = $balance;
         if ($finalize) {
-            // Finalising no longer unlocks return/reimburse directly — it sends
-            // the usage declaration to a branch admin / HR for approval first.
-            // (A re-finalise after a rejection resets it to pending + clears the
-            // stale rejection comment.)
+            // No separate approval step — the employee's confirmation finalises
+            // it directly: equal → completed; maximum → reimburse ready to raise.
             $row->employee_settled_at     = now();
-            $row->settle_approval_status  = 'pending';
-            $row->settle_approved_by      = null;
-            $row->settle_approved_at      = null;
+            $row->settle_approval_status  = 'approved';
+            $row->settle_approved_by      = $user->id;
+            $row->settle_approved_at      = now();
             $row->settle_approval_comment = null;
         }
         $row->save();
@@ -1036,13 +1084,11 @@ class AdvanceRequestController extends Controller
         if (!$finalize) {
             $msg = 'Bills saved — ₹' . number_format($total, 2) . ' itemised so far. Add more or finalise when done.';
         } else {
-            // Finalise now routes to branch/HR for approval before any payout.
-            $tail = ' Sent to a branch admin / HR for approval.';
             $msg = ($settleType === 'equal'
-                ? 'Settlement submitted — usage matched the advance.'
+                ? 'Settlement completed — usage matched the advance.'
                 : ($settleType === 'return'
-                    ? 'Settlement submitted — ₹' . number_format($balance, 2) . ' to return once approved.'
-                    : 'Settlement submitted — ₹' . number_format($balance, 2) . ' to reimburse once approved.')) . $tail;
+                    ? 'Settlement completed — ₹' . number_format($balance, 2) . ' to return.'
+                    : 'Settlement completed — raise the expense for the extra ₹' . number_format($balance, 2) . '.'));
         }
         return response()->json([
             'status'  => true,
@@ -1588,18 +1634,34 @@ class AdvanceRequestController extends Controller
                 'size' => $a['size'] ?? null,
                 'url'  => url("/api/advance-requests/{$row->id}/attachments/{$i}"),
             ])->all(),
+            // Company-advance amount distribution (rows sum to the amount) so the
+            // approver can review each purpose + proof before approving.
+            'request_items'     => collect($row->request_items ?? [])->values()->map(function ($it, $i) use ($row) {
+                return [
+                    'amount'       => (float) ($it['amount'] ?? 0),
+                    'purpose'      => $it['purpose'] ?? '',
+                    'payment_type' => $it['payment_type'] ?? '',
+                    'proof_name'   => $it['proof_name'] ?? null,
+                    // Item order matches the attachments order at create time, so
+                    // the row's proof is served via attachments/{i}.
+                    'proof_url'    => ($it['proof_path'] ?? null)
+                        ? url("/api/advance-requests/{$row->id}/attachments/{$i}")
+                        : null,
+                ];
+            })->all(),
             'payments'          => $row->payments->map(fn ($p) => [
                 'id'           => $p->id,
                 'amount'       => (float) $p->amount,
                 'category_name'=> null,
                 'payment_type' => $p->payment_type,
+                'reference_number' => $p->reference_number,
                 'expense_type' => null,
                 'note'         => $p->note,
                 'proof_name'   => $p->proof_name,
                 'proof_url'    => $p->proof_path ? url("/api/advance-requests/payments/{$p->id}/proof") : null,
-                'zoho_status'  => null,
-                'zoho_synced_at' => null,
-                'zoho_expense_url' => null,
+                'zoho_status'  => $p->zoho_status ?: 'not_synced',
+                'zoho_synced_at' => optional($p->zoho_synced_at)->toIso8601String(),
+                'zoho_expense_url' => $p->zoho_expense_id ? $this->zohoExpenseUrl((string) $p->zoho_expense_id) : null,
                 'paid_by_name' => $p->payer?->name,
                 'paid_at'      => optional($p->paid_at)->toIso8601String(),
             ])->all(),
@@ -1923,6 +1985,7 @@ class AdvanceRequestController extends Controller
             'additions.*.reason'  => ['nullable', 'string', 'max:500'],
             'amount'              => ['required', 'numeric', 'min:0.01'],
             'payment_type'        => ['required', 'string', 'in:Cheque,UPI,PhonePe,Bank Transfer'],
+            'reference_number'    => ['nullable', 'string', 'max:64'],
             'note'                => ['required', 'string', 'max:500'],
             // Proof capped at 2 MB (2048 KB) — matches the attachment limits and
             // stays under PHP's upload cap so it never fails with the cryptic
@@ -1988,6 +2051,7 @@ class AdvanceRequestController extends Controller
                 'advance_request_id' => $row->id,
                 'amount'             => $pay,
                 'payment_type'       => $data['payment_type'],
+                'reference_number'   => $data['reference_number'] ?? null,
                 'note'               => $data['note'] ?? null,
                 'proof_path'         => $proofPath,
                 'proof_name'         => $proofName,
@@ -2031,6 +2095,146 @@ class AdvanceRequestController extends Controller
             abort(404, 'Proof file is missing on the server.');
         }
         return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+    }
+
+    /** Build the Zoho Books web-app deep link for an expense (region derived from
+     *  the configured API host, e.g. zohoapis.in → books.zoho.in). Mirrors
+     *  ExpenseClaimController::zohoExpenseUrl. */
+    private function zohoExpenseUrl(string $expenseId): string
+    {
+        $cfg    = config('services.zoho_books');
+        $org    = (string) ($cfg['organization_id'] ?? '');
+        $region = 'in';
+        if (preg_match('#zohoapis\.([a-z.]+)#i', (string) ($cfg['base_url'] ?? ''), $m)) {
+            $region = $m[1];
+        }
+        return "https://books.zoho.{$region}/app/{$org}#/expenses/" . rawurlencode($expenseId);
+    }
+
+    /**
+     * POST /advance-requests/payments/{paymentId}/sync-zoho
+     * Push a COMPANY-advance payout to Zoho Books as an Expense — mirrors
+     * ExpenseClaimController::syncPaymentToZoho:
+     *   • Expense Account   ← the advance type (find-or-create in Zoho)
+     *   • Paid Through      ← the payout method (find-or-create in Zoho)
+     *   • Amount / Notes    ← payout amount / note
+     *   • Reference #       ← "ADV-ID - <Advance Type>"
+     *   • Receipts          ← EVERY related PDF: the payout proof, the advance's
+     *                         own attachments, and each distribution row's proof.
+     * Only company advances sync (a self advance is recovered from salary, not
+     * booked as a company expense). Idempotent: a payment already carrying a
+     * zoho_expense_id is not re-created.
+     */
+    public function syncPaymentToZoho(Request $request, $paymentId)
+    {
+        $user    = $request->user();
+        $payment = \App\Models\AdvanceRequestPayment::findOrFail($paymentId);
+        $row     = AdvanceRequest::findOrFail($payment->advance_request_id);
+        $this->ensureTenantAccess($row, $user);
+        $this->guardHrPermission($user, 'can_approve');
+
+        if (($row->used_for ?: 'self') !== 'company') {
+            return response()->json(['status' => false, 'message' => 'Only a company advance can be synced to Zoho Books.'], 422);
+        }
+        if (($payment->zoho_status ?? 'not_synced') === 'synced' || !empty($payment->zoho_expense_id)) {
+            return response()->json([
+                'status'   => true,
+                'message'  => 'This payout is already synced to Zoho Books.',
+                'zoho_url' => $payment->zoho_expense_id ? $this->zohoExpenseUrl((string) $payment->zoho_expense_id) : null,
+            ]);
+        }
+
+        /** @var \App\Services\ZohoBooksService $zoho */
+        $zoho = app(\App\Services\ZohoBooksService::class);
+        if (!$zoho->isConfigured()) {
+            return response()->json(['status' => false, 'message' => 'Zoho Books is not configured on the server.'], 503);
+        }
+
+        // The advance type doubles as the Zoho expense account (e.g. "Travel
+        // Advance"); "Other" carries its free-text label. Fall back to a generic
+        // employee-advance account so a sync never fails on a missing category.
+        $advanceType = $row->advance_type === 'Other' && $row->advance_type_other
+            ? $row->advance_type_other
+            : ($row->advance_type ?: 'Employee Advance');
+        $title = ($row->advance_no ?: ('ADV-' . $row->id)) . ' - ' . $advanceType;
+
+        $expenseId = null;
+        try {
+            $payload = [
+                'account_id'              => $zoho->resolveExpenseAccountId($advanceType),
+                'paid_through_account_id' => $zoho->findOrCreatePaidThroughAccountId($payment->payment_type ?: 'Bank'),
+                'date'                    => optional($payment->paid_at)->format('Y-m-d') ?: now()->format('Y-m-d'),
+                'amount'                  => (float) $payment->amount,
+                'reference_number'        => $title,
+                'description'             => (string) ($payment->note ?? ''),
+                'product_type'            => 'goods',
+            ];
+            // GST-registered orgs need source/destination of supply on the expense.
+            $state = $zoho->orgStateCode();
+            if ($state) {
+                $payload['source_of_supply']      = $state;
+                $payload['destination_of_supply'] = $state;
+            }
+
+            $expense   = $zoho->createExpense($payload);
+            $expenseId = (string) ($expense['expense_id'] ?? '');
+
+            // Attach EVERY related PDF (best-effort — a receipt failure must not
+            // undo an otherwise-created expense). Order: payout proof first, then
+            // each distribution row's proof, then the advance's own attachments.
+            if ($expenseId !== '') {
+                $disk = \Illuminate\Support\Facades\Storage::disk('public');
+
+                $receiptFiles = [];
+                if (!empty($payment->proof_path)) {
+                    $receiptFiles[] = ['path' => $payment->proof_path, 'name' => $payment->proof_name ?: basename($payment->proof_path)];
+                }
+                foreach (($row->request_items ?? []) as $it) {
+                    if (empty($it['proof_path'])) continue;
+                    $receiptFiles[] = ['path' => $it['proof_path'], 'name' => ($it['proof_name'] ?? null) ?: basename($it['proof_path'])];
+                }
+                foreach (($row->attachments ?? []) as $att) {
+                    $p = is_array($att) ? ($att['path'] ?? null) : null;
+                    if (empty($p)) continue;
+                    $receiptFiles[] = ['path' => $p, 'name' => (is_array($att) ? ($att['name'] ?? null) : null) ?: basename($p)];
+                }
+                // De-dup by stored path and respect Zoho's 5-receipt-per-expense cap.
+                $seen = [];
+                $receiptFiles = array_values(array_filter($receiptFiles, function ($f) use (&$seen) {
+                    if (isset($seen[$f['path']])) return false;
+                    $seen[$f['path']] = true;
+                    return true;
+                }));
+
+                foreach (array_slice($receiptFiles, 0, 5) as $rf) {
+                    if (!$disk->exists($rf['path'])) continue;
+                    try {
+                        $zoho->attachExpenseReceipt($expenseId, $disk->get($rf['path']), $rf['name']);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Zoho advance receipt attach failed', [
+                            'payment' => $payment->id,
+                            'file'    => $rf['path'],
+                            'error'   => $e->getMessage(),
+                        ]);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Reverse a partially-created expense so a retry starts clean.
+            if ($expenseId) { try { $zoho->deleteExpense($expenseId); } catch (\Throwable $ignore) {} }
+            return response()->json(['status' => false, 'message' => 'Zoho Books sync failed: ' . $e->getMessage()], 422);
+        }
+
+        $payment->zoho_status     = 'synced';
+        $payment->zoho_synced_at  = now();
+        $payment->zoho_expense_id = $expenseId;
+        $payment->save();
+
+        return response()->json([
+            'status'   => true,
+            'message'  => 'Advance payout synced to Zoho Books.',
+            'zoho_url' => $expenseId ? $this->zohoExpenseUrl($expenseId) : null,
+        ]);
     }
 
     /**

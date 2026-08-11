@@ -19,14 +19,16 @@ class AdvanceRequestPayment extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'advance_request_id',
-        'amount', 'payment_type', 'note',
+        'amount', 'payment_type', 'reference_number', 'note',
         'proof_path', 'proof_name',
+        'zoho_status', 'zoho_synced_at', 'zoho_expense_id',
         'paid_by', 'paid_at',
     ];
 
     protected $casts = [
-        'amount'  => 'decimal:2',
-        'paid_at' => 'datetime',
+        'amount'         => 'decimal:2',
+        'paid_at'        => 'datetime',
+        'zoho_synced_at' => 'datetime',
     ];
 
     public function advance(): BelongsTo

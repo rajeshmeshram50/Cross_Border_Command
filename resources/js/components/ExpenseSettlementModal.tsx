@@ -33,6 +33,8 @@ type Summary = {
   currency: string | null;
   claimed_amount: number;
   purpose?: string | null;
+  // Company-advance amount distribution (rows sum to the amount).
+  request_items?: { amount: number; purpose: string; payment_type: string; proof_name: string | null; proof_url: string | null }[];
   vendor?: string | null;
   project?: string | null;
   category_id: number | null;
@@ -50,7 +52,7 @@ type Summary = {
   attachments: Attachment[];
   payments: {
     id: number; amount: number; category_name: string | null;
-    payment_type: string | null; expense_type: string | null;
+    payment_type: string | null; reference_number?: string | null; expense_type: string | null;
     note: string | null; proof_name: string | null; proof_url: string | null;
     zoho_status: string | null; zoho_expense_url: string | null;
     paid_by_name: string | null; paid_at: string | null;
@@ -232,6 +234,8 @@ export default function ExpenseSettlementModal({
   const [categoryId, setCategoryId] = useState('');
   const [paymentType, setPaymentType] = useState('');
   const [expenseType, setExpenseType] = useState('');
+  // UTR / bank reference number for the payout — makes the payment easy to trace.
+  const [reference, setReference] = useState('');
   const [note, setNote] = useState('');
   const [proofFile, setProofFile] = useState<File | null>(null);
   // The proof download is a local blob save, so it finishes instantly and gave
@@ -272,6 +276,7 @@ export default function ExpenseSettlementModal({
   const [adjOpen, setAdjOpen] = useState(true);
   // Collapsible Payment History / Advance Paid section.
   const [payOpen, setPayOpen] = useState(true);
+  const [distOpen, setDistOpen] = useState(true);
   // Proof-of-payment list — collapse to the first few, expand on "+N more".
   const [showAllProofs, setShowAllProofs] = useState(false);
   // Employee "Settlement" (company advance) — itemised usage rows.
@@ -431,12 +436,15 @@ export default function ExpenseSettlementModal({
   const sanctioned = firstPayment ? +(claimed - totalDeduction + totalAddition).toFixed(2) : (summary?.sanctioned_amount ?? 0);
   const remaining = +(sanctioned - paidSoFar).toFixed(2);
   const amountNum = Math.max(0, Number(amount) || 0);
-  // Zoho bulk-sync selection (QA #129) — only un-synced payment rows are
-  // selectable; expense claims only (advances don't sync to Zoho).
-  const zohoUnsyncedIds = (summary?.payments ?? []).filter(p => (p.zoho_status || 'not_synced') !== 'synced').map(p => p.id);
+  // Zoho sync applies to expense claims AND to COMPANY advances (a payout against
+  // a company advance is booked in Zoho Books as an Expense). A SELF advance is
+  // recovered from salary, so it never syncs.
+  const zohoEligible = !isAdvance || (summary?.used_for === 'company');
+  // Zoho bulk-sync selection (QA #129) — only un-synced payment rows are selectable.
+  const zohoUnsyncedIds = zohoEligible ? (summary?.payments ?? []).filter(p => (p.zoho_status || 'not_synced') !== 'synced').map(p => p.id) : [];
   const zohoSelectedIds = zohoUnsyncedIds.filter(id => selectedZoho.has(id));
   const zohoAllSelected = zohoUnsyncedIds.length > 0 && zohoSelectedIds.length === zohoUnsyncedIds.length;
-  const showZohoSelect = !readOnly && !isAdvance && zohoUnsyncedIds.length > 0;
+  const showZohoSelect = !readOnly && zohoEligible && zohoUnsyncedIds.length > 0;
   const toggleZoho = (id: number) => setSelectedZoho(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const toggleAllZoho = () => setSelectedZoho(zohoAllSelected ? new Set() : new Set(zohoUnsyncedIds));
   const fullyPaid = !firstPayment && remaining <= 0.005;
@@ -471,6 +479,7 @@ export default function ExpenseSettlementModal({
     setAmount(String(remaining));
     setPaymentType('');
     setExpenseType('');
+    setReference('');
     setProofFile(null);
     setNote(`Paid ${inr(remaining)} to ${summary?.employee_name || 'the employee'} towards "${summary?.title ?? ''}".`);
     setShowForm(true);
@@ -549,7 +558,22 @@ export default function ExpenseSettlementModal({
         onDone();
         setConfirmKind(null);
         setApprovedInline(true);
-        setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+        const approved = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data;
+        setSummary(approved);
+        // Advance: jump straight into the payout form — no need to reopen a
+        // separate "Advance Paid" action to record the payment.
+        if (isAdvance) {
+          const sanctionedNew = Number(approved.sanctioned_amount ?? approved.claimed_amount) || 0;
+          const remainingNew = +(sanctionedNew - (approved.total_paid ?? 0)).toFixed(2);
+          setShowErrors(false);
+          setAmount(String(remainingNew));
+          setPaymentType('');
+          setExpenseType('');
+          setReference('');
+          setProofFile(null);
+          setNote(`Paid ${inr(remainingNew)} to ${approved.employee_name || 'the employee'} towards "${approved.title ?? ''}".`);
+          setShowForm(true);
+        }
       }
     } catch (e: any) {
       toast.error('Could not approve', e?.response?.data?.message ?? 'Please try again.');
@@ -637,6 +661,7 @@ export default function ExpenseSettlementModal({
         fd.append('expense_type', expenseType);
       }
       fd.append('payment_type', paymentType);
+      if (reference.trim()) fd.append('reference_number', reference.trim());
       if (note) fd.append('note', note);
       if (proofFile) fd.append('proof', proofFile);
       const { data: r } = await api.post(`${basePath}/${claimId}/settle`, fd, {
@@ -762,6 +787,42 @@ export default function ExpenseSettlementModal({
       }
     } catch (e: any) {
       toast.error(finalize ? 'Could not settle' : 'Could not save', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setSettleSaving(false); }
+  };
+
+  // Simplified settle — finalise straight from the "Have you utilized your
+  // advance?" popup with no itemised bills. Equal = used exactly the advance;
+  // Maximum = used more → finalise then raise an expense for the extra.
+  const confirmSettleDirect = async () => {
+    if (claimId == null || settleSaving) return;
+    const type = settleChosenTmp; // 'equal' | 'maximum'
+    const target = type === 'equal' ? settleBase : (Number(settleTargetTmp) || 0);
+    if (type === 'maximum' && !(target > settleBase)) {
+      toast.warning('Enter a valid amount', `Amount utilized must be more than ${inr(settleBase)}.`);
+      return;
+    }
+    setSettleSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('finalize', '1');
+      fd.append('declared_type', type);
+      if (type === 'maximum') fd.append('target_amount', String(target));
+      const { data: r } = await api.post(`${basePath}/${claimId}/employee-settle`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Advance settled', r?.message
+        ?? (type === 'maximum' ? 'Settled — raise the expense for the extra when ready.' : 'Settled — you used exactly the advance.'));
+      // Just confirm + close the popup — the reimbursement (for "maximum") is
+      // recorded and can be raised later from the settle section; no form opens
+      // here.
+      setSettleMode('idle');
+      setSettleChosen('');
+      setSettleChosenTmp('');
+      setSettleTargetTmp('');
+      onDone();
+      setSummary((await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data);
+    } catch (e: any) {
+      toast.error('Could not settle', e?.response?.data?.message ?? 'Please try again.');
     } finally { setSettleSaving(false); }
   };
 
@@ -1054,8 +1115,10 @@ export default function ExpenseSettlementModal({
             <div className="esm-loading"><i className="ri-loader-4-line ri-spin" /> Loading…</div>
           ) : (
             <>
-              {/* KPI strip — hidden in a manager review (everything's in Claim Details). */}
-              {!managerReview && (
+              {/* KPI strip — hidden in a manager review (everything's in Claim
+                  Details) and for ADVANCES (additions/deductions don't apply; the
+                  amounts live in the summary/distribution). */}
+              {!managerReview && !isAdvance && (
               <div className={`esm-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
                 <div className="esm-kpi esm-kpi-teal">
                   <span className="esm-kpi-ico"><IcoDoc /></span>
@@ -1157,8 +1220,37 @@ export default function ExpenseSettlementModal({
                     <div className="esm-ro c3"><label>CATEGORY</label><div className="esm-ro-v esm-ro-sm">{summary.category_name || '—'}</div></div>
                     <div className="esm-ro c3"><label>CLAIMED AMOUNT</label><div className="esm-ro-v">{inr(claimed)}</div></div>
                     <div className="esm-ro c6"><label>DESCRIPTION</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.title || ''}>{summary.title || '—'}</div></div>
-                    {/* Vendor / Project are expense-only; an advance has neither. */}
-                    <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.purpose || ''}>{summary.purpose || '—'}</div></div>
+                    {/* Company advance — show the amount DISTRIBUTION as a table
+                        (amount · payment · purpose · proof) instead of the single
+                        Purpose line, so the manager reviews each line + proof. */}
+                    {isAdvance && (summary.request_items?.length ?? 0) > 0 ? (
+                      <div className="esm-ro c12">
+                        <label>AMOUNT DISTRIBUTION</label>
+                        <div className="esm-tblwrap" style={{ marginTop: 4 }}>
+                          <table className="esm-tbl">
+                            <thead>
+                              <tr><th style={{ width: 120 }}>Amount</th><th style={{ width: 130 }}>Payment</th><th>Purpose</th><th style={{ width: 160 }}>Proof</th></tr>
+                            </thead>
+                            <tbody>
+                              {summary.request_items!.map((it, i) => (
+                                <tr key={i}>
+                                  <td className="esm-tbl-amt" style={{ fontWeight: 700 }}>{inr(it.amount)}</td>
+                                  <td>{it.payment_type || '—'}</td>
+                                  <td style={{ whiteSpace: 'normal' }} title={it.purpose || ''}>{it.purpose || '—'}</td>
+                                  <td>
+                                    {it.proof_url
+                                      ? <a className="esm-tbl-link" href={tokenUrl(it.proof_url)} target="_blank" rel="noreferrer" title={it.proof_name || 'Proof'}><i className="ri-attachment-2" /> {it.proof_name || 'View'}</a>
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className={`esm-ro ${isAdvance ? 'c12' : 'c4'}`}><label>PURPOSE</label><div className="esm-ro-v esm-ro-sm esm-ro-v--text" title={summary.purpose || ''}>{summary.purpose || '—'}</div></div>
+                    )}
                     {!isAdvance && <div className="esm-ro c4"><label>SUPPLIER</label><div className="esm-ro-v esm-ro-sm">{summary.vendor || '—'}</div></div>}
                     {!isAdvance && <div className="esm-ro c4"><label>PROJECT</label><div className="esm-ro-v esm-ro-sm">{summary.project || '—'}</div></div>}
                     {/* Salary-recovery schedule — self advance only. */}
@@ -1185,22 +1277,27 @@ export default function ExpenseSettlementModal({
                         </>
                       );
                     })()}
-                    <div className="esm-ro c12">
-                      <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
-                      {summary.attachments.length === 0 ? (
-                        <div className="esm-hint">No documents were uploaded with this claim.</div>
-                      ) : (
-                        <div className="esm-docs">
-                          {summary.attachments.map((a, i) => (
-                            <a key={i} className="esm-doc" href={tokenUrl(a.url)} target="_blank" rel="noreferrer" title={a.name}>
-                              <i className="ri-file-text-line" />
-                              <span className="esm-doc-name">{a.name}</span>
-                              <i className="ri-external-link-line esm-doc-ext" />
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    {/* A company advance's proofs live per-row in the Amount
+                        Distribution table above, so the combined proof list is
+                        redundant and hidden for it. */}
+                    {!(isAdvance && (summary.request_items?.length ?? 0) > 0) && (
+                      <div className="esm-ro c12">
+                        <label>PROOF OF PAYMENT (BY EMPLOYEE)</label>
+                        {summary.attachments.length === 0 ? (
+                          <div className="esm-hint">No documents were uploaded with this claim.</div>
+                        ) : (
+                          <div className="esm-docs">
+                            {summary.attachments.map((a, i) => (
+                              <a key={i} className="esm-doc" href={tokenUrl(a.url)} target="_blank" rel="noreferrer" title={a.name}>
+                                <i className="ri-file-text-line" />
+                                <span className="esm-doc-name">{a.name}</span>
+                                <i className="ri-external-link-line esm-doc-ext" />
+                              </a>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1227,10 +1324,63 @@ export default function ExpenseSettlementModal({
                 )
               )}
 
-              {/* Deductions section — hidden in a MANAGER review (they only see the
-                  claim + approve/reject; no deduct). Icon header, 2-col body,
-                  submit below; editable only until the first payment locks it. */}
-              {!managerReview && (
+              {/* Amount Distribution — the company advance's line-item breakdown
+                  (amount · payment · purpose · proof). Shown in the HR/settlement
+                  view above Adjustments so the payer sees how it was split. */}
+              {!managerReview && isAdvance && (summary.request_items?.length ?? 0) > 0 && (
+                <div className="esm-sec">
+                  <div className="esm-sec-hd">
+                    <div className="esm-sec-l">
+                      <span className="esm-sec-ico"><i className="ri-list-check-2" /></span>
+                      <div className="esm-sec-tt">
+                        <div className="esm-sec-title-row">
+                          <span className="esm-sec-tag">Advance</span>
+                          <span className="esm-sec-div">|</span>
+                          <span className="esm-sec-title">Amount Distribution</span>
+                        </div>
+                        <div className="esm-sec-sub">How the employee split this advance</div>
+                      </div>
+                    </div>
+                    <div className="esm-sec-hd-actions">
+                      <span className="esm-sec-badge">{summary.request_items!.length} row{summary.request_items!.length === 1 ? '' : 's'}</span>
+                      <button type="button" className={`esm-sec-chev ${distOpen ? '' : 'is-collapsed'}`} onClick={() => setDistOpen(o => !o)} aria-label={distOpen ? 'Collapse' : 'Expand'}>
+                        <i className="ri-arrow-down-s-line" />
+                      </button>
+                    </div>
+                  </div>
+                  {distOpen && (
+                  <div className="esm-sec-body">
+                    <div className="esm-tblwrap">
+                      <table className="esm-tbl">
+                        <thead>
+                          <tr><th style={{ width: 120 }}>Amount</th><th style={{ width: 130 }}>Payment</th><th>Purpose</th><th style={{ width: 160 }}>Proof</th></tr>
+                        </thead>
+                        <tbody>
+                          {summary.request_items!.map((it, i) => (
+                            <tr key={i}>
+                              <td className="esm-tbl-amt" style={{ fontWeight: 700 }}>{inr(it.amount)}</td>
+                              <td>{it.payment_type || '—'}</td>
+                              <td style={{ whiteSpace: 'normal' }} title={it.purpose || ''}>{it.purpose || '—'}</td>
+                              <td>
+                                {it.proof_url
+                                  ? <a className="esm-tbl-link" href={tokenUrl(it.proof_url)} target="_blank" rel="noreferrer" title={it.proof_name || 'Proof'}><i className="ri-attachment-2" /> {it.proof_name || 'View'}</a>
+                                  : '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  )}
+                </div>
+              )}
+
+              {/* Adjustments (additions/deductions) — hidden in a MANAGER review
+                  AND for ADVANCES (an advance carries its own amount distribution
+                  and is approved/rejected as-is, no adjustments). Icon header,
+                  2-col body, submit below; editable only until first payment. */}
+              {!managerReview && !isAdvance && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div
@@ -1245,7 +1395,7 @@ export default function ExpenseSettlementModal({
                         <span className="esm-sec-div">|</span>
                         <span className="esm-sec-title">Adjustments</span>
                       </div>
-                      <div className="esm-sec-sub">{editDeductions ? 'Apply one-time additions / deductions, then submit to lock the net payable' : `Adjustments applied to this ${noun}`}</div>
+                      <div className="esm-sec-sub">{editDeductions ? `Apply one-time ${isAdvance ? 'additions' : 'additions / deductions'}, then submit to lock the net payable` : `Adjustments applied to this ${noun}`}</div>
                     </div>
                   </div>
                   <div className="esm-sec-hd-actions">
@@ -1292,6 +1442,10 @@ export default function ExpenseSettlementModal({
                         )}
                       </div>
 
+                      {/* Deductions are for EXPENSE claims only. An advance is
+                          approved as-is or REJECTED — there's no partial deduction
+                          step — so the whole Deductions column is hidden for it. */}
+                      {!isAdvance && <>
                       <div className="esm-vline" />
 
                       {/* Deductions (−) */}
@@ -1326,13 +1480,14 @@ export default function ExpenseSettlementModal({
                           <div className="esm-hint">No deductions applied.</div>
                         )}
                       </div>
+                      </>}
                     </div>
 
                     <div className="esm-ded-r">
                       <div className="esm-sumbox">
                         <div className="esm-sumrow"><span>Claimed Amount</span><span>{inr(claimed)}</span></div>
                         <div className="esm-sumrow"><span>Additions (+)</span><span className={(editDeductions ? totalAddition : (summary.addition_amount || 0)) > 0 ? 'is-pos' : ''}>+ {inr(editDeductions ? totalAddition : (summary.addition_amount || 0))}</span></div>
-                        <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>
+                        {!isAdvance && <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>}
                         <div className={`esm-sumrow is-grand ${sanctioned <= 0 ? 'is-bad' : ''}`}><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
                       </div>
                     </div>
@@ -1417,7 +1572,7 @@ export default function ExpenseSettlementModal({
                                 />
                               </th>
                             )}
-                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAID BY</th><th>DATE</th>{!isAdvance && <th>ZOHO BOOK STATUS</th>}{!readOnly && !isAdvance && <th>ACTION</th>}
+                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{isAdvance && <th>UTR / REF NO</th>}{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAID BY</th><th>DATE</th>{zohoEligible && <th>ZOHO BOOK STATUS</th>}{!readOnly && zohoEligible && <th>ACTION</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -1443,6 +1598,7 @@ export default function ExpenseSettlementModal({
                               <td>{i + 1}</td>
                               <td className="esm-tbl-amt">{inr(p.amount)}</td>
                               <td>{p.payment_type || '—'}</td>
+                              {isAdvance && <td title={p.reference_number || ''}>{p.reference_number || '—'}</td>}
                               {!isAdvance && <td>{p.expense_type || '—'}</td>}
                               <td>
                                 {p.proof_url ? (
@@ -1453,14 +1609,14 @@ export default function ExpenseSettlementModal({
                               </td>
                               <td>{p.paid_by_name || '—'}</td>
                               <td>{fmtDate(p.paid_at)}</td>
-                              {!isAdvance && (
+                              {zohoEligible && (
                               <td>
                                 <span className={`esm-zpill ${synced ? 'is-synced' : 'is-unsynced'}`}>
                                   <i className={synced ? 'ri-checkbox-circle-line' : 'ri-time-line'} /> {synced ? 'Synced' : 'Not Synced'}
                                 </span>
                               </td>
                               )}
-                              {!readOnly && !isAdvance && (
+                              {!readOnly && zohoEligible && (
                                 <td>
                                   {synced ? (
                                     p.zoho_expense_url ? (
@@ -1604,9 +1760,9 @@ export default function ExpenseSettlementModal({
                       <div className="esm-sec-title-row">
                         <span className="esm-sec-tag">Settlement</span>
                         <span className="esm-sec-div">|</span>
-                        <span className="esm-sec-title">Settle Advance</span>
+                        <span className="esm-sec-title">Confirmation</span>
                       </div>
-                      <div className="esm-sec-sub">Record where the company advance was used — one row per bill</div>
+                      <div className="esm-sec-sub">Confirm whether you used exactly the advance, or spent more</div>
                     </div>
                   </div>
                   <div className="esm-sec-hd-actions">
@@ -1624,6 +1780,7 @@ export default function ExpenseSettlementModal({
                 <div className="esm-sec-body">
                   {(alreadySettled || settleInProgress) ? (
                     <>
+                      {existingSettleItems.length > 0 && (
                       <div className="esm-tblwrap esm-tblwrap--settle">
                         <table className="esm-tbl esm-tbl--settle">
                           <thead><tr><th>SR NO</th><th>AMOUNT</th><th>REASON</th><th>PAYMENT METHOD</th><th>PROOF</th></tr></thead>
@@ -1640,21 +1797,46 @@ export default function ExpenseSettlementModal({
                           </tbody>
                         </table>
                       </div>
+                      )}
                       {alreadySettled && (
-                        <div className="esm-sumrow is-grand" style={{ marginTop: 12, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#cffafe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#0e7490' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
+                        <div className="esm-sumrow is-grand" style={{ marginTop: existingSettleItems.length > 0 ? 12 : 0, borderRadius: 8, padding: '10px 14px', background: summary?.settle_type === 'reimburse' ? '#cffafe' : summary?.settle_type === 'return' ? '#fde8c4' : '#d6f4e3', color: summary?.settle_type === 'reimburse' ? '#0e7490' : summary?.settle_type === 'return' ? '#a4661c' : '#108548' }}>
                           <span>{summary?.settle_type === 'reimburse' ? 'To reimburse (used more)' : summary?.settle_type === 'return' ? 'To return (used less)' : 'Fully settled (equal)'} · Total used {inr(summary?.settle_actual_amount ?? 0)}</span>
                           <span>{inr(summary?.settle_balance ?? 0)}</span>
                         </div>
+                      )}
+                      {/* Used more → raise the reimbursement expense right here (no
+                          separate section). Shows the raised claim once created. */}
+                      {alreadySettled && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
+                        summary?.settle_reimbursement ? (
+                          <div className="esm-tblwrap" style={{ marginTop: 12 }}>
+                            <table className="esm-tbl">
+                              <thead><tr><th>EXPENSE ID</th><th>AMOUNT</th><th>CATEGORY</th><th>CURRENCY</th><th>STATUS</th><th>PROOF</th></tr></thead>
+                              <tbody><tr>
+                                <td className="esm-tbl-amt" style={{ fontWeight: 700 }}>{summary.settle_reimbursement.claim_no}</td>
+                                <td className="esm-tbl-amt">{inr(summary.settle_reimbursement.amount ?? summary.settle_balance ?? 0)}</td>
+                                <td>{summary.settle_reimbursement.category || '—'}</td>
+                                <td>{summary.settle_reimbursement.currency || 'INR'}</td>
+                                <td><span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: 11, textTransform: 'capitalize' }}>{summary.settle_reimbursement.status}</span></td>
+                                <td>{summary.settle_reimbursement.proof_url ? <a className="esm-tbl-link" href={tokenUrl(summary.settle_reimbursement.proof_url)} target="_blank" rel="noreferrer" title={summary.settle_reimbursement.proof_name || 'Proof'}><i className="ri-attachment-2" /> {summary.settle_reimbursement.proof_name || 'View'}</a> : '—'}</td>
+                              </tr></tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="esm-payout-row" style={{ marginTop: 12 }}>
+                            <span className="esm-payout-note">Used more than the advance — raise a reimbursement expense of <strong>{inr(summary?.settle_balance ?? 0)}</strong> for the extra spent.</span>
+                            <button type="button" className="esm-btn-primary esm-payout-btn" onClick={raiseOrOpenReimbursement} disabled={raising}><i className="ri-file-add-line" /> {raising ? 'Raising…' : 'Raise Expense'}</button>
+                          </div>
+                        )
                       )}
                     </>
                   ) : allowSettle ? (
                     <div className="esm-settle-start">
                       <div className="esm-settle-start-txt">
-                        <div className="esm-settle-start-h">Settle this company advance</div>
-                        <div className="esm-settle-start-p">Record where the {inr(settleBase)} was used. You’ll first pick how the spend compares to the advance, then itemise each bill. You can add bills over time and finalise when done.</div>
+                        <div className="esm-settle-start-h">Confirm advance utilization</div>
+                        <div className="esm-settle-start-p">Confirm how you used the {inr(settleBase)}: used it exactly (completed), or used more (raise an expense for the extra).</div>
                       </div>
                       <button type="button" className="esm-sec-btn" onClick={() => { setSettleChosenTmp(''); setSettleMode('choose'); }}>
-                        <i className="ri-add-line" /> Add Settle Payment
+                        <i className="ri-check-double-line" /> Confirm Utilization
                       </button>
                     </div>
                   ) : (
@@ -1832,51 +2014,8 @@ export default function ExpenseSettlementModal({
               </div>
               )}
 
-              {/* ── Raised Expense (reimburse follow-through) ── */}
-              {showSettleSection && settleApproved && summary?.settle_type === 'reimburse' && (summary?.settle_balance ?? 0) > 0 && (
-              <div className="esm-sec">
-                <div className="esm-sec-hd">
-                  <div className="esm-sec-l">
-                    <span className="esm-sec-ico"><i className="ri-refund-2-line" /></span>
-                    <div className="esm-sec-tt">
-                      <div className="esm-sec-title-row">
-                        <span className="esm-sec-tag">Settlement</span>
-                        <span className="esm-sec-div">|</span>
-                        <span className="esm-sec-title">Raised Expense</span>
-                      </div>
-                      <div className="esm-sec-sub">Used more than the advance — reimbursement claim for the extra</div>
-                    </div>
-                  </div>
-                  <div className="esm-sec-hd-actions">
-                    {summary?.settle_reimbursement
-                      ? <span className="esm-sec-badge esm-sec-badge--lock" style={{ background: '#d6f4e3', color: '#108548', borderColor: '#a7e3c2' }}><i className="ri-checkbox-circle-line" /> Raised</span>
-                      : <span className="esm-payout-amt" style={{ color: '#0e7490' }}>{inr(summary?.settle_balance ?? 0)}</span>}
-                  </div>
-                </div>
-                <div className="esm-sec-body">
-                  {summary?.settle_reimbursement ? (
-                    <div className="esm-tblwrap">
-                      <table className="esm-tbl">
-                        <thead><tr><th>EXPENSE ID</th><th>AMOUNT</th><th>CATEGORY</th><th>CURRENCY</th><th>STATUS</th><th>PROOF</th></tr></thead>
-                        <tbody><tr>
-                          <td className="esm-tbl-amt" style={{ fontWeight: 700 }}>{summary.settle_reimbursement.claim_no}</td>
-                          <td className="esm-tbl-amt">{inr(summary.settle_reimbursement.amount ?? summary.settle_balance ?? 0)}</td>
-                          <td>{summary.settle_reimbursement.category || '—'}</td>
-                          <td>{summary.settle_reimbursement.currency || 'INR'}</td>
-                          <td><span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 999, background: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: 11, textTransform: 'capitalize' }}>{summary.settle_reimbursement.status}</span></td>
-                          <td>{summary.settle_reimbursement.proof_url ? <a className="esm-tbl-link" href={tokenUrl(summary.settle_reimbursement.proof_url)} target="_blank" rel="noreferrer" title={summary.settle_reimbursement.proof_name || 'Proof'}><i className="ri-attachment-2" /> {summary.settle_reimbursement.proof_name || 'View'}</a> : '—'}</td>
-                        </tr></tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <div className="esm-payout-row">
-                      <span className="esm-payout-note">Raise a reimbursement expense of <strong>{inr(summary?.settle_balance ?? 0)}</strong> for the amount spent over the advance.</span>
-                      <button type="button" className="esm-btn-primary esm-payout-btn" onClick={raiseOrOpenReimbursement} disabled={raising}><i className="ri-file-add-line" /> {raising ? 'Raising…' : 'Raise Expense'}</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-              )}
+              {/* Raised-expense follow-through is now shown inside the
+                  Confirmation section above (no separate section). */}
             </>
           )}
         </div>
@@ -1974,7 +2113,7 @@ export default function ExpenseSettlementModal({
                   {showErrors && !categoryId && <span className="esm-err">Select a category.</span>}
                 </div>
                 )}
-                <div className={`esm-fld ${isAdvance ? 's12' : 's4'}`}>
+                <div className={`esm-fld ${isAdvance ? 's6' : 's4'}`}>
                   <label>PAYMENT METHOD <span className="esm-req">*</span></label>
                   <MasterSelect
                     value={paymentType}
@@ -1985,6 +2124,19 @@ export default function ExpenseSettlementModal({
                   />
                   {showErrors && !paymentType && <span className="esm-err">Select a payment method.</span>}
                 </div>
+                {/* UTR / bank reference — advance payout, makes it easy to trace. */}
+                {isAdvance && (
+                <div className="esm-fld s6">
+                  <label>UTR / REFERENCE NO</label>
+                  <input
+                    className="esm-in"
+                    value={reference}
+                    maxLength={64}
+                    onChange={e => setReference(e.target.value)}
+                    placeholder="e.g. bank UTR / transaction reference"
+                  />
+                </div>
+                )}
                 {!isAdvance && (
                 <div className="esm-fld s4">
                   <label>EXPENSE TYPE <span className="esm-req">*</span></label>
@@ -2002,9 +2154,11 @@ export default function ExpenseSettlementModal({
 
                 {/* Row 2 — Amount To Pay (4) · Proof of Payment (8) */}
                 <div className={`esm-fld s4 ${showErrors && (amountNum <= 0 || amountNum > remaining + 0.005) ? 'esm-fld--err' : ''}`}>
-                  <label>AMOUNT TO PAY <span className="esm-req">*</span> <span className="esm-muted">(max {inr(remaining)})</span></label>
+                  <label>AMOUNT TO PAY <span className="esm-req">*</span> <span className="esm-muted">{isAdvance ? '(paid in full)' : `(max ${inr(remaining)})`}</span></label>
                   <div className="esm-money"><span className="esm-cur">₹</span>
-                    <input className="esm-in" type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+                    {/* An advance is disbursed in ONE payment for the full net
+                        payable — the amount is locked (no partial payouts). */}
+                    <input className="esm-in" type="number" min={0} value={amount} disabled={isAdvance} title={isAdvance ? 'Advances are paid in full in a single payout' : undefined} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
                   </div>
                   {showErrors && amountNum <= 0 && <span className="esm-err">Enter an amount.</span>}
                   {showErrors && amountNum > remaining + 0.005 && <span className="esm-err">Cannot exceed {inr(remaining)}.</span>}
@@ -2060,8 +2214,8 @@ export default function ExpenseSettlementModal({
         <div className="esm-sub-backdrop" onMouseDown={() => setSettleMode('idle')}>
           <div className="esm-confirm esm-confirm--wide" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
             <span className="esm-confirm-ico is-approve"><i className="ri-check-double-line" /></span>
-            <div className="esm-confirm-title">Settle Advance</div>
-            <div className="esm-confirm-sub">Advance amount <strong>{inr(settleBase)}</strong>. Pick how your spend compares to the advance.</div>
+            <div className="esm-confirm-title">Have you utilized your advance?</div>
+            <div className="esm-confirm-sub">Advance amount <strong>{inr(settleBase)}</strong>. Confirm whether you used exactly the advance, or spent more.</div>
             <div className="esm-choose-fld">
               <label>EXPENSE USED <span className="esm-req">*</span></label>
               <MasterSelect
@@ -2069,38 +2223,39 @@ export default function ExpenseSettlementModal({
                 onChange={(v) => { setSettleChosenTmp(v as any); if (v === 'equal') setSettleTargetTmp(String(settleBase)); else setSettleTargetTmp(''); }}
                 options={[
                   { value: 'equal', label: 'Equal — used exactly the advance' },
-                  { value: 'minimum', label: 'Minimum — used less (return balance)' },
-                  { value: 'maximum', label: 'Maximum — used more (reimburse balance)' },
+                  { value: 'maximum', label: 'Maximum — used more (raise expense for the extra)' },
                 ]}
                 placeholder="Select how the advance was used"
               />
             </div>
-            {settleChosenTmp && (
+            {/* Amount utilised — only asked for "Maximum" (used more). Equal is
+                auto (= the advance). No return/minimum path. */}
+            {settleChosenTmp === 'maximum' && (
               <div className="esm-choose-fld">
-                <label>AMOUNT USED <span className="esm-req">*</span> {settleChosenTmp === 'minimum' ? <span className="esm-muted">(less than {inr(settleBase)})</span> : settleChosenTmp === 'maximum' ? <span className="esm-muted">(more than {inr(settleBase)})</span> : <span className="esm-muted">(auto — equals the advance)</span>}</label>
+                <label>AMOUNT UTILIZED <span className="esm-req">*</span> <span className="esm-muted">(more than {inr(settleBase)})</span></label>
                 <div className="esm-money"><span className="esm-cur">₹</span>
                   <input className="esm-in" type="number" min={0} placeholder="0.00"
-                    value={settleChosenTmp === 'equal' ? String(settleBase) : settleTargetTmp}
-                    readOnly={settleChosenTmp === 'equal'}
+                    value={settleTargetTmp}
                     onChange={e => setSettleTargetTmp(e.target.value)} />
                 </div>
-                {settleChosenTmp === 'minimum' && !!settleTargetTmp && !(Number(settleTargetTmp) > 0 && Number(settleTargetTmp) < settleBase) && <span className="esm-err">Must be greater than 0 and less than {inr(settleBase)}.</span>}
-                {settleChosenTmp === 'maximum' && !!settleTargetTmp && !(Number(settleTargetTmp) > settleBase) && <span className="esm-err">Must be greater than {inr(settleBase)}.</span>}
+                {!!settleTargetTmp && !(Number(settleTargetTmp) > settleBase) && <span className="esm-err">Must be greater than {inr(settleBase)}.</span>}
+                {Number(settleTargetTmp) > settleBase && <span className="esm-muted" style={{ fontSize: 11 }}>Extra to claim: {inr(Number(settleTargetTmp) - settleBase)} — you'll raise an expense for it.</span>}
               </div>
             )}
             <div className="esm-choose-note">
               <i className="ri-error-warning-line" />
-              <span>Once you continue, the settlement type and amount are <strong>locked and can’t be changed</strong>. Your bills must total this amount to finalise.</span>
+              <span>Once you continue, the settlement is <strong>locked and can’t be changed</strong>.{' '}{settleChosenTmp === 'maximum' ? 'Then raise an expense for the extra you spent.' : 'Equal means you used exactly the advance.'}</span>
             </div>
             {(() => {
               const t = Number(settleTargetTmp) || 0;
               const valid = settleChosenTmp === 'equal'
-                || (settleChosenTmp === 'minimum' && t > 0 && t < settleBase)
                 || (settleChosenTmp === 'maximum' && t > settleBase);
               return (
                 <div className="esm-confirm-actions">
-                  <button type="button" className="esm-btn-approve" disabled={!valid} onClick={() => { setSettleChosen(settleChosenTmp); setSettleTarget(settleChosenTmp === 'equal' ? String(settleBase) : settleTargetTmp); setSettleMode('form'); }}>Continue</button>
-                  <button type="button" className="esm-btn-ghost" onClick={() => setSettleMode('idle')}>Cancel</button>
+                  <button type="button" className="esm-btn-approve" disabled={!valid || settleSaving} onClick={confirmSettleDirect}>
+                    {settleSaving ? 'Saving…' : 'Confirm'}
+                  </button>
+                  <button type="button" className="esm-btn-ghost" onClick={() => setSettleMode('idle')} disabled={settleSaving}>Cancel</button>
                 </div>
               );
             })()}
