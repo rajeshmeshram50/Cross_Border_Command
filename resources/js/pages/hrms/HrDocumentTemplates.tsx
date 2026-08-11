@@ -349,9 +349,9 @@ export default function HrDocumentTemplates() {
       enableSorting: false,
       meta: { align: 'center', width: '15%' },
       cell: info => (
-        <button type="button" onClick={() => handleGenerate(info.row.original)}
+        <button type="button" className="dtm-gen-btn" onClick={() => handleGenerate(info.row.original)}
           style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#16a34a,#22c55e)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-          <i className="ri-play-fill" /> Generate Document
+          <i className="ri-play-fill" /> Generate<span className="dtm-gen-word"> Document</span>
         </button>
       ),
     },
@@ -526,47 +526,48 @@ export default function HrDocumentTemplates() {
                 </button>
               </>
             }
+              /* The bar belongs to the ROWS, so it renders inside the table card
+                 between the last row and the pager. Above the table it pushed the
+                 list down as soon as a row was ticked; after <DataTable> it sat
+                 under the pager, detached from the card entirely. */
+              belowRows={selected.size > 0 ? (
+                <div className="dt-below-rows">
+                <div className="hdt-bulk-bar">
+                  <div className="hdt-bulk-info">
+                    <strong>{selected.size}</strong> selected
+                    {/* Round X, not a "Clear" word — same as the Trade Documents
+                        bar. Clearing is a dismissal, and a labelled button next to
+                        two real actions competes with them for attention. */}
+                    <button
+                      type="button" className="hdt-bulk-clear" title="Clear selection"
+                      aria-label="Clear selection" disabled={bulkBusy}
+                      onClick={() => setSelected(new Set())}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                  {/* Counts come from the selection itself, so a button is only
+                      offered when it has something to do — no more pressing
+                      Deprecate to be told there was nothing to deprecate. */}
+                  {selCounts.active > 0 && (
+                    <button
+                      type="button" className="hdt-bulk-btn is-danger"
+                      onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}>
+                      <i className="ri-forbid-2-line" />
+                      {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
+                    </button>
+                  )}
+                  {selCounts.deprecated > 0 && (
+                    <button
+                      type="button" className="hdt-bulk-btn is-primary"
+                      onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}>
+                      <i className="ri-checkbox-circle-line" />
+                      {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
+                    </button>
+                  )}
+                </div>
+                </div>
+              ) : null}
           />
-          {/* Bulk bar sits BELOW the table, like the Trade Documents popup.
-              Above the table it pushed the whole list down the moment a row
-              was ticked, so the rows you were selecting jumped away from the
-              cursor. Under it, the table stays put and the bar grows into
-              empty space. */}
-          {selected.size > 0 && (
-            <div className="hdt-bulk-bar">
-              <div className="hdt-bulk-info">
-                <strong>{selected.size}</strong> selected
-                {/* Round X, not a "Clear" word — same as the Trade Documents
-                    bar. Clearing is a dismissal, and a labelled button next to
-                    two real actions competes with them for attention. */}
-                <button
-                  type="button" className="hdt-bulk-clear" title="Clear selection"
-                  aria-label="Clear selection" disabled={bulkBusy}
-                  onClick={() => setSelected(new Set())}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              </div>
-              {/* Counts come from the selection itself, so a button is only
-                  offered when it has something to do — no more pressing
-                  Deprecate to be told there was nothing to deprecate. */}
-              {selCounts.active > 0 && (
-                <button
-                  type="button" className="hdt-bulk-btn is-danger"
-                  onClick={() => bulkSetStatus('Deprecated')} disabled={bulkBusy}>
-                  <i className="ri-forbid-2-line" />
-                  {bulkBusy ? 'Working…' : `Deprecate ${selCounts.active}`}
-                </button>
-              )}
-              {selCounts.deprecated > 0 && (
-                <button
-                  type="button" className="hdt-bulk-btn is-primary"
-                  onClick={() => bulkSetStatus('Active')} disabled={bulkBusy}>
-                  <i className="ri-checkbox-circle-line" />
-                  {bulkBusy ? 'Working…' : `Activate ${selCounts.deprecated}`}
-                </button>
-              )}
-            </div>
-          )}
         </div>
       </Col>
 
@@ -605,9 +606,13 @@ function DtmDarkStyles() {
          the toolbar rather than as a thing that appeared because you selected
          rows. Deliberately in flow (not sticky) and centred, so it pushes the
          table down instead of covering the rows it acts on. */
+      /* Slot between the last row and the pager. Padded so the pill never
+         touches either, and it does not stretch — the pill sizes to itself. */
+      .dtm-page .dt-below-rows { flex-shrink: 0; padding: 10px 12px 2px; }
+
       .hdt-bulk-bar {
         position: relative; z-index: 5; flex-shrink: 0;
-        margin: 12px auto 2px; width: fit-content; max-width: calc(100% - 24px);
+        margin: 0 auto; width: fit-content; max-width: calc(100% - 24px);
         display: flex; align-items: center; gap: 12px; white-space: nowrap;
         padding: 11px 18px; border-radius: 16px;
         background: linear-gradient(135deg, #4c1d95, #7c3aed);
@@ -719,9 +724,56 @@ function DtmDarkStyles() {
         .dtm-page .dt-table-wrap { min-height: 260px; }
         .dtm-page .dt-scroll { min-height: 200px; }
       }
-      /* Two KPI tiles per row rather than four crushed ones. */
-      @media (min-width: 576px) and (max-width: 767.98px) {
+      /* Two KPI tiles per row rather than four crushed ones. Also below 576px:
+         Bootstrap's col-sm-6 stops applying there, so all four went full width
+         and ate ~320px of a phone screen before the table even started. Four
+         one-line counters read perfectly well two-up. */
+      @media (max-width: 767.98px) {
         .dtm-page .row > [class*='col-md-3'] { flex: 0 0 50%; max-width: 50%; }
+      }
+
+      /* ── Bulk bar ──
+         width:fit-content + white-space:nowrap keeps the pill tight on a
+         desktop, but on a narrow screen "2 selected · Deprecate 2 · Activate 2"
+         is wider than the card and simply overflowed it. Let it wrap and take
+         the full width instead — it is a bar, not a badge. */
+      @media (max-width: 575.98px) {
+        .dtm-page .hdt-bulk-bar {
+          width: 100%; max-width: 100%;
+          flex-wrap: wrap; white-space: normal;
+          justify-content: center; row-gap: 8px; padding: 10px 12px;
+        }
+        .dtm-page .hdt-bulk-btn { flex: 1 1 auto; justify-content: center; }
+      }
+
+      /* ── Generate button ──
+         "Generate Document" is the widest cell in the row. Below 992px the word
+         "Document" is dropped: the green play button in the Generate column
+         cannot mean anything else, and the 90px it frees is what keeps Status
+         and Actions on screen instead of pushing them into a scroll. */
+      @media (max-width: 991.98px) {
+        .dtm-page .dtm-gen-word { display: none; }
+        .dtm-page .dtm-gen-btn { padding: 6px 10px; }
+      }
+
+      /* ── Toolbar on phones ──
+         Search, the Trigger picker and Add Template shared one row and each was
+         squeezed to a stub. Search takes its own line; the other two split the
+         next one. */
+      @media (max-width: 575.98px) {
+        .dtm-page .dt-search { flex: 1 1 100%; max-width: 100%; }
+        .dtm-page .dt-toolbar { row-gap: 8px; }
+        .dtm-page .dtm-add-tpl-btn { flex: 1 1 auto; justify-content: center; }
+      }
+
+      /* ── Header strip on phones ──
+         The title block and the category rail sit side by side and both refuse
+         to shrink, so the rail was pushed past the card's rounded edge. Stacked,
+         each gets the full width and the rail scrolls inside it. */
+      @media (max-width: 575.98px) {
+        .dtm-page .frm-cstrip { flex-direction: column; align-items: stretch; }
+        .dtm-page .frm-cstrip-title { font-size: 16px; }
+        .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
       }
 
       .dtm-page .dtm-kpi-tile {

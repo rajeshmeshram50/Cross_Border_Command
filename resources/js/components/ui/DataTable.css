@@ -166,7 +166,7 @@
 .dt-tab i { font-size: 14px; }
 .dt-tab-emoji { font-size: 13px; line-height: 1; }
 .dt-tab.off { background: transparent; color: var(--vz-secondary-color); }
-.dt-tab.off:hover { background: var(--vz-card-bg); color: var(--vz-heading-color, var(--vz-body-color)); }
+.dt-tab.off:hover { background: var(--vz-secondary-bg, #fff); color: var(--vz-heading-color, var(--vz-body-color)); }
 .dt-tab.on {
   background: linear-gradient(135deg, var(--dt-a-500), var(--dt-a-400));
   color: #fff;
@@ -383,7 +383,13 @@
   /* Opaque on purpose: .dt-table-wrap behind it carries the header colour
      (see .dt-table-wrap). Without this the accent would bleed up through the
      transparent rows and scrollbar tracks and turn the whole body purple. */
-  background: var(--vz-card-bg, #fff);
+  /* --vz-secondary-bg, NOT --vz-card-bg. Bootstrap scopes --vz-card-bg to
+     `.card`, and this table is not always inside one — where it isn't, the var
+     resolves to nothing and the #fff fallback wins, so the whole table body
+     rendered WHITE on a dark page. --vz-secondary-bg is a :root var and follows
+     the theme everywhere. Same trap the Attendance modal hit
+     (resources/css/recruitment.css). */
+  background: var(--vz-secondary-bg, #fff);
 }
 .dt-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .dt-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -651,16 +657,19 @@
 [data-layout-mode="dark"] .dt-chipbar-clear,
 [data-bs-theme="dark"] .dt-empty-link,
 [data-layout-mode="dark"] .dt-empty-link { color: var(--dt-a-300); }
+/* Same --vz-card-bg trap as .dt-scroll above: outside a `.card` the var is
+   undefined, the declaration is dropped, and the row keeps the light
+   `background: #fff` set higher up — a white table on a dark page. */
 [data-bs-theme="dark"] .dt-table tbody tr,
 [data-layout-mode="dark"] .dt-table tbody tr,
 [data-bs-theme="dark"] .dt-table tbody tr:nth-child(even),
-[data-layout-mode="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-card-bg); }
+[data-layout-mode="dark"] .dt-table tbody tr:nth-child(even) { background: var(--vz-secondary-bg, #212529); }
 [data-bs-theme="dark"] .dt-table tbody tr:hover,
 [data-layout-mode="dark"] .dt-table tbody tr:hover { background: rgba(var(--dt-a-rgb), .12); }
 [data-bs-theme="dark"] .dt-table tbody tr.dt-empty-row,
 [data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row,
 [data-bs-theme="dark"] .dt-table tbody tr.dt-empty-row:hover,
-[data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row:hover { background: var(--vz-card-bg); }
+[data-layout-mode="dark"] .dt-table tbody tr.dt-empty-row:hover { background: var(--vz-secondary-bg, #212529); }
 [data-bs-theme="dark"] .dt-table tbody td,
 [data-layout-mode="dark"] .dt-table tbody td { border-bottom-color: rgba(255, 255, 255, .07); }
 [data-bs-theme="dark"] .dt-scroll,

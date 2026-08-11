@@ -111,6 +111,13 @@ export interface DataTableProps<T> {
   className?: string;
   /** Rendered between the toolbar and the table (banners, KPI strips…). */
   children?: ReactNode;
+  /** Rendered between the ROWS and the pager — inside the table card, below the
+   *  last row. For things that belong to the rows rather than to the page: a
+   *  bulk-action bar, a selection summary. Above the table it shoves the list
+   *  down the moment a row is ticked; after the whole component it floats loose
+   *  under the pager, outside the card. This is the only spot that reads as
+   *  part of the table. */
+  belowRows?: ReactNode;
 }
 
 const DEFAULT_PAGE_SIZE = 10;
@@ -177,6 +184,7 @@ export default function DataTable<T extends object>({
   onRowClick,
   className = '',
   children,
+  belowRows,
 }: DataTableProps<T>) {
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -298,7 +306,7 @@ export default function DataTable<T extends object>({
      * cutting through the header band was really a row-counting bug. */
     const scrollBox = el.querySelector('.dt-scroll') as HTMLElement | null;
     const hBar = scrollBox ? Math.max(0, scrollBox.offsetHeight - scrollBox.clientHeight) : 0;
-    const avail = h - px('.dt-toolbar') - px('.dt-chipbar') - px('.dt-table thead') - px('.tc-wl-pag') - hBar - 8;
+    const avail = h - px('.dt-toolbar') - px('.dt-chipbar') - px('.dt-table thead') - px('.tc-wl-pag') - px('.dt-below-rows') - hBar - 8;
     /* Floor of 2, not 5. On a short window five rows do not fit, and forcing
      * them back in is what puts the scrollbar there in the first place — the
      * page control below already exists to reach the rest. Never 0: a page must
@@ -532,6 +540,8 @@ export default function DataTable<T extends object>({
             </tbody>
           </table>
         </div>
+
+        {belowRows}
 
         {/* Footer reuses the app-wide `.tc-wl-*` pager (resources/css/app.css)
             so this table's pagination is pixel-identical to the Customer /

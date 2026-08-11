@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import CustomFieldModal, { CustomFieldFormPayload } from './CustomFieldModal';
+import Tooltip from '../../../components/ui/Tooltip';
 
 // ── Placeholder catalogue ─────────────────────────────────────────────────────
 // Grouped exactly the way the Keka reference UI does it. The labels are the
@@ -251,9 +252,36 @@ export default function TemplateEditor({
   });
 
   return (
-    <div className="tpl-editor-root" style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 16, minHeight: 480 }}>
+    /* One definite height for the row, not a min/max per column.
+       The two sides used to size themselves: the sidebar grew to its field list
+       (up to 560) while the editor sat at its 360 minimum, so an empty template
+       showed a tall sidebar beside a short draft — and as you typed, the draft
+       grew past it. Neither ever matched the other.
+       With a fixed row height both columns are exactly as tall as the row and
+       each scrolls its own overflow, so the pair never moves again. */
+    <div
+      className="tpl-editor-root"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '240px 1fr',
+        /* minmax(0, 1fr), NOT the implicit `auto` row.
+           An auto row stretches UP to fill a definite container but never
+           shrinks BELOW its content, so the row grew to the sidebar's full field
+           list, the 620px container overflowed, and the sidebar's height:100%
+           resolved to that same tall value — nothing overflowed it, so it never
+           produced a scrollbar. minmax(0, 1fr) lets the row be clamped, which is
+           what makes the panels scroll instead of the page.
+           (Same family as the min-width:0 flex trap noted in DataTable.css.) */
+        gridTemplateRows: 'minmax(0, 1fr)',
+        gap: 16,
+        /* Viewport-aware so a short window does not push the panels below the
+           fold — their scrollbars are unreachable down there. */
+        height: 'min(620px, calc(100vh - 220px))',
+        minHeight: 380,
+      }}
+    >
       {/* Left sidebar — placeholder fields */}
-      <div className="tpl-sidebar" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff', maxHeight: 560, overflowY: 'auto' }}>
+      <div className="tpl-sidebar" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff', height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
         <div style={{ position: 'relative', marginBottom: 10 }}>
           <i className="ri-search-line tpl-search-icon" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
           <input
@@ -287,24 +315,31 @@ export default function TemplateEditor({
                   )}
                   {g.fields.map(f => (
                     <div key={f.token} className="tpl-token-row">
-                      <button
-                        type="button"
-                        className="tpl-token-btn"
-                        onClick={() => insertToken(f.token)}
-                        title={`Click to insert ${f.token} at the cursor`}
-                      >
-                        <span className="tpl-token-label">{f.label}</span>
-                        <span className="tpl-token-pill">{f.token}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="tpl-token-copy"
-                        onClick={() => copyToken(f.token)}
-                        title={`Copy ${f.token} to clipboard`}
-                        aria-label={`Copy ${f.token}`}
-                      >
-                        <i className="ri-file-copy-line" />
-                      </button>
+                      {/* Shared Tooltip, not the native `title`: these rows are
+                          exactly where a name gets clipped, and a themed pill
+                          that appears straight away beats the OS box that waits
+                          a second and ignores dark mode. Carries the FULL label
+                          and token, since both may be truncated on screen. */}
+                      <Tooltip label={`${f.label} — ${f.token}`}>
+                        <button
+                          type="button"
+                          className="tpl-token-btn"
+                          onClick={() => insertToken(f.token)}
+                        >
+                          <span className="tpl-token-label">{f.label}</span>
+                          <span className="tpl-token-pill">{f.token}</span>
+                        </button>
+                      </Tooltip>
+                      <Tooltip label={`Copy ${f.token}`}>
+                        <button
+                          type="button"
+                          className="tpl-token-copy"
+                          onClick={() => copyToken(f.token)}
+                          aria-label={`Copy ${f.token}`}
+                        >
+                          <i className="ri-file-copy-line" />
+                        </button>
+                      </Tooltip>
                     </div>
                   ))}
                   {g.id === 'custom' && (
@@ -325,7 +360,7 @@ export default function TemplateEditor({
       </div>
 
       {/* Right — editor + toolbar */}
-      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
         {unknownTokens.length > 0 && (
           <div className="tpl-unknown-banner" style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
             <i className="ri-error-warning-line tpl-unknown-icon" style={{ fontSize: 16, color: '#b45309', marginTop: 2 }} />
@@ -335,17 +370,17 @@ export default function TemplateEditor({
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {unknownTokens.map(tok => (
+                  <Tooltip key={tok} label={`Register {{${tok}}} as a custom field`}>
                   <button
-                    key={tok}
                     type="button"
                     className="tpl-unknown-chip"
-                    title={`Register {{${tok}}} as a custom field`}
                     onClick={() => { setInlinePrefill(tok); setInlineModalOpen(true); }}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 9px', borderRadius: 999, border: '1px solid #fcd34d', background: '#fef3c7', cursor: 'pointer', fontSize: 11.5, fontWeight: 700, color: '#92400e', fontFamily: 'monospace' }}
                   >
                     <span>{`{{${tok}}}`}</span>
                     <i className="ri-add-circle-line" style={{ fontSize: 14 }} />
                   </button>
+                  </Tooltip>
                 ))}
               </div>
               <div className="tpl-unknown-hint" style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 4 }}>
@@ -400,14 +435,21 @@ export default function TemplateEditor({
 
         <div
           className="tpl-editor-surface"
-          style={{ border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '14px 18px', background: '#fff', minHeight: 360, maxHeight: 560, overflowY: 'auto' }}
+          /* flex:1 + minHeight:0 — the surface takes whatever the toolbar (and
+             the unknown-token banner, when it shows) leaves, so the column ends
+             flush with the sidebar however tall those are. A minHeight would
+             re-introduce the mismatch the moment the banner appeared. */
+          style={{ border: '1px solid #e5e7eb', borderTop: 'none', borderRadius: '0 0 10px 10px', padding: '14px 18px', background: '#fff', flex: 1, minHeight: 0, overflowY: 'auto' }}
         >
           <EditorContent editor={editor} />
         </div>
 
         <style>{`
           /* ── Light-mode base ────────────────────────────────────────────── */
-          .tpl-editor-surface .ProseMirror { outline: none; min-height: 320px; font-size: 14px; line-height: 1.6; }
+          /* No min-height: the surface is flex-sized now, and a 320px floor inside it
+             just added a second scrollbar on short screens. 100% keeps the click
+             target the full height so clicking empty space still focuses. */
+          .tpl-editor-surface .ProseMirror { outline: none; min-height: 100%; font-size: 14px; line-height: 1.6; }
           .tpl-editor-surface .ProseMirror p { margin: 0 0 8px 0; }
           .tpl-editor-surface .ProseMirror p.is-editor-empty:first-child::before {
             content: 'Start typing your template here…';
@@ -432,15 +474,25 @@ export default function TemplateEditor({
             transition: background 120ms ease;
           }
           .tpl-editor-root .tpl-token-btn:hover { background: #f3f4f6; }
+          /* The label gives way first: it is prose and reads fine clipped, while
+             the token is what you came to copy. */
           .tpl-editor-root .tpl-token-label {
+            flex: 1 1 auto; min-width: 0;
             color: #374151; text-align: left;
             overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
           }
+          /* flex-shrink was 0 here, so a long custom-field token (users name
+             these anything) could not be clipped — it pushed straight through
+             the sidebar's right edge and put a horizontal scrollbar under the
+             whole panel. It may shrink now, but only after the label has, and
+             never below 40% of the row so it stays readable. Full token is on
+             the row's tooltip either way. */
           .tpl-editor-root .tpl-token-pill {
             font-size: 10.5px; font-family: monospace;
             color: #6366f1; background: #eef2ff;
             padding: 1px 5px; border-radius: 4px; white-space: nowrap;
-            flex-shrink: 0;
+            flex: 0 1 auto; min-width: 40%;
+            overflow: hidden; text-overflow: ellipsis;
           }
           .tpl-editor-root .tpl-token-copy {
             width: 26px; flex-shrink: 0;
