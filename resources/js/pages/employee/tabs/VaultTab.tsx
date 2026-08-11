@@ -345,21 +345,9 @@ export default function VaultTab() {
             <div
               className="ep-section-card-flat ep-section-card mb-3 ep-ct-violet flex-grow-1 d-flex flex-column"
             >
-              {/* Dark-theme-aware styling for the org-doc Code badge, Signer
-                  tags and View button (were hardcoded light → BUG-131/132/133). */}
-              <style>{`
-                .epv-code-badge { font-size: 10.5px; background: #fef3c7; color: #a16207; padding: 2px 6px; border-radius: 4px; }
-                .epv-signer-tag { font-size: 10.5px; padding: 2px 7px; border-radius: 999px; font-weight: 700; display: inline-block; }
-                .epv-signer-tag.is-done { background: #e0e7ff; color: #4338ca; }
-                .epv-signer-tag.is-pending { background: #f3f4f6; color: #6b7280; }
-                .epv-view-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid #c7d2fe; background: #eef2ff; color: #4338ca; font-size: 11.5px; font-weight: 700; cursor: pointer; transition: background .15s ease; }
-                .epv-view-btn:hover { background: #e0e7ff; }
-                [data-bs-theme="dark"] .epv-code-badge, [data-layout-mode="dark"] .epv-code-badge { background: rgba(251,191,36,.16); color: #fcd34d; }
-                [data-bs-theme="dark"] .epv-signer-tag.is-done, [data-layout-mode="dark"] .epv-signer-tag.is-done { background: rgba(99,102,241,.20); color: #c7d2fe; }
-                [data-bs-theme="dark"] .epv-signer-tag.is-pending, [data-layout-mode="dark"] .epv-signer-tag.is-pending { background: rgba(148,163,184,.16); color: #cbd5e1; }
-                [data-bs-theme="dark"] .epv-view-btn, [data-layout-mode="dark"] .epv-view-btn { background: rgba(99,102,241,.16); border-color: rgba(129,140,248,.40); color: #c7d2fe; }
-                [data-bs-theme="dark"] .epv-view-btn:hover, [data-layout-mode="dark"] .epv-view-btn:hover { background: rgba(99,102,241,.26); }
-              `}</style>
+              {/* The .epv-* rules (Code badge, signer tags, View button) used to
+                  be an inline <style> here — see EmployeeProfile.css, where they
+                  now live so the Exit Documents tab gets them too. */}
               <div
                 className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-violet vt-uploaded-head"
               >
@@ -378,10 +366,15 @@ export default function VaultTab() {
                   {/* Search lifted onto the header row, same as the Uploaded
                       Documents card — see the note on that one. */}
                   <div className="vt-head-search" ref={setSignedSearchHost} />
+                  {/* This card only renders under `vaultTab === 'organizational'`,
+                      so the count is organizationalDocs — the old
+                      `vaultTab === 'exit' ? exitDocs.length : …` ternary could
+                      never take its first branch (TS flagged the comparison as
+                      having no overlap). The Exit card below counts its own. */}
                   <div className="text-end">
                     {signedLoading
                       ? <Shimmer height={20} width={28} className="vt-count-shim" />
-                      : <h4 className="mb-0 fw-bold vt-count-violet">{vaultTab === 'exit' ? exitDocs.length : organizationalDocs.length}</h4>}
+                      : <h4 className="mb-0 fw-bold vt-count-violet">{organizationalDocs.length}</h4>}
                     <small className="text-muted text-uppercase vt-count-label">Documents</small>
                   </div>
                 </div>
