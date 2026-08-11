@@ -56,75 +56,34 @@ export interface DataTableProps<T> {
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
   searchDebounce?: number;
-  /**
-   * Render the search box into this element instead of the toolbar. Lets a
-   * caller lift the search into its own card header without the table losing
-   * ownership of the query — filtering, clearing and debounce all still live
-   * here. When set (and it's the only toolbar item) the toolbar row is dropped
-   * entirely rather than left as an empty strip.
-   */
   searchHost?: HTMLElement | null;
   onFilterClick?: () => void;
   activeFilterCount?: number;
   filterLabel?: string;
   filterChips?: DataTableChip[];
   onClearFilters?: () => void;
-
-  /** Extra controls rendered at the right end of the toolbar. */
   toolbarActions?: ReactNode;
-
-  /* ── Sorting ── */
   initialSort?: SortingState;
-  /** Turn every header into a static label. Default false (sorting on). */
   disableSorting?: boolean;
-
-  /** Columns pinned to the far left, BEFORE the auto-numbered "Sr No".
-   *  Sr No is prepended internally, so a column supplied through `columns`
-   *  can never sit left of it — which is where a row-select checkbox belongs.
-   *  Defaults to none, so every existing caller is unaffected. */
   leading?: DataTableColumn<T>[];
-  /** Prepend an auto-numbered "Sr No" column. Counts the row's VISIBLE
-   *  position (page offset + place in the current sort), so it stays 1..n
-   *  down the screen instead of exposing the underlying data index. */
   serial?: boolean | { header?: string; width?: string | number };
-
-  /* ── Pagination ── */
-  /** Rows per page. Default 10 (or the auto-fit result). */
   pageSize?: number;
   pageSizeOptions?: number[];
-  /** Size the page to however many rows fit the viewport. Default false. */
   autoFitRows?: boolean;
-  /** Set false for a single un-paged scroll list. Default true. */
   paginate?: boolean;
-
-  /* ── Presentation ── */
   accent?: DataTableAccent;
-  /** Below this the wrapper scrolls horizontally instead of crushing columns. */
   minWidth?: number;
-  /** Make the card fill the viewport below its top edge (scrolling body). */
   fitToViewport?: boolean;
   loading?: boolean;
-  /** Shown in place of rows when `data` is empty. */
   emptyMessage?: ReactNode;
   rowClassName?: (row: T, index: number) => string | undefined;
   onRowClick?: (row: T, index: number) => void;
   className?: string;
-  /** Rendered between the toolbar and the table (banners, KPI strips…). */
   children?: ReactNode;
-  /** Rendered between the ROWS and the pager — inside the table card, below the
-   *  last row. For things that belong to the rows rather than to the page: a
-   *  bulk-action bar, a selection summary. Above the table it shoves the list
-   *  down the moment a row is ticked; after the whole component it floats loose
-   *  under the pager, outside the card. This is the only spot that reads as
-   *  part of the table. */
   belowRows?: ReactNode;
 }
 
 const DEFAULT_PAGE_SIZE = 10;
-/* Same set as My Workplace (SalesLeadWorksheet's ROWS_PER_PAGE_OPTIONS) and the
- * shared WorklistPager default, so every list in the app offers the same
- * rows-per-page choices. The auto-fit size is merged into the list at render
- * time, so a computed 8 or 14 still appears as a selectable option. */
 const DEFAULT_SIZE_OPTIONS = [10, 25, 50];
 
 const alignToCss = (a?: DataTableAlign): 'left' | 'center' | 'right' =>
@@ -190,26 +149,8 @@ export default function DataTable<T extends object>({
 
   const isSearchControlled = onSearchChange !== undefined;
   const [ownQuery, setOwnQuery] = useState('');
-  /* Sticky header — plain `position: sticky; top: 0` on the real <th>, in the
-   * same scroll box as the rows.
-   *
-   * A CLONE of the header used to be rendered above .dt-scroll and kept in step
-   * by writing scrollLeft (later a transform) from a scroll listener. It was
-   * there for one cosmetic reason: a vertical scrollbar belongs to the scroll
-   * box and paints across everything in it, header included.
-   *
-   * No JS can keep that clone in step. The browser scrolls and paints the body
-   * first and dispatches the event afterwards, so the header is always applying
-   * the previous frame's offset — visibly dragging on every horizontal scroll.
-   * Sticky has no such gap: the header is part of the table, so it moves with
-   * the columns in the same frame, with nothing to synchronise.
-   *
-   * The scrollbar is dealt with where it is actually created — see fitRows(),
-   * which counts rows so the box has nothing to scroll vertically. */
-
   const [draftQuery, setDraftQuery] = useState(searchValue ?? '');
   useEffect(() => {
-    // Keep the input in step when the parent resets/overwrites the value.
     if (isSearchControlled && searchValue !== undefined) setDraftQuery(searchValue);
   }, [isSearchControlled, searchValue]);
   const debouncedDraft = useDebounced(draftQuery, isSearchControlled ? searchDebounce : 0);
@@ -217,9 +158,7 @@ export default function DataTable<T extends object>({
     if (!isSearchControlled) return;
     if (debouncedDraft === (searchValue ?? '')) return;
     onSearchChange?.(debouncedDraft);
-    // `searchValue` is intentionally read, not depended on: including it would
-    // re-fire the callback with a stale draft right after the parent updates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  
   }, [debouncedDraft, isSearchControlled]);
   const inputValue = isSearchControlled ? draftQuery : ownQuery;
   const onInput = (v: string) => (isSearchControlled ? setDraftQuery(v) : setOwnQuery(v));
