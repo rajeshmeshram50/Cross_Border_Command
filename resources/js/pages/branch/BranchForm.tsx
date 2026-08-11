@@ -95,6 +95,7 @@ const FIELD_LABELS: Record<string, string> = {
   pincode: 'Pincode',
   gst_number: 'GST Number',
   pan_number: 'PAN Number',
+  registration_number: 'Registration Number',
   // Letterhead / export-house compliance — used by the error-summary
   // toast so the user sees "GST State Code" instead of "gst_state_code".
   gst_state_code: 'GST State Code',
@@ -215,6 +216,20 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
     }
   }
 
+  /* ── Legal & Registration ──
+     All six are MANDATORY (QA #5 / #6). A branch is the legal entity that
+     appears on quotations, proforma invoices and export paperwork, so it
+     cannot be registered without the numbers that identify it. The FORMAT
+     rules stay India-gated — GSTIN / PAN patterns are Indian, and a branch
+     recorded under another country would fail them for no good reason — but
+     the PRESENCE requirement applies everywhere. */
+  if (!form.gst_number?.trim())          e.gst_number = 'GST Number is required';
+  if (!form.pan_number?.trim())          e.pan_number = 'PAN Number is required';
+  if (!form.registration_number?.trim()) e.registration_number = 'Registration Number is required';
+  if (!form.gst_state_code?.trim())      e.gst_state_code = 'GST State Code is required';
+  if (!form.cin?.trim())                 e.cin = 'CIN is required';
+  if (!form.iec?.trim())                 e.iec = 'IEC is required';
+
   // ── India-specific tax IDs ──
   if (form.country === 'India') {
     if (form.gst_number) {
@@ -230,6 +245,19 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
       } else if (!/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(form.pan_number)) {
         e.pan_number = 'Invalid PAN format. Example: AADCI6120M (5 letters + 4 digits + 1 letter)';
       }
+    }
+    /* The GST state code is the FIRST TWO DIGITS of the GSTIN — it is not an
+       independent value. It also decides the tax split on every document
+       raised from this branch (same state as the party → CGST+SGST, otherwise
+       IGST), so a code that disagrees with the GSTIN silently mis-taxes
+       invoices rather than failing loudly. */
+    if (form.gst_state_code && !/^\d{2}$/.test(form.gst_state_code.trim())) {
+      e.gst_state_code = 'GST State Code must be exactly 2 digits. Example: 27 for Maharashtra';
+    } else if (
+      form.gst_state_code && form.gst_number && !e.gst_number
+      && form.gst_state_code.trim() !== form.gst_number.slice(0, 2)
+    ) {
+      e.gst_state_code = `GST State Code must match the first two digits of the GSTIN (${form.gst_number.slice(0, 2)})`;
     }
   }
 
@@ -466,6 +494,8 @@ export default function BranchForm({ onBack, editId }: Props) {
      exactly the same input. Persisted as branches.bank_accounts (JSON), the same
      way `shifts` is. */
   const [bankAccounts, setBankAccounts] = useState<any[]>([]);
+  // Set when Save is pressed with no bank account on the branch (QA #7).
+  const [bankError, setBankError] = useState('');
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(null);
   // Authorised-signatory image (signature + company stamp combined).
@@ -793,6 +823,19 @@ export default function BranchForm({ onBack, editId }: Props) {
       return;
     }
     setShiftErrors({});
+    /* Bank details are MANDATORY (QA #7). A branch is the entity money is
+       collected into and paid out from — its account appears on proforma
+       invoices — so registering one without an account leaves those documents
+       with nowhere to remit. At least one row with a bank name counts, which
+       is the same row the save filters to (cleanBanks below); a half-typed
+       card the user never completed is not an account. */
+    if (!bankAccounts.some(b => String(b?.bank_name || '').trim())) {
+      toast.error('Bank details required', 'Add at least one bank account for this branch.');
+      document.querySelector('[data-branch-banks]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setBankError('Add at least one bank account.');
+      return;
+    }
+    setBankError('');
     /* Late Mark Policy — the count only has to make sense when the branch
        actually deducts. On "No" the fields aren't even rendered, so there is
        nothing to complete and the rule is saved as disabled. */
@@ -2072,47 +2115,61 @@ export default function BranchForm({ onBack, editId }: Props) {
             <SectionHeader icon="ri-file-text-line" title="Legal & Registration" badge="E" />
             <Row className="g-2 mb-3">
               <Col md={4}>
-                <Lbl>GST Number</Lbl>
+                <Lbl>GST Number <span className="text-danger">*</span></Lbl>
                 <Input name="gst_number" style={css.input} value={form.gst_number} invalid={fieldInvalid('gst_number')} maxLength={15}
                   onChange={e => set('gst_number', e.target.value.toUpperCase())} onBlur={() => touch('gst_number')}
                   placeholder="27AABCU9603R1ZM" />
                 <FormFeedback style={css.formFeedback}>{fieldError('gst_number')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>PAN Number</Lbl>
+                <Lbl>PAN Number <span className="text-danger">*</span></Lbl>
                 <Input name="pan_number" style={css.input} value={form.pan_number} invalid={fieldInvalid('pan_number')} maxLength={10}
                   onChange={e => set('pan_number', e.target.value.toUpperCase())} onBlur={() => touch('pan_number')}
                   placeholder="AABCU9603R" />
                 <FormFeedback style={css.formFeedback}>{fieldError('pan_number')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>Registration Number</Lbl>
-                <Input style={css.input} value={form.registration_number}
-                  onChange={e => set('registration_number', e.target.value)}
+                <Lbl>Registration Number <span className="text-danger">*</span></Lbl>
+                <Input name="registration_number" style={css.input} value={form.registration_number}
+                  invalid={fieldInvalid('registration_number')}
+                  onChange={e => set('registration_number', e.target.value)} onBlur={() => touch('registration_number')}
                   placeholder="REG-XXXX-XXXX" />
+                <FormFeedback style={css.formFeedback}>{fieldError('registration_number')}</FormFeedback>
               </Col>
 
               {/* ── Letterhead / export-house compliance fields ──
-                  All optional. Show on the Quotation/PI PDF letterhead
-                  block when populated. Two rows so the section doesn't
-                  get visually overwhelming. */}
+                  GST State Code, CIN and IEC are REQUIRED (QA #6) — they print
+                  on the Quotation / PI letterhead and the state code decides
+                  the CGST+SGST vs IGST split, so a branch without them raises
+                  documents that are incomplete or mis-taxed. The remaining
+                  licences below stay optional; they apply only to particular
+                  trades. Two rows so the section doesn't overwhelm. */}
               <Col md={4}>
-                <Lbl>GST State Code</Lbl>
-                <Input style={css.input} value={form.gst_state_code}
+                <Lbl>GST State Code <span className="text-danger">*</span></Lbl>
+                <Input name="gst_state_code" style={css.input} value={form.gst_state_code}
+                  invalid={fieldInvalid('gst_state_code')}
                   onChange={e => set('gst_state_code', e.target.value.toUpperCase())}
+                  onBlur={() => touch('gst_state_code')}
                   maxLength={10} placeholder="27" />
+                <FormFeedback style={css.formFeedback}>{fieldError('gst_state_code')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>CIN</Lbl>
-                <Input style={css.input} value={form.cin}
+                <Lbl>CIN <span className="text-danger">*</span></Lbl>
+                <Input name="cin" style={css.input} value={form.cin}
+                  invalid={fieldInvalid('cin')}
                   onChange={e => set('cin', e.target.value.toUpperCase())}
+                  onBlur={() => touch('cin')}
                   maxLength={30} placeholder="U85100PN2014PTC152252" />
+                <FormFeedback style={css.formFeedback}>{fieldError('cin')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>IEC</Lbl>
-                <Input style={css.input} value={form.iec}
+                <Lbl>IEC <span className="text-danger">*</span></Lbl>
+                <Input name="iec" style={css.input} value={form.iec}
+                  invalid={fieldInvalid('iec')}
                   onChange={e => set('iec', e.target.value.toUpperCase())}
+                  onBlur={() => touch('iec')}
                   maxLength={30} placeholder="3114017398" />
+                <FormFeedback style={css.formFeedback}>{fieldError('iec')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Lbl>Drug License</Lbl>
@@ -2147,19 +2204,25 @@ export default function BranchForm({ onBack, editId }: Props) {
 
               {/* Bank accounts — the shared <InlineSublist> block, identical to
                   the one on the Legal Entities master (card list + inline
-                  Add/Edit panel + dashed "+Add"). Optional: a branch with no
-                  bank account saves fine. */}
-              <Col xs={12} className="mt-2">
-                <Lbl>Bank Accounts</Lbl>
+                  Add/Edit panel + dashed "+Add"). At least one is REQUIRED
+                  (QA #7): the branch account is what a proforma invoice tells
+                  the customer to remit to. */}
+              <Col xs={12} className="mt-2" data-branch-banks>
+                <Lbl>Bank Accounts <span className="text-danger">*</span></Lbl>
                 <div className="text-muted mb-2" style={{ fontSize: 11.5 }}>
                   {BRANCH_BANK_FIELD.subDesc}
                 </div>
                 <InlineSublist
                   field={BRANCH_BANK_FIELD}
                   value={bankAccounts}
-                  onChange={setBankAccounts}
+                  onChange={(v: any[]) => { setBankAccounts(v); if (bankError) setBankError(''); }}
                   viewOnly={false}
                 />
+                {bankError && (
+                  <div className="text-danger mt-1" style={{ fontSize: 11.5 }}>
+                    <i className="ri-error-warning-line me-1" />{bankError}
+                  </div>
+                )}
               </Col>
             </Row>
 
