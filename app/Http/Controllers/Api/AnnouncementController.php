@@ -212,10 +212,18 @@ class AnnouncementController extends Controller
 
        
         $oldPath = $row->attachment_path;
+        $dropAttachment = false;
         if ($request->hasFile('attachment')) {
             [$path, $orig] = $this->storeAttachment($request->file('attachment'), $row->client_id, $row->id);
             $data['attachment_path'] = $path;
             $data['attachment_original_name'] = $orig;
+        } elseif ($request->boolean('remove_attachment')) {
+            // Composer's Delete on an already-saved attachment. Clear the row
+            // first; the stored file is unlinked after the save below, so a
+            // failed update can't leave the row pointing at a deleted file.
+            $data['attachment_path'] = null;
+            $data['attachment_original_name'] = null;
+            $dropAttachment = true;
         }
 
     
@@ -236,7 +244,8 @@ class AnnouncementController extends Controller
         $previousStatus = $row->status;
         $row->update($data);
 
-        if ($request->hasFile('attachment') && $oldPath && $oldPath !== ($data['attachment_path'] ?? null)) {
+        if ($oldPath && ($dropAttachment
+            || ($request->hasFile('attachment') && $oldPath !== ($data['attachment_path'] ?? null)))) {
             Storage::disk('public')->delete($oldPath);
         }
 
@@ -388,10 +397,20 @@ class AnnouncementController extends Controller
 
         $validated = $request->validate([
             'title'       => [$req(), 'string', 'max:191'],
-            'description' => [$req(), 'string'],
+            // Capped to match the composer's counter (DESC_MAX in
+            // HrBroadcastCentre.tsx). The column is `text`, but an
+            // announcement is a notice: an unbounded paste broke the Review &
+            // Publish card, the inbox row and the email body alike, and there
+            // is no reader for 50 KB of it. The longest description on record
+            // when this cap went in was 255 characters.
+            'description' => [$req(), 'string', 'max:2000'],
             'type'        => ['nullable', Rule::in(self::TYPES)],
             'priority'    => ['nullable', Rule::in(self::PRIORITIES)],
             'attachment'  => 'nullable|file|mimes:' . self::ATTACH_MIME_TYPES . '|max:' . self::ATTACH_MAX_KB,
+            // Explicit "drop the file that is already on this row". Omitting
+            // `attachment` means "unchanged", so removal needs its own flag —
+            // see update(). Ignored when a replacement file is also sent.
+            'remove_attachment' => 'nullable|boolean',
 
             'audience_type'                => ['nullable', Rule::in(self::AUDIENCES)],
             'audience_role_ids'            => 'nullable|array',

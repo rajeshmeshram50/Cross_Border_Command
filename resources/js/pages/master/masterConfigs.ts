@@ -107,6 +107,14 @@ export type MasterConfig = {
   // the product defines the closed set (Warehouse / Registered Address /
   // Billing Address) and tenants cannot extend it.
   lockedFixed?: boolean;
+  /**
+   * The module this master really belongs to, for masters reached from another
+   * module's menu rather than the Master Control Center. Set it and the page
+   * renders that module's header treatment (the .frm-cstrip strip used by HR >
+   * Custom Fields) with a Back button that returns to `path` — a fixed parent,
+   * not wherever history happens to point.
+   */
+  parent?: { path: string; label: string };
   data: any[];
   wtd: WtdStep[];
   kpis?: KpiDef[];
@@ -1905,6 +1913,11 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-flashlight-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Define lifecycle trigger modules for document generation',
     cat: 'Document & Evidence',
+    /* Lives in the HR sidebar under Document & Evidence, next to Document
+       Templates and Custom Fields — never in the Master Control Center. Back
+       returns to that parent, the same fixed target Custom Fields uses, rather
+       than the Master list an HR user never opened. */
+    parent: { path: '/hr/doc-templates', label: 'Document Templates' },
     // Trigger points are seed-managed (Onboarding / Exit / Promotion) — no manual
     // Add button; existing rows stay editable.
     lockedFixed: true,
