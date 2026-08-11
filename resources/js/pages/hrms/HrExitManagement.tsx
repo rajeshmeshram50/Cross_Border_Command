@@ -4230,18 +4230,26 @@ function apiToExitRow(e: any): EmployeeRow {
        · disabled, exit completed    → Exited, as any completed exit is.
 
      The drop for the first case happens in loadEmployees(), which is the only
-     place that can remove a row rather than re-label it. */
-  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
+     place that can remove a row rather than re-label it.
+
+     The terminal-status test is GATED ON THERE BEING AN EXIT CASE for the same
+     reason. `Inactive` is not only set by completing an exit — HR can pick it
+     straight off the employee edit form — and on its own it made a plain
+     switched-off employee, who never resigned and has no exit row, show up
+     under Exited Employees. An exit is the case, not the status column; the
+     status only corroborates one. */
+  const hasExitCase  = !!ex;
+  const statusExited = hasExitCase && ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
   );
 
   let status: ExitStatus;
-  // NOTE: "Exited" here means a completed/closed exit case OR a terminal
-  // employees.status (Resigned / Terminated / Inactive). An Inactive employee
-  // has been deactivated (login disabled) so they're no longer active staff —
-  // they show in the Exited tab, never the Active Employees list.
+  // NOTE: "Exited" means a completed/closed exit case, or an exit case whose
+  // employee also carries a terminal employees.status (Resigned / Terminated /
+  // Inactive). Both halves need the case: being switched off in HR > Employees
+  // is not an exit, and must never put someone in the Exited tab.
   if      (caseClosed || statusExited)                              status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';

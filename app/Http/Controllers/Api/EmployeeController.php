@@ -1070,6 +1070,12 @@ class EmployeeController extends Controller
         $incomingStatus = (string) $request->input('status', '');
         $reactivating   = $incomingStatus !== ''
             && !in_array(strtolower($incomingStatus), ['inactive', 'resigned', 'terminated'], true);
+        // The reactivation exception below must not become a way to un-exit
+        // someone: an exited employee comes back through Exit Management's
+        // Reactivate or not at all. See assertNotExited().
+        if ($reactivating && $row->isDisabled()) {
+            $this->assertNotExited($row, 'reactivate');
+        }
         if ($row->isDisabled() && !$reactivating) {
             return response()->json([
                 'message' => 'This employee is disabled — restore/re-activate them from the HR Employees page before editing or continuing onboarding.',
@@ -1278,15 +1284,57 @@ class EmployeeController extends Controller
     }
 
     /**
+     * The live (not rehired) exit case for this employee once it has been
+     * COMPLETED — null while an exit is merely in progress, or when the last
+     * one was undone by a rehire.
+     */
+    private function completedExitFor(Employee $employee): ?\App\Models\EmployeeExit
+    {
+        return \App\Models\EmployeeExit::where('employee_id', $employee->id)
+            ->whereNull('rehired_at')
+            ->where(fn ($q) => $q->whereNotNull('completed_at')->orWhere('exit_case_status', 'Closed'))
+            ->first();
+    }
+
+    /**
+     * An EXITED employee stays disabled.
+     *
+     * Completing an exit disables the employee (ExitController::complete soft-
+     * deletes them), which is what puts them in HR > Employees > Disabled. The
+     * enable toggle here, and a PUT that flips status back to Active, were both
+     * back doors out of that: either one returned an exited person to the
+     * active roster without going through Exit Management's Reactivate, and so
+     * skipped every rule that lives there — the blacklist bar, the termination
+     * bar, the probation bar, and the `rehired_at` stamp that marks the case
+     * spent. The person came back as live staff with a closed exit still on
+     * file, which then reads as "Exited" everywhere else.
+     *
+     * The reverse does NOT hold: an ordinary disabled employee has no exit case
+     * and is re-enabled here as normal. Only an exit is an exit.
+     */
+    private function assertNotExited(Employee $employee, string $action): void
+    {
+        if (!$this->completedExitFor($employee)) {
+            return;
+        }
+        abort(422, "This employee has exited, so they cannot be {$action}d from here. "
+            . 'Bring them back with Reactivate in HR > Exit Management > Exited Employees, '
+            . 'which checks whether they are eligible to return.');
+    }
+
+    /**
      * Re-enable a soft-deleted employee. Inverse of destroy() — clears
      * deleted_at, flips the row status back to Active, and re-enables
      * the linked login user. The row is fetched with trashed scope so
      * we can find it after destroy() hid it.
+     *
+     * Refuses on an EXITED employee — see assertNotExited().
      */
     public function restore(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
+        $this->assertNotExited($row, 're-enable');
 
         DB::transaction(function () use ($row) {
             if ($row->trashed()) {
