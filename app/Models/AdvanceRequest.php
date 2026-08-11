@@ -22,6 +22,9 @@ class AdvanceRequest extends Model
         'amount', 'used_for', 'requested_date', 'recovery_start', 'expected_use_date',
         'recovery_mode', 'recovery_months', 'monthly_emi',
         'reason', 'attachments',
+        // Company advance amount distribution: rows of {amount, purpose,
+        // payment_type, proof_index} that sum to the total amount.
+        'request_items',
         'status', 'manager_status', 'manager_acted_at', 'manager_acted_by', 'manager_comment',
         'hr_status', 'hr_user_id', 'hr_acted_at', 'hr_comment',
         'created_by',
@@ -50,6 +53,7 @@ class AdvanceRequest extends Model
         'manager_acted_at' => 'datetime',
         'hr_acted_at'      => 'datetime',
         'attachments'      => 'array',
+        'request_items'    => 'array',
         'recovery_months'  => 'integer',
         // Settlement
         'sanctioned_amount' => 'decimal:2',

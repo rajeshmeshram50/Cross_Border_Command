@@ -790,6 +790,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/employee-settle',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'employeeSettle']);
     Route::post  ('/advance-requests/{id}/settle-approve',      [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleApprove']);
     Route::post  ('/advance-requests/{id}/settle-reject',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleReject']);
+    Route::post  ('/advance-requests/payments/{paymentId}/sync-zoho', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'syncPaymentToZoho'])->whereNumber('paymentId');
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
     Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
     // Branch admin / HR confirm (or reject) each employee return payment — the
