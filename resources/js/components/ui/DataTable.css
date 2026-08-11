@@ -366,12 +366,9 @@
   flex: 1; min-height: 0;
   overflow: hidden;
   position: relative;
-  /* Filled with the header colour so ONE strip shows it: the gutter to the
-     right of .dt-head-clone, which is narrowed by the vertical scrollbar's
-     width so its columns line up with the body. That gutter sits at header
-     height and used to paint the card's white, leaving a notch at the end of
-     the coloured band. Everywhere else this is covered by .dt-scroll's own
-     opaque background, so nothing below the header is tinted. */
+  /* Header-coloured backdrop. It shows through only in the sliver beside the
+     scroll box; everywhere else .dt-scroll's opaque background covers it, so
+     nothing below the header is tinted. */
   background: var(--dt-head-fill);
 }
 /* min-width:0 is load-bearing: as a flex item this box would otherwise take its
@@ -383,11 +380,9 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--dt-a-200) transparent;
-  /* Opaque on purpose: .dt-table-wrap behind it is filled with the header
-     colour so the gutter beside the clone header stops reading as a white
-     notch (see .dt-table-wrap). Without this the accent would bleed up
-     through the transparent rows and scrollbar tracks and turn the whole
-     body purple. */
+  /* Opaque on purpose: .dt-table-wrap behind it carries the header colour
+     (see .dt-table-wrap). Without this the accent would bleed up through the
+     transparent rows and scrollbar tracks and turn the whole body purple. */
   background: var(--vz-card-bg, #fff);
 }
 .dt-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -399,27 +394,6 @@
    overflow:hidden (not auto) because its horizontal position is driven from
    .dt-scroll's scrollLeft; giving it a scrollbar of its own would show a second
    horizontal bar directly above the real one. */
-.dt-head-clone {
-  overflow: hidden;
-  flex-shrink: 0;
-}
-/* With the clone painting the header, the real thead only has to resolve
-   column widths — so it is flattened to nothing. Kept in the DOM (rather than
-   display:none) precisely BECAUSE it still participates in table layout: its
-   cells are what get measured for the clone's colgroup. */
-.dt-scroll.has-clone-head .dt-table > thead > tr > th {
-  padding: 0;
-  height: 0;
-  line-height: 0;
-  font-size: 0;
-  border: 0;
-  overflow: hidden;
-  color: transparent;
-  background: transparent;
-  position: static;
-  text-shadow: none;
-}
-.dt-scroll.has-clone-head .dt-table > thead > tr > th * { display: none; }
 
 .dt-table {
   width: 100%;
