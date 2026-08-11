@@ -851,12 +851,29 @@ function MasterPageInner({
         const uName = cfg.uFields[0];
         const dupRaw = String(fd.get(uName) ?? '').trim();
         if (dupRaw && !errs[uName]) {
-          const dup = records.some(r => {
+          /* Keep the row, not just a boolean. Where the list is sliced into
+           * tabs by a column outside uFields, the clash can sit on a tab the
+           * user isn't on, and a bare "already exists" reads as if the list is
+           * wrong (QA #68: "Manager" as an Ancillary role blocked adding it
+           * from the Primary Roles tab, with an empty Primary list behind the
+           * message). cfg.uContext names the columns that locate the row. */
+          const dup = records.find(r => {
             if (editingId != null && r.id === editingId) return false;
             return String(r[uName] ?? '').trim().toLowerCase() === dupRaw.toLowerCase();
           });
           if (dup) {
-            errs[uName] = `${labelOf(uName)} "${dupRaw}" already exists — pick a different value`;
+            const ctx = (cfg.uContext ?? [])
+              .filter(c => c !== uName)
+              .map(c => {
+                const f = cfg.fields.find(ff => ff.n === c);
+                const val = f?.ref ? resolveRefLabel(f.ref, f.refL, dup[c]) : dup[c];
+                const text = String(val ?? '').trim();
+                return text ? `${labelOf(c)}: ${text}` : '';
+              })
+              .filter(Boolean);
+            errs[uName] = ctx.length
+              ? `${labelOf(uName)} "${dupRaw}" already exists (${ctx.join(', ')}) — pick a different value`
+              : `${labelOf(uName)} "${dupRaw}" already exists — pick a different value`;
           }
         }
       }
