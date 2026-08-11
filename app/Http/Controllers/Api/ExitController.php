@@ -39,7 +39,69 @@ class ExitController extends Controller
         $row = EmployeeExit::with(['manager:id,first_name,middle_name,last_name,display_name,emp_code'])
             ->where('employee_id', $employee->id)
             ->first();
+        /* A REHIRED case is spent history, not this person's exit. The table
+           keeps one row per employee (unique index on employee_id), so the row
+           an exited-then-rehired employee carries is the PREVIOUS employment's
+           closed case — F&F approved and paid, every clearance ticked, HR
+           signed off. Handing it back here made a freshly initiated exit open
+           with Stage 4 already at 100% before Stage 1 was even filled in, and
+           the whole wizard pre-completed with work nobody did this time round.
+           The new case starts blank; upsert() clears the spent row on save. */
+        if ($row && $row->rehired_at) {
+            $row = null;
+        }
         return response()->json($this->format($row, $employee));
+    }
+
+    /**
+     * Columns that belong to ONE exit case. Cleared when a rehired employee
+     * starts a new exit, so the previous employment's answers can't bleed into
+     * it. Identity/tenancy columns (employee, client, branch) are deliberately
+     * absent — they survive the reset.
+     */
+    private const CASE_COLUMNS = [
+        'exit_type', 'initiated_by', 'reason_for_exit', 'other_reason',
+        'notice_date', 'last_working_day', 'reporting_manager_id', 'comments',
+        'business_impact', 'replacement_required',
+        'clearances', 'asset_returns', 'handover_notes',
+        'validation', 'final_employee_status', 'profile_lock',
+        'exit_case_status', 'hr_sign_off', 'stage_status', 'current_stage', 'completed_at',
+        'notice_settlement_mode', 'notice_days_required', 'notice_days_served',
+        'notice_days_unserved', 'notice_settlement_basis', 'notice_per_day_rate',
+        'notice_settlement_amount', 'notice_settlement_status', 'notice_payment', 'fnf',
+        'blacklisted', 'blacklist_reason',
+        'documents_released', 'documents_released_at', 'documents_released_by',
+        // The rehire stamps go too: the row is a LIVE case again, so leaving
+        // them set would make every "is this person exited?" reader treat the
+        // new exit as already spent.
+        'rehired_at', 'rehired_by', 'rehire_restart_onboarding', 'rehire_note',
+    ];
+
+    /**
+     * Wipe a spent (rehired) case so the row can host a brand-new exit.
+     *
+     * NOTE: the previous case's detail is overwritten — employee_exits carries
+     * a UNIQUE index on employee_id, so the two employment spells cannot both
+     * live here. Nothing reads a rehired case (the SPA only reads `rehired_at`
+     * to know the person is back), so the loss is the historical detail of an
+     * exit that was undone, not anything the app shows.
+     */
+    private function resetSpentCase(EmployeeExit $row): void
+    {
+        if (!$row->exists || !$row->rehired_at) {
+            return;
+        }
+        // These four are NOT NULL on the table, so they reset to their column
+        // default rather than to null; everything else in CASE_COLUMNS clears.
+        $defaults = [
+            'exit_case_status'          => 'Open',
+            'current_stage'             => 1,
+            'documents_released'        => false,
+            'rehire_restart_onboarding' => false,
+        ];
+        foreach (self::CASE_COLUMNS as $col) {
+            $row->{$col} = $defaults[$col] ?? null;
+        }
     }
 
     public function upsert(Request $request, $employee)
@@ -63,6 +125,13 @@ class ExitController extends Controller
         if (!$row->exists && $employee->trashed()) {
             abort(422, 'This employee is disabled, so an exit cannot be started for them. Re-enable them from HR > Employees > Disabled Employees, then run the exit process.');
         }
+
+        /* Re-exiting a rehired employee starts a CLEAN case. Must run before
+           anything below reads the row: the locked-type, locked-F&F and
+           already-released guards all exist to protect work done on THIS exit,
+           and the previous employment's answers are not that. Left in place
+           they froze the new case to the old exit type and its paid F&F. */
+        $this->resetSpentCase($row);
 
         $lockedType     = $this->lockedExitType($row);
         $wasReleased    = (bool) $row->documents_released;
@@ -99,6 +168,7 @@ class ExitController extends Controller
         // Never trust a client-sent settlement mode — it follows the exit type.
         $row->notice_settlement_mode = $this->resolveSettlementMode((string) ($row->exit_type ?? ''));
         $this->applyNoticeWaiver($row, $employee);
+        $this->applyTerminationBlacklist($row);
         if (!$row->exists) $row->created_by = $request->user()?->id;
         $row->save();
 
@@ -168,6 +238,12 @@ class ExitController extends Controller
 
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+            // Same clean slate as upsert(): a rehired employee's old case must
+            // never be the thing this completion writes on top of. The SPA
+            // always saves Stage 1 first (which resets it), but a direct call
+            // here would otherwise inherit the previous exit's clearances,
+            // validation and sign-off and close on work nobody redid.
+            $this->resetSpentCase($row);
             $lockedType = $this->lockedExitType($row);
             $storedLwd  = $row->last_working_day;   // captured BEFORE fill()
             // Same freeze as upsert(): completing the exit must not be a way to
@@ -185,6 +261,7 @@ class ExitController extends Controller
             $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
             $row->notice_settlement_mode = $mode;
             $this->applyNoticeWaiver($row, $employee);
+            $this->applyTerminationBlacklist($row);
             if (!$row->exists) $row->created_by = $request->user()?->id;
 
             // Lock the case closed regardless of what the client sent.
@@ -316,6 +393,9 @@ class ExitController extends Controller
         $path = $file->store('exit-fnf/' . $employee->id, 'public');
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
+        // A spent (rehired) case is cleared first, so the merge below can't
+        // fold this upload into the PREVIOUS employment's F&F blob.
+        $this->resetSpentCase($row);
         $row->employee_id = $employee->id;
         $row->client_id   = $row->client_id ?: $employee->client_id;
         $row->branch_id   = $row->branch_id ?: $employee->branch_id;
@@ -382,14 +462,9 @@ class ExitController extends Controller
 
         abort_if(!$exit, 422, 'This employee has no exit on record to rehire from.');
 
-        $type = (string) ($exit->exit_type ?? '');
-        if ($this->resolveSettlementMode($type) !== 'served') {
-            abort(422, $type === 'Termination'
-                ? 'A terminated employee cannot be rehired from here — this needs a fresh hiring process.'
-                : 'An employee who left without serving their notice period cannot be rehired from here — this needs a fresh hiring process.');
+        if ($why = self::rehireBlockedReason($exit, $employee)) {
+            abort(422, $why);
         }
-        abort_if(strcasecmp((string) $exit->blacklisted, 'Yes') === 0, 422,
-            'This employee is blacklisted and cannot be rehired.');
 
         $restart = (bool) ($data['restart_onboarding'] ?? false);
 
@@ -759,6 +834,91 @@ class ExitController extends Controller
         if (\Carbon\Carbon::parse($lwd)->startOfDay()->gt($end)) {
             abort(422, 'Last working day cannot be after the notice period end date ('
                 . $end->format('j M Y') . '). It may be the same day, or earlier.');
+        }
+    }
+
+    /**
+     * Why this exit cannot be rehired from here — null when it can.
+     *
+     * ONE rule, used by the server guard in rehire() and mirrored by the SPA's
+     * Reactivate button, so what the button offers and what the endpoint
+     * accepts can never drift apart:
+     *
+     *   Blacklisted                     never. Applies whatever the exit type.
+     *   Termination                     never — and it is blacklisted by
+     *                                   default, so this is belt-and-braces.
+     *   Absconding / no type            never; there is nothing to reactivate
+     *                                   cleanly from.
+     *   Resignation                     yes, unless blacklisted.
+     *   Resignation w/o notice period   yes, unless blacklisted — EXCEPT when
+     *                                   they left DURING probation. Someone who
+     *                                   walked out mid-probation without
+     *                                   serving notice has not shown the
+     *                                   company anything to reactivate on; that
+     *                                   is a fresh hiring decision.
+     *
+     * Probation is judged as at the exit — the notice date, falling back to the
+     * last working day — not as at today, or a probation window that has since
+     * elapsed on paper would quietly make a mid-probation walkout rehirable.
+     */
+    public static function rehireBlockedReason(?EmployeeExit $exit, ?Employee $employee): ?string
+    {
+        if (!$exit) {
+            return 'This employee has no exit on record to rehire from.';
+        }
+        if (strcasecmp((string) $exit->blacklisted, 'Yes') === 0) {
+            return 'This employee is blacklisted and cannot be rehired.';
+        }
+
+        $type = trim((string) ($exit->exit_type ?? ''));
+        if ($type === '') {
+            return 'No exit type on record — rehire is unavailable.';
+        }
+        if (strcasecmp($type, 'Termination') === 0) {
+            return 'A terminated employee cannot be rehired from here — this needs a fresh hiring process.';
+        }
+        if (strcasecmp($type, 'Absconding') === 0) {
+            return 'An employee who absconded cannot be rehired from here — this needs a fresh hiring process.';
+        }
+
+        if (strcasecmp($type, 'Resignation without notice period') === 0) {
+            $asOf = $exit->notice_date ?: $exit->last_working_day;
+            if ($asOf && \App\Support\ProbationGuard::isOnProbation($employee, \Carbon\Carbon::parse($asOf)->startOfDay())) {
+                return 'This employee resigned during their probation period without serving notice — rehiring needs a fresh hiring process.';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * A TERMINATION blacklists the employee by default.
+     *
+     * Being terminated is already an absolute bar on the one-click rehire
+     * (rehire() only accepts a standard resignation), so this makes the record
+     * say what the rules already do: the person shows as Blacklisted in the
+     * exit list and every blacklist check downstream agrees with the exit type.
+     *
+     * "By default", not "always": HR can still record an explicit `No` — a
+     * role eliminated for redundancy can be filed as a termination without the
+     * person being barred. Rehiring them still needs a fresh hiring process,
+     * which is the rule for every termination regardless of this flag.
+     *
+     * An auto-blacklist with no reason typed gets one stating the mechanism, so
+     * the record is never a bare "Yes" with no explanation, and HR is not held
+     * at the closing gate to retype what the exit type already says.
+     */
+    private function applyTerminationBlacklist(EmployeeExit $row): void
+    {
+        if (strcasecmp((string) ($row->exit_type ?? ''), 'Termination') !== 0) {
+            return;
+        }
+        if ($row->blacklisted === null || trim((string) $row->blacklisted) === '') {
+            $row->blacklisted = 'Yes';
+        }
+        if (strcasecmp((string) $row->blacklisted, 'Yes') === 0
+            && trim((string) $row->blacklist_reason) === '') {
+            $row->blacklist_reason = 'Blacklisted automatically — exit type: Termination.';
         }
     }
 

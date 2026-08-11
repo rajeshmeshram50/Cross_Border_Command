@@ -84,7 +84,13 @@ class EmployeeController extends Controller
         // rehired_at in the payload its `rehired_at ? null : exit` guard can
         // never fire, and a rehired employee is stuck in the Exited tab and
         // missing from Active Employees forever.
-        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage,rehired_at',
+        //
+        // `blacklisted` likewise: the Exited list renders a Blacklisted chip
+        // from it and gates Reactivate on it (a blacklisted leaver can't be
+        // rehired — ExitController::rehireBlockedReason). Missing from the
+        // select, it read as undefined, so every row claimed "Not Blacklisted"
+        // and offered a Reactivate the server would refuse with a 422.
+        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage,rehired_at,blacklisted',
         // Prior work experience — drives the EmployeeProfile "Work Experience"
         // card with REAL data (was previously hardcoded sample values). Newest
         // first so the frontend's [0] is the most recent employer.

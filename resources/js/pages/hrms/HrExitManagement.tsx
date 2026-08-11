@@ -58,6 +58,8 @@ interface EmployeeRow {
    *  since the wizard's stage list is derived from it. */
   exitType: string;
   noticeStartIso: string;
+  /** Last working day on the exit — the fallback "as at" date for probation. */
+  lastWorkingIso: string;
   /** Whether the employee was blacklisted as part of the exit case */
   blacklisted?: boolean;
   // Notice period set on the employee at hire (e.g. "30 Days" + 30). Used to
@@ -413,14 +415,13 @@ export default function HrExitManagement() {
              hiring process rather than a one-click reactivation — the button
              stays visible but disabled so the rule is discoverable instead of
              the action just being absent. */
-          const canRehire = e.exitType === 'Resignation';
-          const rehireWhy = canRehire
-            ? 'Reactivate this employee'
-            : e.exitType === 'Termination'
-              ? 'Terminated employees cannot be rehired from here — this needs a fresh hiring process.'
-              : e.exitType
-                ? 'This employee left without serving their notice period — rehiring needs a fresh hiring process.'
-                : 'No exit type on record — rehire is unavailable.';
+          /* One rule for the button and the endpoint — see
+             rehireBlockedReason(), which mirrors the server. The button stays
+             visible but disabled so the "why not" is discoverable in the
+             tooltip instead of the action simply being absent. */
+          const rehireBlocked = rehireBlockedReason(e);
+          const canRehire = !rehireBlocked;
+          const rehireWhy = rehireBlocked ?? 'Reactivate this employee';
           return (
             <div className="exit-action-row">
               <Tooltip label="Open evidence vault" position="left" themed>
@@ -843,6 +844,43 @@ function settlementOf(exitType: string): Settlement {
   if (t === 'Resignation without notice period' || t === 'Absconding') return 'recover';
   if (t === 'Termination') return 'pay_in_lieu';
   return 'served';
+}
+
+/**
+ * Why this exited employee cannot be reactivated — null when they can be.
+ *
+ * MIRROR of ExitController::rehireBlockedReason(); the endpoint enforces the
+ * same rules, so the button and the server can't disagree:
+ *
+ *   · blacklisted                    → never, whatever the exit type
+ *   · Termination                    → never (and blacklisted by default)
+ *   · Absconding / no exit type      → never
+ *   · Resignation                    → yes, unless blacklisted
+ *   · Resignation w/o notice period  → yes, unless blacklisted — EXCEPT when
+ *                                      they left during probation
+ *
+ * Probation is judged as at the EXIT (notice date, else last working day), not
+ * as at today: a probation window that has since run out on paper must not make
+ * a mid-probation walkout look rehirable.
+ */
+function rehireBlockedReason(e: EmployeeRow): string | null {
+  if (e.blacklisted) return 'This employee is blacklisted and cannot be rehired.';
+  const t = String(e.exitType || '').trim();
+  if (!t) return 'No exit type on record — rehire is unavailable.';
+  if (t === 'Termination') {
+    return 'Terminated employees are blacklisted and cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Absconding') {
+    return 'An employee who absconded cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Resignation without notice period') {
+    const asOf = e.noticeStartIso || e.lastWorkingIso || '';
+    // ISO dates compare correctly as strings; `<=` matches the server's lte().
+    if (asOf && e.probationEndIso && asOf <= e.probationEndIso) {
+      return 'This employee resigned during their probation period without serving notice — rehiring needs a fresh hiring process.';
+    }
+  }
+  return null;
 }
 
 /** Badge tint per exit type — same palette as the Exit Type column in the list
@@ -1526,6 +1564,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      resignation never sees the field and saves null. */
   const [blacklisted, setBlacklisted]         = useState('No');
   const [blacklistReason, setBlacklistReason] = useState('');
+  /* Has the blacklist answer been DECIDED — either loaded off a saved case or
+     chosen by HR here? Until it is, a Termination flips it to Yes on its own
+     (the server does the same on save). Once decided, the type must never
+     overwrite the answer: HR filing a redundancy as a termination and setting
+     No back would otherwise have it snap to Yes again on the next render. */
+  const blacklistDecidedRef = useRef(false);
+  useEffect(() => {
+    if (exitType === 'Termination' && !blacklistDecidedRef.current) setBlacklisted('Yes');
+  }, [exitType]);
+  // A termination blacklists by default, so the REASON is not something HR has
+  // to type before the case can close — the exit type is the reason, and the
+  // server stamps that in words. A blacklist chosen on any other exit type is a
+  // deliberate act and still has to be justified.
+  const autoBlacklist = exitType === 'Termination';
 
   /* Stage 1's progress is measured on what has been SAVED, not on what is
      currently typed into the form.
@@ -1591,7 +1643,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setProfileLock(String(data.profile_lock ?? 'Unlocked'));
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
-        setBlacklisted(String(data.blacklisted ?? 'No') === 'Yes' ? 'Yes' : 'No');
+        /* A saved answer is the decided one. Nothing saved yet → leave it to
+           the termination default below, which is why this only latches the
+           ref when the server actually holds a value. */
+        if (data.blacklisted != null && String(data.blacklisted) !== '') {
+          setBlacklisted(String(data.blacklisted) === 'Yes' ? 'Yes' : 'No');
+          blacklistDecidedRef.current = true;
+        }
         setBlacklistReason(String(data.blacklist_reason ?? ''));
 
         if (data.stage_status && typeof data.stage_status === 'object') {
@@ -1698,7 +1756,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     // 6. Blacklisting someone needs a reason on record — it blocks re-hire, so
     //    a bare "Yes" with no justification must not close the case.
-    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim()) {
+    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim() && !autoBlacklist) {
       items.push('Blacklist reason is required when blacklisting an employee');
     }
 
@@ -2803,18 +2861,39 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 {settlement === 'recover' && (
                   <>
                     <div className="ep-section-label">Notice Period — Recovery</div>
-                    <div className={`ep-echo ${effSettleStatus === 'Settled' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
+                    {/* NA is a settled question, not an outstanding one: there
+                        is nothing to recover (probation, an early resignation,
+                        or a notice served in full), so the band read
+                        "₹0.00 recoverable … not settled yet · Pending" over a
+                        stage the sidebar already showed as 100% Completed. It
+                        now says so, and matches the Notice Period Payment
+                        stage's own "Not applicable" wording. */}
+                    <div className={`ep-echo ${effSettleStatus === 'Settled' || effSettleStatus === 'NA' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
                       <i className={effSettleStatus === 'Settled' ? 'ri-check-double-line'
+                        : effSettleStatus === 'NA' ? 'ri-shield-check-line'
                         : effSettleStatus === 'Rejected' ? 'ri-close-circle-line' : 'ri-time-line'} />
                       <span className="ep-echo-txt">
-                        <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
-                        {effSettleStatus === 'Settled' ? 'collected and approved.'
-                          : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
-                          : 'not settled yet.'}
+                        {effSettleStatus === 'NA' ? (
+                          <>
+                            <strong>Nothing to recover</strong> —{' '}
+                            {onProbation ? 'the employee is on probation, so no notice period is served.'
+                              : earlyResignation ? `they resigned within ${EARLY_EXIT_DAYS} days of joining, so no notice period is served.`
+                              : 'the notice period carries no unserved days.'}
+                          </>
+                        ) : (
+                          <>
+                            <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
+                            {effSettleStatus === 'Settled' ? 'collected and approved.'
+                              : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
+                              : 'not settled yet.'}
+                          </>
+                        )}
                         <em> Handled in Stage {stages.find(s => s.key === 'notice_payment')?.num ?? 2} — Notice Period Payment.</em>
                       </span>
                       <span className="ep-echo-pill">
-                        {effSettleStatus === 'Settled' ? 'Settled' : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
+                        {effSettleStatus === 'Settled' ? 'Settled'
+                          : effSettleStatus === 'NA' ? 'Not applicable'
+                          : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
                       </span>
                     </div>
                   </>
@@ -3466,24 +3545,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     <>
                       <Col md={6}>
                         <EpField label="Blacklist Employee">
-                          <EpSelect value={blacklisted} onChange={setBlacklisted} options={['No', 'Yes']} />
-                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            Blocks re-hire — a blacklisted employee cannot be brought back,
-                            whatever the exit type.
+                          <EpSelect
+                            value={blacklisted}
+                            onChange={(v) => { blacklistDecidedRef.current = true; setBlacklisted(v); }}
+                            options={['No', 'Yes']}
+                          />
+                          <div className="ep-hint" style={{ fontSize: 11, color: autoBlacklist ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            {autoBlacklist
+                              ? 'Set automatically — a termination blacklists the employee. Rehiring them needs a fresh hiring process either way; change this to No only if the termination is not a bar on returning.'
+                              : 'Blocks re-hire — a blacklisted employee cannot be brought back, whatever the exit type.'}
                           </div>
                         </EpField>
                       </Col>
                       {blacklisted === 'Yes' && (
                         <Col md={6}>
-                          <EpField label="Blacklist Reason" required invalid={!blacklistReason.trim()}>
+                          <EpField label="Blacklist Reason" required={!autoBlacklist} invalid={!autoBlacklist && !blacklistReason.trim()}>
                             <EpInput
                               value={blacklistReason}
                               onChange={setBlacklistReason}
-                              placeholder="Why this employee is being blacklisted"
+                              placeholder={autoBlacklist ? 'Optional — the termination itself is recorded as the reason' : 'Why this employee is being blacklisted'}
                               maxLength={500}
-                              invalid={!blacklistReason.trim()}
+                              invalid={!autoBlacklist && !blacklistReason.trim()}
                             />
-                            {!blacklistReason.trim() && (
+                            {!autoBlacklist && !blacklistReason.trim() && (
                               <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <i className="ri-error-warning-line" />A reason is required to blacklist.
                               </div>
@@ -4191,6 +4275,7 @@ function apiToExitRow(e: any): EmployeeRow {
     exitInitiated,
     exitType: String(ex?.exit_type ?? ''),
     noticeStartIso: noticeRaw,
+    lastWorkingIso: ex?.last_working_day ? String(ex.last_working_day).slice(0, 10) : '',
     blacklisted: !!ex && (ex.blacklisted === true || String(ex.blacklisted).toLowerCase() === 'yes'),
     // Prefer the explicit integer; fall back to parsing the label ("90 Days")
     // since notice_period_days is often null while notice_period holds "N Days".
