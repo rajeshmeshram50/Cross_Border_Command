@@ -394,7 +394,7 @@ export default function HrDocumentTemplates() {
         <div className="rec-page dtm-page">
           <DtmDarkStyles />
           {/* Header strip — same shape as the Clients / Branches headers. */}
-          <div className="frm-cstrip mb-3">
+          <div className="frm-cstrip mb-2">
             <span className="frm-cstrip-accent" />
             <div className="frm-cstrip-left">
               <div className="frm-cstrip-icon"><i className="ri-file-text-line" /></div>
