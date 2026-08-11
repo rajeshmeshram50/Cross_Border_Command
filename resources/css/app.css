@@ -89,11 +89,17 @@ body { overflow-x: hidden; }
 /* Velzon ships `.page-content { padding: calc(45px + 2.7rem) .75rem 60px .75rem }`.
    The 45px reserves the horizontal menu; the 2.7rem (~43px) on top of it is
    breathing room, and it is far more than this app wants — every page opened
-   with a wide empty band between the menu and its header card. Trimmed to
-   0.15rem (~2px) so a page's header card starts immediately under the menu.
-   The 45px stays untouched: that is what keeps content clear of the fixed
-   menu bar, and cutting into it would tuck headers underneath. */
-.page-content { padding-top: calc(45px + .15rem) !important; padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 12px !important; }
+   with a wide empty band between the menu and its header card.
+   Now a flat 8px, chosen to match the gap a page's header strip already
+   leaves BELOW itself (.frm-cstrip carries mb-2 = 8px), so the strip sits
+   with equal air above and below. The
+   2.7rem is gone entirely AND the 45px reserve is cut:
+   .topnav is position:absolute and renders shorter than 45px, so most of that
+   reserve was empty space, not clearance.
+   THIS IS THE CLEARANCE UNDER THE FIXED MENU — if any page's header ever tucks
+   behind the menu bar, this number is why. Raise it, do not add margin to the
+   page. */
+.page-content { padding-top: 8px !important; padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 12px !important; }
 .page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
 .footer { position: static; }
 .wl-pager { margin-top: auto; }
@@ -924,6 +930,14 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .pmt-cstrip-export { background: transparent; color: #c4b5fd; }
 [data-bs-theme="dark"] .pmt-cstrip-export:hover:not(:disabled) { background: rgba(124, 58, 237, .14); }
 .frm-cstrip {
+  /* -6px, copied from Supplier Management (.sup-fig { margin: -6px 0 0 }).
+     That page pulls its whole wrapper up by 6px, which is why its header sat
+     tighter under the menu than every HRMS page — those have no such pull, so
+     they took the shell's padding-top as-is and read looser.
+     The strip is the one thing all 15 HRMS pages share (they each use a
+     different page-wrapper class), so the pull belongs here. Harmless on the
+     few screens that use the strip further down the page — 6px. */
+  margin-top: -6px;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   min-height: 70px; padding: 12px 18px;
