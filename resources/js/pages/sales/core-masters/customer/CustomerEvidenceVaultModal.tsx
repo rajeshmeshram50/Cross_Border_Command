@@ -1509,22 +1509,19 @@ function ShipmentTable({ rows, kind, filter, setFilter, onSend, activeSend }: {
 
 /* Expanded shipment row — Buyer / Consignee sub-tabs + the document table.
  * Inline-styled (no scoped classes) so the Consignee vault reuses it as-is. */
-export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', pendingSend }: {
+export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, buyerIsConsignee, onSend, primaryParty = 'buyer', hideBuyerTab = false, pendingSend }: {
   buyer: VaultShipmentDoc[]; consignee: VaultShipmentDoc[]; buyerName: string; consigneeName: string; buyerIsConsignee: boolean;
-  /** Launches Send-for-Signature (preview + draggable signature box) for one
-   *  not-yet-sent ("Draft") doc. Receives the doc + which party it belongs to.
-   *  Omitted ⇒ no Send button. */
   onSend?: (doc: VaultShipmentDoc, party: 'buyer' | 'consignee') => void;
-  /** Whose vault is this — which side the panel opens on, and which side wins
-   *  when Customer = Consignee collapses the two into one.
-   *
-   *  This replaced `forceParty`, which LOCKED the panel to one list and hid the
-   *  Customer / Consignee / Both tabs. Only the Consignee vault ever passed it,
-   *  and the effect was that a deal's buyer-side and shared documents were
-   *  invisible there even though the payload carried them — the consignee could
-   *  not see the documents it co-signs with the buyer. The three tabs are the
-   *  point of the split; a vault should choose its starting tab, not lose two. */
+  
   primaryParty?: 'buyer' | 'consignee';
+  /** Drop the "Customer Documents" tab, leaving Consignee + Both.
+   *
+   *  The CONSIGNEE vault passes this: buyer-EXCLUSIVE documents are the other
+   *  party's own paperwork and have no business in a consignee's archive. Note
+   *  this is not the old `forceParty` in disguise — "Both" stays, so the
+   *  documents the consignee co-signs with the buyer are still reachable,
+   *  which is the case that made forceParty wrong. */
+  hideBuyerTab?: boolean;
   /** The doc whose Send flow is currently launching/in-flight — its row's Send
    *  button shows a spinner until the send wizard closes. */
   pendingSend?: { doc: VaultShipmentDoc; party: 'buyer' | 'consignee' } | null;
@@ -1548,9 +1545,13 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
   /* Customer = Consignee ⇒ one entity, so there is nothing to split: show that
      entity's own side. Which side that is depends on whose vault you opened —
      hardcoding `buyer` meant the Consignee vault fell back to the buyer list. */
+  /* With the Customer tab hidden there is no way back to a 'buyer' selection,
+     but the state could still hold it if a caller opened on that tab — fall
+     through to the consignee list rather than render a tabless buyer view. */
+  const activeParty = hideBuyerTab && party === 'buyer' ? 'consignee' : party;
   const docs = buyerIsConsignee
     ? (primaryParty === 'consignee' ? consignee : buyer)
-    : party === 'both' ? bothDocs : party === 'buyer' ? buyerOnly : consOnly;
+    : activeParty === 'both' ? bothDocs : activeParty === 'buyer' ? buyerOnly : consOnly;
 
   const remind = async (d: VaultShipmentDoc) => {
     setBusy(d.sig_req_id);
@@ -1570,18 +1571,23 @@ export function ShipmentDocPanel({ buyer, consignee, buyerName, consigneeName, b
           party-name label are redundant — render the documents table directly. */}
       {!buyerIsConsignee && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-          <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>Customer Documents <b>{buyerOnly.length}</b></button>
-          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(party === 'consignee')}>Consignee Documents <b>{consOnly.length}</b></button>
-          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(party === 'both')}>Both <b>{bothDocs.length}</b></button>
+          {!hideBuyerTab && (
+            <button type="button" onClick={() => setParty('buyer')} style={partyTabStyle(party === 'buyer')}>Customer Documents <b>{buyerOnly.length}</b></button>
+          )}
+          {/* Highlight follows activeParty, not the raw state — with the
+              Customer tab hidden a stale 'buyer' selection renders the
+              consignee list, and the tab bar has to say so. */}
+          <button type="button" onClick={() => setParty('consignee')} style={partyTabStyle(activeParty === 'consignee')}>Consignee Documents <b>{consOnly.length}</b></button>
+          <button type="button" onClick={() => setParty('both')} style={partyTabStyle(activeParty === 'both')}>Both <b>{bothDocs.length}</b></button>
         </div>
       )}
       <div style={{ fontSize: 11, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>
         {buyerIsConsignee
           ? (primaryParty === 'consignee' ? consigneeName : buyerName)
-          : party === 'both' ? `${buyerName} + ${consigneeName}` : party === 'buyer' ? buyerName : consigneeName}
+          : activeParty === 'both' ? `${buyerName} + ${consigneeName}` : activeParty === 'buyer' ? buyerName : consigneeName}
       </div>
       {docs.length === 0 ? (
-        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {party === 'both' ? '' : party === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
+        <div style={{ padding: '18px', textAlign: 'center', color: '#64748b', fontSize: 12, background: '#fff', border: '1px dashed #a5f3fc', borderRadius: 8 }}>No {activeParty === 'both' ? '' : activeParty === 'buyer' ? 'buyer ' : 'consignee '}documents on this shipment.</div>
       ) : (
         <div style={{ background: '#fff', border: '1px solid #d6eef5', borderRadius: 10, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>

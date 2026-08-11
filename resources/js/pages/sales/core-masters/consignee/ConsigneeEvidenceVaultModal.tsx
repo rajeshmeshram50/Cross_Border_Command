@@ -1372,6 +1372,11 @@ function ShipmentTable({ rows, kind, onSend, activeSend }: {
                           onSend={onSend ? (doc, party) => onSend(r.id, doc, party) : undefined}
                           pendingSend={activeSend && activeSend.leadId === r.id ? { doc: activeSend.doc, party: activeSend.party } : null}
                           primaryParty="consignee"
+                          /* Consignee vault → Consignee Documents + Both only.
+                             Buyer-exclusive paperwork belongs to the other
+                             party; the shared documents this consignee actually
+                             co-signs are still one tab away under Both. */
+                          hideBuyerTab
                         />
                       </td>
                     </tr>
