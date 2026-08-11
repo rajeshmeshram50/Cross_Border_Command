@@ -164,16 +164,18 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     : 'Not Generated';
 
   const buildTplGroup = (templates: VaultTemplate[], orphanRuns: VaultRun[], title: string, groupIcon: string, groupBg: string, groupFg: string) => {
-    const docs = templates.map(tpl => {
+    /* SIGNED ONLY. The vault is the evidence view: a template nobody has sent
+       yet ("Not Generated"), one still going round the signers, a cancelled or
+       rejected run — none of them is a document, and listing them buried the
+       three real signed files among rows with a greyed-out View button. A
+       deprecated template can't reach here at all: /hr-document-templates/match
+       returns Active ones only, so anything deprecated would have to come
+       through a run, and only a fully signed run now does. */
+    const docs = templates
+      .filter(tpl => runByTemplateId.get(tpl.id)?.status === 'Completed')
+      .map(tpl => {
       const run = runByTemplateId.get(tpl.id) || null;
-      const status: DocStatus =
-        run?.status === 'Completed'   ? 'Completed'
-        : run?.status === 'In Progress' ? 'Sent'
-        : run?.status === 'Pending'     ? 'Sent'
-        : run?.status === 'Rejected'    ? 'Pending'
-        : run?.status === 'Cancelled'   ? 'Not Generated'
-        : tpl.status === 'Active'       ? 'Not Generated'
-        : 'Not Generated';
+      const status: DocStatus = 'Completed';
       return {
         id: tpl.id, key: `tpl-${tpl.id}`,
         name: tpl.name || '(unnamed template)',
@@ -193,16 +195,18 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     // /hr-document-templates/match returns nothing). Without this, completed
     // signed documents silently vanish from the vault and the counts read 0
     // even though the signed PDFs exist. Render them straight off the run.
-    const orphanDocs = orphanRuns.map(run => ({
-      id: run.template_id || run.id, key: `run-${run.id}`,
-      name: run.template?.name || run.code || 'Signed document',
-      sub: `${run.template?.doc_type || 'Document'}${run.code ? ` · ${run.code}` : ''} · Run #${run.id}`,
-      icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
-      category: run.trigger_point_name || 'Document',
-      status: runStatusToDoc(run),
-      url: null as string | null,
-      runId: run.status === 'Completed' ? run.id : null,
-    }));
+    const orphanDocs = orphanRuns
+      .filter(run => run.status === 'Completed')   // signed only, as above
+      .map(run => ({
+        id: run.template_id || run.id, key: `run-${run.id}`,
+        name: run.template?.name || run.code || 'Signed document',
+        sub: `${run.template?.doc_type || 'Document'}${run.code ? ` · ${run.code}` : ''} · Run #${run.id}`,
+        icon: 'ri-file-text-line', iconBg: groupBg, iconFg: groupFg,
+        category: run.trigger_point_name || 'Document',
+        status: runStatusToDoc(run),
+        url: null as string | null,
+        runId: run.id,
+      }));
     const all = [...docs, ...orphanDocs];
     return all.length ? [{ title, icon: groupIcon, iconBg: groupBg, iconFg: groupFg, docs: all }] : [];
   };
@@ -223,12 +227,16 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     : tab === 'organizational' ? orgGroups
     : exitGroups;
 
+  /* The KPIs count what the tabs actually SHOW. Unsigned templates used to be
+     both listed and counted; now that they are neither, "% complete" can only
+     come from the employee's own uploads — every organizational / exit row here
+     is signed by definition, so a vault with nothing left to upload reads
+     100%, and one with documents still to collect reads below it. */
   const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
   const total      = allDocs.length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
   const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
-  const notGen     = allDocs.filter(d => d.status === 'Not Generated' || d.status === 'Optional').length;
-  const completionPct = total > 0 ? Math.round(((total - notGen) / total) * 100) : 0;
+  const completionPct = total > 0 ? Math.round(((total - pending) / total) * 100) : 0;
 
   const empCount  = empDocsView.length;
   const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
@@ -363,8 +371,8 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
               {tab === 'employee'
                 ? 'No documents uploaded yet by this employee.'
                 : tab === 'organizational'
-                  ? 'No onboarding-trigger documents on record. Create templates under HR > Document Templates with trigger “Onboarding”.'
-                  : 'No exit-trigger documents on record. Create templates under HR > Document Templates with trigger “Exit Management”.'}
+                  ? 'No signed onboarding documents yet. A document appears here once every signer in its workflow has signed it — send it from Onboarding, Stage 5.'
+                  : 'No signed exit documents yet. A document appears here once every signer in its workflow has signed it — send it from the Exit wizard’s Exit Documents stage.'}
             </div>
           ) : groups.map((g, gi) => (
             <div key={gi} className="ev-group">

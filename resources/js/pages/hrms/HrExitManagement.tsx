@@ -58,6 +58,8 @@ interface EmployeeRow {
    *  since the wizard's stage list is derived from it. */
   exitType: string;
   noticeStartIso: string;
+  /** Last working day on the exit — the fallback "as at" date for probation. */
+  lastWorkingIso: string;
   /** Whether the employee was blacklisted as part of the exit case */
   blacklisted?: boolean;
   // Notice period set on the employee at hire (e.g. "30 Days" + 30). Used to
@@ -413,14 +415,13 @@ export default function HrExitManagement() {
              hiring process rather than a one-click reactivation — the button
              stays visible but disabled so the rule is discoverable instead of
              the action just being absent. */
-          const canRehire = e.exitType === 'Resignation';
-          const rehireWhy = canRehire
-            ? 'Reactivate this employee'
-            : e.exitType === 'Termination'
-              ? 'Terminated employees cannot be rehired from here — this needs a fresh hiring process.'
-              : e.exitType
-                ? 'This employee left without serving their notice period — rehiring needs a fresh hiring process.'
-                : 'No exit type on record — rehire is unavailable.';
+          /* One rule for the button and the endpoint — see
+             rehireBlockedReason(), which mirrors the server. The button stays
+             visible but disabled so the "why not" is discoverable in the
+             tooltip instead of the action simply being absent. */
+          const rehireBlocked = rehireBlockedReason(e);
+          const canRehire = !rehireBlocked;
+          const rehireWhy = rehireBlocked ?? 'Reactivate this employee';
           return (
             <div className="exit-action-row">
               <Tooltip label="Open evidence vault" position="left" themed>
@@ -845,6 +846,43 @@ function settlementOf(exitType: string): Settlement {
   return 'served';
 }
 
+/**
+ * Why this exited employee cannot be reactivated — null when they can be.
+ *
+ * MIRROR of ExitController::rehireBlockedReason(); the endpoint enforces the
+ * same rules, so the button and the server can't disagree:
+ *
+ *   · blacklisted                    → never, whatever the exit type
+ *   · Termination                    → never (and blacklisted by default)
+ *   · Absconding / no exit type      → never
+ *   · Resignation                    → yes, unless blacklisted
+ *   · Resignation w/o notice period  → yes, unless blacklisted — EXCEPT when
+ *                                      they left during probation
+ *
+ * Probation is judged as at the EXIT (notice date, else last working day), not
+ * as at today: a probation window that has since run out on paper must not make
+ * a mid-probation walkout look rehirable.
+ */
+function rehireBlockedReason(e: EmployeeRow): string | null {
+  if (e.blacklisted) return 'This employee is blacklisted and cannot be rehired.';
+  const t = String(e.exitType || '').trim();
+  if (!t) return 'No exit type on record — rehire is unavailable.';
+  if (t === 'Termination') {
+    return 'Terminated employees are blacklisted and cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Absconding') {
+    return 'An employee who absconded cannot be rehired from here — this needs a fresh hiring process.';
+  }
+  if (t === 'Resignation without notice period') {
+    const asOf = e.noticeStartIso || e.lastWorkingIso || '';
+    // ISO dates compare correctly as strings; `<=` matches the server's lte().
+    if (asOf && e.probationEndIso && asOf <= e.probationEndIso) {
+      return 'This employee resigned during their probation period without serving notice — rehiring needs a fresh hiring process.';
+    }
+  }
+  return null;
+}
+
 /** Badge tint per exit type — same palette as the Exit Type column in the list
  *  so a case reads identically in the table and inside the stage modal. */
 function exitTypeTone(exitType: string): { bg: string; fg: string; bd: string } {
@@ -930,6 +968,28 @@ function normaliseStageStatus(raw: any): Record<string, StageStatus> {
   return out;
 }
 
+/* ── Calendar-date helpers ─────────────────────────────────────────────────
+   Deliberately LOCAL-date only. These used to go through
+   `new Date(iso + 'T00:00:00').toISOString().slice(0, 10)`, which parses the
+   string as local midnight and then formats it in UTC — so on any zone ahead
+   of UTC (IST, +5:30) every result came back a day EARLY, and on any zone
+   behind UTC it didn't. That made the notice-period end date, "tomorrow" and
+   even "today" depend on the viewer's timezone: `addDaysIso(d, 1)` returned
+   `d` itself in IST, and before 05:30 IST `todayIso` was still yesterday.
+   Formatting from the local Y/M/D parts keeps every date the one the user
+   sees on their own calendar. */
+const isoOf = (d: Date): string => {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+};
+const addDaysIso = (iso: string, days: number): string => {
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return iso;
+  d.setDate(d.getDate() + days);
+  return isoOf(d);
+};
+
 function ExitProcessModal({ employee, onClose, onCompleted }: { employee: EmployeeRow | null; onClose: () => void; onCompleted?: () => void }) {
   const [stage, setStage] = useState<number>(1);
   const [stageStatus, setStageStatus] = useState<Record<string, StageStatus>>({});
@@ -961,14 +1021,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
+  /* The notice START DATE is day 1 of the notice, so an N-day notice ends on
+     `notice date + N − 1`: a 1-day notice served from today ends today, and a
+     30-day notice from 10 Aug ends 8 Sep. `days served` below counts the same
+     way (inclusive), and so do the two server-side rules — the ceiling in
+     ExitController::assertLastWorkingDayWithinNotice and the settlement in
+     ExitNoticePaymentController. All four must move together or a fully served
+     notice reads as one day short and bills the employee for it. */
   const noticePeriodEnd = useMemo(() => {
     if (noticeWaived) return '';   // probation / early resignation → no notice
-    const days = employee?.noticePeriodDays;
-    if (!noticeDate || days == null || !Number.isFinite(days)) return '';
-    const d = new Date(noticeDate + 'T00:00:00');
-    if (isNaN(d.getTime())) return '';
-    d.setDate(d.getDate() + Number(days));
-    return d.toISOString().slice(0, 10);
+    const days = Number(employee?.noticePeriodDays);
+    if (!noticeDate || employee?.noticePeriodDays == null || !Number.isFinite(days) || days <= 0) return '';
+    return addDaysIso(noticeDate, days - 1);
   }, [noticeDate, employee?.noticePeriodDays, noticeWaived]);
   const [reportingManagerId, setReportingManagerId] = useState<number | null>(null);
   const [reportingManagerName, setReportingManagerName] = useState('');
@@ -1055,8 +1119,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const dayMs = 86400000;
     let served = 0;
     if (noticeDate && lwd) {
+      // Inclusive of the notice start day — working the notice date itself is
+      // one day served, so LWD == notice date is 1, not 0. Matches
+      // `noticePeriodEnd` (start + N − 1) and the two server-side rules.
       const d = Math.round((new Date(lwd + 'T00:00:00').getTime() - new Date(noticeDate + 'T00:00:00').getTime()) / dayMs);
-      served = Math.max(0, Math.min(required, d));
+      served = d < 0 ? 0 : Math.max(0, Math.min(required, d + 1));
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
@@ -1151,14 +1218,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   });
   const [advancingStage, setAdvancingStage] = useState(false);
 
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const addDaysIso = (iso: string, days: number) => {
-    const d = new Date(iso + 'T00:00:00');
-    if (isNaN(d.getTime())) return iso;
-    d.setDate(d.getDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  const tomorrowIso = addDaysIso(todayIso, 1);
+  const todayIso = isoOf(new Date());
   const fmtDateShort = (iso: string) => {
     try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }); }
     catch { return iso; }
@@ -1173,8 +1233,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      point of the non-standard types is that the notice period is NOT served:
 
        Resignation            the notice IS served, so the last working day is
-                              on/after the notice period end and must be a
-                              future date.
+                              on/after the notice period end. There is NO extra
+                              "must be in the future" rule: for a short notice
+                              period the end date can be today (or, on a case
+                              reopened later, already past), and today is then
+                              a perfectly valid last working day. That extra
+                              rule contradicted this floor and made a 1-day
+                              notice impossible to close (bug #71).
        Resignation w/o notice the employee is leaving early — that's exactly
                               what is recovered from them — so the notice-end
                               floor doesn't apply and TODAY is a valid last day.
@@ -1190,8 +1255,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the type impossible to actually express. An already-saved value is still
      accepted as-is so reopening a case never invalidates it. */
   const noticeServed = !noticeWaived && settlement === 'served';
+  /* With no derivable end date (the employee record carries no notice period)
+     there is no notice length to hold them to, so the floor is simply the
+     notice start — you cannot stop working before you resign. It used to be
+     start + 1, which was the old "must be a future date" rule in disguise. */
   const lwdMin = noticeServed
-    ? (noticePeriodEnd || (noticeDate ? addDaysIso(noticeDate, 1) : tomorrowIso))
+    ? (noticePeriodEnd || noticeDate || todayIso)
     : (noticeDate || todayIso);
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
@@ -1205,10 +1274,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      no notice period, and there is nothing to cap against in those cases. */
   const lwdMax = noticePeriodEnd || '';
   const lwdOverEnd = !!lwd && !!lwdMax && lwd > lwdMax;
-  // "Must be a future date" is part of serving notice, so it is waived for the
-  // types that don't serve one — they can be relieved today.
+  /* One floor for every type: `lwdMin`. Served notice used to carry a second,
+     independent "must be a future date" test, which is what rejected a last
+     working day of today even when the notice period had already ended by then
+     — the two rules disagreed, and the cruder one won. lwdMin already keeps the
+     date far enough out whenever the notice genuinely still has days to run. */
   const lwdInvalid = !!lwd && lwd !== loadedLwdRef.current
-    && ((noticeServed ? (lwd <= todayIso || lwd < lwdMin) : lwd < lwdMin) || lwdOverEnd);
+    && (lwd < lwdMin || lwdOverEnd);
   // Picker `min`s must never exclude the value already saved on the exit — a
   // saved date earlier than today/lwdMin would otherwise get clamped forward to
   // the min on (re)mount, replacing the loaded value with "today".
@@ -1492,6 +1564,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      resignation never sees the field and saves null. */
   const [blacklisted, setBlacklisted]         = useState('No');
   const [blacklistReason, setBlacklistReason] = useState('');
+  /* Has the blacklist answer been DECIDED — either loaded off a saved case or
+     chosen by HR here? Until it is, a Termination flips it to Yes on its own
+     (the server does the same on save). Once decided, the type must never
+     overwrite the answer: HR filing a redundancy as a termination and setting
+     No back would otherwise have it snap to Yes again on the next render. */
+  const blacklistDecidedRef = useRef(false);
+  useEffect(() => {
+    if (exitType === 'Termination' && !blacklistDecidedRef.current) setBlacklisted('Yes');
+  }, [exitType]);
+  // A termination blacklists by default, so the REASON is not something HR has
+  // to type before the case can close — the exit type is the reason, and the
+  // server stamps that in words. A blacklist chosen on any other exit type is a
+  // deliberate act and still has to be justified.
+  const autoBlacklist = exitType === 'Termination';
 
   /* Stage 1's progress is measured on what has been SAVED, not on what is
      currently typed into the form.
@@ -1557,7 +1643,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setProfileLock(String(data.profile_lock ?? 'Unlocked'));
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
-        setBlacklisted(String(data.blacklisted ?? 'No') === 'Yes' ? 'Yes' : 'No');
+        /* A saved answer is the decided one. Nothing saved yet → leave it to
+           the termination default below, which is why this only latches the
+           ref when the server actually holds a value. */
+        if (data.blacklisted != null && String(data.blacklisted) !== '') {
+          setBlacklisted(String(data.blacklisted) === 'Yes' ? 'Yes' : 'No');
+          blacklistDecidedRef.current = true;
+        }
         setBlacklistReason(String(data.blacklist_reason ?? ''));
 
         if (data.stage_status && typeof data.stage_status === 'object') {
@@ -1664,7 +1756,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     // 6. Blacklisting someone needs a reason on record — it blocks re-hire, so
     //    a bare "Yes" with no justification must not close the case.
-    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim()) {
+    if (blacklistApplies && blacklisted === 'Yes' && !blacklistReason.trim() && !autoBlacklist) {
       items.push('Blacklist reason is required when blacklisting an employee');
     }
 
@@ -1772,7 +1864,24 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     return 0;
   };
 
+  /* Has the wizard actually got to this stage? A stage counts as reached once
+     HR is on it or past it, or it carries a status saved in an earlier session.
+
+     Stages that DERIVE their completion from data which is already settled
+     before HR arrives would otherwise report 100% from the moment the modal
+     opens: a probation exit owes no notice recovery, so Notice Period Payment
+     measured "nothing outstanding" and sat there as Completed / 100% while
+     Stage 1 was still an empty form. The percentage is meant to describe work
+     HR has done, so a stage nobody has opened yet reads Pending / 0% however
+     satisfied its own measure happens to be. Reaching it flips it to whatever
+     the measure genuinely says — including straight to 100%. */
+  const reachedStage = (n: StageKey): boolean => {
+    const num = stages.find(s => s.key === n)?.num ?? 1;
+    return num <= stage || !!stageStatus[n];
+  };
+
   const effStatusOf = (n: StageKey): StageStatus => {
+    if (!reachedStage(n)) return 'Pending';
     // Clearance & Handover — only complete when EVERY clearance is approved AND
     // EVERY assigned asset is handed over. A stale persisted "Completed" must
     // not show 100% while clearances/assets are still pending.
@@ -1824,6 +1933,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === currentKey || rawStagePct(n) > 0
         || stageStatus[n] === 'In Progress' || stageStatus[n] === 'Completed') return 'In Progress';
     return 'Pending';
+  };
+
+  /* Percentage as SHOWN in the stepper. Same gate as the status above: a stage
+     the wizard hasn't reached reads 0%, not its pre-satisfied measure. */
+  const stagePctOf = (n: StageKey): number => {
+    if (!reachedStage(n)) return 0;
+    return effStatusOf(n) === 'Completed' ? 100 : rawStagePct(n);
   };
 
   const completed = stages.filter(s => effStatusOf(s.key) === 'Completed').length;
@@ -2018,7 +2134,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           // The last-working-day rule depends on whether a notice is served,
           // so the message has to say the right thing for each exit type.
           const lwdMsg = noticeServed
-            ? 'the last working day must be a future date on/after the notice period end date'
+            ? 'the last working day must be on/after the notice period end date'
             : settlement === 'pay_in_lieu'
               ? 'the last working day cannot be before the termination date'
               : 'the last working day cannot be before the notice start date';
@@ -2325,7 +2441,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           <aside className="ep-sidebar">
             {stages.map(s => {
               const st = effStatusOf(s.key);
-              const stagePct = st === 'Completed' ? 100 : rawStagePct(s.key);
+              const stagePct = stagePctOf(s.key);
               return (
                 <button
                   key={s.key}
@@ -2451,7 +2567,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           : earlyResignation
                             ? `Not applicable — resigned within ${EARLY_EXIT_DAYS} days of joining${earlyTenure != null ? ` (${earlyTenure} day(s))` : ''}. No notice period is served, the exit can be effective immediately, and this employee is not included in payroll processing.`
                             : (employee?.noticePeriodDays != null
-                                ? 'Auto-calculated from the notice start date + the employee’s notice period.'
+                                ? 'Auto-calculated — the notice start date counts as day 1, so the notice ends on start + notice period − 1.'
                                 : 'No notice period set on this employee — set it on the employee record to auto-fill.')}
                       </div>
                     </EpField>
@@ -2482,8 +2598,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.');
                               }
-                            } else if (v <= todayIso) {
-                              toast.warning('Invalid last working day', 'Last working day cannot be today or a past date.');
                             } else if (v < lwdMin) {
                               toast.warning(
                                 'Invalid last working day',
@@ -2508,11 +2622,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 ? (settlement === 'pay_in_lieu'
                                     ? 'Last working day cannot be before the termination date.'
                                     : 'Last working day cannot be before the notice start date.')
-                                : (lwd <= todayIso
-                                    ? 'Last working day cannot be today or a past date.'
-                                    : (noticePeriodEnd
-                                        ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
-                                        : 'Last working day must be after the notice start date.')))
+                                : (noticePeriodEnd
+                                    ? `Last working day must be on or after the notice period end date (${fmtDateShort(noticePeriodEnd)}).`
+                                    : 'Last working day must be after the notice start date.'))
                             : 'Last working day is required.'}
                         </div>
                       )}
@@ -2749,18 +2861,39 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 {settlement === 'recover' && (
                   <>
                     <div className="ep-section-label">Notice Period — Recovery</div>
-                    <div className={`ep-echo ${effSettleStatus === 'Settled' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
+                    {/* NA is a settled question, not an outstanding one: there
+                        is nothing to recover (probation, an early resignation,
+                        or a notice served in full), so the band read
+                        "₹0.00 recoverable … not settled yet · Pending" over a
+                        stage the sidebar already showed as 100% Completed. It
+                        now says so, and matches the Notice Period Payment
+                        stage's own "Not applicable" wording. */}
+                    <div className={`ep-echo ${effSettleStatus === 'Settled' || effSettleStatus === 'NA' ? 'is-ok' : effSettleStatus === 'Rejected' ? 'is-no' : 'is-due'}`}>
                       <i className={effSettleStatus === 'Settled' ? 'ri-check-double-line'
+                        : effSettleStatus === 'NA' ? 'ri-shield-check-line'
                         : effSettleStatus === 'Rejected' ? 'ri-close-circle-line' : 'ri-time-line'} />
                       <span className="ep-echo-txt">
-                        <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
-                        {effSettleStatus === 'Settled' ? 'collected and approved.'
-                          : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
-                          : 'not settled yet.'}
+                        {effSettleStatus === 'NA' ? (
+                          <>
+                            <strong>Nothing to recover</strong> —{' '}
+                            {onProbation ? 'the employee is on probation, so no notice period is served.'
+                              : earlyResignation ? `they resigned within ${EARLY_EXIT_DAYS} days of joining, so no notice period is served.`
+                              : 'the notice period carries no unserved days.'}
+                          </>
+                        ) : (
+                          <>
+                            <strong>{fmtMoney(settle.amount)}</strong> recoverable from the employee —{' '}
+                            {effSettleStatus === 'Settled' ? 'collected and approved.'
+                              : effSettleStatus === 'Rejected' ? 'the last payment was rejected, so it is still outstanding.'
+                              : 'not settled yet.'}
+                          </>
+                        )}
                         <em> Handled in Stage {stages.find(s => s.key === 'notice_payment')?.num ?? 2} — Notice Period Payment.</em>
                       </span>
                       <span className="ep-echo-pill">
-                        {effSettleStatus === 'Settled' ? 'Settled' : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
+                        {effSettleStatus === 'Settled' ? 'Settled'
+                          : effSettleStatus === 'NA' ? 'Not applicable'
+                          : effSettleStatus === 'Rejected' ? 'Rejected' : 'Pending'}
                       </span>
                     </div>
                   </>
@@ -3412,24 +3545,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     <>
                       <Col md={6}>
                         <EpField label="Blacklist Employee">
-                          <EpSelect value={blacklisted} onChange={setBlacklisted} options={['No', 'Yes']} />
-                          <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            Blocks re-hire — a blacklisted employee cannot be brought back,
-                            whatever the exit type.
+                          <EpSelect
+                            value={blacklisted}
+                            onChange={(v) => { blacklistDecidedRef.current = true; setBlacklisted(v); }}
+                            options={['No', 'Yes']}
+                          />
+                          <div className="ep-hint" style={{ fontSize: 11, color: autoBlacklist ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            {autoBlacklist
+                              ? 'Set automatically — a termination blacklists the employee. Rehiring them needs a fresh hiring process either way; change this to No only if the termination is not a bar on returning.'
+                              : 'Blocks re-hire — a blacklisted employee cannot be brought back, whatever the exit type.'}
                           </div>
                         </EpField>
                       </Col>
                       {blacklisted === 'Yes' && (
                         <Col md={6}>
-                          <EpField label="Blacklist Reason" required invalid={!blacklistReason.trim()}>
+                          <EpField label="Blacklist Reason" required={!autoBlacklist} invalid={!autoBlacklist && !blacklistReason.trim()}>
                             <EpInput
                               value={blacklistReason}
                               onChange={setBlacklistReason}
-                              placeholder="Why this employee is being blacklisted"
+                              placeholder={autoBlacklist ? 'Optional — the termination itself is recorded as the reason' : 'Why this employee is being blacklisted'}
                               maxLength={500}
-                              invalid={!blacklistReason.trim()}
+                              invalid={!autoBlacklist && !blacklistReason.trim()}
                             />
-                            {!blacklistReason.trim() && (
+                            {!autoBlacklist && !blacklistReason.trim() && (
                               <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                                 <i className="ri-error-warning-line" />A reason is required to blacklist.
                               </div>
@@ -4092,18 +4230,26 @@ function apiToExitRow(e: any): EmployeeRow {
        · disabled, exit completed    → Exited, as any completed exit is.
 
      The drop for the first case happens in loadEmployees(), which is the only
-     place that can remove a row rather than re-label it. */
-  const statusExited = ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
+     place that can remove a row rather than re-label it.
+
+     The terminal-status test is GATED ON THERE BEING AN EXIT CASE for the same
+     reason. `Inactive` is not only set by completing an exit — HR can pick it
+     straight off the employee edit form — and on its own it made a plain
+     switched-off employee, who never resigned and has no exit row, show up
+     under Exited Employees. An exit is the case, not the status column; the
+     status only corroborates one. */
+  const hasExitCase  = !!ex;
+  const statusExited = hasExitCase && ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';
   const exitInitiated = !!ex && (
     !!ex.exit_type || !!ex.last_working_day || !!ex.notice_date || Number(ex.current_stage) >= 1
   );
 
   let status: ExitStatus;
-  // NOTE: "Exited" here means a completed/closed exit case OR a terminal
-  // employees.status (Resigned / Terminated / Inactive). An Inactive employee
-  // has been deactivated (login disabled) so they're no longer active staff —
-  // they show in the Exited tab, never the Active Employees list.
+  // NOTE: "Exited" means a completed/closed exit case, or an exit case whose
+  // employee also carries a terminal employees.status (Resigned / Terminated /
+  // Inactive). Both halves need the case: being switched off in HR > Employees
+  // is not an exit, and must never put someone in the Exited tab.
   if      (caseClosed || statusExited)                              status = 'Exited';
   else if (exitInitiated || statusNotice)                           status = 'Exit In Progress';
   else if (!e.email || !e.department_id || !e.designation_id)        status = 'Missing Details';
@@ -4137,6 +4283,7 @@ function apiToExitRow(e: any): EmployeeRow {
     exitInitiated,
     exitType: String(ex?.exit_type ?? ''),
     noticeStartIso: noticeRaw,
+    lastWorkingIso: ex?.last_working_day ? String(ex.last_working_day).slice(0, 10) : '',
     blacklisted: !!ex && (ex.blacklisted === true || String(ex.blacklisted).toLowerCase() === 'yes'),
     // Prefer the explicit integer; fall back to parsing the label ("90 Days")
     // since notice_period_days is often null while notice_period holds "N Days".
