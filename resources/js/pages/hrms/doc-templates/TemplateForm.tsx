@@ -643,11 +643,16 @@ export default function TemplateFormPage() {
                 hatch wedged in front of it read as part of that title. */}
             <div className="d-flex align-items-center gap-2 flex-shrink-0">
               <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+              {/* The shared .frm-cstrip-back pill (resources/css/app.css), same as
+                  Trigger Point Master and the other masters — a labelled button
+                  rather than a bare arrow, so the way out of a 3-step wizard is
+                  readable rather than guessed. Sized down to sit beside the step
+                  pill in this narrower gradient bar. */}
               <Tooltip label="Back to templates">
-                <button type="button" onClick={() => navigate('/hr/doc-templates')}
-                  style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}
-                  aria-label="Back to templates">
-                  <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
+                <button type="button" className="frm-cstrip-back tpl-head-back"
+                  onClick={() => navigate('/hr/doc-templates')}>
+                  <i className="ri-arrow-left-line" />
+                  Back
                 </button>
               </Tooltip>
             </div>
@@ -1244,6 +1249,13 @@ function TplFormDarkStyles() {
   return (
     <style>{`
       @keyframes tplspin { to { transform: rotate(360deg); } }
+
+      /* The shared back pill is built for a light header strip; this one sits on
+         a purple gradient, so it keeps the white fill (it reads as the way out)
+         but drops to the height of the step pill beside it. */
+      .tpl-form-page .tpl-head-back { height: 34px; padding: 0 14px; border-radius: 10px; font-size: 12px; border-color: rgba(255,255,255,.55); }
+      .tpl-form-page .tpl-head-back i { font-size: 14px; }
+      [data-bs-theme="dark"] .tpl-form-page .tpl-head-back { background: #fff; color: #6d28d9; }
 
       [data-bs-theme="dark"] .tpl-form-page .tpl-step-strip {
         background: var(--vz-card-bg) !important;

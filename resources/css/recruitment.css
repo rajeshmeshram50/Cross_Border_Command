@@ -927,7 +927,10 @@
   display: inline-flex; align-items: center; gap: 12px;
   padding: 14px 22px;
   border-radius: 14px;
-  background: var(--vz-card-bg, #fff);
+  /* --vz-secondary-bg: this box is an overlay, not card content, so the
+     card-scoped var was empty and it rendered white — with --vz-body-color
+     going light in dark mode, that was near-invisible text on white. */
+  background: var(--vz-secondary-bg, #fff);
   color: var(--vz-body-color, #0c2c3a);
   font-size: 14px; font-weight: 700;
   box-shadow: 0 18px 44px rgba(8, 40, 60, 0.28);
@@ -2495,9 +2498,13 @@
   position: relative;
   padding: 18px 22px 8px;
   display: flex; flex-direction: column; gap: 14px;
-  background: var(--vz-card-bg, #ffffff);
+  /* A modal body is portalled to <body>, outside every `.card`, so the
+     card-scoped var was empty here and the #ffffff fallback won.
+     The dark override below tried to fix exactly this and used the SAME broken
+     var — no fallback, so it was simply dropped and the light rule stayed.
+     One theme-aware var handles both modes; the override is now redundant. */
+  background: var(--vz-secondary-bg, #ffffff);
 }
-[data-bs-theme="dark"] .rec-cancel-body { background: var(--vz-card-bg); }
 
 /* Recruitment summary card */
 .rec-cancel-summary {
@@ -11150,7 +11157,8 @@
           height: 36px;
           border-radius: 50%;
           border: 1.5px solid var(--vz-border-color);
-          background: var(--vz-card-bg, #fff);
+          /* Card-scoped var, used outside a card — white button in dark mode. */
+          background: var(--vz-secondary-bg, #fff);
           color: var(--vz-primary, #405189);
           font-size: 20px;
           display: flex;
@@ -12188,4 +12196,751 @@
     var(--vz-card-bg, #1a1d29) 100%);
   color: rgba(255,255,255,0.70);
   border-bottom-color: var(--vz-border-color, #2c3242);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HRMS — responsive column priority
+   ══════════════════════════════════════════════════════════════════════════
+   These lists carry 7-13 columns behind a large minWidth, so on anything short
+   of a wide desktop they scrolled sideways and pushed Status / Actions — the
+   things the screens exist for — off the right edge. Columns drop by PRIORITY
+   instead, least useful first, and minWidth comes down with them (it is an
+   inline prop, hence !important) so what remains spreads out.
+
+   Columns are addressed by NAME via data-col, which DataTable stamps on every
+   th/td from the column's own id. nth-child was the obvious way to write this
+   and the wrong one: add a column, reorder one, or render one conditionally
+   (Exit Management's "Exit Type" appears on some tabs only) and every rule
+   after it silently hides a different column.
+
+   Scoping: seven HRMS pages share .rec-page, and Payroll alone renders four
+   different tables. Every block below is scoped to a page-specific or
+   table-specific class for that reason.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Employees — 11 cols, minWidth 1500 ──────────────────────────────────
+   Kept at every width: name, onboarding, actions. */
+@media (max-width: 1600px) {
+  .hr-employees-surface .dt-table [data-col="__dt_serial"],
+  .hr-employees-surface .dt-table [data-col="ancillaryRoles"] { display: none; }
+  .hr-employees-surface .dt-table { min-width: 1280px !important; }
+}
+@media (max-width: 1400px) {
+  /* Designation duplicates most of Department; Profile % is a progress bar. */
+  .hr-employees-surface .dt-table [data-col="designation"],
+  .hr-employees-surface .dt-table [data-col="profile"] { display: none; }
+  .hr-employees-surface .dt-table { min-width: 1040px !important; }
+}
+@media (max-width: 1200px) {
+  .hr-employees-surface .dt-table [data-col="manager"] { display: none; }
+  .hr-employees-surface .dt-table { min-width: 860px !important; }
+}
+@media (max-width: 992px) {
+  .hr-employees-surface .dt-table [data-col="department"] { display: none; }
+  .hr-employees-surface .dt-table { min-width: 680px !important; }
+}
+@media (max-width: 768px) {
+  /* Employee ID last — search accepts it and the name cell carries it. */
+  .hr-employees-surface .dt-table [data-col="id"] { display: none; }
+  .hr-employees-surface .dt-table { min-width: 520px !important; }
+}
+
+/* ── Exit Management — 11-12 cols, minWidth 1696/1866 ────────────────────
+   Kept: name, primaryRole, exitReadiness, status, actions. */
+@media (max-width: 1600px) {
+  .exit-page .dt-table [data-col="__dt_serial"],
+  .exit-page .dt-table [data-col="ancillary"] { display: none; }
+  .exit-page .dt-table { min-width: 1420px !important; }
+}
+@media (max-width: 1400px) {
+  .exit-page .dt-table [data-col="designation"] { display: none; }
+  .exit-page .dt-table { min-width: 1180px !important; }
+}
+@media (max-width: 1200px) {
+  .exit-page .dt-table [data-col="managerName"] { display: none; }
+  .exit-page .dt-table { min-width: 960px !important; }
+}
+@media (max-width: 992px) {
+  .exit-page .dt-table [data-col="department"] { display: none; }
+  .exit-page .dt-table { min-width: 760px !important; }
+}
+@media (max-width: 768px) {
+  .exit-page .dt-table [data-col="empId"] { display: none; }
+  .exit-page .dt-table { min-width: 600px !important; }
+}
+
+/* ── Payroll run — 11 cols, minWidth 1500 ────────────────────────────────
+   Kept: name, netPay, status, actions. */
+@media (max-width: 1500px) {
+  .pay-tbl-run .dt-table [data-col="__dt_serial"],
+  .pay-tbl-run .dt-table [data-col="designation"] { display: none; }
+  .pay-tbl-run .dt-table { min-width: 1240px !important; }
+}
+@media (max-width: 1300px) {
+  .pay-tbl-run .dt-table [data-col="department"] { display: none; }
+  .pay-tbl-run .dt-table { min-width: 1040px !important; }
+}
+@media (max-width: 1100px) {
+  .pay-tbl-run .dt-table [data-col="empId"] { display: none; }
+  .pay-tbl-run .dt-table { min-width: 860px !important; }
+}
+@media (max-width: 900px) {
+  /* Earnings and Deductions go together — Net Pay is exactly their result, so
+     dropping one would leave a sum that does not add up on screen. */
+  .pay-tbl-run .dt-table [data-col="earnings"],
+  .pay-tbl-run .dt-table [data-col="deductions"] { display: none; }
+  .pay-tbl-run .dt-table { min-width: 560px !important; }
+}
+
+/* ── Payroll report — 13 cols, minWidth 1900 (the widest table in HRMS) ──
+   Deduction components drop smallest-first, in pairs, so the remaining figures
+   still reconcile. Kept: name, netPayable, status, payslip — the full
+   breakdown is one click away inside the payslip. */
+@media (max-width: 1700px) {
+  .pay-tbl-report .dt-table [data-col="esi"],
+  .pay-tbl-report .dt-table [data-col="pt"] { display: none; }
+  .pay-tbl-report .dt-table { min-width: 1620px !important; }
+}
+@media (max-width: 1500px) {
+  .pay-tbl-report .dt-table [data-col="lopDeducted"],
+  .pay-tbl-report .dt-table [data-col="advanceRec"] { display: none; }
+  .pay-tbl-report .dt-table { min-width: 1320px !important; }
+}
+@media (max-width: 1300px) {
+  .pay-tbl-report .dt-table [data-col="pfEmp"],
+  .pay-tbl-report .dt-table [data-col="tds"] { display: none; }
+  .pay-tbl-report .dt-table { min-width: 1020px !important; }
+}
+@media (max-width: 1100px) {
+  .pay-tbl-report .dt-table [data-col="earnings"],
+  .pay-tbl-report .dt-table [data-col="totalDeductions"] { display: none; }
+  .pay-tbl-report .dt-table { min-width: 720px !important; }
+}
+@media (max-width: 900px) {
+  .pay-tbl-report .dt-table [data-col="empId"] { display: none; }
+  .pay-tbl-report .dt-table { min-width: 560px !important; }
+}
+
+/* ── Payroll attendance — 7 cols, minWidth 1100 ──────────────────────────── */
+@media (max-width: 992px) {
+  .pay-tbl-att .dt-table [data-col="lateMarks"],
+  .pay-tbl-att .dt-table [data-col="missingPunch"] { display: none; }
+  .pay-tbl-att .dt-table { min-width: 760px !important; }
+}
+@media (max-width: 768px) {
+  .pay-tbl-att .dt-table [data-col="mismatch"] { display: none; }
+  .pay-tbl-att .dt-table { min-width: 560px !important; }
+}
+
+/* ── Payroll salary roster — 7 cols, minWidth 1200 ───────────────────────── */
+@media (max-width: 1100px) {
+  .pay-tbl-roster .dt-table [data-col="department"],
+  .pay-tbl-roster .dt-table [data-col="source"] { display: none; }
+  .pay-tbl-roster .dt-table { min-width: 900px !important; }
+}
+@media (max-width: 900px) {
+  .pay-tbl-roster .dt-table [data-col="pf_eligible"] { display: none; }
+  .pay-tbl-roster .dt-table { min-width: 700px !important; }
+}
+@media (max-width: 768px) {
+  .pay-tbl-roster .dt-table [data-col="emp_code"] { display: none; }
+  .pay-tbl-roster .dt-table { min-width: 520px !important; }
+}
+
+/* ── Biometric Devices — 9 cols, minWidth 1250 ───────────────────────────
+   Kept: name, status, actions — is the device up, and what can I do. */
+@media (max-width: 1400px) {
+  /* Timezone is the tenant default almost everywhere; Allowed IPs is config
+     you open the device to edit, not something you scan a list for. */
+  .biodev-page .dt-table [data-col="timezone"],
+  .biodev-page .dt-table [data-col="allowed_ips"] { display: none; }
+  .biodev-page .dt-table { min-width: 950px !important; }
+}
+@media (max-width: 1100px) {
+  .biodev-page .dt-table [data-col="__dt_serial"],
+  .biodev-page .dt-table [data-col="branch"] { display: none; }
+  .biodev-page .dt-table { min-width: 760px !important; }
+}
+@media (max-width: 860px) {
+  /* The serial identifies the hardware; the name is what people call it by. */
+  .biodev-page .dt-table [data-col="serial"] { display: none; }
+  .biodev-page .dt-table { min-width: 540px !important; }
+}
+
+/* ── Broadcast Centre — 8 cols, minWidth 1250 ────────────────────────────
+   Kept: title, publish_at, actions. */
+@media (max-width: 1300px) {
+  .bcast-page .dt-table [data-col="__dt_serial"],
+  .bcast-page .dt-table [data-col="type"] { display: none; }
+  .bcast-page .dt-table { min-width: 1020px !important; }
+}
+@media (max-width: 1050px) {
+  .bcast-page .dt-table [data-col="audience"] { display: none; }
+  .bcast-page .dt-table { min-width: 840px !important; }
+}
+@media (max-width: 860px) {
+  .bcast-page .dt-table [data-col="code"],
+  .bcast-page .dt-table [data-col="priority"] { display: none; }
+  .bcast-page .dt-table { min-width: 520px !important; }
+}
+
+/* ── Leave — 9 cols, minWidth 1320 ───────────────────────────────────────
+   Kept: employee, fromDate (date range), stage (status), actions. */
+@media (max-width: 1400px) {
+  /* The approval chain is a row of avatars; the Status pill beside it already
+     says how far the request has got. */
+  .leave-page .dt-table [data-col="__dt_serial"],
+  .leave-page .dt-table [data-col="chain"] { display: none; }
+  .leave-page .dt-table { min-width: 1060px !important; }
+}
+@media (max-width: 1150px) {
+  /* Duration is derivable from the Date Range beside it. */
+  .leave-page .dt-table [data-col="durationLabel"],
+  .leave-page .dt-table [data-col="payroll"] { display: none; }
+  .leave-page .dt-table { min-width: 780px !important; }
+}
+@media (max-width: 880px) {
+  .leave-page .dt-table [data-col="typeName"] { display: none; }
+  .leave-page .dt-table { min-width: 560px !important; }
+}
+
+/* ── Custom Fields — 7 cols, minWidth 1100 ───────────────────────────────
+   Kept: name, variable, actions. The variable IS the reason this list exists —
+   people come here to copy the token. */
+@media (max-width: 1200px) {
+  .cf-page .dt-table [data-col="description"] { display: none; }
+  .cf-page .dt-table { min-width: 880px !important; }
+}
+@media (max-width: 950px) {
+  .cf-page .dt-table [data-col="__dt_serial"],
+  .cf-page .dt-table [data-col="used_in"] { display: none; }
+  .cf-page .dt-table { min-width: 680px !important; }
+}
+@media (max-width: 760px) {
+  .cf-page .dt-table [data-col="type"] { display: none; }
+  .cf-page .dt-table { min-width: 480px !important; }
+}
+
+/* ── Leave Plans (balances) ──────────────────────────────────────────────
+   The lt_* leave-type columns are built at runtime from the tenant's leave
+   types and are never hidden — they are the reason the table exists. Only the
+   two fixed identity columns give way. */
+@media (max-width: 1200px) {
+  .lplan-page .dt-table [data-col="location"] { display: none; }
+}
+@media (max-width: 900px) {
+  .lplan-page .dt-table [data-col="emp_code"] { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HRMS — layout below the table
+   ══════════════════════════════════════════════════════════════════════════
+   The column-priority rules above handle the TABLES. Everything around them —
+   page header, KPI strip, toolbar, tab rails, modals — was still built for a
+   desktop and broke in its own way on a narrow screen: action buttons pushed
+   out of the header card, four KPI tiles stacked into a 320px column before
+   the list even started, and the toolbar's search shrank to a stub beside a
+   filter it could not fit next to.
+
+   Written against SHARED hooks (.frm-cstrip, .rec-page-kpis, .dt-toolbar,
+   .dt-tabrail) plus the per-page classes, so one block covers all 15 HRMS
+   pages instead of fifteen near-identical ones drifting apart.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Page header strip ─────────────────────────────────────────────────── */
+@media (max-width: 991.98px) {
+  /* Title and actions stop competing for one line. */
+  .frm-cstrip { flex-direction: column; align-items: stretch; gap: 10px; }
+  .frm-cstrip-left { width: 100%; min-width: 0; }
+  .frm-cstrip-title { font-size: 16px; }
+}
+@media (max-width: 575.98px) {
+  .frm-cstrip { padding: 10px 14px; min-height: 0; }
+  .frm-cstrip-icon { width: 36px; height: 36px; border-radius: 10px; font-size: 17px; }
+  .frm-cstrip-title { font-size: 15px; }
+  /* The subtitle repeats what the page title and the menu already said. */
+  .frm-cstrip-sub { display: none; }
+  /* Header actions (Export / Add / Back) go full width and share the row
+     evenly — three half-width buttons beat three cramped ones. */
+  .frm-cstrip > .d-flex:last-child { width: 100%; }
+  .frm-cstrip > .d-flex:last-child > * { flex: 1 1 auto; justify-content: center; }
+  .frm-cstrip-back { width: 100%; height: 38px; }
+}
+
+/* ── KPI strip ─────────────────────────────────────────────────────────── */
+@media (max-width: 767.98px) {
+  /* Two up, not one. Four one-line counters read perfectly well side by side,
+     and stacked they ate ~320px before the list started. */
+  .rec-page-kpis > [class*="col-"] { flex: 0 0 50%; max-width: 50%; }
+  .rec-page-kpis .rec-kpi-card { padding: 10px 12px; }
+  .rec-page-kpis .rec-kpi-num { font-size: 18px; }
+  .rec-page-kpis .rec-kpi-label { font-size: 9.5px; }
+}
+@media (max-width: 340px) {
+  /* 340, not 400: a 393px iPhone sat the wrong side of that line and stacked
+     five tiles into a full screen of scrolling before the list even began.
+     Two-up still fits comfortably at 360-400; only the very smallest phones
+     genuinely need one. */
+  .rec-page-kpis > [class*="col-"] { flex: 0 0 100%; max-width: 100%; }
+}
+
+/* ── Table toolbar (search + filters + primary action) ─────────────────── */
+@media (max-width: 767.98px) {
+  .rec-page .dt-toolbar, .pay-page .dt-toolbar, .cf-page .dt-toolbar,
+  .hr-employees-surface .dt-toolbar, .hrexp-surface .dt-toolbar {
+    flex-wrap: wrap; row-gap: 8px;
+  }
+  /* Search takes its own line; the rest share the next one. */
+  .rec-page .dt-search, .pay-page .dt-search, .cf-page .dt-search,
+  .hr-employees-surface .dt-search, .hrexp-surface .dt-search {
+    flex: 1 1 100%; max-width: 100%;
+  }
+  .rec-page .dt-toolbar-actions, .pay-page .dt-toolbar-actions,
+  .cf-page .dt-toolbar-actions, .hr-employees-surface .dt-toolbar-actions {
+    width: 100%; margin-left: 0; justify-content: stretch; gap: 8px;
+  }
+  .rec-page .dt-toolbar-actions > *, .pay-page .dt-toolbar-actions > *,
+  .cf-page .dt-toolbar-actions > *, .hr-employees-surface .dt-toolbar-actions > * {
+    flex: 1 1 auto; justify-content: center;
+  }
+}
+
+/* ── Tab rails ─────────────────────────────────────────────────────────── */
+@media (max-width: 991.98px) {
+  /* Scroll sideways rather than wrap: a wrapped rail leaves one lonely tab on
+     a second line and shifts everything below it. The scrollbar is hidden —
+     the partly-visible next tab is the affordance. */
+  .rec-page .dt-tabrail, .pay-page .dt-tabrail, .cf-page .dt-tabrail,
+  .hr-employees-surface .dt-tabrail, .hrexp-surface .dt-tabrail {
+    overflow-x: auto; scrollbar-width: none; max-width: 100%;
+  }
+  .rec-page .dt-tabrail::-webkit-scrollbar, .pay-page .dt-tabrail::-webkit-scrollbar,
+  .cf-page .dt-tabrail::-webkit-scrollbar, .hr-employees-surface .dt-tabrail::-webkit-scrollbar,
+  .hrexp-surface .dt-tabrail::-webkit-scrollbar { display: none; }
+  .rec-page .dt-tabs, .pay-page .dt-tabs, .cf-page .dt-tabs,
+  .hr-employees-surface .dt-tabs, .hrexp-surface .dt-tabs { flex-wrap: nowrap; }
+}
+
+/* ── Table body on phones ──────────────────────────────────────────────── */
+@media (max-width: 575.98px) {
+  /* The card gets its height from a viewport-fit calc; on a phone that calc
+     can leave nothing over and the rows collapsed to zero — the pager still
+     read "Showing 1-5 of 5" above an empty gap. A floor keeps them on screen. */
+  .rec-page .dt-table-wrap, .pay-page .dt-table-wrap, .cf-page .dt-table-wrap,
+  .hr-employees-surface .dt-table-wrap, .hrexp-surface .dt-table-wrap { min-height: 240px; }
+
+  /* Every HRMS list, same rule as Employees above: on a phone the dropped
+     columns come back and the table scrolls. Hiding is a laptop trade — there
+     it saves a drag; here it just deletes data from the screen. */
+  .rec-page .dt-table th[data-col], .rec-page .dt-table td[data-col],
+  .pay-page .dt-table th[data-col], .pay-page .dt-table td[data-col],
+  .cf-page .dt-table th[data-col], .cf-page .dt-table td[data-col],
+  .hrexp-surface .dt-table th[data-col], .hrexp-surface .dt-table td[data-col],
+  .pay-tbl-run .dt-table th[data-col], .pay-tbl-run .dt-table td[data-col],
+  .pay-tbl-report .dt-table th[data-col], .pay-tbl-report .dt-table td[data-col],
+  .pay-tbl-att .dt-table th[data-col], .pay-tbl-att .dt-table td[data-col],
+  .pay-tbl-roster .dt-table th[data-col], .pay-tbl-roster .dt-table td[data-col],
+  .exit-page .dt-table th[data-col], .exit-page .dt-table td[data-col],
+  .leave-page .dt-table th[data-col], .leave-page .dt-table td[data-col],
+  .bcast-page .dt-table th[data-col], .bcast-page .dt-table td[data-col],
+  .biodev-page .dt-table th[data-col], .biodev-page .dt-table td[data-col],
+  .lplan-page .dt-table th[data-col], .lplan-page .dt-table td[data-col] { display: table-cell; }
+  .rec-page .dt-table tbody td, .pay-page .dt-table tbody td, .cf-page .dt-table tbody td,
+  .hr-employees-surface .dt-table tbody td, .hrexp-surface .dt-table tbody td {
+    padding: 6px 8px; font-size: 11px;
+  }
+  /* Pager stacks instead of squeezing "Showing x-y of z" against the controls. */
+  .rec-page .tc-wl-pag, .pay-page .tc-wl-pag, .cf-page .tc-wl-pag,
+  .hr-employees-surface .tc-wl-pag, .hrexp-surface .tc-wl-pag {
+    flex-direction: column; gap: 8px; align-items: stretch; text-align: center;
+  }
+}
+
+/* ── Modals ────────────────────────────────────────────────────────────── */
+@media (max-width: 575.98px) {
+  /* Bootstrap's default modal margin leaves a sliver of page either side on a
+     phone, which reads as a mis-sized dialog. Full-bleed with a small inset. */
+  .modal-dialog { margin: 8px; max-width: calc(100% - 16px); }
+  /* Footer buttons stack full width — two half-width buttons at phone size are
+     both too small to hit reliably. */
+  .modal-footer { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .modal-footer > * { width: 100%; margin: 0 !important; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   HRMS — phone (<=576px) fit-and-finish
+   Everything below came out of testing the Employees page at 393px.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Employees list on a phone ──────────────────────────────────────────
+   At 768px the table is down to Employee · Primary Role · Onboarding · Actions
+   with min-width 520 — still ~130px wider than the screen, so the Onboarding
+   pill and the action buttons sat half off the right edge. Drop Primary Role
+   and let the table fit the viewport instead of scrolling. */
+@media (max-width: 576px) {
+  /* PHONE: put every column BACK.
+   *
+   * The breakpoints above drop columns as the window narrows, which is right
+   * on a laptop — there the alternative is dragging a table sideways to reach
+   * Status. On a phone that reasoning inverts: you are going to scroll
+   * whatever happens, and hiding eight of eleven columns does not make the
+   * screen smaller, it makes the DATA unreachable. Employee ID, Department,
+   * Manager and the rest simply were not on the phone at all, and no amount of
+   * scrolling brought them back.
+   *
+   * So below 576 the cascade is undone and the table returns to its full width,
+   * scrolling horizontally like any table on a phone does.
+   */
+  /* [data-col] on the selector is load-bearing, not decoration.
+     The hiding rules above are `.hr-employees-surface .dt-table [data-col="x"]`
+     — two classes + an attribute (0,3,0). A plain `... th, ... td` is two
+     classes + an element (0,2,1), which LOSES the tie, so the restore parsed
+     fine, shipped fine and changed nothing. Adding [data-col] makes it (0,3,1)
+     and it wins. */
+  .hr-employees-surface .dt-table th[data-col],
+  .hr-employees-surface .dt-table td[data-col] { display: table-cell; }
+  .hr-employees-surface .dt-table { min-width: 1100px !important; }
+
+  /* The email line stays hidden — it is the one thing in the row that is long
+     without being scannable, and it is on the record itself. */
+  .hr-employees-surface .dt-table [data-col="name"] a[href^="mailto"] { display: none; }
+  .hr-employees-surface .dt-table [data-col="onboarding"] { white-space: nowrap; }
+}
+
+
+/* ── Wizard modals (Edit Employee and friends) ─────────────────────────── */
+@media (max-width: 767.98px) {
+  /* The step rail is four labelled circles joined by lines — it cannot wrap
+     without the connectors going to pieces, so it scrolls. Hidden scrollbar;
+     the half-visible next step is the affordance. */
+  .emp-stepper-bar { padding: 12px 14px !important; overflow-x: auto; scrollbar-width: none; }
+  .emp-stepper-bar::-webkit-scrollbar { display: none; }
+  .emp-stepper-bar > .d-flex { min-width: max-content; }
+  .emp-stepper-label { font-size: 9px; letter-spacing: 0; }
+  .emp-stepper-circle { width: 24px; height: 24px; font-size: 10.5px; }
+  /* The connector was the widest part of each step — shrinking it is what
+     brings a fourth step within reach instead of parking it off-screen. */
+  .emp-stepper-line { min-width: 10px; width: 10px; }
+  .emp-stepper-btn { padding-left: 4px; padding-right: 4px; }
+  /* The active step gets a little breathing room on either side so it does not
+     land flush against the edge when scrolled into view. */
+  .emp-stepper-bar > .d-flex { padding: 0 6px; }
+}
+@media (max-width: 575.98px) {
+  /* Footer actions go full width. A right-aligned "Next" on a phone sits under
+     the thumb of one hand only, and Back/Next side by side are both too small
+     to hit reliably. Reversed so the primary action is on top. */
+  .emp-footer-bar { flex-direction: column-reverse !important; align-items: stretch !important; gap: 8px; }
+  .emp-footer-bar > * { width: 100%; justify-content: center; }
+  /* …but a row of icon-only buttons inside the footer stays a row. */
+  .emp-footer-bar .d-flex { width: 100%; justify-content: center; }
+}
+
+/* ── Modal body padding on phones ──────────────────────────────────────── */
+@media (max-width: 575.98px) {
+  .emp-modal-wide .modal-body { padding: 12px 14px !important; }
+  /* Two-column form rows become one — a 46%-wide date input is unusable. */
+  .emp-modal-wide .row > [class*="col-md-"],
+  .emp-modal-wide .row > [class*="col-lg-"] { flex: 0 0 100%; max-width: 100%; }
+}
+
+/* ── Phone: the horizontal scroll must actually work ────────────────────── */
+@media (max-width: 576px) {
+  /* autoFitRows tables get overflow-y hidden elsewhere; make sure the X axis
+     is never caught by that, and give the scrollbar a visible thumb so it is
+     obvious the table continues past the edge. */
+  .rec-page .dt-scroll, .pay-page .dt-scroll, .cf-page .dt-scroll,
+  .hr-employees-surface .dt-scroll, .hrexp-surface .dt-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hr-employees-surface .dt-scroll::-webkit-scrollbar { height: 6px; }
+
+  /* Tab rail: the count badge on the last tab was clipping against the card
+     edge. Padding inside the scroller keeps it clear of the rounded corner. */
+  .rec-page .dt-tabs, .pay-page .dt-tabs, .cf-page .dt-tabs,
+  .hr-employees-surface .dt-tabs, .hrexp-surface .dt-tabs { padding-right: 10px; }
+  .rec-page .dt-tabrail, .pay-page .dt-tabrail, .cf-page .dt-tabrail,
+  .hr-employees-surface .dt-tabrail, .hrexp-surface .dt-tabrail { padding-right: 4px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Recruitment — responsive
+   ══════════════════════════════════════════════════════════════════════════
+   These two pages live in pages/recruitment/, not pages/hrms/, so the HRMS
+   sweep above missed them entirely — they were still desktop-only. Same rules,
+   same reasoning: columns drop by priority on laptops, everything comes back
+   on a phone where you scroll anyway.
+
+   Recruitment list (14 cols behind minWidth 1800):
+     code · jobTitle · department · designation · employmentType · openings
+     experience · workMode · priority · hiringManagerName · assignedHrName
+     startDate · deadline · __actions
+   Kept at every width: jobTitle, deadline, __actions.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 1600px) {
+  /* Experience and Work Mode are filters people set once, not things they scan
+     a list for. */
+  .recruit-page .dt-table [data-col="experience"],
+  .recruit-page .dt-table [data-col="workMode"] { display: none; }
+  .recruit-page .dt-table { min-width: 1520px !important; }
+}
+@media (max-width: 1400px) {
+  .recruit-page .dt-table [data-col="designation"],
+  .recruit-page .dt-table [data-col="employmentType"] { display: none; }
+  .recruit-page .dt-table { min-width: 1220px !important; }
+}
+@media (max-width: 1200px) {
+  /* Two owner columns; the assigned HR is the one who acts on the row. */
+  .recruit-page .dt-table [data-col="hiringManagerName"],
+  .recruit-page .dt-table [data-col="startDate"] { display: none; }
+  .recruit-page .dt-table { min-width: 980px !important; }
+}
+@media (max-width: 992px) {
+  .recruit-page .dt-table [data-col="department"],
+  .recruit-page .dt-table [data-col="openings"] { display: none; }
+  .recruit-page .dt-table { min-width: 780px !important; }
+}
+@media (max-width: 768px) {
+  .recruit-page .dt-table [data-col="priority"],
+  .recruit-page .dt-table [data-col="assignedHrName"] { display: none; }
+  .recruit-page .dt-table { min-width: 560px !important; }
+}
+
+/* Hiring-requests modal table — 11 cols, minWidth 1500.
+   code · position · department · requestedByName · openings · requestType
+   urgency · status · requestDate · targetJoinDate · __actions
+   Kept: position, status, __actions. */
+@media (max-width: 1400px) {
+  .rec-req-modal .dt-table [data-col="requestType"],
+  .rec-req-modal .dt-table [data-col="requestDate"] { display: none; }
+  .rec-req-modal .dt-table { min-width: 1240px !important; }
+}
+@media (max-width: 1150px) {
+  .rec-req-modal .dt-table [data-col="department"],
+  .rec-req-modal .dt-table [data-col="openings"] { display: none; }
+  .rec-req-modal .dt-table { min-width: 980px !important; }
+}
+@media (max-width: 900px) {
+  .rec-req-modal .dt-table [data-col="requestedByName"],
+  .rec-req-modal .dt-table [data-col="urgency"] { display: none; }
+  .rec-req-modal .dt-table { min-width: 720px !important; }
+}
+
+/* ── Phone ─────────────────────────────────────────────────────────────── */
+@media (max-width: 576px) {
+  /* Columns back, table scrolls — see the Employees block for the reasoning.
+     [data-col] on the selector is what wins the specificity tie against the
+     hiding rules above (attribute beats element). */
+  .recruit-page .dt-table th[data-col], .recruit-page .dt-table td[data-col],
+  .cand-page .dt-table th[data-col], .cand-page .dt-table td[data-col],
+  .rec-req-modal .dt-table th[data-col], .rec-req-modal .dt-table td[data-col] { display: table-cell; }
+  .recruit-page .dt-table { min-width: 1300px !important; }
+  .cand-page .dt-table { min-width: 1100px !important; }
+  .rec-req-modal .dt-table { min-width: 1100px !important; }
+
+  /* Tab rail was clipping its first and last tab against the card's rounded
+     corners — the "ss 0" in the screenshot was "In Progress 0". */
+  .recruit-page .dt-tabrail, .cand-page .dt-tabrail, .rec-req-modal .dt-tabrail {
+    overflow-x: auto; scrollbar-width: none; padding-left: 4px; padding-right: 4px;
+  }
+  .recruit-page .dt-tabrail::-webkit-scrollbar,
+  .cand-page .dt-tabrail::-webkit-scrollbar,
+  .rec-req-modal .dt-tabrail::-webkit-scrollbar { display: none; }
+  .recruit-page .dt-tabs, .cand-page .dt-tabs, .rec-req-modal .dt-tabs {
+    flex-wrap: nowrap; padding-right: 10px;
+  }
+
+  /* The hiring-requests dialog specifically: constrain the whole chain so the
+     table scrolls inside it. :has() covers most browsers, these named selectors
+     cover the rest — the dialog is the one place a stretched box is invisible
+     until it has already pushed the content off screen. */
+  .rec-req-modal .modal-dialog { max-width: calc(100% - 16px); margin: 8px; }
+  .rec-req-modal .rec-req-content { min-width: 0; max-width: 100%; overflow: hidden; }
+  .rec-req-modal .modal-body { min-width: 0; overflow-x: hidden; }
+  .rec-req-modal .dt-table-wrap, .rec-req-modal .dt-root { min-width: 0; max-width: 100%; }
+
+  /* Modal header: the close button had been pushed onto its own line under a
+     wrapped title, which reads as a broken layout. Pin it beside the title. */
+  .rec-req-header { flex-wrap: nowrap !important; align-items: flex-start !important; padding: 12px 14px !important; gap: 10px !important; }
+  .rec-req-header h5 { font-size: 15px !important; }
+  .rec-req-header .rec-close-btn { flex-shrink: 0; }
+  /* The subtitle is a sentence of context, not something you need on a phone
+     while looking at the list underneath it. */
+  .rec-req-header h5 + div { display: none; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Phone card mode — rows stop being rows
+   ══════════════════════════════════════════════════════════════════════════
+   A table with 11-14 columns cannot be made pleasant on a 393px screen. Hiding
+   columns loses data; keeping them means dragging a 1300px table sideways to
+   read one record. Both were tried here and both were wrong.
+
+   Below 576px each ROW becomes a CARD and each cell becomes a "Label  value"
+   line, so every field is visible by scrolling the way a phone already scrolls
+   — down. No horizontal scrolling at all.
+
+   The label comes from data-label, which DataTable stamps from the column's
+   own header text. Cells whose header is JSX (icon-only columns like Actions)
+   get no label and simply centre their content.
+
+   Scoped to the HRMS + recruitment pages that have been through this pass.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 576px) {
+  .recruit-page .dt-table, .cand-page .dt-table, .rec-req-modal .dt-table,
+  .hr-employees-surface .dt-table, .exit-page .dt-table, .leave-page .dt-table,
+  .bcast-page .dt-table, .biodev-page .dt-table, .cf-page .dt-table,
+  .pay-tbl-run .dt-table, .pay-tbl-report .dt-table,
+  .pay-tbl-att .dt-table, .pay-tbl-roster .dt-table {
+    display: block; min-width: 0 !important; width: 100%;
+  }
+
+  /* The header row has nothing to head once rows are cards; the labels move
+     into the cells. Kept in the DOM so column sizing logic is undisturbed. */
+  .recruit-page .dt-table thead, .cand-page .dt-table thead, .rec-req-modal .dt-table thead,
+  .hr-employees-surface .dt-table thead, .exit-page .dt-table thead, .leave-page .dt-table thead,
+  .bcast-page .dt-table thead, .biodev-page .dt-table thead, .cf-page .dt-table thead,
+  .pay-tbl-run .dt-table thead, .pay-tbl-report .dt-table thead,
+  .pay-tbl-att .dt-table thead, .pay-tbl-roster .dt-table thead { display: none; }
+
+  .recruit-page .dt-table tbody, .cand-page .dt-table tbody, .rec-req-modal .dt-table tbody,
+  .hr-employees-surface .dt-table tbody, .exit-page .dt-table tbody, .leave-page .dt-table tbody,
+  .bcast-page .dt-table tbody, .biodev-page .dt-table tbody, .cf-page .dt-table tbody,
+  .pay-tbl-run .dt-table tbody, .pay-tbl-report .dt-table tbody,
+  .pay-tbl-att .dt-table tbody, .pay-tbl-roster .dt-table tbody { display: block; }
+
+  /* One card per record. */
+  .recruit-page .dt-table tbody tr, .cand-page .dt-table tbody tr, .rec-req-modal .dt-table tbody tr,
+  .hr-employees-surface .dt-table tbody tr, .exit-page .dt-table tbody tr, .leave-page .dt-table tbody tr,
+  .bcast-page .dt-table tbody tr, .biodev-page .dt-table tbody tr, .cf-page .dt-table tbody tr,
+  .pay-tbl-run .dt-table tbody tr, .pay-tbl-report .dt-table tbody tr,
+  .pay-tbl-att .dt-table tbody tr, .pay-tbl-roster .dt-table tbody tr {
+    display: block;
+    margin: 0 0 10px;
+    padding: 4px 2px;
+    border: 1px solid var(--vz-border-color, #e5e7eb);
+    border-radius: 12px;
+    background: var(--vz-secondary-bg, #fff);
+    box-shadow: 0 1px 3px rgba(15,23,42,.05);
+  }
+
+  /* Every cell becomes a label/value line. */
+  .recruit-page .dt-table tbody td, .cand-page .dt-table tbody td, .rec-req-modal .dt-table tbody td,
+  .hr-employees-surface .dt-table tbody td, .exit-page .dt-table tbody td, .leave-page .dt-table tbody td,
+  .bcast-page .dt-table tbody td, .biodev-page .dt-table tbody td, .cf-page .dt-table tbody td,
+  .pay-tbl-run .dt-table tbody td, .pay-tbl-report .dt-table tbody td,
+  .pay-tbl-att .dt-table tbody td, .pay-tbl-roster .dt-table tbody td {
+    display: flex !important;
+    align-items: center;
+    justify-content: space-between !important;
+    gap: 12px;
+    width: auto;
+    max-width: none;
+    text-align: right !important;
+    padding: 7px 12px;
+    border: 0;
+    border-bottom: 1px solid var(--vz-border-color, #f1f5f9);
+    white-space: normal;
+  }
+  .recruit-page .dt-table tbody tr td:last-child,
+  .cand-page .dt-table tbody tr td:last-child,
+  .rec-req-modal .dt-table tbody tr td:last-child,
+  .hr-employees-surface .dt-table tbody tr td:last-child,
+  .exit-page .dt-table tbody tr td:last-child,
+  .leave-page .dt-table tbody tr td:last-child,
+  .bcast-page .dt-table tbody tr td:last-child,
+  .biodev-page .dt-table tbody tr td:last-child,
+  .cf-page .dt-table tbody tr td:last-child,
+  .pay-tbl-run .dt-table tbody tr td:last-child,
+  .pay-tbl-report .dt-table tbody tr td:last-child,
+  .pay-tbl-att .dt-table tbody tr td:last-child,
+  .pay-tbl-roster .dt-table tbody tr td:last-child { border-bottom: 0; }
+
+  /* The label. Cells with no data-label (icon-only columns) get no ::before,
+     and centre their buttons instead of hugging the right edge. */
+  .recruit-page .dt-table tbody td[data-label]::before,
+  .cand-page .dt-table tbody td[data-label]::before,
+  .rec-req-modal .dt-table tbody td[data-label]::before,
+  .hr-employees-surface .dt-table tbody td[data-label]::before,
+  .exit-page .dt-table tbody td[data-label]::before,
+  .leave-page .dt-table tbody td[data-label]::before,
+  .bcast-page .dt-table tbody td[data-label]::before,
+  .biodev-page .dt-table tbody td[data-label]::before,
+  .cf-page .dt-table tbody td[data-label]::before,
+  .pay-tbl-run .dt-table tbody td[data-label]::before,
+  .pay-tbl-report .dt-table tbody td[data-label]::before,
+  .pay-tbl-att .dt-table tbody td[data-label]::before,
+  .pay-tbl-roster .dt-table tbody td[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    max-width: 45%;
+    text-align: left;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--vz-secondary-color, #6b7280);
+  }
+  .recruit-page .dt-table tbody td:not([data-label]),
+  .cand-page .dt-table tbody td:not([data-label]),
+  .rec-req-modal .dt-table tbody td:not([data-label]),
+  .hr-employees-surface .dt-table tbody td:not([data-label]),
+  .exit-page .dt-table tbody td:not([data-label]),
+  .leave-page .dt-table tbody td:not([data-label]),
+  .bcast-page .dt-table tbody td:not([data-label]),
+  .biodev-page .dt-table tbody td:not([data-label]),
+  .cf-page .dt-table tbody td:not([data-label]),
+  .pay-tbl-run .dt-table tbody td:not([data-label]),
+  .pay-tbl-report .dt-table tbody td:not([data-label]),
+  .pay-tbl-att .dt-table tbody td:not([data-label]),
+  .pay-tbl-roster .dt-table tbody td:not([data-label]) { justify-content: center !important; }
+
+  /* The serial number is noise once each record is its own card. */
+  .recruit-page .dt-table tbody td[data-col="__dt_serial"],
+  .cand-page .dt-table tbody td[data-col="__dt_serial"],
+  .hr-employees-surface .dt-table tbody td[data-col="__dt_serial"],
+  .exit-page .dt-table tbody td[data-col="__dt_serial"],
+  .leave-page .dt-table tbody td[data-col="__dt_serial"],
+  .bcast-page .dt-table tbody td[data-col="__dt_serial"],
+  .biodev-page .dt-table tbody td[data-col="__dt_serial"],
+  .cf-page .dt-table tbody td[data-col="__dt_serial"],
+  .pay-tbl-run .dt-table tbody td[data-col="__dt_serial"] { display: none !important; }
+
+  /* Let the CARDS flow and the PAGE scroll — drop the inner scroll box.
+   *
+   * On a desktop the table lives in a fixed-height box (fitToViewport +
+   * autoFitRows) that scrolls internally, so the pager stays pinned at the
+   * bottom of the card. In card mode that height calc has nothing sensible to
+   * compute: a card row is several times taller than a table row, the box
+   * collapsed to almost nothing, and the rows rendered inside a strip with no
+   * height — which is exactly the empty gap between the search and the pager.
+   *
+   * A phone already scrolls vertically. Height auto, overflow visible, and the
+   * cards simply extend the page. */
+  .recruit-page .dt-table-wrap, .cand-page .dt-table-wrap, .rec-req-modal .dt-table-wrap,
+  .hr-employees-surface .dt-table-wrap, .exit-page .dt-table-wrap, .leave-page .dt-table-wrap,
+  .bcast-page .dt-table-wrap, .biodev-page .dt-table-wrap, .cf-page .dt-table-wrap,
+  .pay-page .dt-table-wrap {
+    height: auto !important; max-height: none !important; min-height: 0 !important;
+    flex: 0 0 auto; overflow: visible;
+  }
+  .recruit-page .dt-scroll, .cand-page .dt-scroll, .rec-req-modal .dt-scroll,
+  .hr-employees-surface .dt-scroll, .exit-page .dt-scroll, .leave-page .dt-scroll,
+  .bcast-page .dt-scroll, .biodev-page .dt-scroll, .cf-page .dt-scroll,
+  .pay-page .dt-scroll {
+    height: auto !important; max-height: none !important;
+    overflow: visible !important;
+    padding: 8px 8px 0;
+  }
+  /* The card shell no longer needs a viewport height either. */
+  .recruit-page .dt-root, .cand-page .dt-root, .rec-req-modal .dt-root,
+  .hr-employees-surface .dt-root, .exit-page .dt-root, .leave-page .dt-root,
+  .bcast-page .dt-root, .biodev-page .dt-root, .cf-page .dt-root,
+  .pay-page .dt-root { height: auto !important; max-height: none !important; }
+
+  /* The empty-state row must not be dressed as a card. */
+  .dt-table tbody tr.dt-empty-row { border: 0 !important; box-shadow: none !important; background: transparent !important; }
+  .dt-table tbody tr.dt-empty-row td { display: block !important; text-align: center !important; border: 0 !important; }
+  .dt-table tbody tr.dt-empty-row td::before { content: none !important; }
 }

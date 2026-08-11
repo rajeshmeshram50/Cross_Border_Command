@@ -27,7 +27,11 @@ const REVIEW_DESC_PREVIEW  = 300;
 const attachBtn: React.CSSProperties = {
   width: 30, height: 30, borderRadius: 8, flexShrink: 0,
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  background: 'var(--vz-card-bg, #fff)',
+  /* --vz-secondary-bg, NOT --vz-card-bg. Bootstrap scopes --vz-card-bg to
+     `.card`; these buttons sit on an attachment row outside one, so the var
+     resolved to nothing, the #fff fallback won, and they stayed white on a
+     dark page. --vz-secondary-bg is a :root var and follows the theme. */
+  background: 'var(--vz-secondary-bg, #fff)',
   border: '1px solid var(--vz-border-color, #e5e7eb)',
   fontSize: 15, cursor: 'pointer',
 };
@@ -409,7 +413,7 @@ export default function HrBroadcastCentre() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          <div className="rec-page">
+          <div className="rec-page bcast-page">
             {/* Header strip — same shape as the Clients / Branches headers. */}
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />

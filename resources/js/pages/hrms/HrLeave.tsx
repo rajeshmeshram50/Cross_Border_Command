@@ -679,7 +679,7 @@ export default function HrLeave() {
 
       <Row>
         <Col xs={12}>
-          <div className="rec-page">
+          <div className="rec-page leave-page">
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
