@@ -5,8 +5,11 @@ import { useToast } from '../contexts/ToastContext';
 
 /**
  * "Proceed to Pay" disbursement flow:
- *   mode select → payment advice (cheque) / NEFT batch (online) → 3-level
- *   sign-off → initiate → success. Backed by /payroll/payment/* endpoints.
+ *   mode select → payment advice → 3-level sign-off → initiate → success.
+ *   Backed by /payroll/payment/* endpoints.
+ *
+ * Salaries are disbursed by cheque / payment-advice letter only. The online
+ * NEFT batch was withdrawn, so there is no bank-file rail here.
  */
 export interface PaymentDisbursementModalProps {
   open: boolean;
@@ -18,11 +21,19 @@ export interface PaymentDisbursementModalProps {
 }
 
 type Step = 'mode' | 'advice' | 'approval' | 'success';
-interface AdviceRow { payslip_id: number; name: string; emp_code: string; department: string | null; bank: string | null; account: string | null; ifsc: string | null; amount: number; status: 'Ready' | 'Held'; }
-interface Payment { id: number; mode: 'cheque' | 'online'; status: string; company_name: string; bank_name: string | null; period: string | null; eligible_count: number; held_count: number; total_count: number; total: number; rows: AdviceRow[]; batch_ref: string | null; }
+type BankGroup = 'hdfc' | 'other';
+interface AdviceRow { payslip_id: number; name: string; emp_code: string; department: string | null; bank: string | null; bank_group: BankGroup; account: string | null; ifsc: string | null; amount: number; status: 'Ready' | 'Held'; }
+interface Payment { id: number; mode: 'cheque'; status: string; company_name: string; bank_name: string | null; period: string | null; eligible_count: number; held_count: number; total_count: number; total: number; rows: AdviceRow[]; batch_ref: string | null; }
 
 const fmtINR = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n || 0);
 const fmtShort = (n: number) => { if (n >= 1e7) return `₹${(n / 1e7).toFixed(2)}Cr`; if (n >= 1e5) return `₹${(n / 1e5).toFixed(2)}L`; if (n >= 1e3) return `₹${(n / 1e3).toFixed(1)}K`; return `₹${Math.round(n)}`; };
+/* The advice is read as two sheets — the bank files them separately. The
+   server tags each row (App\Support\BankGroup), so the tab only filters. */
+const TABS: { key: BankGroup; label: string; icon: string }[] = [
+  { key: 'hdfc',  label: 'HDFC Bank',  icon: 'ri-bank-line' },
+  { key: 'other', label: 'Other Bank', icon: 'ri-exchange-line' },
+];
+
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#3b82f6', '#f59e0b', '#e83e8c', '#0c63b0', '#108548', '#a06f00'];
 
 export default function PaymentDisbursementModal({ open, onClose, runId, cycleLabel, onPaid }: PaymentDisbursementModalProps) {
@@ -33,20 +44,33 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
   const [prep, setPrep] = useState({ prepared_by: '', verified_by: '', approved_by: '' });
   const [result, setResult] = useState<{ paid: number; held: number; batch_ref: string } | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [tab, setTab] = useState<BankGroup>('hdfc');
 
   useEffect(() => {
-    if (open) { setStep('mode'); setPayment(null); setPrep({ prepared_by: '', verified_by: '', approved_by: '' }); setResult(null); }
+    if (open) { setStep('mode'); setPayment(null); setPrep({ prepared_by: '', verified_by: '', approved_by: '' }); setResult(null); setTab('hdfc'); }
   }, [open]);
 
   const readyRows = useMemo(() => payment?.rows.filter(r => r.status === 'Ready') ?? [], [payment]);
 
+  /** Rows on the open sheet, and what that sheet is worth. */
+  const tabRows  = useMemo(() => payment?.rows.filter(r => r.bank_group === tab) ?? [], [payment, tab]);
+  const tabTotal = useMemo(() => tabRows.filter(r => r.status === 'Ready').reduce((sum, r) => sum + r.amount, 0), [tabRows]);
+  const tabReady = useMemo(() => tabRows.filter(r => r.status === 'Ready').length, [tabRows]);
+  const tabHeld  = tabRows.length - tabReady;
+  /** Row counts per tab — shown on the tab itself so an empty sheet is not a surprise. */
+  const tabCounts = useMemo(() => {
+    const c: Record<BankGroup, number> = { hdfc: 0, other: 0 };
+    payment?.rows.forEach(r => { c[r.bank_group] = (c[r.bank_group] ?? 0) + 1; });
+    return c;
+  }, [payment]);
+
   if (!open) return null;
 
-  const choose = async (mode: 'cheque' | 'online') => {
+  const choose = async () => {
     if (!runId) return;
     setBusy(true);
     try {
-      const res = await api.post('/payroll/payment/prepare', { run_id: runId, mode });
+      const res = await api.post('/payroll/payment/prepare', { run_id: runId, mode: 'cheque' });
       setPayment(res.data?.data);
       setStep('advice');
     } catch (err: any) {
@@ -73,26 +97,22 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
     } finally { setBusy(false); }
   };
 
+  /** Label + filename stem for whichever sheet is open. */
+  const tabLabel = TABS.find(t => t.key === tab)?.label ?? '';
+  const fileStem = `${tab === 'hdfc' ? 'HDFC' : 'OtherBank'}_${cycleLabel.replace(/\s+/g, '_')}`;
+
   const exportExcel = async () => {
     if (!payment) return;
     try {
       const XLSX = await import('xlsx');
-      const sheet = payment.rows.map((r, i) => ({ 'Sr': i + 1, 'Employee': r.name, 'Emp Code': r.emp_code, 'Department': r.department, 'Account': r.account, 'IFSC': r.ifsc, 'Amount': r.amount, 'Status': r.status }));
+      // The open sheet only — exporting all 13 rows from a screen showing 10
+      // is how a batch gets filed with employees nobody reviewed.
+      const sheet = tabRows.map((r, i) => ({ 'Sr': i + 1, 'Employee': r.name, 'Emp Code': r.emp_code, 'Department': r.department, 'Bank': r.bank, 'Account': r.account, 'IFSC': r.ifsc, 'Amount': r.amount, 'Status': r.status }));
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet), 'Payment Advice');
-      XLSX.writeFile(wb, `PaymentAdvice_${cycleLabel.replace(' ', '_')}.xlsx`);
-      toast.success('Excel ready', 'Payment advice exported.');
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheet), tabLabel);
+      XLSX.writeFile(wb, `PaymentAdvice_${fileStem}.xlsx`);
+      toast.success('Excel ready', `${tabLabel} advice exported (${tabRows.length} employees).`);
     } catch { toast.error('Export failed', 'Could not build the Excel file.'); }
-  };
-
-  const exportBankFile = async () => {
-    if (!payment) return;
-    try {
-      const res = await api.get(`/payroll/payment/${payment.id}/bank-file`, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const a = document.createElement('a'); a.href = url; a.download = `BankFile_${cycleLabel.replace(' ', '_')}.csv`; a.click(); URL.revokeObjectURL(url);
-      toast.success('Bank file ready', 'NEFT bank file downloaded.');
-    } catch (err: any) { toast.error('Export failed', err?.response?.data?.message || 'Could not generate the bank file.'); }
   };
 
   // PDF export — no client-side PDF lib is bundled, so render a clean printable
@@ -103,13 +123,12 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
     const w = window.open('', '_blank', 'width=980,height=720');
     if (!w) { toast.error('Export failed', 'Allow pop-ups for this site to export the PDF.'); return; }
     const esc = (s: unknown) => String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string));
-    const online = payment.mode === 'online';
-    const headCols = ['#', 'Employee', 'Emp Code', 'Department', 'Bank', 'Account', ...(online ? [] : ['IFSC']), 'Amount', 'Status'];
-    const bodyRows = payment.rows.map((r, i) =>
-      `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.emp_code)}</td><td>${esc(r.department)}</td><td>${esc(r.bank)}</td><td>${esc(r.account)}</td>${online ? '' : `<td>${esc(r.ifsc)}</td>`}<td class="amt">₹${fmtINR(r.amount)}</td><td>${esc(r.status)}</td></tr>`,
+    const headCols = ['#', 'Employee', 'Emp Code', 'Department', 'Bank', 'Account', 'IFSC', 'Amount', 'Status'];
+    const bodyRows = tabRows.map((r, i) =>
+      `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${esc(r.emp_code)}</td><td>${esc(r.department)}</td><td>${esc(r.bank)}</td><td>${esc(r.account)}</td><td>${esc(r.ifsc)}</td><td class="amt">₹${fmtINR(r.amount)}</td><td>${esc(r.status)}</td></tr>`,
     ).join('');
     w.document.write(
-      '<!doctype html><html><head><meta charset="utf-8"><title>Payment Advice</title>' +
+      `<!doctype html><html><head><meta charset="utf-8"><title>Payment Advice — ${esc(tabLabel)}</title>` +
       '<style>' +
       '*{font-family:Arial,Helvetica,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}' +
       'body{margin:24px;color:#111}h1{font-size:18px;margin:0 0 4px}' +
@@ -120,7 +139,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
       '@media print{@page{margin:14mm}}' +
       '</style></head><body>' +
       `<h1>Payment Advice — ${esc(payment.company_name)}</h1>` +
-      `<div class="meta">${esc(payment.period || cycleLabel)} · ${payment.eligible_count} employees · Total ₹${fmtINR(payment.total)}</div>` +
+      `<div class="meta">${esc(tabLabel)} · ${esc(payment.period || cycleLabel)} · ${tabReady} employees · Total ₹${fmtINR(tabTotal)}</div>` +
       `<table><thead><tr>${headCols.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${bodyRows}</tbody></table>` +
       '</body></html>',
     );
@@ -143,6 +162,28 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
         [data-bs-theme="dark"] .pdm-modal .btn-light { background: var(--vz-secondary-bg) !important; color: var(--vz-body-color) !important; border-color: var(--vz-border-color) !important; }
         .pdm-export-item { display: flex; align-items: center; width: 100%; padding: 8px 10px; border: none; background: transparent; border-radius: 8px; font-size: 13px; color: var(--vz-body-color); cursor: pointer; text-align: left; }
         .pdm-export-item:hover { background: var(--vz-secondary-bg); }
+        /* Sheet tabs. The active one is marked by an underline flush with the
+           header's bottom border, so the table below reads as that tab's body. */
+        .pdm-tab {
+          border: none; background: transparent; cursor: pointer;
+          padding: 10px 14px 9px; margin-bottom: -1px;
+          font-size: 12.5px; font-weight: 600;
+          color: var(--vz-secondary-color);
+          border-bottom: 2px solid transparent;
+          display: inline-flex; align-items: center; gap: 2px;
+          white-space: nowrap;
+        }
+        .pdm-tab:hover { color: var(--vz-body-color); }
+        .pdm-tab[data-active="true"] { color: #5a3fd1; border-bottom-color: #7c5cfc; }
+        [data-bs-theme="dark"] .pdm-modal .pdm-tab[data-active="true"] { color: #c4b5fd; }
+        .pdm-tab-count {
+          margin-left: 6px; padding: 1px 7px; border-radius: 999px;
+          font-size: 10.5px; font-weight: 700;
+          background: var(--vz-secondary-bg); color: var(--vz-secondary-color);
+        }
+        .pdm-tab[data-active="true"] .pdm-tab-count { background: #ece6ff; color: #5a3fd1; }
+        [data-bs-theme="dark"] .pdm-modal .pdm-tab-count { background: rgba(255,255,255,0.10); color: #cbd5e1; }
+        [data-bs-theme="dark"] .pdm-modal .pdm-tab[data-active="true"] .pdm-tab-count { background: rgba(124,92,252,0.28); color: #c4b5fd; }
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-purple { background: rgba(124,92,252,0.20) !important; color: #c4b5fd !important; }
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-green  { background: rgba(16,185,129,0.20) !important; color: #6ee7b7 !important; }
         [data-bs-theme="dark"] .pdm-modal .pdm-acc-amber  { background: rgba(245,158,11,0.20) !important; color: #fcd34d !important; }
@@ -159,8 +200,7 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
       <div style={{ padding: 20 }}>
         <div className="text-uppercase fw-bold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.08em', color: 'var(--vz-secondary-color)' }}>Select Payment Mode</div>
         <div className="d-flex gap-3 flex-wrap">
-          <ModeCard icon="ri-mail-send-line" tint="#ece6ff" fg="#5a3fd1" title="Cheque / Letter" sub="Print payment advice" disabled={busy} onClick={() => choose('cheque')} />
-          <ModeCard icon="ri-bank-line" tint="#d6f4e3" fg="#0a8a78" title="Online Transfer" sub="Bank file / NEFT batch" disabled={busy} onClick={() => choose('online')} />
+          <ModeCard icon="ri-mail-send-line" tint="#ece6ff" fg="#5a3fd1" title="Cheque / Letter" sub="Print payment advice" disabled={busy} onClick={choose} />
         </div>
         {busy && <div className="text-center mt-3 text-muted" style={{ fontSize: 12.5 }}><i className="ri-loader-4-line" /> Preparing…</div>}
       </div>
@@ -169,31 +209,40 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
 
   // ── STEP: ADVICE / BATCH ──
   if (step === 'advice' && payment) {
-    const online = payment.mode === 'online';
     return shell(<>
       <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
         <div className="d-flex align-items-center gap-2">
-          <span className={`d-inline-flex align-items-center justify-content-center rounded ${online ? 'pdm-acc-green' : 'pdm-acc-purple'}`} style={{ width: 38, height: 38, background: online ? '#d6f4e3' : '#ece6ff', color: online ? '#0a8a78' : '#5a3fd1' }}><i className={online ? 'ri-bank-line' : 'ri-mail-line'} style={{ fontSize: 18 }} /></span>
+          <span className="d-inline-flex align-items-center justify-content-center rounded pdm-acc-purple" style={{ width: 38, height: 38, background: '#ece6ff', color: '#5a3fd1' }}><i className="ri-mail-line" style={{ fontSize: 18 }} /></span>
           <div>
-            <h5 className="mb-0 fw-bold" style={{ fontSize: 15 }}>{online ? 'Online Transfer · NEFT / Bank Batch' : 'Cheque / Payment Advice Letter'}</h5>
+            <h5 className="mb-0 fw-bold" style={{ fontSize: 15 }}>Cheque / Payment Advice Letter</h5>
             <small className="text-muted" style={{ fontSize: 11.5 }}>{payment.company_name} · {payment.period} · {payment.eligible_count} employees · {fmtShort(payment.total)}</small>
           </div>
         </div>
         <button type="button" className="btn btn-sm" onClick={onClose}><i className="ri-close-line" style={{ fontSize: 18 }} /></button>
       </div>
 
+      <div className="pdm-tabs" style={{ padding: '0 22px', borderBottom: '1px solid var(--vz-border-color)', display: 'flex', gap: 4 }}>
+        {TABS.map(t => (
+          <button key={t.key} type="button" className="pdm-tab" data-active={tab === t.key}
+            onClick={() => { setTab(t.key); setExportOpen(false); }}>
+            <i className={`${t.icon} me-1`} />{t.label}
+            <span className="pdm-tab-count">{tabCounts[t.key]}</span>
+          </button>
+        ))}
+      </div>
+
       <div style={{ padding: '8px 22px', background: 'var(--vz-secondary-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--vz-border-color)' }}>
-        <span className="fw-semibold" style={{ fontSize: 13 }}>Total: <span style={{ color: '#108548' }}>₹{fmtINR(payment.total)}</span> · Employees: {payment.eligible_count}{payment.held_count > 0 ? ` · ${payment.held_count} held` : ''}</span>
-        <span className="badge rounded-pill pdm-badge-green" style={{ background: '#d6f4e3', color: '#108548' }}>{readyRows.length} ready</span>
+        <span className="fw-semibold" style={{ fontSize: 13 }}>{TABS.find(t => t.key === tab)?.label} total: <span style={{ color: '#108548' }}>₹{fmtINR(tabTotal)}</span> · Employees: {tabReady}{tabHeld > 0 ? ` · ${tabHeld} held` : ''}</span>
+        <span className="badge rounded-pill pdm-badge-green" style={{ background: '#d6f4e3', color: '#108548' }}>{tabReady} ready</span>
       </div>
 
       <div style={{ overflowY: 'auto', flex: 1 }}>
         <table className="table align-middle table-nowrap mb-0" style={{ fontSize: 13 }}>
           <thead className="table-light" style={{ position: 'sticky', top: 0 }}>
-            <tr><th className="ps-3">Employee</th><th>Bank</th><th>Account</th>{!online && <th>IFSC</th>}<th className="text-end">Amount</th><th className="text-center pe-3">Status</th></tr>
+            <tr><th className="ps-3">Employee</th><th>Bank</th><th>Account</th><th>IFSC</th><th className="text-end">Amount</th><th className="text-center pe-3">Status</th></tr>
           </thead>
           <tbody>
-            {payment.rows.map((r, i) => (
+            {tabRows.map((r, i) => (
               <tr key={r.payslip_id}>
                 <td className="ps-3">
                   <div className="d-flex align-items-center gap-2">
@@ -203,13 +252,19 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
                 </td>
                 <td>{r.bank || <span className="text-danger">— Missing —</span>}</td>
                 <td className="font-monospace" style={{ fontSize: 12 }}>{r.account || '–'}</td>
-                {!online && <td className="font-monospace" style={{ fontSize: 12 }}>{r.ifsc || '–'}</td>}
+                <td className="font-monospace" style={{ fontSize: 12 }}>{r.ifsc || '–'}</td>
                 <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{fmtINR(r.amount)}</td>
                 <td className="text-center pe-3"><span className={`badge rounded-pill ${r.status === 'Ready' ? 'pdm-badge-neutral' : 'pdm-badge-red'}`} style={r.status === 'Ready' ? { background: '#eef2f6', color: '#5b6478' } : { background: '#fde7e3', color: '#b1401d' }}>{r.status}</span></td>
               </tr>
             ))}
           </tbody>
         </table>
+        {tabRows.length === 0 && (
+          <div className="text-center text-muted" style={{ padding: '34px 20px', fontSize: 12.5 }}>
+            <i className="ri-inbox-line d-block mb-1" style={{ fontSize: 22, opacity: 0.5 }} />
+            No employees on the {TABS.find(t => t.key === tab)?.label} sheet this cycle.
+          </div>
+        )}
       </div>
 
       <div style={{ padding: '12px 22px', borderTop: '1px solid var(--vz-border-color)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -222,11 +277,6 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
               <div onClick={() => setExportOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 9 }} />
               <div className="pdm-export-menu" style={{ position: 'absolute', bottom: 'calc(100% + 6px)', left: 0, minWidth: 190, background: 'var(--shim-card-bg,#fff)', border: '1px solid var(--vz-border-color)', borderRadius: 10, boxShadow: '0 12px 32px rgba(15,23,42,0.22)', padding: 6, zIndex: 10 }}>
                 <div className="text-uppercase fw-bold px-2 pt-1 pb-2" style={{ fontSize: 9.5, letterSpacing: '0.07em', color: 'var(--vz-secondary-color)' }}>Export as</div>
-                {online && (
-                  <button type="button" className="pdm-export-item" onClick={() => { setExportOpen(false); exportBankFile(); }}>
-                    <i className="ri-bank-line me-2 text-primary" />Bank File (.csv)
-                  </button>
-                )}
                 <button type="button" className="pdm-export-item" onClick={() => { setExportOpen(false); exportExcel(); }}>
                   <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
                 </button>
@@ -238,9 +288,9 @@ export default function PaymentDisbursementModal({ open, onClose, runId, cycleLa
           )}
         </div>
         <button type="button" className="btn btn-sm fw-semibold ms-auto text-white" disabled={busy || readyRows.length === 0}
-          style={{ background: online ? 'linear-gradient(135deg,#0a8a78,#0ab39c)' : 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '8px 16px' }}
+          style={{ background: 'linear-gradient(135deg,#7c5cfc,#5a3fd1)', border: 'none', opacity: busy || readyRows.length === 0 ? 0.6 : 1, padding: '8px 16px' }}
           onClick={() => setStep('approval')}>
-          <i className="ri-shield-check-line me-1" /> {online ? 'Approve & Initiate Payment' : 'Approve & Submit to Bank'}
+          <i className="ri-shield-check-line me-1" /> Approve &amp; Submit to Bank
         </button>
       </div>
     </>, 920);
