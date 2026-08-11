@@ -7,19 +7,25 @@ use App\Models\Payslip;
 use App\Models\PayrollPayment;
 use App\Models\PayrollRun;
 use App\Services\PayrollService;
+use App\Support\BankGroup;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
- * "Proceed to Pay" disbursement flow: choose mode (cheque / online NEFT),
- * review the payment advice / bank batch, capture a 3-level sign-off
- * (Prepared → Verified → Approved), then initiate (mark payslips Paid + lock).
+ * "Proceed to Pay" disbursement flow: review the payment advice, capture a
+ * 3-level sign-off (Prepared → Verified → Approved), then initiate (mark
+ * payslips Paid + lock).
  *
- *   POST /payroll/payment/prepare            {run_id, mode}
+ * Cheque / payment-advice letter is the only mode; the online NEFT batch was
+ * withdrawn. Historic payments may still carry mode 'online' and stay readable.
+ *
+ *   POST /payroll/payment/prepare            {run_id}
  *   GET  /payroll/payment/{id}               advice/batch detail
  *   POST /payroll/payment/{id}/approve       {prepared_by, verified_by, approved_by}
  *   POST /payroll/payment/{id}/initiate      disburse (Paid + lock)
- *   GET  /payroll/payment/{id}/bank-file      NEFT bank file (CSV)
+ *   GET  /payroll/payment/{id}/bank-file      NEFT bank file (CSV) — no longer
+ *                                            offered in the UI; kept so an
+ *                                            already-filed batch stays fetchable.
  *   GET  /payroll/payment/{id}/audit          audit trail
  */
 class PayrollPaymentController extends Controller
@@ -35,9 +41,12 @@ class PayrollPaymentController extends Controller
         if (!$this->canManage($request)) {
             return response()->json(['message' => 'You are not allowed to disburse payroll.'], 403);
         }
+        // Cheque / payment-advice letter is the only disbursement mode — the
+        // online NEFT batch was withdrawn. Historic payments may still carry
+        // mode 'online', which stays readable; it just can't be created again.
         $data = $request->validate([
             'run_id' => ['required', 'integer'],
-            'mode'   => ['required', 'in:cheque,online'],
+            'mode'   => ['nullable', 'in:cheque'],
         ]);
 
         $run = PayrollRun::with('period')->find($data['run_id']);
@@ -60,7 +69,7 @@ class PayrollPaymentController extends Controller
                 'client_id'         => $run->client_id,
                 'branch_id'         => $run->branch_id,
                 'payroll_period_id' => $run->payroll_period_id,
-                'mode'              => $data['mode'],
+                'mode'              => $data['mode'] ?? 'cheque',
                 'status'            => $payment->status === 'approved' ? 'approved' : 'draft',
                 'employee_count'    => $advice['eligible_count'],
                 'total_amount'      => $advice['total'],
@@ -137,7 +146,7 @@ class PayrollPaymentController extends Controller
 
         $result = $this->payroll->disburseRun($run, $request->user()?->id);
 
-        $batchRef = strtoupper(($payment->mode === 'online' ? 'NEFT' : 'CHQ')) . '-' . $run->id . '-' . now()->format('YmdHis');
+        $batchRef = 'CHQ-' . $run->id . '-' . now()->format('YmdHis');
         $payment->update([
             'status'    => $result['held'] === 0 ? 'paid' : 'approved',
             'paid_at'   => $result['held'] === 0 ? now() : null,
@@ -220,7 +229,7 @@ class PayrollPaymentController extends Controller
         // Live bank status per employee — same source disburseRun() uses, so the
         // advice "Ready" set exactly matches what gets paid.
         $bankMap = \App\Models\Employee::whereIn('id', $slips->pluck('employee_id'))
-            ->get(['id', 'bank_account_number', 'ifsc_code'])->keyBy('id');
+            ->get(['id', 'bank_account_number', 'ifsc_code', 'bank_name'])->keyBy('id');
         $rows = [];
         $total = 0; $eligible = 0; $held = 0;
         foreach ($slips as $s) {
@@ -239,6 +248,10 @@ class PayrollPaymentController extends Controller
                 'emp_code'   => $s->employee_code,
                 'department' => $s->department,
                 'bank'       => $acct ? ($ifsc ? substr($ifsc, 0, 4) . ' Bank' : 'Bank') : null,
+                // Which sheet of the advice this employee belongs on. Decided
+                // from the live employee record (IFSC first, HR's free-text bank
+                // name only as a fallback) — see App\Support\BankGroup.
+                'bank_group' => BankGroup::of($emp->bank_name ?? null, $ifsc),
                 'account'    => $acct ? ('XXXX-XXXX-' . substr($acct, -4)) : null,
                 'account_full' => $acct,
                 'ifsc'       => $ifsc,
