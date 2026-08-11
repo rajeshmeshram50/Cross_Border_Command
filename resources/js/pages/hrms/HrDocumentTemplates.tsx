@@ -608,6 +608,20 @@ function DtmDarkStyles() {
          table down instead of covering the rows it acts on. */
       /* Slot between the last row and the pager. Padded so the pill never
          touches either, and it does not stretch — the pill sizes to itself. */
+      /* Page gutters, copied from Supplier Management (.sup-fig in
+         p2p/.../supplier-management.css), which is the reference:
+
+             .sup-fig { margin: -6px 0 0; }
+
+         Note what it does NOT do: no horizontal negative margin. It keeps the
+         container's own side padding, so the card stays inset with page
+         background either side. My earlier guesses pulled the sides out to
+         -1.5rem, which ran the card edge to edge — a different layout, not a
+         tighter one. Vertically it only trims 6px; the rest of the gap is the
+         shell's, and every page lives with it. */
+      .dtm-page { margin: -6px 0 0; padding: 0; }
+      @media (max-width: 640px) { .dtm-page { margin: -2px 0 0; } }
+
       .dtm-page .dt-below-rows { flex-shrink: 0; padding: 10px 12px 2px; }
 
       .hdt-bulk-bar {
@@ -658,7 +672,7 @@ function DtmDarkStyles() {
          The search field is the control people actually use here, and the
          Trigger picker sat taller than everything beside it — so the strip read
          as mismatched heights with a small search box wedged in. */
-      .dtm-page .dt-search { flex: 0 4 400px; max-width: 400px; }
+      .dtm-page .dt-search { flex: 0 4 320px; max-width: 320px; }
       .dtm-page .master-select-toggle { min-height: 34px; height: 34px; padding-top: 0; padding-bottom: 0; }
       /* The Trigger picker is capped inline at 150px, which read as a cramped
          afterthought beside a 400px search. Overridden rather than edited in
@@ -696,6 +710,27 @@ function DtmDarkStyles() {
       .dtm-page .dt-tabrail { overflow-x: auto; scrollbar-width: none; }
       .dtm-page .dt-tabrail::-webkit-scrollbar { display: none; }
       .dtm-page .dt-tabs { flex-wrap: nowrap; }
+      /* The pill hugs its tabs; only the RAIL takes the full line.
+         DataTable's own @media (max-width: 1100px) sets .dt-tabs to
+         flex:1 1 100% so the tabs claim their own row when the toolbar gets
+         cramped — but that stretches the PILL, not just the row, leaving a wide
+         empty white slab to the right of the last tab. The rail above already
+         takes the line (flex: 1 0 100% at <=1500px), so the pill only needs to
+         be as wide as its tabs.
+         Above 760px only: on a phone the shared rule makes it full-width and
+         centred, which is the right call there. */
+      @media (min-width: 761px) {
+        .dtm-page .dt-toolbar .dt-tabs { flex: 0 0 auto; width: fit-content; max-width: 100%; }
+      }
+      /* ...but NOT the category rail in the header strip. Sideways scrolling
+         suits the six Level tabs, where any one of them is a short word. These
+         three are sentences ("Non IT Employee Documents (Operations)"), so the
+         rail was always wider than the card: it clipped the active tab mid-word
+         and hid the third one off the right edge, with no scrollbar to say so.
+         Three tabs wrap onto a second line perfectly well. */
+      .dtm-page .frm-cstrip .dt-tabrail { overflow-x: visible; max-width: 100%; }
+      .dtm-page .frm-cstrip .dt-tabs { flex-wrap: wrap; }
+      .dtm-page .frm-cstrip .dt-tab { white-space: normal; text-align: left; }
       /* DataTable keeps the toolbar on ONE line above 1200px, on the assumption
          that the tab rail will wrap its tabs INSIDE itself to give up width.
          Six role tabs scrolling on a single line cannot do that, so everything
@@ -716,7 +751,8 @@ function DtmDarkStyles() {
            card's rounded edge instead of scrolling inside it. */
         .dtm-page .frm-cstrip > * { min-width: 0; }
         .dtm-page .dt-tabrail { width: 100%; max-width: 100%; }
-        .dtm-page .dtm-kpi-num { font-size: 19px; }
+        /* Same inline-style override as the height rules below. */
+        .dtm-page .dtm-kpi-num { font-size: 19px !important; }
         /* The table body is flex:1 + min-height:0 inside a shell that gets its
            height from the viewport-fit calc. On a phone that calc leaves nothing
            over, so the rows collapsed to zero height — the pager still read
@@ -753,7 +789,7 @@ function DtmDarkStyles() {
          and Actions on screen instead of pushing them into a scroll. */
       @media (max-width: 991.98px) {
         .dtm-page .dtm-gen-word { display: none; }
-        .dtm-page .dtm-gen-btn { padding: 6px 10px; }
+        .dtm-page .dtm-gen-btn { padding: 6px 10px !important; }
       }
 
       /* ── Toolbar on phones ──
@@ -764,6 +800,65 @@ function DtmDarkStyles() {
         .dtm-page .dt-search { flex: 1 1 100%; max-width: 100%; }
         .dtm-page .dt-toolbar { row-gap: 8px; }
         .dtm-page .dtm-add-tpl-btn { flex: 1 1 auto; justify-content: center; }
+      }
+
+      /* ── Toolbar: shrink to fit rather than wrap ──
+         Six level tabs + search + the Trigger picker + Add Template is a lot
+         for one row. Past the point where they stop fitting, the toolbar was
+         wrapping and dropping Trigger + Add Template onto a second line, pinned
+         right, which reads as two unrelated strips.
+         Between 1200px and 1700px everything shrinks instead: smaller tab text,
+         tighter padding, a narrower search and Trigger. Nothing is hidden or
+         moved — it just gets smaller, and one row survives.
+         Below 1200px shrinking is no longer enough, so the existing rule takes
+         over and gives the rail a line of its own. */
+      @media (min-width: 1200px) and (max-width: 1699.98px) {
+        .dtm-page .dt-toolbar { flex-wrap: nowrap; }
+        .dtm-page .dt-tabrail { flex: 0 1 auto; min-width: 0; }
+        .dtm-page .dt-tab { padding-left: 10px; padding-right: 10px; font-size: 11.5px; }
+        .dtm-page .dt-tab-count { min-width: 17px; height: 17px; font-size: 9.5px; padding: 0 4px; }
+        .dtm-page .dt-search { flex: 0 3 240px; max-width: 240px; }
+        .dtm-page .dtm-filter-label { font-size: 10px; }
+        .dtm-page .dtm-filter-label + div { min-width: 130px !important; max-width: 150px !important; }
+        .dtm-page .dtm-add-tpl-btn { padding: 7px 10px !important; font-size: 11.5px !important; }
+      }
+
+      /* ── Density by viewport HEIGHT ──
+         Everything above was about width. What actually breaks this page is
+         height: zoom in, or use a laptop panel, and the viewport shrinks while
+         the KPI tiles, the two tab rails, the toolbar and the row height all
+         stay the same — so the table is left a sliver and the row count drops
+         to its floor with the last row still clipped.
+         Below 900px tall the chrome gives up a few pixels everywhere; below
+         740px it gives up more. Nothing is hidden — the same page, tighter, so
+         more rows fit instead of fewer. */
+      @media (max-height: 900px) {
+        .dtm-page .frm-cstrip { min-height: 56px; padding: 9px 16px; }
+        .dtm-page .frm-cstrip-icon { width: 38px; height: 38px; font-size: 18px; }
+        .dtm-page .frm-cstrip-title { font-size: 16px; }
+        .dtm-page .frm-cstrip-sub { font-size: 11.5px; margin-top: 2px; }
+        .dtm-page .dtm-kpi-tile .d-flex { padding: 8px 12px !important; }
+        /* !important throughout this block: the tiles and the Generate button
+           carry INLINE styles (fontSize / padding on the JSX), and an inline
+           declaration beats any stylesheet rule short of !important. Without
+           it these rules parse fine, ship fine and do nothing. */
+        .dtm-page .dtm-kpi-num { font-size: 18px !important; }
+        .dtm-page .dtm-kpi-label { font-size: 9.5px !important; }
+        .dtm-page .dt-table tbody td { padding: 5px 9px; }
+        .dtm-page .dt-table thead th { padding: 7px 9px; }
+        .dtm-page .dt-toolbar { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+      }
+      @media (max-height: 740px) {
+        /* The KPI row is the biggest single block that is not the table. It
+           keeps its numbers, on one line, at half the height. */
+        .dtm-page .dtm-kpi-tile .d-flex { padding: 6px 10px !important; }
+        .dtm-page .dtm-kpi-num { font-size: 16px !important; }
+        .dtm-page .dtm-kpi-tile > div:first-child { height: 3px !important; }
+        .dtm-page .frm-cstrip-sub { display: none; }
+        .dtm-page .dt-table tbody td { padding: 4px 8px; font-size: 11px; }
+        .dtm-page .dt-tab { padding-top: 5px; padding-bottom: 5px; }
+        .dtm-page .dt-table tbody .dt-serial { width: 20px; height: 20px; font-size: 9.5px; }
+        .dtm-page .dtm-gen-btn { padding: 4px 9px !important; font-size: 11px !important; }
       }
 
       /* ── Header strip on phones ──

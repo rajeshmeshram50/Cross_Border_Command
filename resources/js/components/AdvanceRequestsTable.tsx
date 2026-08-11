@@ -47,6 +47,8 @@ export type AdvanceRequestRow = {
   total_paid?: number;
   settlement_status?: 'unpaid' | 'partial' | 'paid';
   remaining_amount?: number | null;
+  // Zoho Books push state across this company advance's payouts (list column).
+  zoho_sync?: 'na' | 'pending' | 'partial' | 'completed';
   // Recorded payouts — surfaced as Payment entries in the audit log.
   payments?: { amount: number; method?: string | null; paid_by_name: string | null; paid_at: string | null }[];
   // Employee "Settle" — set on a fully-paid Company advance by the employee.
@@ -235,12 +237,17 @@ export function advanceRequestColumns({
         </span>
       ),
     },
+    // Reason is a SELF-advance concern (why the employee needs the money). A
+    // company advance's purpose lives in its distribution rows, so the column is
+    // dropped on the Company Used view to make room.
+    ...(usedFor === 'company' ? [] : [
     {
       header: 'Reason',
       accessorKey: 'reason',
       meta: { width: '14%' },
-      cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
+      cell: (info: any) => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
+    ] as DataTableColumn<AdvanceRequestRow>[]),
     {
       header: 'Amount',
       accessorKey: 'amount',
@@ -372,7 +379,7 @@ export function advanceRequestColumns({
     {
       // Employee "Settle" — a fully-paid COMPANY advance is settled by the
       // employee who took it (they've accounted for the company-paid amount).
-      header: () => <div className="text-center">Settle</div>,
+      header: () => <div className="text-center">Confirmation</div>,
       id: 'settle',
       enableSorting: false,
       meta: { width: '10%', align: 'center' },
@@ -395,14 +402,11 @@ export function advanceRequestColumns({
           if (r.settle_approval_status === 'rejected') {
             return pillEl('ri-close-circle-line', 'Reopened', '#fee2e2', '#b91c1c');
           }
-          if (r.settle_approval_status === 'pending') {
-            return pillEl('ri-time-line', 'In review', '#eef2ff', '#3730a3');
-          }
           if (r.settle_approval_status === 'approved' || r.employee_settled_at) {
             // For an under-spent (return) advance the settlement being approved
             // is NOT the end — the employee still has to pay the balance back,
             // and each return payment needs HR/branch confirmation. Reflect that
-            // follow-through here instead of a blanket "Approved".
+            // follow-through here instead of a blanket "Completed". (legacy path)
             if (r.settle_type === 'return') {
               if ((r.settle_return_pending ?? 0) > 0) {
                 return pillEl('ri-time-line', 'Return in review', '#fef3c7', '#a4661c');
@@ -415,9 +419,19 @@ export function advanceRequestColumns({
               }
               return pillEl('ri-arrow-go-back-line', 'Return due', '#fde8c4', '#a4661c');
             }
-            return pillEl('ri-checkbox-circle-line', 'Approved', '#d6f4e3', '#108548');
+            // Maximum used → the employee owes nothing but must raise an expense
+            // claim for the extra they spent. It's only "Completed" once that
+            // claim is actually raised; until then it's a "Partial" confirmation.
+            if (r.settle_type === 'reimburse') {
+              return r.settle_reimbursed
+                ? pillEl('ri-checkbox-circle-line', 'Completed', '#d6f4e3', '#108548')
+                : pillEl('ri-time-line', 'Partial', '#fde8c4', '#a4661c');
+            }
+            // Equal used — nothing more to do.
+            return pillEl('ri-checkbox-circle-line', 'Completed', '#d6f4e3', '#108548');
           }
-          return pillEl('ri-time-line', 'To settle', '#fde8c4', '#a4661c');
+          // Fully paid but the employee hasn't confirmed utilization yet.
+          return pillEl('ri-time-line', 'Pending', '#fde8c4', '#a4661c');
         }
         // Self: recovered from salary per the EMI schedule. Recovery can't start
         // until the advance has actually been PAID to the employee, so while the
@@ -433,6 +447,29 @@ export function advanceRequestColumns({
         return <span className="text-muted">—</span>;
       },
     },
+    // Zoho Books sync state — COMPANY advances only (a self advance is recovered
+    // from salary, never booked in Zoho). Mirrors the Expense Claims column.
+    ...(usedFor === 'company' ? [{
+      header: () => <div className="text-center">Zoho Sync</div>,
+      id: 'zoho_sync',
+      enableSorting: false,
+      meta: { width: '9%', align: 'center' },
+      cell: (info: any) => {
+        const z = (info.row.original.zoho_sync ?? 'na') as 'na' | 'pending' | 'partial' | 'completed';
+        if (z === 'na') return <span className="text-muted">—</span>;
+        const tone: Record<'pending' | 'partial' | 'completed', { bg: string; fg: string; icon: string; label: string }> = {
+          completed: { bg: '#d6f4e3', fg: '#108548', icon: 'ri-checkbox-circle-line', label: 'Completed' },
+          partial:   { bg: '#e0e7ff', fg: '#3730a3', icon: 'ri-loader-4-line',        label: 'Partial'   },
+          pending:   { bg: '#fde8c4', fg: '#a4661c', icon: 'ri-time-line',            label: 'Pending'   },
+        };
+        const t = tone[z];
+        return (
+          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
+            <i className={t.icon} /> {t.label}
+          </span>
+        );
+      },
+    }] as DataTableColumn<AdvanceRequestRow>[] : []),
     {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',

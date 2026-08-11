@@ -1131,11 +1131,30 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         }
       }
     }
-    if (!advReason.trim())     { errs.reason = 'Reason / purpose is required';    summary.push('Reason / purpose is required'); }
-    // Attachment / proof is mandatory for an advance request (QA #84).
-    if (!(advFiles && advFiles.length > 0)) {
-      errs.files = 'An attachment / proof is required to submit an advance request';
-      summary.push('An attachment / proof is required to submit an advance request');
+    if (advIsCompany) {
+      // Company advance — the distribution rows carry the purpose + proof, and
+      // must add up to the total Amount.
+      const rowsFilled = advItems.filter(it =>
+        String(it.amount).trim() || it.purpose.trim() || it.payment || it.file);
+      if (rowsFilled.length === 0) {
+        errs.items = 'Add at least one amount distribution row'; summary.push('Add at least one distribution row');
+      } else if (advItems.some(it => {
+        const a = Number(String(it.amount).replace(/[^\d.]/g, '')) || 0;
+        return !(a > 0) || !it.purpose.trim() || !it.payment || !it.file;
+      })) {
+        errs.items = 'Each row needs an amount, purpose, payment type and attachment';
+        summary.push('Complete every distribution row (amount, purpose, payment type, attachment)');
+      } else if (amt > 0 && Math.abs(advItemsTotal - amt) >= 0.005) {
+        errs.items = `Rows must total ₹${amt.toLocaleString('en-IN')} — currently ₹${advItemsTotal.toLocaleString('en-IN')}`;
+        summary.push('The distribution rows must add up to the advance amount');
+      }
+    } else {
+      if (!advReason.trim())     { errs.reason = 'Reason / purpose is required';    summary.push('Reason / purpose is required'); }
+      // Attachment / proof is mandatory for an advance request (QA #84).
+      if (!(advFiles && advFiles.length > 0)) {
+        errs.files = 'An attachment / proof is required to submit an advance request';
+        summary.push('An attachment / proof is required to submit an advance request');
+      }
     }
     if (Object.keys(errs).length > 0) {
       setAdvErrors(errs);
@@ -1163,7 +1182,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           }
         }
       }
-      fd.append('reason', advReason.trim());
       // Profile owner — same routing logic as expense-claim store(). The
       // backend resolves either numeric id or EMP- code, and gates the
       // "you can only file under yourself" rule for non-super-admins.
@@ -1172,7 +1190,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       } else if (profileEmpCode) {
         fd.append('employee_code', profileEmpCode);
       }
-      for (const f of advFiles) fd.append('files[]', f);
+      if (advIsCompany) {
+        // Distribution rows → request_items metadata + one proof file per row
+        // (index i lines up items[i] with files[i]). reason is synthesised from
+        // the row purposes so the server's reason requirement is satisfied.
+        const items = advItems.map((it, i) => ({
+          amount: Number(String(it.amount).replace(/[^\d.]/g, '')) || 0,
+          purpose: it.purpose.trim(),
+          payment_type: it.payment,
+          proof_index: i,
+        }));
+        fd.append('request_items', JSON.stringify(items));
+        fd.append('reason', items.map(it => `${it.purpose} (₹${it.amount.toLocaleString('en-IN')})`).join(' · ').slice(0, 500));
+        for (const it of advItems) if (it.file) fd.append('files[]', it.file);
+      } else {
+        fd.append('reason', advReason.trim());
+        for (const f of advFiles) fd.append('files[]', f);
+      }
 
       await api.post('/advance-requests', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -1227,13 +1261,48 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Who the advance is for: 'self' (recovered from salary — the default/current
   // flow) or 'company' (spent for the company, NOT recovered). For 'company' the
   // date field becomes an Expected Use Date and Recovery Mode is disabled.
-  const [advUsedFor, setAdvUsedFor] = useState('self');
+  const [advUsedFor, setAdvUsedFor] = useState('company');
   const [advRequestedDate, setAdvRequestedDate] = useState(new Date().toISOString().slice(0, 10));
   // Shared date field — Recovery Start for self, Expected Use Date for company.
   const [advRecoveryStart, setAdvRecoveryStart] = useState('');
   const [advRecoveryMode, setAdvRecoveryMode] = useState('');
   const [advMonths, setAdvMonths] = useState('');
   const [advReason, setAdvReason] = useState('');
+  // Company-advance amount DISTRIBUTION (QA request): the total Amount is split
+  // into rows (amount + purpose + payment type + attachment) that must sum to
+  // exactly the Amount. Company-used advances only; self advances keep the
+  // single reason + recovery flow.
+  type AdvItem = { amount: string; purpose: string; payment: string; file: File | null };
+  const blankAdvItem = (): AdvItem => ({ amount: '', purpose: '', payment: '', file: null });
+  const [advItems, setAdvItems] = useState<AdvItem[]>([blankAdvItem()]);
+  const setAdvItem = (i: number, patch: Partial<AdvItem>) =>
+    setAdvItems(prev => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)));
+  const addAdvItem = () => setAdvItems(prev => [...prev, blankAdvItem()]);
+  const removeAdvItem = (i: number) => setAdvItems(prev => (prev.length > 1 ? prev.filter((_, j) => j !== i) : prev));
+  // Pick / replace the proof file for a distribution row.
+  const pickAdvItemFile = (i: number) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = Array.from(e.target.files || [])[0] || null;
+    if (f) {
+      const { accepted, errors } = filterValidUploads([f], []);
+      if (errors.length) toast.error('File not added', errors[0]);
+      if (accepted.length) { setAdvItem(i, { file: accepted[0] }); clearAdvErr('items'); }
+    }
+    e.target.value = '';
+  };
+  // Download a row's (client-side) proof file.
+  const downloadAdvItemFile = (f: File) => {
+    try {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url; a.download = f.name;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { toast.error('Could not download', 'Your browser blocked it.'); }
+  };
+  const advItemComplete = (it: AdvItem) =>
+    (Number(String(it.amount).replace(/[^\d.]/g, '')) || 0) > 0 && !!it.purpose.trim() && !!it.payment && !!it.file;
+  const advAmountFirstToast = () =>
+    toast.warning('Enter the amount first', 'Fill the advance Amount above before filling the distribution rows.');
   // Editable EMI — auto-derived from amount/months unless the user has typed
   // a value into the field. `advEmiTouched` flips on any keystroke and stops
   // the auto-fill from overwriting their manual override.
@@ -1266,6 +1335,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Bidirectional recovery schedule (EMI / Bi-Monthly): edit months → per-cycle
   // amount recomputes, and vice-versa. End date derives from start + cycles.
   const advAmountNum = Number(String(advAmount).replace(/[^\d.]/g, '')) || 0;
+  // Distribution roll-up (company advances).
+  const advIsCompanyUsed = advUsedFor === 'company';
+  const advItemsTotal = +advItems.reduce((s, it) => s + (Number(String(it.amount).replace(/[^\d.]/g, '')) || 0), 0).toFixed(2);
+  const advItemsMatch = advAmountNum > 0 && Math.abs(advItemsTotal - advAmountNum) < 0.005;
+  // Add-row is allowed only once the last row is fully filled AND there's still
+  // budget left against the raised Amount (rows can't over-allocate).
+  const advLastItemComplete = advItems.length === 0 || advItemComplete(advItems[advItems.length - 1]);
+  const advCanAddItem = advLastItemComplete && (advAmountNum <= 0 || advItemsTotal < advAmountNum - 0.005);
+  // The distribution rows can't be filled until the total Amount is entered.
+  const advRowsDisabled = advAmountNum <= 0;
   const advStep = advRecoveryMode === 'bimonthly' ? 2 : 1;
   // Per-cycle deduction is capped by the remaining EMI headroom (70% of salary
   // − the employee's other ongoing advance EMIs), fetched from the backend.
@@ -1347,16 +1426,22 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       // "New Advance Request" should start blank even when a draft exists.
       setAdvFiles([]);
       setAdvTypeOther('');
+      // Always clear the distribution rows on open (drafts don't persist them),
+      // so a reopened form never shows the previous request's rows.
+      setAdvItems([blankAdvItem()]);
       if (!resumeFromDraft || !editingDraftId) {
         setAdvType('');
         setAdvAmount('');
         setAdvRequestedDate(new Date().toISOString().slice(0, 10));
-        setAdvUsedFor('self');
+        setAdvUsedFor('company');
         setAdvRecoveryStart('');
         setAdvRecoveryMode('');
         setAdvMonths('');
         setAdvMonthlyEmi('');
         setAdvReason('');
+        // Clear the company-advance distribution rows too — otherwise a fresh
+        // "New Advance Request" reopened the form with the previous rows.
+        setAdvItems([blankAdvItem()]);
         return;
       }
       try {
@@ -3253,7 +3338,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           ) : (
             /* ── Advance Request mode ── */
             <Row className="g-4">
-              <Col lg={6}>
+              <Col lg={advIsCompanyUsed ? 5 : 6}>
                 <div className="ep-claim-banner">
                   <span className="ep-claim-banner-icon">
                     <i className="ri-money-dollar-circle-line" />
@@ -3312,27 +3397,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     {advErrors.type && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.type}</div>}
                   </Col>
                   <Col md={6}>
-                    <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
-                    <div className="position-relative">
-                      <span className="ep-claim-amount-prefix">₹</span>
-                      <input
-                        className={`ep-claim-input ep-pl-28${advErrors.amount ? ' is-invalid' : ''}`}
-                        placeholder="0"
-                        inputMode="decimal"
-                        value={advAmount}
-                        // Numbers only — strip letters/symbols on the way in and
-                        // keep at most one decimal point so the field can never
-                        // hold "1122@sss". The submit validation re-checks too.
-                        onChange={e => {
-                          let v = e.target.value.replace(/[^\d.]/g, '');
-                          const i = v.indexOf('.');
-                          if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
-                          setAdvAmount(v);
-                          clearAdvErr('amount');
-                        }}
-                      />
-                    </div>
-                    {advErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.amount}</div>}
+                    <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
+                    <MasterDatePicker
+                      value={advRequestedDate}
+                      onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
+                      invalid={!!advErrors.requested}
+                      // Requested date IS the request's creation date — locked to today.
+                      minDate={new Date().toISOString().slice(0, 10)}
+                      maxDate={new Date().toISOString().slice(0, 10)}
+                    />
+                    {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
                   </Col>
                 </Row>
                 {/* "Other" advance type — free-text input appears only when the
@@ -3352,17 +3426,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 )}
                 <Row className="g-3 mb-3">
                   <Col md={advUsedFor === 'company' ? 12 : 6}>
-                    <div className="ep-claim-label">Requested Date <span className="ep-claim-req">*</span></div>
-                    <MasterDatePicker
-                      value={advRequestedDate}
-                      onChange={(v) => { setAdvRequestedDate(v); clearAdvErr('requested'); }}
-                      invalid={!!advErrors.requested}
-                      // Requested date IS the request's creation date — locked to
-                      // today. No future (or past): only today is selectable.
-                      minDate={new Date().toISOString().slice(0, 10)}
-                      maxDate={new Date().toISOString().slice(0, 10)}
-                    />
-                    {advErrors.requested && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.requested}</div>}
+                    <div className="ep-claim-label">Amount (₹) <span className="ep-claim-req">*</span></div>
+                    <div className="position-relative">
+                      <span className="ep-claim-amount-prefix">₹</span>
+                      <input
+                        className={`ep-claim-input ep-pl-28${advErrors.amount ? ' is-invalid' : ''}`}
+                        placeholder="0"
+                        inputMode="decimal"
+                        value={advAmount}
+                        onChange={e => {
+                          let v = e.target.value.replace(/[^\d.]/g, '');
+                          const i = v.indexOf('.');
+                          if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
+                          setAdvAmount(v);
+                          clearAdvErr('amount');
+                        }}
+                      />
+                    </div>
+                    {advErrors.amount && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.amount}</div>}
                   </Col>
                   {/* Recovery Start applies to a self advance only — a company
                       advance has no recovery and no expected-use date. */}
@@ -3456,25 +3537,215 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </span>
                   </div>
                 )}
-                <div className="mb-0">
-                  <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
-                  <textarea
-                    className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
-                    rows={3}
-                    maxLength={500}
-                    placeholder="Describe why this advance is needed..."
-                    value={advReason}
-                    onChange={e => { setAdvReason(e.target.value.slice(0, 500)); clearAdvErr('reason'); }}
-                  />
-                  <div style={{ textAlign: 'right', fontSize: 11, color: advReason.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{advReason.length}/500</div>
-                  {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
-                </div>
+                {!advIsCompanyUsed && (
+                  <div className="mb-0">
+                    <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
+                    <textarea
+                      className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
+                      rows={3}
+                      maxLength={500}
+                      placeholder="Describe why this advance is needed..."
+                      value={advReason}
+                      onChange={e => { setAdvReason(e.target.value.slice(0, 500)); clearAdvErr('reason'); }}
+                    />
+                    <div style={{ textAlign: 'right', fontSize: 11, color: advReason.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{advReason.length}/500</div>
+                    {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
+                  </div>
+                )}
               </Col>
 
               {/* Right column — Supporting Documents (multi-file) + Approval Flow.
                   Replaces the old Payroll Recovery Preview / Advance Intelligence
                   placeholders, which weren't wired to anything actionable. */}
-              <Col lg={6}>
+              <Col lg={advIsCompanyUsed ? 7 : 6}>
+                {/* Company advances distribute the amount across rows (each with
+                    its own proof) instead of a single Supporting Documents box.
+                    Shown here on the right, above the Approval Flow. */}
+                {advIsCompanyUsed ? (
+                  <>
+                    <div className="ep-claim-section-head">
+                      <span className="ep-claim-dot is-faded" /> Amount Distribution
+                      <span className="text-danger ms-1">*</span>
+                      <span className="ep-claim-muted ms-1" style={{ fontWeight: 500 }}>(must total ₹{advAmountNum.toLocaleString('en-IN')})</span>
+                    </div>
+                    {/* Proper table (matches the PI Stage 3 look — violet
+                        gradient sticky header, bordered rows, vertical scroll). */}
+                    <style>{`
+                      /* ~3 rows visible, the rest scroll (header + 3 × ~46px). */
+                      .adv-dist-wrap { max-height: 196px; overflow-y: auto; overflow-x: hidden; border: 1px solid #ede9fe; border-radius: 10px; background: #fff; scrollbar-width: thin; scrollbar-color: #cbd5e1 transparent; }
+                      .adv-dist-wrap::-webkit-scrollbar { width: 8px; }
+                      .adv-dist-wrap::-webkit-scrollbar-track { background: transparent; }
+                      .adv-dist-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+                      .adv-dist-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                      /* Fixed layout so a long attachment name can't stretch the
+                         column — it truncates inside its fixed-width cell (the
+                         filename's own container clips it, so no td overflow rule
+                         that would clip the Payment dropdown). */
+                      .adv-dist-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+                      .adv-dist-table thead th { position: sticky; top: 0; z-index: 1; padding: 9px 10px; text-align: center; font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: #fff; background: linear-gradient(180deg,#7c3aed,#6d28d9); white-space: nowrap; }
+                      .adv-dist-table tbody td { padding: 6px 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+                      .adv-dist-table tbody tr:hover { background: #faf5ff; }
+                      .adv-dist-table tbody tr:last-child td { border-bottom: none; }
+                      .adv-dist-table .ep-claim-input { width: 100%; }
+                    `}</style>
+                    <div style={{ position: 'relative' }}>
+                    {/* When the Amount isn't set yet the rows are disabled; this
+                        transparent overlay catches the click and explains why via
+                        a toaster (a disabled input can't fire one itself). */}
+                    {advRowsDisabled && (
+                      <div
+                        onClick={advAmountFirstToast}
+                        data-tooltip="Enter the advance Amount above first"
+                        style={{ position: 'absolute', inset: 0, zIndex: 5, cursor: 'not-allowed' }}
+                      />
+                    )}
+                    <div className="adv-dist-wrap mb-2">
+                      <table className="adv-dist-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: 112 }}>Amount</th>
+                            <th style={{ width: 150 }}>Payment</th>
+                            <th>Purpose</th>
+                            <th style={{ width: 184 }}>Attachment</th>
+                            <th style={{ width: 40 }} />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {advItems.map((it, i) => (
+                            <tr key={i}>
+                              <td>
+                                <div className="position-relative">
+                                  <span className="ep-claim-amount-prefix">₹</span>
+                                  <input
+                                    className="ep-claim-input ep-pl-28"
+                                    placeholder="0"
+                                    inputMode="decimal"
+                                    value={it.amount}
+                                    disabled={advRowsDisabled}
+                                    title={advRowsDisabled ? 'Enter the advance Amount above first' : 'Amount spent on this line item'}
+                                    onChange={e => {
+                                      let v = e.target.value.replace(/[^\d.]/g, '');
+                                      const k = v.indexOf('.');
+                                      if (k !== -1) v = v.slice(0, k + 1) + v.slice(k + 1).replace(/\./g, '');
+                                      // Rows can't allocate more than the advance amount — clamp this
+                                      // row to the remaining budget and tell the user.
+                                      const num = Number(v) || 0;
+                                      const othersTotal = advItems.reduce((s, r, j) => j === i ? s : s + (Number(String(r.amount).replace(/[^\d.]/g, '')) || 0), 0);
+                                      if (advAmountNum > 0 && othersTotal + num > advAmountNum + 0.005) {
+                                        const remain = Math.max(0, +(advAmountNum - othersTotal).toFixed(2));
+                                        v = String(remain);
+                                        toast.warning('Exceeds advance amount', `You can allocate at most ₹${remain.toLocaleString('en-IN')} more — the rows can't total over ₹${advAmountNum.toLocaleString('en-IN')}.`);
+                                      }
+                                      setAdvItem(i, { amount: v }); clearAdvErr('items');
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                              <td>
+                                <span
+                                  style={{ display: 'block' }}
+                                  title={advRowsDisabled ? 'Enter the advance Amount above first' : (it.payment ? `Payment: ${it.payment}` : 'Payment method for this line')}
+                                >
+                                  <MasterSelect
+                                    value={it.payment || null}
+                                    placeholder="Payment"
+                                    disabled={advRowsDisabled}
+                                    options={['UPI', 'PhonePe', 'Cheque', 'Bank Transfer'].map(o => ({ value: o, label: o }))}
+                                    onChange={(v) => { setAdvItem(i, { payment: v }); clearAdvErr('items'); }}
+                                  />
+                                </span>
+                              </td>
+                              <td>
+                                <input
+                                  className="ep-claim-input"
+                                  placeholder="Purpose / reason…"
+                                  value={it.purpose}
+                                  maxLength={200}
+                                  disabled={advRowsDisabled}
+                                  title={advRowsDisabled ? 'Enter the advance Amount above first' : (it.purpose || 'Purpose / reason for this amount')}
+                                  onChange={e => { setAdvItem(i, { purpose: e.target.value.slice(0, 200) }); clearAdvErr('items'); }}
+                                />
+                              </td>
+                              <td>
+                                {it.file ? (
+                                  /* Attached — bordered chip with the (truncated)
+                                     name + exactly two actions: Download & Replace. */
+                                  <div
+                                    className="d-flex align-items-center gap-1"
+                                    style={{ overflow: 'hidden', border: '1px solid #86efac', background: '#f0fdf4', borderRadius: 8, padding: '3px 6px' }}
+                                  >
+                                    <i className="ri-checkbox-circle-fill flex-shrink-0" style={{ color: '#16a34a' }} />
+                                    <span title={it.file.name} style={{ fontSize: 11, color: '#166534', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
+                                      {it.file.name}
+                                    </span>
+                                    <button type="button" className="ep-claim-file-x flex-shrink-0" title="Download" onClick={() => downloadAdvItemFile(it.file!)}>
+                                      <i className="ri-download-2-line" />
+                                    </button>
+                                    <label className="ep-claim-file-x flex-shrink-0" title="Replace" style={{ cursor: 'pointer', marginBottom: 0 }}>
+                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="d-none" onChange={pickAdvItemFile(i)} />
+                                      <i className="ri-refresh-line" />
+                                    </label>
+                                  </div>
+                                ) : (
+                                  <label
+                                    className="ep-claim-input d-flex align-items-center gap-1"
+                                    title={advRowsDisabled ? 'Enter the advance Amount above first' : 'Attach proof (PDF / JPG / PNG · ≤ 2 MB)'}
+                                    style={{ cursor: advRowsDisabled ? 'not-allowed' : 'pointer', overflow: 'hidden', color: '#6b7280', marginBottom: 0, opacity: advRowsDisabled ? 0.6 : 1 }}
+                                  >
+                                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="d-none" disabled={advRowsDisabled} onChange={pickAdvItemFile(i)} />
+                                    <i className="ri-attachment-2" style={{ flexShrink: 0 }} />
+                                    <span style={{ fontSize: 11 }}>Attach proof</span>
+                                  </label>
+                                )}
+                              </td>
+                              <td style={{ textAlign: 'center' }}>
+                                {advItems.length > 1 && (
+                                  <button type="button" className="ep-claim-file-x" title="Remove row" onClick={() => removeAdvItem(i)}>
+                                    <i className="ri-close-line" />
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center mb-3">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-primary"
+                        // Look-disabled but still clickable so we can explain WHY
+                        // via a toaster instead of a dead button.
+                        style={!advCanAddItem ? { opacity: 0.55 } : undefined}
+                        onClick={() => {
+                          if (advAmountNum <= 0) {
+                            toast.warning('Enter the amount first', 'Fill the advance Amount above before distributing it across rows.');
+                            return;
+                          }
+                          if (!advLastItemComplete) {
+                            toast.warning('Complete the current row', 'Fill the amount, payment, purpose and attachment in the current row before adding another.');
+                            return;
+                          }
+                          if (advItemsTotal >= advAmountNum - 0.005) {
+                            toast.warning('Fully allocated', `The rows already total the advance amount ₹${advAmountNum.toLocaleString('en-IN')} — nothing left to distribute.`);
+                            return;
+                          }
+                          addAdvItem();
+                        }}
+                      >
+                        <i className="ri-add-line" /> Add row
+                      </button>
+                      <span style={{ fontSize: 12.5 }}>
+                        <span className="text-muted me-1">Allocated</span>
+                        <span className={advItemsMatch ? 'fw-semibold text-success' : 'fw-semibold text-danger'}>
+                          ₹{advItemsTotal.toLocaleString('en-IN')} / ₹{advAmountNum.toLocaleString('en-IN')}
+                        </span>
+                      </span>
+                    </div>
+                    {advErrors.items && <div className="ep-claim-err mb-3"><i className="ri-error-warning-line" />{advErrors.items}</div>}
+                  </>
+                ) : (<>
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> Supporting Documents
                   <span className="text-danger ms-1">*</span>
@@ -3540,6 +3811,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </div>
                 )}
                 {advFiles.length === 0 && <div className="mb-4" />}
+                </>)}
 
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> Approval Flow

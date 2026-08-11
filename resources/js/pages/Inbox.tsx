@@ -108,6 +108,23 @@ export default function Inbox() {
   const [expenseLoading, setExpenseLoading] = useState(true);
   // Expense/advance being reviewed in the deduction popup (Review & Approve).
   const [reviewItem, setReviewItem] = useState<{ id: number; module: 'expense' | 'advance' } | null>(null);
+  // Deep-link: a reporting manager who clicked "Review & Approve" on the Expense
+  // Management page is redirected here as /inbox?review=expense:29 — open that
+  // review popup straight away instead of making them find the row (QA #119).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const review = params.get('review');
+    if (!review) return;
+    const [mod, idStr] = review.split(':');
+    const id = Number(idStr);
+    if ((mod === 'expense' || mod === 'advance') && id > 0) {
+      setReviewItem({ id, module: mod });
+    }
+    // Strip the param so a refresh / back doesn't reopen it.
+    params.delete('review');
+    const clean = window.location.pathname + (params.toString() ? `?${params.toString()}` : '');
+    window.history.replaceState({}, '', clean);
+  }, []);
   const expRowKey = (r: { module: string; id: number }) => `${r.module}-${r.id}`;
  type MyUpdate = {
     module: 'expense' | 'advance';

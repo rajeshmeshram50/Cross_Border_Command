@@ -715,22 +715,23 @@ export default function HrExpenseManagement() {
     myEmpId != null && row.employee_id != null && Number(row.employee_id) === Number(myEmpId);
   const ownToast = () => toast.info('Handled by your reporting manager',
     'This is your own request — you can’t review, approve, set deductions or pay it. Your reporting manager (the branch user) will do the approval and payment.');
-  const reviewGate = (row: { employee_id?: number | null; manager_status?: string | null; manager_id?: number | null; manager_name?: string | null; reporting_manager_user_id?: number | null }): boolean => {
+  const reviewGate = (row: { id?: number; employee_id?: number | null; manager_status?: string | null; manager_id?: number | null; manager_name?: string | null; reporting_manager_user_id?: number | null }, moduleKind: 'expense' | 'advance' = 'expense'): boolean => {
     if (isOwnRow(row)) { ownToast(); return false; }
     if ((row.manager_status ?? 'pending') !== 'approved') {
       // Is the LOGGED-IN user the reporting manager of this row? Either the
       // assigned employee-manager (manager_id = my employee id) OR the branch
       // USER set as the employee's reporting manager (reporting_manager_user_id
       // = my user id). In that case the manager step is THEIRS to do — send
-      // them to the Inbox to approve it there (QA #119), rather than telling
-      // them to wait on themselves.
+      // them to the Inbox AND deep-link straight to the review popup for this
+      // row (QA #119 + follow-up), rather than telling them to wait on
+      // themselves or making them hunt for it in the list.
       const iAmEmployeeManager = myEmpId != null && row.manager_id != null && Number(row.manager_id) === Number(myEmpId);
       const iAmBranchUserManager = user?.id != null && row.reporting_manager_user_id != null
         && Number(row.reporting_manager_user_id) === Number(user.id);
       if (iAmEmployeeManager || iAmBranchUserManager) {
         toast.info('Approve as reporting manager in your Inbox',
-          'You are the reporting manager for this — taking you to your Inbox to review & approve it. Once approved, come back here to set deductions and record the payment.');
-        window.location.href = '/inbox';
+          'You are the reporting manager for this — opening it in your Inbox to review & approve. Once approved, come back here to set deductions and record the payment.');
+        window.location.href = `/inbox?review=${moduleKind}:${row.id}`;
       } else {
         toast.info('Reporting Manager approval is pending',
           `HR approval can’t be processed until ${row.manager_name ? row.manager_name : 'the reporting manager'} approves this request in their Inbox. Once approved, it returns here for HR / Finance to set deductions and record the payment.`);
@@ -744,12 +745,12 @@ export default function HrExpenseManagement() {
     return true;
   };
   const claimColumns = useMemo(
-    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => { if (payGate(row)) setSettleClaimId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewClaimId(row.id); }, onEmailReimbursement: (row) => emailReimbursement(row.id) }),
+    () => expenseClaimColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, onAct, onRecordPayment: (row) => { if (payGate(row)) setSettleClaimId(row.id); }, onReview: (row) => { if (reviewGate(row, 'expense')) setReviewClaimId(row.id); }, onEmailReimbursement: (row) => emailReimbursement(row.id) }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id],
   );
   const advanceColumns = useMemo(
-    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => { if (payGate(row)) setSettleAdvId(row.id); }, onReview: (row) => { if (reviewGate(row)) setReviewAdvId(row.id); }, onShowRemark: setRemarkAdv }),
+    () => advanceRequestColumns({ mode: 'hr', canHrApprove, currentEmployeeId: user?.employee_id ?? null, usedFor: advUsedFor, onAct: onActAdvance, onRecordPayment: (row) => { if (payGate(row)) setSettleAdvId(row.id); }, onReview: (row) => { if (reviewGate(row, 'advance')) setReviewAdvId(row.id); }, onShowRemark: setRemarkAdv }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [canHrApprove, user?.employee_id, advUsedFor],
   );

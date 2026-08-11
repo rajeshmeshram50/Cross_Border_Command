@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardBody } from 'reactstrap';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useToast } from '../../../contexts/ToastContext';
+import Tooltip from '../../../components/ui/Tooltip';
 import api from '../../../api';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { Shimmer } from '../../../components/ui/Shimmer';
@@ -627,11 +628,6 @@ export default function TemplateFormPage() {
         <div style={{ padding: '16px 22px', background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 60%, #a855f7 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div className="d-flex align-items-center gap-3 min-w-0">
-              <button type="button" onClick={() => navigate('/hr/doc-templates')}
-                style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}
-                title="Back to templates">
-                <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
-              </button>
               <span style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                 <i className="ri-file-text-line" style={{ fontSize: 22, color: '#fff' }} />
               </span>
@@ -642,7 +638,19 @@ export default function TemplateFormPage() {
                 </div>
               </div>
             </div>
-            <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+            {/* Back sits on the RIGHT, with the step pill — the left of the bar
+                is the page's identity (icon, title, step count) and an escape
+                hatch wedged in front of it read as part of that title. */}
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+              <span style={{ fontSize: 12, color: '#fff', background: 'rgba(255,255,255,0.20)', padding: '5px 12px', borderRadius: 999, fontWeight: 700 }}>{STEPS[step - 1].label}</span>
+              <Tooltip label="Back to templates">
+                <button type="button" onClick={() => navigate('/hr/doc-templates')}
+                  style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer' }}
+                  aria-label="Back to templates">
+                  <i className="ri-arrow-left-line" style={{ fontSize: 18 }} />
+                </button>
+              </Tooltip>
+            </div>
           </div>
         </div>
 
