@@ -3,6 +3,7 @@ import { Card, CardBody, Col, Row, Modal, ModalBody, Input } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
@@ -97,6 +98,24 @@ interface ChecklistStage {
 
 export default function HrExitManagement() {
   const toast = useToast();
+  const { user } = useAuth();
+  /* NOBODY RUNS THEIR OWN EXIT. Exit Management access is module-wide, so an HR
+     executive who can process every colleague's exit could equally open their
+     own case — and that case decides their notice recovery, their Full & Final
+     figures, whether they are blacklisted and whether they stay rehireable.
+     Someone else with the same access has to run it. Mirrored server-side by
+     ExitController::guardNotSelf() so a direct API call is refused too. */
+  const selfEmployeeId = user?.employee_id ?? null;
+  const selfEmployeeCode = (user?.employee_code ?? '').trim().toLowerCase();
+  const isSelf = useCallback((e: EmployeeRow) => (
+    (selfEmployeeId != null && Number(e.id) === Number(selfEmployeeId))
+    || (!!selfEmployeeCode && e.empId.trim().toLowerCase() === selfEmployeeCode)
+  ), [selfEmployeeId, selfEmployeeCode]);
+  const SELF_EXIT_MSG = 'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.';
+  const denySelfExit = useCallback(() => {
+    toast.warning('Self exit not allowed', SELF_EXIT_MSG);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]);
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
@@ -419,7 +438,11 @@ export default function HrExitManagement() {
              rehireBlockedReason(), which mirrors the server. The button stays
              visible but disabled so the "why not" is discoverable in the
              tooltip instead of the action simply being absent. */
-          const rehireBlocked = rehireBlockedReason(e);
+          /* Rehiring yourself is the same self-dealing as exiting yourself —
+             it reverses a terminal decision about your own employment. */
+          const rehireBlocked = isSelf(e)
+            ? 'You cannot rehire yourself. Ask another user with Exit Management access.'
+            : rehireBlockedReason(e);
           const canRehire = !rehireBlocked;
           const rehireWhy = rehireBlocked ?? 'Reactivate this employee';
           return (
@@ -447,21 +470,33 @@ export default function HrExitManagement() {
             </div>
           );
         }
+        /* Own row — the action stays VISIBLE but inert so the rule is
+           discoverable rather than the button simply being absent (same
+           treatment Rehire gets above). aria-disabled, not `disabled`: a
+           disabled button swallows pointer events, so neither the tooltip nor
+           the click-through message would ever fire. */
+        const self = isSelf(e);
         if (isInProgress || isScheduled) {
           return (
-            <Tooltip label={isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'} position="left" themed>
+            <Tooltip label={self ? SELF_EXIT_MSG : (isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process')} position="left" themed>
               {/* A case saved before the type question existed still has to
                   answer it before the wizard can pick its stages. */}
-              <button type="button" className="exit-action-btn exit-action-btn--continue"
-                      onClick={() => (e.exitType.trim() ? setProcessing(e) : setInitiating(e))}>
+              <button type="button" className={`exit-action-btn exit-action-btn--continue${self ? ' is-off' : ''}`}
+                      aria-disabled={self}
+                      onClick={() => {
+                        if (self) { denySelfExit(); return; }
+                        e.exitType.trim() ? setProcessing(e) : setInitiating(e);
+                      }}>
                 <i className="ri-arrow-right-line" />Continue
               </button>
             </Tooltip>
           );
         }
         return (
-          <Tooltip label="Initiate exit process" position="left" themed>
-            <button type="button" className="exit-action-btn exit-action-btn--initiate" onClick={() => setInitiating(e)}>
+          <Tooltip label={self ? SELF_EXIT_MSG : 'Initiate exit process'} position="left" themed>
+            <button type="button" className={`exit-action-btn exit-action-btn--initiate${self ? ' is-off' : ''}`}
+                    aria-disabled={self}
+                    onClick={() => { if (self) { denySelfExit(); return; } setInitiating(e); }}>
               <i className="ri-logout-box-r-line" />Initiate Exit
             </button>
           </Tooltip>
@@ -471,8 +506,11 @@ export default function HrExitManagement() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     // `tab` drives whether the Exit Type column is present, so it must be a
     // dependency — with [] the column list froze on the first tab rendered.
+    // `isSelf` too: it resolves once /me lands, and without it the actions
+    // column would keep the pre-auth cells that treat every row as someone
+    // else's.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [tab]);
+  ], [tab, isSelf]);
 
 
   const KPI_CARDS = [
@@ -1200,7 +1238,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const advancesIncomplete: any[] = (fnfDues?.advances?.items ?? []).filter((a: any) => a && a.complete === false);
   const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfPaid = fnfMarkedPaid;
-  const fnfNet = useMemo(() => {
+  const fnfTotals = useMemo(() => {
     const earn = fnfNum(fnfLines.basic) + fnfNum(fnfLines.leaveEncash)
                + fnfNum(fnfLines.bonus)
                + duesClaims                                        // approved, unpaid reimbursements
@@ -1208,8 +1246,31 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const ded  = fnfNum(fnfLines.loan)
                + duesAdvances                                      // unrecovered salary advances
                + (noticeAdjustedInFnf ? settle.amount : 0);
-    return Math.round((earn - ded) * 100) / 100;
+    return { earn, ded, net: Math.round((earn - ded) * 100) / 100 };
   }, [fnfLines, settlement, settle.amount, noticeAdjustedInFnf, duesClaims, duesAdvances]);
+  const fnfNet = fnfTotals.net;
+
+  /* NOTHING TO SETTLE — every earning AND every deduction is zero, so no money
+     moves in either direction. The common case is an early exit (resigned
+     within EARLY_EXIT_DAYS of joining): no salary is processed, nothing is
+     encashed, no advance or reimbursement is outstanding.
+
+     Tested on BOTH sides rather than on `net === 0`: a case where ₹20,000 is
+     earned and ₹20,000 is recovered also nets zero, but there real money is
+     disbursed and collected, so finance must still approve it and a payment
+     advice must still be filed. Only a genuinely empty settlement skips the
+     payment step.
+
+     A NEGATIVE net (the employee owes the company) is not "nothing" either —
+     that recovery still has to be approved and recorded, so it keeps the full
+     Finance Approval & Payment block. */
+  const fnfNothingToSettle = fnfTotals.earn === 0 && fnfTotals.ded === 0;
+  /* Gate for everything DOWNSTREAM of the settlement (exit-document release,
+     the outstanding-items list). An empty settlement is settled by definition —
+     waiting for a payment that will never happen would deadlock the case. The
+     lock/disable semantics on the F&F inputs keep using `fnfPaid`, which means
+     strictly "HR pressed Mark F&F Paid". */
+  const fnfSettled = fnfPaid || fnfNothingToSettle;
   type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd';
   const [s1Errors, setS1Errors] = useState<Set<Stage1FieldKey>>(new Set());
   const clearS1Err = (k: Stage1FieldKey) => setS1Errors(prev => {
@@ -1723,10 +1784,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // 2c. The Full & Final settlement has to be approved and disbursed. A
     //     leaver is dropped from the regular payroll run for their exit month,
     //     so closing the case with F&F outstanding would leave them unpaid.
-    if (fnfMeta.approval !== 'Approved') {
-      items.push('Full & Final settlement not approved by the finance controller');
-    } else if (!fnfPaid) {
-      items.push('Full & Final settlement approved but no payment date recorded');
+    //     Skipped entirely when there is nothing to settle — an empty F&F has
+    //     no approval and no payment to wait for, and listing them as
+    //     outstanding would block Complete Exit permanently.
+    if (!fnfNothingToSettle) {
+      if (fnfMeta.approval !== 'Approved') {
+        items.push('Full & Final settlement not approved by the finance controller');
+      } else if (!fnfPaid) {
+        items.push('Full & Final settlement approved but no payment date recorded');
+      }
     }
 
     // 3. Every assigned asset must be Handed Over (Pending / Not Returned block).
@@ -1762,7 +1828,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, blacklistApplies, blacklisted, blacklistReason]);
+  }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, blacklistApplies, blacklisted, blacklistReason]);
 
   /* Payments the EMPLOYEE submitted from their own Payroll Details tab, loaded
      when the recovery stage is opened. MUST stay above the early return below —
@@ -1832,8 +1898,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (n === 'notice_payment') {
       return effSettleStatus === 'NA' || effSettleStatus === 'Settled' ? 100 : 0;
     }
-    // F&F needs finance approval AND the payment recorded before it's done.
+    // F&F needs finance approval AND the payment recorded before it's done —
+    // UNLESS there is nothing to settle at all. With every line at zero there
+    // is no payment to approve and none to record, so the two-step measure
+    // could never move past 0% and the stage sat "In Progress" forever,
+    // blocking the case on work that does not exist.
     if (n === 'fnf') {
+      if (fnfNothingToSettle) return 100;
       const done = (fnfMeta.approval === 'Approved' ? 1 : 0) + (fnfPaid ? 1 : 0);
       return Math.round((done / 2) * 100);
     }
@@ -2003,7 +2074,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // Carry the uploaded document through — it is stored on this same blob
     // by a separate multipart call, so omitting it here would wipe it on
     // the next Save Draft.
-    fnf:                      { lines: fnfLines, meta: { ...fnfMeta }, net: fnfNet, monthly: settle.monthly,
+    /* `earn` / `ded` travel alongside `net` so the server can tell a settlement
+       with NOTHING in it from one where earnings and deductions merely cancel
+       out — both net zero, but only the first skips the payment step. */
+    fnf:                      { lines: fnfLines, meta: { ...fnfMeta }, net: fnfNet,
+                                earn: fnfTotals.earn, ded: fnfTotals.ded, monthly: settle.monthly,
                                 ...(fnf?.attachment ? { attachment: fnf.attachment } : {}) },
   });
 
@@ -2374,7 +2449,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       await api.put(`/employees/${employee.id}/exit`, {
         ...buildExitPayload(),
         ...(settlesNotice ? { notice_settlement_status: 'Settled' } : {}),
-        fnf: { lines: fnfLines, meta: { ...fnfMeta }, net: fnfNet, monthly: settle.monthly,
+        fnf: { lines: fnfLines, meta: { ...fnfMeta, payStatus: 'Paid' }, net: fnfNet,
+               earn: fnfTotals.earn, ded: fnfTotals.ded, monthly: settle.monthly,
                ...(fnf?.attachment ? { attachment: fnf.attachment } : {}) },
       });
         // Record that the settlement was explicitly marked paid.
@@ -3001,6 +3077,27 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   </div>
                 </div>
 
+                {/* Nothing to settle → no payment step at all. Approval, payment
+                    mode/date, the mandatory F&F document and "Mark F&F Paid"
+                    are all about moving money; with every line at zero there is
+                    no money, so asking for a payment advice and a payment date
+                    demanded paperwork for a transaction that never happened —
+                    and the stage could never reach 100% because neither half of
+                    its measure could ever be satisfied. Says so plainly instead,
+                    in the same band the Notice Period stage uses for its own
+                    "nothing to recover" case. */}
+                {fnfNothingToSettle ? (
+                  <div className="ep-echo is-ok" style={{ marginTop: 14 }}>
+                    <i className="ri-shield-check-line" />
+                    <span className="ep-echo-txt">
+                      <strong>Nothing to settle</strong> — the Full &amp; Final works out to{' '}
+                      {fmtMoney(0)}, with no earnings to pay and no dues to recover.{' '}
+                      <em>No finance approval or payment is required; continue to the next stage.</em>
+                    </span>
+                    <span className="ep-echo-pill">Not applicable</span>
+                  </div>
+                ) : (
+                <>
                 <div className="ep-section-label" style={{ marginTop: 14 }}>Finance Approval &amp; Payment</div>
                 <div className="ep-approval-card ep-details-card mb-2">
                   <Row className="g-2">
@@ -3103,6 +3200,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </div>
                   )}
                 </div>
+                </>
+                )}
               </>
             )}
 
@@ -3252,30 +3351,36 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       until HR confirms the employee is cleared to receive their
                       paperwork. A sent document can't be un-sent, so the switch
                       defaults to OFF. */}
-                  <div className={`ep-release${docsReleased ? ' is-on' : ''}${fnfPaid ? '' : ' is-blocked'}`}>
+                  {/* Gated on fnfSettled, not fnfPaid: an F&F with nothing to
+                      settle is never "paid", so keying the release on the
+                      payment alone locked the relieving letter behind a
+                      disbursement that could never occur. */}
+                  <div className={`ep-release${docsReleased ? ' is-on' : ''}${fnfSettled ? '' : ' is-blocked'}`}>
                     <span className="ep-release-ico">
                       <i className={docsReleased ? 'ri-lock-unlock-line' : 'ri-lock-line'} />
                     </span>
                     <div className="ep-release-text">
                       <div className="ep-release-title">Do you want to release this employee's documents?</div>
                       <div className="ep-release-sub">
-                        {!fnfPaid
+                        {!fnfSettled
                           ? 'Blocked — the Full & Final settlement has not been paid yet. Documents are released only after the employee has been paid.'
                           : docsReleased
                             ? 'Released — the exit documents below can be viewed and sent for signature.'
-                            : 'Not released — viewing and sending are disabled until you switch this on.'}
+                            : fnfNothingToSettle
+                              ? 'Not released — the Full & Final had nothing to settle, so no payment is pending. Switch this on to release.'
+                              : 'Not released — viewing and sending are disabled until you switch this on.'}
                       </div>
                     </div>
-                    <label className={`ep-switch${fnfPaid ? '' : ' is-off'}`}
-                           title={fnfPaid ? 'Release exit documents' : fnfBlockHint}>
+                    <label className={`ep-switch${fnfSettled ? '' : ' is-off'}`}
+                           title={fnfSettled ? 'Release exit documents' : fnfBlockHint}>
                       <input
                         type="checkbox"
                         checked={docsReleased}
-                        disabled={!fnfPaid}
+                        disabled={!fnfSettled}
                         onChange={e => {
                           // Belt and braces — the input is disabled, but a
                           // programmatic change must not slip past the rule.
-                          if (!fnfPaid) return;
+                          if (!fnfSettled) return;
                           setDocsReleased(e.target.checked);
                         }}
                       />

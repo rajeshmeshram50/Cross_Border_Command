@@ -108,6 +108,7 @@ class ExitController extends Controller
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
+        $this->guardNotSelf($request, $employee);
         $data = $this->validatePayload($request);
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
@@ -190,6 +191,7 @@ class ExitController extends Controller
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
+        $this->guardNotSelf($request, $employee);
         $data = $this->validatePayload($request);
 
         /* The notice-period settlement has to be closed before the case can be.
@@ -361,6 +363,7 @@ class ExitController extends Controller
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
+        $this->guardNotSelf($request, $employee);
 
         /* Sealed once the settlement is paid. This document is what finance
          * approved and paid AGAINST, so replacing it afterwards would leave the
@@ -449,6 +452,7 @@ class ExitController extends Controller
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
         $this->guardSameTenant($request, $employee);
+        $this->guardNotSelf($request, $employee);
 
         $data = $request->validate([
             'restart_onboarding' => 'nullable|boolean',
@@ -989,8 +993,12 @@ class ExitController extends Controller
            actually been PAID — which is why F&F sits before Exit Documents in
            the stage order. The SPA disables the switch; this is the
            server-side twin so a direct call can't do what the UI won't.
-           Reopening F&F (back to unpaid) also revokes an existing release. */
-        if (!$this->isFnfPaid($row)) {
+           Reopening F&F (back to unpaid) also revokes an existing release.
+
+           "Settled", not "paid": an F&F with nothing in it is never paid, so
+           gating on the payment alone held the relieving letter behind a
+           disbursement that could never happen. */
+        if (!$this->isFnfSettled($row)) {
             $row->documents_released    = false;
             $row->documents_released_at = null;
             $row->documents_released_by = null;
@@ -1008,11 +1016,53 @@ class ExitController extends Controller
 
     /** Has the Full & Final settlement been marked paid? The F&F stage stores
      *  its state as a JSON blob owned by the wizard; the payment status lives
-     *  at fnf.meta.payStatus. */
+     *  at fnf.meta.payStatus.
+     *
+     *  The approval + payment-date fallback is what the SPA has always used to
+     *  decide `fnfMarkedPaid` on load, and it is the only signal older rows
+     *  carry — nothing ever wrote `payStatus`, so reading it alone made this
+     *  return false for every case on file, including fully approved and paid
+     *  ones. */
     private function isFnfPaid(EmployeeExit $row): bool
     {
         $status = data_get($row->fnf, 'meta.payStatus');
-        return is_string($status) && strcasecmp($status, 'Paid') === 0;
+        if (is_string($status) && strcasecmp($status, 'Paid') === 0) {
+            return true;
+        }
+        $approval = data_get($row->fnf, 'meta.approval');
+        $payDate  = data_get($row->fnf, 'meta.payDate');
+
+        return is_string($approval) && strcasecmp($approval, 'Approved') === 0
+            && is_string($payDate) && trim($payDate) !== '';
+    }
+
+    /** Is there NOTHING to settle — every earning and every deduction zero, so
+     *  no money moves in either direction? Typically an early exit (resigned
+     *  within days of joining): no salary processed, nothing encashed, no
+     *  advance or reimbursement outstanding.
+     *
+     *  Both sides are tested, not the net: earnings and deductions that merely
+     *  cancel out also net zero, but there real money is disbursed and
+     *  collected, so that case still needs finance approval and a payment
+     *  record. The SPA sends `earn` / `ded` alongside `net` for exactly this
+     *  distinction; a row saved before they existed simply reports false and
+     *  gets them back on its next save from the wizard. */
+    private function isFnfEmpty(EmployeeExit $row): bool
+    {
+        $earn = data_get($row->fnf, 'earn');
+        $ded  = data_get($row->fnf, 'ded');
+
+        return is_numeric($earn) && is_numeric($ded)
+            && (float) $earn === 0.0 && (float) $ded === 0.0;
+    }
+
+    /** Settled = paid, OR there was never anything to pay. Use for anything
+     *  DOWNSTREAM of the settlement (exit-document release). The blob/document
+     *  LOCKS keep using isFnfPaid(): an empty settlement has no payment to
+     *  protect, and freezing it would strand HR if a due surfaced later. */
+    private function isFnfSettled(EmployeeExit $row): bool
+    {
+        return $this->isFnfPaid($row) || $this->isFnfEmpty($row);
     }
 
     /** The exit type already on file for a saved case, or null for a new one. */
@@ -1134,6 +1184,40 @@ class ExitController extends Controller
         if ($employee->client_id && $user->client_id !== $employee->client_id) {
             abort(403, 'Employee belongs to a different organization.');
         }
+    }
+
+    /**
+     * NOBODY RUNS THEIR OWN EXIT.
+     *
+     * Exit Management is granted per-user, and the grant is module-wide — an HR
+     * executive who can process every colleague's exit can equally open their
+     * own case. That is self-dealing on the one process that decides their
+     * notice recovery, their Full & Final figures, whether they are
+     * blacklisted, and whether they stay eligible for rehire. Someone else with
+     * the same access has to run it.
+     *
+     * Applied to the MUTATING endpoints only (upsert / complete / F&F
+     * attachment / rehire). Reads stay open so an employee can still see the
+     * state of a case someone else is running for them.
+     */
+    private function guardNotSelf(Request $request, Employee $employee): void
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        /* employees.user_id is the authoritative link. users.employee_code is
+           checked too because a login created before that column was populated
+           can still be matched by code — and a user with no employee row at all
+           (super admin, client admin, branch admin) matches neither, which is
+           correct: they have no own exit to run. */
+        $selfByUserId = $employee->user_id !== null && (int) $employee->user_id === (int) $user->id;
+        $selfByCode   = filled($user->employee_code) && filled($employee->emp_code)
+            && strcasecmp(trim($user->employee_code), trim($employee->emp_code)) === 0;
+
+        $isSelf = $selfByUserId || $selfByCode;
+
+        abort_if($isSelf, 403,
+            'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.');
     }
 
     /** Cap the granular permission check to the 'master.employees' module —

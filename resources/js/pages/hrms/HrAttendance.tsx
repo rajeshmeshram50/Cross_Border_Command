@@ -260,29 +260,10 @@ export default function HrAttendance() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [logTab, setLogTab]       = useState<'log' | 'calendar'>('log');
   const [regOpen, setRegOpen]     = useState(false);
-  // Date + prefill punches the regularization modal opens on. Set from the log
-  // row that was clicked; falls back to the day panel's date when empty.
   const [regDate, setRegDate]     = useState<string>('');
   const [regPunches, setRegPunches] = useState<RegPrefillPunch[] | null>(null);
-
-  /* Two refresh counters, because this page holds two sibling views of the same
-     data that used to be blind to each other — the only way to see a new or
-     approved request was a manual F5.
-       attVersion — refetches the day/month attendance. Bumped on submit (so the
-                    row shows as pending) and on approve/reject (so the corrected
-                    times actually appear).
-       regVersion — reloads the Regularization Requests list. Bumped on submit
-                    only; after an approve that list reloads itself, and bumping
-                    here too would just fetch it twice. */
   const [attVersion, setAttVersion] = useState(0);
   const [regVersion, setRegVersion] = useState(0);
-
-  /* Clock format is fixed at 12-hour. The "24 hour format" toggle was removed
-     from the Logs & Requests header, so this is a constant rather than stored
-     state — the old localStorage preference is deliberately NOT read back: a
-     user who had switched it on would otherwise be stuck in 24-hour with no
-     control left to turn it off. Every formatter still takes the flag, so
-     restoring a toggle later only means putting the control back. */
   const hour24 = false;
 
   const [viewDate, setViewDate]   = useState<string>(TODAY_ISO);
@@ -295,8 +276,6 @@ export default function HrAttendance() {
     setCalMonth((prev) => (prev === wantedMonth ? prev : wantedMonth));
   }, [viewDate]);
 
-  // Fetch real attendance for the inspected date; refires on viewDate change,
-  // and on attVersion so a regularization submit/approve reflects immediately.
   useEffect(() => {
     let cancelled = false;
     setEmployeesLoading(true);
@@ -354,10 +333,6 @@ export default function HrAttendance() {
     () => employees.find(e => e.id === selectedId) || employees[0],
     [employees, selectedId]
   );
-
-  // After a regularization is persisted, reflect a Pending correction on the
-  // selected employee so the Logs/Requests card updates immediately. The
-  // request itself is already saved server-side and routed for approval.
   const onRegularizationSubmitted = (row: ApiRegularization) => {
     const firstPunch = (row.punches ?? [])[0];
     const newReq: CorrectionRequest = {
@@ -374,18 +349,9 @@ export default function HrAttendance() {
       setEmployees(prev => prev.map(e => e.id === selected.id ? { ...e, correction: newReq } : e));
     }
     setRegOpen(false);
-    // The optimistic `correction` above is instant feedback for the row that was
-    // just raised; these pull the real thing. Without them the request sat only
-    // in local state — the Regularization Requests list below never learnt it
-    // existed until the page was reloaded by hand.
     setRegVersion(v => v + 1);
     setAttVersion(v => v + 1);
   };
-
-  /* Open the regularization modal for a SPECIFIC log row. It used to just flip
-     `regOpen` and let the modal read `viewDate`, so Regularize on any row —
-     1 Aug, 3 Aug, anything — always opened on the date pinned in the day panel
-     above, and prefilled that day's punches. Both now follow the row clicked. */
   const openRegularizeFor = (iso: string) => {
     const log = selected?.logs?.find(l => l.iso === iso);
     // Rebuild prefill punches from the row's work segments (decimal hours →
