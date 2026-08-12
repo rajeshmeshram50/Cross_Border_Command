@@ -376,14 +376,16 @@ export function advanceRequestColumns({
         );
       },
     },
-    {
-      // Employee "Settle" — a fully-paid COMPANY advance is settled by the
-      // employee who took it (they've accounted for the company-paid amount).
+    // Confirmation — the employee's utilisation confirmation on a fully-paid
+    // COMPANY advance. It's a company-only concept, so the column is dropped
+    // entirely on the Self Used view (a self advance is recovered from salary;
+    // its progress lives in the Recovery columns).
+    ...(usedFor === 'company' ? [{
       header: () => <div className="text-center">Confirmation</div>,
       id: 'settle',
       enableSorting: false,
       meta: { width: '10%', align: 'center' },
-      cell: info => {
+      cell: (info: any) => {
         const r = info.row.original;
         // A rejected request is never settled — "N/A" instead of a bare "—" (QA #122).
         if (r.status === 'rejected') {
@@ -446,10 +448,40 @@ export function advanceRequestColumns({
         }
         return <span className="text-muted">—</span>;
       },
-    },
-    // Zoho Books sync state — COMPANY advances only (a self advance is recovered
-    // from salary, never booked in Zoho). Mirrors the Expense Claims column.
-    ...(usedFor === 'company' ? [{
+    }] as DataTableColumn<AdvanceRequestRow>[] : [{
+      // Self Used gets a Recovery Status column in the same slot — is the
+      // salary recovery (EMI / bi-monthly / lump sum) still ongoing or fully
+      // recovered? Recovery only starts once the advance has actually been PAID.
+      header: () => <div className="text-center">Recovery Status</div>,
+      id: 'recovery_status',
+      enableSorting: false,
+      meta: { width: '11%', align: 'center' },
+      cell: (info: any) => {
+        const r = info.row.original;
+        const pill = (icon: string, label: string, bg: string, fg: string) => (
+          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: bg, color: fg }}>
+            <i className={icon} /> {label}
+          </span>
+        );
+        // A rejected advance is never recovered — "N/A" (matches QA #134).
+        if (r.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
+        if (r.status === 'approved' && r.recovery_mode) {
+          // Not paid out yet → recovery hasn't started.
+          if ((r.settlement_status ?? 'unpaid') !== 'paid') {
+            return <span className="text-muted">—</span>;
+          }
+          return r.recovery_complete
+            ? pill('ri-checkbox-circle-line', 'Completed', '#d6f4e3', '#108548')
+            : pill('ri-loader-4-line', 'Ongoing', '#e0e7ff', '#3730a3');
+        }
+        return <span className="text-muted">—</span>;
+      },
+    }] as DataTableColumn<AdvanceRequestRow>[]),
+    // Zoho Books sync state — for BOTH self and company advances (the payout to
+    // the employee is booked in Zoho either way). Mirrors the Expense Claims column.
+    {
       header: () => <div className="text-center">Zoho Sync</div>,
       id: 'zoho_sync',
       enableSorting: false,
@@ -469,7 +501,7 @@ export function advanceRequestColumns({
           </span>
         );
       },
-    }] as DataTableColumn<AdvanceRequestRow>[] : []),
+    },
     {
       header: () => <div className="text-center">Action</div>,
       id: '__actions',

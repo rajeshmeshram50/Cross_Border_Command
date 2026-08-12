@@ -436,10 +436,10 @@ export default function ExpenseSettlementModal({
   const sanctioned = firstPayment ? +(claimed - totalDeduction + totalAddition).toFixed(2) : (summary?.sanctioned_amount ?? 0);
   const remaining = +(sanctioned - paidSoFar).toFixed(2);
   const amountNum = Math.max(0, Number(amount) || 0);
-  // Zoho sync applies to expense claims AND to COMPANY advances (a payout against
-  // a company advance is booked in Zoho Books as an Expense). A SELF advance is
-  // recovered from salary, so it never syncs.
-  const zohoEligible = !isAdvance || (summary?.used_for === 'company');
+  // Zoho sync applies to expense claims AND to every advance (self or company) —
+  // the payout recorded against an advance is what gets booked in Zoho Books as
+  // an Expense, regardless of how the advance is later recovered/settled.
+  const zohoEligible = true;
   // Zoho bulk-sync selection (QA #129) — only un-synced payment rows are selectable.
   const zohoUnsyncedIds = zohoEligible ? (summary?.payments ?? []).filter(p => (p.zoho_status || 'not_synced') !== 'synced').map(p => p.id) : [];
   const zohoSelectedIds = zohoUnsyncedIds.filter(id => selectedZoho.has(id));
@@ -1116,9 +1116,10 @@ export default function ExpenseSettlementModal({
           ) : (
             <>
               {/* KPI strip — hidden in a manager review (everything's in Claim
-                  Details) and for ADVANCES (additions/deductions don't apply; the
-                  amounts live in the summary/distribution). */}
-              {!managerReview && !isAdvance && (
+                  Details) and for COMPANY advances (additions/deductions don't
+                  apply; the amounts live in the distribution). A SELF advance
+                  still shows it (claimed / paid / pending / adjustments). */}
+              {!managerReview && !isCompanyAdvance && (
               <div className={`esm-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
                 <div className="esm-kpi esm-kpi-teal">
                   <span className="esm-kpi-ico"><IcoDoc /></span>
@@ -1302,9 +1303,13 @@ export default function ExpenseSettlementModal({
                 </div>
               )}
 
-              {/* Payment progress — sits above the deductions,
-                  shown once the deduction is locked and payments can be recorded. */}
-              {!firstPayment && (
+              {/* Payment / settlement progress — sits above the deductions, shown
+                  once the deduction is locked and payments can be recorded. Hidden
+                  for COMPANY advances: paid in full in one payout (the header
+                  already says "fully paid") and utilisation lives in the
+                  Confirmation section, so a progress bar just adds noise. A SELF
+                  advance keeps it (recovered gradually, so progress is useful). */}
+              {!firstPayment && !isCompanyAdvance && (
                 showSettleSection ? (
                   <div className="esm-prog2 esm-prog2--band">
                     <div className="esm-prog2-hd">

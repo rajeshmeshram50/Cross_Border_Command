@@ -146,14 +146,24 @@ export default function HrExpenseManagement() {
   const [reviewAdvId, setReviewAdvId] = useState<number | null>(null);
   // Advance whose "Decline reason" popup is open (rejected rows' Remark).
   const [remarkAdv, setRemarkAdv] = useState<AdvanceRequestRow | null>(null);
-  // Advance Used-For view — Self used / Company used (Advance Requests only).
-  const [advUsedFor, setAdvUsedFor] = useState<'self' | 'company'>('self');
+  // Advance Used-For view — Company used shows first, then Self used.
+  const [advUsedFor, setAdvUsedFor] = useState<'self' | 'company'>('company');
 
   const [rows, setRows] = useState<ExpenseClaimRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [advanceRows, setAdvanceRows] = useState<AdvanceRequestRow[]>([]);
   const [advanceLoading, setAdvanceLoading] = useState(false);
   const [module, setModule] = useState<'expense' | 'advance'>('expense');
+  // Brief shimmer when switching tabs (module or used-for) — the data is already
+  // in memory so the swap is instant and users couldn't tell the tab changed;
+  // a 500ms skeleton makes the transition legible.
+  const [switching, setSwitching] = useState(false);
+  const switchTimer = useRef<number | null>(null);
+  const flashSwitch = () => {
+    setSwitching(true);
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+    switchTimer.current = window.setTimeout(() => setSwitching(false), 500);
+  };
   const [batchOpen, setBatchOpen] = useState(false);
   const [filter, setFilter] = useState<StatusFilter>('all');
   const [search, setSearch] = useState('');
@@ -715,18 +725,25 @@ export default function HrExpenseManagement() {
     myEmpId != null && row.employee_id != null && Number(row.employee_id) === Number(myEmpId);
   const ownToast = () => toast.info('Handled by your reporting manager',
     'This is your own request — you can’t review, approve, set deductions or pay it. Your reporting manager (the branch user) will do the approval and payment.');
-  const reviewGate = (row: { id?: number; employee_id?: number | null; manager_status?: string | null; manager_id?: number | null; manager_name?: string | null; reporting_manager_user_id?: number | null }, moduleKind: 'expense' | 'advance' = 'expense'): boolean => {
+
+    const reviewGate = (row: { id?: number; employee_id?: number | null; manager_status?: string | null; manager_id?: number | null; manager_name?: string | null; reporting_manager_user_id?: number | null }, moduleKind: 'expense' | 'advance' = 'expense'): boolean => {
     if (isOwnRow(row)) { ownToast(); return false; }
     if ((row.manager_status ?? 'pending') !== 'approved') {
-      // Is the LOGGED-IN user the reporting manager of this row? Either the
-      // assigned employee-manager (manager_id = my employee id) OR the branch
-      // USER set as the employee's reporting manager (reporting_manager_user_id
-      // = my user id). In that case the manager step is THEIRS to do — send
-      // them to the Inbox AND deep-link straight to the review popup for this
-      // row (QA #119 + follow-up), rather than telling them to wait on
-      // themselves or making them hunt for it in the list.
+      // The Inbox redirect is ONLY for the person who actually owns the
+      // MANAGER-review step of this row — not for HR approval or payment (those
+      // stay here on the Expense page). Two ways to be that person:
+      //   • the assigned employee-manager (manager_id = my employee id), OR
+      //   • a branch USER acting as the DE-FACTO reporting manager — but only
+      //     when NO employee-manager is assigned (manager_id is null). This
+      //     mirrors MyTeamController::pendingAdvanceRequests, which surfaces a
+      //     manager-stage row to a branch admin only when manager_id is null.
+      // When an employee-manager IS assigned, a branch user is acting as HR,
+      // not the manager, so we must NOT bounce them to an Inbox that doesn't
+      // even list this row — they wait on the manager (manager stage) or
+      // approve inline (once the manager has approved).
       const iAmEmployeeManager = myEmpId != null && row.manager_id != null && Number(row.manager_id) === Number(myEmpId);
-      const iAmBranchUserManager = user?.id != null && row.reporting_manager_user_id != null
+      const iAmBranchUserManager = user?.id != null && row.manager_id == null
+        && row.reporting_manager_user_id != null
         && Number(row.reporting_manager_user_id) === Number(user.id);
       if (iAmEmployeeManager || iAmBranchUserManager) {
         toast.info('Approve as reporting manager in your Inbox',
@@ -799,6 +816,7 @@ export default function HrExpenseManagement() {
                     key={m.key}
                     type="button"
                     onClick={() => {
+                      if (module !== m.key) flashSwitch();
                       setModule(m.key);
                       setFilter('all');
                     }}
@@ -1088,13 +1106,13 @@ export default function HrExpenseManagement() {
             autoFitRows
             fitToViewport
             minWidth={1500}
-            loading={advanceLoading}
+            loading={advanceLoading || switching}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search employee, advance no, type, reason…"
             tabs={statusTabs}
             activeTab={filter}
-            onTabChange={k => setFilter(k as StatusFilter)}
+            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
             toolbarActions={expenseToolbarActions}
             emptyMessage={
               <>
@@ -1111,15 +1129,15 @@ export default function HrExpenseManagement() {
               Spend Analytics panel above it. */}
           <div className="d-flex gap-2 flex-wrap px-3 pb-2">
             {[
-              { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
               { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
+              { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
             ].map(t => {
               const on = advUsedFor === t.key;
               return (
                 <button
                   key={t.key}
                   type="button"
-                  onClick={() => { setAdvUsedFor(t.key); setFilter('all'); }}
+                  onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
                   className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
                   style={{
                     fontSize: 13, padding: '6px 14px',
@@ -1153,13 +1171,13 @@ export default function HrExpenseManagement() {
             autoFitRows
             fitToViewport
             minWidth={1150}
-            loading={loading}
+            loading={loading || switching}
             searchValue={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search employee, claim no, category, vendor…"
             tabs={statusTabs}
             activeTab={filter}
-            onTabChange={k => setFilter(k as StatusFilter)}
+            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
             toolbarActions={expenseToolbarActions}
             emptyMessage={
               <>
