@@ -977,6 +977,27 @@ const EXIT_TYPE_CHOICES: { value: string; label: string; desc: string; icon: str
   },
 ];
 
+/** The four editable Full & Final lines, all blank. */
+const FNF_LINES_EMPTY = { basic: '', leaveEncash: '', bonus: '', loan: '' };
+
+/**
+ * Coerce every value of a saved blob to a STRING, mapping null/undefined to ''.
+ *
+ * Laravel's global ConvertEmptyStringsToNull middleware rewrites '' → null on
+ * every inbound request, nested JSON included — so a blank F&F line saved as ''
+ * comes back as null. Spread straight into state, that null reaches a
+ * controlled <input value>, which React warns about and then treats as
+ * UNCONTROLLED, quietly breaking the field's binding. Anything non-object
+ * returns an empty object so a malformed blob can't poison state either.
+ */
+function strValues(obj: unknown): Record<string, string> {
+  if (!obj || typeof obj !== 'object') return {};
+  return Object.fromEntries(
+    Object.entries(obj as Record<string, unknown>)
+      .map(([k, v]) => [k, v == null ? '' : String(v)]),
+  );
+}
+
 /* Old rows persisted stage_status keyed by the numbers 1-4 of the original
    fixed stage list. Re-key them so a case created before this change reopens
    with its progress intact instead of showing every stage as Pending. */
@@ -1100,7 +1121,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [rcv, setRcv] = useState({ amount: '', date: '', mode: 'UPI', bank: '', ref: '', remarks: '' });
   // Payment-in-lieu side lives inside the FnF stage.
   const [fnf, setFnf] = useState<any>(null);
-  const [fnfLines, setFnfLines] = useState({ basic: '', leaveEncash: '', bonus: '', loan: '' });
+  const [fnfLines, setFnfLines] = useState({ ...FNF_LINES_EMPTY });
   const [fnfMeta, setFnfMeta]   = useState({ approval: '', payMode: 'Bank Transfer (NEFT)', payDate: '' });
   const [settleSaving, setSettleSaving] = useState(false);
   // `fnfMarkedPaid` records that the settlement was explicitly marked PAID
@@ -1625,20 +1646,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      resignation never sees the field and saves null. */
   const [blacklisted, setBlacklisted]         = useState('No');
   const [blacklistReason, setBlacklistReason] = useState('');
-  /* Has the blacklist answer been DECIDED — either loaded off a saved case or
-     chosen by HR here? Until it is, a Termination flips it to Yes on its own
-     (the server does the same on save). Once decided, the type must never
-     overwrite the answer: HR filing a redundancy as a termination and setting
-     No back would otherwise have it snap to Yes again on the next render. */
+  /* Has the blacklist answer been DECIDED — chosen by HR here, or loaded off a
+     saved case? Only consulted for the exit types where the answer is HR's to
+     give; a Termination overrides it (see below). */
   const blacklistDecidedRef = useRef(false);
-  useEffect(() => {
-    if (exitType === 'Termination' && !blacklistDecidedRef.current) setBlacklisted('Yes');
-  }, [exitType]);
-  // A termination blacklists by default, so the REASON is not something HR has
-  // to type before the case can close — the exit type is the reason, and the
-  // server stamps that in words. A blacklist chosen on any other exit type is a
-  // deliberate act and still has to be justified.
+  /* A TERMINATION ALWAYS blacklists — the answer is not HR's to give, so the
+     dropdown below is locked to Yes rather than merely defaulted to it.
+     A terminated employee can never be rehired from here (rehireBlockedReason
+     refuses every termination), so "Terminated / Not Blacklisted" advertised a
+     door that every rule downstream keeps shut.
+     Unconditional, deliberately ignoring blacklistDecidedRef: with the control
+     disabled there is no way to answer No, and a case SAVED as No before this
+     rule existed has to be corrected on open rather than left contradicting
+     the exit type. Mirrored by ExitController::applyTerminationBlacklist(). */
   const autoBlacklist = exitType === 'Termination';
+  useEffect(() => {
+    if (autoBlacklist) setBlacklisted('Yes');
+  }, [autoBlacklist]);
+  // The termination IS the reason, so HR is not held at the closing gate to
+  // retype it — the server stamps it in words. A blacklist chosen on any other
+  // exit type is a deliberate act and still has to be justified.
 
   /* Stage 1's progress is measured on what has been SAVED, not on what is
      currently typed into the form.
@@ -1727,11 +1754,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         setNoticePayment(data.notice_payment && typeof data.notice_payment === 'object' ? data.notice_payment : null);
         const savedFnf = data.fnf && typeof data.fnf === 'object' ? data.fnf : null;
         setFnf(savedFnf);
-        if (savedFnf?.lines) setFnfLines({ basic: '', leaveEncash: '', bonus: '', loan: '', ...savedFnf.lines });
+        /* Every blank the wizard saves comes BACK as null, not '': Laravel's
+           global ConvertEmptyStringsToNull middleware rewrites '' → null on the
+           way in, all the way through the nested fnf blob. Spreading that
+           straight over the '' defaults put null into a controlled <input
+           value>, which React warns about and — worse — silently flips the
+           field to UNCONTROLLED, so the box stopped tracking state. Coerce
+           every value back to a string on the way out of the payload. */
+        if (savedFnf?.lines) setFnfLines({ ...FNF_LINES_EMPTY, ...strValues(savedFnf.lines) });
         if (savedFnf?.meta) {
           const rawMeta = savedFnf.meta && typeof savedFnf.meta === 'object' ? savedFnf.meta : {};
           const { payStatus: _ignored, ...restMeta } = rawMeta as Record<string, any>;
-          setFnfMeta({ approval: '', payMode: 'Bank Transfer (NEFT)', payDate: '', ...restMeta });
+          setFnfMeta({ approval: '', payMode: 'Bank Transfer (NEFT)', payDate: '', ...strValues(restMeta) });
           // Initialise whether this F&F was already recorded as paid on the
           // server. Backwards-compatible: if the server stored approval +
           // payDate, treat that as already paid.
@@ -2052,9 +2086,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     profile_lock:          profileLock || null,
     hr_sign_off:           hrSignOff || null,
     // Null when the question doesn't apply, so "not asked" stays distinct from
-    // a genuine "No" (the server enforces the same rule).
-    blacklisted:           blacklistApplies ? blacklisted : null,
-    blacklist_reason:      blacklistApplies && blacklisted === 'Yes' ? (blacklistReason.trim() || null) : null,
+    // a genuine "No" (the server enforces the same rule). A termination sends
+    // Yes from the constant, not from state — so a save fired in the render
+    // before the lock-to-Yes effect settles can never post a stale No.
+    blacklisted:           blacklistApplies ? (autoBlacklist ? 'Yes' : blacklisted) : null,
+    blacklist_reason:      blacklistApplies && (autoBlacklist || blacklisted === 'Yes') ? (blacklistReason.trim() || null) : null,
     stage_status:          stageStatus,
     current_stage:         stage,
 
@@ -3650,14 +3686,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     <>
                       <Col md={6}>
                         <EpField label="Blacklist Employee">
+                          {/* LOCKED on a termination — Yes is the only valid
+                              answer, so the control is disabled rather than
+                              merely pre-filled. Options collapse to ['Yes'] too:
+                              a disabled select still listing "No" reads as a
+                              choice the user is being denied, when in fact the
+                              exit type has already decided it. */}
                           <EpSelect
-                            value={blacklisted}
-                            onChange={(v) => { blacklistDecidedRef.current = true; setBlacklisted(v); }}
-                            options={['No', 'Yes']}
+                            value={autoBlacklist ? 'Yes' : blacklisted}
+                            onChange={(v) => {
+                              if (autoBlacklist) return;
+                              blacklistDecidedRef.current = true;
+                              setBlacklisted(v);
+                            }}
+                            options={autoBlacklist ? ['Yes'] : ['No', 'Yes']}
+                            disabled={autoBlacklist}
                           />
                           <div className="ep-hint" style={{ fontSize: 11, color: autoBlacklist ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
                             {autoBlacklist
-                              ? 'Set automatically — a termination blacklists the employee. Rehiring them needs a fresh hiring process either way; change this to No only if the termination is not a bar on returning.'
+                              ? 'Locked — a termination always blacklists the employee, and this cannot be set to No. A terminated employee can never be rehired from here; bringing them back needs a fresh hiring process.'
                               : 'Blocks re-hire — a blacklisted employee cannot be brought back, whatever the exit type.'}
                           </div>
                         </EpField>
@@ -4183,7 +4230,7 @@ function SettlementSummary({
 
 /* One line of the Full & Final breakdown. */
 function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
-  label: string; value: string; onChange?: (v: string) => void;
+  label: string; value: string | null | undefined; onChange?: (v: string) => void;
   deduction?: boolean; readOnly?: boolean; hint?: string;
 }) {
   return (
@@ -4194,8 +4241,13 @@ function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
       </span>
       <span className="ep-fnf-amt">
         {deduction && <i className="ep-fnf-sign">−</i>}
+        {/* `value ?? ''` — the input must stay CONTROLLED. A saved blank round-
+            trips through the API as null (ConvertEmptyStringsToNull), and a
+            null here would flip the field to uncontrolled mid-life, so it stops
+            tracking state. The load path already normalises; this is the leaf
+            guard so no future caller can reintroduce it. */}
         <input
-          className="ep-fnf-in" type="number" min={0} value={value}
+          className="ep-fnf-in" type="number" min={0} value={value ?? ''}
           readOnly={readOnly} disabled={readOnly}
           onChange={e => onChange?.(e.target.value)} placeholder="0.00"
         />
