@@ -672,7 +672,7 @@ export default function HrLeavePlans() {
               body content live inside the bordered .lp-shell card below it.
               Nesting the header inside .lp-shell produced a card-in-card look
               with inconsistent header/content spacing (bug #84). */}
-          <div className="rec-page">
+          <div className="rec-page lplan-page">
             <div className="frm-cstrip mb-3">
               <span className="frm-cstrip-accent" />
               <div className="frm-cstrip-left">
@@ -1431,7 +1431,13 @@ function LeaveBalancesTab() {
         autoFitRows
         /* 3 identity columns + a variable number of leave-type columns; below
            this the wrapper scrolls sideways rather than crushing the bars. */
-        minWidth={720 + (data?.columns.length ?? 0) * 170}
+        /* Base drops with the fixed columns the CSS hides below (see
+           .lplan-page in recruitment.css), so the table stops reserving width
+           for columns that are no longer on screen. The per-leave-type part
+           stays: those balances ARE the table, and scrolling to reach one beats
+           hiding it. */
+        minWidth={(window.innerWidth <= 900 ? 400 : window.innerWidth <= 1200 ? 560 : 720)
+          + (data?.columns.length ?? 0) * 170}
         loading={loading}
         searchValue={search}
         onSearchChange={setSearch}

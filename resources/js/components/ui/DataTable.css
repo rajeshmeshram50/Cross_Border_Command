@@ -361,9 +361,29 @@
 .dt-chipbar-clear:hover { color: var(--dt-a-800); }
 
 /* ── Table ────────────────────────────────────────────────────────────────── */
+/* A table inside a MODAL hits the same min-width:auto chain as one on a page,
+   but through Bootstrap's own boxes. .modal-content and .modal-body are flex
+   containers, so without this the table's min-width propagated up and the
+   dialog grew wider than the screen — its tab rail and header clipped at both
+   edges with nothing to scroll, because the overflow was outside the dialog
+   rather than inside .dt-scroll.
+   Scoped to modals that actually contain a DataTable, so no other dialog's
+   layout is touched. */
+.modal-content:has(.dt-root),
+.modal-content:has(.dt-root) .modal-body,
+.modal-content:has(.dt-root) .modal-body > * { min-width: 0; max-width: 100%; }
+.modal-content:has(.dt-root) { overflow: hidden; }
+
 .dt-table-wrap {
   display: flex; flex-direction: column;
-  flex: 1; min-height: 0;
+  /* min-width:0 is as load-bearing here as it is on .dt-scroll below.
+     A flex item's min-width defaults to its CONTENT's min-content width, and
+     the table inside carries a large min-width — so this box refused to shrink
+     and dragged the whole card past the right edge of the screen instead of
+     letting .dt-scroll scroll inside it. The tab rail and search above the
+     table were pulled wide with it, which is how it showed up: a clipped rail
+     with no way to scroll to the rest. */
+  flex: 1; min-height: 0; min-width: 0;
   overflow: hidden;
   position: relative;
   /* Header-coloured backdrop. It shows through only in the sliver beside the
@@ -712,35 +732,35 @@
   .dt-toolbar-actions { width: 100%; margin-left: 0; justify-content: center; flex-wrap: wrap; }
 }
 
-/* ── Dark mode, part 2 ───────────────────────────────────────────────────────
-   Everything below was still rendering light-mode values on a dark page:
 
-   1. The .tc-wl-* pager. Its dark rules live in resources/css/app.css and are
-      keyed ONLY on [data-bs-theme="dark"], so under the Velzon customizer's
-      [data-layout-mode="dark"] the footer stayed a pale lavender band. Mirrored
-      here, scoped to .dt-root so pages that still use the old pager keep their
-      current behaviour.
-   2. The cell pills / action buttons, whose light pastel fills carry dark text
-      (#475569, #16a34a …) — legible on white, muddy on a dark row.
-   ── */
+[data-bs-theme="dark"] .dt-root .tc-wl-pag,
 [data-layout-mode="dark"] .dt-root .tc-wl-pag {
-  background: var(--tcwl-band-dark, linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08)));
+  background:
+    var(--tcwl-band-dark, linear-gradient(90deg, rgba(124, 58, 237, .08), rgba(124, 58, 237, .14), rgba(124, 58, 237, .08))),
+    var(--vz-secondary-bg, #212529);
   border-top-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30));
 }
+[data-bs-theme="dark"] .dt-root .tc-wl-info,
+[data-bs-theme="dark"] .dt-root .tc-wl-rows,
 [data-layout-mode="dark"] .dt-root .tc-wl-info,
 [data-layout-mode="dark"] .dt-root .tc-wl-rows {
   background: rgba(255, 255, 255, .06);
   border-color: var(--tcwl-border-dark, rgba(167, 139, 250, .30));
   color: var(--tcwl-text-dark, #c4b5fd);
 }
+[data-bs-theme="dark"] .dt-root .tc-wl-info .tc-wl-hl,
 [data-layout-mode="dark"] .dt-root .tc-wl-info .tc-wl-hl { color: #ddd6fe; }
+[data-bs-theme="dark"] .dt-root .tc-wl-rows select,
 [data-layout-mode="dark"] .dt-root .tc-wl-rows select { color: #ddd6fe; background: transparent; }
+[data-bs-theme="dark"] .dt-root .tc-wl-rows select option,
 [data-layout-mode="dark"] .dt-root .tc-wl-rows select option { background-color: #1f1b3a; color: #ddd6fe; }
+[data-bs-theme="dark"] .dt-root .tc-wl-btn,
 [data-layout-mode="dark"] .dt-root .tc-wl-btn {
   background: rgba(var(--dt-a-rgb), .18);
   border-color: rgba(var(--dt-a-rgb), .42);
   color: #ddd6fe;
 }
+[data-bs-theme="dark"] .dt-root .tc-wl-btn:hover:not(:disabled),
 [data-layout-mode="dark"] .dt-root .tc-wl-btn:hover:not(:disabled) {
   background: rgba(var(--dt-a-rgb), .30);
   border-color: var(--dt-a-400);
@@ -778,7 +798,10 @@
 /* The card's light-mode inset highlight reads as a white hairline on dark. */
 [data-bs-theme="dark"] .dt-root,
 [data-layout-mode="dark"] .dt-root { box-shadow: 0 6px 18px rgba(0, 0, 0, .30); }
-/* Standalone tab rails (a header-strip toggle) sit on the page, not the card. */
+/* Standalone tab rails (a header-strip toggle) sit on the page, not the card.
+   Same both-attributes rule as the pager above — [data-layout-mode] alone never
+   matches, which left the rail on its light fill on a dark page. */
+[data-bs-theme="dark"] .dt-tabrail .dt-tabs,
 [data-layout-mode="dark"] .dt-tabrail .dt-tabs { background: rgba(255, 255, 255, .05); border-color: rgba(255, 255, 255, .10); }
 
 

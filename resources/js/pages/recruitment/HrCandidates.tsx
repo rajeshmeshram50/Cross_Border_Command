@@ -362,7 +362,7 @@ export default function HrCandidates() {
       <MasterFormStyles />
       <Row>
         <Col xs={12}>
-          <div className="rec-page">
+          <div className="rec-page cand-page">
             {/* Header — the shared .frm-cstrip strip used by Recruitment (and
                 Payroll / Attendance), rather than a bare flex row: bordered
                 white card, violet accent rail, 46px icon tile, and every page

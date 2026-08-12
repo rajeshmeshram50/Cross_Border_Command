@@ -113,9 +113,6 @@ class SalaryStructureController extends Controller
 
     public function store(Request $request)
     {
-        if (!$this->canManage($request)) {
-            return response()->json(['message' => 'You are not allowed to manage salary structures.'], 403);
-        }
         $data = $request->validate([
             'employee_id'     => ['required', 'integer'],
             'effective_from'  => ['required', 'date'],
@@ -200,9 +197,6 @@ class SalaryStructureController extends Controller
 
     public function destroy(Request $request, int $id)
     {
-        if (!$this->canManage($request)) {
-            return response()->json(['message' => 'You are not allowed to manage salary structures.'], 403);
-        }
         $s = $this->findScoped($request, $id);
         abort_unless($s, 404, 'Salary structure not found.');
         if ($s->status === 'active') {
@@ -210,18 +204,6 @@ class SalaryStructureController extends Controller
         }
         $s->delete();
         return response()->json(['message' => 'Salary structure removed.']);
-    }
-
-    /** Only payroll managers (not plain employees) may create/revise/delete structures. */
-    private function canManage(Request $request): bool
-    {
-        $user = $request->user();
-        if (!$user) return false;
-        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) return true;
-        if ($user->user_type === 'employee') return false;
-        $perm = $user->permissions['hr.payroll'] ?? null;
-        if (is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false))) return true;
-        return $user->user_type === 'branch_user';
     }
 
     private function findScoped(Request $request, int $id): ?SalaryStructure

@@ -1089,9 +1089,7 @@ class BranchController extends Controller
             return response()->json(['legal_entities' => []]);
         }
 
-        $branchId = $user->user_type === 'branch_user'
-            ? $user->branch_id
-            : ($request->integer('branch_id') ?: null);
+        $branchId = self::callerBranchId($request);
 
         $query = Branch::where('client_id', $user->client_id);
         if ($branchId) {
@@ -1112,6 +1110,30 @@ class BranchController extends Controller
                 'location' => self::composeBranchLocation($b),
             ])->values(),
         ]);
+    }
+
+    /**
+     * Which branch the form lookups (/branch-legal-entities, /branch-shifts)
+     * should resolve against.
+     *
+     * ANY caller that is bound to a branch is locked to it — not just a
+     * branch_user. An EMPLOYEE granted the HRMS module is equally branch-bound,
+     * but the BranchSwitcher is only rendered for client_admin, so no
+     * `branch_id` is ever saved for them and the axios interceptor injects
+     * nothing. Keying off user_type alone therefore left an employee adding a
+     * hire with EVERY branch of the client returned: the Legal Entity field
+     * (auto-fetched, resolves only when exactly one branch comes back) stayed
+     * blank on a multi-branch client, and the Shift dropdown merged sibling
+     * branches' shifts. Falling back to the request param stays for
+     * client-level users (branch_id IS NULL), who genuinely span branches.
+     */
+    private static function callerBranchId(Request $request): ?int
+    {
+        $user = $request->user();
+        if ($user && $user->branch_id) {
+            return (int) $user->branch_id;
+        }
+        return $request->integer('branch_id') ?: null;
     }
 
     /**
@@ -1162,9 +1184,7 @@ class BranchController extends Controller
             return response()->json(['shifts' => []]);
         }
 
-        $branchId = $user->user_type === 'branch_user'
-            ? $user->branch_id
-            : ($request->integer('branch_id') ?: null);
+        $branchId = self::callerBranchId($request);
 
         $query = Branch::where('client_id', $user->client_id);
         if ($branchId) {

@@ -597,6 +597,18 @@ export default function HrEmployees() {
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
+  /* The step rail scrolls sideways on a phone (four labelled circles cannot
+     wrap without their connecting lines coming apart). Scrolling alone is not
+     enough: reach step 4 and the rail is still parked at step 1, so the screen
+     shows three steps, none of them the one you are on. Bring the active step
+     into view whenever it changes. */
+  const empStepRailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const rail = empStepRailRef.current;
+    if (!rail) return;
+    const active = rail.querySelector('[aria-current="step"]');
+    active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [empStep]);
   const [empMaxStep, setEmpMaxStep] = useState<1 | 2 | 3 | 4>(1);
   const [eWorkCountry, setEWorkCountry]   = useState('');
   const [eFirstName, setEFirstName]       = useState('');
@@ -3331,7 +3343,7 @@ export default function HrEmployees() {
             </div>
           </div>
 
-          <div className={`emp-stepper-bar${saving ? ' is-loading' : ''}`} style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
+          <div ref={empStepRailRef} className={`emp-stepper-bar${saving ? ' is-loading' : ''}`} style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="d-flex align-items-start">
               {[
                 { n: 1, label: 'Basic Details' },
@@ -4772,7 +4784,10 @@ function ActionBtn({
               position: 'absolute', top: -2, right: -2,
               width: 9, height: 9, borderRadius: '50%',
               background: '#10b981',
-              border: '2px solid var(--vz-card-bg, #fff)',
+              /* Ring reads as a cut-out of the surface behind the avatar, so it
+                 has to BE that surface. --vz-card-bg is card-scoped and empty
+                 here, leaving a white ring on a dark page. */
+              border: '2px solid var(--vz-secondary-bg, #fff)',
               boxShadow: '0 0 0 1px rgba(16,185,129,0.35)',
             }}
           />
