@@ -281,7 +281,10 @@ class ExitController extends Controller
             // already-issued token keeps authenticating — no middleware
             // re-checks users.status on subsequent requests.
             if ($employee->user) {
-                $employee->user->update(['status' => 'inactive']);
+                // Disable the login AND free its email slot (email_active=false):
+                // the person has exited, so their email can be reused for a new
+                // registration. Reset to true if they are ever rehired.
+                $employee->user->update(['status' => 'inactive', 'email_active' => false]);
                 $employee->user->tokens()->delete();
             }
 
@@ -488,10 +491,24 @@ class ExitController extends Controller
             }
             $employee->save();
 
-            // Switch the paired login back on. Tokens were revoked at exit, so
-            // they sign in fresh.
+            // Switch the paired login back on and re-claim its email slot
+            // (email_active=true) — the person is active again. Tokens were
+            // revoked at exit, so they sign in fresh. But if their freed email was
+            // meanwhile taken by another ACTIVE account in the same org, re-claiming
+            // it would collide (unique per client) — fail with a clear message
+            // instead of a raw DB error.
             if ($employee->user) {
-                $employee->user->update(['status' => 'active']);
+                $u = $employee->user;
+                $clash = \App\Models\User::where('id', '!=', $u->id)
+                    ->whereNull('deleted_at')
+                    ->where('email_active', true)
+                    ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $u->email)])
+                    ->where(fn ($q) => $u->client_id === null
+                        ? $q->whereNull('client_id')
+                        : $q->where('client_id', $u->client_id))
+                    ->exists();
+                abort_if($clash, 409, 'This email is now used by another active employee — update this person’s email before rehiring.');
+                $u->update(['status' => 'active', 'email_active' => true]);
             }
 
             $exit->rehired_at = now();

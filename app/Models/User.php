@@ -28,6 +28,10 @@ class User extends Authenticatable
         'branch_id',
         'department_id',
         'status',
+        // Email-slot key: true = active account (its email is taken), false = the
+        // person has EXITED and the email is freed for reuse (see the dup-email
+        // check in EmployeeController::validatePayload).
+        'email_active',
         'must_reset_password',
         'avatar',
         'profile_photo',
@@ -58,6 +62,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'last_login_at' => 'datetime',
             'login_count' => 'integer',
+            'email_active' => 'boolean',
             'must_reset_password' => 'boolean',
         ];
     }
