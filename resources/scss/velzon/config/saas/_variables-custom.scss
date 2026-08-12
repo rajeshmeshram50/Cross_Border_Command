@@ -135,7 +135,13 @@ $boxed-layout-width:                              1300px;
 $boxed-body-bg:                                   darken($body-bg, 4%);
 
 // Footer
-$footer-height:                                   60px;
+// 40px, not the stock 60px — the bar holds one line of 0.825rem text
+// (~19.8px at line-height 1.5), so 60px was ~40px of dead space above the
+// fold on every page. Kept as the variable rather than a local override
+// because the layouts, chat and email panes all size themselves off it
+// (calc(100vh - header - footer)); hard-coding the .footer rule alone would
+// leave those panes reserving space the bar no longer occupies.
+$footer-height:                                   40px;
 $footer-bg:                                       $white;
 $footer-color:                                    #98a6ad;
 

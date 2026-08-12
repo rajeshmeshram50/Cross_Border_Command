@@ -4,7 +4,10 @@
 
 .footer {
     bottom: 0;
-    padding: 20px calc(#{$grid-gutter-width} * 0.5);
+    // Vertical padding tracks $footer-height: the bar is a FIXED height, so
+    // 20px + a 19.8px line overflowed the 40px box. 10px leaves the single
+    // line centred with ~0.2px to spare.
+    padding: 10px calc(#{$grid-gutter-width} * 0.5);
     position: relative;
     right: 0;
     color: var(--#{$prefix}footer-color);
