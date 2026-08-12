@@ -67,6 +67,9 @@ type Summary = {
   // Pending → Recovered status on the schedule instead of always "Pending".
   recovery_ledger?: { year: number; month: number; amount: number; carried: number }[];
   recovery_recovered?: number;
+  // One-time DIRECT pay-offs (from profile, not payroll) + what's left to recover.
+  recovery_direct_payments?: { amount: number; method: string; reference?: string | null; note?: string | null; proof_name?: string | null; proof_url?: string | null; paid_at?: string | null }[];
+  recovery_remaining?: number;
   // Advance-only settle context (company advances).
   employee_id?: number | null;
   used_for?: 'self' | 'company' | string;
@@ -304,6 +307,17 @@ export default function ExpenseSettlementModal({
   // Review mode: confirmation dialog ('approve' | 'reject') + reject reason.
   const [confirmKind, setConfirmKind] = useState<null | 'approve' | 'reject'>(null);
   const [rejectReason, setRejectReason] = useState('');
+  // One-time DIRECT recovery pay-off (self advance) — inline form state.
+  // DISABLED for now (feature kept, not removed). Flip this to true and uncomment
+  // the two routes in routes/api.php to re-enable the "Pay Off (one-time)" flow.
+  const ONETIME_PAYOFF_ENABLED = false;
+  const [recoverFormOpen, setRecoverFormOpen] = useState(false);
+  const [recAmount, setRecAmount] = useState('');
+  const [recMethod, setRecMethod] = useState('');
+  const [recReference, setRecReference] = useState('');
+  const [recNote, setRecNote] = useState('');
+  const [recProof, setRecProof] = useState<File | null>(null);
+  const [recSaving, setRecSaving] = useState(false);
 
   const firstPayment = !summary?.sanctioned_amount;
 
@@ -610,6 +624,34 @@ export default function ExpenseSettlementModal({
     setBulkSyncing(false);
     if (fail === 0) toast.success('Synced to Zoho', `${ok} payment${ok === 1 ? '' : 's'} synced to Zoho Books.`);
     else toast.warning('Partially synced', `${ok} synced, ${fail} failed — retry the remaining rows.`);
+  };
+
+  // Record a ONE-TIME DIRECT recovery pay-off against a self advance (from the
+  // profile, not payroll — e.g. at exit). Direct only, capped at the remaining.
+  const submitRecoverOnetime = async () => {
+    if (claimId == null || recSaving) return;
+    const amt = Math.round((Number(recAmount) || 0) * 100) / 100;
+    const remaining = summary?.recovery_remaining ?? 0;
+    if (amt <= 0) { toast.warning('Enter an amount', 'Enter the amount being paid back.'); return; }
+    if (amt > remaining + 0.005) { toast.warning('Amount too high', `Cannot exceed the remaining ${inr(remaining)}.`); return; }
+    if (!recMethod.trim()) { toast.warning('Select a method', 'Choose how the repayment was made.'); return; }
+    setRecSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('amount', String(amt));
+      fd.append('method', recMethod.trim());
+      if (recReference.trim()) fd.append('reference', recReference.trim());
+      if (recNote.trim()) fd.append('note', recNote.trim());
+      if (recProof) fd.append('proof', recProof);
+      const { data: r } = await api.post(`${basePath}/${claimId}/recover-onetime`, fd);
+      toast.success('Recovery recorded', r?.message ?? 'One-time recovery payment recorded.');
+      if (r?.data) setSummary(r.data);
+      else { const s = (await api.get<Summary>(`${basePath}/${claimId}/settlement`)).data; setSummary(s); }
+      setRecoverFormOpen(false);
+      setRecAmount(''); setRecMethod(''); setRecReference(''); setRecNote(''); setRecProof(null);
+    } catch (e: any) {
+      toast.error('Could not record recovery', e?.response?.data?.message ?? 'Please try again.');
+    } finally { setRecSaving(false); }
   };
 
   const submit = async () => {
@@ -1047,10 +1089,19 @@ export default function ExpenseSettlementModal({
                 const rlbl = rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Single Lump Sum';
                 const rstep = rmode === 'bimonthly' ? 2 : 1;
                 const rmonths = summary.recovery_months ?? 0;
+                // Once the sanctioned (net) amount is locked, the real instalment
+                // count is sanctioned ÷ EMI — not the pre-adjustment plan — so the
+                // header agrees with the schedule (no phantom extra months).
+                const rEmi = summary.monthly_emi ?? 0;
+                const effMonths = rmode === 'lumpsum'
+                  ? 1
+                  : (summary.sanctioned_amount != null && rEmi > 0
+                      ? Math.max(1, Math.ceil((summary.sanctioned_amount - 0.005) / rEmi))
+                      : (rmonths || 0));
                 const rEnd = (() => {
                   if (!summary.recovery_start) return '—';
                   const d = new Date(summary.recovery_start);
-                  const cyc = rmode === 'lumpsum' ? 1 : (rmonths || 1);
+                  const cyc = rmode === 'lumpsum' ? 1 : (effMonths || 1);
                   return new Date(d.getFullYear(), d.getMonth() + (cyc - 1) * rstep, 1).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
                 })();
                 return (
@@ -1058,7 +1109,7 @@ export default function ExpenseSettlementModal({
                     <div className="esm-hp"><label>RECOVERY MODE</label><div>{rlbl}</div></div>
                     <div className="esm-hp"><label>RECOVERY START</label><div>{fmtDate(summary.recovery_start)}</div></div>
                     {rmode !== 'lumpsum' && <>
-                      <div className="esm-hp"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div>{rmonths || '—'}</div></div>
+                      <div className="esm-hp"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div>{effMonths || '—'}</div></div>
                       <div className="esm-hp"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div>{summary.monthly_emi != null ? inr(summary.monthly_emi) : '—'}</div></div>
                       <div className="esm-hp"><label>END DATE</label><div>{rEnd}</div></div>
                     </>}
@@ -1364,10 +1415,11 @@ export default function ExpenseSettlementModal({
               )}
 
               {/* Adjustments (additions/deductions) — hidden in a MANAGER review
-                  AND for ADVANCES (an advance carries its own amount distribution
-                  and is approved/rejected as-is, no adjustments). Icon header,
-                  2-col body, submit below; editable only until first payment. */}
-              {!managerReview && !isAdvance && (
+                  AND for COMPANY advances (they carry their own amount
+                  distribution and are approved/rejected as-is). A SELF advance
+                  and expense claims keep it — HR can add/deduct before the payout.
+                  Icon header, 2-col body, submit below; editable until first payment. */}
+              {!managerReview && !isCompanyAdvance && (
               <div className="esm-sec">
                 <div className="esm-sec-hd">
                   <div
@@ -1382,7 +1434,7 @@ export default function ExpenseSettlementModal({
                         <span className="esm-sec-div">|</span>
                         <span className="esm-sec-title">Adjustments</span>
                       </div>
-                      <div className="esm-sec-sub">{editDeductions ? `Apply one-time ${isAdvance ? 'additions' : 'additions / deductions'}, then submit to lock the net payable` : `Adjustments applied to this ${noun}`}</div>
+                      <div className="esm-sec-sub">{editDeductions ? `Apply one-time ${isCompanyAdvance ? 'additions' : 'additions / deductions'}, then submit to lock the net payable` : `Adjustments applied to this ${noun}`}</div>
                     </div>
                   </div>
                   <div className="esm-sec-hd-actions">
@@ -1429,10 +1481,11 @@ export default function ExpenseSettlementModal({
                         )}
                       </div>
 
-                      {/* Deductions are for EXPENSE claims only. An advance is
-                          approved as-is or REJECTED — there's no partial deduction
-                          step — so the whole Deductions column is hidden for it. */}
-                      {!isAdvance && <>
+                      {/* Deductions apply to expense claims and SELF advances (HR
+                          can trim the sanctioned payout). A COMPANY advance is
+                          approved as-is against its distribution, so its Deductions
+                          column is hidden. */}
+                      {!isCompanyAdvance && <>
                       <div className="esm-vline" />
 
                       {/* Deductions (−) */}
@@ -1474,7 +1527,7 @@ export default function ExpenseSettlementModal({
                       <div className="esm-sumbox">
                         <div className="esm-sumrow"><span>Claimed Amount</span><span>{inr(claimed)}</span></div>
                         <div className="esm-sumrow"><span>Additions (+)</span><span className={(editDeductions ? totalAddition : (summary.addition_amount || 0)) > 0 ? 'is-pos' : ''}>+ {inr(editDeductions ? totalAddition : (summary.addition_amount || 0))}</span></div>
-                        {!isAdvance && <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>}
+                        {!isCompanyAdvance && <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>}
                         <div className={`esm-sumrow is-grand ${sanctioned <= 0 ? 'is-bad' : ''}`}><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
                       </div>
                     </div>
@@ -1634,8 +1687,10 @@ export default function ExpenseSettlementModal({
 
               {/* ── Recovery Schedule (self advance) — collapsible; below Advance Paid.
                   Header shows only the pending amount + next EMI; the full plan +
-                  installments live in the body. ── */}
-              {!managerReview && isAdvance && (summary.used_for ?? 'self') !== 'company' && summary?.recovery_mode && (() => {
+                  installments live in the body. Gated on the advance being PAID —
+                  recovery can't be scheduled until the money has actually been
+                  disbursed to the employee. ── */}
+              {!managerReview && isAdvance && (summary.used_for ?? 'self') !== 'company' && summary?.recovery_mode && advancePaidFully && (() => {
                 const rmode = summary.recovery_mode;
                 const rlbl = rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Single Lump Sum';
                 const rstep = rmode === 'bimonthly' ? 2 : 1;
@@ -1644,7 +1699,15 @@ export default function ExpenseSettlementModal({
                 // Recover only what was actually paid — the sanctioned (net) amount
                 // after payout adjustments — not the originally-claimed amount.
                 const total = summary.sanctioned_amount ?? summary.claimed_amount ?? 0;
-                const n = rmode === 'lumpsum' ? 1 : (rmonths || 1);
+                // Instalment COUNT is derived from what actually needs recovering
+                // (sanctioned ÷ EMI), NOT the originally-planned recovery_months —
+                // which was sized off the pre-adjustment claimed amount. Otherwise a
+                // deduction leaves a phantom trailing instalment with a NEGATIVE
+                // amount (e.g. 96,500 over a plan of 100 × 1,000 → last row −2,500).
+                // The schedule now stops exactly when the balance is paid off.
+                const n = rmode === 'lumpsum'
+                  ? 1
+                  : (emi > 0 ? Math.max(1, Math.ceil((total - 0.005) / emi)) : (rmonths || 1));
                 const startStr = summary.recovery_start || '';
                 // What payroll has actually recovered so far → drives status.
                 const recovered = summary.recovery_recovered ?? 0;
@@ -1694,6 +1757,13 @@ export default function ExpenseSettlementModal({
                       </div>
                       <div className="esm-sec-hd-actions">
                         <span className="esm-recap"><span className="esm-recap-k">Pending</span> {inr(pending)}<span className="esm-recap-dot">•</span>{pending > 0 ? (<><span className="esm-recap-k">Next EMI</span> {inr(nextAmt)} · {nextDate}</>) : (<span className="esm-recap-k" style={{ color: '#15803d' }}>Fully recovered</span>)}</span>
+                        {/* One-time DIRECT pay-off — settle the remaining from the
+                            profile instead of payroll (e.g. at exit). DISABLED. */}
+                        {ONETIME_PAYOFF_ENABLED && pending > 0.005 && (
+                          <button type="button" className="esm-sec-btn" onClick={() => { setRecoveryOpen(true); setRecoverFormOpen(o => { const nx = !o; if (nx) { setRecAmount(String(pending)); setRecMethod(''); setRecReference(''); setRecNote(''); setRecProof(null); } return nx; }); }}>
+                            <i className="ri-hand-coin-line" /> Pay Off (one-time)
+                          </button>
+                        )}
                         <button type="button" className={`esm-sec-chev ${recoveryOpen ? '' : 'is-collapsed'}`} onClick={() => setRecoveryOpen(o => !o)} aria-label={recoveryOpen ? 'Collapse' : 'Expand'}>
                           <i className="ri-arrow-down-s-line" />
                         </button>
@@ -1730,6 +1800,85 @@ export default function ExpenseSettlementModal({
                         </>
                       ) : (
                         <div className="esm-hint">Recovery instalments appear once the advance is paid out.</div>
+                      )}
+
+                      {/* Direct pay-offs already recorded (paid from profile). DISABLED. */}
+                      {ONETIME_PAYOFF_ENABLED && (summary.recovery_direct_payments?.length ?? 0) > 0 && (
+                        <div style={{ marginTop: 14 }}>
+                          <div className="esm-sec-sub" style={{ marginBottom: 6, fontWeight: 700 }}>Direct repayments (paid from profile, not payroll)</div>
+                          <div className="esm-tblwrap">
+                            <table className="esm-tbl">
+                              <thead><tr><th>SR NO</th><th>AMOUNT</th><th>METHOD</th><th>REF NO</th><th>PROOF</th><th>DATE</th></tr></thead>
+                              <tbody>
+                                {summary.recovery_direct_payments!.map((p, i) => (
+                                  <tr key={i}>
+                                    <td>{i + 1}</td>
+                                    <td className="esm-tbl-amt">{inr(p.amount)}</td>
+                                    <td>{p.method || '—'}</td>
+                                    <td title={p.reference || ''}>{p.reference || '—'}</td>
+                                    <td>{p.proof_url ? <a className="esm-tbl-link" href={tokenUrl(p.proof_url)} target="_blank" rel="noreferrer" title={p.proof_name || 'Proof'}><i className="ri-attachment-2" /> {p.proof_name || 'View'}</a> : '—'}</td>
+                                    <td>{fmtDate(p.paid_at ?? null)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Inline one-time pay-off form — direct only (no payroll). DISABLED. */}
+                      {ONETIME_PAYOFF_ENABLED && recoverFormOpen && pending > 0.005 && (
+                        <div style={{ marginTop: 14, padding: 14, borderRadius: 12, background: 'var(--vz-secondary-bg,#f6fafb)', border: '1px solid var(--vz-border-color,#e3eef2)' }}>
+                          <div className="esm-sec-sub" style={{ marginBottom: 10, fontWeight: 700 }}>Record a one-time repayment — paid directly (not from payroll) · remaining {inr(pending)}</div>
+                          <div className="esm-fgrid">
+                            <div className="esm-fld s4">
+                              <label>AMOUNT <span className="esm-req">*</span> <span className="esm-muted">(max {inr(pending)})</span></label>
+                              <div className="esm-money"><span className="esm-cur">₹</span>
+                                <input className="esm-in" type="number" min={0} max={pending} value={recAmount} onChange={e => setRecAmount(e.target.value)} placeholder="0.00" />
+                              </div>
+                            </div>
+                            <div className="esm-fld s4">
+                              <label>METHOD <span className="esm-req">*</span></label>
+                              <MasterSelect
+                                value={recMethod}
+                                onChange={setRecMethod}
+                                options={['UPI', 'Bank Transfer', 'Cheque', 'PhonePe', 'Cash'].map(v => ({ value: v, label: v }))}
+                                placeholder="Select method"
+                              />
+                            </div>
+                            <div className="esm-fld s4">
+                              <label>REFERENCE / UTR</label>
+                              <input className="esm-in" value={recReference} maxLength={64} onChange={e => setRecReference(e.target.value)} placeholder="Optional" />
+                            </div>
+                            <div className="esm-fld s8">
+                              <label>PROOF <span className="esm-muted">(optional)</span></label>
+                              {!recProof ? (
+                                <label className="esm-file">
+                                  <i className="ri-attachment-2" />
+                                  <span>Attach receipt / transfer proof</span>
+                                  <input type="file" accept={PROOF_ACCEPT} onChange={e => setRecProof(acceptProof(e.target.files?.[0]))} />
+                                </label>
+                              ) : (
+                                <div className="esm-file-chip">
+                                  <i className="ri-file-text-line esm-file-ic" />
+                                  <span className="esm-file-name" title={recProof.name}>{recProof.name}</span>
+                                  <label className="esm-file-btn" title="Replace file"><i className="ri-refresh-line" /><span>Reupload</span>
+                                    <input type="file" accept={PROOF_ACCEPT} onChange={e => setRecProof(acceptProof(e.target.files?.[0]) ?? recProof)} />
+                                  </label>
+                                  <button type="button" className="esm-file-btn" onClick={() => setRecProof(null)}><i className="ri-close-line" /> Remove</button>
+                                </div>
+                              )}
+                            </div>
+                            <div className="esm-fld s4">
+                              <label>NOTE</label>
+                              <input className="esm-in" value={recNote} maxLength={500} onChange={e => setRecNote(e.target.value)} placeholder="Optional note…" />
+                            </div>
+                          </div>
+                          <div className="d-flex justify-content-end gap-2" style={{ marginTop: 10 }}>
+                            <button type="button" className="esm-btn-ghost" onClick={() => setRecoverFormOpen(false)} disabled={recSaving}>Cancel</button>
+                            <button type="button" className="esm-btn-submit" onClick={submitRecoverOnetime} disabled={recSaving}>{recSaving ? 'Recording…' : 'Record Repayment'}</button>
+                          </div>
+                        </div>
                       )}
                     </div>
                     )}

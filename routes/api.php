@@ -793,6 +793,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/payments/{paymentId}/sync-zoho', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'syncPaymentToZoho'])->whereNumber('paymentId');
     Route::post  ('/advance-requests/{id}/raise-reimbursement', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'raiseReimbursement']);
     Route::post  ('/advance-requests/{id}/record-return',       [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recordReturn']);
+    // DISABLED (kept for later re-enable) — one-time DIRECT recovery pay-off.
+    // Uncomment this route + the recovery-payment-proof route below, and flip
+    // ONETIME_PAYOFF_ENABLED in ExpenseSettlementModal.tsx, to turn it back on.
+    // Route::post  ('/advance-requests/{id}/recover-onetime',     [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recoverOnetime']);
     // Branch admin / HR confirm (or reject) each employee return payment — the
     // return only closes once every payment covering the balance is approved.
     Route::post  ('/advance-requests/{id}/return-payments/{index}/approve', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'approveReturnPayment'])->whereNumber('index');
@@ -1056,6 +1060,9 @@ Route::get('/advance-requests/payments/{paymentId}/proof', [\App\Http\Controller
     ->name('advance-requests.payment-proof');
 Route::get('/advance-requests/{id}/settle-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'settleProof'])
     ->name('advance-requests.settle-proof');
+// DISABLED (kept for later re-enable) — proof server for one-time recovery pay-offs.
+// Route::get('/advance-requests/{id}/recovery-payment-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'recoveryPaymentProof'])
+//     ->name('advance-requests.recovery-payment-proof');
 Route::get('/advance-requests/{id}/return-proof/{index}', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'returnProof'])
     ->name('advance-requests.return-proof');
 

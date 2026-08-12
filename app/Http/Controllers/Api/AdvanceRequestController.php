@@ -221,17 +221,25 @@ class AdvanceRequestController extends Controller
         ]);
 
         $isCompany = ($data['used_for'] ?? 'self') === 'company';
-        // Spreading the amount over the cycles must leave at least ₹1 per cycle —
-        // otherwise the repayment rounds to zero (QA #135).
-        if (!$isCompany
-            && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)
-            && (int) ($data['recovery_months'] ?? 0) > 0
-            && ((float) $data['amount'] / (int) $data['recovery_months']) < 1) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Amount too low for the number of cycles — each instalment would be under ₹1. Reduce the cycles or increase the amount.',
-                'errors'  => ['recovery_months' => ['Too many cycles for this amount.']],
-            ], 422);
+        // Each recovery instalment must be at least ₹500 — an advance can't be
+        // repaid in tiny sub-₹500 slices that stretch recovery out (supersedes the
+        // old ₹1 floor, QA #135). For an advance below ₹500 the floor is the whole
+        // amount (a single instalment).
+        if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true)) {
+            $months   = (int) ($data['recovery_months'] ?? 0);
+            $perCycle = (float) ($data['monthly_emi'] ?? 0) > 0
+                ? (float) $data['monthly_emi']
+                : ($months > 0 ? (float) $data['amount'] / $months : 0.0);
+            $minCycle = min(500.0, (float) $data['amount']);
+            if ($perCycle > 0 && $perCycle < $minCycle - 0.005) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => (float) $data['amount'] >= 500
+                        ? 'Each recovery instalment must be at least ₹500 — reduce the number of cycles or increase the amount.'
+                        : 'An advance below ₹500 must be recovered in a single instalment of ₹' . number_format((float) $data['amount'], 2) . '.',
+                    'errors'  => ['recovery_months' => ['Minimum instalment is ₹' . number_format($minCycle, 2) . '.']],
+                ], 422);
+            }
         }
         if (!$isCompany && in_array($data['recovery_mode'] ?? null, ['emi', 'bimonthly'], true) && empty($data['recovery_months'])) {
             abort(422, 'Number of instalments is required for EMI / Bi-Monthly recovery.');
@@ -795,10 +803,13 @@ class AdvanceRequestController extends Controller
         // What payroll has recovered so far on each stream, so the list's Settle
         // column can show "Recovered" once recovery is complete (not forever
         // "Recovering"). Self target = advance amount; return target = balance.
-        $selfRecovered   = $this->recoveryLedgerTotal($row->id, 'self');
+        $selfRecovered   = $this->selfRecoveredTotal($row);   // payroll ledger + direct pay-offs
         $returnRecovered = $this->recoveryLedgerTotal($row->id, 'return');
+        // Recovery target is the sanctioned (net) amount when set — a self advance
+        // can now carry deductions — else the requested amount.
+        $selfTarget      = (float) ($row->sanctioned_amount ?? $row->amount);
         $selfComplete    = $row->recovery_mode && $row->hr_status === 'approved'
-            && (float) $row->amount > 0 && $selfRecovered + 0.005 >= (float) $row->amount;
+            && $selfTarget > 0 && $selfRecovered + 0.005 >= $selfTarget;
         return [
             'id'                 => $row->id,
             'advance_no'         => $row->advance_no,
@@ -1604,11 +1615,27 @@ class AdvanceRequestController extends Controller
             'recovery_mode'     => $row->recovery_mode,
             'recovery_months'   => $row->recovery_months,
             'monthly_emi'       => $row->monthly_emi !== null ? (float) $row->monthly_emi : null,
-            // What payroll has ACTUALLY recovered so far (self stream) — lets the
+            // What has ACTUALLY been recovered so far (self stream) — lets the
             // recovery schedule flip instalments from Pending → Recovered instead
-            // of always showing Pending. Per-month rows + running total.
+            // of always showing Pending. Per-month payroll rows + running total,
+            // where the total also folds in one-time DIRECT pay-offs.
             'recovery_ledger'   => $this->recoveryLedgerRows($row->id, 'self'),
-            'recovery_recovered'=> $this->recoveryLedgerTotal($row->id, 'self'),
+            'recovery_recovered'=> $this->selfRecoveredTotal($row),
+            // One-time direct repayments (from profile, not payroll) + what's left
+            // to recover — drives the "Pay Off (one-time)" action in the modal.
+            'recovery_direct_payments' => collect($row->recovery_direct_payments ?? [])->values()->map(fn ($p, $i) => [
+                'amount'    => (float) ($p['amount'] ?? 0),
+                'method'    => (string) ($p['method'] ?? ''),
+                'reference' => $p['reference'] ?? null,
+                'note'      => $p['note'] ?? null,
+                'proof_name'=> $p['proof_name'] ?? null,
+                'proof_url' => !empty($p['proof_path']) ? url("/api/advance-requests/{$row->id}/recovery-payment-proof/{$i}") : null,
+                'paid_by_name' => null,
+                'paid_at'   => $p['paid_at'] ?? null,
+            ])->all(),
+            'recovery_remaining' => $row->recovery_mode && (float) $row->amount > 0
+                ? round(max(0, (float) ($row->sanctioned_amount ?? $row->amount) - $this->selfRecoveredTotal($row)), 2)
+                : 0.0,
             'sanctioned_amount' => $row->sanctioned_amount !== null ? (float) $row->sanctioned_amount : null,
             'deduction_amount'  => (float) $row->deduction_amount,
             'deduction_reason'  => $row->deduction_reason,
@@ -1822,6 +1849,22 @@ class AdvanceRequestController extends Controller
         return round((float) DB::table('advance_recovery_ledger')
             ->where('advance_request_id', $advanceId)->where('stream', $stream)
             ->sum('amount'), 2);
+    }
+
+    /** Total the employee has repaid DIRECTLY (from profile, not payroll) against
+     *  a self advance's recovery — the one-time pay-offs recorded at exit etc. */
+    private function selfDirectRepaid(AdvanceRequest $row): float
+    {
+        return round(array_sum(array_map(
+            fn ($p) => (float) ($p['amount'] ?? 0),
+            $row->recovery_direct_payments ?? []
+        )), 2);
+    }
+
+    /** Everything recovered on the SELF stream = payroll ledger + direct pay-offs. */
+    private function selfRecoveredTotal(AdvanceRequest $row): float
+    {
+        return round($this->recoveryLedgerTotal($row->id, 'self') + $this->selfDirectRepaid($row), 2);
     }
 
     private function ongoingEmiTotal($employeeId, $excludeId = null): float
@@ -2095,6 +2138,115 @@ class AdvanceRequestController extends Controller
             abort(404, 'Proof file is missing on the server.');
         }
         return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+    }
+
+    /**
+     * POST /advance-requests/{id}/recover-onetime
+     * Record a ONE-TIME DIRECT repayment against a SELF advance's pending
+     * recovery — the employee pays the outstanding balance back from their
+     * profile instead of via payroll (typically at exit, when there is no more
+     * salary to deduct from and the advance can't just be removed). Direct only;
+     * there is no payroll option here by design.
+     */
+    public function recoverOnetime(Request $request, $id)
+    {
+        $user = $request->user();
+        $row  = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $user);
+
+        // The employee can record their own pay-off; anyone else needs HR rights.
+        $myEmployeeId = $this->currentEmployeeId($user);
+        if ($user->user_type !== 'super_admin' && (int) $row->employee_id !== (int) $myEmployeeId) {
+            $this->guardHrPermission($user, 'can_approve');
+        }
+
+        if (($row->used_for ?: 'self') === 'company') {
+            abort(409, 'One-time recovery applies to self advances only — a company advance is reconciled through its settlement.');
+        }
+        if ($row->status !== 'approved' || ($row->settlement_status ?? 'unpaid') !== 'paid') {
+            abort(409, 'Recovery can only be settled once the advance has been fully paid out.');
+        }
+        if (!$row->recovery_mode) {
+            abort(409, 'This advance has no salary recovery to settle.');
+        }
+
+        $target    = round((float) ($row->sanctioned_amount ?? $row->amount), 2);
+        $remaining = round(max(0, $target - $this->selfRecoveredTotal($row)), 2);
+        if ($remaining <= 0.005) {
+            abort(409, 'This advance is already fully recovered.');
+        }
+
+        $data = $request->validate([
+            'amount'    => ['required', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            'method'    => ['required', 'string', 'max:40'],
+            'reference' => ['nullable', 'string', 'max:64'],
+            'note'      => ['nullable', 'string', 'max:500'],
+            'proof'     => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+        ], [
+            'proof.max'   => 'The proof must be 2 MB or smaller.',
+            'proof.mimes' => 'Proof must be a PDF, image or document file.',
+        ]);
+
+        $amount = round((float) $data['amount'], 2);
+        if ($amount > $remaining + 0.005) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Amount ₹' . number_format($amount, 2) . ' exceeds the remaining ₹' . number_format($remaining, 2) . '.',
+                'errors'  => ['amount' => ['Cannot exceed the remaining ₹' . number_format($remaining, 2) . '.']],
+            ], 422);
+        }
+
+        $path = $name = null;
+        if ($request->hasFile('proof')) {
+            $f    = $request->file('proof');
+            $path = $f->store('advance_recovery_direct/' . $row->id, 'public');
+            $name = $f->getClientOriginalName();
+        }
+
+        $ledger   = array_values($row->recovery_direct_payments ?? []);
+        $ledger[] = [
+            'amount'     => $amount,
+            'method'     => $data['method'],
+            'reference'  => $data['reference'] ?? null,
+            'note'       => $data['note'] ?? null,
+            'proof_path' => $path,
+            'proof_name' => $name,
+            'paid_by'    => $user->id,
+            'paid_at'    => now()->toIso8601String(),
+        ];
+        $row->recovery_direct_payments = $ledger;
+        $row->save();
+
+        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+        $left = round(max(0, $target - $this->selfRecoveredTotal($row)), 2);
+        return response()->json([
+            'status'  => true,
+            'message' => $left <= 0.005
+                ? 'Recovery settled — ₹' . number_format($amount, 2) . ' paid; the advance is fully recovered.'
+                : 'Recovery payment recorded — ₹' . number_format($amount, 2) . ' paid, ₹' . number_format($left, 2) . ' remaining.',
+            'data'    => $this->serialize($row),
+        ]);
+    }
+
+    /**
+     * Stream the proof attached to a one-time direct recovery payment.
+     * Auth via query token so a plain browser link works (mirrors paymentProof).
+     */
+    public function recoveryPaymentProof(Request $request, $id, $index)
+    {
+        $this->authenticateFromQueryToken($request);
+        $row = AdvanceRequest::findOrFail($id);
+        $this->ensureTenantAccess($row, $request->user());
+
+        $entry = ($row->recovery_direct_payments ?? [])[$index] ?? null;
+        if (!$entry || empty($entry['proof_path'])) {
+            abort(404, 'No proof was attached to this recovery payment.');
+        }
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($entry['proof_path'])) {
+            abort(404, 'Proof file is missing on the server.');
+        }
+        return $disk->response($entry['proof_path'], $entry['proof_name'] ?: basename($entry['proof_path']));
     }
 
     /** Build the Zoho Books web-app deep link for an expense (region derived from
