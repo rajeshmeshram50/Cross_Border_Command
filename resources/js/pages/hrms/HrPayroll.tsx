@@ -1675,6 +1675,7 @@ export default function HrPayroll() {
             <DataTable<PayrollRow>
               data={filtered}
               columns={processingColumns}
+              className="pay-tbl-run"
               serial={{ header: 'Sr. No.' }}
               accent="violet"
               autoFitRows
@@ -1731,6 +1732,7 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={biometricColumns}
                 accent="violet"
+                className="pay-tbl-att"
                 autoFitRows
                 minWidth={1100}
                 loading={loading}
@@ -1778,6 +1780,7 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={reportColumns}
                 accent="violet"
+                className="pay-tbl-report"
                 autoFitRows
                 minWidth={1900}
                 loading={loading}
@@ -1807,6 +1810,7 @@ export default function HrPayroll() {
               <DataTable<SalaryEmployeeLite>
                 data={roster}
                 columns={rosterColumns}
+                className="pay-tbl-roster"
                 accent="violet"
                 autoFitRows
                 /* Floor raised 1100 → 1200 so the Action column's 12% still

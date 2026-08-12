@@ -225,10 +225,18 @@ export function MasterSelect({
       setDropDir(spaceBelow < ESTIMATED_HEIGHT && spaceAbove > spaceBelow ? 'up' : 'down');
     };
     update();
-    // Resize / browser-zoom reflows the whole layout and can strand or clip
-    // the portalled menu away from its trigger — close it instead so it never
-    // shows mispositioned; the user reopens it cleanly at the new size.
-    const closeMenu = () => setOpen(false);
+    /* Resize / browser-zoom reflows the layout and can strand the portalled
+     * menu away from its trigger, so it closes instead of showing
+     * mispositioned. But only on a WIDTH change.
+     *
+     * A phone fires `resize` constantly at a fixed width: the address bar
+     * collapsing on the first scroll, the on-screen keyboard opening, the URL
+     * bar coming back. Each one closed the menu the instant it opened, which is
+     * why dropdowns looked dead on mobile while working on a desktop.
+     * A height-only resize does not move the trigger horizontally and does not
+     * strand the menu — Popper repositions it. Width is the one that reflows. */
+    const openWidth = window.innerWidth;
+    const closeMenu = () => { if (window.innerWidth !== openWidth) setOpen(false); };
     window.addEventListener('resize', closeMenu);
     // The menu is portalled to <body> with fixed positioning, so a page/ancestor
     // scroll moves the trigger but leaves the menu behind — it drifts out of
@@ -236,9 +244,27 @@ export function MasterSelect({
     // any ancestor: page, modal bodies, side panels). EXCEPTION: a scroll that
     // originates INSIDE the menu's own option list (infinite-scroll paging)
     // must not close it.
+    /* Ignore the scrolls that a TAP itself produces.
+     *
+     * On a touch screen a tap almost always emits a scroll event — momentum
+     * settling, rubber-band, the mobile browser's address bar collapsing. This
+     * handler fired on that and closed the menu in the same gesture that opened
+     * it, so on a phone the dropdown looked like it never opened at all.
+     *
+     * Two guards, both narrow:
+     *  - a short grace window, so the opening tap's own scroll is ignored;
+     *  - a movement check, so only a scroll that actually MOVED the trigger
+     *    closes the menu. That is the case this handler exists for (bug #70:
+     *    a fixed-positioned menu drifting away from a scrolled trigger), and
+     *    it is unaffected by a stray 0px scroll event. */
+    const openedAt = Date.now();
+    const anchorTop = wrapRef.current?.getBoundingClientRect().top ?? 0;
     const onScroll = (e: Event) => {
       const el = e.target instanceof Element ? e.target : null;
       if (el && el.closest('.master-select-menu')) return;
+      if (Date.now() - openedAt < 250) return;
+      const now = wrapRef.current?.getBoundingClientRect().top ?? anchorTop;
+      if (Math.abs(now - anchorTop) < 4) return;
       setOpen(false);
     };
     window.addEventListener('scroll', onScroll, true);

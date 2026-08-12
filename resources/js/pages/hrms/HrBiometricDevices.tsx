@@ -289,7 +289,7 @@ export default function HrBiometricDevices() {
           must equal the employee's Attendance Number) is the thing users get
           wrong most often, so it moves up here as the subtitle rather than
           sitting in a banner between the toolbar and the header row. */}
-      <div className="rec-page">
+      <div className="rec-page biodev-page">
         <div className="frm-cstrip mb-3">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">

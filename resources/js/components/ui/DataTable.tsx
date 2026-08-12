@@ -417,6 +417,11 @@ export default function DataTable<T extends object>({
                     return (
                       <th
                         key={header.id}
+                        /* The column's own id, so CSS can target a column by NAME
+                           instead of by position. nth-child breaks the moment a
+                           column is added, reordered, or rendered conditionally —
+                           and then it hides a different column in silence. */
+                        data-col={header.column.id}
                         style={{ textAlign, width: meta?.width }}
                         className={canSort ? 'dt-sortable' : undefined}
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}
@@ -466,6 +471,14 @@ export default function DataTable<T extends object>({
                       return (
                         <td
                           key={cell.id}
+                          data-col={cell.column.id}
+                          /* Plain-text header, used as the field label when the
+                             row collapses into a card on a phone. Only string
+                             headers can be read here; a JSX header has no text
+                             to borrow, so those cells simply show no label. */
+                          data-label={typeof cell.column.columnDef.header === 'string'
+                            ? cell.column.columnDef.header
+                            : undefined}
                           style={{ textAlign: alignToCss(meta?.align) }}
                           className={meta?.wrap ? 'dt-wrap' : undefined}
                         >
