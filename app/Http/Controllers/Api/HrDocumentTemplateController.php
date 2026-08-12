@@ -62,9 +62,9 @@ class HrDocumentTemplateController extends Controller
     ];
 
     private const DOCX_MAX_KB = 20 * 1024;
-    // Soft page cap for an uploaded DOCX template. Lenient by design (contracts
-    // /policies run long); tune as policy dictates. See docxPageLimitError().
-    private const DOCX_MAX_PAGES = 30;
+    // NOTE: DOCX_MAX_PAGES + docxPageLimitError() come from HandlesDocxHtmlRoundtrip
+    // (shared with ClmTradeDocumentController) — do NOT redefine them here; a class
+    // constant that differs from the trait's is a fatal "incompatible" error.
 
     /* ───── LIST / SHOW / NEXT-CODE / STATS ───── */
 
@@ -1164,43 +1164,8 @@ class HrDocumentTemplateController extends Controller
 
     /* ───── DOCX storage + parse ───── */
 
-    /**
-     * Best-effort page-limit guard for an uploaded DOCX. Word records the page
-     * count in docProps/app.xml (<Pages>N</Pages>); when present and above the
-     * cap we reject BEFORE storing. If the count can't be determined (a
-     * programmatically-built docx often omits it) we do NOT block — the file
-     * size is already capped by DOCX_MAX_KB.
-     *
-     * @param  string       $absPath  local path to the uploaded temp file
-     * @param  string|null  $html     converted body (reserved for a future
-     *                                HTML-based estimate; not required here)
-     * @return string|null            error message when over the limit, else null
-     */
-    private function docxPageLimitError(string $absPath, ?string $html = null): ?string
-    {
-        try {
-            $zip = new \ZipArchive();
-            if ($zip->open($absPath) !== true) {
-                return null;
-            }
-            $xml = $zip->getFromName('docProps/app.xml');
-            $zip->close();
-            if ($xml === false || $xml === '') {
-                return null;
-            }
-            if (preg_match('/<Pages>\s*(\d+)\s*<\/Pages>/', $xml, $m)) {
-                $pages = (int) $m[1];
-                if ($pages > self::DOCX_MAX_PAGES) {
-                    return 'This template is ' . $pages . ' pages — the limit is '
-                        . self::DOCX_MAX_PAGES . ' pages. Please shorten the document and upload again.';
-                }
-            }
-        } catch (\Throwable $e) {
-            // Unreadable zip / missing property — a soft check must never block a
-            // valid upload, so treat "can't tell" as "within limit".
-        }
-        return null;
-    }
+    // docxPageLimitError() is provided by HandlesDocxHtmlRoundtrip (canonical,
+    // shared with ClmTradeDocumentController). Not redefined here.
 
     private function storeDocx($file, $clientId, $templateId): array
     {
