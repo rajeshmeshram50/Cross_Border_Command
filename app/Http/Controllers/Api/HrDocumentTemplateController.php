@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
@@ -9,6 +10,7 @@ use App\Models\HrDocumentTemplate;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\HrTemplateMatch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +23,15 @@ use PhpOffice\PhpWord\Shared\Html;
 
 class HrDocumentTemplateController extends Controller
 {
+    /* uploadDocx() calls docxPageLimitError(), which lives here along with the
+       DOCX_MAX_PAGES constant it reads — the trait was never pulled in, so
+       every .docx upload died on "Call to undefined method". ClmTradeDocument
+       does the same page-limit check off the same trait.
+       This class defines its own docxToHtml() and elementToHtml(); a class's
+       own method wins over the trait's, so those two keep behaving exactly as
+       they did. */
+    use HandlesDocxHtmlRoundtrip;
+
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',
@@ -51,6 +62,9 @@ class HrDocumentTemplateController extends Controller
     ];
 
     private const DOCX_MAX_KB = 20 * 1024;
+    // NOTE: DOCX_MAX_PAGES + docxPageLimitError() come from HandlesDocxHtmlRoundtrip
+    // (shared with ClmTradeDocumentController) — do NOT redefine them here; a class
+    // constant that differs from the trait's is a fatal "incompatible" error.
 
     /* ───── LIST / SHOW / NEXT-CODE / STATS ───── */
 
@@ -355,21 +369,11 @@ class HrDocumentTemplateController extends Controller
      * those buckets. Anything that doesn't smell like IT or Legal goes to
      * Non-IT (Accounts, Logistics, HR, Operations, etc.).
      */
+    /* Moved to App\Support\HrTemplateMatch so the onboarding-completion guard
+       matches templates by exactly the same rules this endpoint does. */
     private function mapDepartmentToCategory(?string $deptName): string
     {
-        $name = strtolower(trim((string) $deptName));
-        if ($name === '') return 'Non-IT';
-
-        $itHints = ['it', 'information technology', 'tech', 'engineering', 'software', 'devops', 'qa', 'mobile', 'data', 'product'];
-        $legalHints = ['legal', 'compliance', 'governance'];
-
-        foreach ($legalHints as $h) {
-            if (str_contains($name, $h)) return 'Legal';
-        }
-        foreach ($itHints as $h) {
-            if (str_contains($name, $h)) return 'IT';
-        }
-        return 'Non-IT';
+        return HrTemplateMatch::categoryForDepartment($deptName);
     }
 
     /**
@@ -414,15 +418,10 @@ class HrDocumentTemplateController extends Controller
             ]);
         }
 
-        $category = $this->mapDepartmentToCategory($emp->department?->name);
+        $category = HrTemplateMatch::categoryForDepartment($emp->department?->name);
         $level    = $emp->designation?->level;  // 'Director / CEO' | 'Head of Department (HOD)' | …
 
-        $q = HrDocumentTemplate::query()->with(self::WITH)
-            ->where('status', 'Active')
-            ->where('employee_category', $category);
-        if ($level) $q->where('role_type', $level);
-
-        // Optional lifecycle filter. Two variants:
+        // Optional lifecycle filter. Two variants, both handled by the matcher:
         //   - trigger_keyword (preferred) — substring LIKE match against
         //     module_name. Frontend passes just the lifecycle word
         //     ("onboarding" / "exit"), and any trigger row containing
@@ -433,30 +432,22 @@ class HrDocumentTemplateController extends Controller
         //     using the old contract.
         $keyword   = trim((string) $request->query('trigger_keyword', ''));
         $exactName = trim((string) $request->query('trigger_point_name', ''));
-        if ($keyword !== '' || $exactName !== '') {
-            $tpQuery = DB::table('master_trigger_points');
-            if ($keyword !== '') {
-                $tpQuery->whereRaw('LOWER(TRIM(module_name)) LIKE ?', ['%' . strtolower($keyword) . '%']);
-            } else {
-                $tpQuery->whereRaw('LOWER(TRIM(module_name)) = ?', [strtolower($exactName)]);
-            }
-            $triggerIds = $tpQuery->pluck('id')->all();
-            // No matching trigger row → no matching template. Return early
-            // with an empty list instead of letting whereIn([]) silently
-            // return everything.
-            if (empty($triggerIds)) {
-                return response()->json([
-                    'employee_category'  => $category,
-                    'role_type'          => $level,
-                    'department_name'    => $emp->department?->name,
-                    'designation_name'   => $emp->designation?->name,
-                    'trigger_point_name' => $exactName ?: null,
-                    'trigger_keyword'    => $keyword ?: null,
-                    'templates'          => [],
-                ]);
-            }
-            $q->whereIn('trigger_point_id', $triggerIds);
+
+        // null = a keyword was asked for and no trigger point carries it, so
+        // nothing can match. Return an empty list rather than an unfiltered one.
+        $q = HrTemplateMatch::query($emp, $keyword, $exactName);
+        if (!$q) {
+            return response()->json([
+                'employee_category'  => $category,
+                'role_type'          => $level,
+                'department_name'    => $emp->department?->name,
+                'designation_name'   => $emp->designation?->name,
+                'trigger_point_name' => $exactName ?: null,
+                'trigger_keyword'    => $keyword ?: null,
+                'templates'          => [],
+            ]);
         }
+        $q->with(self::WITH);
 
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
@@ -1172,6 +1163,9 @@ class HrDocumentTemplateController extends Controller
     }
 
     /* ───── DOCX storage + parse ───── */
+
+    // docxPageLimitError() is provided by HandlesDocxHtmlRoundtrip (canonical,
+    // shared with ClmTradeDocumentController). Not redefined here.
 
     private function storeDocx($file, $clientId, $templateId): array
     {
