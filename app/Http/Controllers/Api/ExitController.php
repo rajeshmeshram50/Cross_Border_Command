@@ -583,6 +583,7 @@ class ExitController extends Controller
             ->whereRaw('LOWER(hr_status) = ?', ['approved'])
             ->get(['id', 'advance_no', 'advance_type', 'amount', 'used_for',
                    'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
+                   'recovery_direct_payments',
                    'employee_settled_at', 'settle_type', 'settle_balance',
                    'settle_approval_status', 'settle_returned_at', 'settle_return_scheduled_at',
                    'settle_return_payments', 'settle_reimbursement_claim_id']);
@@ -602,6 +603,13 @@ class ExitController extends Controller
             //    the F&F. Always resolvable at F&F time, so never blocking.
             if ($usedFor !== 'company') {
                 $recovered = 0.0;
+                // One-time DIRECT pay-offs the employee already made from their
+                // profile (not payroll) — count them so the F&F doesn't re-recover
+                // money that's already been paid back.
+                $directPaid = round(array_sum(array_map(
+                    fn ($p) => (float) ($p['amount'] ?? 0),
+                    json_decode((string) ($r->recovery_direct_payments ?? '[]'), true) ?: []
+                )), 2);
                 if ($r->recovery_start) {
                     $start = \Carbon\Carbon::parse($r->recovery_start)->startOfDay();
                     if ($start->lte($lwd)) {
@@ -615,6 +623,9 @@ class ExitController extends Controller
                         }
                     }
                 }
+                // Payroll-schedule recovery + one-time direct pay-offs, capped at
+                // the advance amount.
+                $recovered   = round(min($amount, $recovered + $directPaid), 2);
                 $outstanding = round($amount - $recovered, 2);
                 if ($outstanding <= 0.005) continue;   // fully recovered — nothing to do
                 $total += $outstanding;
@@ -623,7 +634,9 @@ class ExitController extends Controller
                     'used_for' => 'self', 'amount' => round($amount, 2),
                     'recovered' => round($recovered, 2), 'outstanding' => $outstanding,
                     'settle_state' => 'self_recover', 'complete' => true,
-                    'note' => 'Recover the outstanding balance from the final settlement.',
+                    'note' => $directPaid > 0.005
+                        ? 'Balance after direct pay-off recovered from the final settlement.'
+                        : 'Recover the outstanding balance from the final settlement.',
                 ];
                 continue;
             }

@@ -298,8 +298,8 @@ export default function ExpenseTab() {
                     <div className="dt-tabrail flex-shrink-0" data-accent="blue">
                       <div className="dt-tabs" role="tablist">
                         {[
-                          { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self },
                           { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company },
+                          { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self },
                         ].map(f => {
                           const on = advUsedForTab === f.key;
                           return (

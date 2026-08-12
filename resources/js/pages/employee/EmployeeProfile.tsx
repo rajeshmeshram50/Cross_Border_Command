@@ -1112,11 +1112,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       if (advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') {
         const perCycle = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
         const cycles = Number(advMonths) || 0;
-        // Spreading the amount over the cycles must leave at least ₹1 per cycle —
-        // otherwise the repayment rounds to zero (QA #135).
-        if (advAmountNum > 0 && cycles > 0 && (advAmountNum / cycles) < 1) {
-          errs.months = 'Too many cycles for this amount';
-          summary.push('₹' + advAmountNum.toLocaleString('en-IN') + ' can’t be spread over ' + cycles + ' ' + (advRecoveryMode === 'bimonthly' ? 'cycles' : 'months') + ' — each instalment would be under ₹1. Reduce the cycles or increase the amount.');
+        // Each instalment must be at least ₹500 — a self advance can't be repaid
+        // in tiny sub-₹500 slices that stretch recovery out. For an advance under
+        // ₹500 the floor is the whole amount (a single instalment).
+        const minCycle = Math.min(ADV_MIN_EMI, advAmountNum);
+        if (advAmountNum > 0 && perCycle > 0 && perCycle < minCycle - 0.005) {
+          errs.months = 'Instalment below the ₹' + ADV_MIN_EMI + ' minimum';
+          summary.push(advAmountNum >= ADV_MIN_EMI
+            ? 'Each instalment must be at least ₹' + ADV_MIN_EMI.toLocaleString('en-IN') + ' — reduce the number of ' + (advRecoveryMode === 'bimonthly' ? 'cycles' : 'months') + '.'
+            : '₹' + advAmountNum.toLocaleString('en-IN') + ' is below the ₹' + ADV_MIN_EMI + ' minimum instalment — recover it in a single instalment.');
         } else if (advAmountNum > 0 && perCycle > advAmountNum) {
           // A single instalment can't be bigger than the advance itself.
           errs.months = 'Instalment exceeds the advance amount';
@@ -1353,6 +1357,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // Max recovery tenure = 120 instalments. If the amount can't be cleared within
   // 120 instalments at the available headroom, it can't be granted.
   const ADV_MAX_INSTALMENTS = 120;
+  // Floor on a single recovery instalment — an advance can't be repaid in tiny
+  // sub-₹500 slices. (For an advance below ₹500 the floor is the whole amount.)
+  const ADV_MIN_EMI = 500;
   const advInstalmentsNeeded = advEmiCap > 0 && advAmountNum > 0 ? Math.ceil(advAmountNum / advEmiCap) : 0;
   const advTenureExceeds = advEmiCap > 0 && advAmountNum > 0 && advInstalmentsNeeded > ADV_MAX_INSTALMENTS;
   // A single instalment can never exceed the advance itself — it can be EQUAL
@@ -1361,7 +1368,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const advPerCycleNum = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
   const advEmiOverAmount = advAmountNum > 0 && advPerCycleNum > advAmountNum;
   const advEmiOverHeadroom = advEmiCap > 0 && advPerCycleNum > advEmiCap;
-  const advEmiInvalid = advEmiOverAmount || advEmiOverHeadroom;
+  // Each instalment must be at least ₹500 (or the whole amount when it's below ₹500).
+  const advEmiUnderMin = advAmountNum > 0 && advPerCycleNum > 0 && advPerCycleNum < Math.min(ADV_MIN_EMI, advAmountNum) - 0.005;
+  const advEmiInvalid = advEmiOverAmount || advEmiOverHeadroom || advEmiUnderMin;
   const advPerCycleCap = advAmountNum > 0
     ? (advEmiCap > 0 ? Math.min(advEmiCap, advAmountNum) : advAmountNum)
     : advEmiCap;
@@ -1803,7 +1812,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const [advanceSubTab, setAdvanceSubTab] = useState<'mine' | 'team'>('mine');
   // Advance Used-For filter — Self used / Company used (no "All"). Sits above the
   // status pills (All/Approved/Rejected/Pending), narrowing by used_for first.
-  const [advUsedForTab, setAdvUsedForTab] = useState<'self' | 'company'>('self');
+  const [advUsedForTab, setAdvUsedForTab] = useState<'self' | 'company'>('company');
 
   const refreshAdvances = async () => {
     if (tab !== 'expense' || !profileEmpCode) return;
@@ -3487,7 +3496,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 {(advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && (
                   <Row className="g-3 mb-3">
                     <Col md={4}>
-                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advPerCycleCap > 0 ? <span className="ep-claim-muted"> (max ₹{advPerCycleCap.toLocaleString('en-IN')} · {advEmiCap > 0 && advEmiCap < advAmountNum ? 'EMI headroom' : 'advance amount'})</span> : null}</div>
+                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advPerCycleCap > 0 ? <span className="ep-claim-muted"> (min ₹{Math.min(ADV_MIN_EMI, advAmountNum).toLocaleString('en-IN')} · max ₹{advPerCycleCap.toLocaleString('en-IN')} · {advEmiCap > 0 && advEmiCap < advAmountNum ? 'EMI headroom' : 'advance amount'})</span> : null}</div>
                       <div className="position-relative">
                         <span className="ep-claim-amount-prefix">₹</span>
                         <input
@@ -3498,7 +3507,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                         />
                       </div>
                       {advEmiInvalid && (
-                        <div className="ep-claim-err"><i className="ri-error-warning-line" />{advEmiOverAmount ? `Can’t exceed the advance ₹${advAmountNum.toLocaleString('en-IN')} (equal is fine)` : `Max ₹${advEmiCap.toLocaleString('en-IN')} (EMI headroom)`}</div>
+                        <div className="ep-claim-err"><i className="ri-error-warning-line" />{advEmiOverAmount ? `Can’t exceed the advance ₹${advAmountNum.toLocaleString('en-IN')} (equal is fine)` : advEmiUnderMin ? (advAmountNum >= ADV_MIN_EMI ? `Minimum ₹${ADV_MIN_EMI.toLocaleString('en-IN')} per instalment` : `Recover ₹${advAmountNum.toLocaleString('en-IN')} in a single instalment`) : `Max ₹${advEmiCap.toLocaleString('en-IN')} (EMI headroom)`}</div>
                       )}
                     </Col>
                     <Col md={4}>
