@@ -164,8 +164,22 @@ export default function HrExitManagement() {
       });
   }, [employees, tab, search]);
 
-  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     4+17+8+9+10+8+7+11+9+8+9. */
+  /* Employee names clip to a hard character count rather than to whatever the
+     column happens to be — the full name is always one hover away, and a fixed
+     cap is what lets the column itself be narrow enough to keep the Active tab
+     free of a horizontal scrollbar. */
+  const NAME_MAX_CHARS = 28;
+
+  /* Per-tab column widths.
+     The Active tab shows neither Exit Type nor the Exited row's two-button
+     action group, so the widths tuned for those tabs left it ~300px wider than
+     it needed to be and it scrolled sideways for no reason. `w()` picks the
+     tighter number when the Active tab is showing. Whatever these sum to has
+     to match the `minWidth` passed to <DataTable> below — see WIDTH_SUM. */
+  const isActiveTab = tab === 'active';
+  const w = (wide: number, active: number) => (isActiveTab ? active : wide);
+
+  /* Columns for the shared <DataTable>. */
   const columns = useMemo<DataTableColumn<EmployeeRow>[]>(() => [
     {
       header: 'Employee',
@@ -180,10 +194,12 @@ export default function HrExitManagement() {
          scrolls horizontally instead of crushing the columns. Their sum is
          mirrored in `minWidth` on the DataTable below — keep the two in step
          when adding or resizing a column. */
-      meta: { width: 260, wrap: true },
+      meta: { width: w(260, 210), wrap: true },
       cell: info => {
         const e = info.row.original;
         const isScheduled = e.status === 'Active' && e.exitInitiated;
+        const nameCapped = e.name.length > NAME_MAX_CHARS;
+        const nameShown  = nameCapped ? `${e.name.slice(0, NAME_MAX_CHARS)}…` : e.name;
         const noticeFromLabel = e.noticeStartIso
           ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
           : '';
@@ -203,9 +219,12 @@ export default function HrExitManagement() {
               </div>
             )}
             <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
-              {/* Long names clip to the column width — hover shows the full one. */}
+              {/* Capped at NAME_MAX_CHARS with the full name on hover. A hard
+                  cap, not just CSS ellipsis: the column has to stay narrow for
+                  the table to fit without scrolling, and `text-truncate` alone
+                  would still let a long name demand the room first. */}
               <Tooltip label={e.name} maxWidth={360}>
-                <span className="fw-bold fs-13 text-truncate">{e.name}</span>
+                <span className="fw-bold fs-13 text-truncate">{nameShown}</span>
               </Tooltip>
               <span className="text-muted text-truncate" style={{ fontSize: 10.5, fontWeight: 500 }}>
                 {isScheduled ? (noticeFromLabel ? `Exit scheduled · notice ${noticeFromLabel}` : 'Exit scheduled')
@@ -244,15 +263,15 @@ export default function HrExitManagement() {
          an inline-block wider than its text, so the table's default
          `text-overflow: ellipsis` painted a "…" just past the pill's edge.
          Every column whose cell is a pill/badge needs this opt-out. */
-      meta: { width: 130, wrap: true },
+      meta: { width: w(130, 108), wrap: true },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: 140 },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: 150 }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118) },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124) }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: 140 },
+      meta: { width: w(140, 120) },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
          the full name on hover, same contract as the Designation column. */
@@ -262,7 +281,7 @@ export default function HrExitManagement() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
-      meta: { width: 150 },
+      meta: { width: w(150, 126) },
       cell: info => {
         const e = info.row.original;
         return (
@@ -275,7 +294,7 @@ export default function HrExitManagement() {
     {
       header: 'Rep. Manager',
       accessorKey: 'managerName',
-      meta: { width: 170 },
+      meta: { width: w(170, 146) },
       cell: info => {
         const e = info.row.original;
         return (
@@ -325,7 +344,7 @@ export default function HrExitManagement() {
          bar, so the cell must not clip it. */
       header: 'Exit Readiness',
       accessorKey: 'exitReadiness',
-      meta: { width: 130, wrap: true },
+      meta: { width: w(130, 126), wrap: true },
       cell: info => {
         const p = info.row.original.exitReadiness;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -380,7 +399,7 @@ export default function HrExitManagement() {
          and the ellipsis rendered just past the pill's edge — the stray dot
          that looked like a bug in the data. Widened to 10% as well so the pill
          fits outright rather than merely being allowed to overflow. */
-      meta: { width: 160, align: 'center', wrap: true },
+      meta: { width: w(160, 132), align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const statusColor = STATUS_COLOR[e.status];
@@ -400,7 +419,7 @@ export default function HrExitManagement() {
          (1700) is ~204px — MORE absolute space than the old 13% of 1500
          (~195px), so the buttons still fit on one line while the percentages
          now total exactly 100. */
-      meta: { width: 210, align: 'center', wrap: true },
+      meta: { width: w(210, 150), align: 'center', wrap: true },
       cell: info => {
         const e = info.row.original;
         const isExited = e.status === 'Exited';
@@ -539,13 +558,18 @@ export default function HrExitManagement() {
               serial
               accent="violet"
               /* Sum of the columns' pixel widths (see the `meta.width` block at
-                 the top of `columns`): 56 serial + 1810 = 1866, and 1696 on the
-                 Active tab where Exit Type is not rendered. Matching minWidth to
-                 the real total is what stops the compaction — the table never
-                 shrinks below the space its columns actually need, and
-                 .dt-scroll scrolls horizontally instead. Keep this in step when
-                 a column is added or resized. */
-              minWidth={tab === 'active' ? 1696 : 1866}
+                 the top of `columns`). Matching minWidth to the real total is
+                 what stops the compaction — the table never shrinks below the
+                 space its columns actually need, and .dt-scroll scrolls
+                 horizontally instead. Keep this in step when a column is added
+                 or resized.
+                   Other tabs 1866 = 56 serial + 1810.
+                   Active     1416 = 56 serial + 210+108+118+124+120+126+146
+                                     +126+132+150 — Exit Type is not rendered
+                                     here and the narrower `w()` widths apply,
+                                     which is what took the Active tab off a
+                                     horizontal scrollbar. */
+              minWidth={tab === 'active' ? 1416 : 1866}
               fitToViewport
               autoFitRows
               loading={listLoading}

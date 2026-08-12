@@ -71,6 +71,10 @@ const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => 
 
 interface SalBreakComp { code: string; label: string; amount: number }
 
+/** The three components the auto-split owns — everything else in Earnings was
+ *  added by HR and survives a re-seed. */
+const SPLIT_CODES = ['basic', 'hra', 'special'];
+
 const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   const g = Math.max(0, Math.round(monthlyGross));
   const basic = Math.round(g * 0.5);
@@ -978,7 +982,12 @@ export default function HrEmployees() {
   const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
   const [ePfEligible, setEPfEligible]            = useState(false);
   const [ePfType, setEPfType]                    = useState('Statutory'); // 'Statutory' (₹15k cap) | 'Standard' (full basic)
-  const [eDetailedBreakup, setEDetailedBreakup]  = useState(false);
+  /* Detailed breakup is ON by default. The collapsed "Regular + Bonus = CTC"
+     summary restates the CTC field directly above it and nothing else, so the
+     section opened with no information in it and every user's first act was to
+     flip the toggle. An employee SAVED with it off still opens off — see the
+     explicit null check where detailed_breakup is read back. */
+  const [eDetailedBreakup, setEDetailedBreakup]  = useState(true);
   const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
   const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
   const [eEsiApplicable, setEEsiApplicable]      = useState(false);
@@ -993,7 +1002,11 @@ export default function HrEmployees() {
   // it re-seed when the Salary Amount changes. Flips true the moment HR edits /
   // adds / removes a component or a saved structure loads, so manual work is
   // never wiped by a later salary change.
-  const breakupDirtyRef     = useRef<boolean>(false);
+  /* The Annual CTC the current Basic/HRA/Special were built from. Set whenever
+     the breakup is loaded or seeded, and compared before re-seeding, so the
+     split follows a CTC the USER changed and never a value that merely arrived
+     from the server. */
+  const seededForSalaryRef  = useRef<string | null>(null);
 
   const resetEmpForm = () => {
     setEmpStep(1);
@@ -1022,12 +1035,15 @@ export default function HrEmployees() {
     setEExistingDocs({}); setEDocBusy({});
     setEEnablePayroll(true); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
-    setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(false);
+    // Reset restores the DEFAULT, which is open — not `false`. Leaving this at
+    // false meant the first employee of a session got the open section and
+    // every one after it got the collapsed summary again.
+    setEBonusInAnnual(false); setEPfEligible(false); setEDetailedBreakup(true);
     setEEarnings([]); setEDeductions([]); setEEsiApplicable(false); setEPtApplicable(false);
     setEBreakupLoading(false);
     breakupLoadedForRef.current = null;
     breakupBaselineRef.current = null;
-    breakupDirtyRef.current = false;
+    seededForSalaryRef.current = null;
     setEErrors({});
   };
 
@@ -1057,6 +1073,12 @@ export default function HrEmployees() {
     if (breakupLoadedForRef.current === target) return;
     breakupLoadedForRef.current = target;
 
+    /* Whatever the breakup ends up being below — freshly split or read back
+       from the server — it belongs to THIS CTC. Recording that here is what
+       stops the debounced re-seed from firing 500ms after the modal opens and
+       overwriting a saved structure nobody touched. */
+    seededForSalaryRef.current = eAnnualSalary;
+
     const monthlyGross = monthlyGrossFromSalary();
     const seedFresh = () => {
       setEEarnings(seedBreakup(monthlyGross));
@@ -1068,7 +1090,6 @@ export default function HrEmployees() {
       setEEsiApplicable(false);
       setEPtApplicable(false);
       breakupBaselineRef.current = null;
-      breakupDirtyRef.current = false; // fresh auto-split → may re-seed on salary change
     };
 
     if (typeof target === 'number') {
@@ -1092,7 +1113,6 @@ export default function HrEmployees() {
             setEEsiApplicable(esi);
             setEPtApplicable(pt);
             breakupBaselineRef.current = breakupSignature(earn, ded, pf, esi, pt);
-            breakupDirtyRef.current = true; // saved structure is HR's own → don't re-seed on salary change
           } else {
             seedFresh();
           }
@@ -1105,23 +1125,61 @@ export default function HrEmployees() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empOpen, empStep, eDetailedBreakup, editingDbId]);
 
-  // Re-seed the auto-split (Basic/HRA/Special) whenever the Salary Amount or
-  // frequency changes — but ONLY while the breakup is still untouched. Once HR
-  // edits/adds/removes a component (breakupDirty), their figures are kept as-is.
+  /* Annual CTC, settled — 500ms after the last keystroke.
+     The re-seed below rebuilds Basic / HRA / Special from this figure, and it
+     used to read the raw input: typing "120000" is six separate values, so the
+     table was rebuilt six times and the reader watched Basic climb through
+     ₹0.50, ₹5, ₹50, ₹500 … before landing. It went unnoticed while Detailed
+     Breakup defaulted to OFF, because the toggle was flipped only after the CTC
+     had been typed — so the seed ran once, on a finished number. Opening the
+     section by default removed that accidental gate and put every intermediate
+     value on screen.
+     Only the seed waits; the CTC field itself, its validation and the
+     annualised comparison stay live, so typing never feels laggy. */
+  const [settledSalary, setSettledSalary] = useState(eAnnualSalary);
+  useEffect(() => {
+    const t = setTimeout(() => setSettledSalary(eAnnualSalary), 500);
+    return () => clearTimeout(t);   // each keystroke cancels the pending seed
+  }, [eAnnualSalary]);
+
+  /* Re-seed Basic / HRA / Special whenever the CTC changes.
+     The split IS the CTC expressed monthly, so leaving it behind when the CTC
+     moves produced a breakup that had stopped describing the salary above it —
+     an employee on ₹11,00,000 still showing ₹13,102/month, with the summary
+     line reporting the gap and nothing acting on it.
+     This used to bail out on `breakupDirtyRef`, which froze the split forever
+     after the first manual edit, with no way back. That guard is gone; what
+     survives an edit instead is anything HR ADDED, which is the part a formula
+     cannot reproduce. A hand-typed Basic is overwritten — it is a value the
+     CTC owns.
+
+     `seededForSalaryRef` is what keeps this from firing on load. The effect
+     watches a debounced value, so opening an employee would settle 500ms later
+     and rewrite their SAVED structure without anyone touching the form. The
+     ref records the CTC the current breakup belongs to; only a different one
+     re-seeds. */
   useEffect(() => {
     if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
     if (breakupLoadedForRef.current === null) return; // initial seed not done yet
-    if (breakupDirtyRef.current) return;               // HR customised → leave it
-    const monthlyGross = monthlyGrossFromSalary();
-    setEEarnings(seedBreakup(monthlyGross));
+    if (seededForSalaryRef.current === settledSalary) return; // CTC unchanged
+    seededForSalaryRef.current = settledSalary;
+    const amt = Number(settledSalary) || 0;
+    const monthlyGross = eSalaryFreq === 'Per month' ? amt : amt / 12;
+    setEEarnings(prev => {
+      // HR's own components are kept; the three derived ones are rebuilt.
+      const custom = prev.filter(c => !SPLIT_CODES.includes(c.code));
+      return [...seedBreakup(monthlyGross), ...custom];
+    });
     /* The ESI toggle is deliberately NOT touched here. It used to be re-derived
        from the ₹21,000 wage ceiling on every salary keystroke, which fought the
        seed above (seedFresh leaves both statutory toggles off on purpose) and,
        worse, overwrote the user: untick ESI, adjust the CTC, and the box came
        back on with a zero-amount row and a validation error nobody asked for.
        ESI eligibility is a rule someone applies, not one the form decides. */
+    /* settledSalary, NOT eAnnualSalary — depending on the raw value is what
+       made this run per keystroke. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eAnnualSalary, eSalaryFreq]);
+  }, [settledSalary, eSalaryFreq]);
 
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
   const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
@@ -1265,11 +1323,9 @@ export default function HrEmployees() {
       next[i] = { ...next[i], label: value };
     }
     setList(next);
-    breakupDirtyRef.current = true; // HR edited a component → stop auto-re-seeding
     clearEErr('salary_breakup');
   };
   const addBreakRow = (which: 'earn' | 'ded') => {
-    breakupDirtyRef.current = true; // HR added a component → stop auto-re-seeding
     if (which === 'earn') setEEarnings([...eEarnings, { code: `comp_${eEarnings.length + 1}`, label: '', amount: 0 }]);
     else setEDeductions([...eDeductions, { code: `ded_${eDeductions.length + 1}`, label: '', amount: 0 }]);
   };
@@ -1286,7 +1342,6 @@ export default function HrEmployees() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    breakupDirtyRef.current = true; // HR removed a component → stop auto-re-seeding
     if (which === 'earn') setEEarnings(eEarnings.filter((_, idx) => idx !== i));
     else {
       setEDeductions(eDeductions.filter((_, idx) => idx !== i));
@@ -1330,10 +1385,21 @@ export default function HrEmployees() {
         {list.map((c, i) => {
           const rowErr = errs[i];
           const underline = rowErr ? '#dc2626' : 'transparent';
-          // ESI / PT rows are tied to their checkbox: the name is fixed and the
-          // row can't be deleted directly — only the amount is editable; untick
-          // the box above to remove it.
-          const locked = which === 'ded' && (c.code === 'esi' || c.code === 'pt');
+          /* Statutory rows are owned by the control above them, not by this
+             list: ESI / PT by their checkbox, PF by the PF Applicable picker.
+             Their names are fixed and the delete button is replaced by a lock.
+             PF was missing from this set and so carried a bin icon that did
+             nothing — removeBreakRow dropped the row and the sync effect put it
+             straight back, because PF Applicable was still Yes. */
+          const locked = which === 'ded' && (c.code === 'esi' || c.code === 'pt' || c.code === 'pf');
+          /* ESI and PT amounts are typed by HR / accounts. PF's is DERIVED
+             (12% of basic, capped for Statutory) and re-synced whenever basic
+             changes — so a typed value survived only until the next edit to the
+             salary. Read-only says that up front instead. */
+          const computedAmount = which === 'ded' && c.code === 'pf';
+          const lockHint = c.code === 'pf'
+            ? 'Set PF Applicable to No to remove this row'
+            : 'Untick the box above to remove';
           return (
             <div key={i} style={{ padding: '5px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
               <div className="emp-break-row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1355,15 +1421,17 @@ export default function HrEmployees() {
                     max={MAX_COMP_AMOUNT}
                     step="0.01"
                     inputMode="decimal"
-                    style={{ width: '100%', border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', textAlign: 'right', fontSize: 13, fontWeight: 700, padding: '3px 2px 3px 15px', outline: 'none', color: 'var(--vz-body-color)' }}
+                    style={{ width: '100%', border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', textAlign: 'right', fontSize: 13, fontWeight: 700, padding: '3px 2px 3px 15px', outline: 'none', color: computedAmount ? 'var(--vz-secondary-color)' : 'var(--vz-body-color)', cursor: computedAmount ? 'not-allowed' : undefined }}
                     value={c.amount}
-                    onChange={e => updateBreakRow(which, i, 'amount', e.target.value)}
+                    readOnly={computedAmount}
+                    title={computedAmount ? 'Calculated from Basic Salary and PF Type — not editable' : undefined}
+                    onChange={e => { if (!computedAmount) updateBreakRow(which, i, 'amount', e.target.value); }}
                     onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
                     onBlur={e => { e.currentTarget.style.borderBottomColor = rowErr ? '#dc2626' : 'transparent'; }}
                   />
                 </div>
                 {locked ? (
-                  <span title="Untick the box above to remove" style={{ color: '#9ca3af', padding: '2px 4px', flexShrink: 0, lineHeight: 1, fontSize: 13 }}>
+                  <span title={lockHint} style={{ color: '#9ca3af', padding: '2px 4px', flexShrink: 0, lineHeight: 1, fontSize: 13 }}>
                     <i className="ri-lock-line" />
                   </span>
                 ) : (
@@ -1688,7 +1756,17 @@ export default function HrEmployees() {
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
-      setESalaryFreq(raw.salary_frequency || 'Per annum');
+      /* Always 'Per annum' — the stored value is deliberately ignored.
+         The frequency picker was removed and the field is now labelled
+         "Annual CTC", so whatever HR types there is a yearly figure. This line
+         used to read the column back (`raw.salary_frequency || 'Per annum'`),
+         which left legacy rows still carrying 'Per month' driving the maths:
+         EMP-013 shows ₹1,20,000 in a box that says ANNUAL CTC while the
+         summary compares against ₹14,40,000, because monthlyGrossFromSalary()
+         took the 1,20,000 as a MONTHLY figure and multiplied by 12.
+         The comment in validateStep4 already claimed this was "defaulted to
+         'Per annum' on load/reset" — it just was not. */
+      setESalaryFreq('Per annum');
       if (raw.salary_effective_from) setESalaryFrom(String(raw.salary_effective_from).slice(0, 10));
       if (raw.bonus_in_annual !== undefined && raw.bonus_in_annual !== null) setEBonusInAnnual(!!raw.bonus_in_annual);
       if (raw.pf_eligible !== undefined && raw.pf_eligible !== null) setEPfEligible(!!raw.pf_eligible);
