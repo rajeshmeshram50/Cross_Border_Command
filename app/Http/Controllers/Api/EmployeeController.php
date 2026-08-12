@@ -12,6 +12,7 @@ use App\Models\Masters\LeavePlans;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\OnboardingGuard;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Carbon\Carbon;
@@ -974,6 +975,17 @@ class EmployeeController extends Controller
                 ]);
                 $employee = Employee::create($payload);
 
+                /* Same rule as update(): stage 6 means "onboarded", and an
+                   agreement that has not come back signed means they are not.
+                   validatePayload accepts onboarding_stage_completed on create
+                   too, so without this a POST could mint an employee already
+                   stamped complete — with, necessarily, zero signing runs.
+                   Throwing here rolls the whole transaction back, login user
+                   included. */
+                if ((int) ($payload['onboarding_stage_completed'] ?? 0) >= OnboardingGuard::COMPLETE_STAGE) {
+                    OnboardingGuard::assertDocumentsSigned($employee);
+                }
+
                 // Mirror the leave_plan dropdown selection into the
                 // leave_plan_employees pivot. The frontend used to do
                 // this via a separate fire-and-forget POST after save,
@@ -1109,10 +1121,21 @@ class EmployeeController extends Controller
 
         // Same high-watermark rule for the macro 6-stage tracker.
         $macroFromRequest = (int) $request->input('onboarding_stage_completed', 0);
-        $newMacro = max((int) $row->onboarding_stage_completed, $macroFromRequest);
+        $oldMacro = (int) $row->onboarding_stage_completed;
+        $newMacro = max($oldMacro, $macroFromRequest);
         // Stage 1's internal wizard fully done ⇒ macro stage ≥ 1.
         if ($newStep >= 4) {
             $newMacro = max($newMacro, 1);
+        }
+
+        /* Stage 6 is the "onboarding complete" stamp, and it is reachable by
+           anything that PUTs this integer — the wizard's own Stage 5 gate had
+           been commented out, and rows exist that reached stage 6 without a
+           single agreement ever being dispatched. Only guard the TRANSITION
+           into 6, so re-saving an already-completed employee (a later profile
+           edit) is never blocked by a rule applied after the fact. */
+        if ($newMacro >= OnboardingGuard::COMPLETE_STAGE && $oldMacro < OnboardingGuard::COMPLETE_STAGE) {
+            OnboardingGuard::assertDocumentsSigned($row);
         }
 
         $oldStatus = (string) $row->getOriginal('status');

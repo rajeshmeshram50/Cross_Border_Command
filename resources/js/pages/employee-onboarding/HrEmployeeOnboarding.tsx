@@ -1884,8 +1884,20 @@ function InitiateOnboardingModal({
   // "Completed" the moment HR clicks Next (macro watermark only).
   const [stage5Total, setStage5Total]   = useState(0);
   const [stage5Signed, setStage5Signed] = useState(0);
+  /* How many matched agreements have actually been DISPATCHED for signature —
+     any signing run that isn't Cancelled. Distinct from `stage5Signed`, which
+     only counts fully-signed runs. Onboarding must not be completable while a
+     required document was never even sent, and "sent but awaiting signature"
+     is a different (legitimate, in-progress) state from "never sent". */
+  const [stage5Sent, setStage5Sent]     = useState(0);
+  /* Whether the counts above reflect a real answer from the server yet. They
+     start at 0/0, and 0-of-0 reads as "nothing to sign, stage satisfied" — so
+     before the fetch resolves, or after it fails, the wizard was treating an
+     unknown as a pass and letting HR complete onboarding on the strength of
+     data it had never loaded. Nothing may be judged done until this is true. */
+  const [stage5Loaded, setStage5Loaded] = useState(false);
   useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); return; }
+    if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -1903,9 +1915,16 @@ function InitiateOnboardingModal({
         // Latest run per template_id (highest id wins) — a 'Completed' run = signed.
         const latest = new Map<number, any>();
         runs.forEach(r => { const t = r.template_id; if (t == null) return; const p = latest.get(t); if (!p || r.id > p.id) latest.set(t, r); });
+        /* "Sent" is read across ALL runs, not just the latest one: re-sending a
+           document creates a fresh run and cancelling one leaves a Cancelled
+           row behind, so the newest run alone can say "Cancelled" for a
+           template that was in fact dispatched and signed earlier. */
+        const dispatched = new Set(runs.filter(r => r.status !== 'Cancelled').map(r => r.template_id));
         setStage5Total(tpls.length);
         setStage5Signed(tpls.filter(t => latest.get(t.id)?.status === 'Completed').length);
-      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); } }
+        setStage5Sent(tpls.filter(t => dispatched.has(t.id)).length);
+        setStage5Loaded(true);
+      } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); } }
     })();
     return () => { cancelled = true; };
   }, [isOpen, emp?.dbId]);
@@ -1915,9 +1934,11 @@ function InitiateOnboardingModal({
      even though Stage 5 already showed the row as "Signed". Stage5Policies
      refetches its runs after every send/sign, so let it drive these counts
      while it's mounted. Stable identity — it's an onProgress dependency. */
-  const handleStage5Progress = useCallback((p: { signed: number; total: number }) => {
+  const handleStage5Progress = useCallback((p: { signed: number; sent: number; total: number }) => {
     setStage5Signed(p.signed);
+    setStage5Sent(p.sent);
     setStage5Total(p.total);
+    setStage5Loaded(true);
   }, []);
 
   // The employee's SAVED salary structure (the exact components HR entered in
@@ -2222,7 +2243,10 @@ function InitiateOnboardingModal({
     enable_payroll: true,
     pay_group: '', annual_salary: '', salary_frequency: 'Per annum',
     salary_effective_from: '', salary_structure: '', tax_regime: '',
-    bonus_in_annual: false, pf_eligible: false, detailed_breakup: false,
+    /* null = nobody has answered yet, which is NOT the same as "No". The field
+       is required, so it must start unanswered rather than pre-selecting one
+       of the two answers on the user's behalf. */
+    bonus_in_annual: false, pf_eligible: null as boolean | null, detailed_breakup: false,
     pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
@@ -2383,7 +2407,8 @@ useEffect(() => {
     salary_structure:      String(x.salary_structure      ?? ''),
     tax_regime:            String(x.tax_regime            ?? ''),
     bonus_in_annual:       !!x.bonus_in_annual,
-    pf_eligible:           !!x.pf_eligible,
+    // Preserve "unanswered" across a reopen — !! would turn null into a No.
+    pf_eligible:           x.pf_eligible == null ? null : !!x.pf_eligible,
     pf_type:               String(x.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory',
     detailed_breakup:      !!x.detailed_breakup,
   });
@@ -2541,6 +2566,7 @@ const STAGE1_FIELD_ORDER = [
   'reporting_manager',
   'annual_salary',
   'salary_effective_from',
+  'pf_applicable',
   // Assets & Security sits at the bottom of step 3; listed last so
   // scrollToFirstError still jumps to the earliest field on the form.
   'laptop_assigned',
@@ -2686,6 +2712,13 @@ const validateStage1 = (): boolean => {
         : 'Salary effective date is too far in the past';
     } else if (sef > salaryMax) {
       errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
+    }
+    /* PF Applicable must be answered, not defaulted. The control offers Yes/No
+       off a boolean, so an untouched field rendered as "No" and read back as a
+       decision nobody had made — and PF changes take-home pay. `null` is the
+       unanswered state; both Yes and No are valid answers. */
+    if (s1.pf_eligible !== true && s1.pf_eligible !== false) {
+      errors.pf_applicable = 'Select whether PF applies to this employee';
     }
   }
 
@@ -3269,8 +3302,16 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     s1.primary_role_id,
     s1.legal_entity_id,
     s1.reporting_manager,
-    s1.annual_salary,
-    s1.salary_effective_from,
+    /* The Compensation fields count only while payroll is enabled — the same
+       condition validateStage1 applies to them. Listed unconditionally, they
+       could never be filled for a payroll-disabled employee, so Stage 1 was
+       stuck below 100% and Stage 6 stayed blocked with nothing left to fix.
+       `pf_eligible` is `false` when answered No, and String(false) is a
+       non-empty string, so an explicit No counts as filled; only `null`
+       (unanswered) does not. */
+    ...(s1.enable_payroll !== false
+      ? [s1.annual_salary, s1.salary_effective_from, s1.pf_eligible]
+      : []),
   ];
   const stage1Filled = stage1RequiredFields.filter(v => String(v ?? '').trim()).length;
   const stage1LivePct = Math.round((stage1Filled / stage1RequiredFields.length) * 100);
@@ -3505,8 +3546,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // "Done" only when EVERY matched agreement has a completed signing run —
   // not just because HR advanced past the stage. If the employee has no
   // matched agreements, fall back to the macro watermark.
-  const stage5SignedAll = stage5Total > 0 ? stage5Signed >= stage5Total : macroCompleted >= 5;
-  const stage5IsDone = macroCompleted >= 5 && stage5SignedAll;
+  /* Stage 5 is measured against what HR actually SENT, not against every
+     template that matched the employee. HR decides which agreements this hire
+     needs; the matched list is a menu, not a mandate. So four matched and two
+     sent means the stage is done once those two come back signed.
+     Sending nothing is a valid outcome — "none of these apply to this hire" is
+     one of the answers HR is allowed to give — so there is deliberately no
+     "at least one must go out" rule. Only what was sent is checked.
+     `stage5Loaded` still guards it: 0-of-0 must mean "the answer is in and it
+     is zero", never "the fetch has not come back yet". */
+  const stage5AllSigned = stage5Loaded && stage5Signed >= stage5Sent;
+  const stage5IsDone = macroCompleted >= 5 && stage5AllSigned;
   // Stage 6 represents the HR final-approval / activation step. Used to
   // flip Completed the moment the activate API returned, even when
   // earlier stages were still Pending (the screenshot bug). Now we
@@ -3545,13 +3595,28 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
          The 35% is a "you are here" placeholder and only makes sense for a
          stage with no countable work (stage 6); stage 5 has a real
          denominator, so it reports the real fraction. */
+      /* Measured against the SENT documents, matching the completion rule
+         above: send two of four and the bar fills as those two are signed.
+         Each sent agreement is still two steps of work — dispatching it, then
+         the signers returning it — because counting signatures alone left the
+         stage reading 0% right after HR had sent everything, contradicting the
+         "Sent — waiting on the signers" line on the row itself.
+         Nothing sent = 0%, never 100%: an empty denominator must not read as
+         "all done". */
       progress = stage5IsDone ? 100
-        : (stage5Total > 0 ? Math.round((stage5Signed / stage5Total) * 100) : 0);
+        : (stage5Sent > 0
+            ? Math.round(((stage5Sent + stage5Signed) / (stage5Sent * 2)) * 100)
+            : 0);
       /* Opening the stage no longer marks it In Progress on its own — with
-         nothing assigned there is no work in progress to report. */
+         nothing assigned there is no work in progress to report.
+         A document that has been SENT counts as work in progress even before
+         anyone signs it: the wizard is genuinely waiting on the counter-party.
+         Without `stage5Sent`, HR who sent every agreement and then reopened
+         the wizard on Stage 1 saw Stage 5 sitting at "Pending", as though
+         nothing had been dispatched at all. */
       status = stage5IsDone ? 'Completed'
         : (stage5Total === 0 ? 'Pending'
-        : ((stage5Signed > 0 || activeStage === 5 || macroCompleted >= 5) ? 'In Progress' : 'Pending'));
+        : ((stage5Sent > 0 || stage5Signed > 0 || activeStage === 5 || macroCompleted >= 5) ? 'In Progress' : 'Pending'));
     } else if (s.num === 6) {
       progress = stage6Done ? 100 : (activeStage === 6 ? 35 : 0);
       status   = stage6Done ? 'Completed' : (activeStage === 6 ? 'In Progress' : 'Pending');
@@ -4338,12 +4403,23 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       Type → Statutory (₹15k cap) vs Standard (full basic). */}
                   {s1.enable_payroll !== false && (
                     <Col md={4} data-field="pf_applicable">
-                      <label className="onb-init-label">PF Applicable</label>
+                      <label className="onb-init-label">
+                        PF Applicable <span className="req">*</span>
+                      </label>
+                      {/* Empty until answered — `s1.pf_eligible ? 'Yes' : 'No'`
+                          showed "No" for an untouched field, which is a answer
+                          the user never gave. */}
                       <MasterSelect
                         options={ONB_YES_NO}
-                        value={s1.pf_eligible ? 'Yes' : 'No'}
-                        onChange={(v) => setS1(p => ({ ...p, pf_eligible: v === 'Yes' }))}
+                        placeholder="Select Yes or No"
+                        invalid={!!s1Errors.pf_applicable}
+                        value={s1.pf_eligible == null ? '' : (s1.pf_eligible ? 'Yes' : 'No')}
+                        onChange={(v) => {
+                          setS1(p => ({ ...p, pf_eligible: v === 'Yes' }));
+                          setS1Errors(p => ({ ...p, pf_applicable: '' }));
+                        }}
                       />
+                      {s1Errors.pf_applicable && <div className="onb-error-msg">{s1Errors.pf_applicable}</div>}
                     </Col>
                   )}
                   {s1.enable_payroll !== false && s1.pf_eligible && (
@@ -4713,16 +4789,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             return;
           }
         }
-        // Stage 5 — every policy must be acknowledged. Block the
-        // advance to verification otherwise; the user would just hit
-        // the same blocker at final submission.
-        // if (activeStage === 5 && !stage5IsDone) {
-        //   toast.error(
-        //     'Policies — acknowledge to continue',
-        //     'Tick every policy checkbox before moving to verification.',
-        //   );
-        //   return;
-        // }
+        /* Stage 5 does NOT gate the advance. HR dispatches agreements as they
+           get to them — some today, the rest next week — and holding the wizard
+           shut in the meantime just blocks the stages that have nothing to do
+           with signatures. Moving past this stage claims nothing; stage 6 is
+           where onboarding is declared complete, and THAT is gated, on every
+           agreement having come back signed (see the Complete Onboarding
+           button below and OnboardingGuard::assertDocumentsSigned server-side). */
         setNextLoading(true);
         // Flush any typed-but-unblurred Previous-Employment rows before
         // we advance — same fix as the Previous / sidebar navigation.
@@ -4759,7 +4832,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (!stage2IsDone) pending.push('Document Management');
     if (!stage3IsDone) pending.push('Provisioning & Asset Setup');
     if (!stage4IsDone) pending.push('Payroll & Finance');
-    if (!stage5IsDone) pending.push('Policies & Agreements');
+    /* Name the actual blocker — "Policies & Agreements" alone left HR guessing
+       whether a document was unsent, unsigned, or the stage simply unstamped. */
+    if (!stage5IsDone) {
+      pending.push(
+        !stage5Loaded               ? 'Policies & Agreements (still loading)'
+        : stage5Signed < stage5Sent ? `Policies & Agreements (${stage5Sent - stage5Signed} of ${stage5Sent} sent awaiting signature)`
+                                    : 'Policies & Agreements',
+      );
+    }
     const blocked = pending.length > 0;
     return (
       <button
@@ -4874,27 +4955,33 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               if (nextLoading) return;
               setNextLoading(true);
               try {
-                // Notes are sent in the PUT payload alongside the macro
-                // bump. The backend currently strips them at validation
-                // (no column yet) — that's intentional; the field is here
-                // so the UX is in place when we wire persistence later.
-                if (emp?.dbId) {
-                  try {
-                    await api.put(`/employees/${emp.dbId}`, {
-                      onboarding_stage_completed: 6,
-                      onboarding_complete_notes: completeNotes.trim() || null,
-                    });
-                    onSaved?.();
-                  } catch { /* fall through to retry via bumpMacroStage */ }
-                }
-                await Promise.all([
-                  bumpMacroStage(6),
-                  new Promise(r => setTimeout(r, 350)),
-                ]);
+                if (!emp?.dbId) return;
+                /* One request, and its failure IS the answer.
+                   This used to swallow the PUT's error, retry the same call
+                   through bumpMacroStage (which swallows too), and then toast
+                   "Onboarding completed" unconditionally — so a server refusal
+                   was reported to HR as a success and the modal closed on it.
+                   The server now rejects stage 6 when a required agreement was
+                   never sent for signature, and that message has to reach the
+                   person who pressed the button.
+                   Notes ride along in the payload; the backend still strips
+                   them at validation (no column yet), which is intentional. */
+                await api.put(`/employees/${emp.dbId}`, {
+                  onboarding_stage_completed: 6,
+                  onboarding_complete_notes: completeNotes.trim() || null,
+                });
+                onSaved?.();
+                await new Promise(r => setTimeout(r, 350));
                 toast.success('Onboarding completed', 'All stages signed off. You can now activate the employee.');
                 setShowCompleteConfirm(false);
                 setCompleteNotes('');
                 onClose();
+              } catch (err: any) {
+                toast.error(
+                  'Could not complete onboarding',
+                  err?.response?.data?.message
+                    || 'The server rejected the request. Please try again.',
+                );
               } finally {
                 setNextLoading(false);
               }
@@ -6908,7 +6995,7 @@ function Stage5Policies({ emp, onProgress }: {
   emp: OnboardRow;
   /* Fires whenever the signed/total counts change, so the wizard sidebar can
      show live Stage 5 progress instead of a stale snapshot taken on open. */
-  onProgress?: (p: { signed: number; total: number }) => void;
+  onProgress?: (p: { signed: number; sent: number; total: number }) => void;
 }) {
   type Tpl = {
     id: number;
@@ -7117,6 +7204,14 @@ function Stage5Policies({ emp, onProgress }: {
 
   const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
 
+  /* Templates that have been DISPATCHED for signature at least once. Read over
+     every run rather than the latest, because a cancelled re-send leaves the
+     newest run at 'Cancelled' on a template that was already sent. */
+  const sentCount = useMemo(() => {
+    const dispatched = new Set(runs.filter(r => r.status !== 'Cancelled').map(r => r.template_id));
+    return templates.filter(t => dispatched.has(t.id)).length;
+  }, [runs, templates]);
+
   /* Report the LIVE counts up to the modal so the sidebar percentage tracks
      them. The parent used to fetch its own copy of exactly this, once, keyed
      on [isOpen, employee] — so signing a document while the wizard was open
@@ -7124,8 +7219,9 @@ function Stage5Policies({ emp, onProgress }: {
      sources of the same truth; now there is one, and this component already
      refetches after every send / sign action. */
   useEffect(() => {
-    onProgress?.({ signed: signedCount, total: templates.length });
-  }, [signedCount, templates.length, onProgress]);
+    if (loading) return; // an empty list mid-fetch is not an answer
+    onProgress?.({ signed: signedCount, sent: sentCount, total: templates.length });
+  }, [loading, signedCount, sentCount, templates.length, onProgress]);
 
   // Open the rich send modal; the actual POST happens in confirmSend.
   const handleSend = (tpl: Tpl) => { setSendForTpl(tpl); };

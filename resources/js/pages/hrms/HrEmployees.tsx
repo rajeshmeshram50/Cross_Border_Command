@@ -1080,7 +1080,12 @@ export default function HrEmployees() {
           if (active && Array.isArray(active.earnings) && active.earnings.length) {
             const earn: SalBreakComp[] = active.earnings.map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 }));
             const ded: SalBreakComp[] = (active.deductions ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 }));
-            const pf = !!active.pf_applicable, esi = !!active.esi_applicable, pt = active.pt_applicable !== false;
+            /* All three read the same way: absent / null means "not applicable".
+               pt_applicable used to be `!== false`, so a legacy row that never
+               stored the flag opened with Professional Tax already ticked and a
+               zero-amount PT row failing validation on a form the user had not
+               yet touched. */
+            const pf = !!active.pf_applicable, esi = !!active.esi_applicable, pt = !!active.pt_applicable;
             setEEarnings(earn);
             setEDeductions(ded);
             setEPfEligible(pf);
@@ -1109,7 +1114,12 @@ export default function HrEmployees() {
     if (breakupDirtyRef.current) return;               // HR customised → leave it
     const monthlyGross = monthlyGrossFromSalary();
     setEEarnings(seedBreakup(monthlyGross));
-    setEEsiApplicable(monthlyGross > 0 && monthlyGross <= 21000);
+    /* The ESI toggle is deliberately NOT touched here. It used to be re-derived
+       from the ₹21,000 wage ceiling on every salary keystroke, which fought the
+       seed above (seedFresh leaves both statutory toggles off on purpose) and,
+       worse, overwrote the user: untick ESI, adjust the CTC, and the box came
+       back on with a zero-amount row and a validation error nobody asked for.
+       ESI eligibility is a rule someone applies, not one the form decides. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eAnnualSalary, eSalaryFreq]);
 
@@ -1285,6 +1295,18 @@ export default function HrEmployees() {
       if (removed?.code === 'esi') setEEsiApplicable(false);
       if (removed?.code === 'pt')  setEPtApplicable(false);
     }
+    clearEErr('salary_breakup');
+  };
+
+  /* Ticking ESI / Professional Tax drops a Fixed Deduction row into the breakup
+     and unticking takes it away — so a toggle changes what the breakup
+     validation has to say about the form, exactly as editing, adding or
+     removing a row does. Those three all clear the last "fix the highlighted
+     components" message; the two checkboxes did not. Result: tick ESI → Next →
+     error → untick ESI, and the offending row is gone but its error sentence
+     stays on screen pointing at a row that no longer exists. */
+  const setStatutoryToggle = (which: 'esi' | 'pt', on: boolean) => {
+    (which === 'esi' ? setEEsiApplicable : setEPtApplicable)(on);
     clearEErr('salary_breakup');
   };
 
@@ -4378,10 +4400,10 @@ export default function HrEmployees() {
                       </ul>
                       <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
                         <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={eEsiApplicable} onChange={e => setEEsiApplicable(e.target.checked)} /> ESI
+                          <input type="checkbox" checked={eEsiApplicable} onChange={e => setStatutoryToggle('esi', e.target.checked)} /> ESI
                         </label>
                         <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={ePtApplicable} onChange={e => setEPtApplicable(e.target.checked)} /> Professional Tax
+                          <input type="checkbox" checked={ePtApplicable} onChange={e => setStatutoryToggle('pt', e.target.checked)} /> Professional Tax
                         </label>
                       </div>
                       <Row className="g-4">
