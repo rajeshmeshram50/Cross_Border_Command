@@ -4,7 +4,7 @@ import { Card, CardBody, Col, Row, Button, Input, Dropdown, DropdownToggle, Drop
 import * as XLSX from 'xlsx';
 import { MasterFormStyles, MasterSelect } from '../master/masterFormKit';
 import PayslipViewerModal, { type PayslipLine } from '../../components/PayslipViewerModal';
-import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem } from '../../components/PayrollRunModal';
+import PayrollRunModal, { type PayrollRunIssue, type PayrollSandwichItem, type PayrollExcludedItem } from '../../components/PayrollRunModal';
 import SalaryStructureModal, { type SalaryEmployeeLite } from '../../components/SalaryStructureModal';
 import PaymentDisbursementModal from '../../components/PaymentDisbursementModal';
 import { useToast } from '../../contexts/ToastContext';
@@ -468,6 +468,30 @@ export default function HrPayroll() {
   }, [cycle]);
 
   useEffect(() => { if (runOpen) loadSandwichReview(); }, [runOpen, loadSandwichReview]);
+
+  /* Employees the backend deliberately held OUT of this run — exited in the
+     cycle (settled through F&F), resigned within 15 days of joining, or still
+     half-onboarded. The API has always returned these on /payroll/preflight,
+     but nothing read them, so an employee missing from the run looked like a
+     bug with no explanation anywhere on the screen. Fetched with the modal,
+     same as the sandwich review. */
+  const [excluded, setExcluded] = useState<PayrollExcludedItem[]>([]);
+
+  const loadExclusions = useCallback(async () => {
+    if (!cycle) return;
+    try {
+      const res = await api.get('/payroll/preflight', {
+        params: { month: cycle.month, year: cycle.year },
+      });
+      setExcluded(Array.isArray(res.data?.data?.excluded) ? res.data.data.excluded : []);
+    } catch {
+      // Non-fatal, like the sandwich review — an explanation panel must never
+      // block the run itself.
+      setExcluded([]);
+    }
+  }, [cycle]);
+
+  useEffect(() => { if (runOpen) loadExclusions(); }, [runOpen, loadExclusions]);
 
   /* Excuse every still-charged sandwich leave for ONE employee.
      Sequential, not Promise.all: each call re-sizes leave_requests.days, and
@@ -1861,6 +1885,7 @@ export default function HrPayroll() {
         sandwichItems={sandwichItems}
         onWaiveSandwich={waiveSandwich}
         sandwichBusyIds={sandwichBusyIds}
+        excludedItems={excluded}
         onAction={handleIssueAction}
         onExportPayslips={downloadAllPayslips}
         exporting={downloading === 'zip'}

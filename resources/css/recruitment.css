@@ -6396,6 +6396,19 @@
   cursor: not-allowed;
 }
 .exit-action-btn--rehire.is-off:hover { background: var(--vz-secondary-bg); }
+/* Own row — Initiate / Continue stay visible but inert (nobody runs their own
+   exit). Same greyed treatment as a blocked Rehire so the rule reads the same
+   way wherever it applies. */
+.exit-action-btn--initiate.is-off,
+.exit-action-btn--continue.is-off {
+  background: var(--vz-secondary-bg);
+  color: var(--vz-secondary-color);
+  border-color: var(--vz-border-color);
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.exit-action-btn--initiate.is-off:hover,
+.exit-action-btn--continue.is-off:hover { background: var(--vz-secondary-bg); }
 [data-bs-theme="dark"] .exit-action-btn--rehire {
   background: rgba(16,185,129,0.16);
   border-color: rgba(16,185,129,0.35);

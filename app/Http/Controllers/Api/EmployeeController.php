@@ -1846,8 +1846,13 @@ class EmployeeController extends Controller
         // to another client. Scope the dup check to the owning client_id so a
         // collision in a DIFFERENT client no longer blocks creation here. Mirrors
         // the pan_number rule above and the users_email_client_unique DB index.
+        // Only an ACTIVE account holds its email slot. When an employee EXITS,
+        // their user is marked `email_active = false`, which frees the email for
+        // reuse — so an exited person's email no longer blocks a new registration
+        // (the flag is reset to true on rehire). See migration add_email_active.
         $emailRule[] = Rule::unique('users', 'email')
             ->whereNull('deleted_at')
+            ->where('email_active', true)
             ->where(fn($q) => $tenantWhere($q)
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);

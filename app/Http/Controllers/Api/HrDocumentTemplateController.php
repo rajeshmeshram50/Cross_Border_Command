@@ -62,6 +62,9 @@ class HrDocumentTemplateController extends Controller
     ];
 
     private const DOCX_MAX_KB = 20 * 1024;
+    // NOTE: DOCX_MAX_PAGES + docxPageLimitError() come from HandlesDocxHtmlRoundtrip
+    // (shared with ClmTradeDocumentController) — do NOT redefine them here; a class
+    // constant that differs from the trait's is a fatal "incompatible" error.
 
     /* ───── LIST / SHOW / NEXT-CODE / STATS ───── */
 
@@ -1160,6 +1163,9 @@ class HrDocumentTemplateController extends Controller
     }
 
     /* ───── DOCX storage + parse ───── */
+
+    // docxPageLimitError() is provided by HandlesDocxHtmlRoundtrip (canonical,
+    // shared with ClmTradeDocumentController). Not redefined here.
 
     private function storeDocx($file, $clientId, $templateId): array
     {
