@@ -319,11 +319,24 @@ export default function HrExpenseManagement() {
   const kpiTotalAmount   = isAdvanceModule ? advanceTotalAmount : totalAmount;
   const kpiApprovedAmount = isAdvanceModule ? advanceApprovedAmount : approvedAmount;
 
+  /* KPI tiles are one line of 26px type in a narrow card, so a long figure
+     wraps or clips. Compact it — but never at the cost of being wrong.
+     QA #88 was exactly that: ₹6,550 rendered as "₹7K", a total that read as
+     ₹450 too high. The answer is not "no K", it is ENOUGH PRECISION — two
+     decimals keep ₹6,550 as ₹6.55K, and a round ₹2,000 still shows as ₹2K
+     because trailing zeros are trimmed.
+     Where two decimals still round (₹6,555 → ₹6.56K), the tile's tooltip
+     carries the exact rupee figure — every caller passes titleText. */
+  /* Truncated, not rounded. toFixed() rounds UP, which turned ₹99,999 into
+     "₹100K" — a figure that reads as a lakh. On money, a display that rounds up
+     overstates the total; truncating is at most a few rupees short and never
+     claims more than there is. The exact figure is on the tile's tooltip. */
+  const compactAt = (n: number, unit: number) =>
+    String(Math.floor((n / unit) * 100) / 100);
   const fmtCompact = (n: number): string => {
-    if (n >= 1_00_00_000) return `₹${(n / 1_00_00_000).toFixed(1).replace(/\.0$/, '')}Cr`;
-    if (n >= 1_00_000)    return `₹${(n / 1_00_000).toFixed(1).replace(/\.0$/, '')}L`;
-    // Below ₹1 lakh, show the exact figure with Indian grouping. Rounding to
-    // whole "K" turned ₹6,550 into "₹7K", which read as a wrong total (QA #88).
+    if (n >= 1_00_00_000) return `₹${compactAt(n, 1_00_00_000)}Cr`;
+    if (n >= 1_00_000)    return `₹${compactAt(n, 1_00_000)}L`;
+    if (n >= 1_000)       return `₹${compactAt(n, 1_000)}K`;
     return `₹${Math.round(n).toLocaleString('en-IN')}`;
   };
 

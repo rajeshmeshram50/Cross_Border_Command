@@ -715,7 +715,7 @@ function CreateAnnouncementModal({
     return pool.length;
   }, [employees, audienceType, roleIds, designationIds, excludeIds]);
 
-  const validateStep = (s: number): boolean => {
+  const stepErrorsFor = (s: number): Record<string, string> => {
     const e: Record<string, string> = {};
     if (s === 1) {
       if (!title.trim()) e.title = 'Title is required';
@@ -734,11 +734,35 @@ function CreateAnnouncementModal({
         e.audience = 'Select at least one designation.';
       }
     }
+    return e;
+  };
+
+  const validateStep = (s: number): boolean => {
+    const e = stepErrorsFor(s);
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  const handleNext = () => { if (validateStep(step)) setStep(s => Math.min(TOTAL_STEPS, s + 1)); };
+  /* Toast the same reasons the inline errors give.
+   *
+   * The inline message sits under the field it belongs to, which is right —
+   * but on this step that field is a grid of thirteen checkboxes, and the
+   * message lands below all of them, well away from the Save & Next button
+   * that was just clicked. Nothing appeared to happen. The toast says why at
+   * the moment of the click; the inline text still says which field. */
+  const validateStepWithToast = (s: number): boolean => {
+    const ok = validateStep(s);
+    if (!ok) {
+      const reasons = Object.values(stepErrorsFor(s));
+      toast.error(
+        'Cannot continue',
+        reasons.length === 1 ? reasons[0] : reasons.join(' '),
+      );
+    }
+    return ok;
+  };
+
+  const handleNext = () => { if (validateStepWithToast(step)) setStep(s => Math.min(TOTAL_STEPS, s + 1)); };
   const handleBack = () => setStep(s => Math.max(1, s - 1));
 
   const buildPayload = (forceStatus?: 'Draft' | null): FormData => {

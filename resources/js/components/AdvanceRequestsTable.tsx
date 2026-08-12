@@ -1,4 +1,5 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
+import { useScrollLock } from '../hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
@@ -870,17 +871,10 @@ function AuditLogTrigger({
   }, [open, setOpen]);
 
   // Lock the page behind the popover; the log itself still scrolls (CBC #73).
-  useEffect(() => {
-    if (!open) return;
-    const body = document.body.style.overflow;
-    const html = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = body;
-      document.documentElement.style.overflow = html;
-    };
-  }, [open]);
+  /* Shared hook instead of a local html+body lock: that pair misses the
+     element this app actually scrolls (.main-content), so the page carried on
+     moving behind the popup. */
+  useScrollLock(open);
 
   useEffect(() => {
     if (!open) return;

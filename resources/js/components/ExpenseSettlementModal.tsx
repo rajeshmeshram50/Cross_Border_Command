@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useScrollLock } from '../hooks/useScrollLock';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { MasterSelect } from './ui/MasterSelect';
@@ -187,30 +188,11 @@ export default function ExpenseSettlementModal({
 }) {
   const toast = useToast();
   const open = claimId != null;
-  // Lock background page scroll while the modal is open — the page scrolled
-  // behind the overlay (QA #99, #115). The app layout scrolls inside its
-  // <main> container (overflow-y:auto), NOT <body>/<html>, so locking those
-  // alone did nothing on the Inbox. Lock the scrollable <main> too and restore
-  // every element on close/unmount.
-  useEffect(() => {
-    if (!open) return;
-    const html = document.documentElement;
-    const body = document.body;
-    const main = document.querySelector('main') as HTMLElement | null;
-    const prev = {
-      html: html.style.overflow,
-      body: body.style.overflow,
-      main: main?.style.overflow ?? '',
-    };
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    if (main) main.style.overflow = 'hidden';
-    return () => {
-      html.style.overflow = prev.html;
-      body.style.overflow = prev.body;
-      if (main) main.style.overflow = prev.main;
-    };
-  }, [open]);
+  /* Background scroll lock (QA #99, #115) — the shared hook, not a local copy.
+     It discovers whatever is actually scrolling (this app's page scrolls on
+     .main-content, and from the Inbox this dialog opens over ANOTHER modal
+     whose body scrolls) and leaves this dialog's own subtree alone. */
+  useScrollLock(open, '.esm-backdrop, .esm-sub-backdrop');
   const isAdvance = kind === 'advance';
   // Noun for user-facing copy — an advance is a "advance"/"payout", an expense
   // claim is a "claim"/"reimbursement".
@@ -2858,7 +2840,20 @@ const CSS = `
 .esm-fld>label,.esm-ro>label,.esm-card>label,.esm-card-lbl,.esm-card-hd label{font-size:10.5px;font-weight:700;letter-spacing:.03em;color:#64748b;text-transform:uppercase;}
 .esm-ro-sm{font-size:13px;font-weight:600;}
 .esm-req{color:#ef4444;}
-.esm-ro-v{font-size:14px;font-weight:700;color:#0f172a;}
+/* Expense titles are free text and users type anything — a single unbroken
+   run of characters has NO break opportunity, so it sets the cell's min-content
+   width and every flex/grid ancestor grows to fit it. That is what stretched
+   the whole dialog past the page edge (QA screenshot: a "wwww…" title running
+   clean across the viewport).
+   The hero title was capped for this once already; the fix belongs on every
+   place the title lands, not one of them. */
+.esm-ro-v{font-size:14px;font-weight:700;color:#0f172a;min-width:0;overflow-wrap:anywhere;}
+/* The read-only grid cells are flex/grid children, whose min-width defaults to
+   their content — so they need the same release or the value cannot shrink. */
+.esm-ro{min-width:0;}
+/* Guard rail: nothing inside this modal may exceed it. */
+.esm-sub-modal,.esm-modal{max-width:100%;}
+.esm-sub-modal *,.esm-modal *{min-width:0;}
 [data-bs-theme="dark"] .esm-ro-v{color:#e2e8f0;}
 .esm-ro-v.is-neg,.is-neg{color:#e11d48;}
 .esm-ro-v.is-pos,.is-pos{color:#059669;}
@@ -3136,7 +3131,8 @@ textarea.esm-in{resize:vertical;}
 .esm-confirm-ico.is-reject{background:linear-gradient(135deg,#f06548,#e11d48);box-shadow:0 8px 20px rgba(225,29,72,.32);}
 .esm-confirm-title{font-size:17px;font-weight:800;color:#0f172a;}
 [data-bs-theme="dark"] .esm-confirm-title{color:#e2e8f0;}
-.esm-confirm-msg{font-size:13px;color:#475569;line-height:1.5;}
+.esm-confirm-msg{font-size:13px;color:#475569;line-height:1.5;min-width:0;overflow-wrap:anywhere;}
+.esm-confirm-msg b{max-width:100%;}
 [data-bs-theme="dark"] .esm-confirm-msg{color:#94a3b8;}
 .esm-confirm .esm-in{text-align:left;}
 .esm-confirm-actions{display:flex;gap:10px;justify-content:center;margin-top:4px;}

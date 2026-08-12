@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
+import { useScrollLock } from '../hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
 import { useToast } from '../contexts/ToastContext';
+import Tooltip from './ui/Tooltip';
 // Reuses the polished confirmation-modal CSS classes already shipping with
 // the recruitment / candidate flows (cand-confirm-modal, cand-confirm-head,
 // cand-confirm-body, cand-confirm-footer, etc.).
@@ -508,23 +510,23 @@ function ExpenseActionCell({
   const emailedAlready = !!c.reimbursement_emailed_at;
 
   const verdictBtn = (stage: 'manager' | 'hr', verdict: 'approve' | 'reject') => (
-    <button
-      type="button"
-      data-tooltip={verdict === 'approve' ? 'Approve' : 'Reject'}
-      data-tooltip-pos="left"
-      aria-label={verdict === 'approve' ? 'Approve' : 'Reject'}
-      onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
-      className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-      style={{
-        width: 28, height: 28, padding: 0,
-        background: verdict === 'approve'
-          ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
-          : 'linear-gradient(135deg,#f06548,#ff7a5c)',
-        color: '#fff', border: 'none',
-      }}
-    >
-      <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
-    </button>
+    <Tooltip label={verdict === 'approve' ? 'Approve' : 'Reject'}>
+      <button
+        type="button"
+        aria-label={verdict === 'approve' ? 'Approve' : 'Reject'}
+        onClick={() => { setConfirmAction({ stage, verdict }); setComment(''); }}
+        className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+        style={{
+          width: 28, height: 28, padding: 0,
+          background: verdict === 'approve'
+            ? 'linear-gradient(135deg,#0ab39c,#02c8a7)'
+            : 'linear-gradient(135deg,#f06548,#ff7a5c)',
+          color: '#fff', border: 'none',
+        }}
+      >
+        <i className={verdict === 'approve' ? 'ri-check-line' : 'ri-close-line'} />
+      </button>
+    </Tooltip>
   );
 
   return (
@@ -537,7 +539,10 @@ function ExpenseActionCell({
           icon before it — in a straight line down the table. */}
       <div
         className="d-inline-flex align-items-center justify-content-end gap-1"
-        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined }}
+        /* paddingRight keeps the trailing kebab off the column's edge. Flush
+           against it the icons read as clipped — and where a vertical scrollbar
+           sits over that edge, they genuinely were. */
+        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined, paddingRight: 6 }}
       >
         {(canManagerAct || canHrReview) && onReview ? (
           (() => {
@@ -563,63 +568,63 @@ function ExpenseActionCell({
           </>
         )}
         {canSettle && (
-          <button
-            type="button"
-            data-tooltip={settleDone ? 'View payment history' : (c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}
-            data-tooltip-pos="left"
-            aria-label={settleDone ? 'View payment history' : 'Record payment'}
-            onClick={() => onRecordPayment?.(c)}
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-            style={{
-              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
-              background: settleDone ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#f7b84b,#f59e0b)',
-            }}
-          >
-            <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
-          </button>
+          <Tooltip label={settleDone ? 'View payment history' : (c.settlement_status ?? 'unpaid') === 'partial' ? 'Record another payment' : 'Record payment'}>
+            <button
+              type="button"
+              aria-label={settleDone ? 'View payment history' : 'Record payment'}
+              onClick={() => onRecordPayment?.(c)}
+              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+              style={{
+                width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+                background: settleDone ? 'linear-gradient(135deg,#0ab39c,#02c8a7)' : 'linear-gradient(135deg,#f7b84b,#f59e0b)',
+              }}
+            >
+              <i className={settleDone ? 'ri-history-line' : 'ri-bank-card-line'} />
+            </button>
+          </Tooltip>
         )}
         {showEmail && (
-          <button
-            type="button"
-            data-tooltip={!canEmail ? (settleDone ? 'Sync all payments to Zoho first' : 'Available once fully paid & synced to Zoho') : emailedAlready ? 'Re-send reimbursement email' : 'Email reimbursement to employee'}
-            data-tooltip-pos="left"
-            aria-label="Email reimbursement"
-            onClick={() => {
-              if (canEmail) { onEmailReimbursement?.(c); return; }
-              if (settleDone && !c.zoho_all_synced) {
-                toast.warning('Sync to Zoho first', 'This claim’s payment isn’t in Zoho Books yet — sync all payments to Zoho before emailing the reimbursement.');
-              } else {
-                toast.info('Not ready yet', 'The claim must be fully paid and every payment synced to Zoho before it can be emailed.');
-              }
-            }}
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-            style={{
-              width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
-              cursor: canEmail ? 'pointer' : 'not-allowed',
-              // Disabled state is conveyed by the muted grey gradient, NOT
-              // element opacity — CSS opacity also dims the ::after tooltip pill,
-              // which made the tooltip render faint on the disabled button.
-              background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
-                : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
-                : 'linear-gradient(135deg,#6366f1,#4f46e5)',
-            }}
-          >
-            <i className={emailedAlready && canEmail ? 'ri-mail-check-line' : 'ri-mail-send-line'} />
-          </button>
+          <Tooltip label={!canEmail ? (settleDone ? 'Sync all payments to Zoho first' : 'Available once fully paid & synced to Zoho') : emailedAlready ? 'Re-send reimbursement email' : 'Email reimbursement to employee'}>
+            <button
+              type="button"
+              aria-label="Email reimbursement"
+              onClick={() => {
+                if (canEmail) { onEmailReimbursement?.(c); return; }
+                if (settleDone && !c.zoho_all_synced) {
+                  toast.warning('Sync to Zoho first', 'This claim’s payment isn’t in Zoho Books yet — sync all payments to Zoho before emailing the reimbursement.');
+                } else {
+                  toast.info('Not ready yet', 'The claim must be fully paid and every payment synced to Zoho before it can be emailed.');
+                }
+              }}
+              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+              style={{
+                width: 28, height: 28, padding: 0, color: '#fff', border: 'none',
+                cursor: canEmail ? 'pointer' : 'not-allowed',
+                // Disabled state is conveyed by the muted grey gradient, NOT
+                // element opacity — CSS opacity also dims the ::after tooltip pill,
+                // which made the tooltip render faint on the disabled button.
+                background: !canEmail ? 'linear-gradient(135deg,#cbd5e1,#94a3b8)'
+                  : emailedAlready ? 'linear-gradient(135deg,#94a3b8,#64748b)'
+                  : 'linear-gradient(135deg,#6366f1,#4f46e5)',
+              }}
+            >
+              <i className={emailedAlready && canEmail ? 'ri-mail-check-line' : 'ri-mail-send-line'} />
+            </button>
+          </Tooltip>
         )}
         {/* View payments (read-only) — for the claim owner on their profile. */}
         {!!onViewPayments && c.status === 'approved' && (
-          <button
-            type="button"
-            data-tooltip="View payments"
-            data-tooltip-pos="left"
-            aria-label="View payments"
-            onClick={() => onViewPayments?.(c)}
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-            style={{ width: 28, height: 28, padding: 0, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
-          >
-            <i className="ri-history-line" />
-          </button>
+          <Tooltip label="View payments">
+            <button
+              type="button"
+              aria-label="View payments"
+              onClick={() => onViewPayments?.(c)}
+              className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+              style={{ width: 28, height: 28, padding: 0, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)' }}
+            >
+              <i className="ri-history-line" />
+            </button>
+          </Tooltip>
         )}
         <AuditLogTrigger open={menuOpen} setOpen={setMenuOpen} claim={c} viewerMode={mode} />
       </div>
@@ -756,70 +761,70 @@ function ExpenseClaimRowView({
         <div className="d-inline-flex align-items-center gap-1">
           {canManagerAct && (
             <>
-              <button
-                type="button"
-                data-tooltip="Approve"
-                data-tooltip-pos="left"
-                aria-label="Approve"
-                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-check-line" />
-              </button>
-              <button
-                type="button"
-                data-tooltip="Reject"
-                data-tooltip-pos="left"
-                aria-label="Reject"
-                onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-close-line" />
-              </button>
+              <Tooltip label="Approve">
+                <button
+                  type="button"
+                  aria-label="Approve"
+                  onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'approve' }); setComment(''); }}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    color: '#fff', border: 'none',
+                  }}
+                >
+                  <i className="ri-check-line" />
+                </button>
+              </Tooltip>
+              <Tooltip label="Reject">
+                <button
+                  type="button"
+                  aria-label="Reject"
+                  onClick={() => { setConfirmAction({ stage: 'manager', verdict: 'reject' }); setComment(''); }}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+                    color: '#fff', border: 'none',
+                  }}
+                >
+                  <i className="ri-close-line" />
+                </button>
+              </Tooltip>
             </>
           )}
           {canHrAct && (
             <>
-              <button
-                type="button"
-                data-tooltip="Approve"
-                data-tooltip-pos="left"
-                aria-label="Approve"
-                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-check-line" />
-              </button>
-              <button
-                type="button"
-                data-tooltip="Reject"
-                data-tooltip-pos="left"
-                aria-label="Reject"
-                onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
-                className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
-                style={{
-                  width: 28, height: 28, padding: 0,
-                  background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
-                  color: '#fff', border: 'none',
-                }}
-              >
-                <i className="ri-close-line" />
-              </button>
+              <Tooltip label="Approve">
+                <button
+                  type="button"
+                  aria-label="Approve"
+                  onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'approve' }); setComment(''); }}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                    color: '#fff', border: 'none',
+                  }}
+                >
+                  <i className="ri-check-line" />
+                </button>
+              </Tooltip>
+              <Tooltip label="Reject">
+                <button
+                  type="button"
+                  aria-label="Reject"
+                  onClick={() => { setConfirmAction({ stage: 'hr', verdict: 'reject' }); setComment(''); }}
+                  className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
+                  style={{
+                    width: 28, height: 28, padding: 0,
+                    background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
+                    color: '#fff', border: 'none',
+                  }}
+                >
+                  <i className="ri-close-line" />
+                </button>
+              </Tooltip>
             </>
           )}
           <AuditLogTrigger
@@ -911,17 +916,10 @@ function AuditLogTrigger({
   // Lock the page behind the popover. It is pinned to fixed coords, so letting
   // the page scroll underneath drags it away from its row; the popover's own
   // body still scrolls (CBC #73).
-  useEffect(() => {
-    if (!open) return;
-    const body = document.body.style.overflow;
-    const html = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = body;
-      document.documentElement.style.overflow = html;
-    };
-  }, [open]);
+  /* Shared hook instead of a local html+body lock: that pair misses the
+     element this app actually scrolls (.main-content), so the page carried on
+     moving behind the popup. */
+  useScrollLock(open);
 
   // Click-outside to dismiss.
   useEffect(() => {
@@ -938,24 +936,24 @@ function AuditLogTrigger({
 
   return (
     <>
-      <button
-        ref={btnRef}
-        type="button"
-        data-tooltip="View audit log"
-        data-tooltip-pos="left"
-        aria-label="View audit log"
-        onClick={() => setOpen(!open)}
-        className="btn btn-sm d-inline-flex align-items-center justify-content-center"
-        style={{
-          width: 28, height: 28, padding: 0,
-          background: open ? 'var(--vz-card-bg, #ffffff)' : 'var(--vz-secondary-bg, #f3f4f6)',
-          color: 'var(--vz-secondary-color, #6b7280)',
-          border: '1px solid var(--vz-border-color)',
-          borderRadius: 8,
-        }}
-      >
-        <i className="ri-more-2-fill" />
-      </button>
+      <Tooltip label="View audit log">
+        <button
+          ref={btnRef}
+          type="button"
+          aria-label="View audit log"
+          onClick={() => setOpen(!open)}
+          className="btn btn-sm d-inline-flex align-items-center justify-content-center"
+          style={{
+            width: 28, height: 28, padding: 0,
+            background: open ? 'var(--vz-card-bg, #ffffff)' : 'var(--vz-secondary-bg, #f3f4f6)',
+            color: 'var(--vz-secondary-color, #6b7280)',
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: 8,
+          }}
+        >
+          <i className="ri-more-2-fill" />
+        </button>
+      </Tooltip>
       {open && pos && createPortal(
         <div
           ref={popRef}

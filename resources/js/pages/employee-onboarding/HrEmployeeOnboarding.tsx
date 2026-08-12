@@ -7408,17 +7408,12 @@ function Stage5Policies({ emp, onProgress }: {
                           ? `${run.signers.filter(s => s.status === 'Done').length}/${run.signers.length} signed`
                           : 'Not yet sent'}
                       </span>
-                      {run?.status === 'Completed' && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); downloadSignedRun(run.id, tpl.code); }}
-                          disabled={downloadingRunId === run.id}
-                          title="Download the signed PDF"
-                          style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 600, color: '#0e7490', background: '#cffafe', border: '1px solid #a5f3fc', borderRadius: 7, padding: '3px 9px', cursor: downloadingRunId === run.id ? 'wait' : 'pointer' }}
-                        >
-                          <i className={downloadingRunId === run.id ? 'ri-loader-4-line' : 'ri-file-pdf-2-line'} /> {downloadingRunId === run.id ? 'Downloading…' : 'Download signed PDF'}
-                        </button>
-                      )}
+                      {/* No download button here.
+                          The row above already carries one, calling the SAME
+                          downloadSignedRun(run.id) — two buttons, one action,
+                          eight pixels apart. The row's is the one that stays:
+                          it is visible without expanding the panel, so a signed
+                          document can be fetched from the list itself. */}
                     </div>
                     <div className="ep-signing-flow">
                       {/* When SENT → live per-signer status from the run; else
