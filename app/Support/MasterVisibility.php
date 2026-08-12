@@ -31,7 +31,12 @@ use Illuminate\Database\Eloquent\Builder;
  *                                           + ONLY OWN rows (created_by = self)
  *                                           — peer employees in the same
  *                                           branch are HIDDEN from each
- *                                           other.
+ *                                           other. EXCEPT master data
+ *                                           (`master_*` / `clm_*` tables),
+ *                                           which is branch-SHARED: the whole
+ *                                           branch reads one lookup set, same
+ *                                           as the branch admin. Mutation is
+ *                                           still peer-locked.
  *
  * MUTATE (edit/delete) — only the creator + ancestor tiers can modify:
  *   - super_admin                         : any row
@@ -79,14 +84,28 @@ class MasterVisibility
         // Employees are PEER-ISOLATED — they see only their own rows plus
         // ancestor-tier reference data (globals + client-level rows).
         if (($user->user_type ?? null) === 'employee') {
-            // EXCEPTION — CLM masters are BRANCH-SHARED: every employee sees the
+            // EXCEPTION — MASTER DATA is BRANCH-SHARED: every employee sees the
             // whole branch's rows (same view as the branch admin), not just
-            // their own. Detected by the `clm_` table prefix so all CLM master
-            // tables (kyc, dd, qc, segments, authorities, trade-licenses,
-            // agreements/clauses/tnc/trade-doc libraries, segment-rules) opt in
-            // uniformly. This only widens READ visibility — mutating another
-            // member's row stays blocked by hierarchicalDenial() below.
-            if (str_starts_with($q->getModel()->getTable(), 'clm_')) {
+            // their own. Detected by the `master_` / `clm_` table prefixes so
+            // all master tables opt in uniformly — the ~54 `master_*` lookups
+            // (roles, departments, designations, leave types, warehouses, …)
+            // and the CLM masters (kyc, dd, qc, segments, authorities,
+            // trade-licenses, agreements/clauses/tnc/trade-doc libraries,
+            // segment-rules).
+            //
+            // Peer-isolation is wrong for lookups: a role/department the BRANCH
+            // ADMIN creates is stamped (client_id=own, branch_id=own) and so
+            // fell through every arm of the employee rule below — invisible to
+            // every employee under that branch. Employee-facing pickers
+            // (Primary/Ancillary Role, Department, Designation, Recruitment's
+            // Assigned HR …) then listed only the super-admin globals, and a
+            // colleague already holding a branch-created role rendered blank
+            // because the option could not be resolved.
+            //
+            // This only widens READ visibility — mutating another member's row
+            // stays blocked by hierarchicalDenial() below.
+            $table = $q->getModel()->getTable();
+            if (str_starts_with($table, 'master_') || str_starts_with($table, 'clm_')) {
                 self::applyBranchScope($q, $user);
                 return;
             }

@@ -164,8 +164,24 @@ export default function Tooltip({
       childProps.onMouseLeave?.(e);
       onLeave();
     },
+    /* Keyboard focus opens the tooltip; MOUSE focus must not.
+     *
+     * onClick below closes the tooltip, but a click also FOCUSES the button.
+     * When that click opens something modal — a native file picker, a confirm
+     * dialog — focus returns to the trigger on dismiss, onFocus fires, and the
+     * tooltip reopens with the pointer nowhere near it. Nothing can close it
+     * after that: no mouseleave is coming. Upload a few documents in a row and
+     * the labels pile up on screen looking like stray buttons.
+     *
+     * :focus-visible is the browser's own answer to "was this focus worth
+     * showing an affordance for" — true for keyboard, false for a click. So
+     * keyboard users keep the tooltip and mouse users stop collecting ghosts. */
     onFocus: (e: any) => {
       childProps.onFocus?.(e);
+      const el = e?.currentTarget as HTMLElement | null;
+      try {
+        if (el && typeof el.matches === 'function' && !el.matches(':focus-visible')) return;
+      } catch { /* engine without :focus-visible support — fall through */ }
       onEnter();
     },
     onBlur: (e: any) => {

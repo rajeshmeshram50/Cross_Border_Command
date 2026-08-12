@@ -852,11 +852,11 @@ class AdvanceRequestController extends Controller
             'total_paid'         => (float) $row->total_paid,
             'settlement_status'  => $row->settlement_status ?: 'unpaid',
             'settled_at'         => optional($row->settled_at)->toIso8601String(),
-            // Zoho Books sync state for the list column — COMPANY advances only
-            // (a self advance is recovered from salary, never booked in Zoho):
-            // na (n/a or no payouts) | pending (none synced) | partial | completed.
+            // Zoho Books sync state for the list column — for BOTH self and
+            // company advances, keyed off the recorded payouts (the payout to the
+            // employee is what gets booked in Zoho): na (no payouts) | pending
+            // (none synced) | partial | completed.
             'zoho_sync'          => (function () use ($row) {
-                if (($row->used_for ?: 'self') !== 'company') return 'na';
                 $payments = $row->relationLoaded('payments') ? $row->payments : $row->payments()->get();
                 if ($payments->isEmpty()) return 'na';
                 $synced = $payments->filter(fn ($p) => ($p->zoho_status ?? 'not_synced') === 'synced')->count();
@@ -2113,7 +2113,7 @@ class AdvanceRequestController extends Controller
 
     /**
      * POST /advance-requests/payments/{paymentId}/sync-zoho
-     * Push a COMPANY-advance payout to Zoho Books as an Expense — mirrors
+     * Push an advance payout to Zoho Books as an Expense — mirrors
      * ExpenseClaimController::syncPaymentToZoho:
      *   • Expense Account   ← the advance type (find-or-create in Zoho)
      *   • Paid Through      ← the payout method (find-or-create in Zoho)
@@ -2121,8 +2121,8 @@ class AdvanceRequestController extends Controller
      *   • Reference #       ← "ADV-ID - <Advance Type>"
      *   • Receipts          ← EVERY related PDF: the payout proof, the advance's
      *                         own attachments, and each distribution row's proof.
-     * Only company advances sync (a self advance is recovered from salary, not
-     * booked as a company expense). Idempotent: a payment already carrying a
+     * Applies to BOTH self and company advances (the payout to the employee is
+     * the booked expense either way). Idempotent: a payment already carrying a
      * zoho_expense_id is not re-created.
      */
     public function syncPaymentToZoho(Request $request, $paymentId)
@@ -2133,9 +2133,6 @@ class AdvanceRequestController extends Controller
         $this->ensureTenantAccess($row, $user);
         $this->guardHrPermission($user, 'can_approve');
 
-        if (($row->used_for ?: 'self') !== 'company') {
-            return response()->json(['status' => false, 'message' => 'Only a company advance can be synced to Zoho Books.'], 422);
-        }
         if (($payment->zoho_status ?? 'not_synced') === 'synced' || !empty($payment->zoho_expense_id)) {
             return response()->json([
                 'status'   => true,
