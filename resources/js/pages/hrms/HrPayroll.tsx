@@ -623,23 +623,25 @@ export default function HrPayroll() {
     }
   };
 
-  const reopenPayroll = async () => {
-    if (busy) return;
-    const month = cycle?.month, year = cycle?.year;
-    if (!month || !year) return;
-    setBusy(true);
-    try {
-      await api.post('/payroll/reopen', { month, year });
-      await reloadCycle();
-      toast.success('Payroll reopened', `${cycle.label} is open for corrections — re-run when ready.`);
-    } catch (err: any) {
-      toast.error('Reopen failed', err?.response?.data?.message || 'Could not reopen payroll.');
-    } finally {
-      setBusy(false);
-    }
+  /* Jump straight to this cycle's payroll sheet.
+   *
+   * This replaced the header's Reopen action. Reopening wipes a generated run
+   * so it can be re-run, which is a destructive correction step and a poor
+   * neighbour to Run Payroll / Export — the common intent from here is simply
+   * to look at what was generated. Correction still exists via the run modal's
+   * re-run path; it is just no longer one stray click from the header. */
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+
+  const viewPayrollSheet = () => {
+    setTab('processing');
+    // After the tab switch has painted, so we scroll to the sheet's real spot.
+    requestAnimationFrame(() => {
+      sheetRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   };
 
-  const canReopen = !!runMeta && runMeta.status !== 'paid';
+  /** A generated run exists for this cycle — there is a sheet worth viewing. */
+  const hasRun = !!runMeta;
 
   const downloadPayslipPdf = async (row: PayrollRow) => {
     if (!row.payslip_id) {
@@ -1394,24 +1396,22 @@ export default function HrPayroll() {
               </DropdownItem>
             </DropdownMenu>
           </Dropdown>
-          {canReopen && (
+          {hasRun && (
             <Button
               color="light"
               className="rounded-pill fw-semibold d-inline-flex align-items-center pay-hero-export"
-              onClick={reopenPayroll}
-              disabled={busy}
-              title="Reopen this cycle to correct attendance/leave, then re-run"
+              onClick={viewPayrollSheet}
+              title="Jump to this cycle's payroll sheet"
               style={{
                 padding: '10px 15px',
                 fontSize: 12,
-                border: '1px solid #e0a800',
+                border: '1px solid #705ad0',
                 background: 'var(--vz-card-bg)',
-                color: '#a06f00',
-                opacity: busy ? 0.6 : 1,
+                color: '#5a3fd1',
               }}
             >
-              <i className="ri-arrow-go-back-line me-2" style={{ fontSize: 14 }} />
-              Reopen
+              <i className="ri-table-line me-2" style={{ fontSize: 14 }} />
+              View
             </Button>
           )}
         </div>
@@ -1616,6 +1616,7 @@ export default function HrPayroll() {
       <Row className="g-2 align-items-center mb-3">
         <Col xs={12}>
           <div
+            ref={sheetRef}
             className="d-flex flex-wrap pay-tabs"
             style={{
               background: 'var(--vz-secondary-bg)',
