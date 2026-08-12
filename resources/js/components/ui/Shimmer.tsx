@@ -165,22 +165,31 @@ export function ShimmerForm({
 export function ShimmerTableRows({
   rows = 5,
   cols = 6,
+  colIds,
   height = 14,
   cellClassName = 'py-3',
   keyPrefix = 'shim',
 }: {
   rows?: number;
   cols?: number;
+  /** Column ids, in order, stamped onto each placeholder cell as `data-col`.
+   *  Responsive stylesheets hide columns by `[data-col="…"]`, which reaches the
+   *  real header and body cells but could not reach these — so a narrow screen
+   *  dropped the header cells and kept every placeholder, and the loading table
+   *  rendered wider than its own header. Supply this wherever such rules apply;
+   *  `cols` remains the fallback for tables with no per-column rules. */
+  colIds?: string[];
   height?: number | string;
   cellClassName?: string;
   keyPrefix?: string;
 }) {
+  const count = colIds?.length ?? cols;
   return (
     <>
       {Array.from({ length: rows }).map((_, r) => (
         <tr key={`${keyPrefix}-${r}`}>
-          {Array.from({ length: cols }).map((_, c) => (
-            <td key={c} className={cellClassName}>
+          {Array.from({ length: count }).map((_, c) => (
+            <td key={c} className={cellClassName} data-col={colIds?.[c]}>
               <Shimmer height={height} />
             </td>
           ))}

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
@@ -22,6 +23,15 @@ use PhpOffice\PhpWord\Shared\Html;
 
 class HrDocumentTemplateController extends Controller
 {
+    /* uploadDocx() calls docxPageLimitError(), which lives here along with the
+       DOCX_MAX_PAGES constant it reads — the trait was never pulled in, so
+       every .docx upload died on "Call to undefined method". ClmTradeDocument
+       does the same page-limit check off the same trait.
+       This class defines its own docxToHtml() and elementToHtml(); a class's
+       own method wins over the trait's, so those two keep behaving exactly as
+       they did. */
+    use HandlesDocxHtmlRoundtrip;
+
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',

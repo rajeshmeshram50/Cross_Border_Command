@@ -229,7 +229,8 @@ export default function DataTable<T extends object>({
   useEffect(() => { setPageIndex(0); }, [activeTab, inputValue, filterChips?.length]);
 
   const rows = table.getRowModel().rows;
-  const colCount = table.getVisibleFlatColumns().length;
+  const colIds = table.getVisibleFlatColumns().map(c => c.id);
+  const colCount = colIds.length;
   const isEmpty = !loading && rows.length === 0;
   const fitRows = useCallback(() => {
     const el = rootRef.current;
@@ -451,8 +452,13 @@ export default function DataTable<T extends object>({
             </thead>
 
             <tbody>
+              {/* The shimmer takes colIds, not a bare count: its placeholder
+                  cells must carry the same data-col as the header, or the
+                  responsive hide-a-column rules reach the header and miss the
+                  placeholders — leaving the loading table wider than its own
+                  header strip. */}
               {loading ? (
-                <ShimmerTableRows rows={Math.min(pageSize, 12)} cols={colCount} cellClassName="dt-shim-cell" keyPrefix="dt-shim" />
+                <ShimmerTableRows rows={Math.min(pageSize, 12)} colIds={colIds} cellClassName="dt-shim-cell" keyPrefix="dt-shim" />
               ) : rows.length === 0 ? (
                 <tr className="dt-empty-row">
                   <td colSpan={colCount}>
