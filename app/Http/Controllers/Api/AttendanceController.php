@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Attendance;
 use App\Models\AttendancePunch;
-use App\Models\Branch;  
-use App\Models\Employee; 
+use App\Models\Branch;
+use App\Models\Employee;
+use App\Models\Module;
+use App\Models\Permission;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -15,6 +17,9 @@ class AttendanceController extends Controller
 {
     private const MATCH_THRESHOLD = 0.55;
     private const DESCRIPTOR_LEN  = 128;
+
+    /** Module slug that grants the HR-wide attendance views. */
+    private const MODULE_SLUG = 'hr.attendance';
 
    
     private const DISPLAY_TZ = 'Asia/Kolkata';
@@ -388,13 +393,31 @@ class AttendanceController extends Controller
         ]);
     }
 
-   
+    private function authorizeAttendanceView(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) abort(401, 'Unauthenticated');
+        if ($user->user_type !== 'employee') return;
+
+        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
+        $allowed  = $moduleId && Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+
+        if (!$allowed) abort(403, 'Access Denied');
+    }
+
+    private function isBranchPinned($user): bool
+    {
+        return in_array($user->user_type, ['branch_user', 'employee'], true);
+    }
 
     public function index(Request $request)
     {
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
-        if ($user->user_type === 'employee') abort(403, 'Use /api/attendance/my for your own records.');
+        $this->authorizeAttendanceView($request);
 
         $q = Attendance::with([
             'punches',
@@ -410,8 +433,8 @@ class AttendanceController extends Controller
             // A13: a branch user is HARD-pinned to their own branch — pin
             // first, so passing a sibling branch_id can't leak other branches'
             // attendance. Only client admins may use the filter (every branch
-            // is an isolated peer).
-            if ($user->user_type === 'branch_user') {
+            // is an isolated peer). Permitted employees are pinned too.
+            if ($this->isBranchPinned($user)) {
                 $q->where('branch_id', $user->branch_id);
             } else {
                 $branchFilter = $request->integer('branch_id') ?: null;
@@ -448,7 +471,7 @@ class AttendanceController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
-        if ($user->user_type === 'employee') abort(403, 'Use /api/attendance/my for your own records.');
+        $this->authorizeAttendanceView($request);
 
         $date = (string) $request->query('date', self::todayLocal());
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -495,7 +518,9 @@ class AttendanceController extends Controller
             // (cross-tenant) value used to fall through and surface every
             // employee in the client, which leaked rows across branches.
             // Only client admins can switch branches within the tenant.
-            $isSubBranchUser = $user->user_type === 'branch_user';
+            // Permitted employees are pinned the same way — they never send a
+            // branch_id, so the client-admin arm would leave them unpinned.
+            $isSubBranchUser = $this->isBranchPinned($user);
             if ($isSubBranchUser) {
                 $empQ->where('branch_id', $user->branch_id);
             } elseif ($branchFilter !== null) {
