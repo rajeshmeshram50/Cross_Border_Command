@@ -22,7 +22,7 @@ import { leavePlansApi } from './leavePlansApi';
    and the Revise Salary modal writes the same table, so a copy per screen is
    how the figures drift apart. */
 import {
-  type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL,
+  type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
   seedBreakup, absorbIntoSpecial, statutoryPt, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
@@ -1255,7 +1255,11 @@ export default function HrEmployees() {
   const salaryAnnual = useMemo(() => Math.round(monthlyGrossFromSalary() * 12), [monthlyGrossFromSalary]);
   const breakupAnnual = useMemo(() => Math.round(breakupGross * 12), [breakupGross]);
   const breakupDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
-  const breakupOverSalary = breakupDiff > 0;
+  /* A gap inside the rounding slack is not a difference worth reporting — see
+     CTC_ROUNDING_SLACK. Every comparison below reads this, so the red line, the
+     colour and the save-time warning all agree. */
+  const breakupMatches = Math.abs(breakupDiff) <= CTC_ROUNDING_SLACK;
+  const breakupOverSalary = breakupDiff > CTC_ROUNDING_SLACK;
 
   // ESI / Professional Tax are entered manually: ticking the box drops a
   // labelled, free-input row into Fixed Deductions for HR/accounts to fill;
@@ -4601,14 +4605,14 @@ export default function HrEmployees() {
                             <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
                               ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
                             </div>
-                            {salaryAnnual > 0 && breakupDiff !== 0 && (
+                            {salaryAnnual > 0 && !breakupMatches && (
                               <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
                                 {breakupOverSalary
                                   ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
                                   : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
                               </div>
                             )}
-                            {salaryAnnual > 0 && breakupDiff === 0 && (
+                            {salaryAnnual > 0 && breakupMatches && (
                               <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                             )}
                           </div>

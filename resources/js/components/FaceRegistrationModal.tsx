@@ -4,6 +4,8 @@ import { Button } from 'reactstrap';
 import FaceCapture, { type FaceCaptureResult } from './FaceCapture';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
+/* .rec-btn-ghost / .rec-btn-primary — the app's standard dialog buttons. */
+import '../../css/recruitment.css';
 
 interface Props {
   open: boolean;
@@ -161,32 +163,84 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
         }}
       >
         <style>{`
+          /* Sits on the gradient now, so it is a translucent white chip rather
+             than a bordered light-grey square. */
           .frm-close-btn {
-            border: 1px solid var(--vz-border-color);
-            background: var(--vz-light);
-            color: var(--vz-body-color);
-            transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+            border: 1px solid rgba(255,255,255,0.30);
+            background: rgba(255,255,255,0.18);
+            color: #fff;
+            transition: background 0.15s ease, transform 0.15s ease;
           }
           .frm-close-btn:hover:not(:disabled) {
-            background: var(--vz-danger);
-            border-color: var(--vz-danger);
+            background: rgba(255,255,255,0.34);
             color: #fff;
             transform: scale(1.06);
           }
           .frm-close-btn:active:not(:disabled) { transform: scale(0.94); }
+
+          /* Each guarantee gets its own icon + line. As a bare <ul> the three
+             points ran together as one grey block that nobody reads before
+             ticking a consent box. */
+          .frm-point {
+            display: flex; align-items: flex-start; gap: 10px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            background: var(--vz-secondary-bg);
+            border: 1px solid var(--vz-border-color);
+            font-size: 12.5px; line-height: 1.5;
+          }
+          .frm-point i { font-size: 15px; line-height: 1.4; flex-shrink: 0; color: #7c5cfc; }
+
+          /* The consent tick is the gate on this dialog, so it is framed rather
+             than left as a loose checkbox under the text. */
+          .frm-consent {
+            display: flex; align-items: flex-start; gap: 10px;
+            margin-top: 14px; padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(124,92,252,0.07);
+            border: 1px solid rgba(124,92,252,0.28);
+            cursor: pointer;
+          }
+          .frm-consent input { margin-top: 1px; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
         `}</style>
-        <div className="d-flex align-items-center justify-content-between px-3 py-3" style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
-          <div className="d-flex align-items-center gap-2">
-            <span style={{ width: 32, height: 32, borderRadius: 10, background: 'rgba(99,102,241,0.18)', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-              <i className="ri-user-smile-line" />
+        {/* Gradient header, matching Assign Assets and the Add/Edit Employee
+            wizard. This dialog asks for biometric consent, and a plain bordered
+            strip made it read as a throwaway confirm rather than a decision the
+            user is being asked to record. */}
+        <div
+          className="d-flex align-items-center justify-content-between gap-3"
+          style={{
+            padding: '16px 20px',
+            background: 'linear-gradient(120deg,#5a3fd1 0%,#7c5cfc 55%,#a78bfa 100%)',
+            color: '#fff',
+          }}
+        >
+          <div className="d-flex align-items-center gap-3 min-w-0">
+            <span
+              className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+              style={{
+                width: 42, height: 42, borderRadius: 12,
+                background: 'rgba(255,255,255,0.22)',
+                border: '2.5px solid rgba(255,255,255,0.55)',
+              }}
+            >
+              <i className="ri-user-smile-line" style={{ fontSize: 20 }} />
             </span>
-            <h6 className="mb-0 fw-bold">
-              {step === 'already' ? 'Face Already Registered' : 'Register Your Face'}
-            </h6>
+            <div className="min-w-0">
+              <h6 className="mb-0 fw-bold text-white" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
+                {step === 'already' ? 'Face Already Registered' : 'Register Your Face'}
+              </h6>
+              {/* Says what the dialog is for — the title alone doesn't. */}
+              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: 2 }}>
+                {step === 'already'
+                  ? 'Review, re-register or remove the stored face signature'
+                  : 'Consent and capture for face-based attendance'}
+              </div>
+            </div>
           </div>
           <button
             type="button"
-            className="btn btn-sm d-inline-flex align-items-center justify-content-center frm-close-btn"
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center frm-close-btn flex-shrink-0"
             style={{ width: 30, height: 30, padding: 0, borderRadius: 8 }}
             onClick={onClose}
             disabled={step === 'saving' || step === 'revoking'}
@@ -286,28 +340,38 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
 
           {step === 'consent' && (
             <>
-              <p className="mb-2" style={{ fontSize: 14 }}>
+              <p className="mb-3" style={{ fontSize: 13.5, lineHeight: 1.6 }}>
                 Your face image is used <strong>only to mark attendance</strong>. We do not store the photo.
                 We extract a 128-number mathematical signature from the image and store that — it cannot
                 be reversed into a recognisable face.
               </p>
-              <ul style={{ fontSize: 13, lineHeight: 1.6, paddingLeft: 18 }}>
-                <li>The signature is kept on your employee record and used to verify clock-in / clock-out.</li>
-                <li>You can revoke this consent at any time and we will delete the data.</li>
-                <li>This data is never shared with third parties.</li>
-              </ul>
-              <div className="form-check mt-3">
+              <div className="d-flex flex-column gap-2">
+                <div className="frm-point">
+                  <i className="ri-fingerprint-line" />
+                  <span>The signature is kept on your employee record and used to verify clock-in / clock-out.</span>
+                </div>
+                <div className="frm-point">
+                  <i className="ri-delete-bin-line" />
+                  <span>You can revoke this consent at any time and we will delete the data.</span>
+                </div>
+                <div className="frm-point">
+                  <i className="ri-shield-check-line" />
+                  <span>This data is never shared with third parties.</span>
+                </div>
+              </div>
+              {/* Whole box is the label, so the tick target is the full row
+                  rather than a 16px square. */}
+              <label className="frm-consent" htmlFor="face-consent">
                 <input
                   type="checkbox"
                   id="face-consent"
-                  className="form-check-input"
                   checked={consent}
                   onChange={e => setConsent(e.target.checked)}
                 />
-                <label htmlFor="face-consent" className="form-check-label" style={{ fontSize: 13 }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>
                   I consent to my face biometric being stored for attendance purposes.
-                </label>
-              </div>
+                </span>
+              </label>
             </>
           )}
 
@@ -366,31 +430,41 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
         <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
           {step === 'already' && (
             <>
-              <Button color="light" size="sm" onClick={onClose}>Close</Button>
-              <Button color="danger" size="sm" outline onClick={handleRevoke}>
+              <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
+              {/* Destructive action keeps its own red outline — it must not
+                  look like the two neutral buttons beside it. */}
+              <Button color="danger" outline onClick={handleRevoke} style={{ height: 36, borderRadius: 10, fontSize: 12.5, fontWeight: 700 }}>
                 <i className="ri-delete-bin-line me-1" /> Remove Face Data
               </Button>
-              <Button color="primary" size="sm" onClick={() => setStep('capture')}>
-                <i className="ri-refresh-line me-1" /> Re-register
-              </Button>
+              <button type="button" className="rec-btn-primary" onClick={() => setStep('capture')}>
+                <i className="ri-refresh-line" /> Re-register
+              </button>
             </>
           )}
           {step === 'consent' && (
             <>
-              <Button color="light" size="sm" onClick={onClose}>Cancel</Button>
-              <Button color="primary" size="sm" onClick={() => setStep('capture')} disabled={!consent}>
-                I Agree, Continue
-              </Button>
+              <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
+              {/* Held until the box is ticked — consent is the whole point of
+                  this step, so the button states it plainly rather than sitting
+                  there looking merely faded. */}
+              <button type="button" className="rec-btn-primary" onClick={() => setStep('capture')} disabled={!consent}
+                style={!consent ? { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' } : undefined}
+                title={!consent ? 'Tick the consent box to continue' : undefined}
+              >
+                <i className="ri-check-line" /> I Agree, Continue
+              </button>
             </>
           )}
           {(step === 'capture' || step === 'saving') && (
             <>
-              <Button color="light" size="sm" onClick={onClose} disabled={step === 'saving'}>Cancel</Button>
-              <Button color="primary" size="sm" onClick={handleSave} disabled={!result || step === 'saving'}>
+              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={step === 'saving'}>Cancel</button>
+              <button type="button" className="rec-btn-primary" onClick={handleSave} disabled={!result || step === 'saving'}
+                style={(!result || step === 'saving') ? { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' } : undefined}
+              >
                 {step === 'saving'
-                  ? (<><span className="spinner-border spinner-border-sm me-2" /> Saving…</>)
-                  : 'Save Face Data'}
-              </Button>
+                  ? (<><span className="spinner-border spinner-border-sm" /> Saving…</>)
+                  : (<><i className="ri-save-line" /> Save Face Data</>)}
+              </button>
             </>
           )}
         </div>
