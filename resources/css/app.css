@@ -105,8 +105,84 @@ body { overflow-x: hidden; }
    THIS IS THE CLEARANCE UNDER THE FIXED MENU — if any page's header ever tucks
    behind the menu bar, this number is why. Raise it, do not add margin to the
    page. */
-.page-content { padding-top: 8px !important; padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 12px !important; }
-.page-content > .container-fluid { padding-left: 6px !important; padding-right: 6px !important; }
+/* One number on all three visible sides: 8px above, 8px left, 8px right.
+   Getting there means switching Bootstrap's gutter machinery off on the
+   OUTERMOST row, not just shrinking padding. Every page puts its content in
+   `.container-fluid > .row > .col`, and a `.row` carries a -12px margin that
+   the container's padding is supposed to absorb. Shrink that padding without
+   touching the row and the row hangs past the container on both sides — with
+   `.main-content` clipping overflow-x, the right edge of the widest strip
+   (the KPI cards) simply disappeared.
+   So: no padding on the container, and the outer row/col gutters zeroed. The
+   nested KPI row keeps its own `g-3` (-8px), which now lands exactly on 0 —
+   flush with the viewport edge, nothing clipped, everything starting at 8px.
+   Nested rows deeper in a page are untouched: this is scoped to the direct
+   container > row > col chain. */
+/* NOTE: padding-top here is NOT what you see. Layouts/index.tsx ships an inline
+   `.idims-active .page-content{padding-top:8px!important}` — two classes, so it
+   wins over this rule no matter what is written below. Change the top gap
+   there; this value only applies if that layout is ever dropped. */
+.page-content { padding-top: 8px !important; padding-left: 8px !important; padding-right: 8px !important; padding-bottom: 8px !important; }
+.page-content > .container-fluid { padding-left: 0 !important; padding-right: 0 !important; }
+.page-content > .container-fluid > .row { margin-left: 0 !important; margin-right: 0 !important; }
+.page-content > .container-fluid > .row > [class*="col"] { padding-left: 0 !important; padding-right: 0 !important; }
+
+/* ── One gap, everywhere on a page: 8px ───────────────────────────────────
+   The four bands a page stacks — menu to header strip, strip to KPI cards,
+   KPI cards to the list, list to the footer — were 8 / 8 / 16 / 12, which is
+   why nothing lined up by eye however carefully any single one was tuned.
+   Two of them come from Bootstrap spacing utilities written into the markup,
+   and pages disagree about WHICH utility: Employees writes `.frm-cstrip mb-2`,
+   Onboarding writes `.frm-cstrip mb-3`. Overriding the element rather than
+   chasing the utility class is what makes the number hold everywhere,
+   including on pages written after this comment.
+   Keep all of these on the same value; changing one alone is what produced
+   the mismatch in the first place. */
+
+/* Header strip → whatever follows it.
+   `div.` is load-bearing. Bootstrap's `.mb-3 {margin-bottom:1rem!important}` is
+   (0,1,0) with !important and so is a bare `.frm-cstrip`, so the winner is
+   decided by load order — and Blade lists `resources/css/app.css` BEFORE
+   `resources/js/app.tsx`, whose bundle carries Bootstrap. This file therefore
+   loads FIRST and loses every tie, however far down it the rule sits. Adding
+   the element makes it (0,1,1) and settles it on specificity instead.
+   Nothing here can beat a Bootstrap utility on order alone — raise
+   specificity, do not move the rule. */
+div.frm-cstrip { margin-bottom: 8px !important; }
+
+/* KPI strip → the list below it. Matched three ways because the KPI row is
+   written differently per page: by its shared class, as the row that directly
+   follows the header strip (Onboarding, whose row carries no class at all),
+   and by the Employees page's own wrapper.
+   `.ep-doc-kpis` is exempt — it is a KPI strip inside the Exit modal, spaced
+   against the dialog rather than the page. */
+/* The one that cannot miss: any row whose columns hold a KPI card, whatever
+   the page calls it (.onb-kpi-card, .hr-emp-kpi-card, .rec-kpi-card) and
+   whatever wrapper it sits in. The three structural selectors below it were
+   each written against one page's markup and each silently stopped matching on
+   the next page that laid its header out differently — which is why the gap
+   kept "not changing" while the CSS said it had.
+   Specificity (0,4,0): `:has()` contributes its most specific argument. */
+.row.mb-3:has(> [class*="col"] > [class*="kpi-card"]),
+.rec-page-kpis.mb-3:not(.ep-doc-kpis),
+.frm-cstrip + .row.mb-3,
+.hr-employees-surface > .row.mb-3 {
+  margin-bottom: 8px !important;
+  /* …and the gap BETWEEN the cards, which is deliberately TIGHTER than the 8px
+     everywhere else: 16px (Bootstrap's `g-3`) first, then 8px, and both still
+     read as a wide channel. Tiles carry a 14px radius and a drop shadow, so the
+     eye measures from where the shadow fades rather than from the border — the
+     gap always looks a few pixels wider than it is. 4px, the same value the KPI rows now carry as `g-1` in their own
+     markup, so whichever of the two wins the result is identical. The pages
+     that still write `g-3` (Exit, Leave, Broadcast) get it from here.
+     Set as gutter variables rather than as margins so the row's negative margin
+     and the columns' padding stay in step — halving one without the other would
+     knock the first and last card out of line with the header strip above them.
+     Overriding `.g-3` (0,1,0) needs the compound selectors above; a bare class
+     would only tie and lose on load order, as the strip's margin did. */
+  --bs-gutter-x: 4px !important;
+  --bs-gutter-y: 4px !important;
+}
 .footer { position: static; }
 .wl-pager { margin-top: auto; }
 .navbar-brand-box .logo img,
@@ -936,14 +1012,12 @@ tbody tr:nth-child(10) {
 [data-bs-theme="dark"] .pmt-cstrip-export { background: transparent; color: #c4b5fd; }
 [data-bs-theme="dark"] .pmt-cstrip-export:hover:not(:disabled) { background: rgba(124, 58, 237, .14); }
 .frm-cstrip {
-  /* -6px, copied from Supplier Management (.sup-fig { margin: -6px 0 0 }).
-     That page pulls its whole wrapper up by 6px, which is why its header sat
-     tighter under the menu than every HRMS page — those have no such pull, so
-     they took the shell's padding-top as-is and read looser.
-     The strip is the one thing all 15 HRMS pages share (they each use a
-     different page-wrapper class), so the pull belongs here. Harmless on the
-     few screens that use the strip further down the page — 6px. */
-  margin-top: -6px;
+  /* No pull. This used to be -6px (copied from Supplier Management) to tighten
+     the strip under the menu, which left the top gap at 2px while the sides
+     were 8px — the strip looked pasted to the menu and floating away from the
+     edges. The 8px in .page-content is now the single number for all three
+     sides, so cancelling it on one side only would undo that. */
+  margin-top: 0;
   position: relative; overflow: hidden;
   display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
   min-height: 70px; padding: 12px 18px;

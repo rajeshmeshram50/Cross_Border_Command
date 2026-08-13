@@ -434,7 +434,7 @@ export default function HrBroadcastCentre() {
             {/* KPI strip — 4 even columns at md+ so the cards stretch the
                 full width (Total / Draft / Published / High Priority). Drops
                 to 2 at sm, 1 at xs. */}
-            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
+            <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-1 row-cols-sm-2 row-cols-md-4">
               {KPI_CARDS.map(k => (
                 <Col key={k.label}>
                   <div className="rec-kpi-card h-100">

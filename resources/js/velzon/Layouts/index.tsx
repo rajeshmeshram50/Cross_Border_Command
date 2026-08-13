@@ -167,7 +167,13 @@ const Layout = (props : any) => {
                     browser. The `overflow: hidden` here is what stops any inner
                     content pushing the document itself. */}
                 <div id="layout-wrapper" className="idims-active" style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden' }}>
-                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:1rem!important;}.idims-active > .footer{position:static!important;left:0!important;right:0!important;flex-shrink:0;}'}</style>
+                    {/* padding-top is 8px, not 1rem. It has to equal the 8px
+                        .page-content sets on its left and right (app.css) or the
+                        page header card sits further from the menu than from the
+                        edges. This selector carries an extra class, so it wins
+                        over app.css whatever that file says — the top gap is set
+                        HERE, and app.css only looks like it owns it. */}
+                    <style>{'.idims-active .main-content{margin-left:0!important;margin-top:0!important;padding-top:0!important;}.idims-active .page-content{margin-top:0!important;padding-top:8px!important;}.idims-active > .footer{position:static!important;left:0!important;right:0!important;flex-shrink:0;}'}</style>
                     <IdimsHeader />
                     <div className="main-content" style={{ flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
                         {props.children}

@@ -475,7 +475,7 @@ export default function HrCandidates() {
               </div>
             )}
 
-            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis">
+            <Row className="g-1 mb-3 align-items-stretch rec-page-kpis">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl={3} md={6} sm={6} xs={12}>
                   <div className="rec-kpi-card h-100">

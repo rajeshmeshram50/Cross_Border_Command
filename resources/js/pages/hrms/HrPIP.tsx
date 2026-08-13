@@ -451,7 +451,7 @@ function EmployeeWiseView() {
     <>
       {/* KPI cards — soft tinted icon block (not flat saturated), bold
           brand-coloured number, inline delta pill below. */}
-      <Row className="g-3 mb-3 align-items-stretch rec-page-kpis pip-kpis">
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis pip-kpis">
         {EMPLOYEE_KPIS.map(k => (
           <Col key={k.key} xl md={4} sm={6} xs={12}>
             <div className="rec-kpi-card h-100 pip-kpi-card">
@@ -1019,7 +1019,7 @@ function PipActionsView({ pips }: { pips: ActivePip[] }) {
   return (
     <>
       {/* 6 KPIs */}
-      <Row className="g-3 mb-3 align-items-stretch rec-page-kpis pip-kpis">
+      <Row className="g-1 mb-3 align-items-stretch rec-page-kpis pip-kpis">
         {PIP_KPIS.map(k => (
           <Col key={k.key} xl={2} md={4} sm={6} xs={12}>
             <div className="rec-kpi-card h-100 pip-kpi-card">

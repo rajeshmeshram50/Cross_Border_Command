@@ -961,7 +961,12 @@ export default function HrEmployeeOnboarding() {
       </div>
 
       {/* ── KPI cards (own row, each its own card) ── */}
-      <Row className="g-3 mb-3 align-items-stretch">
+      {/* g-1, not g-3: the KPI tiles sit ~4px apart, matching the Employees
+          strip. The gap is set on the row itself rather than left to the
+          override in app.css — that file is a separate Vite entry and its
+          rules were not reaching the browser, so the spacing appeared stuck at
+          Bootstrap's 16px however many times it was changed. */}
+      <Row className="g-1 mb-3 align-items-stretch">
         {KPI_CARDS.map(k => (
           <Col key={k.key} xl={true} md={4} sm={6} xs={12}>
             <div

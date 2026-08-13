@@ -462,7 +462,7 @@ export default function HrCustomFields() {
               Employee master: label top-left, value directly under it, and the
               gradient icon tile on the RIGHT. The old layout mirrored this
               (icon left, right-aligned value) which broke module consistency. */}
-          <div className="row g-3 mb-3 align-items-stretch rec-page-kpis">
+          <div className="row g-1 mb-3 align-items-stretch rec-page-kpis">
             {KPI.map(k => (
               <div key={k.label} className="col-xl col-md-4 col-sm-6">
                 <div className="rec-kpi-card h-100">

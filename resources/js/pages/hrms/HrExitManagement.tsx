@@ -568,7 +568,7 @@ export default function HrExitManagement() {
               </button>
             </div>
 
-            <Row className="g-3 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
+            <Row className="g-1 mb-3 align-items-stretch rec-page-kpis row-cols-xl-5 row-cols-md-3 row-cols-sm-2 row-cols-1">
               {KPI_CARDS.map(k => (
                 <Col key={k.key}>
                   <div className="rec-kpi-card h-100">

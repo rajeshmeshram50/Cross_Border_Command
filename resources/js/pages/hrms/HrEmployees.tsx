@@ -2798,7 +2798,9 @@ export default function HrEmployees() {
               </div>
             </div>
 
-            <Row className="g-3 mb-3 align-items-stretch">
+            {/* g-1 — see the note on the Onboarding hub's KPI row: the gap
+                between tiles is set here rather than via app.css. */}
+            <Row className="g-1 mb-3 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.key} xl md={4} sm={6} xs={12}>
                   <div
