@@ -172,8 +172,6 @@ export interface HiringRequestRow {
   department: string;
   departmentId: number | null;
   requestedByName: string;
-  requestedByInitials: string;
-  requestedByAccent: string;
   openings: number;
   requestType: RequestType;
   urgency: RequestUrgency;
@@ -217,8 +215,6 @@ export function apiToHiringRequestRow(api: any): HiringRequestRow {
     departmentId: api?.department_id ?? null,
 
     requestedByName:     requestedBy,
-    requestedByInitials: initialsOf(requestedBy),
-    requestedByAccent:   pickAccent(api?.id ?? requestedBy),
 
     openings:       Number(api?.openings) || 1,
     requestType:    (api?.request_type || 'New Position') as RequestType,
@@ -429,7 +425,7 @@ export default function HrRecruitment() {
       id: 'code',
       accessorFn: (r: RecruitmentRow) => r.code || r.id,
       sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     {
@@ -444,12 +440,12 @@ export default function HrRecruitment() {
         </Tooltip>
       ),
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Employment',
       accessorKey: 'employmentType',
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => {
         const et = EMPLOY_TYPE_TONES[info.row.original.employmentType];
         return <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>{info.row.original.employmentType}</span>;
@@ -470,7 +466,7 @@ export default function HrRecruitment() {
     {
       header: 'Work Mode',
       accessorKey: 'workMode',
-      meta: { width: '7%' },
+      meta: { width: '7%', align: 'center' },
       cell: info => {
         const wm = WORK_MODE_TONES[info.row.original.workMode];
         return <span className="rec-pill" style={{ background: wm.bg, color: wm.fg }}>{info.row.original.workMode}</span>;
@@ -479,7 +475,7 @@ export default function HrRecruitment() {
     {
       header: 'Priority',
       accessorKey: 'priority',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => {
         const pri = PRIORITY_TONES[info.row.original.priority];
         return <span className="rec-pill" style={{ background: pri.bg, color: pri.fg }}>{info.row.original.priority}</span>;
@@ -488,17 +484,11 @@ export default function HrRecruitment() {
     {
       header: 'Hiring Manager',
       accessorKey: 'hiringManagerName',
-      meta: { width: '11%' },
+      meta: { width: '11%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.hiringManagerAccent}, ${r.hiringManagerAccent}cc)` }}
-            >
-              {r.hiringManagerInitials}
-            </div>
+          <div className="d-flex align-items-center justify-content-center gap-2">
             <span className="fs-13 text-truncate">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
             {(r.hiringManagerState === 'disabled' || r.hiringManagerState === 'inactive') && (
               <span className={`rec-mgr-flag rec-mgr-flag--${r.hiringManagerState}`}>{r.hiringManagerState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
@@ -510,17 +500,11 @@ export default function HrRecruitment() {
     {
       header: 'Assigned HR',
       accessorKey: 'assignedHrName',
-      meta: { width: '10%' },
+      meta: { width: '10%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.assignedHrAccent}, ${r.assignedHrAccent}cc)` }}
-            >
-              {r.assignedHrInitials}
-            </div>
+          <div className="d-flex align-items-center justify-content-center gap-2">
             <span className="fs-13 text-truncate">{r.assignedHrName}</span>
             {(r.assignedHrState === 'disabled' || r.assignedHrState === 'inactive') && (
               <span className={`rec-mgr-flag rec-mgr-flag--${r.assignedHrState}`}>{r.assignedHrState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
@@ -534,13 +518,13 @@ export default function HrRecruitment() {
          not alphabetical on the dd-Mon-yyyy label. */
       header: 'Start Date',
       accessorKey: 'startDate',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.startDate)}</span>,
     },
     {
       header: 'Deadline',
       accessorKey: 'deadline',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.deadline)}</span>,
     },
     {
@@ -1361,7 +1345,14 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   const rejectedCount = useMemo(() => requests.filter(r => r.status === 'Rejected').length, [requests, linkedHrIds]);
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     8+20+10+13+6+9+8+9+8+9. */
+     8+10+9+10+5+8+10+10+10+20. Request Type was dropped from the grid; the field
+     is still mapped on the row (and still saved), it just isn't a column any
+     more — nothing else on this screen renders it, so removing the column is
+     the only place it was visible.
+     Sr No is NOT declared here: DataTable's `serial` prop prepends it, which
+     is what the main Recruitment list does too. It numbers ROWS ON THE PAGE
+     (page offset included), so it renumbers on sort/filter rather than
+     claiming to be a stable identifier — REQ ID is the identifier. */
   const columns = useMemo<DataTableColumn<HiringRequestRow>[]>(() => [
     {
       header: 'REQ ID',
@@ -1372,57 +1363,37 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     {
+      // Job title only. The employment-type and work-mode mini-chips are gone;
+      // both are still on the row and both are shown in the View drawer, so
+      // nothing is lost from the record — the grid just stops carrying them.
+      // No `wrap` any more either: the chips were the only reason the cell
+      // needed a second line.
+      //
+      // max={10} — hard character cap, not just a CSS ellipsis at the column
+      // edge. TruncCell clips to 10 chars, appends "…" and puts the FULL title
+      // in a hover tooltip, so the column can stay narrow at any zoom or
+      // viewport instead of its cut point drifting with the rendered width.
       header: 'Position',
       accessorKey: 'position',
-      // wrap: the type / work-mode mini-chips trail the title.
-      meta: { width: '20%', wrap: true },
-      cell: info => {
-        const r = info.row.original;
-        return (
-          <>
-            <span className="fw-bold fs-13">{r.position}</span>
-            <span className="rec-mini-chip" style={{ background: '#eef2f6', color: '#475569', ['--pill-fg' as string]: '#64748b' } as React.CSSProperties}>{r.positionType}</span>
-            <span
-              className="rec-mini-chip"
-              style={{
-                background: WORK_MODE_TONES[r.positionMode]?.bg || '#eef2f6',
-                color: WORK_MODE_TONES[r.positionMode]?.fg || '#475569',
-                ['--pill-fg' as string]: WORK_MODE_TONES[r.positionMode]?.fg || '#64748b',
-              } as React.CSSProperties}
-            >
-              {r.positionMode}
-            </span>
-          </>
-        );
-      },
+      meta: { width: '10%' },
+      cell: info => <TruncCell value={info.row.original.position} max={10} caseSensitive className="fw-bold fs-13" />,
     },
-    { header: 'Department', accessorKey: 'department', meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department', accessorKey: 'department', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
+      // Name only — the initials avatar carried no information the name did
+      // not already give, and its accent colour is derived from the id rather
+      // than meaning anything.
       header: 'Requested By',
       accessorKey: 'requestedByName',
-      meta: { width: '13%' },
-      cell: info => {
-        const r = info.row.original;
-        return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.requestedByAccent}, ${r.requestedByAccent}cc)` }}
-            >
-              {r.requestedByInitials}
-            </div>
-            <span className="fs-13 text-truncate">{r.requestedByName}</span>
-          </div>
-        );
-      },
+      meta: { width: '10%' },
+      cell: info => <TruncCell value={info.row.original.requestedByName} caseSensitive />,
     },
     {
       header: () => <div className="text-center">Openings</div>,
       accessorKey: 'openings',
-      meta: { width: '6%', align: 'center' },
+      meta: { width: '5%', align: 'center' },
       cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Request Type', accessorKey: 'requestType', meta: { width: '9%' }, cell: info => <span className="fs-13">{String(info.getValue() ?? '')}</span> },
     {
       header: 'Urgency',
       accessorKey: 'urgency',
@@ -1435,7 +1406,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: '10%', align: 'center' },
       cell: info => {
         const statusColor = REQUEST_STATUS_COLOR[info.row.original.status];
         return (
@@ -1445,13 +1416,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         );
       },
     },
-    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '8%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
-    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
+    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
+    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
     {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { width: '9%', align: 'center' },
+      meta: { width: '20%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1461,10 +1432,17 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
                 <i className="ri-eye-line" />
               </button>
             </Tooltip>
+            {/* LABELLED, not an icon tile — this is the primary action of the
+                whole screen (a hiring request exists to become a recruitment),
+                and as a bare icon it read as a peer of View. Same treatment as
+                Exit Management's "Initiate Exit": one prominent labelled button
+                next to the quiet icon actions. Dropping `rec-act--icon` is what
+                restores the solid gradient — that modifier deliberately
+                neutralises it back to the soft violet icon chrome. */}
             {tab === 'pending' && (
-              <Tooltip label="Create Recruitment">
-                <button type="button" className="rec-act rec-act-create rec-act--icon" onClick={() => onCreateRecruitment(r)} aria-label="Create Recruitment">
-                  <i className="ri-user-search-line" />
+              <Tooltip label="Create a recruitment from this request">
+                <button type="button" className="rec-act rec-act-create" onClick={() => onCreateRecruitment(r)}>
+                  <i className="ri-user-search-line" />Create Recruitment
                 </button>
               </Tooltip>
             )}
@@ -1528,8 +1506,9 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         <DataTable<HiringRequestRow>
           data={filtered}
           columns={columns}
+          serial={{ width: 52 }}
           accent="violet"
-          minWidth={1500}
+          minWidth={1150}
           pageSize={8}
           searchValue={q}
           onSearchChange={setQ}

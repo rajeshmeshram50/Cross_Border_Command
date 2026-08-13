@@ -1414,7 +1414,9 @@
 /* KPI strip — soft gradient strip background with polished cards */
 .rec-req-stats {
   display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px;
-  padding: 18px 24px;
+  /* Left/right inset matches the table below (its toolbar/tabs sit ~15px in),
+     so the KPI cards line up with the tab bar + the table columns. */
+  padding: 18px 15px;
   border-bottom: 1px solid #ede9fe;
   background:
     radial-gradient(800px 240px at 0% 0%, rgba(124,92,252,0.06) 0%, transparent 55%),
@@ -1892,6 +1894,45 @@
   border-color: rgba(245,158,11,0.50);
 }
 [data-bs-theme="dark"] .cand-cv-text strong { color: var(--vz-body-color); }
+
+/* #28 / CV file-card — the attached / on-file CV shown as a container with a
+   TRUNCATED name and Download + Reupload icon actions. */
+.cand-cv-file {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 8px;
+  padding: 9px 12px;
+  border: 1px solid #ececf2;
+  border-radius: 10px;
+  background: #fafbfc;
+  min-width: 0;
+}
+[data-bs-theme="dark"] .cand-cv-file { border-color: var(--vz-border-color); background: rgba(255,255,255,0.03); }
+.cand-cv-file-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+  background: rgba(59,130,246,0.12); color: #2563eb; font-size: 17px;
+}
+.cand-cv-file-info { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; flex: 1; }
+.cand-cv-file-name {
+  font-size: 12.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color));
+  /* Truncate long file names instead of stretching / wrapping the card. */
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.cand-cv-file-sub { font-size: 10.5px; color: var(--vz-secondary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cand-cv-file-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.cand-cv-file-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  background: #ffffff; color: #475569; font-size: 15px;
+  /* Reset the default <label> bottom margin so the Reupload label lines up on
+     the SAME row as the Download button (it was sitting a few px higher). */
+  margin: 0; vertical-align: middle;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s ease;
+}
+.cand-cv-file-act:hover { transform: translateY(-1px); border-color: #2563eb; color: #2563eb; background: rgba(37,99,235,0.06); }
+[data-bs-theme="dark"] .cand-cv-file-act { background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.75); }
+.cand-cv-file-act input { display: none; }
 
 /* ---------------------------------------------------------------------
    10. Hiring Requests modal — polished filter row + table + pills
@@ -2869,9 +2910,11 @@
   content: '';
   position: absolute;
   left: 0; top: 0; bottom: 0;
-  width: 3px;
+  /* 4px to match the header card (.frm-cstrip-accent) and the Customers
+     strip (.cv-cstrip__accent) — one consistent left-strip width (#27). */
+  width: 4px;
   background: linear-gradient(180deg, #5b3fd1 0%, #7c5cfc 50%, #a78bfa 100%);
-  border-radius: 0 3px 3px 0;
+  border-radius: 0 4px 4px 0;
 }
 .cand-rec-head {
   display: flex;
@@ -2956,7 +2999,9 @@
 /* ── Header CTA buttons — rectangular tinted chips for Candidate Management ── */
 .cand-pill-btn {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 38px;
+  /* Match the table tab-pill height (.dt-tab = 40px) so the header actions and
+     the tabs below read as the same control size. */
+  height: 40px;
   padding: 0 16px;
   border-radius: 10px;
   border: 1px solid transparent;
@@ -2970,41 +3015,48 @@
 .cand-pill-btn i { font-size: 15px; line-height: 1; }
 .cand-pill-btn:hover { transform: translateY(-1px); }
 .cand-pill-btn:active { transform: translateY(0); filter: brightness(0.97); }
+/* Disabled (e.g. Import / Add on a Completed / Cancelled / Expired recruitment):
+   dim it and kill the hover so a solid-colour button reads as unavailable. */
+.cand-pill-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+.cand-pill-btn:disabled:hover { transform: none; filter: none; }
+
+/* All header actions use a SOLID colour fill (white text), matching the
+   Add Candidate primary button — just in each button's own hue. */
 
 /* Violet — used by Back to Recruitment List + Import */
 .cand-pill-btn--violet {
-  background: #ede9fe;
-  color: #5b3fd1;
-  border-color: #ddd6fe;
-  box-shadow: 0 2px 6px rgba(91,63,209,0.10);
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(124,58,237,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
 }
 .cand-pill-btn--violet:hover {
-  background: #ddd6fe;
-  box-shadow: 0 6px 14px rgba(91,63,209,0.18);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 22px rgba(124,58,237,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
 }
 
 /* Blue — used by Sample */
 .cand-pill-btn--blue {
-  background: #dbeafe;
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-  box-shadow: 0 2px 6px rgba(37,99,235,0.10);
+  background: linear-gradient(135deg, #38bdf8, #2563eb);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(37,99,235,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
 }
 .cand-pill-btn--blue:hover {
-  background: #bfdbfe;
-  box-shadow: 0 6px 14px rgba(37,99,235,0.18);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 22px rgba(37,99,235,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
 }
 
 /* Green — used by Export */
 .cand-pill-btn--green {
-  background: #d1fae5;
-  color: #047857;
-  border-color: #a7f3d0;
-  box-shadow: 0 2px 6px rgba(4,120,87,0.10);
+  background: linear-gradient(135deg, #22c55e, #15803d);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(21,128,61,0.34), inset 0 1px 0 rgba(255,255,255,0.26);
 }
 .cand-pill-btn--green:hover {
-  background: #a7f3d0;
-  box-shadow: 0 6px 14px rgba(4,120,87,0.18);
+  filter: brightness(1.05);
+  box-shadow: 0 10px 22px rgba(21,128,61,0.42), inset 0 1px 0 rgba(255,255,255,0.30);
 }
 
 /* Primary — solid blue gradient for Add Candidate */
@@ -3026,30 +3078,10 @@
 }
 
 /* Dark-mode tints */
-[data-bs-theme="dark"] .cand-pill-btn--violet {
-  background: rgba(124,92,252,0.18);
-  color: #c4b5fd;
-  border-color: rgba(124,92,252,0.40);
-}
-[data-bs-theme="dark"] .cand-pill-btn--violet:hover {
-  background: rgba(124,92,252,0.28);
-}
-[data-bs-theme="dark"] .cand-pill-btn--blue {
-  background: rgba(59,130,246,0.18);
-  color: #93c5fd;
-  border-color: rgba(59,130,246,0.40);
-}
-[data-bs-theme="dark"] .cand-pill-btn--blue:hover {
-  background: rgba(59,130,246,0.28);
-}
-[data-bs-theme="dark"] .cand-pill-btn--green {
-  background: rgba(16,185,129,0.18);
-  color: #6ee7b7;
-  border-color: rgba(16,185,129,0.40);
-}
-[data-bs-theme="dark"] .cand-pill-btn--green:hover {
-  background: rgba(16,185,129,0.28);
-}
+/* Dark mode keeps the SAME solid fills (white text) — no tint-down. */
+[data-bs-theme="dark"] .cand-pill-btn--violet { color: #ffffff; border-color: transparent; }
+[data-bs-theme="dark"] .cand-pill-btn--blue   { color: #ffffff; border-color: transparent; }
+[data-bs-theme="dark"] .cand-pill-btn--green  { color: #ffffff; border-color: transparent; }
 
 /* ---------------------------------------------------------------------
    Sample Import Format modal — preview table + download CTA
@@ -3119,6 +3151,9 @@
 [data-bs-theme="dark"] .cand-sample-table-wrap { border-color: var(--vz-border-color); }
 .cand-sample-table {
   width: 100%;
+  /* Give the 11 columns enough room; the wrap scrolls horizontally when the
+     popup is narrower than this. */
+  min-width: 1080px;
   border-collapse: collapse;
   font-size: 12px;
 }
@@ -3135,8 +3170,14 @@
   padding: 10px 12px;
   color: var(--vz-secondary-color);
   border-bottom: 1px solid #f3f4f6;
+  /* Keep each value on one line — no more "Priya / Sharma" or "Final / Round /
+     Selected" wrapping; the row scrolls horizontally instead. */
+  white-space: nowrap;
 }
 .cand-sample-table tbody tr:last-child td { border-bottom: 0; }
+/* Center every column except Name (1) and Email (2) — header + value. */
+.cand-sample-table th:not(:nth-child(1)):not(:nth-child(2)),
+.cand-sample-table td:not(:nth-child(1)):not(:nth-child(2)) { text-align: center; }
 [data-bs-theme="dark"] .cand-sample-table thead th {
   background: color-mix(in srgb, #ffffff 4%, var(--vz-card-bg));
   color: #ffffff;
@@ -3597,6 +3638,35 @@
 .cand-export-submit:active { transform: translateY(0); filter: brightness(0.98); }
 .cand-export-submit i { font-size: 14px; }
 
+/* #26 — full-width, solid primary action in the Import / Export popups. The
+   footer stacks (primary on top, Close below), and both buttons fill the width
+   so the main action reads as one solid full-width bar. */
+.cand-import-footer,
+.cand-export-footer {
+  flex-direction: column-reverse;
+  align-items: stretch;
+  gap: 8px;
+}
+.cand-import-submit,
+.cand-export-submit {
+  width: 100%;
+  justify-content: center;
+}
+.cand-import-footer .rec-btn-ghost,
+.cand-export-footer .rec-btn-ghost {
+  width: 100%;
+  justify-content: center;
+}
+
+/* #32 — a roomier Sample popup so the template's columns show without a cramped
+   scroll, plus a slim, tidy horizontal scrollbar when they still overflow. */
+.cand-sample-dialog .modal-dialog { max-width: 1200px; width: calc(100vw - 40px); }
+.cand-sample-table-wrap { scrollbar-width: thin; scrollbar-color: #c7cdd6 transparent; }
+.cand-sample-table-wrap::-webkit-scrollbar { height: 8px; }
+.cand-sample-table-wrap::-webkit-scrollbar-track { background: transparent; }
+.cand-sample-table-wrap::-webkit-scrollbar-thumb { background: #c7cdd6; border-radius: 999px; }
+.cand-sample-table-wrap::-webkit-scrollbar-thumb:hover { background: #aeb6c2; }
+
 /* ---------------------------------------------------------------------
    Confirm Selection / Confirm Rejection modal — green / red header
    --------------------------------------------------------------------- */
@@ -3711,6 +3781,36 @@
   margin-bottom: 3px;
 }
 [data-bs-theme="dark"] .cand-confirm-stage-label { color: rgba(255,255,255,0.55); }
+
+/* #31 — Recruitment / Position detail sections in the confirm popup. */
+.cand-confirm-details {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 640px) { .cand-confirm-details { grid-template-columns: 1fr; } }
+.cand-confirm-details-sec {
+  border: 1px solid #ececf2;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #fafbfc;
+}
+[data-bs-theme="dark"] .cand-confirm-details-sec {
+  border-color: var(--vz-border-color);
+  background: rgba(255,255,255,0.03);
+}
+.cand-confirm-details-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--vz-secondary-color);
+  margin-bottom: 10px;
+}
+.cand-confirm-details-title i { font-size: 13px; }
+.cand-confirm-details-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+.ccd-item { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ccd-k { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--vz-secondary-color); }
+.ccd-v { font-size: 12.5px; font-weight: 600; color: var(--vz-heading-color, var(--vz-body-color)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Form fields */
 .cand-confirm-field { display: flex; flex-direction: column; gap: 6px; }

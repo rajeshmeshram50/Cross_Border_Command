@@ -36,6 +36,7 @@ interface CandidateRow {
   referred_by_name: string | null;
   cv_path: string | null;
   cv_url: string | null;
+  cv_original_name?: string | null;
   status: CandidateStatus;
   created_at: string | null;
 }
@@ -176,10 +177,6 @@ export default function HrCandidates() {
         const c = info.row.original;
         return (
           <div className="d-flex align-items-center gap-2">
-            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${c.accent}, ${c.accent}cc)` }}>
-              {c.initials}
-            </div>
             <span className="fw-bold fs-13 text-truncate" title={c.name}>{c.name}</span>
             {c.recruitment_code && <span className="rec-id-pill flex-shrink-0" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
           </div>
@@ -195,7 +192,7 @@ export default function HrCandidates() {
     {
       header: 'Mobile',
       accessorKey: 'mobile',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -231,7 +228,7 @@ export default function HrCandidates() {
     {
       header: 'Source',
       accessorKey: 'source',
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -381,9 +378,6 @@ export default function HrCandidates() {
                 </div>
               </div>
               <div className="cand-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
-                <button type="button" className="cand-pill-btn cand-pill-btn--violet" onClick={() => navigate('/hr/recruitment')}>
-                  <i className="ri-arrow-left-line" />Back to Recruitment List
-                </button>
                 <button type="button" className="cand-pill-btn cand-pill-btn--blue" title="Download a sample CSV" onClick={() => setSampleOpen(true)}>
                   <i className="ri-download-line" />Sample
                 </button>
@@ -395,6 +389,10 @@ export default function HrCandidates() {
                 </button>
                 <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} title={recClosed ? recClosedMsg : 'Add a candidate'} onClick={() => { setEditing(null); setViewOnly(false); setModalOpen(true); }}>
                   <i className="ri-add-line" />Add Candidate
+                </button>
+                {/* Back nav sits at the far-right corner, after the action buttons. */}
+                <button type="button" className="cand-pill-btn cand-pill-btn--violet" style={{ marginLeft: 'auto' }} onClick={() => navigate('/hr/recruitment')}>
+                  <i className="ri-arrow-left-line" />Back to Recruitment List
                 </button>
               </div>
             </div>
@@ -514,12 +512,6 @@ export default function HrCandidates() {
               ]}
               activeTab={tab}
               onTabChange={k => setTab(k as typeof tab)}
-              toolbarActions={
-                <span className="cand-result-chip">
-                  <i className="ri-filter-3-line" />
-                  {filtered.length} result{filtered.length === 1 ? '' : 's'}
-                </span>
-              }
               emptyMessage={
                 <>
                   <i className="ri-user-search-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -619,6 +611,7 @@ export default function HrCandidates() {
 
       <CandidateConfirmModal
         target={confirming}
+        rec={recruitment}
         onClose={() => setConfirming(null)}
         onConfirm={async (reasonOrNote: string) => {
           if (!confirming) return;
@@ -701,7 +694,7 @@ function ExportCandidatesModal({
                 Current View Only <span className="cand-export-option-tag">(filtered)</span>
               </div>
               <div className="cand-export-option-sub">
-                {filteredCount} record{filteredCount === 1 ? '' : 's'} matching current tab + filters
+                Exports only what you can see right now — the {filteredCount} candidate{filteredCount === 1 ? '' : 's'} left after the active tab, search and filters. Clear them to export everyone.
               </div>
             </div>
           </label>
@@ -709,9 +702,8 @@ function ExportCandidatesModal({
           <div className="cand-export-info">
             <i className="ri-file-excel-2-line" />
             <div>
-              <strong>File format: Excel (.xlsx)</strong> · Columns: Name, Email, Mobile,
-              Experience, Current Salary, Expected Salary, Notice Period, Source, Status,
-              Recruitment ID
+              <div><strong>File format: Excel (.xlsx)</strong></div>
+              <div>Columns: Name, Email, Mobile, Experience, Current Salary, Expected Salary, Notice Period, Source, Status, Recruitment ID</div>
             </div>
           </div>
         </div>
@@ -899,7 +891,7 @@ function SampleImportFormatModal({ open, onClose }: { open: boolean; onClose: ()
   };
 
   return (
-    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" contentClassName="border-0 cand-sample-modal">
+    <Modal isOpen={open} toggle={onClose} centered size="lg" backdrop="static" modalClassName="cand-sample-dialog" contentClassName="border-0 cand-sample-modal">
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="cand-sample-head">
           <span className="cand-sample-head-icon">
@@ -1308,6 +1300,26 @@ function CandidateFormModal({
     }
   };
 
+  /* CV pick + validate — shared by the initial dropzone and the Reupload icon. */
+  const handleCvPick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    if (!f) { setCvFile(null); return; }
+    const okExt = /\.(pdf|doc|docx)$/i.test(f.name);
+    if (!okExt) {
+      setErrors(prev => ({ ...prev, cv: 'CV must be a PDF, DOC, or DOCX file' }));
+      toast.error('Unsupported file type', 'Please pick a PDF, DOC, or DOCX file.');
+      return;
+    }
+    if (f.size > 2 * 1024 * 1024) {
+      setErrors(prev => ({ ...prev, cv: 'CV must be under 2 MB' }));
+      toast.error('File too large', 'CV must be under 2 MB.');
+      return;
+    }
+    setErrors(prev => { const n = { ...prev }; delete n.cv; return n; });
+    setCvFile(f);
+  };
+
   /* toggle/keyboard guards: the overlay swallows clicks, but ESC is handled at
      the document level and would still close the popup mid-submit. The two
      recruitment modals already set keyboard={false}; this one did not. */
@@ -1492,59 +1504,86 @@ function CandidateFormModal({
                     <p className="rec-form-section-title">Attachment Details</p>
                   </div>
                   <label className="rec-form-label">{readOnly ? 'CV' : <>Attach CV<span className="req">*</span></>}</label>
-                  {readOnly && !existingCvUrl && (
+
+                  {/* No CV yet (and editable) → the attach dropzone. */}
+                  {!cvFile && !existingCvUrl && !readOnly && (
+                    <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        style={{ display: 'none' }}
+                        onChange={handleCvPick}
+                      />
+                      <i className="ri-attachment-2" />
+                      <span className="cand-cv-text">
+                        <strong>Attach CV</strong>
+                        <span>PDF, DOC, DOCX · Max 2 MB</span>
+                      </span>
+                    </label>
+                  )}
+
+                  {/* A CV is present (new upload or already on file) → file card:
+                      truncated name + Download and Reupload icon actions. */}
+                  {(cvFile || existingCvUrl) && (
+                    <div className="cand-cv-file">
+                      <span className="cand-cv-file-icon"><i className="ri-file-text-line" /></span>
+                      <div className="cand-cv-file-info">
+                        <span className="cand-cv-file-name" title={cvFile ? cvFile.name : (editing?.cv_original_name || 'Current CV')}>
+                          {cvFile ? cvFile.name : (editing?.cv_original_name || 'Current CV')}
+                        </span>
+                        <span className="cand-cv-file-sub">{cvFile ? 'Newly attached — not saved yet' : 'PDF, DOC, DOCX · Max 2 MB'}</span>
+                      </div>
+                      <div className="cand-cv-file-actions">
+                        {/* Download — the locally-attached file if one was just
+                            picked, otherwise the CV saved on the server. Always
+                            shown, before Reupload. */}
+                        <button
+                          type="button"
+                          className="cand-cv-file-act"
+                          title="Download CV"
+                          aria-label="Download CV"
+                          onClick={async () => {
+                            try {
+                              if (cvFile) {
+                                const url = URL.createObjectURL(cvFile);
+                                const a = document.createElement('a');
+                                a.href = url; a.download = cvFile.name;
+                                document.body.appendChild(a); a.click(); a.remove();
+                                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                              } else if (editing) {
+                                const resp = await api.get(`/candidates/${editing.id}/cv`, { responseType: 'blob' });
+                                const url = URL.createObjectURL(resp.data as Blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${(editing.name || 'candidate').replace(/\s+/g, '-')}-cv`;
+                                document.body.appendChild(a); a.click(); a.remove();
+                                setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                              }
+                            } catch {
+                              toast.error('Could not download CV', 'Please try again.');
+                            }
+                          }}
+                        >
+                          <i className="ri-download-2-line" />
+                        </button>
+                        {/* Reupload — swap the file (hidden in read-only view). */}
+                        {!readOnly && (
+                          <label className="cand-cv-file-act" title="Reupload CV" aria-label="Reupload CV">
+                            <i className="ri-refresh-line" />
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                              style={{ display: 'none' }}
+                              onChange={handleCvPick}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {readOnly && !cvFile && !existingCvUrl && (
                     <div className="text-muted fs-13">No CV on file</div>
-                  )}
-                  {!readOnly && (
-                  <label className="cand-cv-drop" style={errors.cv ? { borderColor: '#f06548' } : undefined}>
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                      style={{ display: 'none' }}
-                      onChange={e => {
-                        const f = e.target.files?.[0] ?? null;
-                        e.target.value = '';
-                        if (!f) { setCvFile(null); return; }
-                        const okExt = /\.(pdf|doc|docx)$/i.test(f.name);
-                        if (!okExt) {
-                          setErrors(prev => ({ ...prev, cv: 'CV must be a PDF, DOC, or DOCX file' }));
-                          toast.error('Unsupported file type', 'Please pick a PDF, DOC, or DOCX file.');
-                          return;
-                        }
-                        if (f.size > 2 * 1024 * 1024) {
-                          setErrors(prev => ({ ...prev, cv: 'CV must be under 2 MB' }));
-                          toast.error('File too large', 'CV must be under 2 MB.');
-                          return;
-                        }
-                        setErrors(prev => { const n = { ...prev }; delete n.cv; return n; });
-                        setCvFile(f);
-                      }}
-                    />
-                    <i className="ri-attachment-2" />
-                    <span className="cand-cv-text">
-                      <strong>{cvFile ? cvFile.name : (existingCvUrl ? 'Replace CV' : 'Attach CV')}</strong>
-                      <span>PDF, DOC, DOCX · Max 2 MB</span>
-                    </span>
-                  </label>
-                  )}
-                  {!cvFile && existingCvUrl && editing && (
-                    <button
-                      type="button"
-                      className="btn btn-link p-0 d-inline-flex align-items-center gap-1 mt-1 fs-13"
-                      style={{ color: 'var(--vz-link-color, #4458fe)', textDecoration: 'none' }}
-                      onClick={async () => {
-                        try {
-                          const resp = await api.get(`/candidates/${editing.id}/cv`, { responseType: 'blob' });
-                          const url = URL.createObjectURL(resp.data as Blob);
-                          window.open(url, '_blank', 'noopener');
-                          setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                        } catch {
-                          toast.error('Could not open CV', 'Please try again.');
-                        }
-                      }}
-                    >
-                      <i className="ri-file-text-line" />View current CV
-                    </button>
                   )}
                   {errors.cv && <div className="rec-error"><i className="ri-error-warning-line" />{errors.cv}</div>}
                 </div>
@@ -1631,10 +1670,18 @@ const REJECTION_REASONS = [
   { value: 'Other',                              label: 'Other (add notes below)' },
 ];
 
+/** Title-case a name so "meera chopra" / "MEERA CHOPRA" render as "Meera Chopra". */
+function titleCaseName(s: string): string {
+  return (s || '')
+    .toLowerCase()
+    .replace(/\b([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
 function CandidateConfirmModal({
-  target, onClose, onConfirm,
+  target, rec, onClose, onConfirm,
 }: {
   target: { row: CandidateRow; mode: 'select' | 'reject' } | null;
+  rec: RecruitmentInfo | null;
   onClose: () => void;
   onConfirm: (reasonOrNote: string) => Promise<void> | void;
 }) {
@@ -1690,9 +1737,9 @@ function CandidateConfirmModal({
               {row.initials}
             </div>
             <div className="cand-confirm-summary-text">
-              <div className="cand-confirm-name">{row.name}</div>
+              <div className="cand-confirm-name">{titleCaseName(row.name)}</div>
               <div className="cand-confirm-meta">
-                <span>{row.email || '—'}</span>
+                <span><i className="ri-mail-line" /> {row.email || '—'}</span>
                 {row.recruitment_code && (
                   <>
                     <span className="dot">·</span>
@@ -1706,6 +1753,33 @@ function CandidateConfirmModal({
               <span className={`badge rounded-pill rec-status-pill bg-${stageColor}-subtle text-${stageColor} fw-semibold px-3 py-2 fs-13`}>{row.status}</span>
             </div>
           </div>
+
+          {/* #31 — informative context so the approver sees WHAT they're
+              selecting/rejecting for: the recruitment + the position. */}
+          {rec && (
+            <div className="cand-confirm-details">
+              <div className="cand-confirm-details-sec">
+                <div className="cand-confirm-details-title"><i className="ri-briefcase-4-line" /> Recruitment Details</div>
+                <div className="cand-confirm-details-grid">
+                  <div className="ccd-item"><span className="ccd-k">Code</span><span className="ccd-v">{rec.code || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Job Title</span><span className="ccd-v">{rec.jobTitle || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Priority</span><span className="ccd-v">{rec.priority || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Status</span><span className="ccd-v">{rec.status || '—'}</span></div>
+                </div>
+              </div>
+              <div className="cand-confirm-details-sec">
+                <div className="cand-confirm-details-title"><i className="ri-map-pin-user-line" /> Position Details</div>
+                <div className="cand-confirm-details-grid">
+                  <div className="ccd-item"><span className="ccd-k">Department</span><span className="ccd-v">{rec.department || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Designation</span><span className="ccd-v">{rec.designation || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Employment</span><span className="ccd-v">{rec.employmentType || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Work Mode</span><span className="ccd-v">{rec.workMode || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Experience</span><span className="ccd-v">{rec.experience || '—'}</span></div>
+                  <div className="ccd-item"><span className="ccd-k">Openings</span><span className="ccd-v">{rec.openings ?? '—'}</span></div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {isReject && (
             <div className="cand-confirm-field">

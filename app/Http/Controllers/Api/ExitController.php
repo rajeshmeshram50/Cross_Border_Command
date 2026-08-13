@@ -926,17 +926,15 @@ class ExitController extends Controller
     }
 
     /**
-     * A TERMINATION blacklists the employee by default.
+     * A TERMINATION ALWAYS blacklists the employee.
      *
-     * Being terminated is already an absolute bar on the one-click rehire
-     * (rehire() only accepts a standard resignation), so this makes the record
-     * say what the rules already do: the person shows as Blacklisted in the
-     * exit list and every blacklist check downstream agrees with the exit type.
-     *
-     * "By default", not "always": HR can still record an explicit `No` — a
-     * role eliminated for redundancy can be filed as a termination without the
-     * person being barred. Rehiring them still needs a fresh hiring process,
-     * which is the rule for every termination regardless of this flag.
+     * Not "by default" — the answer is forced to Yes and a posted `No` is
+     * overwritten. A terminated employee can never be rehired from here
+     * (rehire() only accepts a standard resignation), so a case reading
+     * "Terminated / Not Blacklisted" claimed a door was open that every rule
+     * downstream keeps shut. The exit type decides this, not the operator: the
+     * SPA locks the dropdown to Yes and this is the server-side twin, so a
+     * direct API call cannot record what the UI won't.
      *
      * An auto-blacklist with no reason typed gets one stating the mechanism, so
      * the record is never a bare "Yes" with no explanation, and HR is not held
@@ -947,11 +945,8 @@ class ExitController extends Controller
         if (strcasecmp((string) ($row->exit_type ?? ''), 'Termination') !== 0) {
             return;
         }
-        if ($row->blacklisted === null || trim((string) $row->blacklisted) === '') {
-            $row->blacklisted = 'Yes';
-        }
-        if (strcasecmp((string) $row->blacklisted, 'Yes') === 0
-            && trim((string) $row->blacklist_reason) === '') {
+        $row->blacklisted = 'Yes';
+        if (trim((string) $row->blacklist_reason) === '') {
             $row->blacklist_reason = 'Blacklisted automatically — exit type: Termination.';
         }
     }
