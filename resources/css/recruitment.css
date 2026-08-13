@@ -1411,17 +1411,38 @@
 }
 .rec-req-raise-btn:hover i { filter: brightness(0.95); }
 
-/* KPI strip — soft gradient strip background with polished cards */
+/* KPI strip — soft gradient strip background with polished cards.
+   This band and .rec-req-tablewrap below it are deliberately two DIFFERENT
+   surfaces: the KPI band keeps the tinted violet wash, the table panel sits on
+   a plain neutral base. They used to share the same lavender tone, which made
+   the modal read as one continuous block with no boundary between the summary
+   and the list. */
 .rec-req-stats {
   display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px;
-  /* Left/right inset matches the table below (its toolbar/tabs sit ~15px in),
-     so the KPI cards line up with the tab bar + the table columns. */
-  padding: 18px 15px;
+  /* 19px so a KPI card's left edge lands on the tab rail's left edge below it.
+     That 19 is the sum of what sits between the modal edge and the rail:
+     .rec-req-tablewrap padding (4) + .dt-root border (1) + .dt-toolbar
+     padding-left (14). Change any of those three and this has to follow, or
+     the cards and the tabs stop starting at the same point. */
+  padding: 18px 19px;
   border-bottom: 1px solid #ede9fe;
   background:
     radial-gradient(800px 240px at 0% 0%, rgba(124,92,252,0.06) 0%, transparent 55%),
     radial-gradient(700px 200px at 100% 100%, rgba(167,139,250,0.04) 0%, transparent 55%),
     #fbfaff;
+}
+
+/* Table panel — the second of the two containers. Plain surface (no violet
+   wash) so it separates cleanly from the KPI band, with the requested 4px
+   left/right inset. The vertical padding is what actually lets the DataTable's
+   16px corner radius and its shadow render instead of being clipped flush
+   against the modal edges. */
+.rec-req-tablewrap {
+  padding: 14px 4px 16px;
+  background: #ffffff;
+}
+[data-bs-theme="dark"] .rec-req-tablewrap {
+  background: var(--vz-secondary-bg, #1a1d21);
 }
 @media (max-width: 1199px) { .rec-req-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
 @media (max-width: 575px)  { .rec-req-stats { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; } }
