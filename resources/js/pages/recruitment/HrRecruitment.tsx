@@ -1654,8 +1654,11 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
       <div className="rec-view-value">{value !== undefined && value !== null && value !== '' ? value : <span className="text-muted">—</span>}</div>
     </div>
   );
+  /* margin 8px above and below — was 14px above, which made the run between one
+     section's card and the next header wider than every other gap in the modal.
+     Matches the 8px rhythm of the Hiring Requests popup. */
   const SectionHeader = ({ icon, title }: { icon: string; title: string }) => (
-    <div className="d-flex align-items-center gap-2" style={{ margin: '14px 0 8px' }}>
+    <div className="d-flex align-items-center gap-2" style={{ margin: '8px 0' }}>
       <span style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
         <i className={icon} style={{ fontSize: 14 }} />
       </span>
@@ -1695,7 +1698,12 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
           </div>
         </div>
 
-        <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        {/* 8px top/bottom — the same gap the Hiring Requests popup now uses
+            above its KPI cards and below its table, so the two modals breathe
+            identically. Sides stay at 18px: the section cards are the content
+            here, not a full-width table, and pulling them to 8px put them
+            almost against the modal edge. */}
+        <div className="rec-view-body" style={{ padding: '8px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
           <SectionHeader icon="ri-calendar-event-line" title="Section 1 · Request Basics" />
           <div className="rec-view-card">
             <div className="rec-view-grid">
@@ -2657,12 +2665,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
                </div>
 
+        {/* Save is the only footer action. Cancel was redundant with the
+            header × and the "Fields marked * are required" hint restated what
+            the red asterisks on every label already say. ms-auto keeps the
+            button hard right now that the hint is no longer holding the other
+            end of the footer's space-between. */}
         <div className="rec-form-footer">
-          <span className="hint">Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
-          <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
+          <div className="d-flex gap-2 ms-auto">
             <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
               {saving ? (
                 <>
