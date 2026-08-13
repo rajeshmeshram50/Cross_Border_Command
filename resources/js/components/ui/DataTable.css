@@ -154,7 +154,7 @@
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   /* 11px (was 14) — across a six-tab rail that's ~36px reclaimed, which is the
      difference between the last tab fitting the row and wrapping under it. */
-  padding: 0 11px; height: 34px;
+  padding: 0 11px; height: 40px;
   border: 0; border-radius: 8px;
   background: transparent;
   font-family: inherit;
@@ -277,12 +277,14 @@
      right-aligned on the SAME row. */
   /* Shrink factor 8 (vs the tab rail's 1): when the toolbar line is over-full
      the search gives up its width FIRST, so the tab rail keeps its tabs on a
-     single line instead of wrapping one onto a second row inside the rail. */
-  flex: 0 8 320px; min-width: 140px; max-width: 320px;
-  /* 38px, down from 42. The field sat taller than the tab pills beside it,
-     which made the toolbar read as two mismatched rows of controls rather than
-     one strip. */
-  height: 38px;
+     single line instead of wrapping one onto a second row inside the rail.
+     Basis/cap widened to ~600 so the search stretches out to about the Profile
+     column on wide tables (Onboarding / Employees); the high shrink factor
+     still collapses it to min-width on crowded toolbars (e.g. Document Template
+     Management) so nothing wraps. */
+  flex: 0 8 600px; min-width: 140px; max-width: 600px;
+  /* Matched to the taller tab pills (40px) so the toolbar reads as one strip. */
+  height: 44px;
   display: flex; align-items: center;
   padding: 0 8px 0 36px;
   background: rgba(255, 255, 255, .80);

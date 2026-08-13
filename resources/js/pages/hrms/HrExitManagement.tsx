@@ -3072,7 +3072,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   <FnfRow label="Other Recovery"               value={fnfLines.loan}        onChange={v => setFnfLines(s => ({ ...s, loan: v }))} deduction
                           hint="Anything not pulled automatically — loans, asset damage, notice shortfall settled elsewhere." />
                   <div className="ep-fnf-net">
-                    <span>Net FnF Payable</span>
+                    {/* A NEGATIVE net means deductions (advances / recovery)
+                        exceed the earnings — the company doesn't pay out, the
+                        EMPLOYEE owes the balance back. Flag it so it's not read
+                        as a payable to the employee. */}
+                    <span>Net FnF Payable{fnfNet < 0 ? <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, opacity: 0.9 }}>(Employee Will Pay)</span> : null}</span>
                     <span>{fmtMoney(fnfNet)}</span>
                   </div>
                 </div>
