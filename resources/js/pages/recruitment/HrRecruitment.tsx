@@ -153,6 +153,28 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
+/**
+ * Capitalise the first character, leave the rest of the string exactly as
+ * typed (PHP's ucfirst, not a title-caser) — so "compliance associate" becomes
+ * "Compliance associate" and an intentional "iOS Engineer" is never mangled.
+ *
+ * Applied on every keystroke of the free-text recruitment fields. Only index 0
+ * is ever rewritten and the length never changes, so the caret does not jump
+ * when the user is typing further along the string.
+ *
+ * Leading whitespace is skipped rather than blocking the capital: a value that
+ * starts with a space or newline capitalises its first real character instead
+ * of silently doing nothing.
+ */
+const ucFirst = (s: string): string => {
+  const i = s.search(/\S/);
+  if (i < 0) return s;                       // empty or all-whitespace
+  const c = s[i];
+  const upper = c.toUpperCase();
+  if (c === upper) return s;                 // already capital / not a letter
+  return s.slice(0, i) + upper + s.slice(i + 1);
+};
+
 type RequestStatus = 'Approved' | 'Under Review' | 'Submitted' | 'Sent Back' | 'Draft' | 'Rejected';
 type RequestUrgency = 'Low' | 'Medium' | 'High' | 'Critical';
 type RequestType =
@@ -1614,7 +1636,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
     );
   };
   return (
-    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0" zIndex={2200}>
+    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-view-modal" contentClassName="rec-view-content border-0" zIndex={2200}>
       <ModalBody className="p-0">
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1686,8 +1708,14 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
           </div>
         </div>
 
+        {/* Footer only exists to hold decisions. On a read-only request — a
+            rejected one, or the Employee Profile > Hiring Requests eye action,
+            which passes neither callback — there is nothing to decide, so the
+            whole bar goes rather than rendering a "Read-only view" label next
+            to a lone Close. The header × dismisses the modal in every case. */}
+        {(canReject || showCreate) && (
         <div className="rec-form-footer">
-          <span className="hint">{canReject ? 'Review this request — create a recruitment or reject it' : 'Read-only view'}</span>
+          <span className="hint">Review this request — create a recruitment or reject it</span>
           <div className="d-flex gap-2">
             {canReject && (
               <button
@@ -1709,9 +1737,6 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
                 )}
               </button>
             )}
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={rejecting}>
-              <i className="ri-close-line" />Close
-            </button>
             {showCreate && (
               <button
                 type="button"
@@ -1724,6 +1749,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
             )}
           </div>
         </div>
+        )}
       </ModalBody>
     </Modal>
   );
@@ -2035,7 +2061,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   useEffect(() => {
     if (!isOpen) return;
     if (editing) {
-      setJobTitle(editing.jobTitle);
+      setJobTitle(ucFirst(editing.jobTitle));
       setDepartmentId(editing.departmentId != null ? String(editing.departmentId) : '');
       setDesignationId(editing.designationId != null ? String(editing.designationId) : '');
       setPrimaryRoleId(editing.primaryRoleId != null ? String(editing.primaryRoleId) : '');
@@ -2049,8 +2075,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setAssignedHrId(editing.assignedHrId != null ? String(editing.assignedHrId) : '');
       setStartDate(editing.startDate ? String(editing.startDate).slice(0, 10) : '');
       setDeadline(editing.deadline ? String(editing.deadline).slice(0, 10) : '');
-      setJobDescription(editing.jobDescription || '');
-      setRequirements(editing.requirements || '');
+      setJobDescription(ucFirst(editing.jobDescription || ''));
+      setRequirements(ucFirst(editing.requirements || ''));
       setPostOnPortal(editing.postOnPortal);
       setNotifyTeamLeads(editing.notifyTeamLeads);
       setEnableReferralBonus(editing.enableReferralBonus);
@@ -2070,7 +2096,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       }
     } else if (prefillFromHr) {
       const hr = prefillFromHr;
-      setJobTitle((hr.job_role || hr.title || '') as string);
+      setJobTitle(ucFirst((hr.job_role || hr.title || '') as string));
       setDepartmentId(hr.department_id != null ? String(hr.department_id) : '');
       setDesignationId('');
       setPrimaryRoleId('');
@@ -2084,9 +2110,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setAssignedHrId('');
       setStartDate('');
       setDeadline(hr.target_join_date ? String(hr.target_join_date).slice(0, 10) : '');
-      setJobDescription((hr.job_description || '') as string);
+      setJobDescription(ucFirst((hr.job_description || '') as string));
       const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
-      setRequirements(reqParts.join('\n'));
+      setRequirements(ucFirst(reqParts.join('\n')));
       setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     } else {
@@ -2336,7 +2362,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                     className={`rec-input has-leading-icon${errors.jobTitle ? ' is-invalid' : ''}`}
                     placeholder="e.g. Senior Backend Engineer"
                     value={jobTitle}
-                    onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
+                    onChange={e => { setJobTitle(ucFirst(e.target.value)); clear('jobTitle'); }}
                   />
                 </div>
                 {errors.jobTitle && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobTitle}</div>}
@@ -2565,7 +2591,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.jobDescription ? ' is-invalid' : ''}`}
                   placeholder="Key responsibilities, expectations, and role overview…"
                   value={jobDescription}
-                  onChange={e => { setJobDescription(e.target.value); clear('jobDescription'); }}
+                  onChange={e => { setJobDescription(ucFirst(e.target.value)); clear('jobDescription'); }}
                 />
                 {errors.jobDescription && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobDescription}</div>}
               </Col>
@@ -2575,7 +2601,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.requirements ? ' is-invalid' : ''}`}
                   placeholder="Required skills, qualifications, certifications…"
                   value={requirements}
-                  onChange={e => { setRequirements(e.target.value); clear('requirements'); }}
+                  onChange={e => { setRequirements(ucFirst(e.target.value)); clear('requirements'); }}
                 />
                 {errors.requirements && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requirements}</div>}
               </Col>

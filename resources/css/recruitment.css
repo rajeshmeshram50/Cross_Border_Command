@@ -1739,6 +1739,13 @@
 /* ---------------------------------------------------------------------
    9. View Request detail modal — read-only field grid
    --------------------------------------------------------------------- */
+/* Wider than Bootstrap's modal-lg (800px), which was cramping the 4-column
+   field grids inside — "Legal Compliance Associate" wrapped onto two lines in a
+   column that had room to spare. Still narrower than the Hiring Requests list
+   behind it (min(1380px, 97vw)) so this reads as a panel ON TOP of that list
+   rather than replacing it. Beats size="lg" on specificity, so the modal-lg
+   class staying on the dialog is harmless. */
+.rec-view-modal .modal-dialog { max-width: min(1080px, 96vw); }
 .rec-view-content { border-radius: 16px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(91,63,209,0.20); }
 .rec-view-body {
   background: #f8f9fc;
