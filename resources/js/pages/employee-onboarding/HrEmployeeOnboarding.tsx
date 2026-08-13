@@ -10,6 +10,7 @@ import api from '../../api';
 import {
   type SalBreakComp, SPLIT_CODES,
   seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
+  CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
@@ -2358,6 +2359,11 @@ function InitiateOnboardingModal({
   const obSalaryAnnual  = useMemo(() => Math.round(obMonthlyOf(s1.annual_salary) * 12), [obMonthlyOf, s1.annual_salary]);
   const obBreakupAnnual = useMemo(() => Math.round(obGross * 12), [obGross]);
   const obDiff = obSalaryAnnual > 0 ? obBreakupAnnual - obSalaryAnnual : 0;  // + over, − under
+  /* A gap inside the rounding slack is not a difference worth reporting — see
+     CTC_ROUNDING_SLACK. Whole-rupee components can't land exactly on a CTC that
+     doesn't divide by 12. */
+  const obMatches = Math.abs(obDiff) <= CTC_ROUNDING_SLACK;
+  const obOverSalary = obDiff > CTC_ROUNDING_SLACK;
 
   /* ESI / Professional Tax are entered manually: ticking drops a labelled row
      into Deductions, unticking removes it. PT opens on its slab figure; ESI
@@ -4877,17 +4883,17 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                             <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
                             <div className="text-end">
                               <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>{fmt(obGross)}</div>
-                              <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obDiff > 0 ? '#dc2626' : '#0a8754') }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obOverSalary ? '#dc2626' : '#0a8754') }}>
                                 ≈ {fmt(obBreakupAnnual)} / year
                               </div>
-                              {obSalaryAnnual > 0 && obDiff !== 0 && (
-                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obDiff > 0 ? '#dc2626' : '#0a8754' }}>
-                                  {obDiff > 0
+                              {obSalaryAnnual > 0 && !obMatches && (
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obOverSalary ? '#dc2626' : '#0a8754' }}>
+                                  {obOverSalary
                                     ? `${fmt(obDiff)} over the salary (${fmt(obSalaryAnnual)})`
                                     : `${fmt(Math.abs(obDiff))} under the salary (${fmt(obSalaryAnnual)})`}
                                 </div>
                               )}
-                              {obSalaryAnnual > 0 && obDiff === 0 && (
+                              {obSalaryAnnual > 0 && obMatches && (
                                 <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                               )}
                             </div>
