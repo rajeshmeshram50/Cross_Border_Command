@@ -1452,6 +1452,7 @@ export default function HrEmployees() {
                   <span style={{ position: 'absolute', left: 2, fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>₹</span>
                   <input
                     type="number"
+                    className="no-spin"
                     min={0}
                     max={MAX_COMP_AMOUNT}
                     step="0.01"
