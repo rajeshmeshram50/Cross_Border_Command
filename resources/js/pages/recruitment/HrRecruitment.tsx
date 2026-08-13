@@ -2801,9 +2801,15 @@ function CancelConfirmModal({
             <div className="rec-cancel-body">
 
               <div className="rec-cancel-summary">
-                <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
-                  <span className="rec-id-pill">{target.code || target.id}</span>
+                {/* Job title leads on the left, the REC-### pill sits hard
+                    right. The title is what identifies the requisition to a
+                    reader; the code is the reference you check afterwards.
+                    `nowrap` + ms-auto rather than justify-content-between so a
+                    long title pushes the pill instead of the two drifting apart
+                    with a gap in the middle. */}
+                <div className="d-flex align-items-center gap-2 flex-nowrap mb-1">
                   <span className="rec-cancel-summary-title">{target.jobTitle}</span>
+                  <span className="rec-id-pill ms-auto flex-shrink-0">{target.code || target.id}</span>
                 </div>
                 <div className="rec-cancel-summary-meta">
                   <span><strong>Dept:</strong> {target.department}</span>
