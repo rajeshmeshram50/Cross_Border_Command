@@ -12153,6 +12153,18 @@
             background: rgba(124,92,252,0.18) !important;
             border-color: rgba(124,92,252,0.55) !important;
           }
+          /* Kill the native number spinners. On a salary field the stepper is
+             worse than useless — one click moves a CTC by ₹1, the arrows sit on
+             top of a right-aligned figure, and they only appear on hover, so
+             the amount visibly shifts as the pointer crosses it. Typing is the
+             only sane way to enter these. `.no-spin` is for the breakup rows,
+             whose inputs are styled inline and carry no class of their own. */
+          .emp-input[type="number"]::-webkit-outer-spin-button,
+          .emp-input[type="number"]::-webkit-inner-spin-button,
+          .no-spin::-webkit-outer-spin-button,
+          .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+          .emp-input[type="number"], .no-spin { -moz-appearance: textfield; appearance: textfield; }
+
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
