@@ -1352,6 +1352,50 @@ class ExitController extends Controller
             'completed_at'          => $row?->completed_at?->toIso8601String(),
             'employee_status'       => $employee->status,
             'updated_at'            => $row?->updated_at?->toIso8601String(),
+
+            /* Monthly BASIC the notice-period settlement is priced on. Resolved
+               here rather than on the SPA, which derived it from annual_salary
+               alone and so showed ₹0 (and a ₹0 per-day rate, and a ₹0 payable)
+               for anyone paid through a salary structure with no annual figure
+               set. Sent on the per-employee exit payload, not appended to the
+               Employee model, so the employees LIST doesn't take a structure
+               lookup per row. */
+            'monthly_basic'         => $this->resolveMonthlyBasic($employee),
         ];
+    }
+
+    /**
+     * Monthly basic for the exit settlement, using the SAME precedence as
+     * PayrollService::resolveCompensation() so the exit and a payroll run price
+     * a day off the same figure:
+     *   1. the employee's in-force salary structure (its own basic component)
+     *   2. annual_salary ÷ 12 × 50%  (the engine's fallback split)
+     *   3. 0 — nothing on file; HR types the figure in, as before.
+     *
+     * The structure lookup mirrors PayrollService::structureFor(): statuses are
+     * stored LOWER-case and 'superseded' still counts (a newer draft must not
+     * hide the version actually in force), ordered by effective date then
+     * version. Matching that query is the whole point — a different one here
+     * would quietly price the exit off a different structure than payroll used.
+     */
+    private function resolveMonthlyBasic(Employee $employee): float
+    {
+        $structure = \App\Models\SalaryStructure::where('employee_id', $employee->id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', \Carbon\Carbon::now(self::DISPLAY_TZ))
+            ->orderByDesc('effective_from')
+            ->orderByDesc('version')
+            ->first();
+        if ($structure) {
+            $basic = (float) $structure->basicAmount();
+            if ($basic > 0) return round($basic, 2);
+            // A structure with no explicit basic component still carries a
+            // gross; fall back to the engine's 50% split of it rather than to 0.
+            $gross = (float) $structure->monthly_gross;
+            if ($gross > 0) return round($gross * 0.5, 2);
+        }
+
+        $annual = (float) ($employee->annual_salary ?? 0);
+        return $annual > 0 ? round(($annual / 12) * 0.5, 2) : 0.0;
     }
 }
