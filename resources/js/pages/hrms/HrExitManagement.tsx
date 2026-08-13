@@ -222,21 +222,11 @@ export default function HrExitManagement() {
         const noticeFromLabel = e.noticeStartIso
           ? new Date(e.noticeStartIso + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
           : '';
+        /* Avatar removed — same as the employee and onboarding lists. It said
+           nothing the name beside it didn't, and this column is hard-capped at
+           NAME_MAX_CHARS precisely because the room is tight. */
         return (
           <div className="d-flex align-items-center gap-2">
-            {e.photoUrl ? (
-              <img
-                src={e.photoUrl}
-                alt={e.name}
-                className="rounded-circle flex-shrink-0"
-                style={{ width: 26, height: 26, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-              />
-            ) : (
-              <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{ width: 26, height: 26, fontSize: 10.5, background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)` }}>
-                {e.initials}
-              </div>
-            )}
             <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
               {/* Capped at NAME_MAX_CHARS with the full name on hover. A hard
                   cap, not just CSS ellipsis: the column has to stay narrow for
@@ -282,7 +272,9 @@ export default function HrExitManagement() {
          an inline-block wider than its text, so the table's default
          `text-overflow: ellipsis` painted a "…" just past the pill's edge.
          Every column whose cell is a pill/badge needs this opt-out. */
-      meta: { width: w(130, 108), wrap: true },
+      /* Centred, like every pill/chip column across the HR lists — a badge is a
+         fixed shape, so left-aligning it leaves a ragged right-hand gap. */
+      meta: { width: w(130, 108), wrap: true, align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118) },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
@@ -290,7 +282,7 @@ export default function HrExitManagement() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: w(140, 120) },
+      meta: { width: w(140, 120), align: 'center' },
       /* Role names run long ("Software Developer", "Sales Intern") and the
          column is narrow — ChipCell ellipsises inside the pill and reveals
          the full name on hover, same contract as the Designation column. */
@@ -300,6 +292,8 @@ export default function HrExitManagement() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
+      /* LEFT — variable chip count plus a "+N" counter, so the cell width
+         changes row to row and centring made each row start at a different x. */
       meta: { width: w(150, 126) },
       cell: info => {
         const e = info.row.original;
@@ -316,26 +310,26 @@ export default function HrExitManagement() {
       meta: { width: w(170, 146) },
       cell: info => {
         const e = info.row.original;
+        // Avatar removed here too — the name is the whole column.
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 22, height: 22, fontSize: 9, background: `linear-gradient(135deg, ${e.managerAccent}, ${e.managerAccent}cc)` }}>
-              {e.managerInitials}
-            </div>
-            <Tooltip label={e.managerName} maxWidth={360}>
-              <span className="fs-13 text-truncate">{e.managerName}</span>
-            </Tooltip>
-          </div>
+          <Tooltip label={e.managerName} maxWidth={360}>
+            <span className="fs-13 text-truncate d-block">{e.managerName}</span>
+          </Tooltip>
         );
       },
     },
     /* Exit Type — only meaningful once an exit exists, so it's shown on the
        "Exit In Progress" and "Exited" tabs and omitted from Active Employees
        (where every cell would be a dash). */
-    ...(tab === 'active' ? [] : [{
+    /* Annotated: the array inside this conditional is NOT reached by the
+       useMemo's contextual type, so `align: 'center'` widened to `string` and
+       failed to match DataTableAlign — and a single unassignable element made
+       TypeScript give up contextually typing the WHOLE column list, surfacing
+       the same complaint on three other columns that had been fine for months. */
+    ...(tab === 'active' ? [] : ([{
       header: 'Exit Type',
       accessorKey: 'exitType',
-      meta: { width: 170, wrap: true },
+      meta: { width: 170, wrap: true, align: 'center' },
       cell: (info: any) => {
         const t = String(info.getValue() || '').trim();
         if (!t) return <span className="text-muted">—</span>;
@@ -357,13 +351,13 @@ export default function HrExitManagement() {
           </Tooltip>
         );
       },
-    }]),
+    }] as DataTableColumn<EmployeeRow>[])),
     {
       /* wrap: the meter is a fixed-width block with a badge floating above the
          bar, so the cell must not clip it. */
       header: 'Exit Readiness',
       accessorKey: 'exitReadiness',
-      meta: { width: w(130, 126), wrap: true },
+      meta: { width: w(130, 126), wrap: true, align: 'center' },
       cell: info => {
         const p = info.row.original.exitReadiness;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }

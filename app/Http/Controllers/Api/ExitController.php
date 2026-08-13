@@ -1232,12 +1232,12 @@ class ExitController extends Controller
             'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.');
     }
 
-    /** Cap the granular permission check to the 'master.employees' module —
+    /** Cap the granular permission check to the 'hr.employee' module —
      *  exit management piggy-backs on it since it's a per-employee action. */
     private function authorizeMaster($user): void
     {
         if ($user->isSuperAdmin()) return;
-        $moduleId = Module::where('slug', 'master.employees')->value('id');
+        $moduleId = Module::where('slug', 'hr.employee')->value('id');
         if (!$moduleId) {
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
             abort(403, 'Employees module not enabled.');
@@ -1246,7 +1246,7 @@ class ExitController extends Controller
             ->where('module_id', $moduleId)
             ->where('can_edit', true)
             ->exists();
-        if (!$allowed) abort(403, 'Missing can_edit on master.employees');
+        if (!$allowed) abort(403, 'Missing can_edit on hr.employee');
     }
 
     /**

@@ -835,6 +835,13 @@
           background: rgba(16,185,129,0.18) !important;
           color: #6ee7b7 !important;
         }
+        /* No native number spinners — on a salary field one click moves the CTC
+           by ₹1, and the arrows sit on top of a right-aligned figure, appearing
+           only on hover so the amount shifts as the pointer crosses it. */
+        .onb-init-input[type="number"]::-webkit-outer-spin-button,
+        .onb-init-input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .onb-init-input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+
         .onb-init-input, .onb-init-select { width: 100%; height: 36px; padding: 6px 10px; font-size: 12px; color: #1f2937; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; transition: all .15s ease; }
         .onb-init-input::placeholder { color: #9ca3af; }
         .onb-init-input:focus, .onb-init-select:focus { outline: none; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(124,92,252,0.15); }

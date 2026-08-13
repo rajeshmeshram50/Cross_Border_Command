@@ -1435,10 +1435,10 @@ class EmployeeController extends Controller
      *  HELPERS
      * ───────────────────────────────────────────────────────────────── */
 
-    /** Cap the granular permission check to the 'master.employees' module. */
+    /** Cap the granular permission check to the 'hr.employee' module. */
     /**
      * Like authorize('can_view'), but always allows a user to read THEIR OWN
-     * employee record even without the master.employees grant. Ordinary
+     * employee record even without the hr.employee grant. Ordinary
      * employees don't hold the HR module permission, yet the self-service
      * profile (/profile → EmployeeProfile) and its panels (Holidays, etc.)
      * must still load their own data. Anyone else falls back to the normal
@@ -1460,7 +1460,11 @@ class EmployeeController extends Controller
         if (!$user) abort(401, 'Authentication required');
         if ($user->isSuperAdmin()) return;
 
-        $moduleId = Module::where('slug', 'master.employees')->value('id');
+        // Single consolidated Employee permission: HRMS → HR Core → Employee
+        // (slug `hr.employee`). It now gates BOTH this API and the frontend
+        // menu/route — the former `master.employees` (API-only) and standalone
+        // `employees` modules were merged into it.
+        $moduleId = Module::where('slug', 'hr.employee')->value('id');
         if (!$moduleId) {
             // First-run: module row not seeded yet. Fall back to plan-default
             // (allow client_admin / branch_user; deny others).
@@ -1472,7 +1476,7 @@ class EmployeeController extends Controller
             ->where('module_id', $moduleId)
             ->where($perm, true)
             ->exists();
-        if (!$allowed) abort(403, "Missing {$perm} on master.employees");
+        if (!$allowed) abort(403, "Missing {$perm} on hr.employee");
     }
 
     /** Pick (client_id, branch_id) for a new row, mirroring MasterController::resolveOwnership. */
