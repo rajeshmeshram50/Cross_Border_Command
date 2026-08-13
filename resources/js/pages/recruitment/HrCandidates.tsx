@@ -694,7 +694,7 @@ function ExportCandidatesModal({
                 Current View Only <span className="cand-export-option-tag">(filtered)</span>
               </div>
               <div className="cand-export-option-sub">
-                Exports only what you can see right now — the {filteredCount} candidate{filteredCount === 1 ? '' : 's'} left after the active tab, search and filters. Clear them to export everyone.
+                Only the {filteredCount} candidate{filteredCount === 1 ? '' : 's'} currently shown (after tab, search &amp; filters).
               </div>
             </div>
           </label>
@@ -1526,7 +1526,10 @@ function CandidateFormModal({
                       truncated name + Download and Reupload icon actions. */}
                   {(cvFile || existingCvUrl) && (
                     <div className="cand-cv-file">
-                      <span className="cand-cv-file-icon"><i className="ri-file-text-line" /></span>
+                      <span className="cand-cv-file-icon">
+                        <i className="ri-file-text-line" />
+                        <span className="cand-cv-file-check" title="File attached"><i className="ri-check-line" /></span>
+                      </span>
                       <div className="cand-cv-file-info">
                         <span className="cand-cv-file-name" title={cvFile ? cvFile.name : (editing?.cv_original_name || 'Current CV')}>
                           {cvFile ? cvFile.name : (editing?.cv_original_name || 'Current CV')}

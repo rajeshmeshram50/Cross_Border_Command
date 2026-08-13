@@ -70,6 +70,11 @@ export interface DataTableProps<T> {
   pageSize?: number;
   pageSizeOptions?: number[];
   autoFitRows?: boolean;
+  /** Floor for the auto-fit row count. Defaults to 2 (a short window genuinely
+   *  fits only a couple). Pages with a tall header above the table (KPI strips,
+   *  analytics) can raise this so the table never collapses to 2 rows on a big
+   *  screen — the extra rows spill below the fold and the page scrolls. */
+  minAutoRows?: number;
   paginate?: boolean;
   accent?: DataTableAccent;
   minWidth?: number;
@@ -145,6 +150,7 @@ export default function DataTable<T extends object>({
   pageSize: pageSizeProp,
   pageSizeOptions = DEFAULT_SIZE_OPTIONS,
   autoFitRows = false,
+  minAutoRows = 2,
   paginate = true,
   accent = 'violet',
   minWidth,
@@ -263,8 +269,8 @@ export default function DataTable<T extends object>({
      * them back in is what puts the scrollbar there in the first place — the
      * page control below already exists to reach the rest. Never 0: a page must
      * show something. */
-    setAutoSize(Math.max(2, Math.floor(avail / rowH)));
-  }, [autoFitRows, manualSize]);
+    setAutoSize(Math.max(minAutoRows, Math.floor(avail / rowH)));
+  }, [autoFitRows, manualSize, minAutoRows]);
 
   useEffect(() => {
     const el = rootRef.current;
