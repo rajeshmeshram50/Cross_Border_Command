@@ -224,26 +224,50 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
           }
           .ep-chip-value-pill:last-child { margin-right: 0; }
           .ep-chip-empty { color: rgba(255,255,255,0.40); font-weight: 500; }
+
+          /* Both header buttons live here rather than in inline styles, because
+             inline styles cannot carry :hover — the two controls had no hover
+             feedback at all, so neither looked clickable. */
+          .ep-hdr-btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            height: 40px; padding: 0 18px; border-radius: 10px;
+            font-size: 12.5px; font-weight: 700; white-space: nowrap;
+            cursor: pointer;
+            transition: background .15s ease, border-color .15s ease, transform .15s ease, box-shadow .15s ease;
+          }
+          .ep-hdr-btn:active { transform: translateY(0); }
+
+          /* A 12%-white fill on a navy header is barely a shade off the
+             background, so the button dissolved into the strip. A solid outline
+             is what makes it read as a control at all; the fill only supports it. */
+          .ep-back-btn {
+            background: rgba(255,255,255,0.14);
+            border: 1.5px solid rgba(255,255,255,0.60);
+            color: #fff;
+          }
+          .ep-back-btn:hover {
+            background: rgba(255,255,255,0.28);
+            border-color: #fff;
+            color: #fff;
+            transform: translateY(-1px);
+          }
+
+          .ep-save-btn {
+            background: #fff; color: #0c1740; border: 1.5px solid #fff;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+          }
+          .ep-save-btn:hover:not(:disabled) {
+            background: #fff; color: #0c1740;
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.45);
+          }
+          .ep-save-btn:disabled { opacity: 0.7; cursor: not-allowed; }
         `}</style>
 
         {/* Slim hero strip */}
         <div style={{ padding: '12px 18px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
             <div className="d-flex align-items-center gap-2 min-w-0">
-              <button
-                type="button"
-                onClick={onBack}
-                className="btn p-0 d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                aria-label="Back"
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: 'rgba(255,255,255,0.10)',
-                  border: '1px solid rgba(255,255,255,0.20)',
-                  color: '#fff',
-                }}
-              >
-                <i className="ri-arrow-left-line" style={{ fontSize: 16 }} />
-              </button>
               <div className="min-w-0">
                 <h5 className="mb-0 fw-bold text-white d-flex align-items-center gap-2" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
                   Manage Permissions
@@ -264,20 +288,34 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                 </div>
               </div>
             </div>
-            <Button
-              className={`waves-effect waves-light rounded-pill flex-shrink-0 btn-sm d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+            {/* Back moved out of the title block and in beside Save. The two
+                controls that leave or commit this screen now sit together, so
+                the pointer doesn't cross the full width of the page to go from
+                one to the other. The breadcrumb below the title still walks
+                back too. */}
+            <div className="d-flex align-items-center gap-2 flex-shrink-0">
+            {/* Labelled, like "Back to Recruitment List" on Candidate
+                Management, and sized to the same 40px / 10px radius the header
+                pills use everywhere else. A bare icon circle beside a wide
+                labelled button read as two unrelated controls. */}
+            <button
+              type="button"
+              onClick={onBack}
+              className="ep-hdr-btn ep-back-btn flex-shrink-0"
+            >
+              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
+            </button>
+            {/* Same 40px / 10px box as Back. It was a `btn-sm rounded-pill`, so
+                the pair sat at different heights with different corners.
+                `btn-label` dropped too — it positions the icon as a separate
+                labelled block, which fought the flex gap and left the label
+                off-centre. */}
+            <button
+              type="button"
+              className="ep-hdr-btn ep-save-btn flex-shrink-0"
               onClick={handleSave}
               disabled={saving}
-              style={{
-                background: '#fff',
-                color: '#0c1740',
-                border: 'none',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-                fontWeight: 600,
-                fontSize: 13,
-                minWidth: 170,
-                justifyContent: 'center',
-              }}
+              style={{ minWidth: 170 }}
             >
               {saving ? (
                 <>
@@ -286,11 +324,14 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                 </>
               ) : (
                 <>
-                  <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-15 me-2" style={{ color: '#0c1740' }}></i>
+                  {/* me-2 dropped — the flex `gap` already spaces the icon, and
+                      the two together pushed the label off-centre. */}
+                  <i className="ri-shield-check-line" style={{ color: '#0c1740', fontSize: 16 }}></i>
                   Save Permissions
                 </>
               )}
-            </Button>
+            </button>
+            </div>
           </div>
         </div>
 

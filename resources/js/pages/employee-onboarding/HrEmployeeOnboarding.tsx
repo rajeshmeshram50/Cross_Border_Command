@@ -2340,9 +2340,14 @@ function InitiateOnboardingModal({
   const obGross = useMemo(() => obEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obEarnings]);
   const obDed   = useMemo(() => obDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obDeductions]);
   const obBasic = useMemo(() => Number(obEarnings.find(c => c.code === 'basic')?.amount) || 0, [obEarnings]);
+  /* PF only applies while the employee is ON payroll. PF Applicable is hidden
+     when the payroll toggle goes off but its value stays `true` underneath, so
+     the PF row kept sitting in the deductions with no field on screen to clear
+     it. */
+  const obPfActive = s1.enable_payroll !== false && !!s1.pf_eligible;
   const obPfAmt = useMemo(
-    () => pfDeduction(obBasic, s1.pf_type, !!s1.pf_eligible),
-    [obBasic, s1.pf_type, s1.pf_eligible],
+    () => pfDeduction(obBasic, s1.pf_type, obPfActive),
+    [obBasic, s1.pf_type, obPfActive],
   );
   // PF is a row in the list, so the "Fixed Deductions" line excludes it or the
   // same rupee is reported twice on screen.
@@ -2382,7 +2387,7 @@ function InitiateOnboardingModal({
       sync(obPt,  'pt',  'Professional Tax', statutoryPt(obGross, s1.gender));
 
       const pfIdx = next.findIndex(d => d.code === 'pf');
-      if (s1.pf_eligible) {
+      if (obPfActive) {
         const row = { code: 'pf', label: 'Provident Fund (PF)', amount: obPfAmt };
         if (pfIdx < 0) next = [...next, row];
         else if (Number(next[pfIdx].amount) !== obPfAmt) {
@@ -2394,7 +2399,7 @@ function InitiateOnboardingModal({
       return next === prev ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [obEsi, obPt, s1.pf_eligible, obPfAmt]);
+  }, [obEsi, obPt, obPfActive, obPfAmt]);
 
   const updateObRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
     const list = which === 'earn' ? obEarnings : obDeductions;
@@ -4591,7 +4596,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   style={{ cursor: 'pointer' }}
                 >
                   <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
-                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'PF enabled for this employee' : 'Enable PF for this employee'}</span>
+                  {/* Same field as the employee form's toggle (enable_payroll),
+                      so it carries the same words. It said "PF", which is the
+                      PF Applicable dropdown below it — one flag reading as two
+                      different settings depending on which screen you opened. */}
+                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'Payroll enabled for this employee' : 'Enable payroll for this employee'}</span>
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
@@ -4899,9 +4908,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                             </div>
                           </div>
 
-                          {(s1.pf_eligible || obDed > 0) && (
+                          {(obPfActive || obDed > 0) && (
                             <>
-                              {s1.pf_eligible && (
+                              {obPfActive && (
                                 <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                   <span className="text-muted">
                                     Provident Fund (PF) — {s1.pf_type === 'Standard'
