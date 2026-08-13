@@ -49,6 +49,28 @@ export interface PayrollSandwichItem {
   waiver_reason?: string | null;
 }
 
+/** One employee deliberately held OUT of this run, and why. Straight from
+ *  GET /payroll/preflight → data.excluded (PayrollService::payrollExclusions).
+ *  These people have no payslip, so they can never appear as an issue card —
+ *  without this list they are simply missing from the screen. */
+export interface PayrollExcludedItem {
+  employee_id: number;
+  employee_code: string;
+  employee_name: string;
+  date_of_joining: string | null;
+  resignation_date: string | null;
+  last_working_day: string | null;
+  tenure_days: number | null;
+  /** Still inside probation when the employment ended. */
+  on_probation?: boolean;
+  probation_end?: string | null;
+  /** What the F&F has to settle for this cycle — present only for a real exit
+   *  inside the period. Null on an early exit (nothing is owed) and on the
+   *  non-exit reasons (no exit month to price). */
+  fnf_amount?: number | null;
+  reason: string;
+}
+
 export interface PayrollRunModalProps {
   open: boolean;
   onClose: () => void;
@@ -80,6 +102,10 @@ export interface PayrollRunModalProps {
   /** emp_code currently saving — drives that entry's spinner. */
   /** leave_ids currently being waived — one row at a time, not a whole card. */
   sandwichBusyIds?: number[];
+  /** Employees held out of this run, with the reason. Read-only — nothing here
+   *  is actionable at run time; it exists so an absence is explained rather
+   *  than silent. */
+  excludedItems?: PayrollExcludedItem[];
   /** Fired when an issue action chip (Go to Attendance / Open Employee /
    *  Upload Proof) is clicked — parent handles navigation. */
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
@@ -202,6 +228,7 @@ export default function PayrollRunModal({
   sandwichItems = [],
   onWaiveSandwich,
   sandwichBusyIds = [],
+  excludedItems = [],
   onAction,
   onExportPayslips,
   exporting = false,
@@ -485,6 +512,49 @@ export default function PayrollRunModal({
                     onWaive={onWaiveSandwich}
                   />
                 ))}
+                </div>
+              </>
+            )}
+
+            {/* Held out of this run on purpose. Listed last, and without action
+                chips, because nothing here is fixable at run time — the point
+                is only that HR can see WHO is missing and WHY before paying,
+                instead of noticing an absent salary a week later. */}
+            {excludedItems.length > 0 && (
+              <>
+                <div className="prm-section-head mt-3">
+                  <span className="d-inline-flex align-items-center gap-2">
+                    <span className="d" style={{ background: '#64748b' }} />
+                    <span className="fw-bold" style={{ color: '#475569', fontSize: 11, letterSpacing: '0.10em', textTransform: 'uppercase' }}>Not in this run</span>
+                    <span className="text-muted" style={{ fontSize: 11.5 }}>— excluded on purpose</span>
+                  </span>
+                  <span className="prm-count-chip">{excludedItems.length}</span>
+                </div>
+                <div className="text-muted" style={{ fontSize: 11.5, margin: '0 0 8px', lineHeight: 1.45 }}>
+                  These employees have no payslip in this cycle. Their dues, where any exist,
+                  are settled through the Full &amp; Final settlement instead.
+                </div>
+
+                <div className="prm-sw-list">
+                  {excludedItems.map(x => (
+                    <div key={x.employee_id} className="prm-sw-card">
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <span className="fw-semibold" style={{ fontSize: 12.5 }}>{x.employee_name}</span>
+                        <span className="text-muted" style={{ fontSize: 11 }}>{x.employee_code}</span>
+                        {x.on_probation && (
+                          <span className="prm-count-chip prm-count-chip--amber">On probation</span>
+                        )}
+                        {x.tenure_days !== null && x.tenure_days !== undefined && (
+                          <span className="text-muted" style={{ fontSize: 11 }}>
+                            {x.tenure_days} day{x.tenure_days === 1 ? '' : 's'} of service
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-muted" style={{ fontSize: 11.5, marginTop: 4, lineHeight: 1.45 }}>
+                        {x.reason}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </>
             )}
