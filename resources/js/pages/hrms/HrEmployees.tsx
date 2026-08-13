@@ -87,6 +87,52 @@ const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
   ];
 };
 
+/** Special Allowance is the residual of the package, so a component HR adds is
+ *  funded OUT of it rather than piled on top of the gross.
+ *  Without this a ₹102 custom row pushed the gross ₹102/mo past the CTC and, worse,
+ *  left Basic at 50% of the CTC while the gross had grown — so the Code on Wages
+ *  floor tripped at 49.99% and blocked the save with an error the form offered no
+ *  way to clear. Clamped at 0: a package that genuinely outgrows the CTC still
+ *  shows the red "over the salary" line instead of being silently rewritten. */
+const absorbIntoSpecial = (earnings: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
+  const target = Math.max(0, Math.round(monthlyGross));
+  if (target <= 0) return earnings;
+  const idx = earnings.findIndex(c => c.code === 'special');
+  if (idx < 0) return earnings;   // HR deleted the row — nothing left to fund from
+  const others = earnings.reduce((s, c, i) => (i === idx ? s : s + (Number(c.amount) || 0)), 0);
+  const special = Math.max(0, target - others);
+  if (special === (Number(earnings[idx].amount) || 0)) return earnings;
+  return earnings.map((c, i) => (i === idx ? { ...c, amount: special } : c));
+};
+
+/* Professional Tax opens on its statutory figure, mirroring the slab in
+   app/Services/PayrollService.php so the breakup shows the number payroll would
+   actually apply. It SEEDS the row and stays editable — payroll honours a manual
+   line VERBATIM, so whatever sits here is what gets deducted. Ticking used to
+   drop a ₹0 row that failed the "Amount must be greater than 0" check on the
+   spot, leaving HR to type a placeholder just to get past it — that is where
+   figures like ₹10 came from.
+   ESI is deliberately NOT derived here: its ₹21,000 wage ceiling has a
+   contribution-period carry-over (an employee who crosses it mid-period keeps
+   contributing to the end of that period), so eligibility is HR's call and the
+   row stays a plain manual entry. */
+
+/** Maharashtra slab. The ₹300 February top-up (₹2,500 annual cap) is applied by
+ *  the payroll run, not stored here — this row is the ordinary monthly figure. */
+const statutoryPt = (monthlyGross: number, gender: string): number => {
+  if (monthlyGross <= 0) return 0;
+  if (gender.trim().toLowerCase().startsWith('f')) return monthlyGross <= 25000 ? 0 : 200;
+  if (monthlyGross <= 7500)  return 0;
+  if (monthlyGross <= 10000) return 175;
+  return 200;
+};
+
+/** Rows where ₹0 is a real answer rather than an unfilled field: PT is nil below
+ *  the first slab, ESI is nil above the wage ceiling, and Special Allowance is
+ *  nil once the other components use up the whole CTC. HR's own rows still have
+ *  to carry a positive amount. */
+const ZERO_OK_CODES = ['pf', 'esi', 'pt', 'special'];
+
 const MAX_COMP_AMOUNT = 99999999.99;
 const MAX_COMP_LABEL  = 120;
 
@@ -1165,6 +1211,12 @@ export default function HrEmployees() {
     return () => clearTimeout(t);   // each keystroke cancels the pending seed
   }, [eAnnualSalary]);
 
+  /* True from the moment the CTC is edited until the debounced re-seed has
+     landed. In that window every figure below belongs to the PREVIOUS CTC, so
+     the section is covered rather than left showing stale money as though it
+     were the answer — on a slow machine that gap is long enough to read. */
+  const [breakupRecalcing, setBreakupRecalcing] = useState(false);
+
   /* Re-seed Basic / HRA / Special whenever the CTC changes.
      The split IS the CTC expressed monthly, so leaving it behind when the CTC
      moves produced a breakup that had stopped describing the salary above it —
@@ -1182,6 +1234,12 @@ export default function HrEmployees() {
      ref records the CTC the current breakup belongs to; only a different one
      re-seeds. */
   useEffect(() => {
+    /* Cleared before any guard below: once the debounce has landed the breakup
+       is no longer waiting on a newer CTC, whether or not it re-seeds. Leaving
+       this to the success path alone stranded the overlay on screen whenever a
+       guard returned early (CTC retyped back to its old value, step switched
+       mid-edit). */
+    setBreakupRecalcing(false);
     if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
     if (breakupLoadedForRef.current === null) return; // initial seed not done yet
     if (seededForSalaryRef.current === settledSalary) return; // CTC unchanged
@@ -1190,9 +1248,18 @@ export default function HrEmployees() {
     const monthlyGross = eSalaryFreq === 'Per month' ? amt : amt / 12;
     setEEarnings(prev => {
       // HR's own components are kept; the three derived ones are rebuilt.
+      // Special then absorbs the kept ones so the re-seed lands ON the new CTC
+      // rather than at CTC + whatever HR had added.
       const custom = prev.filter(c => !SPLIT_CODES.includes(c.code));
-      return [...seedBreakup(monthlyGross), ...custom];
+      return absorbIntoSpecial([...seedBreakup(monthlyGross), ...custom], monthlyGross);
     });
+    /* Professional Tax is a function of the gross exactly like Basic / HRA, so a
+       new CTC re-derives it too instead of leaving the old slab figure sitting
+       against a salary it no longer belongs to. Same ownership rule as the
+       split: between CTC changes the amount is HR's to edit. */
+    setEDeductions(prev => prev.map(d => (
+      d.code === 'pt' ? { ...d, amount: statutoryPt(monthlyGross, eGender) } : d
+    )));
     /* The ESI toggle is deliberately NOT touched here. It used to be re-derived
        from the ₹21,000 wage ceiling on every salary keystroke, which fought the
        seed above (seedFresh leaves both statutory toggles off on purpose) and,
@@ -1248,13 +1315,19 @@ export default function HrEmployees() {
   useEffect(() => {
     setEDeductions(prev => {
       let next = prev;
-      const sync = (on: boolean, code: string, label: string) => {
+      /* PT opens on its slab figure instead of ₹0. Seeded ONCE, at tick — it is
+         deliberately not kept in step with the gross afterwards, because a
+         figure that rewrites itself on every CTC keystroke is the same trap the
+         ESI checkbox was pulled out of (see the CTC re-seed above).
+         ESI seeds at ₹0 and is HR's to fill: its ceiling carries over across a
+         contribution period, so the form does not have enough to derive it. */
+      const sync = (on: boolean, code: string, label: string, seed: number) => {
         const has = next.some(d => d.code === code);
-        if (on && !has) next = [...next, { code, label, amount: 0 }];
+        if (on && !has) next = [...next, { code, label, amount: seed }];
         else if (!on && has) next = next.filter(d => d.code !== code);
       };
-      sync(eEsiApplicable, 'esi', 'ESI');
-      sync(ePtApplicable,  'pt',  'Professional Tax');
+      sync(eEsiApplicable, 'esi', 'ESI',              0);
+      sync(ePtApplicable,  'pt',  'Professional Tax', statutoryPt(breakupGross, eGender));
 
       /* PF joins the same list — it was only ever a note under the totals.
          ESI and PT already appeared as deduction rows, so a reader saw two of
@@ -1291,7 +1364,8 @@ export default function HrEmployees() {
       if (blank && treatEmptyAsBlank) return null;
       if (!label) return 'Component name is required';
       if (label.length > MAX_COMP_LABEL) return `Name must be ≤ ${MAX_COMP_LABEL} characters`;
-      if (!Number.isFinite(amt) || amt <= 0) return 'Amount must be greater than 0';
+      const zeroOk = ZERO_OK_CODES.includes(c.code);
+      if (!Number.isFinite(amt) || amt < 0 || (amt === 0 && !zeroOk)) return 'Amount must be greater than 0';
       if (amt > MAX_COMP_AMOUNT) return 'Amount is too large';
       return null;
     };
@@ -1345,7 +1419,14 @@ export default function HrEmployees() {
     } else {
       next[i] = { ...next[i], label: value };
     }
-    setList(next);
+    /* Editing one of HR's own earning rows re-funds it out of Special so the
+       gross stays pinned to the CTC. Basic / HRA / Special themselves are left
+       alone — rebalancing while someone types INTO Special would fight them. */
+    if (which === 'earn' && !SPLIT_CODES.includes(next[i].code)) {
+      setEEarnings(absorbIntoSpecial(next, monthlyGrossFromSalary()));
+    } else {
+      setList(next);
+    }
     clearEErr('salary_breakup');
   };
   const addBreakRow = (which: 'earn' | 'ded') => {
@@ -1365,8 +1446,13 @@ export default function HrEmployees() {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    if (which === 'earn') setEEarnings(eEarnings.filter((_, idx) => idx !== i));
-    else {
+    if (which === 'earn') {
+      const rest = eEarnings.filter((_, idx) => idx !== i);
+      // Removing one of HR's own rows hands its money back to Special.
+      setEEarnings(SPLIT_CODES.includes(removed?.code)
+        ? rest
+        : absorbIntoSpecial(rest, monthlyGrossFromSalary()));
+    } else {
       setEDeductions(eDeductions.filter((_, idx) => idx !== i));
       // Removing the ESI / Professional Tax row also unticks its checkbox so
       // the two stay consistent.
@@ -1385,6 +1471,28 @@ export default function HrEmployees() {
      stays on screen pointing at a row that no longer exists. */
   const setStatutoryToggle = (which: 'esi' | 'pt', on: boolean) => {
     (which === 'esi' ? setEEsiApplicable : setEPtApplicable)(on);
+    clearEErr('salary_breakup');
+  };
+
+  /* A PT row already saved against this employee predates the seeding above (or
+     was hand-typed to clear the old ₹0 validation error), so the amount on
+     screen can differ from what the slab says. Surfaced with a one-click
+     correction rather than silently rewritten — it is still HR's figure to set.
+     ESI is left out: eligibility carries across a contribution period, so the
+     form cannot tell a stale figure from a deliberate one. */
+  const statutoryDrift = useMemo(() => {
+    if (!ePtApplicable) return null;
+    const row = eDeductions.find(d => d.code === 'pt');
+    if (!row) return null;
+    const typed = Number(row.amount) || 0;
+    const should = statutoryPt(breakupGross, eGender);
+    return Math.abs(typed - should) >= 0.01 ? { typed, should } : null;
+  }, [ePtApplicable, eDeductions, breakupGross, eGender]);
+
+  const applyStatutoryFigures = () => {
+    setEDeductions(prev => prev.map(d => (
+      d.code === 'pt' ? { ...d, amount: statutoryPt(breakupGross, eGender) } : d
+    )));
     clearEErr('salary_breakup');
   };
 
@@ -1778,7 +1886,16 @@ export default function HrEmployees() {
 
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
-      if (raw.annual_salary !== undefined && raw.annual_salary !== null) setEAnnualSalary(String(raw.annual_salary));
+      /* The column carries two decimals, so a whole-rupee CTC comes back as
+         "300000888.00". The field is whole-rupee now, so those trailing zeros
+         are dropped rather than shown as a value the form would then reject on
+         open. A saved figure that really does carry paise is left as it is for
+         validation to flag — silently rounding someone's stored CTC is worse
+         than telling them about it. */
+      if (raw.annual_salary !== undefined && raw.annual_salary !== null) {
+        const n = Number(raw.annual_salary);
+        setEAnnualSalary(Number.isInteger(n) ? String(n) : String(raw.annual_salary));
+      }
       /* Always 'Per annum' — the stored value is deliberately ignored.
          The frequency picker was removed and the field is now labelled
          "Annual CTC", so whatever HR types there is a yearly figure. This line
@@ -2029,8 +2146,10 @@ export default function HrEmployees() {
       e.annual_salary = 'Annual CTC must be a valid number';
     } else if (amt <= 0) {
       e.annual_salary = 'Annual CTC must be greater than 0';
-    } else if (amt > 999999999999.99) {
-      e.annual_salary = 'Annual CTC must be ≤ 999,999,999,999.99';
+    } else if (!Number.isInteger(amt)) {
+      e.annual_salary = 'Annual CTC must be a whole number (no paise)';
+    } else if (amt > 999999999999) {
+      e.annual_salary = 'Annual CTC must be ≤ 999,999,999,999';
     }
     // Frequency picker was removed — salary is always entered "Per annum",
     // so it's never user-editable and must not block the form. (Defaulted to
@@ -4328,6 +4447,10 @@ export default function HrEmployees() {
                       />
                     </button>
                     <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
+                      {/* This gates the whole Compensation step (CTC, effective
+                          date, breakup) — `enable_payroll`. It said "Enable PF",
+                          which is the PF Applicable dropdown right below it, so
+                          the two read as contradicting each other on screen. */}
                       Enable payroll for this employee
                     </span>
                   </div>
@@ -4353,19 +4476,34 @@ export default function HrEmployees() {
                           type="number"
                           placeholder="Enter annual amount"
                           value={eAnnualSalary}
-                          max={999999999999.99}
-                          step="0.01"
-                          inputMode="decimal"
+                          max={999999999999}
+                          step="1"
+                          inputMode="numeric"
+                          /* Locked while the saved structure is still in flight.
+                             The response overwrites the whole breakup when it
+                             lands, so a CTC typed during the fetch was silently
+                             thrown away a moment later — the one point in this
+                             form where the server can actually outrun the user. */
+                          disabled={eBreakupLoading}
                           onChange={e => {
                             const raw = e.target.value;
-                            if (raw === '') { setEAnnualSalary(''); clearEErr('annual_salary'); return; }
-                            if (!/^\d{0,12}(\.\d{0,2})?$/.test(raw)) return;
+                            if (raw === '') { setEAnnualSalary(''); setBreakupRecalcing(false); clearEErr('annual_salary'); return; }
+                            // Whole rupees only — a CTC is never quoted in paise,
+                            // and the decimals only ever reached the breakup as
+                            // rounding noise across the 50 / 30 / 20 split.
+                            if (!/^\d{0,12}$/.test(raw)) return;
                             setEAnnualSalary(raw);
+                            if (eDetailedBreakup) setBreakupRecalcing(true);
                             clearEErr('annual_salary');
                           }}
-                          style={{ width: '100%', paddingLeft: 25 }}
+                          style={{ width: '100%', paddingLeft: 25, cursor: eBreakupLoading ? 'not-allowed' : undefined }}
                         />
                       </div>
+                      {eBreakupLoading && (
+                        <small className="text-muted d-block mt-1" style={{ fontSize: 11 }}>
+                          <i className="ri-loader-4-line emp-spin" /> Loading the saved breakup — CTC unlocks in a moment.
+                        </small>
+                      )}
                       {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                     </Col>
                     <Col md={6}>
@@ -4488,7 +4626,31 @@ export default function HrEmployees() {
                       <i className="ri-loader-4-line emp-spin" /> Loading breakup…
                     </div>
                   ) : (
-                    <>
+                    <div style={{ position: 'relative' }}>
+                      {/* Scrim + label, not a replacement: the figures stay in
+                          place underneath so the section doesn't collapse and
+                          jump the page every time the CTC is edited. */}
+                      {breakupRecalcing && (
+                        <>
+                          <div style={{
+                            position: 'absolute', inset: -6, zIndex: 3, borderRadius: 10,
+                            background: 'var(--vz-card-bg, #fff)', opacity: 0.72,
+                          }} />
+                          <div style={{
+                            position: 'absolute', inset: -6, zIndex: 4,
+                            display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40,
+                          }}>
+                            <span className="d-inline-flex align-items-center gap-2 px-3 py-2"
+                              style={{
+                                fontSize: 12.5, fontWeight: 600, color: 'var(--vz-secondary-color)',
+                                background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)',
+                                borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                              }}>
+                              <i className="ri-loader-4-line emp-spin" /> Recalculating breakup…
+                            </span>
+                          </div>
+                        </>
+                      )}
                       <div className="text-muted mb-2" style={{ fontSize: 12 }}>
                         Monthly component breakup. Saved as the employee's active salary
                         structure — payroll runs read these figures.
@@ -4498,7 +4660,7 @@ export default function HrEmployees() {
                       <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
                         <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
                         <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
-                        <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+                        <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
                         <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by the <em>PF Type</em> above). Toggle PF on/off via <em>PF Applicable</em> above.</li>
                       </ul>
                       <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
@@ -4508,7 +4670,22 @@ export default function HrEmployees() {
                         <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
                           <input type="checkbox" checked={ePtApplicable} onChange={e => setStatutoryToggle('pt', e.target.checked)} /> Professional Tax
                         </label>
+                        <span className="text-muted" style={{ fontSize: 11 }}>
+                          Ticking one adds it to Fixed Deductions — editable, and payroll uses what's saved here.
+                        </span>
                       </div>
+                      {statutoryDrift && (
+                        <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2 p-2 px-3"
+                          style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 8, fontSize: 11.5 }}>
+                          <span className="text-muted">
+                            Professional Tax is ₹{statutoryDrift.typed.toLocaleString('en-IN')}; the slab for this salary works out to ₹{statutoryDrift.should.toLocaleString('en-IN')}.
+                          </span>
+                          <button type="button" onClick={applyStatutoryFigures}
+                            style={{ fontSize: 11, fontWeight: 700, color: '#5a3fd1', background: '#5a3fd112', border: '1px solid #5a3fd133', borderRadius: 8, padding: '3px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                            Use slab figure
+                          </button>
+                        </div>
+                      )}
                       <Row className="g-4">
                         <Col md={6}>{renderBreakTable('earn', '#108548', 'Earnings')}</Col>
                         <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
@@ -4581,7 +4758,7 @@ export default function HrEmployees() {
                       <div className="text-muted mt-2" style={{ fontSize: 11 }}>
                         Net shown is an estimate (PF / ESI / PT + fixed deductions); LOP and any final adjustments apply at payroll run-time.
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </>

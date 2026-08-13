@@ -153,6 +153,54 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
+/**
+ * Capitalise the first character, leave the rest of the string exactly as
+ * typed (PHP's ucfirst, not a title-caser) — so "compliance associate" becomes
+ * "Compliance associate" and an intentional "iOS Engineer" is never mangled.
+ *
+ * Applied on every keystroke of the free-text recruitment fields. Only index 0
+ * is ever rewritten and the length never changes, so the caret does not jump
+ * when the user is typing further along the string.
+ *
+ * Leading whitespace is skipped rather than blocking the capital: a value that
+ * starts with a space or newline capitalises its first real character instead
+ * of silently doing nothing.
+ */
+const ucFirst = (s: string): string => {
+  const i = s.search(/\S/);
+  if (i < 0) return s;                       // empty or all-whitespace
+  const c = s[i];
+  const upper = c.toUpperCase();
+  if (c === upper) return s;                 // already capital / not a letter
+  return s.slice(0, i) + upper + s.slice(i + 1);
+};
+
+/**
+ * Compress a Laravel 422 message into the same terse vocabulary the local
+ * validators use ("The job title field is required." -> "Required").
+ *
+ * Server messages are written as full sentences naming the column, which is
+ * right for an API consumer but wraps to three lines in the narrow .rec-error
+ * strip under a form field. The toast still shows the server's original text,
+ * so nothing is lost — only the inline strip is shortened.
+ */
+const shortenServerError = (msg: string): string => {
+  const m = msg.toLowerCase();
+  if (m.includes('required'))                                   return 'Required';
+  if (m.includes('already been taken') || m.includes('unique')) return 'Already exists';
+  if (m.includes('integer') || m.includes('whole number'))      return 'Whole numbers only';
+  if (m.includes('special characters') || m.includes('format') || m.includes('regex')) return 'No special characters';
+  if (m.includes('must be a number') || m.includes('numeric'))  return 'Enter a number';
+  if (m.includes('after'))                                      return 'Date is too early';
+  if (m.includes('before'))                                     return 'Date is too late';
+  if (m.includes('not be greater') || m.includes('max'))        return 'Value is too long';
+  if (m.includes('at least') || m.includes('min'))              return 'Value is too short';
+  if (m.includes('valid'))                                      return 'Not valid';
+  // Nothing matched — fall back to the server's own first sentence rather than
+  // inventing a message, but keep it to one clause so it still fits.
+  return msg.split(/[.;]/)[0].trim() || 'Invalid';
+};
+
 type RequestStatus = 'Approved' | 'Under Review' | 'Submitted' | 'Sent Back' | 'Draft' | 'Rejected';
 type RequestUrgency = 'Low' | 'Medium' | 'High' | 'Critical';
 type RequestType =
@@ -856,60 +904,65 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
   const validate = (): RaiseErrors => {
     const e: RaiseErrors = {};
+    /* Messages are deliberately terse — they render in a one-line .rec-error
+       strip under a field that is a third of the form wide, so a sentence wraps
+       to two or three lines and shoves the rest of the form down. The label
+       above already names the field, so the message only has to say what is
+       wrong with it: "Required", "Min 20 characters", "Max 20 skills". */
     const titleRe = /^[A-Za-z0-9 .,\-\/]+$/;
-    const titleMsg = 'cannot contain special characters — use only letters, numbers, spaces and - . , /';
-    if (!title.trim())          e.title          = 'Request title is required';
-    else if (!titleRe.test(title.trim())) e.title = `Request title ${titleMsg}`;
-    if (!jobRole.trim())        e.jobRole        = 'Job role is required';
-    else if (!titleRe.test(jobRole.trim())) e.jobRole = `Job role ${titleMsg}`;
-    if (!departmentId)          e.department     = 'Department is required';
+    const titleMsg = 'No special characters';
+    if (!title.trim())          e.title          = 'Required';
+    else if (!titleRe.test(title.trim())) e.title = titleMsg;
+    if (!jobRole.trim())        e.jobRole        = 'Required';
+    else if (!titleRe.test(jobRole.trim())) e.jobRole = titleMsg;
+    if (!departmentId)          e.department     = 'Required';
     if (targetDate) {
       const tomorrow = new Date(); tomorrow.setHours(0, 0, 0, 0); tomorrow.setDate(tomorrow.getDate() + 1);
       const picked = new Date(targetDate); picked.setHours(0, 0, 0, 0);
       if (picked.getTime() < tomorrow.getTime()) {
-        e.targetDate = 'Target join date must be from tomorrow onward';
+        e.targetDate = 'Must be tomorrow or later';
       }
     }
-    if (!openings.trim() || Number(openings) <= 0) e.openings = 'Openings must be at least 1';
-    if (!employType)            e.employType     = 'Employment type is required';
-    if (!workMode)              e.workMode       = 'Work mode is required';
-    if (!urgency)               e.urgency        = 'Urgency is required';
+    if (!openings.trim() || Number(openings) <= 0) e.openings = 'Minimum 1';
+    if (!employType)            e.employType     = 'Required';
+    if (!workMode)              e.workMode       = 'Required';
+    if (!urgency)               e.urgency        = 'Required';
     const jd = jobDesc.trim();
-    if (!jd)                   e.jobDesc = 'Job description is required';
-    else if (jd.length < 20)   e.jobDesc = 'Job description must be at least 20 characters';
-    else if (jd.length > 5000) e.jobDesc = 'Job description must be at most 5000 characters';
+    if (!jd)                   e.jobDesc = 'Required';
+    else if (jd.length < 20)   e.jobDesc = 'Min 20 characters';
+    else if (jd.length > 5000) e.jobDesc = 'Max 5000 characters';
 
     const dr = dailyResp.trim();
     if (dr) {
-      if (dr.length < 20)        e.dailyResp = 'Daily responsibilities must be at least 20 characters';
-      else if (dr.length > 3000) e.dailyResp = 'Daily responsibilities must be at most 3000 characters';
+      if (dr.length < 20)        e.dailyResp = 'Min 20 characters';
+      else if (dr.length > 3000) e.dailyResp = 'Max 3000 characters';
     }
 
     const skillList = requiredSkills.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-    if (skillList.length === 0)     e.requiredSkills = 'Required skills are required';
-    else if (skillList.length < 2)  e.requiredSkills = 'Enter at least 2 skills (separate with commas or new lines)';
-    else if (skillList.length > 20) e.requiredSkills = 'Enter at most 20 skills';
+    if (skillList.length === 0)     e.requiredSkills = 'Required';
+    else if (skillList.length < 2)  e.requiredSkills = 'Add at least 2 skills';
+    else if (skillList.length > 20) e.requiredSkills = 'Max 20 skills';
 
-    if (!requiredExp)           e.requiredExp    = 'Required experience is required';
+    if (!requiredExp)           e.requiredExp    = 'Required';
 
     const rq = requiredQual.trim();
-    if (!rq)                  e.requiredQual = 'Required qualification is required';
-    else if (rq.length < 2)   e.requiredQual = 'Qualification must be at least 2 characters';
-    else if (rq.length > 255) e.requiredQual = 'Qualification must be at most 255 characters';
+    if (!rq)                  e.requiredQual = 'Required';
+    else if (rq.length < 2)   e.requiredQual = 'Min 2 characters';
+    else if (rq.length > 255) e.requiredQual = 'Max 255 characters';
     // Must contain at least one letter and only qualification-safe characters —
     // rejects special-character junk like "@#$%" (bug #32).
     else if (!/[A-Za-z]/.test(rq))
-      e.requiredQual = 'Qualification must contain letters (not just symbols)';
+      e.requiredQual = 'Must contain letters';
     else if (!/^[A-Za-z0-9 .,/&()+\-]+$/.test(rq))
-      e.requiredQual = "Qualification may only contain letters, numbers, spaces and . , / & ( ) + -";
+      e.requiredQual = 'No special characters';
     return e;
   };
 
   const handleSubmit = async (asDraft: boolean) => {
     if (asDraft) {
       const draftErrs: RaiseErrors = {};
-      if (!title.trim())   draftErrs.title   = 'Add a title before saving the draft';
-      if (!jobRole.trim()) draftErrs.jobRole = 'Add a job role before saving the draft';
+      if (!title.trim())   draftErrs.title   = 'Required for a draft';
+      if (!jobRole.trim()) draftErrs.jobRole = 'Required for a draft';
       if (Object.keys(draftErrs).length > 0) {
         setErrors(draftErrs);
         toast.error(
@@ -959,13 +1012,18 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
           job_description: 'jobDesc', required_skills: 'requiredSkills', required_experience: 'requiredExp',
         };
         const mapped: RaiseErrors = {};
+        let firstRaw = '';
         for (const k of Object.keys(serverErrs)) {
           const v = serverErrs[k];
+          const raw = Array.isArray(v) ? String(v[0]) : String(v);
+          if (!firstRaw) firstRaw = raw;
           const ui = fieldMap[k];
-          if (ui) mapped[ui] = Array.isArray(v) ? String(v[0]) : String(v);
+          if (ui) mapped[ui] = shortenServerError(raw);
         }
         setErrors(mapped);
-        toast.error('Validation failed', 'Please fix the highlighted fields.');
+        // Inline strip gets the short form; the toast keeps the server's full
+        // sentence, which is where there is actually room for it.
+        toast.error('Validation failed', firstRaw || 'Please fix the highlighted fields.');
       } else {
         const raw = String(err?.response?.data?.message || '');
         const sqlMatch = /not[- ]null|null value in column ["`']?(\w+)["`']?/i.exec(raw);
@@ -978,7 +1036,7 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
           };
           const ui = colToField[col];
           if (ui) {
-            setErrors(prev => ({ ...prev, [ui]: 'This field is required.' }));
+            setErrors(prev => ({ ...prev, [ui]: 'Required' }));
           }
           toast.error(
             'Some details are missing',
@@ -1345,7 +1403,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   const rejectedCount = useMemo(() => requests.filter(r => r.status === 'Rejected').length, [requests, linkedHrIds]);
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     8+10+9+10+5+8+10+10+10+20. Request Type was dropped from the grid; the field
+     8+10+9+9+8+8+10+9+9+20. Openings went 5% -> 8%: at 5% the header word plus
+     the sort arrows had no room and the arrows collided with the label. The 3%
+     comes off Requested By and the two date columns (10% -> 9% each), all of
+     which had slack — the dates render a fixed "13-Aug-2026" and the name cell
+     already truncates. Request Type was dropped from the grid; the field
      is still mapped on the row (and still saved), it just isn't a column any
      more — nothing else on this screen renders it, so removing the column is
      the only place it was visible.
@@ -1385,13 +1447,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       // than meaning anything.
       header: 'Requested By',
       accessorKey: 'requestedByName',
-      meta: { width: '10%' },
+      meta: { width: '9%' },
       cell: info => <TruncCell value={info.row.original.requestedByName} caseSensitive />,
     },
     {
       header: () => <div className="text-center">Openings</div>,
       accessorKey: 'openings',
-      meta: { width: '5%', align: 'center' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
     },
     {
@@ -1416,8 +1478,8 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         );
       },
     },
-    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
-    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
+    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
+    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
     {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
@@ -1502,7 +1564,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
             NOT autoFitRows (the one HRMS table without it): auto-fit measures
             from the card top to the viewport bottom, which inside a modal body
             would ask for more rows than the modal can show. Fixed page size
-            instead; the Rows-per-page selector still works. */}
+            instead; the Rows-per-page selector still works.
+
+            The wrapper is what separates this panel from the KPI band above:
+            the band keeps its tinted violet wash, the table sits on a plain
+            surface, and the 4px side inset lets the card's rounded corners
+            read as a card instead of butting into the modal edge. */}
+        <div className="rec-req-tablewrap">
         <DataTable<HiringRequestRow>
           data={filtered}
           columns={columns}
@@ -1535,8 +1603,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
             </>
           }
         />
-
-        
+        </div>
       </ModalBody>
 
       <ViewHiringRequestModal
@@ -1587,8 +1654,11 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
       <div className="rec-view-value">{value !== undefined && value !== null && value !== '' ? value : <span className="text-muted">—</span>}</div>
     </div>
   );
+  /* margin 8px above and below — was 14px above, which made the run between one
+     section's card and the next header wider than every other gap in the modal.
+     Matches the 8px rhythm of the Hiring Requests popup. */
   const SectionHeader = ({ icon, title }: { icon: string; title: string }) => (
-    <div className="d-flex align-items-center gap-2" style={{ margin: '14px 0 8px' }}>
+    <div className="d-flex align-items-center gap-2" style={{ margin: '8px 0' }}>
       <span style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
         <i className={icon} style={{ fontSize: 14 }} />
       </span>
@@ -1605,7 +1675,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
     );
   };
   return (
-    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" contentClassName="rec-view-content border-0" zIndex={2200}>
+    <Modal isOpen={!!request} toggle={onClose} centered size="lg" backdrop="static" modalClassName="rec-view-modal" contentClassName="rec-view-content border-0" zIndex={2200}>
       <ModalBody className="p-0">
         <div className="rec-form-header" style={{ padding: '14px 22px 12px' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
@@ -1628,7 +1698,12 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
           </div>
         </div>
 
-        <div className="rec-view-body" style={{ padding: '14px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
+        {/* 8px top/bottom — the same gap the Hiring Requests popup now uses
+            above its KPI cards and below its table, so the two modals breathe
+            identically. Sides stay at 18px: the section cards are the content
+            here, not a full-width table, and pulling them to 8px put them
+            almost against the modal edge. */}
+        <div className="rec-view-body" style={{ padding: '8px 18px', maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
           <SectionHeader icon="ri-calendar-event-line" title="Section 1 · Request Basics" />
           <div className="rec-view-card">
             <div className="rec-view-grid">
@@ -1677,8 +1752,14 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
           </div>
         </div>
 
+        {/* Footer only exists to hold decisions. On a read-only request — a
+            rejected one, or the Employee Profile > Hiring Requests eye action,
+            which passes neither callback — there is nothing to decide, so the
+            whole bar goes rather than rendering a "Read-only view" label next
+            to a lone Close. The header × dismisses the modal in every case. */}
+        {(canReject || showCreate) && (
         <div className="rec-form-footer">
-          <span className="hint">{canReject ? 'Review this request — create a recruitment or reject it' : 'Read-only view'}</span>
+          <span className="hint">Review this request — create a recruitment or reject it</span>
           <div className="d-flex gap-2">
             {canReject && (
               <button
@@ -1700,9 +1781,6 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
                 )}
               </button>
             )}
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={rejecting}>
-              <i className="ri-close-line" />Close
-            </button>
             {showCreate && (
               <button
                 type="button"
@@ -1715,6 +1793,7 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
             )}
           </div>
         </div>
+        )}
       </ModalBody>
     </Modal>
   );
@@ -2026,7 +2105,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   useEffect(() => {
     if (!isOpen) return;
     if (editing) {
-      setJobTitle(editing.jobTitle);
+      setJobTitle(ucFirst(editing.jobTitle));
       setDepartmentId(editing.departmentId != null ? String(editing.departmentId) : '');
       setDesignationId(editing.designationId != null ? String(editing.designationId) : '');
       setPrimaryRoleId(editing.primaryRoleId != null ? String(editing.primaryRoleId) : '');
@@ -2040,8 +2119,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setAssignedHrId(editing.assignedHrId != null ? String(editing.assignedHrId) : '');
       setStartDate(editing.startDate ? String(editing.startDate).slice(0, 10) : '');
       setDeadline(editing.deadline ? String(editing.deadline).slice(0, 10) : '');
-      setJobDescription(editing.jobDescription || '');
-      setRequirements(editing.requirements || '');
+      setJobDescription(ucFirst(editing.jobDescription || ''));
+      setRequirements(ucFirst(editing.requirements || ''));
       setPostOnPortal(editing.postOnPortal);
       setNotifyTeamLeads(editing.notifyTeamLeads);
       setEnableReferralBonus(editing.enableReferralBonus);
@@ -2052,8 +2131,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       // confusing raw "Employee #47" with no explanation.
       const isStale = (s?: RecruitmentRow['hiringManagerState']) => s === 'disabled' || s === 'inactive' || s === 'missing';
       const initErrs: CreateErrors = {};
-      if (isStale(editing.hiringManagerState)) initErrs.hiringManager = 'This hiring manager is disabled or has exited — select an active employee.';
-      if (isStale(editing.assignedHrState))    initErrs.assignedHr    = 'This HR is disabled or has exited — select an active employee.';
+      // Short inline strip; the toast below carries the full explanation.
+      if (isStale(editing.hiringManagerState)) initErrs.hiringManager = 'Inactive — reselect';
+      if (isStale(editing.assignedHrState))    initErrs.assignedHr    = 'Inactive — reselect';
       setErrors(initErrs);
       if (Object.keys(initErrs).length) {
         const who = [isStale(editing.hiringManagerState) && 'hiring manager', isStale(editing.assignedHrState) && 'assigned HR'].filter(Boolean).join(' and ');
@@ -2061,7 +2141,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       }
     } else if (prefillFromHr) {
       const hr = prefillFromHr;
-      setJobTitle((hr.job_role || hr.title || '') as string);
+      setJobTitle(ucFirst((hr.job_role || hr.title || '') as string));
       setDepartmentId(hr.department_id != null ? String(hr.department_id) : '');
       setDesignationId('');
       setPrimaryRoleId('');
@@ -2075,9 +2155,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setAssignedHrId('');
       setStartDate('');
       setDeadline(hr.target_join_date ? String(hr.target_join_date).slice(0, 10) : '');
-      setJobDescription((hr.job_description || '') as string);
+      setJobDescription(ucFirst((hr.job_description || '') as string));
       const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
-      setRequirements(reqParts.join('\n'));
+      setRequirements(ucFirst(reqParts.join('\n')));
       setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     } else {
@@ -2096,29 +2176,32 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
   const validate = (): CreateErrors => {
     const e: CreateErrors = {};
+    /* Terse by design — see the note in RaiseHiringRequestModal's validate().
+       These fields sit three and four to a row, so anything longer than a few
+       words wraps and pushes the section below it down. */
     const jobTitleTrim = jobTitle.trim();
     if (!jobTitleTrim) {
-      e.jobTitle = 'Job title is required';
+      e.jobTitle = 'Required';
     } else if (!/^[A-Za-z0-9 .,\-/]+$/.test(jobTitleTrim)) {
-      e.jobTitle = 'Job title cannot contain special characters — use only letters, numbers, spaces and - . , /';
+      e.jobTitle = 'No special characters';
     }
-    if (!departmentId)           e.department      = 'Department is required';
-    if (!designationId)          e.designation     = 'Designation is required';
-    if (!primaryRoleId)          e.primaryRole     = 'Primary role is required';
-    if (!employmentType)         e.employmentType  = 'Employment type is required';
+    if (!departmentId)           e.department      = 'Required';
+    if (!designationId)          e.designation     = 'Required';
+    if (!primaryRoleId)          e.primaryRole     = 'Required';
+    if (!employmentType)         e.employmentType  = 'Required';
     const openingsTrim = openings.trim();
     if (!openingsTrim) {
-      e.openings = 'No. of openings is required';
+      e.openings = 'Required';
     } else {
       const n = Number(openingsTrim);
       if (!Number.isFinite(n)) {
-        e.openings = 'Enter a valid number';
+        e.openings = 'Enter a number';
       } else if (!Number.isInteger(n) || /[^0-9]/.test(openingsTrim)) {
-        e.openings = 'Openings must be a whole number (no decimals or symbols)';
+        e.openings = 'Whole numbers only';
       } else if (n < 1) {
-        e.openings = 'Openings must be at least 1';
+        e.openings = 'Minimum 1';
       } else if (n > 9999) {
-        e.openings = 'Openings cannot exceed 9,999 — split this requisition if you need more';
+        e.openings = 'Maximum 9,999';
       }
     }
     const ctc = ctcRange.trim();
@@ -2126,49 +2209,49 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     // value is actually entered; an empty value is allowed.
     if (ctc) {
       if (ctc.length > 50) {
-        e.ctcRange = 'CTC range cannot exceed 50 characters';
+        e.ctcRange = 'Max 50 characters';
       } else if (!/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/.test(ctc)) {
-        e.ctcRange = 'Enter a valid CTC range — a number or min-max, e.g. 8 or 8-12';
+        e.ctcRange = 'Use 8 or 8-12';
       } else {
         const nums = ctc.match(/\d+(?:\.\d+)?/g) || [];
         if (nums.some(num => Number(num) > 9999.99)) {
-          e.ctcRange = 'CTC values cannot exceed 9,999.99 LPA';
+          e.ctcRange = 'Max 9,999.99 LPA';
         } else if (nums.length === 2 && Number(nums[0]) > Number(nums[1])) {
-          e.ctcRange = 'CTC range minimum cannot be greater than the maximum';
+          e.ctcRange = 'Min is above max';
         }
       }
     }
-    if (!priority)               e.priority        = 'Priority is required';
-    if (!experience)             e.experience      = 'Experience level is required';
-    if (!hiringManagerId)        e.hiringManager   = 'Hiring manager is required';
-    if (!assignedHrId)           e.assignedHr      = 'Assigned HR is required';
+    if (!priority)               e.priority        = 'Required';
+    if (!experience)             e.experience      = 'Required';
+    if (!hiringManagerId)        e.hiringManager   = 'Required';
+    if (!assignedHrId)           e.assignedHr      = 'Required';
     // A disabled/inactive person (only present as an injected option, not in the
     // live active list) can't stay assigned — force picking an active employee.
     // Guarded on options being loaded so we don't false-flag during the fetch.
     if (employeeOptions.length > 0) {
       const activeIds = new Set(employeeOptions.map(o => o.value));
       if (hiringManagerId && !activeIds.has(hiringManagerId)) {
-        e.hiringManager = 'This hiring manager is no longer active — select an active employee';
+        e.hiringManager = 'No longer active — reselect';
       }
       if (assignedHrId && !activeIds.has(assignedHrId)) {
-        e.assignedHr = 'This HR is no longer active — select an active employee';
+        e.assignedHr = 'No longer active — reselect';
       }
     }
-    if (!startDate)              e.startDate       = 'Start date is required';
-    if (!deadline)               e.deadline        = 'TAT/Deadline is required';
+    if (!startDate)              e.startDate       = 'Required';
+    if (!deadline)               e.deadline        = 'Required';
     const todayIso = new Date().toISOString().slice(0, 10);
     if (startDate && startDate < todayIso) {
-      e.startDate = 'Start date cannot be in the past';
+      e.startDate = 'Cannot be in the past';
     }
     if (deadline && startDate && deadline <= startDate) {
-      e.deadline = 'TAT/Deadline must be later than the start date';
+      e.deadline = 'Must be after start date';
     }
     const jd = jobDescription.trim();
-    if (!jd)                  e.jobDescription = 'Job description is required';
-    else if (jd.length < 2)   e.jobDescription = 'Job description must be at least 2 characters';
+    if (!jd)                  e.jobDescription = 'Required';
+    else if (jd.length < 2)   e.jobDescription = 'Min 2 characters';
     const rq = requirements.trim();
-    if (!rq)                  e.requirements   = 'Requirements are required';
-    else if (rq.length < 2)   e.requirements   = 'Requirements must be at least 2 characters';
+    if (!rq)                  e.requirements   = 'Required';
+    else if (rq.length < 2)   e.requirements   = 'Min 2 characters';
     return e;
   };
 
@@ -2179,11 +2262,14 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       const keys = Object.keys(errs);
-      const firstMsg = errs[keys[0] as keyof CreateErrors] as string | undefined;
-      const heading  = 'Please fix the highlighted fields';
+      const heading = 'Please fix the highlighted fields';
+      /* The toast no longer echoes the first inline message. Those are now one
+         or two words ("Required"), which told the user nothing on its own once
+         it was lifted out of the field it sits under — the count plus the red
+         fields themselves carry more. */
       const body = keys.length === 1
-        ? (firstMsg || 'One field needs attention.')
-        : `${firstMsg || ''}${firstMsg ? ' ' : ''}(${keys.length - 1} more ${keys.length === 2 ? 'field needs' : 'fields need'} attention.)`;
+        ? 'One field needs attention.'
+        : `${keys.length} fields need attention.`;
       toast.error(heading, body);
       return;
     }
@@ -2233,27 +2319,28 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
           start_date: 'startDate', deadline: 'deadline', work_mode: 'workMode',
           openings: 'openings', ctc_range: 'ctcRange',
         };
+        /* Column-specific short forms where the generic compressor would lose
+           the number that matters; everything else falls through to it. */
         const rewrite = (col: string, msg: string): string => {
           const lower = msg.toLowerCase();
           if (col === 'openings') {
-            if (lower.includes('integer'))             return 'Openings must be a whole number (no decimals or symbols).';
-            if (lower.includes('max') || lower.includes('not be greater')) return 'Openings cannot exceed 9,999 — split this requisition if you need more.';
-            if (lower.includes('min') || lower.includes('at least'))       return 'Openings must be at least 1.';
+            if (lower.includes('integer'))                                 return 'Whole numbers only';
+            if (lower.includes('max') || lower.includes('not be greater')) return 'Maximum 9,999';
+            if (lower.includes('min') || lower.includes('at least'))       return 'Minimum 1';
           }
           if (col === 'ctc_range' && (lower.includes('max') || lower.includes('characters')))
-            return 'CTC range cannot exceed 50 characters.';
-          return msg;
+            return 'Max 50 characters';
+          return shortenServerError(msg);
         };
-        let firstMsg = '';
+        let firstRaw = '';
         for (const k of Object.keys(serverErrs)) {
           const v = serverErrs[k];
           const raw = Array.isArray(v) ? String(v[0]) : String(v);
-          const pretty = rewrite(k, raw);
-          mapped[fieldMap[k] || k] = pretty;
-          if (!firstMsg) firstMsg = pretty;
+          if (!firstRaw) firstRaw = raw;
+          mapped[fieldMap[k] || k] = rewrite(k, raw);
         }
         setErrors(mapped);
-        toast.error('Please fix the highlighted fields', firstMsg || 'Some inputs need attention.');
+        toast.error('Please fix the highlighted fields', firstRaw || 'Some inputs need attention.');
       } else {
         toast.error('Could not save', err?.response?.data?.message?.split('\n')[0] || 'Please try again.');
       }
@@ -2327,7 +2414,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                     className={`rec-input has-leading-icon${errors.jobTitle ? ' is-invalid' : ''}`}
                     placeholder="e.g. Senior Backend Engineer"
                     value={jobTitle}
-                    onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
+                    onChange={e => { setJobTitle(ucFirst(e.target.value)); clear('jobTitle'); }}
                   />
                 </div>
                 {errors.jobTitle && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobTitle}</div>}
@@ -2556,7 +2643,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.jobDescription ? ' is-invalid' : ''}`}
                   placeholder="Key responsibilities, expectations, and role overview…"
                   value={jobDescription}
-                  onChange={e => { setJobDescription(e.target.value); clear('jobDescription'); }}
+                  onChange={e => { setJobDescription(ucFirst(e.target.value)); clear('jobDescription'); }}
                 />
                 {errors.jobDescription && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobDescription}</div>}
               </Col>
@@ -2566,7 +2653,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.requirements ? ' is-invalid' : ''}`}
                   placeholder="Required skills, qualifications, certifications…"
                   value={requirements}
-                  onChange={e => { setRequirements(e.target.value); clear('requirements'); }}
+                  onChange={e => { setRequirements(ucFirst(e.target.value)); clear('requirements'); }}
                 />
                 {errors.requirements && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requirements}</div>}
               </Col>
@@ -2578,12 +2665,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
 
                </div>
 
+        {/* Save is the only footer action. Cancel was redundant with the
+            header × and the "Fields marked * are required" hint restated what
+            the red asterisks on every label already say. ms-auto keeps the
+            button hard right now that the hint is no longer holding the other
+            end of the footer's space-between. */}
         <div className="rec-form-footer">
-          <span className="hint">Fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</span>
-          <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
-              Cancel
-            </button>
+          <div className="d-flex gap-2 ms-auto">
             <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
               {saving ? (
                 <>
