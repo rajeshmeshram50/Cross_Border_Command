@@ -766,7 +766,11 @@
   border-color: #f06548 !important;
   box-shadow: 0 0 0 3px rgba(240,101,72,0.20), 0 4px 12px rgba(240,101,72,0.15) !important;
 }
+/* One line. The messages are kept to a few words in HrRecruitment.tsx (the
+   validators and shortenServerError) so this never needs to wrap; nowrap on the
+   icon just stops it being squashed to a sliver if one ever runs long. */
 .rec-error { color: #f06548; font-size: 11.5px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+.rec-error i { flex-shrink: 0; }
 
 /* ---------------------------------------------------------------------
    3. Work-mode segmented buttons + urgency pills — compact + glossy
