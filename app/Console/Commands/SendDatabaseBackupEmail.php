@@ -70,11 +70,12 @@ class SendDatabaseBackupEmail extends Command
             return self::FAILURE;
         }
 
-        // --- Compress for email ----------------------------------------
-        $gzBytes = gzencode((string) File::get($dump['path']), 6);
-        File::delete($dump['path']);
-        if ($gzBytes === false) {
-            $this->error('Could not compress the backup for email.');
+        // --- Compress for email (streamed — never held in memory) --------
+        try {
+            $gz = $service->compress($dump['path'], $dump['filename']);
+        } catch (RuntimeException $e) {
+            File::delete($dump['path']);
+            $this->error($e->getMessage());
             return self::FAILURE;
         }
 
@@ -87,19 +88,23 @@ class SendDatabaseBackupEmail extends Command
                 databaseName: $dbName,
                 generatedAt: now()->format('d M Y, H:i'),
                 senderName: 'Scheduled backup',
-                gzBytes: $gzBytes,
-                gzFilename: $dump['filename'] . '.gz',
+                gzPath: $gz['path'],
+                gzFilename: $gz['filename'],
+                gzSize: $gz['size'],
             ));
         } catch (\Throwable $e) {
+            File::delete($gz['path']);
             $this->error('Backup email failed: ' . $e->getMessage());
             Log::error('[DB Backup] auto-email send failed', ['error' => $e->getMessage()]);
             return self::FAILURE;
         }
 
+        File::delete($gz['path']);
+
         // Stamp success so the 15-day clock restarts from now.
         File::put($marker, now()->toIso8601String());
 
-        $sizeKb = number_format(strlen($gzBytes) / 1024, 0);
+        $sizeKb = number_format($gz['size'] / 1024, 0);
         $this->info("✓ Backup emailed ({$sizeKb} KB) to: " . implode(', ', $recipients));
         Log::info('[DB Backup] auto-email sent', ['recipients' => $recipients, 'size_kb' => $sizeKb]);
         return self::SUCCESS;

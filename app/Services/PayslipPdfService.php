@@ -76,6 +76,7 @@ class PayslipPdfService
             'logo'             => $company['logo'],
             'company'          => $company,
             'periodLabelUpper' => strtoupper($label),
+            'financialYear'    => $this->financialYear($slip),
             'isFinal'          => $isFinal,
             'employee' => [
                 'name'           => $slip->employee_name ?: '—',
@@ -230,9 +231,38 @@ class PayslipPdfService
 
     private function periodLabel(Payslip $slip): string
     {
-        $p = DB::table('payroll_periods')->where('id', $slip->payroll_period_id)->first();
-        return $p?->label ?: now()->format('M Y');
+        $p = $this->period($slip);
+        if ($p?->label) return $p->label;
+        // Never fall back to now() — a December payslip opened in January must
+        // not print "Jan". Rebuild from the period's own month/year, and if even
+        // that is gone say so rather than stamping a wrong month. (PAY-49)
+        if ($p && $p->month && $p->year) {
+            return Carbon::create((int) $p->year, (int) $p->month, 1)->format('M Y');
+        }
+        return '—';
     }
+
+    /** Financial year (Apr–Mar, "2026-27") of the payslip's own cycle. */
+    private function financialYear(Payslip $slip): string
+    {
+        $p = $this->period($slip);
+        return ($p && $p->month && $p->year)
+            ? \App\Models\PayrollPeriod::financialYearFor((int) $p->month, (int) $p->year)
+            : '—';
+    }
+
+    /** The payslip's period row, fetched once per render. */
+    private function period(Payslip $slip)
+    {
+        // Keyed by period id: the service instance is reused across payslips in
+        // bulk email/download loops, so a single-slot cache would leak one
+        // employee's cycle onto the next.
+        $id = (int) $slip->payroll_period_id;
+        return $this->periodCache[$id] ??= DB::table('payroll_periods')
+            ->where('id', $id)->first();
+    }
+
+    private array $periodCache = [];
 
     private function num($v): string
     {

@@ -86,6 +86,7 @@
             </td>
             <td class="hdr-right" style="width: 58%;">
                 <div class="pay-title">PAYSLIP <span>{{ $periodLabelUpper }}</span></div>
+                <div class="co-addr">FY {{ $financialYear ?? '—' }}</div>
                 <div class="co-name">{{ strtoupper($company['name']) }}</div>
                 <div class="co-addr">{{ $company['address'] }}</div>
             </td>

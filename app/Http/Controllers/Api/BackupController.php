@@ -113,11 +113,13 @@ class BackupController extends Controller
             return response()->json(['message' => 'Backup generation failed: ' . $e->getMessage()], 500);
         }
 
-        // --- Compress for email ----------------------------------------
-        $gzBytes = gzencode((string) File::get($dump['path']), 6);
-        File::delete($dump['path']);
-        if ($gzBytes === false) {
-            return response()->json(['message' => 'Could not compress the backup for email.'], 500);
+        // --- Compress for email (streamed — never held in memory) --------
+        try {
+            $gz = $service->compress($dump['path'], $dump['filename']);
+        } catch (RuntimeException $e) {
+            File::delete($dump['path']);
+            Log::error('[DB Backup] API send — compression failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => $e->getMessage()], 500);
         }
 
         $connection = config('database.default');
@@ -129,18 +131,22 @@ class BackupController extends Controller
                 databaseName: $dbName,
                 generatedAt: now()->format('d M Y, H:i'),
                 senderName: (string) ($request->user()?->name ?? 'Admin'),
-                gzBytes: $gzBytes,
-                gzFilename: $dump['filename'] . '.gz',
+                gzPath: $gz['path'],
+                gzFilename: $gz['filename'],
+                gzSize: $gz['size'],
             ));
         } catch (\Throwable $e) {
+            File::delete($gz['path']);
             Log::error('[DB Backup] API send failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Backup email failed: ' . $e->getMessage()], 500);
         }
 
+        File::delete($gz['path']);
+
         // Stamp success so the scheduled 15-day clock restarts from now too.
         File::put($this->markerPath(), now()->toIso8601String());
 
-        $sizeKb = (int) round(strlen($gzBytes) / 1024);
+        $sizeKb = (int) round($gz['size'] / 1024);
         Log::info('[DB Backup] API send OK', ['recipients' => $recipients, 'size_kb' => $sizeKb]);
 
         return response()->json([

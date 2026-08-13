@@ -103,6 +103,16 @@ const lastDayOfMonth = (fullMonth: string, year: number | string): number => {
   return new Date(y, idx + 1, 0).getDate();
 };
 
+// Indian financial year (Apr–Mar) of the payslip's own period, e.g.
+// January 2027 → "2026-27". Mirrors PayrollPeriod::financialYearFor(). (PAY-49)
+const financialYearOf = (fullMonth: string, year: number | string): string => {
+  const idx = MONTH_FULL.indexOf(fullMonth as typeof MONTH_FULL[number]);
+  const y = Number(year);
+  if (idx < 0 || !Number.isFinite(y)) return '—';
+  const startYear = idx + 1 >= 4 ? y : y - 1;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+};
+
 /**
  * Standalone payslip viewer modal — same visual + interaction model as the
  * one shipped inside EmployeeProfile, extracted so the HR Payroll page (and
@@ -462,6 +472,7 @@ export default function PayslipViewerModal({
                     { label: 'Designation',   value: employee.designation },
                     { label: 'Department',    value: employee.department },
                     { label: 'Pay Period',    value: `${month.slice(0,3)} ${year}` },
+                    { label: 'Financial Year', value: financialYearOf(month, year) },
                   ].map(c => (
                     <div className="ep-pay-identity-cell" key={c.label}>
                       <div className="ep-pay-identity-label">{c.label}</div>

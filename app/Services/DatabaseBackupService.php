@@ -61,7 +61,7 @@ class DatabaseBackupService
         $path     = $dir . DIRECTORY_SEPARATOR . $filename;
 
         // Sweep stale dumps (>1h) so aborted runs don't pile up.
-        foreach (File::glob($dir . DIRECTORY_SEPARATOR . '*.sql') as $old) {
+        foreach (File::glob($dir . DIRECTORY_SEPARATOR . '*.sql*') as $old) {
             if (File::lastModified($old) < now()->subHour()->timestamp) {
                 File::delete($old);
             }
@@ -114,5 +114,62 @@ class DatabaseBackupService
         }
 
         return ['path' => $path, 'filename' => $filename];
+    }
+
+    /**
+     * Gzip a dump into a sibling .gz file, streaming 1 MB at a time.
+     *
+     * Deliberately never loads the dump into a PHP string: a production dump can
+     * be hundreds of MB, and File::get() + gzencode() would hold two full copies
+     * in memory and blow memory_limit. The plain .sql is deleted on success.
+     *
+     * @return array{path:string, filename:string, size:int}
+     * @throws RuntimeException
+     */
+    public function compress(string $sqlPath, string $sqlFilename): array
+    {
+        @set_time_limit(0);
+
+        $gzPath = $sqlPath . '.gz';
+
+        $in = @fopen($sqlPath, 'rb');
+        if ($in === false) {
+            throw new RuntimeException('Could not open the generated dump for compression.');
+        }
+
+        $out = @gzopen($gzPath, 'wb6');
+        if ($out === false) {
+            fclose($in);
+            throw new RuntimeException('Could not create the compressed backup file.');
+        }
+
+        while (! feof($in)) {
+            $chunk = fread($in, 1048576);
+            if ($chunk === false) {
+                fclose($in);
+                gzclose($out);
+                File::delete($gzPath);
+                throw new RuntimeException('Failed while reading the dump for compression.');
+            }
+            if ($chunk !== '' && gzwrite($out, $chunk) === false) {
+                fclose($in);
+                gzclose($out);
+                File::delete($gzPath);
+                throw new RuntimeException('Failed while writing the compressed backup.');
+            }
+        }
+
+        fclose($in);
+        gzclose($out);
+        File::delete($sqlPath);
+
+        clearstatcache(true, $gzPath);
+        $size = (int) @filesize($gzPath);
+        if ($size <= 0) {
+            File::delete($gzPath);
+            throw new RuntimeException('The compressed backup came out empty.');
+        }
+
+        return ['path' => $gzPath, 'filename' => $sqlFilename . '.gz', 'size' => $size];
     }
 }

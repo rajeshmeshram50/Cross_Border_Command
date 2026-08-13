@@ -1439,33 +1439,63 @@
      The 8px below lives in this block's padding-bottom with
      .rec-req-tablewrap contributing 0 on top, so the two never stack. */
   gap: 4px;
-  /* 19px so a KPI card's left edge lands on the tab rail's left edge below it.
-     That 19 is the sum of what sits between the modal edge and the rail:
-     .rec-req-tablewrap padding (4) + .dt-root border (1) + .dt-toolbar
-     padding-left (14). Change any of those three and this has to follow, or
-     the cards and the tabs stop starting at the same point. */
-  padding: 8px 19px;
-  border-bottom: 1px solid #ede9fe;
+  /* 4px — the same inset as .rec-req-tablewrap, so a KPI card's outer edge is
+     flush with the table card's outer edge below it and both containers share
+     one left and right margin against the modal.
+     This replaced 19px, which aligned the cards with the TAB RAIL instead
+     (4 tablewrap + 1 .dt-root border + 14 .dt-toolbar padding). Aligning to the
+     rail meant a visibly wider side gap on the cards than on the table, so the
+     container edge won. Swap back to 19px if the rail matters more. */
+  padding: 8px 4px;
+  /* No border-bottom. It was the divider between the KPI band and the table
+     back when the two sat on different surfaces; now that the table wrapper
+     carries this same #fbfaff tint, the band has no edge to mark and the rule
+     just read as a stray line floating above the table card.
+     (The dark-theme blocks below still set border-color on this element — inert
+     with no border-style, left in place rather than hunted down.) */
   background:
     radial-gradient(800px 240px at 0% 0%, rgba(124,92,252,0.06) 0%, transparent 55%),
     radial-gradient(700px 200px at 100% 100%, rgba(167,139,250,0.04) 0%, transparent 55%),
     #fbfaff;
 }
 
-/* Table panel — the second of the two containers. Plain surface (no violet
-   wash) so it separates cleanly from the KPI band, with the requested 4px
-   left/right inset. padding-top is 0 on purpose: the 8px cards-to-table gap is
-   owned entirely by .rec-req-stats' padding-bottom, so the two don't stack into
-   a double gap. padding-bottom is the SAME 8px, so the space under the table
-   matches the space above it — and it still clears the DataTable's 16px corner
-   radius and shadow off the modal edge. */
+/* Spacing wrapper around the table. It carries no PANEL of its own — that
+   second surface behind a table which already renders as a card was a container
+   inside a container — but it does carry the KPI band's tint (#fbfaff, the flat
+   base of .rec-req-stats below its two radial washes). Left transparent, the
+   modal's own white showed through in the 4px margin and under the pager, so a
+   white frame appeared around the table card while everything above it was
+   lavender. Same tint = one continuous backdrop from the header down.
+   padding-top is 0 on purpose: the 8px cards-to-table gap is owned entirely by
+   .rec-req-stats' padding-bottom, so the two don't stack into a double gap.
+   padding-bottom is the SAME 8px, so the space under the table matches the
+   space above it, and it clears the card's 16px radius and shadow off the
+   modal edge. */
 .rec-req-tablewrap {
   padding: 0 4px 8px;
-  background: #ffffff;
+  background: #fbfaff;
 }
+/* Mirrors [data-bs-theme="dark"] .rec-req-stats so the two stay in step. */
 [data-bs-theme="dark"] .rec-req-tablewrap {
-  background: var(--vz-secondary-bg, #1a1d21);
+  background: var(--vz-card-bg);
 }
+
+/* Cap the body at 4 rows; row 5 onward scrolls. Keeps the modal a fixed height
+   whatever the tab holds, instead of growing to 8 rows on Pending and
+   collapsing on an empty tab.
+   226px = the 30px header + 4 rows of 49px:
+     header  9px padding top + 9px bottom + ~12px of 9.5px/1.3 caps   = 30
+     row     7px padding top + 7px bottom + 34px (the tallest cell is
+             the .rec-act-create button) + 1px border-bottom          = 49
+   .dt-scroll already carries `overflow: auto` and the thead is `position:
+   sticky`, so the header stays put while the rows move under it — no extra
+   markup needed. Recheck this number if the row's tallest control changes
+   height (it was 26px before Create Recruitment took the onboarding pill's
+   34px styling). */
+.rec-req-modal .dt-scroll { max-height: 226px; }
+/* The empty state renders in the same box, so let it use the full height rather
+   than being squeezed into a 226px window with its own scrollbar. */
+.rec-req-modal .dt-scroll:has(.dt-table-empty) { max-height: none; }
 @media (max-width: 1199px) { .rec-req-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
 /* Column count drops with width, but the gap does NOT — the page's g-1 gutter
    is the same at every breakpoint, so this used to widen to 8px and stop
@@ -2612,8 +2642,13 @@
 /* ── Body ───────────────────────────────────────────────────────────── */
 .rec-cancel-body {
   position: relative;
-  padding: 18px 22px 8px;
-  display: flex; flex-direction: column; gap: 14px;
+  /* 8px on all four sides, and 8px between the blocks inside — the same single
+     gap the Hiring Requests popup now uses above its KPI cards, below its table
+     and around its section cards. Was 18px 22px 8px with a 14px internal gap,
+     so the sides were nearly 3x the bottom and nothing lined up between the two
+     modals. One number, every edge. */
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
   /* A modal body is portalled to <body>, outside every `.card`, so the
      card-scoped var was empty here and the #ffffff fallback won.
      The dark override below tried to fix exactly this and used the SAME broken
@@ -2756,10 +2791,19 @@
   transition: border-color .15s ease, box-shadow .15s ease;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
 }
+/* Violet focus ring, matching .rec-input:focus — the module's standard for a
+   focused field. This was orange (#f97316 + an orange glow), inherited from the
+   Cancel Recruitment styling this modal started as. The component is shared with
+   Mark Recruitment Completed, which is green-themed, so the orange read as a
+   warning on a field that is just an optional notes box. Violet is neutral
+   against both headers and matches every other form in the module. */
 .rec-cancel-textarea:focus {
   outline: none;
-  border-color: #f97316;
-  box-shadow: 0 0 0 3px rgba(249,115,22,0.18);
+  border-color: #7c5cfc;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.85),
+    0 0 0 3px rgba(124,92,252,0.18),
+    0 4px 10px rgba(124,92,252,0.10);
 }
 .rec-cancel-textarea::placeholder { color: #9ca3af; }
 [data-bs-theme="dark"] .rec-cancel-textarea {
@@ -2780,7 +2824,10 @@
 .rec-cancel-footer {
   display: flex; align-items: center; justify-content: flex-end;
   gap: 10px;
-  padding: 14px 22px;
+  /* Matches .rec-cancel-body's 8px so the Confirm button's right edge lands on
+     the same line as the content cards above it. At the old 22px the button sat
+     14px further in than everything it was confirming. */
+  padding: 8px;
   background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);
   border-top: 1px solid #ececf2;
 }
@@ -2820,6 +2867,39 @@
 }
 .rec-cancel-confirm:active { transform: translateY(0); filter: brightness(0.98); }
 .rec-cancel-confirm i { font-size: 14px; }
+
+/* "Confirm Completion" — the same treatment as .rec-btn-teal ("View Hiring
+   Requests" in the page header), at 40px.
+   The gradient used to be an inline `background` on the element, which left the
+   base rule's ORANGE shadow glowing under a green button — a cancel-coloured
+   halo on the completion action. Both layers are overridden here so they can't
+   drift apart again. */
+.rec-cancel-confirm--complete {
+  height: 40px;
+  background: linear-gradient(135deg, #10b981 0%, #0d9488 60%, #047857 100%);
+  box-shadow:
+    0 6px 16px rgba(13,148,136,0.38),
+    0 2px 4px rgba(5,150,105,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.28),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+}
+.rec-cancel-confirm--complete:hover {
+  box-shadow:
+    0 10px 22px rgba(13,148,136,0.46),
+    0 3px 6px rgba(5,150,105,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.34),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+  filter: brightness(1.06);
+}
+[data-bs-theme="dark"] .rec-cancel-confirm--complete,
+[data-layout-mode="dark"] .rec-cancel-confirm--complete {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 60%, #059669 100%);
+  box-shadow:
+    0 6px 16px rgba(16,185,129,0.45),
+    0 2px 4px rgba(16,185,129,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+}
 
 /* ── Dark-mode polish ─────────────────────────────────────────────────
    The Mark Recruitment Completed / Cancel Recruitment popups carry

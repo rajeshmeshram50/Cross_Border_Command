@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AttendancePunch;
 use App\Models\DeviceTerminal;
 use App\Models\Employee;
+use App\Models\PayrollPeriod;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -26,8 +27,40 @@ use Illuminate\Support\Facades\DB;
  */
 class EsslAttendanceImporter
 {
-    public function __construct(private AttendancePunchService $punches)
+    public function __construct(
+        private AttendancePunchService $punches,
+        private PayrollService $payroll,
+    ) {
+    }
+
+    /**
+     * Payroll periods already LOCKED (fully disbursed), keyed "clientId|branchId|Y-m".
+     * A locked cycle's payslips are immutable, so accepting a punch into it would
+     * silently change the basis of money that is already paid — the numbers on the
+     * payslip and the numbers in attendance would disagree forever, with nothing
+     * to reconcile them. Those rows are rejected and reported instead. (PAY-50)
+     */
+    private array $lockedPeriodCache = [];
+
+    private function periodIsLocked(Employee $emp, ?int $branchId, string $localDate): bool
     {
+        $when = Carbon::parse($localDate);
+        $bId  = $emp->branch_id ?: $branchId;
+        $key  = ($emp->client_id ?: 0) . '|' . ($bId ?: 0) . '|' . $when->format('Y-m');
+
+        return $this->lockedPeriodCache[$key] ??= PayrollPeriod::query()
+            ->where('client_id', $emp->client_id)
+            // A client-wide cycle (branch_id NULL) pays this employee too, so a
+            // locked one must block the punch just as their own branch's would.
+            // A branch-less employee is covered ONLY by that client-wide cycle —
+            // don't let another branch's closed payroll block their punches.
+            ->where(fn ($w) => $bId
+                ? $w->where('branch_id', $bId)->orWhereNull('branch_id')
+                : $w->whereNull('branch_id'))
+            ->where('month', (int) $when->month)
+            ->where('year', (int) $when->year)
+            ->where('status', 'locked')
+            ->exists();
     }
 
     /** Convenience entry for a registered terminal (Mode C). */
@@ -44,7 +77,7 @@ class EsslAttendanceImporter
 
     /**
      * @param  array  $rows  each: ['user_id' => string, 'punched_at' => 'Y-m-d H:i:s', 'status' => string]
-     * @return array{imported:int,skipped_duplicates:int,unmatched_user_ids:array,errors:array,employees_affected:int,date_range:array}
+     * @return array{imported:int,skipped_duplicates:int,unmatched_user_ids:array,errors:array,employees_affected:int,date_range:array,payslips_recomputed:int,affected_employee_ids:array}
      */
     public function importRows(array $rows, ?int $clientId, ?int $branchId, string $serial, string $tz = 'Asia/Kolkata'): array
     {
@@ -120,6 +153,14 @@ class EsslAttendanceImporter
                 continue;
             }
 
+            // Reject punches landing in a fully-paid (locked) payroll cycle —
+            // the payslip can no longer be regenerated, so the correction must
+            // go to the next cycle as an adjustment. (PAY-50)
+            if ($this->periodIsLocked($emp, $branchId, $localDate)) {
+                $errors[] = ['user_id' => $c['user_id'], 'punched_at' => $c['ts'], 'reason' => 'payroll for this month is locked (paid) — post an adjustment in the next cycle'];
+                continue;
+            }
+
             $key = $emp->id . '|' . $localDate;
             $buckets[$key]['emp']  = $emp;
             $buckets[$key]['date'] = $localDate;
@@ -189,7 +230,22 @@ class EsslAttendanceImporter
             });
         }
 
-        return $this->summary($imported, $dupes, array_keys($unmatched), $errors, count($affected), [$minDate, $maxDate]);
+        /* PAY-50 — a correction must show up in the money, not just the
+         * attendance grid.
+         *
+         * Every employee whose punches changed has their payslips in DRAFT /
+         * GENERATED runs recomputed IN PLACE (same row, recomputed columns), so
+         * the payroll table reflects the corrected attendance without anyone
+         * having to remember to re-run, and without a second payslip appearing.
+         * recomputeEmployeePayslips() skips approved/paid runs and locked
+         * periods by design, so a settled cycle is never rewritten. */
+        $recomputed = 0;
+        foreach (array_keys($affected) as $employeeId) {
+            $recomputed += $this->payroll->recomputeEmployeePayslips((int) $employeeId);
+        }
+
+        return $this->summary($imported, $dupes, array_keys($unmatched), $errors, count($affected), [$minDate, $maxDate])
+            + ['payslips_recomputed' => $recomputed, 'affected_employee_ids' => array_map('intval', array_keys($affected))];
     }
 
     private function summary(int $imported, int $dupes, array $unmatched, array $errors, int $affected, array $range): array

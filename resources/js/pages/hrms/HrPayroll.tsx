@@ -82,6 +82,15 @@ const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'S
 
 const monthKey = (year: number, monthIdx: number) => `${MONTHS_SHORT[monthIdx].toLowerCase()}-${year}`;
 
+// Indian financial year (Apr–Mar) of a cycle, e.g. Jan 2027 → "2026-27".
+// Mirrors PayrollPeriod::financialYearFor() on the backend so a synthesised
+// (not-yet-created) month shows the same FY the period will get. (PAY-49)
+const financialYearOf = (month?: number, year?: number): string => {
+  if (!month || !year) return '';
+  const startYear = month >= 4 ? year : year - 1;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+};
+
 // Build the full 12-month cycle list for a year, merging real per-month status
 // from the backend /payroll/cycles payload (keyed `${year}-${month}`); months
 // the backend hasn't surfaced yet default to 'Not Started'.
@@ -1346,6 +1355,11 @@ export default function HrPayroll() {
               <span className="onb-hero-pill">
                 <span className="dot" />{cycle.label}
               </span>
+              {financialYearOf(cycle.month, cycle.year) && (
+                <span className="onb-hero-pill" title="Financial year (Apr–Mar)">
+                  <span className="dot" />FY {financialYearOf(cycle.month, cycle.year)}
+                </span>
+              )}
             </div>
             <div className="frm-cstrip-sub">
               Monthly payroll engine — biometric → run payroll → payslips & bank advice

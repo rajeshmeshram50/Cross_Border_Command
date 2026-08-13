@@ -18,8 +18,9 @@ class DatabaseBackupMail extends Mailable
         public string $databaseName,
         public string $generatedAt,
         public string $senderName,
-        public string $gzBytes,
+        public string $gzPath,
         public string $gzFilename,
+        public int $gzSize,
     ) {}
 
     public function envelope(): Envelope
@@ -31,7 +32,7 @@ class DatabaseBackupMail extends Mailable
 
     public function content(): Content
     {
-        $size = number_format(strlen($this->gzBytes) / 1024, 0) . ' KB';
+        $size = number_format($this->gzSize / 1048576, 1) . ' MB';
 
         return new Content(
             htmlString: <<<HTML
@@ -52,7 +53,10 @@ class DatabaseBackupMail extends Mailable
     public function attachments(): array
     {
         return [
-            Attachment::fromData(fn () => $this->gzBytes, $this->gzFilename)
+            // fromPath (not fromData) so Symfony streams the file off disk —
+            // a large dump must never be materialised as a PHP string.
+            Attachment::fromPath($this->gzPath)
+                ->as($this->gzFilename)
                 ->withMime('application/gzip'),
         ];
     }
