@@ -233,7 +233,32 @@ The divisor is read from `payroll_periods.working_days`, resolved **per payroll 
 - `GET /payroll-adjustments/overtime-preview?employee_id=&month=&year=` → detected hours, per-day detail, the rate breakdown and the amount. Read-only.
 - `POST /payroll-adjustments` with `type=overtime` + `from_attendance=true` and no `hours` → server fills the hours from detection (422s if attendance shows none).
 
-> ⚠️ **Open policy question to confirm with the business:** work on a **weekly off or holiday** currently yields OT only for time past the shift end, not for the whole day. If the intent is "any hours worked on an off day are overtime", that's a separate rule and is **not** implemented.
+> ✅ **Resolved (PAY-23):** work on a **weekly off or holiday** now yields OT for the **whole worked stretch**, not just the time past the shift end — a rest day is not a short working day. See `overtimeHoursFromAttendance()`; rest days come from `holidayDateSet()` + `WeekOff::isOff()`.
+
+### 4a — Regularization can never create overtime
+
+**Rule:** Overtime must come from a real punch at the device. Attendance regularization corrects a day the reader got **wrong**; it is not a channel for claiming extra hours. This matters more than it looks, because detected OT hours are **paid with no approval gate** when the cycle carries no explicit OT adjustment — so an approved regularization used to turn straight into money.
+
+Two independent routes existed, and **both** are now closed:
+
+| # | Route | Guard |
+|---|---|---|
+| 1 | Punches requested **past the shift end** (e.g. 09:30–22:00 on a 09:30–18:30 shift) | Every punch is bounded to the assigned shift window before it is stored |
+| 2 | A regularization on a **weekly off / holiday**, entirely within shift hours | The day keeps its rest-day status instead of being restamped `Present`, so PAY-23 never fires |
+
+**Where:** [AttendanceRegularizationController.php](../app/Http/Controllers/Api/AttendanceRegularizationController.php)
+- `boundPunchesToShift()` — trims each punch into the window; an entry lying **entirely** outside is dropped, and a request with nothing left is refused (422 naming the window).
+- `shiftBoundsFor()` — resolves the window via `Employee::resolveShiftWindow()`, falling back to the same **09:30–18:30** office default payroll uses.
+- `nearestToWindow()` — disambiguates bare clock times on a night shift: against `22:00–06:00`, `05:00` is the tail of the window, `21:00` is the hour before it.
+- `PayrollService::restDayKind()` — single source of truth for "is this date a rest day, and which kind", reused so the writer and the OT detector cannot disagree.
+
+**Enforced at both ends:** at **filing** (`store()`), so the requester and the approver review the times that will actually be written; and again at **apply** time, so requests raised before this gate existed cannot slip through an approval queue.
+
+**Not silent:** the modal warns in amber as soon as a picked time falls outside the shift, and a trimmed submit returns `shift_notice` → a warning toast, not a plain success.
+
+**Deliberately NOT restricted:** the time pickers stay open to any hour. Greying out-of-shift hours would block the corrections the screen exists for (an early arrival, a shift changed after the fact, a night shift crossing midnight). What is enforced is what gets **stored**.
+
+**Exempt-mode** requests carry no punches by definition, so there is nothing to bound — but they take the same rest-day guard, since stamping a Sunday `On Duty` would strip the status OT detection relies on to skip it.
 
 **Small points:**
 - Overtime is a **`PayrollAdjustment`** with `type='overtime'`. Add via `POST /payroll-adjustments` (send `hours`), approve via `POST /payroll-adjustments/{id}/approve`.
@@ -744,6 +769,7 @@ SalaryStructure::create([... version, effective_from, status='active',
 | 2 | Late mark deduction | ⚠️ warning, no auto-hold/waiver | PayrollService:634 |
 | 3 | Leave salary impact | ✅ | PayrollService:1012, 1005, 619 |
 | 4 | Overtime approved-only, priced `hourly × multiplier × hours` | ✅ | `PayrollService::overtimeForCycle()` |
+| 4a | Regularization can never create overtime (shift-bounded + rest-day safe) | ✅ | `AttendanceRegularizationController::boundPunchesToShift()`, `PayrollService::restDayKind()` |
 | 5 | Salary structure mandatory | ✅ | PayrollService:571 |
 | 6 | Joining/exit pro-rata | ✅ | PayrollService:585 |
 | 7 | Inactive/terminated exclusion | ✅ | PayrollService:380 |
@@ -892,6 +918,54 @@ Baseline for D1–D2 and D7–D12: gross **₹30,000** → **basic ₹15,000**, 
 | D31 | Employee already saved on a rate that is then set Inactive | value stays **visible but disabled** ("… (inactive)") so save doesn't blank it; cannot be re-selected | ☐ |
 | D32 | Master is empty | placeholder reads "No rates — add in Master › Overtime (OT)" | ☐ |
 | D33 | Overtime Applicable = No | Rate picker hidden and `employees.overtime` cleared | ☐ |
+
+**Regularization cannot create overtime (Rule 4a).**
+Baseline: employee on shift **09:30–18:30**, **Overtime Applicable = Yes**, weekly off **Saturday & Sunday**. Raise each request from HR Attendance → day cell → *Regularize*, approve it as the reporting manager, then re-run/recompute payroll and read `overtime_hours`.
+
+| TC | Input | Steps | Expected Result | Result |
+|---|---|---|---|---|
+| D34 | Regularize a **weekday** `09:30 → 22:00` | Submit | Amber warning in the modal before submit; toast reads "Times trimmed to shift"; stored punches are **09:30–18:30** | ☐ |
+| D35 | Approve D34 | Approve → recompute | Ledger shows 09:30–18:30; **`overtime_hours = 0`** — no OT line on the payslip | ☐ |
+| D36 | Regularize a weekday `08:00 → 19:00` (over at both ends) | Submit → approve | Trimmed to **09:30–18:30** at both ends; `overtime_hours = 0` | ☐ |
+| D37 | Regularize a weekday `20:00 → 22:00` (pure OT, no in-shift overlap) | Submit | **422** — "…fall entirely outside the assigned shift (09:30 – 18:30)…"; nothing stored | ☐ |
+| D38 | Regularize a weekday `10:00 → 17:00` (fully inside) | Submit → approve | **No** warning, **no** trim; punches stored verbatim; `overtime_hours = 0` | ☐ |
+| D39 | **Rest-day route** — regularize a **Sunday** `09:30 → 18:30` | Submit → approve | Punches recorded, but the day keeps status **Weekly Off** (not `Present`); **`overtime_hours = 0`** — *before the fix this paid a full day of OT* | ☐ |
+| D40 | Regularize a **holiday** (employee in a holiday group) `09:30 → 18:30` | Submit → approve | Status stays **Holiday**; `overtime_hours = 0` | ☐ |
+| D41 | **Exempt** mode (On Duty) on a Sunday that already has punches | Submit → approve | Status stays **Weekly Off**, not `On Duty`; `overtime_hours = 0` | ☐ |
+| D42 | **Night shift** `22:00–06:00`, regularize `22:00 → 05:00` | Submit → approve | Inside the window — **no** trim; `overtime_hours = 0` | ☐ |
+| D43 | Night shift `22:00–06:00`, regularize `21:00 → 08:00` | Submit → approve | Trimmed to **22:00–06:00** (not dropped — 21:00 reads as the hour before the shift, 08:00 as past its end) | ☐ |
+| D44 | Employee with **no shift timing** on file, regularize `09:00 → 20:00` | Submit → approve | Falls back to the office default → trimmed to **09:30–18:30** | ☐ |
+| D45 | **Legacy request** raised before this gate, still Pending with `09:30 → 22:00` | Approve it now | Apply-time guard trims to 09:30–18:30; `laravel.log` carries "punches trimmed to shift window on apply" | ☐ |
+| D46 | Genuine OT still works | HR adds a `type=overtime` PayrollAdjustment, approves it | OT pays normally — this rule blocks the **regularization** route only, not overtime itself | ☐ |
+
+**Edge cases — one-sided, reversed and boundary punches (Rule 4a).**
+A complete in/out pair is an **interval** (dropped when it misses the shift entirely); a one-sided punch is a **point** (always pulled to the nearest edge, never dropped — "the reader missed my in punch" is the commonest real request on this screen). Neither can yield OT: a lone in leaves `check_out_at` null, which detection requires, and a lone out lands at or before the shift end.
+
+| TC | Input (shift 09:30–18:30) | Expected Result | Result |
+|---|---|---|---|
+| D47 | In **08:00**, no out | Stored as **in 09:30**, no out — kept, not discarded; warning shown | ☐ |
+| D48 | In **10:00**, no out | Stored verbatim; **no** warning | ☐ |
+| D49 | In **22:00**, no out | Pulled to **in 18:30**; `overtime_hours = 0` | ☐ |
+| D50 | Out **20:00**, no in | Pulled to **out 18:30** — the correction is kept, the OT is not | ☐ |
+| D51 | Out **08:00**, no in | Pulled to **out 09:30** | ☐ |
+| D52 | In **17:00** → out **10:00** (entered backwards) | Dropped **and** the trim warning fires (not a silent success) | ☐ |
+| D53 | In **12:00** → out **12:00** (zero length) | Dropped + warning | ☐ |
+| D54 | In **18:30** → out **19:00** (starts exactly at shift end) | Dropped — no in-shift time | ☐ |
+| D55 | In **09:30** → out **18:30** (exact boundary) | Stored verbatim; **no** warning, no trim | ☐ |
+| D56 | Two rows: `09:30–13:00` **and** `19:00–22:00` | First kept, second dropped, warning fires | ☐ |
+| D57 | Lunch split `09:30–13:00` + `14:00–21:00` | Both kept; only the second trimmed → `14:00–18:30` | ☐ |
+| D58 | Night shift `22:00–06:00`, lone in **23:00** / lone out **05:00** | Both stored verbatim; no trim | ☐ |
+
+**Regularization workflow defects found during the Rule 4a audit (2026-08-13).**
+
+| TC | Input | Steps | Expected Result | Result |
+|---|---|---|---|---|
+| D59 | Employee whose RM is a **login user** (`reporting_manager_user_id`), not an employee row | Employee files a regularization → RM opens Regularization Approvals | Request **appears** in the RM's queue. *Before the fix it was Pending forever and invisible, though that RM was the only one authorised to approve it* | ☐ |
+| D60 | RM who is a plain login user with **no employee row of their own** | Open Regularization Approvals | Their reports' requests are listed (the queue used to return empty outright) | ☐ |
+| D61 | Employee with an employee-row RM | Same | Unchanged — own requests + direct reports still listed (regression check) | ☐ |
+| D62 | **Night shift** `22:00–06:00`: regularize `22:00 → 06:00`, approve | Read the day's punch timeline | In **22:00** on the request date, out **06:00** on the **next** date; `check_out_at > check_in_at`. *Before the fix both were pinned to the same day, so the timeline read `Check Out 06:00 → Step In 22:00` and check-out preceded check-in* | ☐ |
+| D63 | Night shift with a break: `22:00→01:00` + `02:00→06:00` | Approve | Four punches in true chronological order, the three post-midnight ones on the next date | ☐ |
+| D64 | Day shift `09:30–18:30`, regularize `09:30 → 18:30` | Approve | Both punches on the request date — no day roll (regression check) | ☐ |
 
 ---
 
