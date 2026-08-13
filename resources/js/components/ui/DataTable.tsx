@@ -86,6 +86,18 @@ export interface DataTableProps<T> {
 const DEFAULT_PAGE_SIZE = 10;
 const DEFAULT_SIZE_OPTIONS = [10, 25, 50];
 
+/** Space to keep clear at the bottom of the viewport so a fit-to-viewport card
+ *  (and its pager) ends ABOVE the in-flow app footer (Velzon `<footer.footer>`)
+ *  instead of running behind it. Measured live so it's right at any footer
+ *  height / zoom, plus an 8px breathing gap. Falls back to 15px when there is no
+ *  app footer (e.g. the table is rendered inside a modal). */
+const bottomReserve = (): number => {
+  if (typeof document === 'undefined') return 15;
+  const f = document.querySelector('footer.footer') as HTMLElement | null;
+  const fh = f?.offsetHeight ?? 0;
+  return fh > 0 ? fh + 8 : 15;
+};
+
 const alignToCss = (a?: DataTableAlign): 'left' | 'center' | 'right' =>
   a === 'center' ? 'center' : a === 'right' || a === 'end' ? 'right' : 'left';
 const containsFilter: FilterFn<any> = (row, _columnId, value) => {
@@ -236,7 +248,7 @@ export default function DataTable<T extends object>({
     const el = rootRef.current;
     if (!el || !autoFitRows || manualSize !== null) return;
     const top = el.getBoundingClientRect().top;
-    const h = Math.max(240, window.innerHeight - top - 15);
+    const h = Math.max(240, window.innerHeight - top - bottomReserve());
     const px = (sel: string) => (el.querySelector(sel) as HTMLElement | null)?.offsetHeight || 0;
     const rowH = px('.dt-table tbody tr:not(.dt-empty-row)') || 44;
     /* The HORIZONTAL scrollbar takes height too and was never subtracted —
@@ -259,7 +271,7 @@ export default function DataTable<T extends object>({
     if (!el || !fitToViewport) return;
     const size = () => {
       const top = el.getBoundingClientRect().top;
-      const h = `${Math.max(240, window.innerHeight - top - 15)}px`;
+      const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
       if (el.style.height === h) return;
       el.style.flex = 'none';
       el.style.height = h;

@@ -10,6 +10,7 @@ import api from '../../api';
 import {
   type SalBreakComp, SPLIT_CODES,
   seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
+  CTC_ROUNDING_SLACK,
 } from '../../utils/salaryBreakup';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
@@ -726,27 +727,11 @@ export default function HrEmployeeOnboarding() {
       meta: { width: '13%', wrap: true },
       cell: info => {
         const r = info.row.original;
+        /* Avatar removed — it told the reader nothing the name beside it didn't,
+           and took 42px off a column whose names already clip. Matches the
+           employee list, which dropped its circle for the same reason. */
         return (
           <div className="d-flex align-items-center gap-2">
-            {r.photoUrl ? (
-              <img
-                src={r.photoUrl}
-                alt={r.name}
-                className="rounded-circle flex-shrink-0"
-                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-              />
-            ) : (
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{
-                  width: 34, height: 34, fontSize: 12,
-                  background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                  boxShadow: `0 2px 6px ${r.accent}40`,
-                }}
-              >
-                {r.initials}
-              </div>
-            )}
             <div className="min-w-0">
               {/* Long names clip to the column width — hover shows the full one. */}
               <Tooltip label={r.name} maxWidth={360}>
@@ -758,13 +743,16 @@ export default function HrEmployeeOnboarding() {
         );
       },
     },
-    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
+    /* Pills and chips are centred across every HR list — a badge is a fixed
+       shape, so left-aligning it leaves a ragged gap on the right of each cell
+       that reads as mis-alignment. Plain-text columns stay left. */
+    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%', align: 'center' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       /* Long role names ellipsise inside the pill and reveal on hover instead
          of spilling under the next column — same contract as Designation. */
       cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
@@ -773,6 +761,8 @@ export default function HrEmployeeOnboarding() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
+      /* LEFT — variable chip count plus a "+N" counter, so the cell width
+         changes row to row and centring made each row start at a different x. */
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
@@ -793,22 +783,12 @@ export default function HrEmployeeOnboarding() {
          * inside (the old path) made the row taller than its neighbours and
          * pulled the column out of alignment with the header. */
         if (r.managerName === '—') return <span style={{ fontSize: 13 }} className="text-muted">—</span>;
+        // Avatar removed here too — the manager's name is the whole point of
+        // the column, and the initials bubble was crowding a 9% -wide cell.
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 28, height: 28, fontSize: 10.5,
-                background: `linear-gradient(135deg, ${r.managerAccent}, ${r.managerAccent}cc)`,
-                boxShadow: `0 2px 5px ${r.managerAccent}40`,
-              }}
-            >
-              {r.managerInitials}
-            </div>
-            <Tooltip label={r.managerName} maxWidth={360}>
-              <span style={{ fontSize: 13 }} className="text-truncate">{r.managerName}</span>
-            </Tooltip>
-          </div>
+          <Tooltip label={r.managerName} maxWidth={360}>
+            <span style={{ fontSize: 13 }} className="text-truncate d-block">{r.managerName}</span>
+          </Tooltip>
         );
       },
     },
@@ -818,7 +798,7 @@ export default function HrEmployeeOnboarding() {
          floating badge is not clipped by the cell. */
       header: 'Profile %',
       accessorKey: 'profile',
-      meta: { width: '8%', wrap: true },
+      meta: { width: '8%', wrap: true, align: 'center' },
       cell: info => {
         const p = info.row.original.profile;
         const T = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -2360,9 +2340,14 @@ function InitiateOnboardingModal({
   const obGross = useMemo(() => obEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obEarnings]);
   const obDed   = useMemo(() => obDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obDeductions]);
   const obBasic = useMemo(() => Number(obEarnings.find(c => c.code === 'basic')?.amount) || 0, [obEarnings]);
+  /* PF only applies while the employee is ON payroll. PF Applicable is hidden
+     when the payroll toggle goes off but its value stays `true` underneath, so
+     the PF row kept sitting in the deductions with no field on screen to clear
+     it. */
+  const obPfActive = s1.enable_payroll !== false && !!s1.pf_eligible;
   const obPfAmt = useMemo(
-    () => pfDeduction(obBasic, s1.pf_type, !!s1.pf_eligible),
-    [obBasic, s1.pf_type, s1.pf_eligible],
+    () => pfDeduction(obBasic, s1.pf_type, obPfActive),
+    [obBasic, s1.pf_type, obPfActive],
   );
   // PF is a row in the list, so the "Fixed Deductions" line excludes it or the
   // same rupee is reported twice on screen.
@@ -2379,6 +2364,11 @@ function InitiateOnboardingModal({
   const obSalaryAnnual  = useMemo(() => Math.round(obMonthlyOf(s1.annual_salary) * 12), [obMonthlyOf, s1.annual_salary]);
   const obBreakupAnnual = useMemo(() => Math.round(obGross * 12), [obGross]);
   const obDiff = obSalaryAnnual > 0 ? obBreakupAnnual - obSalaryAnnual : 0;  // + over, − under
+  /* A gap inside the rounding slack is not a difference worth reporting — see
+     CTC_ROUNDING_SLACK. Whole-rupee components can't land exactly on a CTC that
+     doesn't divide by 12. */
+  const obMatches = Math.abs(obDiff) <= CTC_ROUNDING_SLACK;
+  const obOverSalary = obDiff > CTC_ROUNDING_SLACK;
 
   /* ESI / Professional Tax are entered manually: ticking drops a labelled row
      into Deductions, unticking removes it. PT opens on its slab figure; ESI
@@ -2397,7 +2387,7 @@ function InitiateOnboardingModal({
       sync(obPt,  'pt',  'Professional Tax', statutoryPt(obGross, s1.gender));
 
       const pfIdx = next.findIndex(d => d.code === 'pf');
-      if (s1.pf_eligible) {
+      if (obPfActive) {
         const row = { code: 'pf', label: 'Provident Fund (PF)', amount: obPfAmt };
         if (pfIdx < 0) next = [...next, row];
         else if (Number(next[pfIdx].amount) !== obPfAmt) {
@@ -2409,7 +2399,7 @@ function InitiateOnboardingModal({
       return next === prev ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [obEsi, obPt, s1.pf_eligible, obPfAmt]);
+  }, [obEsi, obPt, obPfActive, obPfAmt]);
 
   const updateObRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
     const list = which === 'earn' ? obEarnings : obDeductions;
@@ -4606,7 +4596,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   style={{ cursor: 'pointer' }}
                 >
                   <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
-                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'PF enabled for this employee' : 'Enable PF for this employee'}</span>
+                  {/* Same field as the employee form's toggle (enable_payroll),
+                      so it carries the same words. It said "PF", which is the
+                      PF Applicable dropdown below it — one flag reading as two
+                      different settings depending on which screen you opened. */}
+                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'Payroll enabled for this employee' : 'Enable payroll for this employee'}</span>
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
@@ -4898,25 +4892,25 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                             <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
                             <div className="text-end">
                               <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>{fmt(obGross)}</div>
-                              <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obDiff > 0 ? '#dc2626' : '#0a8754') }}>
+                              <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obOverSalary ? '#dc2626' : '#0a8754') }}>
                                 ≈ {fmt(obBreakupAnnual)} / year
                               </div>
-                              {obSalaryAnnual > 0 && obDiff !== 0 && (
-                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obDiff > 0 ? '#dc2626' : '#0a8754' }}>
-                                  {obDiff > 0
+                              {obSalaryAnnual > 0 && !obMatches && (
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obOverSalary ? '#dc2626' : '#0a8754' }}>
+                                  {obOverSalary
                                     ? `${fmt(obDiff)} over the salary (${fmt(obSalaryAnnual)})`
                                     : `${fmt(Math.abs(obDiff))} under the salary (${fmt(obSalaryAnnual)})`}
                                 </div>
                               )}
-                              {obSalaryAnnual > 0 && obDiff === 0 && (
+                              {obSalaryAnnual > 0 && obMatches && (
                                 <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                               )}
                             </div>
                           </div>
 
-                          {(s1.pf_eligible || obDed > 0) && (
+                          {(obPfActive || obDed > 0) && (
                             <>
-                              {s1.pf_eligible && (
+                              {obPfActive && (
                                 <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                   <span className="text-muted">
                                     Provident Fund (PF) — {s1.pf_type === 'Standard'

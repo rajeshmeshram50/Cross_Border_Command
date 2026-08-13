@@ -89,6 +89,18 @@ export const pfDeduction = (basic: number, pfType: string, eligible: boolean): n
   return Math.round(Math.max(0, base) * 0.12);
 };
 
+/** Largest annual gap that is pure rounding rather than a real mismatch.
+ *
+ *  Components are held in whole rupees, so the monthly gross can sit up to 50
+ *  paise either side of CTC ÷ 12 — over twelve months, ±₹6. A CTC of
+ *  ₹1,40,00,000 divides to ₹11,66,666.67, rounds to ₹11,66,667, and annualises
+ *  to ₹1,40,00,004: the panel was flagging "₹4 over the salary" in red on a
+ *  perfectly ordinary figure, and warning about it again on save.
+ *
+ *  6, not 12: the smallest change anyone can actually make is ₹1/month = ₹12/yr,
+ *  so this absorbs the rounding without ever hiding a deliberate edit. */
+export const CTC_ROUNDING_SLACK = 6;
+
 /** Identity of a breakup, for skipping a POST that would save nothing new. */
 export const breakupSignature = (
   earnings: SalBreakComp[],

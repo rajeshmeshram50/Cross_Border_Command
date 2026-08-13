@@ -1439,33 +1439,63 @@
      The 8px below lives in this block's padding-bottom with
      .rec-req-tablewrap contributing 0 on top, so the two never stack. */
   gap: 4px;
-  /* 19px so a KPI card's left edge lands on the tab rail's left edge below it.
-     That 19 is the sum of what sits between the modal edge and the rail:
-     .rec-req-tablewrap padding (4) + .dt-root border (1) + .dt-toolbar
-     padding-left (14). Change any of those three and this has to follow, or
-     the cards and the tabs stop starting at the same point. */
-  padding: 8px 19px;
-  border-bottom: 1px solid #ede9fe;
+  /* 4px — the same inset as .rec-req-tablewrap, so a KPI card's outer edge is
+     flush with the table card's outer edge below it and both containers share
+     one left and right margin against the modal.
+     This replaced 19px, which aligned the cards with the TAB RAIL instead
+     (4 tablewrap + 1 .dt-root border + 14 .dt-toolbar padding). Aligning to the
+     rail meant a visibly wider side gap on the cards than on the table, so the
+     container edge won. Swap back to 19px if the rail matters more. */
+  padding: 8px 4px;
+  /* No border-bottom. It was the divider between the KPI band and the table
+     back when the two sat on different surfaces; now that the table wrapper
+     carries this same #fbfaff tint, the band has no edge to mark and the rule
+     just read as a stray line floating above the table card.
+     (The dark-theme blocks below still set border-color on this element — inert
+     with no border-style, left in place rather than hunted down.) */
   background:
     radial-gradient(800px 240px at 0% 0%, rgba(124,92,252,0.06) 0%, transparent 55%),
     radial-gradient(700px 200px at 100% 100%, rgba(167,139,250,0.04) 0%, transparent 55%),
     #fbfaff;
 }
 
-/* Table panel — the second of the two containers. Plain surface (no violet
-   wash) so it separates cleanly from the KPI band, with the requested 4px
-   left/right inset. padding-top is 0 on purpose: the 8px cards-to-table gap is
-   owned entirely by .rec-req-stats' padding-bottom, so the two don't stack into
-   a double gap. padding-bottom is the SAME 8px, so the space under the table
-   matches the space above it — and it still clears the DataTable's 16px corner
-   radius and shadow off the modal edge. */
+/* Spacing wrapper around the table. It carries no PANEL of its own — that
+   second surface behind a table which already renders as a card was a container
+   inside a container — but it does carry the KPI band's tint (#fbfaff, the flat
+   base of .rec-req-stats below its two radial washes). Left transparent, the
+   modal's own white showed through in the 4px margin and under the pager, so a
+   white frame appeared around the table card while everything above it was
+   lavender. Same tint = one continuous backdrop from the header down.
+   padding-top is 0 on purpose: the 8px cards-to-table gap is owned entirely by
+   .rec-req-stats' padding-bottom, so the two don't stack into a double gap.
+   padding-bottom is the SAME 8px, so the space under the table matches the
+   space above it, and it clears the card's 16px radius and shadow off the
+   modal edge. */
 .rec-req-tablewrap {
   padding: 0 4px 8px;
-  background: #ffffff;
+  background: #fbfaff;
 }
+/* Mirrors [data-bs-theme="dark"] .rec-req-stats so the two stay in step. */
 [data-bs-theme="dark"] .rec-req-tablewrap {
-  background: var(--vz-secondary-bg, #1a1d21);
+  background: var(--vz-card-bg);
 }
+
+/* Cap the body at 4 rows; row 5 onward scrolls. Keeps the modal a fixed height
+   whatever the tab holds, instead of growing to 8 rows on Pending and
+   collapsing on an empty tab.
+   226px = the 30px header + 4 rows of 49px:
+     header  9px padding top + 9px bottom + ~12px of 9.5px/1.3 caps   = 30
+     row     7px padding top + 7px bottom + 34px (the tallest cell is
+             the .rec-act-create button) + 1px border-bottom          = 49
+   .dt-scroll already carries `overflow: auto` and the thead is `position:
+   sticky`, so the header stays put while the rows move under it — no extra
+   markup needed. Recheck this number if the row's tallest control changes
+   height (it was 26px before Create Recruitment took the onboarding pill's
+   34px styling). */
+.rec-req-modal .dt-scroll { max-height: 226px; }
+/* The empty state renders in the same box, so let it use the full height rather
+   than being squeezed into a 226px window with its own scrollbar. */
+.rec-req-modal .dt-scroll:has(.dt-table-empty) { max-height: none; }
 @media (max-width: 1199px) { .rec-req-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
 /* Column count drops with width, but the gap does NOT — the page's g-1 gutter
    is the same at every breakpoint, so this used to widen to 8px and stop
@@ -2612,8 +2642,13 @@
 /* ── Body ───────────────────────────────────────────────────────────── */
 .rec-cancel-body {
   position: relative;
-  padding: 18px 22px 8px;
-  display: flex; flex-direction: column; gap: 14px;
+  /* 8px on all four sides, and 8px between the blocks inside — the same single
+     gap the Hiring Requests popup now uses above its KPI cards, below its table
+     and around its section cards. Was 18px 22px 8px with a 14px internal gap,
+     so the sides were nearly 3x the bottom and nothing lined up between the two
+     modals. One number, every edge. */
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 8px;
   /* A modal body is portalled to <body>, outside every `.card`, so the
      card-scoped var was empty here and the #ffffff fallback won.
      The dark override below tried to fix exactly this and used the SAME broken
@@ -2756,10 +2791,19 @@
   transition: border-color .15s ease, box-shadow .15s ease;
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
 }
+/* Violet focus ring, matching .rec-input:focus — the module's standard for a
+   focused field. This was orange (#f97316 + an orange glow), inherited from the
+   Cancel Recruitment styling this modal started as. The component is shared with
+   Mark Recruitment Completed, which is green-themed, so the orange read as a
+   warning on a field that is just an optional notes box. Violet is neutral
+   against both headers and matches every other form in the module. */
 .rec-cancel-textarea:focus {
   outline: none;
-  border-color: #f97316;
-  box-shadow: 0 0 0 3px rgba(249,115,22,0.18);
+  border-color: #7c5cfc;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.85),
+    0 0 0 3px rgba(124,92,252,0.18),
+    0 4px 10px rgba(124,92,252,0.10);
 }
 .rec-cancel-textarea::placeholder { color: #9ca3af; }
 [data-bs-theme="dark"] .rec-cancel-textarea {
@@ -2780,7 +2824,10 @@
 .rec-cancel-footer {
   display: flex; align-items: center; justify-content: flex-end;
   gap: 10px;
-  padding: 14px 22px;
+  /* Matches .rec-cancel-body's 8px so the Confirm button's right edge lands on
+     the same line as the content cards above it. At the old 22px the button sat
+     14px further in than everything it was confirming. */
+  padding: 8px;
   background: linear-gradient(180deg, #fcfcfd 0%, #f7f8fa 100%);
   border-top: 1px solid #ececf2;
 }
@@ -2820,6 +2867,39 @@
 }
 .rec-cancel-confirm:active { transform: translateY(0); filter: brightness(0.98); }
 .rec-cancel-confirm i { font-size: 14px; }
+
+/* "Confirm Completion" — the same treatment as .rec-btn-teal ("View Hiring
+   Requests" in the page header), at 40px.
+   The gradient used to be an inline `background` on the element, which left the
+   base rule's ORANGE shadow glowing under a green button — a cancel-coloured
+   halo on the completion action. Both layers are overridden here so they can't
+   drift apart again. */
+.rec-cancel-confirm--complete {
+  height: 40px;
+  background: linear-gradient(135deg, #10b981 0%, #0d9488 60%, #047857 100%);
+  box-shadow:
+    0 6px 16px rgba(13,148,136,0.38),
+    0 2px 4px rgba(5,150,105,0.22),
+    inset 0 1px 0 rgba(255,255,255,0.28),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+}
+.rec-cancel-confirm--complete:hover {
+  box-shadow:
+    0 10px 22px rgba(13,148,136,0.46),
+    0 3px 6px rgba(5,150,105,0.28),
+    inset 0 1px 0 rgba(255,255,255,0.34),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+  filter: brightness(1.06);
+}
+[data-bs-theme="dark"] .rec-cancel-confirm--complete,
+[data-layout-mode="dark"] .rec-cancel-confirm--complete {
+  background: linear-gradient(135deg, #34d399 0%, #10b981 60%, #059669 100%);
+  box-shadow:
+    0 6px 16px rgba(16,185,129,0.45),
+    0 2px 4px rgba(16,185,129,0.30),
+    inset 0 1px 0 rgba(255,255,255,0.20),
+    inset 0 -1px 0 rgba(0,0,0,0.08);
+}
 
 /* ── Dark-mode polish ─────────────────────────────────────────────────
    The Mark Recruitment Completed / Cancel Recruitment popups carry
@@ -5103,7 +5183,9 @@
    crisp percent in the centre, soft uppercase caption. */
 .ep-dial {
   position: relative;
-  width: 80px; height: 80px;
+  /* 58 (was 80) — it is a status read-out beside the title, not the subject of
+     the header, and at 80px it competed with the "Evidence Vault" heading. */
+  width: 58px; height: 58px;
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   filter: drop-shadow(0 4px 14px rgba(15,23,42,0.18));
@@ -5128,7 +5210,7 @@
   pointer-events: none;
 }
 .ep-dial-num {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -5137,15 +5219,7 @@
     0 2px 4px rgba(45,31,110,0.45);
   line-height: 1;
 }
-.ep-dial-label {
-  font-size: 7.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255,255,255,0.82);
-  text-transform: uppercase;
-  margin-top: 3px;
-  text-shadow: 0 1px 2px rgba(45,31,110,0.40);
-}
+/* .ep-dial-label removed with the "COMPLETE" caption it styled. */
 .ep-close {
   width: 32px; height: 32px;
   border-radius: 9px;
@@ -6856,16 +6930,26 @@
 
 /* Status pill — colour-coded by document state */
 .ev-doc-status {
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
+  /* Fixed width so every pill in the list shares one left and right edge —
+     "Uploaded" and "Pending" are different lengths, and ragged pills read as
+     rows that don't line up. */
+  min-width: 92px;
+  justify-content: center;
 }
+.ev-doc-status i { font-size: 12px; line-height: 1; }
+/* Uploaded and Signed join Verified in green: all three mean the document is
+   IN the vault, and colouring them blue/violet made a complete row look like it
+   was still mid-flight. Amber (Pending) and grey (missing) stay as they were —
+   those are the states that still owe something. */
 .ev-doc-status--verified      { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.ev-doc-status--uploaded      { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
-.ev-doc-status--signed        { background: #ede9fe; color: #5b3fd1; border: 1px solid #ddd6fe; }
+.ev-doc-status--uploaded      { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.ev-doc-status--signed        { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .ev-doc-status--sent          { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .ev-doc-status--pending       { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .ev-doc-status--not-generated { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
@@ -6892,30 +6976,51 @@
 [data-bs-theme="dark"] .ev-group-icon { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 
 /* Action buttons */
+/* Sized and shaped like the app's standard buttons (.rec-btn-ghost /
+   .rec-btn-primary) rather than the one-off 28px/7px pair this used to be —
+   same 10px radius, same 12.5px label, same gap. Height stays a notch under
+   the 36px page buttons because these live inside a list row. */
 .ev-doc-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  min-width: 108px;
+  border-radius: 10px;
   border: 1px solid transparent;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform .15s ease, filter .15s ease, background .15s ease;
+  transition: transform .15s ease, filter .15s ease, background .15s ease, border-color .15s ease;
   flex-shrink: 0;
   white-space: nowrap;
 }
 .ev-doc-btn i { font-size: 13px; }
+/* Icon-only variant — square, so it reads as an icon button rather than a
+   label button with the text knocked out and the padding left behind. */
+.ev-doc-btn--icon {
+  min-width: 0;
+  width: 32px;
+  padding: 0;
+  gap: 0;
+}
+/* 14px, not 16 — Remix's line icons scale their stroke with the glyph, so the
+   larger size was reading as a heavier eye than the 14px action icons it sits
+   alongside (ActionBtn uses .fs-14). */
+.ev-doc-btn--icon i { font-size: 14px; }
 .ev-doc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Matches ActionBtn in the employee table — the app's standard icon button:
+   secondary surface, --vz-border-color outline, grey glyph, and the border +
+   icon taking the accent only on hover. Both are theme tokens, so dark mode
+   needs no separate block. */
 .ev-doc-btn--view {
-  background: #ffffff;
+  background: var(--vz-secondary-bg);
   color: var(--vz-secondary-color);
-  border-color: #e5e7eb;
+  border-color: var(--vz-border-color);
+  font-weight: 600;
 }
 .ev-doc-btn--view:hover:not(:disabled) {
-  background: #f9fafb;
-  border-color: #d1d5db;
-  color: var(--vz-body-color);
+  border-color: #7c5cfc;
+  color: #7c5cfc;
 }
 .ev-doc-btn--preview {
   background: #ffffff;
@@ -6923,10 +7028,13 @@
   border-color: #a7f3d0;
 }
 .ev-doc-btn--preview:hover:not(:disabled) { background: #ecfdf5; }
+/* Standard primary — the same violet gradient + lift as .rec-btn-primary,
+   instead of the flat #6d28d9 block this carried on its own. */
 .ev-doc-btn--download {
-  background: #6d28d9;
+  background: linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
   color: #ffffff;
-  border-color: #6d28d9;
+  border: 0;
+  box-shadow: 0 6px 16px rgba(147,51,234,0.40), inset 0 1px 0 rgba(255,255,255,0.30);
 }
 .ev-doc-btn--download:hover:not(:disabled) {
   background: #5b21b6;
@@ -12027,6 +12135,18 @@
             background: rgba(124,92,252,0.18) !important;
             border-color: rgba(124,92,252,0.55) !important;
           }
+          /* Kill the native number spinners. On a salary field the stepper is
+             worse than useless — one click moves a CTC by ₹1, the arrows sit on
+             top of a right-aligned figure, and they only appear on hover, so
+             the amount visibly shifts as the pointer crosses it. Typing is the
+             only sane way to enter these. `.no-spin` is for the breakup rows,
+             whose inputs are styled inline and carry no class of their own. */
+          .emp-input[type="number"]::-webkit-outer-spin-button,
+          .emp-input[type="number"]::-webkit-inner-spin-button,
+          .no-spin::-webkit-outer-spin-button,
+          .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+          .emp-input[type="number"], .no-spin { -moz-appearance: textfield; appearance: textfield; }
+
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }
@@ -12242,7 +12362,9 @@
           .assign-error i { font-size: 13px; }
           .assign-save-btn {
             display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 22px; border-radius: 999px;
+            /* 8px vertical (was 10) — the button sets the footer's height, so
+               trimming the bar's own padding alone left it taller than asked. */
+            padding: 8px 22px; border-radius: 999px;
             font-size: 13.5px; font-weight: 600; color: #fff;
             border: none;
             background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #7c5cfc 100%);

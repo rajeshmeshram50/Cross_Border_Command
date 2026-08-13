@@ -22,7 +22,7 @@ import { leavePlansApi } from './leavePlansApi';
    and the Revise Salary modal writes the same table, so a copy per screen is
    how the figures drift apart. */
 import {
-  type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL,
+  type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
   seedBreakup, absorbIntoSpecial, statutoryPt, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
@@ -802,6 +802,16 @@ export default function HrEmployees() {
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
   const [aOtherOpts, setAOtherOpts] = useState<AssetOpt[]>([]);
 
+  /* The two device pickers only exist on "Yes", so the Assets row holds 2, 3 or
+     4 fields — and the fixed md={4} it used to carry suited exactly one of
+     those. At 2 it left the right third of the dialog empty; at 4 it put three
+     on the first row and stranded Mobile Device alone on the second.
+     Deriving the span keeps every row full — 2 → 6+6, 3 → 4+4+4, 4 → 6+6 twice
+     — and at 4 it also lands each toggle beside its own device picker. */
+  const assetFieldCount =
+    2 + (aLaptopAssigned === 'Yes' ? 1 : 0) + (aMobileAssigned === 'Yes' ? 1 : 0);
+  const assetColSpan = assetFieldCount === 3 ? 4 : 6;
+
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
     const raw = (row as any)._raw || {};
@@ -1225,11 +1235,17 @@ export default function HrEmployees() {
     () => Number(eEarnings.find(c => c.code === 'basic')?.amount) || 0,
     [eEarnings],
   );
+  /* PF only applies while the employee is ON payroll. The PF Applicable field
+     is hidden when the payroll toggle is off, but its value stays `true`
+     underneath — so the PF row went on sitting in the deductions, and the ₹1,800
+     went on coming off the net, for an employee who had just been taken off
+     payroll and had no field on screen to turn it back off with. */
+  const pfActive = eEnablePayroll && ePfEligible;
   const breakupPf = useMemo(() => {
-    if (!ePfEligible) return 0;
+    if (!pfActive) return 0;
     const base = ePfType === 'Standard' ? breakupBasic : Math.min(breakupBasic, 15000);
     return Math.round(base * 0.12);
-  }, [ePfEligible, ePfType, breakupBasic]);
+  }, [pfActive, ePfType, breakupBasic]);
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
   // auto-computed — they're added as editable rows in Fixed Deductions
   // (so they're part of breakupDed when present), filled by HR / accounts.
@@ -1245,7 +1261,11 @@ export default function HrEmployees() {
   const salaryAnnual = useMemo(() => Math.round(monthlyGrossFromSalary() * 12), [monthlyGrossFromSalary]);
   const breakupAnnual = useMemo(() => Math.round(breakupGross * 12), [breakupGross]);
   const breakupDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
-  const breakupOverSalary = breakupDiff > 0;
+  /* A gap inside the rounding slack is not a difference worth reporting — see
+     CTC_ROUNDING_SLACK. Every comparison below reads this, so the red line, the
+     colour and the save-time warning all agree. */
+  const breakupMatches = Math.abs(breakupDiff) <= CTC_ROUNDING_SLACK;
+  const breakupOverSalary = breakupDiff > CTC_ROUNDING_SLACK;
 
   // ESI / Professional Tax are entered manually: ticking the box drops a
   // labelled, free-input row into Fixed Deductions for HR/accounts to fill;
@@ -1275,7 +1295,7 @@ export default function HrEmployees() {
          so the row is kept in step with that figure rather than left for
          someone to type. */
       const pfIdx = next.findIndex(d => d.code === 'pf');
-      if (ePfEligible) {
+      if (pfActive) {
         const row = { code: 'pf', label: 'Provident Fund (PF)', amount: breakupPf };
         if (pfIdx < 0) next = [...next, row];
         else if (Number(next[pfIdx].amount) !== breakupPf) {
@@ -1287,7 +1307,7 @@ export default function HrEmployees() {
       return next === prev ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eEsiApplicable, ePtApplicable, ePfEligible, breakupPf]);
+  }, [eEsiApplicable, ePtApplicable, pfActive, breakupPf]);
 
   const breakupErrors = useMemo(
     () => validateBreakup(eEarnings, eDeductions, eDetailedBreakup),
@@ -1438,6 +1458,7 @@ export default function HrEmployees() {
                   <span style={{ position: 'absolute', left: 2, fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>₹</span>
                   <input
                     type="number"
+                    className="no-spin"
                     min={0}
                     max={MAX_COMP_AMOUNT}
                     step="0.01"
@@ -2577,27 +2598,11 @@ export default function HrEmployees() {
       meta: { width: '15%' },
       cell: info => {
         const e = info.row.original;
+        /* Avatar removed — the photo/initials circle carried no information the
+           name and email below it don't already give, and it cost the column
+           42px of width that the (often long) names had to wrap into. */
         return (
           <div className="d-flex align-items-center gap-2">
-            {e.photoUrl ? (
-              <img
-                src={e.photoUrl}
-                alt={e.name}
-                className="rounded-circle flex-shrink-0"
-                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-              />
-            ) : (
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{
-                  width: 34, height: 34, fontSize: 12,
-                  background: `linear-gradient(135deg, ${e.accent}, ${e.accent}cc)`,
-                  boxShadow: `0 2px 6px ${e.accent}40`,
-                }}
-              >
-                {e.initials}
-              </div>
-            )}
             <div className="min-w-0" style={{ flex: 1, minWidth: 0 }}>
               <Tooltip label={e.name}>
                 <div className="fw-semibold fs-13 text-truncate">{e.name}</div>
@@ -2624,7 +2629,11 @@ export default function HrEmployees() {
          other ID column in the app. */
       header: 'Employee ID',
       accessorKey: 'id',
-      meta: { width: '7%' },
+      /* Pills and chips are centred across every HR list: a badge is a fixed
+         shape, so left-aligning it leaves a ragged gap on the right of each
+         cell that reads as mis-alignment rather than as text. Plain-text
+         columns stay left — they're read, not scanned. */
+      meta: { width: '7%', align: 'center' },
       cell: info => <IdCell value={info.getValue() as string} />,
     },
     {
@@ -2642,7 +2651,7 @@ export default function HrEmployees() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       /* Role names run long ("Software Development", "Training Coordinator")
          and the column is narrow — ChipCell ellipsises inside the pill and
          reveals the full name on hover, same contract as Designation. */
@@ -2661,6 +2670,11 @@ export default function HrEmployees() {
       header: 'Ancillary Role',
       id: 'ancillaryRoles',
       enableSorting: false,
+      /* LEFT, unlike the single-badge columns. This cell holds a variable
+         number of chips plus a "+N" overflow counter, so its width changes row
+         to row — centring made every row start at a different x and the column
+         read as jittery. A common left edge is what makes a stack of chips
+         scannable. */
       meta: { width: '9%' },
       cell: info => <AncillaryRolesChip names={info.row.original.ancillaryRoles} />,
     },
@@ -2676,7 +2690,7 @@ export default function HrEmployees() {
       // wrap: the badge floats ABOVE the bar, so the cell must not clip it
       // vertically. 9% (was 7%) gives the meter enough room that it no longer
       // has to overflow sideways into the Onboarding column.
-      meta: { width: '9%', wrap: true },
+      meta: { width: '9%', wrap: true, align: 'center' },
       cell: info => {
         const p = info.row.original.profile;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
@@ -3447,21 +3461,22 @@ export default function HrEmployees() {
                   <h5 className="fw-bold mb-0 text-white" style={{ fontSize: 17, letterSpacing: '-0.01em' }}>
                     {empMode === 'edit' ? 'Edit Employee' : 'Add Employee'}
                   </h5>
+                  {/* Names the stage the wizard is actually on, so the header
+                      says what this screen is for rather than just which modal
+                      is open. The "Step n of 4" pill counts; this one tells. */}
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.82)', marginTop: 2 }}>
+                    {empStep === 1 && 'Personal details, contact and identity'}
+                    {empStep === 2 && 'Department, role, reporting line and employment terms'}
+                    {empStep === 3 && 'Work schedule, policies, assets and documents'}
+                    {empStep === 4 && 'CTC, payroll configuration and salary breakup'}
+                  </div>
                 </div>
               </div>
+              {/* The "Step n of 4" pill is gone: the stepper immediately below
+                  already marks the current step and the ones done, and the
+                  subtitle names the stage — three ways of saying the same
+                  thing in one header. */}
               <div className="d-flex align-items-center gap-2 flex-shrink-0">
-                <span
-                  className="badge rounded-pill"
-                  style={{
-                    background: 'rgba(255,255,255,0.22)',
-                    color: '#fff',
-                    fontWeight: 600,
-                    fontSize: 11,
-                    padding: '6px 12px',
-                  }}
-                >
-                  Step {empStep} of 4
-                </span>
                 <button
                   type="button"
                   onClick={closeEmp}
@@ -4597,14 +4612,14 @@ export default function HrEmployees() {
                             <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
                               ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
                             </div>
-                            {salaryAnnual > 0 && breakupDiff !== 0 && (
+                            {salaryAnnual > 0 && !breakupMatches && (
                               <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
                                 {breakupOverSalary
                                   ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
                                   : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
                               </div>
                             )}
-                            {salaryAnnual > 0 && breakupDiff === 0 && (
+                            {salaryAnnual > 0 && breakupMatches && (
                               <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                             )}
                           </div>
@@ -4612,9 +4627,9 @@ export default function HrEmployees() {
                         {/* Live deduction estimate + net — Net = Gross − PF − ESI −
                           PT − fixed deductions. Updates with PF / ESI / PT
                           selections and any Fixed Deductions added. */}
-                        {(ePfEligible || breakupDed > 0) && (
+                        {(pfActive || breakupDed > 0) && (
                           <>
-                            {ePfEligible && (
+                            {pfActive && (
                               <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                 <span className="text-muted">
                                   Provident Fund (PF) — {ePfType === 'Standard'
@@ -4638,7 +4653,7 @@ export default function HrEmployees() {
                                   ₹{breakupNet.toLocaleString('en-IN')}
                                 </div>
                                 <div className="text-muted" style={{ fontSize: 11.5 }}>
-                                  Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
+                                  Gross ₹{breakupGross.toLocaleString('en-IN')}{pfActive ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
                                 </div>
                               </div>
                             </div>
@@ -4662,22 +4677,24 @@ export default function HrEmployees() {
             className="emp-footer-bar d-flex align-items-center justify-content-between gap-2 flex-wrap"
             style={{ padding: '14px 22px' }}
           >
-            {empStep > 1 ? (
-              <button
-                type="button"
-                onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
-                // Back must freeze too — stepping away mid-save would swap the
-                // form under the in-flight PUT.
-                disabled={saving}
-                className="rec-btn-ghost"
-              >
-                <i className="ri-arrow-left-s-line" /> Back
-              </button>
-            ) : (
-              <span />
-            )}
+            {/* Left slot is empty now — Previous sits beside the forward button
+                on the right, so the pair reads as one control and the pointer
+                doesn't cross the dialog to step back and forth. */}
+            <span />
 
             <div className="d-flex align-items-center gap-2">
+              {empStep > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
+                  // Previous must freeze too — stepping away mid-save would swap
+                  // the form under the in-flight PUT.
+                  disabled={saving}
+                  className="rec-btn-ghost"
+                >
+                  <i className="ri-arrow-left-s-line" /> Previous
+                </button>
+              )}
               {empStep < 4 ? (
                 <button
                   type="button"
@@ -4685,7 +4702,7 @@ export default function HrEmployees() {
                   disabled={saving}
                   className="rec-btn-primary"
                   style={{
-                    minWidth: 110,
+                    minWidth: 140,
                     justifyContent: 'center',
                     cursor: saving ? 'wait' : 'pointer',
                     opacity: saving ? 0.9 : 1,
@@ -4698,7 +4715,11 @@ export default function HrEmployees() {
                     </>
                   ) : (
                     <>
-                      Next <i className="ri-arrow-right-s-line" />
+                      {/* "Save & Next" — the step IS persisted on the way
+                          through (handleNextStep PUTs before advancing), and a
+                          plain "Next" read like the work was being carried
+                          along unsaved until the final button. */}
+                      <i className="ri-check-line" /> Save &amp; Next <i className="ri-arrow-right-s-line" />
                     </>
                   )}
                 </button>
@@ -4778,7 +4799,10 @@ export default function HrEmployees() {
                   style={{
                     width: 46, height: 46,
                     background: 'rgba(255,255,255,0.22)',
-                    border: '1px solid rgba(255,255,255,0.30)',
+                    /* Heavier ring — at 1px the outline all but vanished against
+                       the violet gradient behind it, leaving the tile reading as
+                       a soft patch rather than a framed icon. */
+                    border: '2.5px solid rgba(255,255,255,0.55)',
                   }}
                 >
                   <i className="ri-computer-line" style={{ color: '#fff', fontSize: 21 }} />
@@ -4804,7 +4828,7 @@ export default function HrEmployees() {
               <i className="ri-computer-line" /> Assets &amp; Security
             </div>
             <Row className="g-3">
-              <Col md={4}>
+              <Col md={assetColSpan}>
                 <label>Laptop Assigned</label>
                 <MasterSelect
                   value={aLaptopAssigned}
@@ -4817,7 +4841,7 @@ export default function HrEmployees() {
                 />
               </Col>
               {aLaptopAssigned === 'Yes' && (
-                <Col md={4}>
+                <Col md={assetColSpan}>
                   <label>Laptop Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aLaptopMasterAssetId}
@@ -4832,7 +4856,7 @@ export default function HrEmployees() {
                 </Col>
               )}
 
-              <Col md={4}>
+              <Col md={assetColSpan}>
                 <label>Mobile Assigned</label>
                 <MasterSelect
                   value={aMobileAssigned}
@@ -4845,7 +4869,7 @@ export default function HrEmployees() {
                 />
               </Col>
               {aMobileAssigned === 'Yes' && (
-                <Col md={4}>
+                <Col md={assetColSpan}>
                   <label>Mobile Device<span style={{ color: '#ef4444', marginLeft: 2 }}>*</span></label>
                   <MasterSelect
                     value={aMobileMasterAssetId}
@@ -4876,7 +4900,10 @@ export default function HrEmployees() {
 
           <div
             className="d-flex align-items-center justify-content-between gap-2 flex-wrap"
-            style={{ padding: '14px 24px 18px', borderTop: '1px solid var(--vz-border-color)' }}
+            /* Tightened from 14/18 — the bottom pad was 4px deeper than the top,
+               so the bar sat visually low and added height the two buttons
+               never needed. Even 10px now. */
+            style={{ padding: '10px 24px', borderTop: '1px solid var(--vz-border-color)' }}
           >
             <span />
             <div className="d-flex align-items-center gap-2">
