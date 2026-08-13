@@ -33,6 +33,10 @@ class AttendanceRegularizationController extends Controller
 
     private const ADMIN_TYPES = ['super_admin', 'client_admin', 'branch_user'];
 
+    /** Office default applied when the employee's shift resolves to no timing —
+     *  same pair AttendanceController / PayrollService fall back to. */
+    private const DEFAULT_SHIFT = ['09:30', '18:30'];
+
     // ─────────────────────────────────────────────────────────────────────
     // Index — regularization history for an employee
     // ─────────────────────────────────────────────────────────────────────
@@ -152,6 +156,25 @@ class AttendanceRegularizationController extends Controller
             abort(422, 'Add at least one punch entry (an in or out time) to adjust the attendance log.');
         }
 
+        /* Overtime may not be created by regularization — bound every requested
+         * punch to the assigned shift before it is stored. Done at filing time
+         * (not only on approval) so the requester sees the trim immediately and
+         * the approver reviews the same times that will actually be written. */
+        $shiftNotice = null;
+        if ($data['mode'] === 'adjust') {
+            $bounded = $this->boundPunchesToShift($punches, $employee);
+            if (empty($bounded['punches'])) {
+                abort(422, 'Those times fall entirely outside the assigned shift ('
+                    . $bounded['window'] . '). Regularization can only correct hours within the shift —'
+                    . ' overtime has to come from an actual punch at the device.');
+            }
+            if ($bounded['trimmed']) {
+                $shiftNotice = 'Times outside the assigned shift (' . $bounded['window']
+                    . ') were trimmed — regularization cannot be used to claim overtime.';
+            }
+            $punches = $bounded['punches'];
+        }
+
         // One open request per (employee, date) — block stacking duplicates.
         $dup = AttendanceRegularization::where('employee_id', $employee->id)
             ->where('regularization_date', $dateStr)
@@ -219,6 +242,7 @@ class AttendanceRegularizationController extends Controller
         $payload = $row->load('approver:id,name')->toArray();
         $payload['auto_approved']         = $autoApproved;
         $payload['pending_approver_label'] = $pendingApprover;
+        $payload['shift_notice']          = $shiftNotice;
 
         return response()->json(['data' => $payload], 201);
     }
@@ -270,15 +294,32 @@ class AttendanceRegularizationController extends Controller
         $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
-            if (!$myEmployeeId) {
+
+            /* Reporting-manager matching has to cover BOTH links, exactly as
+             * isReportingManager() and snapshotApprovalChain() already do.
+             * Matching only reporting_manager_id stranded every request routed
+             * to a user-linked manager: the chain named them, they were
+             * authorised to approve, but the request never appeared in their
+             * queue — Pending forever with no one able to see it. A manager who
+             * is a plain login user with no employee row of their own hit the
+             * same wall from the other side, via the early return that used to
+             * sit here. */
+            if (!$myEmployeeId
+                && !Employee::where('reporting_manager_user_id', $user->id)->exists()) {
                 return response()->json(['data' => []]);
             }
+
             // My own requests, plus requests by anyone who reports to me.
-            $q->where(function ($w) use ($myEmployeeId) {
-                $w->where('employee_id', $myEmployeeId)
-                  ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                      $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                  });
+            $q->where(function ($w) use ($myEmployeeId, $user) {
+                if ($myEmployeeId) {
+                    $w->where('employee_id', $myEmployeeId)
+                      ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                          $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                      });
+                }
+                $w->orWhereIn('employee_id', function ($sub) use ($user) {
+                    $sub->select('id')->from('employees')->where('reporting_manager_user_id', $user->id);
+                });
             });
             if ($user->client_id) $q->where('client_id', $user->client_id);
         } elseif ($user->user_type !== 'super_admin' && $user->client_id) {
@@ -581,6 +622,17 @@ class AttendanceRegularizationController extends Controller
             ? 'Work From Home'
             : 'On Duty';
 
+        /* A rest day keeps its own status here too. An employee is already paid
+         * for a weekly off or holiday, so crediting it again as On Duty adds
+         * nothing — but it does strip the status overtime detection relies on to
+         * skip the day, which (PAY-23) would turn any punches already on that
+         * date into a full day of auto-paid overtime. */
+        $restKind = app(\App\Services\PayrollService::class)
+            ->restDayKind($employee, Carbon::parse($dateStr));
+        if ($restKind !== null) {
+            $status = $restKind;
+        }
+
         $attendance = Attendance::where('employee_id', $employee->id)
             ->whereDate('attendance_date', $dateStr)
             ->lockForUpdate()
@@ -635,6 +687,27 @@ class AttendanceRegularizationController extends Controller
             return;
         }
 
+        /* Re-bound to the shift before writing. store() already did this, but
+         * requests raised BEFORE that gate existed are still sitting in approval
+         * queues carrying unbounded times, and this is the point where they
+         * would become real punches — and therefore real overtime. Re-running it
+         * here costs nothing for an already-bounded set. */
+        if (!$isExempt) {
+            $bounded = $this->boundPunchesToShift($punches, $employee);
+            if (empty($bounded['punches'])) {
+                Log::warning('[regularization] apply skipped — punches fall entirely outside the shift', [
+                    'request_id' => $row->id, 'employee_id' => $employee->id, 'window' => $bounded['window'],
+                ]);
+                return;
+            }
+            if ($bounded['trimmed']) {
+                Log::info('[regularization] punches trimmed to shift window on apply', [
+                    'request_id' => $row->id, 'window' => $bounded['window'],
+                ]);
+            }
+            $punches = $bounded['punches'];
+        }
+
         // An exemption stamps the day's status and touches no punches, so it
         // takes its own short path and then shares the payslip refresh below.
         if ($isExempt) {
@@ -658,6 +731,22 @@ class AttendanceRegularizationController extends Controller
                     ->whereDate('attendance_date', $dateStr)
                     ->lockForUpdate()
                     ->first();
+                /* A weekly off or holiday stays a REST day even after its
+                 * punches are corrected.
+                 *
+                 * Stamping 'Present' here was the second way regularization
+                 * created overtime, and the shift bounding does not catch it:
+                 * PAY-23 makes EVERY hour worked on a rest day overtime, and
+                 * detected hours are paid with no approval gate. So an approved
+                 * 09:30–18:30 correction on a Sunday — entirely inside the
+                 * shift — silently became a full day of paid OT. Keeping the
+                 * day's real status leaves the corrected timeline intact while
+                 * overtime detection skips it, exactly as it does for an
+                 * uncorrected rest day. */
+                $restKind  = app(\App\Services\PayrollService::class)
+                    ->restDayKind($employee, Carbon::parse($dateStr));
+                $dayStatus = $restKind ?? 'Present';
+
                 if (!$attendance) {
                     $attendance = Attendance::create([
                         'client_id'       => $employee->client_id,
@@ -665,7 +754,7 @@ class AttendanceRegularizationController extends Controller
                         'user_id'         => $employee->user_id,
                         'employee_id'     => $employee->id,
                         'attendance_date' => $dateStr,
-                        'status'          => 'Present',
+                        'status'          => $dayStatus,
                     ]);
                 }
 
@@ -706,14 +795,30 @@ class AttendanceRegularizationController extends Controller
                 // Replace the day's punches with the approved corrected set.
                 AttendancePunch::where('attendance_id', $attendance->id)->delete();
 
-                // Flatten {in,out} pairs into discrete, time-ordered events.
+                /* Flatten {in,out} pairs into discrete, time-ordered events.
+                 *
+                 * On a shift that crosses midnight the tail of the window falls
+                 * on the NEXT calendar day: pinning every time to $dateStr put a
+                 * 22:00–06:00 night's 06:00 out seventeen hours BEFORE its own
+                 * 22:00 in, so sorting inverted the timeline (Check Out 06:00 →
+                 * Step In 22:00) and check_out_at landed before check_in_at.
+                 * nearestToWindow already resolves which side of midnight a bare
+                 * clock time belongs to — reuse it rather than re-deciding. */
+                [$sMin, $eMin] = $this->shiftBoundsFor($employee);
+                $overnight     = $eMin > 1440;
+
                 $events = [];
                 foreach ($punches as $p) {
                     foreach (['in', 'out'] as $dir) {
                         $t = trim((string) ($p[$dir] ?? ''));
                         if ($t === '' || !preg_match('/^\d{1,2}:\d{2}$/', $t)) continue;
+                        $at = Carbon::parse("$dateStr $t", self::DISPLAY_TZ);
+                        if ($overnight
+                            && ($this->nearestToWindow($this->toMinutes($t), $sMin, $eMin) ?? 0) >= 1440) {
+                            $at->addDay();
+                        }
                         $events[] = [
-                            'ts'  => Carbon::parse("$dateStr $t", self::DISPLAY_TZ)->setTimezone('UTC'),
+                            'ts'  => $at->setTimezone('UTC'),
                             'dir' => $dir,
                         ];
                     }
@@ -762,7 +867,7 @@ class AttendanceRegularizationController extends Controller
                     'check_in_method'  => $firstIn?->method,
                     'check_out_at'     => $lastOut?->punched_at,
                     'check_out_method' => $lastOut?->method,
-                    'status'           => 'Present',
+                    'status'           => $dayStatus,
                 ]);
 
                 // Link the request to the (possibly newly created) day row.
@@ -847,6 +952,168 @@ class AttendanceRegularizationController extends Controller
         }
 
         return response()->json(['data' => $out]);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Shift bounding — regularization may never manufacture overtime
+    // ─────────────────────────────────────────────────────────────────────
+
+    /**
+     * Resolve the employee's shift as minute offsets [start, end].
+     *
+     * `end` is expressed on the SAME continuous scale as `start`, so a night
+     * shift that crosses midnight (22:00–06:00) comes back as [1320, 1800]
+     * rather than [1320, 360] — that keeps every comparison below a plain
+     * integer range test instead of a special case per shift type.
+     *
+     * @return array{0:int,1:int,2:string,3:string}  [startMin, endMin, "HH:MM", "HH:MM"]
+     */
+    private function shiftBoundsFor(Employee $employee): array
+    {
+        [$start, $end] = $employee->resolveShiftWindow();
+        $start = $this->toMinutes((string) $start) !== null ? (string) $start : self::DEFAULT_SHIFT[0];
+        $end   = $this->toMinutes((string) $end)   !== null ? (string) $end   : self::DEFAULT_SHIFT[1];
+
+        $sMin = (int) $this->toMinutes($start);
+        $eMin = (int) $this->toMinutes($end);
+        if ($eMin <= $sMin) {
+            $eMin += 1440; // crosses midnight
+        }
+
+        return [$sMin, $eMin, $start, $end];
+    }
+
+    /** "HH:MM" → minutes past midnight, or null when unparseable. */
+    private function toMinutes(string $t): ?int
+    {
+        if (!preg_match('/^(\d{1,2}):(\d{2})$/', trim($t), $m)) {
+            return null;
+        }
+        $h = (int) $m[1];
+        $i = (int) $m[2];
+        if ($h > 23 || $i > 59) {
+            return null;
+        }
+        return $h * 60 + $i;
+    }
+
+    /**
+     * Place an ambiguous clock time on the night-shift scale.
+     *
+     * "05:00" can mean 300 (before the window) or 1740 (inside a 22:00–06:00
+     * shift); the reading nearer the window is the one the employee meant.
+     */
+    private function nearestToWindow(?int $min, int $sMin, int $eMin): ?int
+    {
+        if ($min === null) {
+            return null;
+        }
+        $distance = fn (int $v) => $v < $sMin ? $sMin - $v : ($v > $eMin ? $v - $eMin : 0);
+
+        return $distance($min + 1440) < $distance($min) ? $min + 1440 : $min;
+    }
+
+    /** Minutes (possibly ≥1440 from a night shift) back to a same-day "HH:MM". */
+    private function toHhmm(int $min): string
+    {
+        $min = (($min % 1440) + 1440) % 1440;
+        return sprintf('%02d:%02d', intdiv($min, 60), $min % 60);
+    }
+
+    /**
+     * Confine every requested punch to the employee's shift window.
+     *
+     * Regularization corrects a day the device got WRONG — it is not a channel
+     * for claiming extra hours. Left unbounded it was exactly that: an approved
+     * 09:30–22:00 request wrote real punches, and for an overtime-applicable
+     * employee PayrollService then detected and PAID the post-shift hours, with
+     * no punch ever having happened at the device. Overtime has to come from the
+     * biometric log, so anything outside the shift is trimmed away here.
+     *
+     * Trimming rather than rejecting outright keeps the screen usable: the
+     * common real request is "I was here from 09:30, the reader missed my in
+     * punch", occasionally with a rough end time typed past the shift. That is
+     * still honoured — only the out-of-shift portion is dropped. A window that
+     * lies ENTIRELY outside the shift carries no correctable in-shift time at
+     * all, so it is refused by the caller instead of being silently flattened
+     * to a zero-length entry.
+     *
+     * @param  array<int, array{in:?string, out:?string}>  $punches
+     * @return array{punches:array<int,array{in:?string,out:?string}>, trimmed:bool, dropped:int, window:string}
+     */
+    private function boundPunchesToShift(array $punches, Employee $employee): array
+    {
+        [$sMin, $eMin, $sLabel, $eLabel] = $this->shiftBoundsFor($employee);
+
+        $out     = [];
+        $trimmed = false;
+        $dropped = 0;
+
+        foreach ($punches as $p) {
+            $inMin  = $p['in']  !== null ? $this->toMinutes((string) $p['in'])  : null;
+            $outMin = $p['out'] !== null ? $this->toMinutes((string) $p['out']) : null;
+
+            // On a night shift a bare "HH:MM" is ambiguous: 05:00 against a
+            // 22:00–06:00 window is the tail of the shift, while 21:00 is the
+            // hour before it starts. Resolve each time to whichever of the two
+            // readings sits nearer the window.
+            if ($eMin > 1440) {
+                $inMin  = $this->nearestToWindow($inMin,  $sMin, $eMin);
+                $outMin = $this->nearestToWindow($outMin, $sMin, $eMin);
+            }
+
+            if ($inMin === null && $outMin === null) {
+                $dropped++;
+                $trimmed = true;
+                continue;
+            }
+
+            /* A COMPLETE pair spans an interval, so it survives only if that
+             * interval overlaps the shift. One entirely outside (20:00–22:00 on
+             * a 09:30–18:30 shift) is pure overtime and is dropped rather than
+             * flattened onto the shift end.
+             *
+             * A ONE-SIDED entry is a point in time, not an interval — the
+             * commonest real request on this screen is "I arrived at 08:00 and
+             * the reader missed my in punch". Treating it as a zero-width
+             * interval made it overlap nothing and discarded the correction
+             * outright, so a lone punch is always pulled to the nearest edge of
+             * the window instead. It cannot yield overtime either way: a lone in
+             * leaves check_out_at null (detection needs an out), and a lone out
+             * lands at or before the shift end. */
+            if ($inMin !== null && $outMin !== null && ($outMin <= $sMin || $inMin >= $eMin)) {
+                $dropped++;
+                $trimmed = true;
+                continue;
+            }
+
+            $clampedIn  = $inMin  !== null ? min(max($inMin,  $sMin), $eMin) : null;
+            $clampedOut = $outMin !== null ? min(max($outMin, $sMin), $eMin) : null;
+
+            if ($clampedIn !== $inMin || $clampedOut !== $outMin) {
+                $trimmed = true;
+            }
+
+            // A pair flattened to a single instant — or entered backwards —
+            // records no worked time.
+            if ($clampedIn !== null && $clampedOut !== null && $clampedOut <= $clampedIn) {
+                $dropped++;
+                $trimmed = true;
+                continue;
+            }
+
+            $out[] = [
+                'in'  => $clampedIn  !== null ? $this->toHhmm($clampedIn)  : null,
+                'out' => $clampedOut !== null ? $this->toHhmm($clampedOut) : null,
+            ];
+        }
+
+        return [
+            'punches' => $out,
+            'trimmed' => $trimmed,
+            'dropped' => $dropped,
+            'window'  => $sLabel . ' – ' . $eLabel,
+        ];
     }
 
     // ─────────────────────────────────────────────────────────────────────

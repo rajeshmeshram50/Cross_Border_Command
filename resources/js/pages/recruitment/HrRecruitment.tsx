@@ -1421,7 +1421,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       id: 'code',
       accessorFn: (r: HiringRequestRow) => r.code || r.id,
       sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     {
@@ -1440,7 +1440,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       meta: { width: '10%' },
       cell: info => <TruncCell value={info.row.original.position} max={10} caseSensitive className="fw-bold fs-13" />,
     },
-    { header: 'Department', accessorKey: 'department', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department', accessorKey: 'department', meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       // Name only — the initials avatar carried no information the name did
       // not already give, and its accent colour is derived from the id rather
@@ -1478,8 +1478,8 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         );
       },
     },
-    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
-    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
+    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '9%', align: 'center' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
+    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%', align: 'center' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
     {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
@@ -1578,6 +1578,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
           accent="violet"
           minWidth={1150}
           pageSize={8}
+          disableSorting
           searchValue={q}
           onSearchChange={setQ}
           searchPlaceholder="Search requests…"
