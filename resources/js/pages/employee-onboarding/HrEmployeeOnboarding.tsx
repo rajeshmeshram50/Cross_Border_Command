@@ -4345,7 +4345,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                   style={{ cursor: 'pointer' }}
                 >
                   <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
-                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'Payroll enabled for this employee' : 'Enable payroll for this employee'}</span>
+                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'PF enabled for this employee' : 'Enable PF for this employee'}</span>
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
@@ -4360,7 +4360,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 <Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
     Annual CTC {s1.enable_payroll !== false && <span className="req">*</span>}
-  </label>
+  </label>X1
   <input
     className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
     placeholder="Enter amount"
