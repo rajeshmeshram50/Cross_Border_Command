@@ -1074,7 +1074,7 @@ tbody tr:nth-child(10) {
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 8px;
   margin: 10px -16px -16px;
-  padding: 10px 16px;
+  padding: 10px 8px;
   border-top: 2px solid var(--tcwl-border, #ddd6fe);
   background: var(--tcwl-band, linear-gradient(90deg, #faf7ff 0%, #f1ecfd 40%, #faf7ff 100%));
 }

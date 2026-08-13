@@ -949,6 +949,13 @@
 [data-bs-theme="dark"] .rec-form-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 .rec-form-footer .hint { font-size: 11.5px; color: var(--vz-secondary-color); }
 /* Primary CTA — vivid purple gradient (#865ce2 → lavender) */
+/* Header action buttons (Create Recruitment / View Hiring Requests) sit at the
+   tab-GROUP height (~48px) so they line up with the tab box below. Scoped to the
+   page header so modal-footer buttons that share the class stay 36px. */
+.rec-hero-actions .rec-btn-primary,
+.rec-hero-actions .rec-btn-teal {
+  height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 12px;
+}
 .rec-btn-primary {
   padding: 6px 18px; height: 36px; border-radius: 10px;
   font-size: 12.5px; font-weight: 700; color: #fff;

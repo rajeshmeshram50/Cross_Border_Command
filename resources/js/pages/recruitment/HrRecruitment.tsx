@@ -609,7 +609,7 @@ export default function HrRecruitment() {
                   </div>
                 </div>
               </div>
-              <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+              <div className="rec-hero-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
                 <button
                   type="button"
                   className="rec-btn-primary"
