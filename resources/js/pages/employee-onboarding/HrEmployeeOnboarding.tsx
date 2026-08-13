@@ -5,6 +5,12 @@ import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } f
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api from '../../api';
+/* Same rules as the Add/Edit Employee wizard — imported, not re-implemented,
+   so a fix to the split or the slabs lands on both screens at once. */
+import {
+  type SalBreakComp, SPLIT_CODES,
+  seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
+} from '../../utils/salaryBreakup';
 import ComingSoonShell from '../../components/ComingSoonShell';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -1946,32 +1952,6 @@ function InitiateOnboardingModal({
     setStage5Loaded(true);
   }, []);
 
-  // The employee's SAVED salary structure (the exact components HR entered in
-  // the employee form). The salary breakup prefers these real figures and only
-  // falls back to a 50/30/20 auto-split when nothing has been saved yet — so
-  // editing the breakup in the employee form reflects here too.
-  const [savedBreakup, setSavedBreakup] = useState<{ earnings: any[]; deductions: any[]; pf: boolean } | null>(null);
-  useEffect(() => {
-    if (!isOpen || !emp?.dbId) { setSavedBreakup(null); return; }
-    let cancelled = false;
-    api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } })
-      .then(res => {
-        if (cancelled) return;
-        const rows = res.data?.data ?? [];
-        const active = Array.isArray(rows) && rows.length ? rows[0] : null;
-        if (active && Array.isArray(active.earnings) && active.earnings.length) {
-          setSavedBreakup({
-            earnings: active.earnings,
-            deductions: Array.isArray(active.deductions) ? active.deductions : [],
-            pf: !!active.pf_applicable,
-          });
-        } else {
-          setSavedBreakup(null);
-        }
-      })
-      .catch(() => { if (!cancelled) setSavedBreakup(null); });
-    return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
   // Imperative handle into Stage 2 so we can flush its typed-but-not-blurred
   // company rows before leaving the stage (Previous / sidebar / Next Stage).
   const stage2Ref = useRef<Stage2DocumentsHandle | null>(null);
@@ -2255,6 +2235,258 @@ function InitiateOnboardingModal({
     pf_type: 'Statutory',   // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   });
 
+  /* ── Stage 1 salary breakup ────────────────────────────────────────────────
+     EDITABLE, and running the same rules as the Add/Edit Employee wizard —
+     both import them from utils/salaryBreakup so the two screens cannot drift.
+     It used to be a read-only view of the saved structure, which read as
+     correct right up to the moment someone changed the CTC here: the figures
+     below went on describing the OLD salary, and the structure payroll reads
+     was never rewritten at all (only POST /salary-structures does that, and
+     this screen never called it). */
+  const [obEarnings, setObEarnings]     = useState<SalBreakComp[]>([]);
+  const [obDeductions, setObDeductions] = useState<SalBreakComp[]>([]);
+  const [obEsi, setObEsi]               = useState(false);
+  const [obPt, setObPt]                 = useState(false);
+  const [obBreakupLoading, setObBreakupLoading] = useState(false);
+  const obLoadedForRef  = useRef<number | null>(null);
+  const obSeededForRef  = useRef<string | null>(null);
+  const obBaselineRef   = useRef<string | null>(null);   // signature last saved
+
+  /* 'Per month' means the figure entered IS the monthly amount; anything else
+     is the annual one. Same rule as the employee form's monthlyGrossFromSalary,
+     so both screens show the same gross for the same input. */
+  const obMonthlyOf = useCallback((salary: string) => {
+    const entered = salary === '' ? 0 : Number(salary);
+    if (!Number.isFinite(entered)) return 0;
+    return s1.salary_frequency === 'Per month' ? entered : entered / 12;
+  }, [s1.salary_frequency]);
+
+  // Latest typed salary, readable from inside the async load below without
+  // making it a dependency (which would re-fetch on every keystroke).
+  const obSalaryRef = useRef(s1.annual_salary);
+  useEffect(() => { obSalaryRef.current = s1.annual_salary; }, [s1.annual_salary]);
+
+  useEffect(() => {
+    if (!isOpen || !emp?.dbId) { obLoadedForRef.current = null; return; }
+    if (obLoadedForRef.current === emp.dbId) return;   // already loaded for this employee
+    obLoadedForRef.current = emp.dbId;
+    let cancelled = false;
+
+    const seedFresh = () => {
+      if (cancelled) return;
+      setObEarnings(seedBreakup(obMonthlyOf(obSalaryRef.current)));
+      setObDeductions([]);
+      setObEsi(false);
+      setObPt(false);
+      obBaselineRef.current = null;
+    };
+
+    setObBreakupLoading(true);
+    api.get('/salary-structures', { params: { employee_id: emp.dbId, active_only: 1 } })
+      .then(res => {
+        if (cancelled) return;
+        const rows = res.data?.data ?? [];
+        const active = Array.isArray(rows) && rows.length ? rows[0] : null;
+        if (active && Array.isArray(active.earnings) && active.earnings.length) {
+          const earn = active.earnings.map((c: any) => ({
+            code: String(c.code ?? ''), label: String(c.label ?? c.code ?? ''), amount: Number(c.amount) || 0,
+          }));
+          const ded = (Array.isArray(active.deductions) ? active.deductions : []).map((c: any) => ({
+            code: String(c.code ?? ''), label: String(c.label ?? c.code ?? ''), amount: Number(c.amount) || 0,
+          }));
+          setObEarnings(earn);
+          setObDeductions(ded);
+          setObEsi(!!active.esi_applicable || ded.some((d: SalBreakComp) => d.code === 'esi'));
+          setObPt(!!active.pt_applicable  || ded.some((d: SalBreakComp) => d.code === 'pt'));
+          // What was on the server — a save that matches this is skipped.
+          obBaselineRef.current = breakupSignature(earn, ded, !!active.pf_applicable, !!active.esi_applicable, !!active.pt_applicable);
+        } else {
+          seedFresh();
+        }
+      })
+      .catch(seedFresh)
+      .finally(() => {
+        if (cancelled) return;
+        setObBreakupLoading(false);
+        /* Whatever the breakup ended up being, it belongs to THIS salary.
+           Without this the debounce below fires 500ms after open and rewrites
+           a structure nobody touched. */
+        obSeededForRef.current = obSalaryRef.current;
+      });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, emp?.dbId]);
+
+  /* Re-split on a CTC change, debounced so it doesn't run per keystroke.
+     HR's own components survive; the three derived ones are rebuilt, and
+     Special absorbs the rest so the gross lands ON the new CTC. */
+  /* True from the edit until the debounce lands — every figure below belongs to
+     the previous CTC in that window, so it is covered rather than left reading
+     as the answer. */
+  const [obRecalcing, setObRecalcing] = useState(false);
+
+  const [obSettledSalary, setObSettledSalary] = useState(s1.annual_salary);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setObSettledSalary(s1.annual_salary);
+      /* Cleared HERE, on the timer, not in the re-split effect below. Typing a
+         digit and deleting it inside the 500ms leaves the settled value
+         UNCHANGED — React bails out of the identical setState, the effect never
+         re-runs, and the overlay it was going to clear stays over the section
+         for good. This fires whether or not anything actually changed. */
+      setObRecalcing(false);
+    }, 500);
+    return () => clearTimeout(t);
+  }, [s1.annual_salary]);
+
+  useEffect(() => {
+    setObRecalcing(false);   // cleared before any guard, or it strands on screen
+    if (!isOpen || !s1.detailed_breakup) return;
+    if (obLoadedForRef.current === null) return;            // initial load not done
+    if (obSeededForRef.current === obSettledSalary) return; // salary unchanged
+    obSeededForRef.current = obSettledSalary;
+    const monthly = obMonthlyOf(obSettledSalary);
+    setObEarnings(prev => {
+      const custom = prev.filter(c => !SPLIT_CODES.includes(c.code));
+      return absorbIntoSpecial([...seedBreakup(monthly), ...custom], monthly);
+    });
+    // PT is a function of the gross, same as Basic / HRA.
+    setObDeductions(prev => prev.map(d => (
+      d.code === 'pt' ? { ...d, amount: statutoryPt(monthly, s1.gender) } : d
+    )));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obSettledSalary, s1.salary_frequency, s1.detailed_breakup]);
+
+  const obGross = useMemo(() => obEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obEarnings]);
+  const obDed   = useMemo(() => obDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [obDeductions]);
+  const obBasic = useMemo(() => Number(obEarnings.find(c => c.code === 'basic')?.amount) || 0, [obEarnings]);
+  const obPfAmt = useMemo(
+    () => pfDeduction(obBasic, s1.pf_type, !!s1.pf_eligible),
+    [obBasic, s1.pf_type, s1.pf_eligible],
+  );
+  // PF is a row in the list, so the "Fixed Deductions" line excludes it or the
+  // same rupee is reported twice on screen.
+  const obDedExPf = useMemo(
+    () => obDeductions.filter(c => c.code !== 'pf').reduce((s, c) => s + (Number(c.amount) || 0), 0),
+    [obDeductions],
+  );
+  const obNet = useMemo(() => Math.max(0, obGross - obDed), [obGross, obDed]);
+  const obBreakupErrors = useMemo(
+    () => validateBreakup(obEarnings, obDeductions, s1.detailed_breakup),
+    [obEarnings, obDeductions, s1.detailed_breakup],
+  );
+  // Annualised gross vs the entered salary — over = the components exceed the CTC.
+  const obSalaryAnnual  = useMemo(() => Math.round(obMonthlyOf(s1.annual_salary) * 12), [obMonthlyOf, s1.annual_salary]);
+  const obBreakupAnnual = useMemo(() => Math.round(obGross * 12), [obGross]);
+  const obDiff = obSalaryAnnual > 0 ? obBreakupAnnual - obSalaryAnnual : 0;  // + over, − under
+
+  /* ESI / Professional Tax are entered manually: ticking drops a labelled row
+     into Deductions, unticking removes it. PT opens on its slab figure; ESI
+     opens at ₹0 for HR to fill (its ceiling carries across a contribution
+     period, so the form cannot derive eligibility). PF is COMPUTED, so its row
+     is kept in step rather than left for someone to type. */
+  useEffect(() => {
+    setObDeductions(prev => {
+      let next = prev;
+      const sync = (on: boolean, code: string, label: string, seed: number) => {
+        const has = next.some(d => d.code === code);
+        if (on && !has) next = [...next, { code, label, amount: seed }];
+        else if (!on && has) next = next.filter(d => d.code !== code);
+      };
+      sync(obEsi, 'esi', 'ESI', 0);
+      sync(obPt,  'pt',  'Professional Tax', statutoryPt(obGross, s1.gender));
+
+      const pfIdx = next.findIndex(d => d.code === 'pf');
+      if (s1.pf_eligible) {
+        const row = { code: 'pf', label: 'Provident Fund (PF)', amount: obPfAmt };
+        if (pfIdx < 0) next = [...next, row];
+        else if (Number(next[pfIdx].amount) !== obPfAmt) {
+          next = next.map((d, i) => (i === pfIdx ? { ...d, ...row } : d));
+        }
+      } else if (pfIdx >= 0) {
+        next = next.filter(d => d.code !== 'pf');
+      }
+      return next === prev ? prev : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obEsi, obPt, s1.pf_eligible, obPfAmt]);
+
+  const updateObRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
+    const list = which === 'earn' ? obEarnings : obDeductions;
+    const next = [...list];
+    if (field === 'amount') {
+      if (value === '') next[i] = { ...next[i], amount: 0 };
+      else {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0) return;
+        next[i] = { ...next[i], amount: n };
+      }
+    } else {
+      next[i] = { ...next[i], label: value };
+    }
+    // Editing one of HR's own earning rows re-funds it out of Special so the
+    // gross stays pinned to the CTC. The three derived rows are left alone —
+    // rebalancing while someone types INTO Special would fight them.
+    if (which === 'earn' && !SPLIT_CODES.includes(next[i].code)) {
+      setObEarnings(absorbIntoSpecial(next, obMonthlyOf(s1.annual_salary)));
+    } else if (which === 'earn') {
+      setObEarnings(next);
+    } else {
+      setObDeductions(next);
+    }
+  };
+
+  const addObRow = (which: 'earn' | 'ded') => {
+    if (which === 'earn') setObEarnings([...obEarnings, { code: `comp_${obEarnings.length + 1}`, label: '', amount: 0 }]);
+    else setObDeductions([...obDeductions, { code: `ded_${obDeductions.length + 1}`, label: '', amount: 0 }]);
+  };
+
+  const removeObRow = (which: 'earn' | 'ded', i: number) => {
+    if (which === 'earn') {
+      const removed = obEarnings[i];
+      const rest = obEarnings.filter((_, idx) => idx !== i);
+      // Removing one of HR's own rows hands its money back to Special.
+      setObEarnings(SPLIT_CODES.includes(removed?.code)
+        ? rest
+        : absorbIntoSpecial(rest, obMonthlyOf(s1.annual_salary)));
+    } else {
+      const removed = obDeductions[i];
+      setObDeductions(obDeductions.filter((_, idx) => idx !== i));
+      // Removing the ESI / PT row also unticks its box so the two stay in step.
+      if (removed?.code === 'esi') setObEsi(false);
+      if (removed?.code === 'pt')  setObPt(false);
+    }
+  };
+
+  /* Writes the breakup to the same table the employee form writes, so a change
+     made on either screen is what the other one loads — and what payroll reads.
+     Mirrors HrEmployees' persistBreakup deliberately: same filtering, same
+     signature check, same endpoint. A save that would store what is already on
+     the server is skipped rather than stacking an identical revision. */
+  const persistObBreakup = async (empId: number): Promise<void> => {
+    if (!s1.detailed_breakup) return;
+    const earn = obEarnings
+      .filter(c => c.label.trim() && Number(c.amount) >= 0)
+      .map((c, i) => ({ code: (c.code || `comp_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
+    if (!earn.length) return;
+    const ded = obDeductions
+      .filter(c => c.label.trim())
+      .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
+    const sig = breakupSignature(earn, ded, !!s1.pf_eligible, obEsi, obPt);
+    if (obBaselineRef.current === sig) return;
+
+    await api.post('/salary-structures', {
+      employee_id: empId,
+      effective_from: s1.salary_effective_from || new Date().toISOString().slice(0, 10),
+      earnings: earn,
+      deductions: ded,
+      pf_applicable: !!s1.pf_eligible,
+      esi_applicable: obEsi,
+      pt_applicable: obPt,
+    });
+    obBaselineRef.current = sig;
+  };
+
   /* Notice period: is the free-text box showing?
    *
    * Two ways it opens — the user picks "Set Custom Notice Period…", or an
@@ -2406,7 +2638,14 @@ useEffect(() => {
 
     enable_payroll: x.enable_payroll !== undefined ? !!x.enable_payroll : true,
     pay_group:             String(x.pay_group             ?? ''),
-    annual_salary:         x.annual_salary != null ? String(x.annual_salary) : '',
+    /* The column carries two decimals, so a whole-rupee CTC comes back as
+       "300000.00". The field is whole-rupee now, so those trailing zeros are
+       dropped rather than shown as a value the form would reject on open. A
+       stored figure that really does carry paise is left alone for validation
+       to flag — silently rounding someone's saved CTC is worse than saying so. */
+    annual_salary:         x.annual_salary != null
+      ? (Number.isInteger(Number(x.annual_salary)) ? String(Number(x.annual_salary)) : String(x.annual_salary))
+      : '',
     salary_frequency:      String(x.salary_frequency      ?? 'Per annum'),
     salary_effective_from: x.salary_effective_from ? String(x.salary_effective_from).slice(0, 10) : '',
     salary_structure:      String(x.salary_structure      ?? ''),
@@ -2572,6 +2811,10 @@ const STAGE1_FIELD_ORDER = [
   'annual_salary',
   'salary_effective_from',
   'pf_applicable',
+  // The breakup sits directly under the payroll fields, and it can now block
+  // the save — without an entry here a breakup-only failure scrolled nowhere
+  // and left the toast pointing at a field the user could not find.
+  'salary_breakup',
   // Assets & Security sits at the bottom of step 3; listed last so
   // scrollToFirstError still jumps to the earliest field on the form.
   'laptop_assigned',
@@ -2705,8 +2948,10 @@ const validateStage1 = (): boolean => {
     const annualNum = Number(s1.annual_salary);
     if (!s1.annual_salary || !Number.isFinite(annualNum) || annualNum <= 0) {
       errors.annual_salary = 'Salary amount is required and must be greater than 0';
-    } else if (annualNum > 999_999_999_999.99) {
-      errors.annual_salary = 'Salary amount is too large (max 999,999,999,999.99)';
+    } else if (!Number.isInteger(annualNum)) {
+      errors.annual_salary = 'Salary amount must be a whole number (no paise)';
+    } else if (annualNum > 999_999_999_999) {
+      errors.annual_salary = 'Salary amount is too large (max 999,999,999,999)';
     }
     const sef = s1.salary_effective_from?.trim() ?? '';
     if (!sef) {
@@ -2765,6 +3010,17 @@ const validateStage1 = (): boolean => {
 
   // Work Details — Expense Policy is required (marked * in the form).
   if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
+
+  /* The breakup is saved to salary_structures on this same submit, so an
+     invalid one has to block here — otherwise the employee row persists and the
+     structure silently does not, leaving payroll on the previous figures. Only
+     while payroll is on and the detailed view is open; there is nothing on
+     screen to be wrong otherwise. */
+  if (s1.enable_payroll !== false && s1.detailed_breakup) {
+    const be = validateBreakup(obEarnings, obDeductions, true);
+    const rowErr = Object.values(be.earnings)[0] || Object.values(be.deductions)[0];
+    if (be.form || rowErr) errors.salary_breakup = be.form || String(rowErr);
+  }
 
   setS1Errors(errors);
 
@@ -2875,6 +3131,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     if (markComplete) payload.wizard_step_completed = 4;
     try {
       await api.put(`/employees/${emp.dbId}`, payload);
+      /* The breakup is a SEPARATE table, and only POST /salary-structures
+         writes it — PUT /employees never has. Without this the CTC moved and
+         the structure payroll actually reads stayed on the old salary, which is
+         the state this screen used to leave behind on every edit. */
+      await persistObBreakup(emp.dbId);
       // `silent` (stage-to-stage navigation) skips the heavy parent reload
       // AND the toast: the PUT already persisted the data, and re-fetching the
       // whole /employees list on every Next-Stage click was the main cause of
@@ -4360,30 +4621,35 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
 <Col md={4} data-field="annual_salary">
   <label className="onb-init-label">
     Annual CTC {s1.enable_payroll !== false && <span className="req">*</span>}
-  </label>X1
+  </label>
   <input
     className={`onb-init-input ${s1Errors.annual_salary ? 'is-invalid' : ''}`}
     placeholder="Enter amount"
-    inputMode="decimal"
+    inputMode="numeric"
     value={s1.annual_salary}
+    /* Locked while the saved structure is still in flight — the response
+       replaces the whole breakup when it lands, so a CTC typed during the
+       fetch was thrown away a moment later. */
+    disabled={obBreakupLoading}
     onChange={e => {
-      // Strip everything that isn't a digit or a dot. Collapse multiple
-      // dots to the first one. Cap whole part at 12 digits, fractional
-      // part at 2 digits. Result is always a valid representation of a
-      // value ≤ 999,999,999,999.99 — no further client-side coercion
-      // needed before sending.
-      let raw = e.target.value.replace(/[^0-9.]/g, '');
-      const firstDot = raw.indexOf('.');
-      if (firstDot !== -1) {
-        raw = raw.slice(0, firstDot + 1) + raw.slice(firstDot + 1).replace(/\./g, '');
-      }
-      const [whole, frac] = raw.split('.');
-      let capped = (whole || '').slice(0, 12);
-      if (frac !== undefined) capped += '.' + frac.slice(0, 2);
+      // Whole rupees only, matching the employee form — a CTC is never
+      // quoted in paise, and the decimals only ever reached the breakup
+      // as rounding noise across the 50 / 30 / 20 split. Everything that
+      // isn't a digit is stripped, and the value is capped at 12 digits
+      // so it can't overflow the numeric(14, 2) column (which then
+      // surfaced as a 500 from the server).
+      const capped = e.target.value.replace(/[^0-9]/g, '').slice(0, 12);
       setS1(p => ({ ...p, annual_salary: capped }));
       setS1Errors(p => ({ ...p, annual_salary: '' }));
+      // Cover the breakup until the debounced re-split lands.
+      if (s1.detailed_breakup) setObRecalcing(capped !== '');
     }}
   />
+  {obBreakupLoading && (
+    <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+      <i className="ri-loader-4-line" /> Loading the saved breakup — CTC unlocks in a moment.
+    </div>
+  )}
   {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
 </Col>
                   <Col md={4} data-field="salary_effective_from">
@@ -4515,78 +4781,174 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                         );
                       }
 
-                      // Detailed view — PREFER the employee's SAVED salary
-                      // structure (the exact components HR entered/edited in the
-                      // employee form). Only fall back to a 50/30/20 auto-split
-                      // from the salary when nothing has been saved yet, so a
-                      // breakup edited in the employee form reflects here too.
-                      const useSaved = !!savedBreakup && savedBreakup.earnings.length > 0;
-                      const earnLines: { label: string; value: number }[] = useSaved
-                        ? savedBreakup!.earnings.map((c: any) => ({ label: c.label || c.code || 'Component', value: Number(c.amount) || 0 }))
-                        : (() => {
-                            const g = Math.round(regular / 12);
-                            const b = Math.round(g * 0.5), h = Math.round(g * 0.3);
-                            return [
-                              { label: 'Basic Salary', value: b },
-                              { label: 'House Rent Allowance', value: h },
-                              { label: 'Special Allowance', value: Math.max(0, g - b - h) },
-                            ];
-                          })();
-                      const monthlyGross = earnLines.reduce((s, l) => s + l.value, 0);
-                      const basic = useSaved
-                        ? Number(savedBreakup!.earnings.find((c: any) => c.code === 'basic')?.amount ?? earnLines[0]?.value ?? 0)
-                        : (earnLines[0]?.value ?? 0);
-                      // Statutory caps basic at the ₹15k EPF ceiling; Standard uses full basic.
-                      const pf = s1.pf_eligible
-                        ? Math.round((s1.pf_type === 'Standard' ? basic : Math.min(basic, 15000)) * 0.12)
-                        : 0;
-                      const fixedDed = useSaved ? savedBreakup!.deductions.reduce((s: number, c: any) => s + (Number(c.amount) || 0), 0) : 0;
-                      const net = Math.max(0, monthlyGross - pf - fixedDed);
-                      const ctcAnnual = useSaved ? monthlyGross * 12 : total;
-                      const Line = ({ label, value, strong }: { label: string; value: number; strong?: boolean }) => (
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
-                          <span style={{ fontSize: 12.5, fontWeight: strong ? 700 : 500 }}>{label}</span>
-                          <span style={{ fontSize: 13, fontWeight: strong ? 800 : 600 }}>{fmt(value)}</span>
-                        </div>
-                      );
+                      /* Detailed view — EDITABLE, and the same rules the employee
+                         form runs (utils/salaryBreakup). Rows are the working
+                         copy: loaded from the saved structure, re-split when the
+                         CTC changes, and written back on Save. */
+                      if (obBreakupLoading) {
+                        return (
+                          <div className="text-center py-4 text-muted" style={{ fontSize: 13 }}>
+                            <i className="ri-loader-4-line" /> Loading breakup…
+                          </div>
+                        );
+                      }
+
+                      /* One editable column. `locked` rows (PF / ESI / PT) keep
+                         their name — it identifies the statutory line to payroll
+                         — but the amount stays HR's to set. */
+                      const renderCol = (which: 'earn' | 'ded', accent: string, heading: string) => {
+                        const list = which === 'earn' ? obEarnings : obDeductions;
+                        const errs = which === 'earn' ? obBreakupErrors.earnings : obBreakupErrors.deductions;
+                        return (
+                          <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `2px solid ${accent}26`, paddingBottom: 5, marginBottom: 4 }}>
+                              <span style={{ fontSize: 11.5, fontWeight: 800, letterSpacing: '.05em', textTransform: 'uppercase', color: accent }}>{heading}</span>
+                              <button type="button" onClick={() => addObRow(which)}
+                                style={{ fontSize: 11, fontWeight: 700, color: accent, background: `${accent}12`, border: `1px solid ${accent}33`, borderRadius: 8, padding: '3px 11px', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                                <i className="ri-add-line" /> Add
+                              </button>
+                            </div>
+                            {list.length === 0 && (
+                              <div className="text-muted" style={{ fontSize: 12, padding: '10px 0' }}>No components yet.</div>
+                            )}
+                            {list.map((c, i) => {
+                              const locked = ['pf', 'esi', 'pt'].includes(c.code);
+                              return (
+                                <div key={`${which}-${i}`}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: '1px dashed var(--vz-border-color, #e5e7eb)' }}>
+                                    <input
+                                      className="onb-init-input"
+                                      value={c.label}
+                                      readOnly={locked}
+                                      placeholder="Component name"
+                                      onChange={e => updateObRow(which, i, 'label', e.target.value)}
+                                      style={{ flex: 1, minWidth: 0, height: 30, fontSize: 12.5, border: 'none', background: 'transparent', padding: 0, fontWeight: 500 }}
+                                    />
+                                    <span style={{ fontSize: 12, color: 'var(--vz-secondary-color)' }}>₹</span>
+                                    <input
+                                      className="onb-init-input"
+                                      type="number"
+                                      value={c.amount === 0 ? '' : c.amount}
+                                      placeholder="0"
+                                      onChange={e => updateObRow(which, i, 'amount', e.target.value)}
+                                      style={{ width: 110, height: 30, fontSize: 12.5, textAlign: 'right', fontWeight: 700, border: 'none', background: 'transparent', padding: 0 }}
+                                    />
+                                    {locked ? (
+                                      <i className="ri-lock-line" style={{ fontSize: 13, color: 'var(--vz-secondary-color)', width: 18, textAlign: 'center' }} />
+                                    ) : (
+                                      <button type="button" onClick={() => removeObRow(which, i)} title="Remove component"
+                                        style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer', width: 18, padding: 0 }}>
+                                        <i className="ri-delete-bin-line" style={{ fontSize: 13 }} />
+                                      </button>
+                                    )}
+                                  </div>
+                                  {errs[i] && <div className="onb-error-msg" style={{ marginTop: 2 }}>{errs[i]}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      };
+
                       return (
-                        <div>
+                        <div style={{ position: 'relative' }} data-field="salary_breakup">
+                          {/* Scrim + label while the debounced re-split is pending:
+                              the figures stay in place underneath so the section
+                              doesn't collapse and jump the page on every edit. */}
+                          {obRecalcing && (
+                            <>
+                              <div style={{ position: 'absolute', inset: -6, zIndex: 3, borderRadius: 10, background: 'var(--vz-card-bg, #fff)', opacity: .72 }} />
+                              <div style={{ position: 'absolute', inset: -6, zIndex: 4, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40 }}>
+                                <span className="d-inline-flex align-items-center gap-2 px-3 py-2"
+                                  style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--vz-secondary-color)', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
+                                  <i className="ri-loader-4-line" /> Recalculating breakup…
+                                </span>
+                              </div>
+                            </>
+                          )}
                           <p className="text-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-                            {useSaved
-                              ? "Monthly component breakup — the employee's saved salary structure."
-                              : 'Monthly component breakup (auto-split from the annual salary).'}
+                            Monthly component breakup. Saved as the employee's active salary
+                            structure — payroll runs read these figures.
                           </p>
-                          {/* How the split + PF are derived, so anyone reading
-                              the breakup understands the figures. */}
                           <ul style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.7, paddingLeft: 16, marginBottom: 10 }}>
-                            <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum, Code on Wages 2019).</li>
+                            <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum, Code on Wages 2019; you can adjust the components below).</li>
                             <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
-                            <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
+                            <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
                             <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by <em>PF Type</em> above).</li>
                           </ul>
+                          <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
+                            <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={obEsi} onChange={e => setObEsi(e.target.checked)} /> ESI
+                            </label>
+                            <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={obPt} onChange={e => setObPt(e.target.checked)} /> Professional Tax
+                            </label>
+                            <span className="text-muted" style={{ fontSize: 11 }}>
+                              Ticking one adds it to Deductions — editable, and payroll uses what's saved here.
+                            </span>
+                          </div>
+
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
-                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-                              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#108548', textTransform: 'uppercase', letterSpacing: .4, marginBottom: 2 }}>Earnings</div>
-                              {earnLines.map((l, i) => <Line key={i} label={l.label} value={l.value} />)}
-                              <Line label="Gross (Monthly)" value={monthlyGross} strong />
-                            </div>
-                            <div style={{ flex: '1 1 240px', minWidth: 220 }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                                <span style={{ fontSize: 11.5, fontWeight: 700, color: '#b91c1c', textTransform: 'uppercase', letterSpacing: .4 }}>Deductions</span>
-                                {/* PF on/off is now the "PF Applicable" field above. */}
-                                {s1.pf_eligible && (
-                                  <span style={{ fontSize: 11, fontWeight: 600, color: '#6d28d9' }}>
-                                    PF: {s1.pf_type === 'Standard' ? 'Standard (full basic)' : 'Statutory (₹15k cap)'}
-                                  </span>
-                                )}
+                            {renderCol('earn', '#108548', 'Earnings')}
+                            {renderCol('ded',  '#b91c1c', 'Deductions (optional)')}
+                          </div>
+
+                          <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
+                            style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                            <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
+                            <div className="text-end">
+                              <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>{fmt(obGross)}</div>
+                              <div style={{ fontSize: 11.5, fontWeight: 600, color: obSalaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (obDiff > 0 ? '#dc2626' : '#0a8754') }}>
+                                ≈ {fmt(obBreakupAnnual)} / year
                               </div>
-                              <Line label="Provident Fund (PF)" value={pf} />
-                              {useSaved && savedBreakup!.deductions.map((c: any, i: number) => (
-                                <Line key={`d${i}`} label={c.label || c.code || 'Deduction'} value={Number(c.amount) || 0} />
-                              ))}
-                              <Line label="Net Pay (Monthly)" value={net} strong />
-                              <Line label="Total CTC (Annual)" value={ctcAnnual} strong />
+                              {obSalaryAnnual > 0 && obDiff !== 0 && (
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: obDiff > 0 ? '#dc2626' : '#0a8754' }}>
+                                  {obDiff > 0
+                                    ? `${fmt(obDiff)} over the salary (${fmt(obSalaryAnnual)})`
+                                    : `${fmt(Math.abs(obDiff))} under the salary (${fmt(obSalaryAnnual)})`}
+                                </div>
+                              )}
+                              {obSalaryAnnual > 0 && obDiff === 0 && (
+                                <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
+                              )}
                             </div>
+                          </div>
+
+                          {(s1.pf_eligible || obDed > 0) && (
+                            <>
+                              {s1.pf_eligible && (
+                                <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                                  <span className="text-muted">
+                                    Provident Fund (PF) — {s1.pf_type === 'Standard'
+                                      ? '12% of full basic'
+                                      : `12% of ₹${Math.min(obBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
+                                  </span>
+                                  <span className="fw-semibold" style={{ color: '#b91c1c' }}>− {fmt(obPfAmt)}/mo</span>
+                                </div>
+                              )}
+                              {obDedExPf > 0 && (
+                                <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                                  <span className="text-muted">Fixed Deductions</span>
+                                  <span className="fw-semibold" style={{ color: '#b91c1c' }}>− {fmt(obDedExPf)}/mo</span>
+                                </div>
+                              )}
+                              <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3"
+                                style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                                <span className="fw-semibold" style={{ fontSize: 13 }}>Net (Monthly)</span>
+                                <div className="text-end">
+                                  <div className="fw-bold" style={{ fontSize: 18, color: '#0a8754' }}>{fmt(obNet)}</div>
+                                  <div className="text-muted" style={{ fontSize: 11.5 }}>
+                                    Gross {fmt(obGross)} − Deductions {fmt(obDed)}
+                                  </div>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          {obBreakupErrors.form && (
+                            <div className="onb-error-msg" style={{ marginTop: 8 }}>{obBreakupErrors.form}</div>
+                          )}
+                          <div className="text-muted mt-2" style={{ fontSize: 11 }}>
+                            Net shown is an estimate (PF / ESI / PT + fixed deductions); LOP and any final adjustments apply at payroll run-time.
                           </div>
                         </div>
                       );

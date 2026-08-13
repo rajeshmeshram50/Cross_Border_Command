@@ -18,21 +18,28 @@ import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
+/* Breakup rules live in one place now — onboarding Stage 1 edits the same CTC
+   and the Revise Salary modal writes the same table, so a copy per screen is
+   how the figures drift apart. */
+import {
+  type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL,
+  seedBreakup, absorbIntoSpecial, statutoryPt, breakupSignature, validateBreakup,
+} from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
 import '../../../css/recruitment.css';
 
 
 const GENDER_OPTIONS = [
-  { value: 'Male',              label: 'Male' },
-  { value: 'Female',            label: 'Female' },
-  { value: 'Other',             label: 'Other' },
+  { value: 'Male', label: 'Male' },
+  { value: 'Female', label: 'Female' },
+  { value: 'Other', label: 'Other' },
   { value: 'Prefer not to say', label: 'Prefer not to say' },
 ];
-const WORK_TYPE_OPTIONS = ['Full Time','Part Time','Contract','Intern','Consultant'].map(w => ({ value: w, label: w }));
+const WORK_TYPE_OPTIONS = ['Full Time', 'Part Time', 'Contract', 'Intern', 'Consultant'].map(w => ({ value: w, label: w }));
 const CUSTOM_PROBATION_VALUE = '__custom_probation__';
-const CUSTOM_NOTICE_VALUE    = '__custom_notice__';
+const CUSTOM_NOTICE_VALUE = '__custom_notice__';
 const PROBATION_POLICY_OPTIONS = [
-  ...['Default Probation Policy','3-Month Probation','6-Month Probation','No Probation']
+  ...['Default Probation Policy', '3-Month Probation', '6-Month Probation', 'No Probation']
     .map(p => ({ value: p, label: p })),
   { value: CUSTOM_PROBATION_VALUE, label: 'Set Custom Probation…' },
 ];
@@ -41,7 +48,7 @@ const PROBATION_POLICY_OPTIONS = [
    was to leave a required field blank or invent a custom "0", which the custom
    field now rejects. It mirrors "No Probation" in the list above. */
 const NOTICE_PERIOD_OPTIONS = [
-  ...['No Notice Period','15 Days','30 Days','60 Days','90 Days']
+  ...['No Notice Period', '15 Days', '30 Days', '60 Days', '90 Days']
     .map(n => ({ value: n, label: n })),
   { value: CUSTOM_NOTICE_VALUE, label: 'Set Custom Notice Period…' },
 ];
@@ -50,101 +57,24 @@ const NOTICE_PERIOD_OPTIONS = [
    HrEmployeeOnboarding's ONB_WEEKLY_OFF exactly; the backend resolves the rule
    from this string. "Week Off Policy" / bare "Rotational" were dropped: they
    name no day, so the parser fell back to Sunday for everyone who picked them. */
-const WEEKLY_OFF_OPTIONS    = [
+const WEEKLY_OFF_OPTIONS = [
   'Sunday Only',
   'Saturday & Sunday',
   'Rotational — 1st & 3rd Saturday',
   'Rotational — 2nd & 4th Saturday',
 ].map(v => ({ value: v, label: v }));
-const TIME_TRACKING_OPTIONS = ['Manual','Biometric'].map(v => ({ value: v, label: v }));
-const PENALIZATION_OPTIONS  = ['Tracking Policy','Strict Policy','Lenient Policy','No Penalty'].map(v => ({ value: v, label: v }));
+const TIME_TRACKING_OPTIONS = ['Manual', 'Biometric'].map(v => ({ value: v, label: v }));
+const PENALIZATION_OPTIONS = ['Tracking Policy', 'Strict Policy', 'Lenient Policy', 'No Penalty'].map(v => ({ value: v, label: v }));
 // Overtime rate options now come from the Overtime (OT) Master (fetched at
 // runtime into overtimeRateOptions), gated behind an Applicable Yes/No toggle.
-const YES_NO_OPTIONS        = ['No','Yes'].map(v => ({ value: v, label: v }));
+const YES_NO_OPTIONS = ['No', 'Yes'].map(v => ({ value: v, label: v }));
 // No blank "Select" row — the empty state is carried by the placeholder,
 // so the dropdown lists only the two real choices.
-const EXPENSE_POLICY_OPTIONS= [{ value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
+const EXPENSE_POLICY_OPTIONS = [{ value: 'Applicable', label: 'Applicable' }, { value: 'Not Applicable', label: 'Not Applicable' }];
 
-const SALARY_FREQUENCY_OPTIONS  = ['Per annum','Per month','Per hour','Per day'].map(v => ({ value: v, label: v }));
-const SALARY_STRUCTURE_OPTIONS  = ['Range Based','Fixed','Component Based'].map(v => ({ value: v, label: v }));
-const TAX_REGIME_OPTIONS        = ['New Regime (115BAC)','Old Regime'].map(v => ({ value: v, label: v }));
-
-interface SalBreakComp { code: string; label: string; amount: number }
-
-/** The three components the auto-split owns — everything else in Earnings was
- *  added by HR and survives a re-seed. */
-const SPLIT_CODES = ['basic', 'hra', 'special'];
-
-const seedBreakup = (monthlyGross: number): SalBreakComp[] => {
-  const g = Math.max(0, Math.round(monthlyGross));
-  const basic = Math.round(g * 0.5);
-  const hra = Math.round(g * 0.3);
-  const special = Math.max(0, g - basic - hra);
-  return [
-    { code: 'basic',   label: 'Basic Salary',          amount: basic },
-    { code: 'hra',     label: 'House Rent Allowance',   amount: hra },
-    { code: 'special', label: 'Special Allowance',      amount: special },
-  ];
-};
-
-/** Special Allowance is the residual of the package, so a component HR adds is
- *  funded OUT of it rather than piled on top of the gross.
- *  Without this a ₹102 custom row pushed the gross ₹102/mo past the CTC and, worse,
- *  left Basic at 50% of the CTC while the gross had grown — so the Code on Wages
- *  floor tripped at 49.99% and blocked the save with an error the form offered no
- *  way to clear. Clamped at 0: a package that genuinely outgrows the CTC still
- *  shows the red "over the salary" line instead of being silently rewritten. */
-const absorbIntoSpecial = (earnings: SalBreakComp[], monthlyGross: number): SalBreakComp[] => {
-  const target = Math.max(0, Math.round(monthlyGross));
-  if (target <= 0) return earnings;
-  const idx = earnings.findIndex(c => c.code === 'special');
-  if (idx < 0) return earnings;   // HR deleted the row — nothing left to fund from
-  const others = earnings.reduce((s, c, i) => (i === idx ? s : s + (Number(c.amount) || 0)), 0);
-  const special = Math.max(0, target - others);
-  if (special === (Number(earnings[idx].amount) || 0)) return earnings;
-  return earnings.map((c, i) => (i === idx ? { ...c, amount: special } : c));
-};
-
-/* Professional Tax opens on its statutory figure, mirroring the slab in
-   app/Services/PayrollService.php so the breakup shows the number payroll would
-   actually apply. It SEEDS the row and stays editable — payroll honours a manual
-   line VERBATIM, so whatever sits here is what gets deducted. Ticking used to
-   drop a ₹0 row that failed the "Amount must be greater than 0" check on the
-   spot, leaving HR to type a placeholder just to get past it — that is where
-   figures like ₹10 came from.
-   ESI is deliberately NOT derived here: its ₹21,000 wage ceiling has a
-   contribution-period carry-over (an employee who crosses it mid-period keeps
-   contributing to the end of that period), so eligibility is HR's call and the
-   row stays a plain manual entry. */
-
-/** Maharashtra slab. The ₹300 February top-up (₹2,500 annual cap) is applied by
- *  the payroll run, not stored here — this row is the ordinary monthly figure. */
-const statutoryPt = (monthlyGross: number, gender: string): number => {
-  if (monthlyGross <= 0) return 0;
-  if (gender.trim().toLowerCase().startsWith('f')) return monthlyGross <= 25000 ? 0 : 200;
-  if (monthlyGross <= 7500)  return 0;
-  if (monthlyGross <= 10000) return 175;
-  return 200;
-};
-
-/** Rows where ₹0 is a real answer rather than an unfilled field: PT is nil below
- *  the first slab, ESI is nil above the wage ceiling, and Special Allowance is
- *  nil once the other components use up the whole CTC. HR's own rows still have
- *  to carry a positive amount. */
-const ZERO_OK_CODES = ['pf', 'esi', 'pt', 'special'];
-
-const MAX_COMP_AMOUNT = 99999999.99;
-const MAX_COMP_LABEL  = 120;
-
-const breakupSignature = (
-  earnings: SalBreakComp[],
-  deductions: SalBreakComp[],
-  pf: boolean, esi: boolean, pt: boolean,
-): string => JSON.stringify({
-  e: earnings.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
-  d: deductions.map(c => [c.code, c.label.trim(), Number(c.amount) || 0]),
-  pf, esi, pt,
-});
+const SALARY_FREQUENCY_OPTIONS = ['Per annum', 'Per month', 'Per hour', 'Per day'].map(v => ({ value: v, label: v }));
+const SALARY_STRUCTURE_OPTIONS = ['Range Based', 'Fixed', 'Component Based'].map(v => ({ value: v, label: v }));
+const TAX_REGIME_OPTIONS = ['New Regime (115BAC)', 'Old Regime'].map(v => ({ value: v, label: v }));
 
 
 interface EmployeeRow {
@@ -211,7 +141,7 @@ interface ApiEmployee {
 }
 
 const accentFromName = (name: string): string => {
-  const palette = ['#0ab39c','#7c5cfc','#f7b84b','#0ea5e9','#e83e8c','#299cdb','#f06548','#405189','#d63384'];
+  const palette = ['#0ab39c', '#7c5cfc', '#f7b84b', '#0ea5e9', '#e83e8c', '#299cdb', '#f06548', '#405189', '#d63384'];
   let h = 0;
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return palette[h % palette.length];
@@ -254,26 +184,26 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
       : (e.ancillary_role?.name ? [e.ancillary_role.name] : []),
     manager: e.reporting_manager?.display_name
       || (e.reporting_manager
-          ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
-          : '')
+        ? [e.reporting_manager.first_name, e.reporting_manager.last_name].filter(Boolean).join(' ').trim()
+        : '')
       || e.reporting_manager_user?.name
       || '—',
     profile: ((): number => {
       const backend = Number(e.profile_completion);
       if (Number.isFinite(backend)) return Math.max(0, Math.min(100, Math.round(backend)));
       const STAGE1_WEIGHT = 0.40;
-      const OTHER_WEIGHT  = 0.60 / 5;
-      const step  = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
+      const OTHER_WEIGHT = 0.60 / 5;
+      const step = Math.max(0, Math.min(4, Number(e.wizard_step_completed ?? 0)));
       const macro = Math.max(0, Math.min(6, Number(e.onboarding_stage_completed ?? 0)));
       const stage1Pct = macro >= 1 ? STAGE1_WEIGHT : STAGE1_WEIGHT * (step / 4);
       const othersDone = (macro >= 2 ? 1 : 0) + (macro >= 3 ? 1 : 0)
-                       + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
-                       + (macro >= 6 ? 1 : 0);
+        + (macro >= 4 ? 1 : 0) + (macro >= 5 ? 1 : 0)
+        + (macro >= 6 ? 1 : 0);
       return Math.round((stage1Pct + othersDone * OTHER_WEIGHT) * 100);
     })(),
     onboarding: ((): 'Completed' | 'In Progress' | 'Pending' => {
       const macro = Number(e.onboarding_stage_completed ?? 0);
-      const step  = Number(e.wizard_step_completed ?? 0);
+      const step = Number(e.wizard_step_completed ?? 0);
       if (macro >= 6) return 'Completed';
       if (macro > 0 || step > 0) return 'In Progress';
       return 'Pending';
@@ -288,36 +218,36 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
 
 
 const ROLE_TONES: Record<string, { bg: string; fg: string }> = {
-  'Associate':            { bg: '#fdf3d6', fg: '#a06f00' },
+  'Associate': { bg: '#fdf3d6', fg: '#a06f00' },
   'Training Coordinator': { bg: '#dceefe', fg: '#0c63b0' },
-  'Business Analyst':     { bg: '#fde8c4', fg: '#a4661c' },
-  'Project Coordinator':  { bg: '#d6f4e3', fg: '#108548' },
-  'Analyst':              { bg: '#fde8c4', fg: '#a4661c' },
-  'DevOps Engineer':      { bg: '#d3f0ee', fg: '#0a716a' },
-  'Security Analyst':     { bg: '#fdd9ea', fg: '#a02960' },
-  'QA Testing Lead':      { bg: '#fde8c4', fg: '#a4661c' },
-  'QA Engineer':          { bg: '#fde8c4', fg: '#a4661c' },
-  'Team Lead':            { bg: '#fdf3d6', fg: '#a06f00' },
-  'Executive':            { bg: '#fdf3d6', fg: '#a06f00' },
-  'Software Engineer':    { bg: '#dceefe', fg: '#0c63b0' },
-  'Mentor':               { bg: '#dceefe', fg: '#0c63b0' },
-  'Sales Manager':        { bg: '#fde8c4', fg: '#a4661c' },
-  'Designer':             { bg: '#fdf3d6', fg: '#a06f00' },
-  'Brand Consultant':     { bg: '#dceefe', fg: '#0c63b0' },
+  'Business Analyst': { bg: '#fde8c4', fg: '#a4661c' },
+  'Project Coordinator': { bg: '#d6f4e3', fg: '#108548' },
+  'Analyst': { bg: '#fde8c4', fg: '#a4661c' },
+  'DevOps Engineer': { bg: '#d3f0ee', fg: '#0a716a' },
+  'Security Analyst': { bg: '#fdd9ea', fg: '#a02960' },
+  'QA Testing Lead': { bg: '#fde8c4', fg: '#a4661c' },
+  'QA Engineer': { bg: '#fde8c4', fg: '#a4661c' },
+  'Team Lead': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Executive': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Software Engineer': { bg: '#dceefe', fg: '#0c63b0' },
+  'Mentor': { bg: '#dceefe', fg: '#0c63b0' },
+  'Sales Manager': { bg: '#fde8c4', fg: '#a4661c' },
+  'Designer': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Brand Consultant': { bg: '#dceefe', fg: '#0c63b0' },
   'Test Automation Lead': { bg: '#dceefe', fg: '#0c63b0' },
-  'Accounts Head':        { bg: '#fde8c4', fg: '#a4661c' },
-  'Accounts Manager':     { bg: '#fde8c4', fg: '#a4661c' },
-  'Scrum Master':         { bg: '#fdf3d6', fg: '#a06f00' },
-  'Data Analyst':         { bg: '#fde8c4', fg: '#a4661c' },
-  'UI/UX Designer':       { bg: '#fdf3d6', fg: '#a06f00' },
-  'Coordinator':          { bg: '#fdf3d6', fg: '#a06f00' },
-  'Engineer':             { bg: '#fdf3d6', fg: '#a06f00' },
-  'Board Member':         { bg: '#dceefe', fg: '#0c63b0' },
-  'CEO':                  { bg: '#fdf3d6', fg: '#a06f00' },
-  'Lead':                 { bg: '#fdf3d6', fg: '#a06f00' },
-  'Sr. Software Engineer':{ bg: '#fdf3d6', fg: '#a06f00' },
-  'Developer':            { bg: '#fdf3d6', fg: '#a06f00' },
-  'Design Head':          { bg: '#fdf3d6', fg: '#a06f00' },
+  'Accounts Head': { bg: '#fde8c4', fg: '#a4661c' },
+  'Accounts Manager': { bg: '#fde8c4', fg: '#a4661c' },
+  'Scrum Master': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Data Analyst': { bg: '#fde8c4', fg: '#a4661c' },
+  'UI/UX Designer': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Coordinator': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Engineer': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Board Member': { bg: '#dceefe', fg: '#0c63b0' },
+  'CEO': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Lead': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Sr. Software Engineer': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Developer': { bg: '#fdf3d6', fg: '#a06f00' },
+  'Design Head': { bg: '#fdf3d6', fg: '#a06f00' },
 };
 const DARK_BY_FG: Record<string, { bg: string; fg: string }> = {
   '#a06f00': { bg: 'rgba(160,111,0,0.28)', fg: '#fcd34d' },
@@ -334,18 +264,18 @@ const tone = (role: string, dark = false) => {
 };
 
 const ONBOARDING_TONES: Record<EmployeeRow['onboarding'], { bg: string; fg: string; dot: string }> = {
-  'Completed':   { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
+  'Completed': { bg: '#d6f4e3', fg: '#108548', dot: '#10b981' },
   'In Progress': { bg: '#fde8c4', fg: '#a4661c', dot: '#f59e0b' },
-  'Pending':     { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
+  'Pending': { bg: '#eef2f6', fg: '#5b6478', dot: '#878a99' },
 };
 
 
 const KPI_CARDS = [
-  { key: 'total',                 label: 'Total Employees',          icon: 'ri-team-line',            gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
-  { key: 'active',                label: 'Active Employees',         icon: 'ri-user-follow-fill',     gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
-  { key: 'disabled',              label: 'Disabled Employees',       icon: 'ri-user-unfollow-fill',   gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
-  { key: 'onboarding_completed',  label: 'Onboarding Completed',     icon: 'ri-medal-fill',           gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', accent: '#299cdb' },
-  { key: 'new_joiners',           label: 'New Joiners',              icon: 'ri-user-add-fill',        gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', accent: '#7c5cfc' },
+  { key: 'total', label: 'Total Employees', icon: 'ri-team-line', gradient: 'linear-gradient(135deg,#405189,#6691e7)', accent: '#6691e7' },
+  { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-fill', gradient: 'linear-gradient(135deg,#0ab39c,#02c8a7)', accent: '#0ab39c' },
+  { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-fill', gradient: 'linear-gradient(135deg,#878a99,#b9bbc6)', accent: '#878a99' },
+  { key: 'onboarding_completed', label: 'Onboarding Completed', icon: 'ri-medal-fill', gradient: 'linear-gradient(135deg,#0c63b0,#299cdb)', accent: '#299cdb' },
+  { key: 'new_joiners', label: 'New Joiners', icon: 'ri-user-add-fill', gradient: 'linear-gradient(135deg,#7c5cfc,#a78bfa)', accent: '#7c5cfc' },
 ] as const;
 
 type ExpiryDays = 3 | 7 | 15;
@@ -364,7 +294,7 @@ export default function HrEmployees() {
   const [statusFilter, setStatusFilter] = useState<'Active' | 'Disabled' | 'All'>('Active');
 
   useEffect(() => {
-    if (statusFilter === 'Active'   && tab !== 'active')   setTab('active');
+    if (statusFilter === 'Active' && tab !== 'active') setTab('active');
     if (statusFilter === 'Disabled' && tab !== 'disabled') setTab('disabled');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
@@ -486,7 +416,7 @@ export default function HrEmployees() {
   }, [reloadEmployees, reloadMasters]);
 
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => {}); };
+    const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => { }); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
@@ -523,12 +453,12 @@ export default function HrEmployees() {
   };
   const validateOnboarding = (): OnbErrors => {
     const errs: OnbErrors = {};
-    if (!onbName.trim())  errs.name  = 'Employee name is required';
+    if (!onbName.trim()) errs.name = 'Employee name is required';
     else if (!/^[A-Za-z][A-Za-z\s'\-.]*$/.test(onbName.trim())) errs.name = 'Name can only contain letters (no numbers or special characters)';
     if (!onbEmail.trim()) errs.email = 'Email address is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(onbEmail.trim())) errs.email = 'Please enter a valid email address';
-    if (!onbDept)         errs.dept  = 'Please select a department';
-    if (!onbDate)         errs.date  = 'Please pick the expected joining date';
+    if (!onbDept) errs.dept = 'Please select a department';
+    if (!onbDate) errs.date = 'Please pick the expected joining date';
     return errs;
   };
   const handleGenerateOnboarding = async () => {
@@ -544,12 +474,12 @@ export default function HrEmployees() {
     setGeneratingInvite(true);
     try {
       const r = await api.post('/employees/onboarding-invite', {
-        invitee_name:       onbName.trim(),
-        invitee_email:      onbEmail.trim(),
-        department_id:      deptId ?? null,
+        invitee_name: onbName.trim(),
+        invitee_email: onbEmail.trim(),
+        department_id: deptId ?? null,
         expected_join_date: onbDate || null,
-        expiry_days:        onbExpiry,
-        app_origin:         typeof window !== 'undefined' ? window.location.origin : undefined,
+        expiry_days: onbExpiry,
+        app_origin: typeof window !== 'undefined' ? window.location.origin : undefined,
       });
       const inviteUrl = r?.data?.invite?.url;
       toast.success(
@@ -563,8 +493,8 @@ export default function HrEmployees() {
       if (apiErrors) {
         const next: OnbErrors = {};
         if (apiErrors.invitee_email) next.email = apiErrors.invitee_email[0];
-        if (apiErrors.invitee_name)  next.name  = apiErrors.invitee_name[0];
-        if (apiErrors.department_id) next.dept  = apiErrors.department_id[0];
+        if (apiErrors.invitee_name) next.name = apiErrors.invitee_name[0];
+        if (apiErrors.department_id) next.dept = apiErrors.department_id[0];
         if (apiErrors.expected_join_date) next.date = apiErrors.expected_join_date[0];
         setOnbErrors(next);
       }
@@ -660,47 +590,47 @@ export default function HrEmployees() {
     active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [empStep]);
   const [empMaxStep, setEmpMaxStep] = useState<1 | 2 | 3 | 4>(1);
-  const [eWorkCountry, setEWorkCountry]   = useState('');
-  const [eFirstName, setEFirstName]       = useState('');
-  const [eMiddleName, setEMiddleName]     = useState('');
-  const [eLastName, setELastName]         = useState('');
-  const [eDisplayName, setEDisplayName]   = useState('');
+  const [eWorkCountry, setEWorkCountry] = useState('');
+  const [eFirstName, setEFirstName] = useState('');
+  const [eMiddleName, setEMiddleName] = useState('');
+  const [eLastName, setELastName] = useState('');
+  const [eDisplayName, setEDisplayName] = useState('');
   const [eDisplayNameTouched, setEDisplayNameTouched] = useState(false);
-  const [eActualName, setEActualName]     = useState('');
+  const [eActualName, setEActualName] = useState('');
   const [eActualNameTouched, setEActualNameTouched] = useState(false);
   const [eActualNameLocked, setEActualNameLocked] = useState(false);
-  const [eGender, setEGender]             = useState('');
-  const [eDob, setEDob]                   = useState('');
-  const [eNationality, setENationality]   = useState('');
-  const [eWorkEmail, setEWorkEmail]       = useState('');
-  const [eMobile, setEMobile]             = useState('');
-  const [eEmpId, setEEmpId]               = useState('');
-  const [eStatus, setEStatus]             = useState('Active');
-  const [eCurAddr1, setECurAddr1]   = useState('');
-  const [eCurAddr2, setECurAddr2]   = useState('');
-  const [eCurCity, setECurCity]     = useState('');
-  const [eCurState, setECurState]   = useState('');
+  const [eGender, setEGender] = useState('');
+  const [eDob, setEDob] = useState('');
+  const [eNationality, setENationality] = useState('');
+  const [eWorkEmail, setEWorkEmail] = useState('');
+  const [eMobile, setEMobile] = useState('');
+  const [eEmpId, setEEmpId] = useState('');
+  const [eStatus, setEStatus] = useState('Active');
+  const [eCurAddr1, setECurAddr1] = useState('');
+  const [eCurAddr2, setECurAddr2] = useState('');
+  const [eCurCity, setECurCity] = useState('');
+  const [eCurState, setECurState] = useState('');
   const [eCurCountry, setECurCountry] = useState('');
-  const [eCurPin, setECurPin]       = useState('');
+  const [eCurPin, setECurPin] = useState('');
   const [eSameAsCurrent, setESameAsCurrent] = useState(false);
   const [ePermAddr1, setEPermAddr1] = useState('');
   const [ePermAddr2, setEPermAddr2] = useState('');
-  const [ePermCity, setEPermCity]   = useState('');
+  const [ePermCity, setEPermCity] = useState('');
   const [ePermState, setEPermState] = useState('');
   const [ePermCountry, setEPermCountry] = useState('');
-  const currentAddressStates   = useMemo(() => statesForCountry(eCurCountry),  [statesForCountry, eCurCountry]);
+  const currentAddressStates = useMemo(() => statesForCountry(eCurCountry), [statesForCountry, eCurCountry]);
   const permanentAddressStates = useMemo(() => statesForCountry(ePermCountry), [statesForCountry, ePermCountry]);
-  const [ePermPin, setEPermPin]     = useState('');
-  const [eJoinDate, setEJoinDate]                = useState('');
-  const [eDept, setEDept]                        = useState('');
-  const [eDesignation, setEDesignation]          = useState('');
-  const [ePrimaryRole, setEPrimaryRole]          = useState('');
-  const [eAncillaryRole, setEAncillaryRole]      = useState<string[]>([]);
-  const [eWorkType, setEWorkType]                = useState('');
+  const [ePermPin, setEPermPin] = useState('');
+  const [eJoinDate, setEJoinDate] = useState('');
+  const [eDept, setEDept] = useState('');
+  const [eDesignation, setEDesignation] = useState('');
+  const [ePrimaryRole, setEPrimaryRole] = useState('');
+  const [eAncillaryRole, setEAncillaryRole] = useState<string[]>([]);
+  const [eWorkType, setEWorkType] = useState('');
   // Primary & Ancillary share the SAME role list, but a role can't be BOTH for
   // one employee: exclude the other side's current pick from each dropdown so
   // the clash is physically unselectable (a save-time guard backs it up too).
-  const primaryRoleOptionsX   = useMemo(
+  const primaryRoleOptionsX = useMemo(
     () => primaryRoleOptions.filter(o => !eAncillaryRole.includes(o.value)),
     [primaryRoleOptions, eAncillaryRole],
   );
@@ -708,13 +638,13 @@ export default function HrEmployees() {
     () => primaryRoleOptions.filter(o => o.value !== ePrimaryRole),
     [primaryRoleOptions, ePrimaryRole],
   );
-  const [eLegalEntity, setELegalEntity]          = useState('');
+  const [eLegalEntity, setELegalEntity] = useState('');
   /* Display name for the read-only Legal Entity field. Held separately from the
      id because when editing an employee of another branch the saved entity may
      not be in the branch-scoped options list — the row's own
      `legal_entity.name` is then the only source for the label. */
   const [eLegalEntityLabel, setELegalEntityLabel] = useState('');
-  const [eLocation, setELocation]                = useState('');
+  const [eLocation, setELocation] = useState('');
   /* Fill both fields once the branch resolves. Only when EMPTY, so opening an
      existing employee keeps their saved entity instead of being rewritten to the
      active branch (which would silently re-home them on the next save). */
@@ -724,14 +654,14 @@ export default function HrEmployees() {
     setELegalEntityLabel(autoLegalEntity.name || '');
     setELocation(autoLegalEntity.location || autoLegalEntity.city || '');
   }, [autoLegalEntity, eLegalEntity]);
-  const [eReportingMgr, setEReportingMgr]        = useState('');
+  const [eReportingMgr, setEReportingMgr] = useState('');
   const [savedMgrOption, setSavedMgrOption] = useState<{ value: string; label: string } | null>(null);
-  const [eProbationPolicy, setEProbationPolicy]  = useState('');
-  const [eNoticePeriod, setENoticePeriod]        = useState('');
-  const [eCustomProbation, setECustomProbation]  = useState('');
-  const [eCustomNotice, setECustomNotice]        = useState('');
-  const [eLeavePlan, setELeavePlan]              = useState('');
-  const [leavePlanOptions, setLeavePlanOptions]  = useState<Array<{ value: string; label: string }>>([]);
+  const [eProbationPolicy, setEProbationPolicy] = useState('');
+  const [eNoticePeriod, setENoticePeriod] = useState('');
+  const [eCustomProbation, setECustomProbation] = useState('');
+  const [eCustomNotice, setECustomNotice] = useState('');
+  const [eLeavePlan, setELeavePlan] = useState('');
+  const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
     leavePlansApi.list()
       .then(plans => {
@@ -745,7 +675,7 @@ export default function HrEmployees() {
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
   }, []);
-  const [eHolidayList, setEHolidayList]          = useState('');
+  const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const holidayGroupSelectOptions = useMemo(() => {
     const opts = [...holidayGroupOptions];
@@ -755,7 +685,7 @@ export default function HrEmployees() {
     }
     return opts;
   }, [holidayGroupOptions, mHolidayGroups, eHolidayList]);
-  const [eShift, setEShift]                      = useState('');
+  const [eShift, setEShift] = useState('');
   // Shift options come from the branch's configured Shift Details (set in the
   // Branch form). BranchSwitcher injects ?branch_id on this GET, so a branch
   // user sees their branch's shifts and a client_admin sees the selected
@@ -794,14 +724,14 @@ export default function HrEmployees() {
   const shiftPlaceholder = branchShiftOptions.length === 0
     ? 'No shifts configured for this branch'
     : 'Select shift';
-  const [eWeeklyOff, setEWeeklyOff]              = useState('');
-  const [eAttendanceNumber, setEAttendanceNumber]= useState('');
-  const [eOvertime, setEOvertime]                = useState('');
+  const [eWeeklyOff, setEWeeklyOff] = useState('');
+  const [eAttendanceNumber, setEAttendanceNumber] = useState('');
+  const [eOvertime, setEOvertime] = useState('');
   // Yes/No toggle gating the Overtime Rate picker; derived from eOvertime on hydrate.
   const [eOvertimeApplicable, setEOvertimeApplicable] = useState('No');
   const overtimeRateSelectOptions = useMemo(() => {
     const active = overtimeRateOptions;
-    const saved  = eOvertime.trim();
+    const saved = eOvertime.trim();
     if (!saved || active.some(o => o.value === saved)) return active;
     return [...active, {
       value: saved,
@@ -810,13 +740,13 @@ export default function HrEmployees() {
       disabledReason: 'This rate is no longer Active in Master › Overtime (OT). Pick a current rate.',
     }];
   }, [overtimeRateOptions, eOvertime]);
-  const [eExpensePolicy, setEExpensePolicy]      = useState('');
-  const [eLaptopAssigned, setELaptopAssigned]    = useState('No');
-  const [eLaptopAssetId, setELaptopAssetId]      = useState('');
-  const [eMobileDevice, setEMobileDevice]        = useState('');
-  const [eOtherAssets, setEOtherAssets]          = useState('');
+  const [eExpensePolicy, setEExpensePolicy] = useState('');
+  const [eLaptopAssigned, setELaptopAssigned] = useState('No');
+  const [eLaptopAssetId, setELaptopAssetId] = useState('');
+  const [eMobileDevice, setEMobileDevice] = useState('');
+  const [eOtherAssets, setEOtherAssets] = useState('');
   const [eLaptopMasterAssetId, setELaptopMasterAssetId] = useState('');
-  const [eMobileAssigned,      setEMobileAssigned]      = useState('No');
+  const [eMobileAssigned, setEMobileAssigned] = useState('No');
   const [eMobileMasterAssetId, setEMobileMasterAssetId] = useState('');
   const [eOtherMasterAssetIds, setEOtherMasterAssetIds] = useState<string[]>([]);
   // `badge` flags a device whose Asset-master category no longer matches the
@@ -824,21 +754,21 @@ export default function HrEmployees() {
   type AssetOpt = { value: string; label: string; badge?: { text: string; tone?: 'green' | 'red' | 'gray' | 'violet' } };
   const [laptopAssetOpts, setLaptopAssetOpts] = useState<AssetOpt[]>([]);
   const [mobileAssetOpts, setMobileAssetOpts] = useState<AssetOpt[]>([]);
-  const [otherAssetOpts,  setOtherAssetOpts]  = useState<AssetOpt[]>([]);
-  const [eAadharFile, setEAadharFile]            = useState<File | null>(null);
-  const [ePanFile, setEPanFile]                  = useState<File | null>(null);
-  const [ePhotoFile, setEPhotoFile]              = useState<File | null>(null);
+  const [otherAssetOpts, setOtherAssetOpts] = useState<AssetOpt[]>([]);
+  const [eAadharFile, setEAadharFile] = useState<File | null>(null);
+  const [ePanFile, setEPanFile] = useState<File | null>(null);
+  const [ePhotoFile, setEPhotoFile] = useState<File | null>(null);
   type ServerDoc = { id: number; document_key: string; original_name: string | null; status: string; url: string | null };
   const [eExistingDocs, setEExistingDocs] = useState<Record<string, ServerDoc>>({});
   const eExistingDocsRef = useRef<Record<string, ServerDoc>>({});
   useEffect(() => { eExistingDocsRef.current = eExistingDocs; }, [eExistingDocs]);
-  const [eDocBusy, setEDocBusy]           = useState<Record<string, boolean>>({});
+  const [eDocBusy, setEDocBusy] = useState<Record<string, boolean>>({});
 
-  const [assignOpen, setAssignOpen]   = useState(false);
-  const [assignEmp, setAssignEmp]     = useState<EmployeeRow | null>(null);
-  const [aLaptopAssigned, setALaptopAssigned]           = useState('No');
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [assignEmp, setAssignEmp] = useState<EmployeeRow | null>(null);
+  const [aLaptopAssigned, setALaptopAssigned] = useState('No');
   const [aLaptopMasterAssetId, setALaptopMasterAssetId] = useState('');
-  const [aMobileAssigned, setAMobileAssigned]           = useState('No');
+  const [aMobileAssigned, setAMobileAssigned] = useState('No');
   const [aMobileMasterAssetId, setAMobileMasterAssetId] = useState('');
   const [aOtherMasterAssetIds, setAOtherMasterAssetIds] = useState<string[]>([]);
   // Per-field errors for the Assign Assets modal, keyed 'laptop' | 'mobile'.
@@ -847,7 +777,7 @@ export default function HrEmployees() {
   const [aSaving, setASaving] = useState(false);
   const [aLaptopOpts, setALaptopOpts] = useState<AssetOpt[]>([]);
   const [aMobileOpts, setAMobileOpts] = useState<AssetOpt[]>([]);
-  const [aOtherOpts,  setAOtherOpts]  = useState<AssetOpt[]>([]);
+  const [aOtherOpts, setAOtherOpts] = useState<AssetOpt[]>([]);
 
   const openAssignAssets = (row: EmployeeRow) => {
     setAssignEmp(row);
@@ -879,7 +809,7 @@ export default function HrEmployees() {
     return Promise.allSettled([
       fetchCat('laptop', setALaptopOpts),
       fetchCat('mobile', setAMobileOpts),
-      fetchCat('other',  setAOtherOpts),
+      fetchCat('other', setAOtherOpts),
     ]);
   }, [assignEmp]);
 
@@ -973,8 +903,8 @@ export default function HrEmployees() {
   };
 
   const [vaultOpen, setVaultOpen] = useState(false);
-  const [vaultEmp, setVaultEmp]   = useState<EmployeeRow | null>(null);
-  const [vaultTab, setVaultTab]   = useState<'employee' | 'organizational'>('employee');
+  const [vaultEmp, setVaultEmp] = useState<EmployeeRow | null>(null);
+  const [vaultTab, setVaultTab] = useState<'employee' | 'organizational'>('employee');
   const openVault = (row: EmployeeRow) => {
     setVaultEmp(row);
     setVaultTab('employee');
@@ -992,7 +922,7 @@ export default function HrEmployees() {
   const requestToggle = (employee: EmployeeRow, next: boolean, commit: () => void) => {
     setTogglePending({ employee, next, commit });
   };
-  const cancelToggle  = () => { if (!toggling) setTogglePending(null); };
+  const cancelToggle = () => { if (!toggling) setTogglePending(null); };
   const confirmToggle = async () => {
     const pending = togglePending;
     if (!pending || toggling) return;
@@ -1020,30 +950,30 @@ export default function HrEmployees() {
       setToggling(false);
     }
   };
-  const [eEnablePayroll, setEEnablePayroll]      = useState(true);
-  const [ePayGroup, setEPayGroup]                = useState('');
-  const [eAnnualSalary, setEAnnualSalary]        = useState('');
-  const [eSalaryFreq, setESalaryFreq]            = useState('Per annum'); // salary is always entered per annum (frequency picker removed)
-  const [eSalaryFrom, setESalaryFrom]            = useState('');
-  const [eBonusInAnnual, setEBonusInAnnual]      = useState(false);
-  const [ePfEligible, setEPfEligible]            = useState(false);
-  const [ePfType, setEPfType]                    = useState('Statutory'); // 'Statutory' (₹15k cap) | 'Standard' (full basic)
+  const [eEnablePayroll, setEEnablePayroll] = useState(true);
+  const [ePayGroup, setEPayGroup] = useState('');
+  const [eAnnualSalary, setEAnnualSalary] = useState('');
+  const [eSalaryFreq, setESalaryFreq] = useState('Per annum'); // salary is always entered per annum (frequency picker removed)
+  const [eSalaryFrom, setESalaryFrom] = useState('');
+  const [eBonusInAnnual, setEBonusInAnnual] = useState(false);
+  const [ePfEligible, setEPfEligible] = useState(false);
+  const [ePfType, setEPfType] = useState('Statutory'); // 'Statutory' (₹15k cap) | 'Standard' (full basic)
   /* Detailed breakup is ON by default. The collapsed "Regular + Bonus = CTC"
      summary restates the CTC field directly above it and nothing else, so the
      section opened with no information in it and every user's first act was to
      flip the toggle. An employee SAVED with it off still opens off — see the
      explicit null check where detailed_breakup is read back. */
-  const [eDetailedBreakup, setEDetailedBreakup]  = useState(true);
-  const [eEarnings, setEEarnings]                = useState<SalBreakComp[]>([]);
-  const [eDeductions, setEDeductions]            = useState<SalBreakComp[]>([]);
-  const [eEsiApplicable, setEEsiApplicable]      = useState(false);
+  const [eDetailedBreakup, setEDetailedBreakup] = useState(true);
+  const [eEarnings, setEEarnings] = useState<SalBreakComp[]>([]);
+  const [eDeductions, setEDeductions] = useState<SalBreakComp[]>([]);
+  const [eEsiApplicable, setEEsiApplicable] = useState(false);
   /* Both start UNCHECKED. PT defaulted to true, so every new employee arrived
      with a Professional Tax deduction row nobody had asked for — and it is not
      universal (it is state-levied, and several states do not charge it). */
-  const [ePtApplicable, setEPtApplicable]        = useState(false);
-  const [eBreakupLoading, setEBreakupLoading]    = useState(false);
+  const [ePtApplicable, setEPtApplicable] = useState(false);
+  const [eBreakupLoading, setEBreakupLoading] = useState(false);
   const breakupLoadedForRef = useRef<number | 'new' | null>(null);
-  const breakupBaselineRef  = useRef<string | null>(null);
+  const breakupBaselineRef = useRef<string | null>(null);
   // false while the breakup is still the auto-split (Basic/HRA/Special) — lets
   // it re-seed when the Salary Amount changes. Flips true the moment HR edits /
   // adds / removes a component or a saved structure loads, so manual work is
@@ -1052,7 +982,7 @@ export default function HrEmployees() {
      the breakup is loaded or seeded, and compared before re-seeding, so the
      split follows a CTC the USER changed and never a value that merely arrived
      from the server. */
-  const seededForSalaryRef  = useRef<string | null>(null);
+  const seededForSalaryRef = useRef<string | null>(null);
 
   const resetEmpForm = () => {
     setEmpStep(1);
@@ -1182,17 +1112,25 @@ export default function HrEmployees() {
      value on screen.
      Only the seed waits; the CTC field itself, its validation and the
      annualised comparison stay live, so typing never feels laggy. */
+  /* True from the moment the CTC is edited until the debounce lands. In that
+     window every figure below belongs to the PREVIOUS CTC, so the section is
+     covered rather than left showing stale money as though it were the answer —
+     on a slow machine that gap is long enough to read. */
+  const [breakupRecalcing, setBreakupRecalcing] = useState(false);
+
   const [settledSalary, setSettledSalary] = useState(eAnnualSalary);
   useEffect(() => {
-    const t = setTimeout(() => setSettledSalary(eAnnualSalary), 500);
+    const t = setTimeout(() => {
+      setSettledSalary(eAnnualSalary);
+      /* Cleared HERE, on the timer, not in the re-seed effect below. Typing a
+         digit and deleting it inside the 500ms leaves the settled value
+         UNCHANGED — React bails out of the identical setState, the effect never
+         re-runs, and the overlay it was going to clear stays over the section
+         for good. This fires whether or not anything actually changed. */
+      setBreakupRecalcing(false);
+    }, 500);
     return () => clearTimeout(t);   // each keystroke cancels the pending seed
   }, [eAnnualSalary]);
-
-  /* True from the moment the CTC is edited until the debounced re-seed has
-     landed. In that window every figure below belongs to the PREVIOUS CTC, so
-     the section is covered rather than left showing stale money as though it
-     were the answer — on a slow machine that gap is long enough to read. */
-  const [breakupRecalcing, setBreakupRecalcing] = useState(false);
 
   /* Re-seed Basic / HRA / Special whenever the CTC changes.
      The split IS the CTC expressed monthly, so leaving it behind when the CTC
@@ -1249,7 +1187,7 @@ export default function HrEmployees() {
   }, [settledSalary, eSalaryFreq]);
 
   const breakupGross = useMemo(() => eEarnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eEarnings]);
-  const breakupDed   = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
+  const breakupDed = useMemo(() => eDeductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [eDeductions]);
   /* Fixed deductions EXCLUDING the PF row, for the summary line that already
      reports PF on its own. PF is now a row in the list, so adding it to the
      "Fixed Deductions" figure would show the same rupee twice on screen. */
@@ -1303,8 +1241,8 @@ export default function HrEmployees() {
         if (on && !has) next = [...next, { code, label, amount: seed }];
         else if (!on && has) next = next.filter(d => d.code !== code);
       };
-      sync(eEsiApplicable, 'esi', 'ESI',              0);
-      sync(ePtApplicable,  'pt',  'Professional Tax', statutoryPt(breakupGross, eGender));
+      sync(eEsiApplicable, 'esi', 'ESI', 0);
+      sync(ePtApplicable, 'pt', 'Professional Tax', statutoryPt(breakupGross, eGender));
 
       /* PF joins the same list — it was only ever a note under the totals.
          ESI and PT already appeared as deduction rows, so a reader saw two of
@@ -1328,58 +1266,10 @@ export default function HrEmployees() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eEsiApplicable, ePtApplicable, ePfEligible, breakupPf]);
 
-  const breakupErrors = useMemo(() => {
-    const earnings: Record<number, string> = {};
-    const deductions: Record<number, string> = {};
-    let form = '';
-    if (!eDetailedBreakup) return { earnings, deductions, form };
-
-    const checkRow = (c: SalBreakComp, treatEmptyAsBlank: boolean): string | null => {
-      const label = c.label.trim();
-      const amt = Number(c.amount);
-      const blank = !label && (!Number.isFinite(amt) || amt === 0);
-      if (blank && treatEmptyAsBlank) return null;
-      if (!label) return 'Component name is required';
-      if (label.length > MAX_COMP_LABEL) return `Name must be ≤ ${MAX_COMP_LABEL} characters`;
-      const zeroOk = ZERO_OK_CODES.includes(c.code);
-      if (!Number.isFinite(amt) || amt < 0 || (amt === 0 && !zeroOk)) return 'Amount must be greater than 0';
-      if (amt > MAX_COMP_AMOUNT) return 'Amount is too large';
-      return null;
-    };
-
-    const flagDuplicates = (list: SalBreakComp[], errs: Record<number, string>) => {
-      const seen = new Map<string, number>();
-      list.forEach((c, i) => {
-        if (errs[i]) return;
-        const key = c.label.trim().toLowerCase();
-        if (!key) return;
-        if (seen.has(key)) errs[i] = 'Duplicate component name';
-        else seen.set(key, i);
-      });
-    };
-
-    eEarnings.forEach((c, i) => { const er = checkRow(c, true); if (er) earnings[i] = er; });
-    eDeductions.forEach((c, i) => { const er = checkRow(c, true); if (er) deductions[i] = er; });
-    flagDuplicates(eEarnings, earnings);
-    flagDuplicates(eDeductions, deductions);
-
-    const hasValidEarning = eEarnings.some(c => c.label.trim() && Number(c.amount) > 0);
-    if (!hasValidEarning || breakupGross <= 0) {
-      form = 'Add at least one earning component with a positive amount';
-    } else if (breakupDed > breakupGross) {
-      form = 'Total deductions cannot exceed the monthly gross';
-    } else {
-      // Code on Wages, 2019: "wages" (Basic + DA) must be at least 50% of the
-      // total remuneration. The auto-split already seeds Basic at 50%; this only
-      // trips if Basic is manually skewed below the legal floor. A ₹1 slack
-      // absorbs the rounding on a clean 50% split so it never false-positives.
-      const basic = Number(eEarnings.find(c => c.code === 'basic')?.amount ?? 0) || 0;
-      if (basic > 0 && basic + 1 < breakupGross * 0.5) {
-        form = 'Basic Salary must be at least 50% of the monthly gross (Code on Wages, 2019).';
-      }
-    }
-    return { earnings, deductions, form };
-  }, [eDetailedBreakup, eEarnings, eDeductions, breakupGross, breakupDed]);
+  const breakupErrors = useMemo(
+    () => validateBreakup(eEarnings, eDeductions, eDetailedBreakup),
+    [eDetailedBreakup, eEarnings, eDeductions],
+  );
 
   const updateBreakRow = (which: 'earn' | 'ded', i: number, field: 'label' | 'amount', value: string) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
@@ -1434,7 +1324,7 @@ export default function HrEmployees() {
       // Removing the ESI / Professional Tax row also unticks its checkbox so
       // the two stay consistent.
       if (removed?.code === 'esi') setEEsiApplicable(false);
-      if (removed?.code === 'pt')  setEPtApplicable(false);
+      if (removed?.code === 'pt') setEPtApplicable(false);
     }
     clearEErr('salary_breakup');
   };
@@ -1613,19 +1503,21 @@ export default function HrEmployees() {
     const exclude = editingDbId ? `&exclude_employee_id=${editingDbId}` : '';
     const fetchCat = (cat: string, setter: (opts: AssetOpt[]) => void) =>
       api.get(`/employees/available-assets?category=${cat}${exclude}`)
-        .then(r => { if (!cancelled) setter((r.data ?? []).map((a: any) => ({
-          value: String(a.id),
-          label: a.label || a.asset_name,
-          /* Device still linked to this slot but re-categorised in the Asset
-             master since (Laptop -> Mobile). Without this row the select had no
-             option matching the saved id and fell back to printing the raw id. */
-          ...(a.stale_category ? { badge: { text: 'Category changed', tone: 'red' as const } } : {}),
-        }))); })
+        .then(r => {
+          if (!cancelled) setter((r.data ?? []).map((a: any) => ({
+            value: String(a.id),
+            label: a.label || a.asset_name,
+            /* Device still linked to this slot but re-categorised in the Asset
+               master since (Laptop -> Mobile). Without this row the select had no
+               option matching the saved id and fell back to printing the raw id. */
+            ...(a.stale_category ? { badge: { text: 'Category changed', tone: 'red' as const } } : {}),
+          })));
+        })
         .catch(() => { if (!cancelled) setter([]); });
     Promise.allSettled([
       fetchCat('laptop', setLaptopAssetOpts),
       fetchCat('mobile', setMobileAssetOpts),
-      fetchCat('other',  setOtherAssetOpts),
+      fetchCat('other', setOtherAssetOpts),
     ]);
     return () => { cancelled = true; };
   }, [empOpen, editingDbId]);
@@ -1651,7 +1543,7 @@ export default function HrEmployees() {
     const type = (file.type || '').toLowerCase();
     return accept.split(',').map(s => s.trim().toLowerCase()).filter(Boolean).some(spec => {
       if (spec.startsWith('.')) return name.endsWith(spec);
-      if (spec.endsWith('/*'))  return type.startsWith(spec.slice(0, -1));
+      if (spec.endsWith('/*')) return type.startsWith(spec.slice(0, -1));
       return type === spec;
     });
   };
@@ -1800,7 +1692,7 @@ export default function HrEmployees() {
       // branch-scoped options list this user can see.
       setELegalEntityLabel(raw.legal_entity?.name || '');
       setELocation(raw.location || '');
-      const mgrUserId   = raw.reporting_manager_user_id;
+      const mgrUserId = raw.reporting_manager_user_id;
       const mgrUserType = raw.reporting_manager_user?.user_type;
       if (raw.reporting_manager_id && raw.reporting_manager) {
         setEReportingMgr(`employee:${raw.reporting_manager_id}`);
@@ -1914,26 +1806,26 @@ export default function HrEmployees() {
 
   const validateStep1 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-   
+
     const emailRe = /^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/;
-    if (!eWorkCountry)        e.work_country_id = 'Work country is required';
+    if (!eWorkCountry) e.work_country_id = 'Work country is required';
 
     const NAME_RE = /^[A-Za-z ]+$/;
     const nameError = (val: string, label: string): string | null => {
       const v = val.trim();
       if (!NAME_RE.test(v)) return `${label} may contain letters and spaces only`;
-      if (v.length < 2)     return `${label} must be at least 2 characters`;
-      if (v.length > 50)    return `${label} must be at most 50 characters`;
+      if (v.length < 2) return `${label} must be at least 2 characters`;
+      if (v.length > 50) return `${label} must be at most 50 characters`;
       return null;
     };
     if (!eFirstName.trim()) e.first_name = 'First name is required';
     else { const m = nameError(eFirstName, 'First name'); if (m) e.first_name = m; }
-    if (!eLastName.trim())  e.last_name  = 'Last name is required';
+    if (!eLastName.trim()) e.last_name = 'Last name is required';
     else { const m = nameError(eLastName, 'Last name'); if (m) e.last_name = m; }
     if (eMiddleName.trim()) { const m = nameError(eMiddleName, 'Middle name'); if (m) e.middle_name = m; }
-    if (!eDisplayName.trim()) e.display_name    = 'Display name is required';
-    if (!eActualName.trim())  e.actual_name     = 'Employee actual name is required';
-    if (!eGender)             e.gender          = 'Gender is required';
+    if (!eDisplayName.trim()) e.display_name = 'Display name is required';
+    if (!eActualName.trim()) e.actual_name = 'Employee actual name is required';
+    if (!eGender) e.gender = 'Gender is required';
     if (!eDob) {
       e.date_of_birth = 'Date of birth is required';
     } else {
@@ -1958,14 +1850,14 @@ export default function HrEmployees() {
         }
       }
     }
-    if (!eNationality)        e.nationality_country_id = 'Nationality is required';
+    if (!eNationality) e.nationality_country_id = 'Nationality is required';
     if (!eWorkEmail.trim()) {
       e.email = 'Email is required';
     } else {
       const em = eWorkEmail.trim();
-      if (/\s/.test(em))                  e.email = 'Email cannot contain spaces';
-      else if (em !== em.toLowerCase())   e.email = 'Email must be in lowercase';
-      else if (!emailRe.test(em))         e.email = 'Enter a valid email address';
+      if (/\s/.test(em)) e.email = 'Email cannot contain spaces';
+      else if (em !== em.toLowerCase()) e.email = 'Email must be in lowercase';
+      else if (!emailRe.test(em)) e.email = 'Enter a valid email address';
     }
     if (!eMobile.trim()) {
       e.mobile = 'Mobile is required';
@@ -1975,28 +1867,28 @@ export default function HrEmployees() {
         e.mobile = 'Mobile must be 6–15 digits';
       }
     }
-    if (!eCurAddr1.trim())    e.address_line1   = 'Address Line 1 is required';
-    if (!eCurCity.trim())     e.city            = 'City is required';
-    if (!eCurCountry)         e.country_id      = 'Country is required';
-    if (!eCurState)           e.state_id        = 'State is required';
-    if (!eCurPin.trim())      e.pincode         = 'Pincode is required';
+    if (!eCurAddr1.trim()) e.address_line1 = 'Address Line 1 is required';
+    if (!eCurCity.trim()) e.city = 'City is required';
+    if (!eCurCountry) e.country_id = 'Country is required';
+    if (!eCurState) e.state_id = 'State is required';
+    if (!eCurPin.trim()) e.pincode = 'Pincode is required';
     else if (!/^\d{6}$/.test(eCurPin.trim())) e.pincode = 'Pincode must be exactly 6 digits';
 
     // Permanent address is mandatory too — but only when it's NOT mirrored
     // from the current address (the "Same as Current Address" toggle copies
     // the already-validated current values).
     if (!eSameAsCurrent) {
-      if (!ePermAddr1.trim())  e.perm_address_line1 = 'Address Line 1 is required';
-      if (!ePermCity.trim())   e.perm_city          = 'City is required';
-      if (!ePermCountry)       e.perm_country_id    = 'Country is required';
-      if (!ePermState)         e.perm_state_id      = 'State is required';
-      if (!ePermPin.trim())    e.perm_pincode       = 'Pincode is required';
+      if (!ePermAddr1.trim()) e.perm_address_line1 = 'Address Line 1 is required';
+      if (!ePermCity.trim()) e.perm_city = 'City is required';
+      if (!ePermCountry) e.perm_country_id = 'Country is required';
+      if (!ePermState) e.perm_state_id = 'State is required';
+      if (!ePermPin.trim()) e.perm_pincode = 'Pincode is required';
       else if (!/^\d{6}$/.test(ePermPin.trim())) e.perm_pincode = 'Pincode must be exactly 6 digits';
     }
     return e;
   }, [eWorkCountry, eFirstName, eLastName, eDisplayName, eActualName, eGender, eDob, eNationality,
-      eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName,
-      eSameAsCurrent, ePermAddr1, ePermCity, ePermCountry, ePermState, ePermPin]);
+    eWorkEmail, eMobile, eCurAddr1, eCurCity, eCurCountry, eCurState, eCurPin, eMiddleName,
+    eSameAsCurrent, ePermAddr1, ePermCity, ePermCountry, ePermState, ePermPin]);
 
   /* The date the record already carried, and today. Kept together because the
      no-back-dating rule needs both: one to decide whether the user changed it,
@@ -2006,7 +1898,7 @@ export default function HrEmployees() {
 
   const validateStep2 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
-    if (!eJoinDate)        e.date_of_joining   = 'Joining date is required';
+    if (!eJoinDate) e.date_of_joining = 'Joining date is required';
     /* No back-dating — but only for a date the user is actually setting.
        Every existing employee joined in the past, so a blanket rule would make
        their record un-editable: step 2 would refuse to advance until a correct
@@ -2015,26 +1907,26 @@ export default function HrEmployees() {
     else if (eJoinDate < todayIso && eJoinDate !== eJoinDateOrig) {
       e.date_of_joining = 'Joining date can’t be in the past';
     }
-    if (!eDept)            e.department_id     = 'Department is required';
-    if (!eDesignation)     e.designation_id    = 'Designation is required';
-    if (!ePrimaryRole)     e.primary_role_id   = 'Primary role is required';
+    if (!eDept) e.department_id = 'Department is required';
+    if (!eDesignation) e.designation_id = 'Designation is required';
+    if (!ePrimaryRole) e.primary_role_id = 'Primary role is required';
     // A role can't be both Primary and Ancillary for the same employee.
     else if (eAncillaryRole.includes(ePrimaryRole)) e.primary_role_id = 'The Primary role cannot also be an Ancillary role.';
-    if (!eWorkType)        e.work_type         = 'Work type is required';
+    if (!eWorkType) e.work_type = 'Work type is required';
     // Auto-fetched, so it can only be empty when no single branch resolved
     // (client_admin on "All Branches") — say what to do rather than "required".
-    if (!eLegalEntity)     e.legal_entity_id   = 'Pick a branch in the branch switcher — the legal entity is taken from it';
-    if (!eReportingMgr)    e.reporting_manager_id = 'Reporting manager is required';
+    if (!eLegalEntity) e.legal_entity_id = 'Pick a branch in the branch switcher — the legal entity is taken from it';
+    if (!eReportingMgr) e.reporting_manager_id = 'Reporting manager is required';
     else if (hodDesignationId && String(eDesignation) === hodDesignationId
-             && !String(eReportingMgr).startsWith('branch_user:'))
-                           e.reporting_manager_id = 'An HOD must report to a Branch User (Director / CEO).';
-    if (!eProbationPolicy) e.probation_policy  = 'Probation policy is required';
+      && !String(eReportingMgr).startsWith('branch_user:'))
+      e.reporting_manager_id = 'An HOD must report to a Branch User (Director / CEO).';
+    if (!eProbationPolicy) e.probation_policy = 'Probation policy is required';
     if (eProbationPolicy === CUSTOM_PROBATION_VALUE) {
       const n = parseInt(eCustomProbation, 10);
       if (!eCustomProbation.trim()) e.probation_policy = 'Please enter the probation months (1–12)';
       else if (!Number.isInteger(n) || n < 1 || n > 12) e.probation_policy = 'Probation months must be between 1 and 12';
     }
-    if (!eNoticePeriod)    e.notice_period     = 'Notice period is required';
+    if (!eNoticePeriod) e.notice_period = 'Notice period is required';
     if (eNoticePeriod === CUSTOM_NOTICE_VALUE) {
       /* Free text ("45 Days", "2 months"), so the number is read out of it
          rather than typed into a number field. It only had a non-empty check,
@@ -2053,7 +1945,7 @@ export default function HrEmployees() {
     }
     return e;
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eWorkType, eLegalEntity, eReportingMgr,
-      hodDesignationId, eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
+    hodDesignationId, eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -2065,9 +1957,9 @@ export default function HrEmployees() {
     if (holidayGroupOptions.length > 0 && !eHolidayList) {
       e.holiday_list = 'Holiday group is required';
     }
-    if (!eShift)              e.shift               = 'Shift is required';
-    if (!eWeeklyOff)          e.weekly_off          = 'Weekly off is required';
-    if (!eExpensePolicy)      e.expense_policy      = 'Expense policy is required';
+    if (!eShift) e.shift = 'Shift is required';
+    if (!eWeeklyOff) e.weekly_off = 'Weekly off is required';
+    if (!eExpensePolicy) e.expense_policy = 'Expense policy is required';
     /* Answering "Overtime Applicable = Yes" and leaving the rate blank saved an
        employee marked for overtime with nothing to pay it at — payroll then
        computes OT hours it cannot price. The field already appears only when
@@ -2090,8 +1982,8 @@ export default function HrEmployees() {
     }
     return e;
   }, [eAadharFile, ePanFile, eLaptopAssigned, eLaptopMasterAssetId, eMobileAssigned, eMobileMasterAssetId,
-      leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
-      eOvertimeApplicable, eOvertime]);
+    leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
+    eOvertimeApplicable, eOvertime]);
 
   const salaryEffectiveCap = useMemo(() => {
     if (!eJoinDate) return '';
@@ -2154,10 +2046,10 @@ export default function HrEmployees() {
     if (Object.keys(errs).length === 0) return null;
     const k = Object.keys(errs);
     const STEP_KEYS: Array<{ step: 1 | 2 | 3 | 4; keys: Set<string> }> = [
-      { step: 1, keys: new Set(['work_country_id','first_name','middle_name','last_name','display_name','actual_name','gender','date_of_birth','nationality_country_id','email','mobile','address_line1','city','country_id','state_id','pincode']) },
-      { step: 2, keys: new Set(['date_of_joining','department_id','designation_id','primary_role_id','legal_entity_id','probation_policy','notice_period']) },
-      { step: 3, keys: new Set(['leave_plan','holiday_list','shift','weekly_off','expense_policy','overtime','doc_aadhaar','doc_pan','laptop_master_asset_id','mobile_master_asset_id']) },
-      { step: 4, keys: new Set(['annual_salary','salary_frequency','salary_effective_from','salary_breakup']) },
+      { step: 1, keys: new Set(['work_country_id', 'first_name', 'middle_name', 'last_name', 'display_name', 'actual_name', 'gender', 'date_of_birth', 'nationality_country_id', 'email', 'mobile', 'address_line1', 'city', 'country_id', 'state_id', 'pincode']) },
+      { step: 2, keys: new Set(['date_of_joining', 'department_id', 'designation_id', 'primary_role_id', 'legal_entity_id', 'probation_policy', 'notice_period']) },
+      { step: 3, keys: new Set(['leave_plan', 'holiday_list', 'shift', 'weekly_off', 'expense_policy', 'overtime', 'doc_aadhaar', 'doc_pan', 'laptop_master_asset_id', 'mobile_master_asset_id']) },
+      { step: 4, keys: new Set(['annual_salary', 'salary_frequency', 'salary_effective_from', 'salary_breakup']) },
     ];
     for (const s of STEP_KEYS) {
       if (k.some(x => s.keys.has(x))) return s.step;
@@ -2171,37 +2063,37 @@ export default function HrEmployees() {
       return Number.isFinite(n) ? n : null;
     };
     return {
-      first_name:  eFirstName.trim(),
+      first_name: eFirstName.trim(),
       middle_name: eMiddleName.trim() || null,
-      last_name:   eLastName.trim() || null,
-      gender:      eGender || null,
+      last_name: eLastName.trim() || null,
+      gender: eGender || null,
       date_of_birth: eDob || null,
       nationality_country_id: intOrNull(eNationality),
-      work_country_id:        intOrNull(eWorkCountry),
-      email:       eWorkEmail.trim(),
-      mobile:      eMobile.trim() || null,
+      work_country_id: intOrNull(eWorkCountry),
+      email: eWorkEmail.trim(),
+      mobile: eMobile.trim() || null,
 
       address_line1: eCurAddr1.trim() || null,
       address_line2: eCurAddr2.trim() || null,
-      city:          eCurCity.trim() || null,
-      state_id:      intOrNull(eCurState),
-      country_id:    intOrNull(eCurCountry),
-      pincode:       eCurPin.trim() || null,
+      city: eCurCity.trim() || null,
+      state_id: intOrNull(eCurState),
+      country_id: intOrNull(eCurCountry),
+      pincode: eCurPin.trim() || null,
 
       perm_address_line1: (eSameAsCurrent ? eCurAddr1 : ePermAddr1).trim() || null,
       perm_address_line2: (eSameAsCurrent ? eCurAddr2 : ePermAddr2).trim() || null,
-      perm_city:          (eSameAsCurrent ? eCurCity  : ePermCity).trim()  || null,
-      perm_state_id:      intOrNull(eSameAsCurrent ? eCurState   : ePermState),
-      perm_country_id:    intOrNull(eSameAsCurrent ? eCurCountry : ePermCountry),
-      perm_pincode:       (eSameAsCurrent ? eCurPin  : ePermPin).trim()    || null,
+      perm_city: (eSameAsCurrent ? eCurCity : ePermCity).trim() || null,
+      perm_state_id: intOrNull(eSameAsCurrent ? eCurState : ePermState),
+      perm_country_id: intOrNull(eSameAsCurrent ? eCurCountry : ePermCountry),
+      perm_pincode: (eSameAsCurrent ? eCurPin : ePermPin).trim() || null,
 
-      department_id:   intOrNull(eDept),
-      designation_id:  intOrNull(eDesignation),
+      department_id: intOrNull(eDept),
+      designation_id: intOrNull(eDesignation),
       primary_role_id: intOrNull(ePrimaryRole),
       ancillary_role_ids: eAncillaryRole.map(v => Number(v)).filter(n => Number.isFinite(n)),
       work_type: eWorkType || null,
       legal_entity_id: intOrNull(eLegalEntity),
-      location:        eLocation || null,
+      location: eLocation || null,
       reporting_manager_id: (() => {
         if (!eReportingMgr) return null;
         const [kind, idStr] = String(eReportingMgr).split(':');
@@ -2218,36 +2110,36 @@ export default function HrEmployees() {
       probation_policy: eProbationPolicy === CUSTOM_PROBATION_VALUE ? (eCustomProbation || 'Custom') : eProbationPolicy,
       probation_months: probationInfo.months,
       probation_end_date: probationInfo.endIso || null,
-      notice_period:    eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
+      notice_period: eNoticePeriod === CUSTOM_NOTICE_VALUE ? (eCustomNotice || 'Custom') : eNoticePeriod,
       designation_name: mDesignations.find(d => String(d.id) === String(eDesignation))?.name,
 
-      leave_plan:           eLeavePlan || null,
-      holiday_group_id:     eHolidayList ? Number(eHolidayList) : null,
-      holiday_list:         mHolidayGroups.find(g => String(g.id) === String(eHolidayList))?.name || null,
-      attendance_tracking:  !!eAttendanceTracking,
-      shift:                eShift || null,
-      weekly_off:           eWeeklyOff || null,
-      attendance_number:    eAttendanceNumber.trim() || null,
-      overtime:             eOvertime || null,
-      expense_policy:       eExpensePolicy || null,
-      laptop_assigned:      eLaptopAssigned || null,
-      mobile_assigned:      eMobileAssigned || null,
-      laptop_asset_id:      eLaptopAssetId.trim() || null,
-      mobile_device:        eMobileDevice.trim() || null,
-      other_assets:         eOtherAssets.trim() || null,
+      leave_plan: eLeavePlan || null,
+      holiday_group_id: eHolidayList ? Number(eHolidayList) : null,
+      holiday_list: mHolidayGroups.find(g => String(g.id) === String(eHolidayList))?.name || null,
+      attendance_tracking: !!eAttendanceTracking,
+      shift: eShift || null,
+      weekly_off: eWeeklyOff || null,
+      attendance_number: eAttendanceNumber.trim() || null,
+      overtime: eOvertime || null,
+      expense_policy: eExpensePolicy || null,
+      laptop_assigned: eLaptopAssigned || null,
+      mobile_assigned: eMobileAssigned || null,
+      laptop_asset_id: eLaptopAssetId.trim() || null,
+      mobile_device: eMobileDevice.trim() || null,
+      other_assets: eOtherAssets.trim() || null,
       laptop_master_asset_id: eLaptopAssigned === 'Yes' ? intOrNull(eLaptopMasterAssetId) : null,
       mobile_master_asset_id: eMobileAssigned === 'Yes' ? intOrNull(eMobileMasterAssetId) : null,
       other_master_asset_ids: eOtherMasterAssetIds.map(v => parseInt(v, 10)).filter(n => Number.isFinite(n)),
 
-      enable_payroll:        !!eEnablePayroll,
-      pay_group:             ePayGroup || null,
-      annual_salary:         eAnnualSalary === '' ? null : Number(eAnnualSalary),
-      salary_frequency:      eSalaryFreq || null,
+      enable_payroll: !!eEnablePayroll,
+      pay_group: ePayGroup || null,
+      annual_salary: eAnnualSalary === '' ? null : Number(eAnnualSalary),
+      salary_frequency: eSalaryFreq || null,
       salary_effective_from: eSalaryFrom || null,
-      bonus_in_annual:       !!eBonusInAnnual,
-      pf_eligible:           !!ePfEligible,
-      pf_type:               ePfEligible ? ePfType.toLowerCase() : null,
-      detailed_breakup:      !!eDetailedBreakup,
+      bonus_in_annual: !!eBonusInAnnual,
+      pf_eligible: !!ePfEligible,
+      pf_type: ePfEligible ? ePfType.toLowerCase() : null,
+      detailed_breakup: !!eDetailedBreakup,
 
       status: eStatus || 'Inactive',
 
@@ -2308,9 +2200,9 @@ export default function HrEmployees() {
   const handleNextStep = async () => {
     if (saving) return;
     const errs = empStep === 1 ? validateStep1()
-               : empStep === 2 ? validateStep2()
-               : empStep === 3 ? validateStep3()
-               : validateStep4();
+      : empStep === 2 ? validateStep2()
+        : empStep === 3 ? validateStep3()
+          : validateStep4();
     if (Object.keys(errs).length > 0) {
       setEErrors(errs);
       scrollToFirstError();
@@ -2478,8 +2370,8 @@ export default function HrEmployees() {
 
   const departments = useMemo(() => {
     const fromMaster = mDepts.map((d: any) => d.name).filter(Boolean);
-    const fromRows   = apiRows.map(e => e.department).filter(d => d && d !== '—');
-    const merged     = fromMaster.length > 0
+    const fromRows = apiRows.map(e => e.department).filter(d => d && d !== '—');
+    const merged = fromMaster.length > 0
       ? Array.from(new Set([...fromMaster, ...fromRows]))
       : Array.from(new Set(fromRows));
     return ['All Depts', ...merged];
@@ -2535,7 +2427,7 @@ export default function HrEmployees() {
     try {
       const r = await api.get('/employees/managers');
       const merged = [
-        ...((r?.data?.employees   ?? []) as { id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]),
+        ...((r?.data?.employees ?? []) as { id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]),
         ...((r?.data?.login_users ?? []) as { id: number; kind: string; label: string }[]),
       ];
       setManagerCandidates(merged);
@@ -2596,8 +2488,8 @@ export default function HrEmployees() {
         if (tab === 'active' && !e.enabled) return false;
         if (tab === 'disabled' && e.enabled) return false;
       }
-      if (statusFilter === 'Active'   && !e.enabled) return false;
-      if (statusFilter === 'Disabled' &&  e.enabled) return false;
+      if (statusFilter === 'Active' && !e.enabled) return false;
+      if (statusFilter === 'Disabled' && e.enabled) return false;
       if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
       if (!s) return true;
       return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
@@ -2619,20 +2511,20 @@ export default function HrEmployees() {
     setExporting(true);
     try {
       const sheetRows = exportRows.map((e, i) => ({
-        'Sr No':          i + 1,
-        'Employee':       e.name,
-        'Email':          e.email || '',
-        'Employee ID':    e.id,
-        'Department':     e.department || '',
-        'Designation':    e.designation || '',
-        'Primary Role':   e.primaryRole || '',
+        'Sr No': i + 1,
+        'Employee': e.name,
+        'Email': e.email || '',
+        'Employee ID': e.id,
+        'Department': e.department || '',
+        'Designation': e.designation || '',
+        'Primary Role': e.primaryRole || '',
         'Ancillary Role': (e.ancillaryRoles && e.ancillaryRoles.length
-                            ? e.ancillaryRoles.join(', ')
-                            : (e.ancillaryRole || '')),
-        'Manager':        e.manager || '',
-        'Profile %':      e.profile ?? 0,
-        'Onboarding':     e.onboarding || '',
-        'Status':         e.enabled ? 'Active' : 'Disabled',
+          ? e.ancillaryRoles.join(', ')
+          : (e.ancillaryRole || '')),
+        'Manager': e.manager || '',
+        'Profile %': e.profile ?? 0,
+        'Onboarding': e.onboarding || '',
+        'Status': e.enabled ? 'Active' : 'Disabled',
       }));
       const ws = XLSX.utils.json_to_sheet(sheetRows);
       const wb = XLSX.utils.book_new();
@@ -2765,9 +2657,9 @@ export default function HrEmployees() {
       cell: info => {
         const p = info.row.original.profile;
         const TIER = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }
-                  : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
-                  : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
-                  :           { dark: '#f06548', light: '#fda192' };
+          : p >= 75 ? { dark: '#3b82f6', light: '#93c5fd' }
+            : p >= 60 ? { dark: '#f59e0b', light: '#fcd34d' }
+              : { dark: '#f06548', light: '#fda192' };
         /* Keep the floating badge clear of BOTH edges. The circle is 26px and
            centred on this percentage, so at 100% it used to sit half-outside
            the meter and, with the block being a fixed 110px inside a narrower
@@ -2846,7 +2738,7 @@ export default function HrEmployees() {
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
-            <ActionBtn title="Edit"  icon="ri-pencil-line"   color="info"    onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
+            <ActionBtn title="Edit" icon="ri-pencil-line" color="info" onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
             <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
             <ActionBtn
               title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
@@ -2856,8 +2748,8 @@ export default function HrEmployees() {
               onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
               disabled={rowDisabled}
             />
-            <ActionBtn title="Permissions" icon="ri-lock-2-line"    color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled} />
-            <ActionBtn title="Documents"   icon="ri-file-text-line" color="success" onClick={() => openVault(e)}       disabled={rowDisabled} />
+            <ActionBtn title="Permissions" icon="ri-lock-2-line" color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled} />
+            <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
             {tab === 'disabled' && (
               <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
             )}
@@ -2955,7 +2847,7 @@ export default function HrEmployees() {
               ))}
             </Row>
 
-    
+
             <DataTable<EmployeeRow>
               data={filtered}
               columns={employeeColumns}
@@ -2966,7 +2858,7 @@ export default function HrEmployees() {
               autoFitRows
               loading={loadingEmployees || tabSwitching}
               tabs={[
-                { key: 'active',   label: 'Active Employees',   icon: 'ri-user-follow-line',   count: counts.activeTab },
+                { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-line', count: counts.activeTab },
                 { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-line', count: counts.disabledTab },
               ]}
               activeTab={tab}
@@ -3254,39 +3146,39 @@ export default function HrEmployees() {
             const emp = togglePending.employee;
             const tone = enabling
               ? {
-                  headerGrad: 'linear-gradient(135deg,#d6f4e3 0%, #c1eed8 100%)',
-                  iconBg:     '#0ab39c',
-                  iconShadow: '0 8px 22px rgba(10,179,156,0.35)',
-                  iconGlyph:  'ri-shield-check-line',
-                  title:      'Enable Employee',
-                  subtitle:   'Restore platform access for this employee',
-                  bannerBg:   '#ecfaf3',
-                  bannerBd:   '#bce8d2',
-                  bannerFg:   '#0a8a78',
-                  bannerIcon: 'ri-information-line',
-                  bannerText: "They'll regain access immediately and reappear under the Active tab.",
-                  ctaLabel:   'Yes, Enable',
-                  ctaIcon:    'ri-check-line',
-                  ctaBg:      'linear-gradient(135deg,#0ab39c,#02c8a7)',
-                  ctaShadow:  '0 8px 18px rgba(10,179,156,0.30)',
-                }
+                headerGrad: 'linear-gradient(135deg,#d6f4e3 0%, #c1eed8 100%)',
+                iconBg: '#0ab39c',
+                iconShadow: '0 8px 22px rgba(10,179,156,0.35)',
+                iconGlyph: 'ri-shield-check-line',
+                title: 'Enable Employee',
+                subtitle: 'Restore platform access for this employee',
+                bannerBg: '#ecfaf3',
+                bannerBd: '#bce8d2',
+                bannerFg: '#0a8a78',
+                bannerIcon: 'ri-information-line',
+                bannerText: "They'll regain access immediately and reappear under the Active tab.",
+                ctaLabel: 'Yes, Enable',
+                ctaIcon: 'ri-check-line',
+                ctaBg: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
+                ctaShadow: '0 8px 18px rgba(10,179,156,0.30)',
+              }
               : {
-                  headerGrad: 'linear-gradient(135deg,#fff4dd 0%, #ffe8c2 100%)',
-                  iconBg:     '#f59e0b',
-                  iconShadow: '0 8px 22px rgba(245,158,11,0.35)',
-                  iconGlyph:  'ri-error-warning-line',
-                  title:      'Disable Employee',
-                  subtitle:   'Suspend platform access for this employee',
-                  bannerBg:   '#fff7e6',
-                  bannerBd:   '#fbcf8a',
-                  bannerFg:   '#a4661c',
-                  bannerIcon: 'ri-alert-line',
-                  bannerText: "They'll lose platform access immediately and move to the Disabled tab. You can re-enable them anytime.",
-                  ctaLabel:   'Yes, Disable',
-                  ctaIcon:    'ri-forbid-2-line',
-                  ctaBg:      'linear-gradient(135deg,#f59e0b,#fbbf24)',
-                  ctaShadow:  '0 8px 18px rgba(245,158,11,0.30)',
-                };
+                headerGrad: 'linear-gradient(135deg,#fff4dd 0%, #ffe8c2 100%)',
+                iconBg: '#f59e0b',
+                iconShadow: '0 8px 22px rgba(245,158,11,0.35)',
+                iconGlyph: 'ri-error-warning-line',
+                title: 'Disable Employee',
+                subtitle: 'Suspend platform access for this employee',
+                bannerBg: '#fff7e6',
+                bannerBd: '#fbcf8a',
+                bannerFg: '#a4661c',
+                bannerIcon: 'ri-alert-line',
+                bannerText: "They'll lose platform access immediately and move to the Disabled tab. You can re-enable them anytime.",
+                ctaLabel: 'Yes, Disable',
+                ctaIcon: 'ri-forbid-2-line',
+                ctaBg: 'linear-gradient(135deg,#f59e0b,#fbbf24)',
+                ctaShadow: '0 8px 18px rgba(245,158,11,0.30)',
+              };
             return (
               <>
                 <div
@@ -3386,7 +3278,7 @@ export default function HrEmployees() {
                       padding: '5px 12px',
                       borderRadius: 999,
                       background: enabling ? '#eef2f6' : '#d6f4e3',
-                      color:      enabling ? '#5b6478' : '#108548',
+                      color: enabling ? '#5b6478' : '#108548',
                     }}
                   >
                     <span
@@ -3406,7 +3298,7 @@ export default function HrEmployees() {
                       padding: '5px 12px',
                       borderRadius: 999,
                       background: enabling ? '#d6f4e3' : '#fde8c4',
-                      color:      enabling ? '#108548' : '#a4661c',
+                      color: enabling ? '#108548' : '#a4661c',
                     }}
                   >
                     <span
@@ -3614,710 +3506,747 @@ export default function HrEmployees() {
             }}
           >
             <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
-            {empStep === 1 && (
-              <>
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-user-line" /> Employee Details
-                  </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Work Country<span className="req">*</span></label>
-                      <MasterSelect value={eWorkCountry} onChange={(v) => { setEWorkCountry(v); clearEErr('work_country_id'); }} placeholder="Select work country" options={countryOptions} invalid={!!eErrors.work_country_id} />
-                      {eErrors.work_country_id && <small className="emp-err">{eErrors.work_country_id}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">First Name<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.first_name ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="e.g. Aarav"
-                        value={eFirstName}
-                        onChange={e => {
-                          const v = e.target.value;
-                          setEFirstName(v);
-                          const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g,' ').trim();
-                          if (!eDisplayNameTouched) setEDisplayName(composed);
-                          if (!eActualNameTouched) setEActualName(composed);
-                          clearEErr('first_name');
-                          clearEErr('display_name');
-                          clearEErr('actual_name');
-                        }}
-                      />
-                      {eErrors.first_name && <small className="emp-err">{eErrors.first_name}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Middle Name</label>
-                      <input className={`emp-input${eErrors.middle_name ? ' is-invalid' : ''}`} type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
-                        const v = e.target.value;
-                        setEMiddleName(v);
-                        const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g,' ').trim();
-                        if (!eDisplayNameTouched) setEDisplayName(composed);
-                        if (!eActualNameTouched) setEActualName(composed);
-                        clearEErr('middle_name');
-                        clearEErr('actual_name');
-                      }} />
-                      {eErrors.middle_name && <small className="emp-err">{eErrors.middle_name}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Last Name<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.last_name ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="e.g. Kale"
-                        value={eLastName}
-                        onChange={e => {
-                          const v = e.target.value;
-                          setELastName(v);
-                          const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g,' ').trim();
-                          if (!eDisplayNameTouched) setEDisplayName(composed);
-                          if (!eActualNameTouched) setEActualName(composed);
-                          clearEErr('last_name');
-                          clearEErr('display_name');
-                          clearEErr('actual_name');
-                        }}
-                      />
-                      {eErrors.last_name && <small className="emp-err">{eErrors.last_name}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Display Name<span className="req">*</span>
-                        <span className="hint">(auto-generated)</span>
-                      </label>
-                      <input
-                        className={`emp-input is-readonly${eErrors.display_name ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="Auto-filled from First / Middle / Last name"
-                        value={eDisplayName}
-                        readOnly
-                        tabIndex={-1}
-                      />
-                      {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Employee Actual Name<span className="req">*</span>
-                        <span className="hint">{eActualNameLocked ? '(auto-generated)' : '(auto-filled · editable)'}</span>
-                      </label>
-                      <input
-                        className={`emp-input${eActualNameLocked ? ' is-readonly' : ''}${eErrors.actual_name ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="Auto-filled from name — edit to override"
-                        value={eActualName}
-                        readOnly={eActualNameLocked}
-                        tabIndex={eActualNameLocked ? -1 : undefined}
-                        onChange={e => { setEActualName(e.target.value); setEActualNameTouched(true); clearEErr('actual_name'); }}
-                      />
-                      {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Gender<span className="req">*</span></label>
-                      <MasterSelect value={eGender} onChange={(v) => { setEGender(v); clearEErr('gender'); }} placeholder="Select gender" options={GENDER_OPTIONS} invalid={!!eErrors.gender} />
-                      {eErrors.gender && <small className="emp-err">{eErrors.gender}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Date of Birth<span className="req">*</span></label>
-                      <MasterDatePicker
-                        value={eDob}
-                        onChange={(v) => { setEDob(v); clearEErr('date_of_birth'); }}
-                        placeholder="dd-mm-yyyy"
-                        invalid={!!eErrors.date_of_birth}
-                        maxDate={isoYearsAgo(18)}
-                      />
-                      {eErrors.date_of_birth && <small className="emp-err">{eErrors.date_of_birth}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Nationality<span className="req">*</span></label>
-                      <MasterSelect value={eNationality} onChange={(v) => { setENationality(v); clearEErr('nationality_country_id'); }} placeholder="Select nationality" options={countryOptions} invalid={!!eErrors.nationality_country_id} />
-                      {eErrors.nationality_country_id && <small className="emp-err">{eErrors.nationality_country_id}</small>}
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-mail-line" /> Contact &amp; Identity
-                  </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Personal Email<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.email ? ' is-invalid' : ''}`}
-                        type="email"
-                        autoComplete="email"
-                        spellCheck={false}
-                        placeholder="name@enterprise.com"
-                        value={eWorkEmail}
-                        onChange={e => {
-                          const v = e.target.value.replace(/\s+/g, '').toLowerCase();
-                          setEWorkEmail(v);
-                          clearEErr('email');
-                        }}
-                      />
-                      {eErrors.email && <small className="emp-err">{eErrors.email}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Mobile Number<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.mobile ? ' is-invalid' : ''}`}
-                        type="tel"
-                        inputMode="numeric"
-                        placeholder="10-digit mobile number"
-                        maxLength={15}
-                        value={eMobile}
-                        onChange={e => {
-                          const cleaned = e.target.value.replace(/[^\d+]/g, '').slice(0, 15);
-                          setEMobile(cleaned);
-                          clearEErr('mobile');
-                        }}
-                        onBlur={() => { void checkMobileUnique(eMobile); }}
-                      />
-                      {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
-                    </Col>
-                    
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Employee ID<span className="hint">(auto-assigned)</span>
-                      </label>
-                      <input className="emp-input is-readonly" type="text" value={eEmpId} readOnly placeholder="Auto-assigned on save" />
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-map-pin-line" /> Address Details
-                  </div>
-
-                  <div className="emp-subsection-title">
-                    <i className="ri-checkbox-circle-fill" /> Current Address
-                  </div>
-                  <Row className="g-3 mb-3">
-                    <Col md={6}>
-                      <label className="emp-label">Address Line 1<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.address_line1 ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="House / Flat No., Building, Street"
-                        value={eCurAddr1}
-                        onChange={e => { setECurAddr1(e.target.value); clearEErr('address_line1'); }}
-                      />
-                      {eErrors.address_line1 && <small className="emp-err">{eErrors.address_line1}</small>}
-                    </Col>
-                    <Col md={6}>
-                      <label className="emp-label">Address Line 2</label>
-                      <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={eCurAddr2} onChange={e => setECurAddr2(e.target.value)} />
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">City<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.city ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="e.g. Pune"
-                        value={eCurCity}
-                        onChange={e => { setECurCity(e.target.value); clearEErr('city'); }}
-                      />
-                      {eErrors.city && <small className="emp-err">{eErrors.city}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">Country<span className="req">*</span></label>
-                      <MasterSelect
-                        value={eCurCountry}
-                        onChange={(v) => {
-                          setECurCountry(v);
-                          if (eCurState) setECurState('');
-                          clearEErr('country_id');
-                          clearEErr('state_id');
-                        }}
-                        placeholder="Select country"
-                        options={countryOptions}
-                        invalid={!!eErrors.country_id}
-                      />
-                      {eErrors.country_id && <small className="emp-err">{eErrors.country_id}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">State<span className="req">*</span></label>
-                      <MasterSelect
-                        value={eCurState}
-                        onChange={(v) => { setECurState(v); clearEErr('state_id'); }}
-                        placeholder={eCurCountry ? 'Select state' : 'Pick country first'}
-                        options={currentAddressStates}
-                        disabled={!eCurCountry}
-                        invalid={!!eErrors.state_id}
-                      />
-                      {eErrors.state_id && <small className="emp-err">{eErrors.state_id}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">Pincode<span className="req">*</span></label>
-                      <input
-                        className={`emp-input${eErrors.pincode ? ' is-invalid' : ''}`}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        placeholder="6-digit pincode"
-                        value={eCurPin}
-                        onChange={e => { setECurPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('pincode'); }}
-                      />
-                      {eErrors.pincode && <small className="emp-err">{eErrors.pincode}</small>}
-                    </Col>
-                  </Row>
-
-                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 mt-2 pt-3" style={{ borderTop: '1px dashed var(--vz-border-color)' }}>
-                    <div className="emp-subsection-title mb-0">
-                      <i className="ri-checkbox-circle-fill" /> Permanent Address
+              {empStep === 1 && (
+                <>
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-user-line" /> Employee Details
                     </div>
-                    <label className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        className="form-check-input m-0"
-                        checked={eSameAsCurrent}
-                        onChange={e => onToggleSameAsCurrent(e.target.checked)}
-                      />
-                      Same as Current Address
-                    </label>
+                    <Row className="g-3">
+                      <Col md={4}>
+                        <label className="emp-label">Work Country<span className="req">*</span></label>
+                        <MasterSelect value={eWorkCountry} onChange={(v) => { setEWorkCountry(v); clearEErr('work_country_id'); }} placeholder="Select work country" options={countryOptions} invalid={!!eErrors.work_country_id} />
+                        {eErrors.work_country_id && <small className="emp-err">{eErrors.work_country_id}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">First Name<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.first_name ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="e.g. Aarav"
+                          value={eFirstName}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setEFirstName(v);
+                            const composed = `${v} ${eMiddleName} ${eLastName}`.replace(/\s+/g, ' ').trim();
+                            if (!eDisplayNameTouched) setEDisplayName(composed);
+                            if (!eActualNameTouched) setEActualName(composed);
+                            clearEErr('first_name');
+                            clearEErr('display_name');
+                            clearEErr('actual_name');
+                          }}
+                        />
+                        {eErrors.first_name && <small className="emp-err">{eErrors.first_name}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Middle Name</label>
+                        <input className={`emp-input${eErrors.middle_name ? ' is-invalid' : ''}`} type="text" placeholder="Middle name (optional)" value={eMiddleName} onChange={e => {
+                          const v = e.target.value;
+                          setEMiddleName(v);
+                          const composed = `${eFirstName} ${v} ${eLastName}`.replace(/\s+/g, ' ').trim();
+                          if (!eDisplayNameTouched) setEDisplayName(composed);
+                          if (!eActualNameTouched) setEActualName(composed);
+                          clearEErr('middle_name');
+                          clearEErr('actual_name');
+                        }} />
+                        {eErrors.middle_name && <small className="emp-err">{eErrors.middle_name}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Last Name<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.last_name ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="e.g. Kale"
+                          value={eLastName}
+                          onChange={e => {
+                            const v = e.target.value;
+                            setELastName(v);
+                            const composed = `${eFirstName} ${eMiddleName} ${v}`.replace(/\s+/g, ' ').trim();
+                            if (!eDisplayNameTouched) setEDisplayName(composed);
+                            if (!eActualNameTouched) setEActualName(composed);
+                            clearEErr('last_name');
+                            clearEErr('display_name');
+                            clearEErr('actual_name');
+                          }}
+                        />
+                        {eErrors.last_name && <small className="emp-err">{eErrors.last_name}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Display Name<span className="req">*</span>
+                          <span className="hint">(auto-generated)</span>
+                        </label>
+                        <input
+                          className={`emp-input is-readonly${eErrors.display_name ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="Auto-filled from First / Middle / Last name"
+                          value={eDisplayName}
+                          readOnly
+                          tabIndex={-1}
+                        />
+                        {eErrors.display_name && <small className="emp-err">{eErrors.display_name}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Employee Actual Name<span className="req">*</span>
+                          <span className="hint">{eActualNameLocked ? '(auto-generated)' : '(auto-filled · editable)'}</span>
+                        </label>
+                        <input
+                          className={`emp-input${eActualNameLocked ? ' is-readonly' : ''}${eErrors.actual_name ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="Auto-filled from name — edit to override"
+                          value={eActualName}
+                          readOnly={eActualNameLocked}
+                          tabIndex={eActualNameLocked ? -1 : undefined}
+                          onChange={e => { setEActualName(e.target.value); setEActualNameTouched(true); clearEErr('actual_name'); }}
+                        />
+                        {eErrors.actual_name && <small className="emp-err">{eErrors.actual_name}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Gender<span className="req">*</span></label>
+                        <MasterSelect value={eGender} onChange={(v) => { setEGender(v); clearEErr('gender'); }} placeholder="Select gender" options={GENDER_OPTIONS} invalid={!!eErrors.gender} />
+                        {eErrors.gender && <small className="emp-err">{eErrors.gender}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Date of Birth<span className="req">*</span></label>
+                        <MasterDatePicker
+                          value={eDob}
+                          onChange={(v) => { setEDob(v); clearEErr('date_of_birth'); }}
+                          placeholder="dd-mm-yyyy"
+                          invalid={!!eErrors.date_of_birth}
+                          maxDate={isoYearsAgo(18)}
+                        />
+                        {eErrors.date_of_birth && <small className="emp-err">{eErrors.date_of_birth}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Nationality<span className="req">*</span></label>
+                        <MasterSelect value={eNationality} onChange={(v) => { setENationality(v); clearEErr('nationality_country_id'); }} placeholder="Select nationality" options={countryOptions} invalid={!!eErrors.nationality_country_id} />
+                        {eErrors.nationality_country_id && <small className="emp-err">{eErrors.nationality_country_id}</small>}
+                      </Col>
+                    </Row>
                   </div>
-                  <Row className="g-3">
-                    <Col md={6}>
-                      <label className="emp-label">Address Line 1{!eSameAsCurrent && <span className="req">*</span>}</label>
-                      <input
-                        className={`emp-input${eErrors.perm_address_line1 ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="House / Flat No., Building, Street"
-                        value={ePermAddr1}
-                        onChange={e => { setEPermAddr1(e.target.value); clearEErr('perm_address_line1'); }}
-                        disabled={eSameAsCurrent}
-                      />
-                      {eErrors.perm_address_line1 && <small className="emp-err">{eErrors.perm_address_line1}</small>}
-                    </Col>
-                    <Col md={6}>
-                      <label className="emp-label">Address Line 2</label>
-                      <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">City{!eSameAsCurrent && <span className="req">*</span>}</label>
-                      <input
-                        className={`emp-input${eErrors.perm_city ? ' is-invalid' : ''}`}
-                        type="text"
-                        placeholder="e.g. Pune"
-                        value={ePermCity}
-                        onChange={e => { setEPermCity(e.target.value); clearEErr('perm_city'); }}
-                        disabled={eSameAsCurrent}
-                      />
-                      {eErrors.perm_city && <small className="emp-err">{eErrors.perm_city}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">Country{!eSameAsCurrent && <span className="req">*</span>}</label>
-                      <MasterSelect
-                        value={ePermCountry}
-                        onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); clearEErr('perm_country_id'); clearEErr('perm_state_id'); }}
-                        placeholder="Select country"
-                        options={countryOptions}
-                        disabled={eSameAsCurrent}
-                        invalid={!!eErrors.perm_country_id}
-                      />
-                      {eErrors.perm_country_id && <small className="emp-err">{eErrors.perm_country_id}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">State{!eSameAsCurrent && <span className="req">*</span>}</label>
-                      <MasterSelect
-                        value={ePermState}
-                        onChange={(v) => { setEPermState(v); clearEErr('perm_state_id'); }}
-                        placeholder={ePermCountry ? 'Select state' : 'Pick country first'}
-                        options={permanentAddressStates}
-                        disabled={eSameAsCurrent || !ePermCountry}
-                        invalid={!!eErrors.perm_state_id}
-                      />
-                      {eErrors.perm_state_id && <small className="emp-err">{eErrors.perm_state_id}</small>}
-                    </Col>
-                    <Col md={3}>
-                      <label className="emp-label">Pincode{!eSameAsCurrent && <span className="req">*</span>}</label>
-                      <input
-                        className={`emp-input${eErrors.perm_pincode ? ' is-invalid' : ''}`}
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        placeholder="6-digit pincode"
-                        value={ePermPin}
-                        onChange={e => { setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('perm_pincode'); }}
-                        disabled={eSameAsCurrent}
-                      />
-                      {eErrors.perm_pincode && <small className="emp-err">{eErrors.perm_pincode}</small>}
-                    </Col>
-                  </Row>
-                </div>
-              </>
-            )}
 
-            {empStep === 2 && (
-              <>
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-briefcase-line" /> Employment Details
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-mail-line" /> Contact &amp; Identity
+                    </div>
+                    <Row className="g-3">
+                      <Col md={4}>
+                        <label className="emp-label">Personal Email<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.email ? ' is-invalid' : ''}`}
+                          type="email"
+                          autoComplete="email"
+                          spellCheck={false}
+                          placeholder="name@enterprise.com"
+                          value={eWorkEmail}
+                          onChange={e => {
+                            const v = e.target.value.replace(/\s+/g, '').toLowerCase();
+                            setEWorkEmail(v);
+                            clearEErr('email');
+                          }}
+                        />
+                        {eErrors.email && <small className="emp-err">{eErrors.email}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Mobile Number<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.mobile ? ' is-invalid' : ''}`}
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="10-digit mobile number"
+                          maxLength={15}
+                          value={eMobile}
+                          onChange={e => {
+                            const cleaned = e.target.value.replace(/[^\d+]/g, '').slice(0, 15);
+                            setEMobile(cleaned);
+                            clearEErr('mobile');
+                          }}
+                          onBlur={() => { void checkMobileUnique(eMobile); }}
+                        />
+                        {eErrors.mobile && <small className="emp-err">{eErrors.mobile}</small>}
+                      </Col>
+
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Employee ID<span className="hint">(auto-assigned)</span>
+                        </label>
+                        <input className="emp-input is-readonly" type="text" value={eEmpId} readOnly placeholder="Auto-assigned on save" />
+                      </Col>
+                    </Row>
                   </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Joining Date<span className="req">*</span></label>
-                      <MasterDatePicker value={eJoinDate} onChange={(v) => { setEJoinDate(v); clearEErr('date_of_joining'); }} placeholder="dd-mm-yyyy" minDate={todayIso} invalid={!!eErrors.date_of_joining} />
-                      {eErrors.date_of_joining && <small className="emp-err">{eErrors.date_of_joining}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Department<span className="req">*</span></label>
-                      <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); setEReportingMgr(prev => { const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === prev); const keep = !mgr || mgr.kind === 'branch_user' || (mgr.department_id != null && String(mgr.department_id) === String(v)); return keep ? prev : ''; }); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
-                      {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Designation<span className="req">*</span></label>
-                      <MasterSelect value={eDesignation} onChange={(v) => {
-                        setEDesignation(v);
-                        clearEErr('designation_id');
-                        // A Branch User as reporting manager is valid ONLY for an HOD.
-                        // Clear the manager whenever the designation ↔ manager pairing
-                        // breaks that rule — HOD needs a Branch User; any other
-                        // designation must NOT keep a Branch User manager.
-                        const nowHod = !!hodDesignationId && String(v) === hodDesignationId;
-                        const rmIsBranchUser = String(eReportingMgr || '').startsWith('branch_user:');
-                        if (eReportingMgr && (nowHod ? !rmIsBranchUser : rmIsBranchUser)) {
-                          setEReportingMgr('');
-                          clearEErr('reporting_manager_id');
-                        }
-                      }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
-                      {eErrors.designation_id && <small className="emp-err">{eErrors.designation_id}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Primary Role<span className="req">*</span></label>
-                      <MasterSelect value={ePrimaryRole} onChange={(v) => { setEPrimaryRole(v); clearEErr('primary_role_id'); setEAncillaryRole(prev => prev.filter(id => id !== v)); }} placeholder="Select role" options={primaryRoleOptionsX} invalid={!!eErrors.primary_role_id} />
-                      {eErrors.primary_role_id && <small className="emp-err">{eErrors.primary_role_id}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
-                      {/* MasterMultiSelect, not MultiSelectChips: the latter
+
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-map-pin-line" /> Address Details
+                    </div>
+
+                    <div className="emp-subsection-title">
+                      <i className="ri-checkbox-circle-fill" /> Current Address
+                    </div>
+                    <Row className="g-3 mb-3">
+                      <Col md={6}>
+                        <label className="emp-label">Address Line 1<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.address_line1 ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="House / Flat No., Building, Street"
+                          value={eCurAddr1}
+                          onChange={e => { setECurAddr1(e.target.value); clearEErr('address_line1'); }}
+                        />
+                        {eErrors.address_line1 && <small className="emp-err">{eErrors.address_line1}</small>}
+                      </Col>
+                      <Col md={6}>
+                        <label className="emp-label">Address Line 2</label>
+                        <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={eCurAddr2} onChange={e => setECurAddr2(e.target.value)} />
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">City<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.city ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="e.g. Pune"
+                          value={eCurCity}
+                          onChange={e => { setECurCity(e.target.value); clearEErr('city'); }}
+                        />
+                        {eErrors.city && <small className="emp-err">{eErrors.city}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">Country<span className="req">*</span></label>
+                        <MasterSelect
+                          value={eCurCountry}
+                          onChange={(v) => {
+                            setECurCountry(v);
+                            if (eCurState) setECurState('');
+                            clearEErr('country_id');
+                            clearEErr('state_id');
+                          }}
+                          placeholder="Select country"
+                          options={countryOptions}
+                          invalid={!!eErrors.country_id}
+                        />
+                        {eErrors.country_id && <small className="emp-err">{eErrors.country_id}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">State<span className="req">*</span></label>
+                        <MasterSelect
+                          value={eCurState}
+                          onChange={(v) => { setECurState(v); clearEErr('state_id'); }}
+                          placeholder={eCurCountry ? 'Select state' : 'Pick country first'}
+                          options={currentAddressStates}
+                          disabled={!eCurCountry}
+                          invalid={!!eErrors.state_id}
+                        />
+                        {eErrors.state_id && <small className="emp-err">{eErrors.state_id}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">Pincode<span className="req">*</span></label>
+                        <input
+                          className={`emp-input${eErrors.pincode ? ' is-invalid' : ''}`}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="6-digit pincode"
+                          value={eCurPin}
+                          onChange={e => { setECurPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('pincode'); }}
+                        />
+                        {eErrors.pincode && <small className="emp-err">{eErrors.pincode}</small>}
+                      </Col>
+                    </Row>
+
+                    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2 mt-2 pt-3" style={{ borderTop: '1px dashed var(--vz-border-color)' }}>
+                      <div className="emp-subsection-title mb-0">
+                        <i className="ri-checkbox-circle-fill" /> Permanent Address
+                      </div>
+                      <label className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          className="form-check-input m-0"
+                          checked={eSameAsCurrent}
+                          onChange={e => onToggleSameAsCurrent(e.target.checked)}
+                        />
+                        Same as Current Address
+                      </label>
+                    </div>
+                    <Row className="g-3">
+                      <Col md={6}>
+                        <label className="emp-label">Address Line 1{!eSameAsCurrent && <span className="req">*</span>}</label>
+                        <input
+                          className={`emp-input${eErrors.perm_address_line1 ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="House / Flat No., Building, Street"
+                          value={ePermAddr1}
+                          onChange={e => { setEPermAddr1(e.target.value); clearEErr('perm_address_line1'); }}
+                          disabled={eSameAsCurrent}
+                        />
+                        {eErrors.perm_address_line1 && <small className="emp-err">{eErrors.perm_address_line1}</small>}
+                      </Col>
+                      <Col md={6}>
+                        <label className="emp-label">Address Line 2</label>
+                        <input className="emp-input" type="text" placeholder="Area, Locality (optional)" value={ePermAddr2} onChange={e => setEPermAddr2(e.target.value)} disabled={eSameAsCurrent} />
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">City{!eSameAsCurrent && <span className="req">*</span>}</label>
+                        <input
+                          className={`emp-input${eErrors.perm_city ? ' is-invalid' : ''}`}
+                          type="text"
+                          placeholder="e.g. Pune"
+                          value={ePermCity}
+                          onChange={e => { setEPermCity(e.target.value); clearEErr('perm_city'); }}
+                          disabled={eSameAsCurrent}
+                        />
+                        {eErrors.perm_city && <small className="emp-err">{eErrors.perm_city}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">Country{!eSameAsCurrent && <span className="req">*</span>}</label>
+                        <MasterSelect
+                          value={ePermCountry}
+                          onChange={(v) => { setEPermCountry(v); if (ePermState) setEPermState(''); clearEErr('perm_country_id'); clearEErr('perm_state_id'); }}
+                          placeholder="Select country"
+                          options={countryOptions}
+                          disabled={eSameAsCurrent}
+                          invalid={!!eErrors.perm_country_id}
+                        />
+                        {eErrors.perm_country_id && <small className="emp-err">{eErrors.perm_country_id}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">State{!eSameAsCurrent && <span className="req">*</span>}</label>
+                        <MasterSelect
+                          value={ePermState}
+                          onChange={(v) => { setEPermState(v); clearEErr('perm_state_id'); }}
+                          placeholder={ePermCountry ? 'Select state' : 'Pick country first'}
+                          options={permanentAddressStates}
+                          disabled={eSameAsCurrent || !ePermCountry}
+                          invalid={!!eErrors.perm_state_id}
+                        />
+                        {eErrors.perm_state_id && <small className="emp-err">{eErrors.perm_state_id}</small>}
+                      </Col>
+                      <Col md={3}>
+                        <label className="emp-label">Pincode{!eSameAsCurrent && <span className="req">*</span>}</label>
+                        <input
+                          className={`emp-input${eErrors.perm_pincode ? ' is-invalid' : ''}`}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={6}
+                          placeholder="6-digit pincode"
+                          value={ePermPin}
+                          onChange={e => { setEPermPin(e.target.value.replace(/\D/g, '').slice(0, 6)); clearEErr('perm_pincode'); }}
+                          disabled={eSameAsCurrent}
+                        />
+                        {eErrors.perm_pincode && <small className="emp-err">{eErrors.perm_pincode}</small>}
+                      </Col>
+                    </Row>
+                  </div>
+                </>
+              )}
+
+              {empStep === 2 && (
+                <>
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-briefcase-line" /> Employment Details
+                    </div>
+                    <Row className="g-3">
+                      <Col md={4}>
+                        <label className="emp-label">Joining Date<span className="req">*</span></label>
+                        <MasterDatePicker value={eJoinDate} onChange={(v) => { setEJoinDate(v); clearEErr('date_of_joining'); }} placeholder="dd-mm-yyyy" minDate={todayIso} invalid={!!eErrors.date_of_joining} />
+                        {eErrors.date_of_joining && <small className="emp-err">{eErrors.date_of_joining}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Department<span className="req">*</span></label>
+                        <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); setEReportingMgr(prev => { const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === prev); const keep = !mgr || mgr.kind === 'branch_user' || (mgr.department_id != null && String(mgr.department_id) === String(v)); return keep ? prev : ''; }); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
+                        {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Designation<span className="req">*</span></label>
+                        <MasterSelect value={eDesignation} onChange={(v) => {
+                          setEDesignation(v);
+                          clearEErr('designation_id');
+                          // A Branch User as reporting manager is valid ONLY for an HOD.
+                          // Clear the manager whenever the designation ↔ manager pairing
+                          // breaks that rule — HOD needs a Branch User; any other
+                          // designation must NOT keep a Branch User manager.
+                          const nowHod = !!hodDesignationId && String(v) === hodDesignationId;
+                          const rmIsBranchUser = String(eReportingMgr || '').startsWith('branch_user:');
+                          if (eReportingMgr && (nowHod ? !rmIsBranchUser : rmIsBranchUser)) {
+                            setEReportingMgr('');
+                            clearEErr('reporting_manager_id');
+                          }
+                        }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
+                        {eErrors.designation_id && <small className="emp-err">{eErrors.designation_id}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Primary Role<span className="req">*</span></label>
+                        <MasterSelect value={ePrimaryRole} onChange={(v) => { setEPrimaryRole(v); clearEErr('primary_role_id'); setEAncillaryRole(prev => prev.filter(id => id !== v)); }} placeholder="Select role" options={primaryRoleOptionsX} invalid={!!eErrors.primary_role_id} />
+                        {eErrors.primary_role_id && <small className="emp-err">{eErrors.primary_role_id}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Ancillary Role <span className="hint">(select multiple)</span></label>
+                        {/* MasterMultiSelect, not MultiSelectChips: the latter
                           rendered EVERY selected chip, so 10+ roles stacked
                           into four rows and blew the field out of the form
                           grid. This collapses to 3 chips + a "+N more" pill
                           (click to expand/collapse) — the same treatment the
                           segment pickers use. Same props, and it keeps the
                           search box. */}
-                      <MasterMultiSelect
-                        value={eAncillaryRole}
-                        onChange={setEAncillaryRole}
-                        options={ancillaryRoleOptionsX}
-                        placeholder="Select one or more roles"
-                      />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Work Type<span className="req">*</span></label>
-                      <MasterSelect value={eWorkType} onChange={(v) => { setEWorkType(v); clearEErr('work_type'); }} options={WORK_TYPE_OPTIONS} placeholder="Select work type" invalid={!!eErrors.work_type} />
-                      {eErrors.work_type && <small className="emp-err">{eErrors.work_type}</small>}
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-building-2-line" /> Organisational Details
+                        <MasterMultiSelect
+                          value={eAncillaryRole}
+                          onChange={setEAncillaryRole}
+                          options={ancillaryRoleOptionsX}
+                          placeholder="Select one or more roles"
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Work Type<span className="req">*</span></label>
+                        <MasterSelect value={eWorkType} onChange={(v) => { setEWorkType(v); clearEErr('work_type'); }} options={WORK_TYPE_OPTIONS} placeholder="Select work type" invalid={!!eErrors.work_type} />
+                        {eErrors.work_type && <small className="emp-err">{eErrors.work_type}</small>}
+                      </Col>
+                    </Row>
                   </div>
-                  <Row className="g-3">
-                    {/* Legal Entity + Location are both auto-fetched from the
+
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-building-2-line" /> Organisational Details
+                    </div>
+                    <Row className="g-3">
+                      {/* Legal Entity + Location are both auto-fetched from the
                         branch this employee is being added under — no picker. */}
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Legal Entity<span className="req">*</span>
-                        <span className="hint">(auto-fetched)</span>
-                      </label>
-                      <input
-                        className="emp-input is-readonly"
-                        type="text"
-                        value={eLegalEntityLabel}
-                        readOnly
-                        placeholder="Select a branch to auto-fetch"
-                        title="The branch this employee is hired into — switch branch to change it"
-                      />
-                      {eErrors.legal_entity_id && <small className="emp-err">{eErrors.legal_entity_id}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Location<span className="req">*</span>
-                        <span className="hint">(auto-fetched)</span>
-                      </label>
-                      <input
-                        className="emp-input is-readonly"
-                        type="text"
-                        value={eLocation}
-                        readOnly
-                        placeholder="Auto-fetched with the legal entity"
-                        title="The legal entity's city and country"
-                      />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Reporting Manager<span className="req">*</span></label>
-                      <MasterSelect
-                        value={eReportingMgr}
-                        onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === v); if (mgr && mgr.kind === 'employee' && mgr.department_id != null) { setEDept(String(mgr.department_id)); clearEErr('department_id'); } }}
-                        placeholder="Select manager"
-                        options={reportingManagerOptions}
-                        invalid={!!eErrors.reporting_manager_id}
-                      />
-                      {eErrors.reporting_manager_id && <small className="emp-err">{eErrors.reporting_manager_id}</small>}
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-file-list-3-line" /> Employment Terms
-                  </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Probation Policy (Month)<span className="req">*</span></label>
-                      <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
-                      {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Legal Entity<span className="req">*</span>
+                          <span className="hint">(auto-fetched)</span>
+                        </label>
                         <input
-                          className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
-                          type="number"
-                          min={1}
-                          max={12}
-                          step={1}
-                          inputMode="numeric"
-                          placeholder="Enter months (1–12)"
-                          value={eCustomProbation}
-                          onChange={e => {
-                            // Integer 1–12 only.
-                            const digits = e.target.value.replace(/\D/g, '');
-                            const v = digits === '' ? '' : String(Math.max(1, Math.min(12, parseInt(digits, 10))));
-                            setECustomProbation(v);
-                            clearEErr('probation_policy');
-                          }}
-                          autoFocus
-                        />
-                      )}
-                      {eErrors.probation_policy && <small className="emp-err">{eErrors.probation_policy}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">
-                        Probation End Date
-                        <span className="hint">(auto-calculated)</span>
-                      </label>
-                      <input
-                        className="emp-input is-readonly"
-                        type="text"
-                        value={probationInfo.endDisplay}
-                        readOnly
-                        tabIndex={-1}
-                        placeholder={!eJoinDate ? 'Set the joining date' : (probationInfo.months > 0 ? '' : 'No probation')}
-                      />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Notice Period<span className="req">*</span></label>
-                      <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} placeholder="Select notice period" invalid={!!eErrors.notice_period} />
-                      {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
-                        <input
-                          className={`emp-input mt-2${eErrors.notice_period ? ' is-invalid' : ''}`}
+                          className="emp-input is-readonly"
                           type="text"
-                          placeholder="e.g. 45 Days, 2 months, etc."
-                          value={eCustomNotice}
-                          onChange={e => { setECustomNotice(e.target.value); clearEErr('notice_period'); }}
-                          autoFocus
+                          value={eLegalEntityLabel}
+                          readOnly
+                          placeholder="Select a branch to auto-fetch"
+                          title="The branch this employee is hired into — switch branch to change it"
                         />
+                        {eErrors.legal_entity_id && <small className="emp-err">{eErrors.legal_entity_id}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Location<span className="req">*</span>
+                          <span className="hint">(auto-fetched)</span>
+                        </label>
+                        <input
+                          className="emp-input is-readonly"
+                          type="text"
+                          value={eLocation}
+                          readOnly
+                          placeholder="Auto-fetched with the legal entity"
+                          title="The legal entity's city and country"
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Reporting Manager<span className="req">*</span></label>
+                        <MasterSelect
+                          value={eReportingMgr}
+                          onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === v); if (mgr && mgr.kind === 'employee' && mgr.department_id != null) { setEDept(String(mgr.department_id)); clearEErr('department_id'); } }}
+                          placeholder="Select manager"
+                          options={reportingManagerOptions}
+                          invalid={!!eErrors.reporting_manager_id}
+                        />
+                        {eErrors.reporting_manager_id && <small className="emp-err">{eErrors.reporting_manager_id}</small>}
+                      </Col>
+                    </Row>
+                  </div>
+
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-file-list-3-line" /> Employment Terms
+                    </div>
+                    <Row className="g-3">
+                      <Col md={4}>
+                        <label className="emp-label">Probation Policy (Month)<span className="req">*</span></label>
+                        <MasterSelect value={eProbationPolicy} onChange={(v) => { setEProbationPolicy(v); clearEErr('probation_policy'); }} options={PROBATION_POLICY_OPTIONS} placeholder="Select probation policy" invalid={!!eErrors.probation_policy} />
+                        {eProbationPolicy === CUSTOM_PROBATION_VALUE && (
+                          <input
+                            className={`emp-input mt-2${eErrors.probation_policy ? ' is-invalid' : ''}`}
+                            type="number"
+                            min={1}
+                            max={12}
+                            step={1}
+                            inputMode="numeric"
+                            placeholder="Enter months (1–12)"
+                            value={eCustomProbation}
+                            onChange={e => {
+                              // Integer 1–12 only.
+                              const digits = e.target.value.replace(/\D/g, '');
+                              const v = digits === '' ? '' : String(Math.max(1, Math.min(12, parseInt(digits, 10))));
+                              setECustomProbation(v);
+                              clearEErr('probation_policy');
+                            }}
+                            autoFocus
+                          />
+                        )}
+                        {eErrors.probation_policy && <small className="emp-err">{eErrors.probation_policy}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">
+                          Probation End Date
+                          <span className="hint">(auto-calculated)</span>
+                        </label>
+                        <input
+                          className="emp-input is-readonly"
+                          type="text"
+                          value={probationInfo.endDisplay}
+                          readOnly
+                          tabIndex={-1}
+                          placeholder={!eJoinDate ? 'Set the joining date' : (probationInfo.months > 0 ? '' : 'No probation')}
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Notice Period<span className="req">*</span></label>
+                        <MasterSelect value={eNoticePeriod} onChange={(v) => { setENoticePeriod(v); clearEErr('notice_period'); }} options={NOTICE_PERIOD_OPTIONS} placeholder="Select notice period" invalid={!!eErrors.notice_period} />
+                        {eNoticePeriod === CUSTOM_NOTICE_VALUE && (
+                          <input
+                            className={`emp-input mt-2${eErrors.notice_period ? ' is-invalid' : ''}`}
+                            type="text"
+                            placeholder="e.g. 45 Days, 2 months, etc."
+                            value={eCustomNotice}
+                            onChange={e => { setECustomNotice(e.target.value); clearEErr('notice_period'); }}
+                            autoFocus
+                          />
+                        )}
+                        {eErrors.notice_period && <small className="emp-err">{eErrors.notice_period}</small>}
+                      </Col>
+                    </Row>
+                  </div>
+                </>
+              )}
+
+              {empStep === 3 && (
+                <>
+                  <div className="emp-section">
+                    <div className="emp-section-title" style={{ color: '#0a8a78' }}>
+                      <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave, Expense &amp; Attendance
+                    </div>
+                    <Row className="g-3">
+                      <Col md={4}>
+                        <label className="emp-label">Leave Plan<span className="req">*</span></label>
+                        <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
+                        {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
+                        <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupSelectOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
+                        {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Shift<span className="req">*</span></label>
+                        <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={shiftSelectOptions} placeholder={shiftPlaceholder} invalid={!!eErrors.shift} />
+                        {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Weekly Off<span className="req">*</span></label>
+                        <MasterSelect value={eWeeklyOff} onChange={(v) => { setEWeeklyOff(v); clearEErr('weekly_off'); }} options={WEEKLY_OFF_OPTIONS} placeholder="Select weekly off" invalid={!!eErrors.weekly_off} />
+                        {eErrors.weekly_off && <small className="emp-err">{eErrors.weekly_off}</small>}
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Attendance Number</label>
+                        <input
+                          className="emp-input"
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="Attendance number"
+                          value={eAttendanceNumber}
+                          onChange={e => setEAttendanceNumber(e.target.value.replace(/\D/g, ''))}
+                          maxLength={20}
+                        />
+                      </Col>
+                      <Col md={4}>
+                        <label className="emp-label">Overtime Applicable</label>
+                        <MasterSelect value={eOvertimeApplicable} onChange={(v) => { setEOvertimeApplicable(v); if (v !== 'Yes') setEOvertime(''); }} options={YES_NO_OPTIONS} placeholder="Select" />
+                      </Col>
+                      {eOvertimeApplicable === 'Yes' && (
+                        <Col md={4}>
+                          <label className="emp-label">Overtime Rate<span className="req">*</span></label>
+                          <MasterSelect value={eOvertime} onChange={(v) => { setEOvertime(v); clearEErr('overtime'); }} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} invalid={!!eErrors.overtime} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
+                          {eErrors.overtime && <small className="emp-err">{eErrors.overtime}</small>}
+                        </Col>
                       )}
-                      {eErrors.notice_period && <small className="emp-err">{eErrors.notice_period}</small>}
-                    </Col>
-                  </Row>
-                </div>
-              </>
-            )}
-
-            {empStep === 3 && (
-              <>
-                <div className="emp-section">
-                  <div className="emp-section-title" style={{ color: '#0a8a78' }}>
-                    <i className="ri-calendar-2-line" style={{ color: '#0ab39c' }} /> Leave, Expense &amp; Attendance
-                  </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                      <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
-                      {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Holiday List (Group)<span className="req">*</span></label>
-                      <MasterSelect value={eHolidayList} onChange={(v) => { setEHolidayList(v); clearEErr('holiday_list'); }} options={holidayGroupSelectOptions} placeholder={holidayGroupOptions.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} invalid={!!eErrors.holiday_list} />
-                      {eErrors.holiday_list && <small className="emp-err">{eErrors.holiday_list}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Shift<span className="req">*</span></label>
-                      <MasterSelect value={eShift} onChange={(v) => { setEShift(v); clearEErr('shift'); }} options={shiftSelectOptions} placeholder={shiftPlaceholder} invalid={!!eErrors.shift} />
-                      {eErrors.shift && <small className="emp-err">{eErrors.shift}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Weekly Off<span className="req">*</span></label>
-                      <MasterSelect value={eWeeklyOff} onChange={(v) => { setEWeeklyOff(v); clearEErr('weekly_off'); }} options={WEEKLY_OFF_OPTIONS} placeholder="Select weekly off" invalid={!!eErrors.weekly_off} />
-                      {eErrors.weekly_off && <small className="emp-err">{eErrors.weekly_off}</small>}
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Attendance Number</label>
-                      <input
-                        className="emp-input"
-                        type="text"
-                        inputMode="numeric"
-                        placeholder="Attendance number"
-                        value={eAttendanceNumber}
-                        onChange={e => setEAttendanceNumber(e.target.value.replace(/\D/g, ''))}
-                        maxLength={20}
-                      />
-                    </Col>
-                    <Col md={4}>
-                      <label className="emp-label">Overtime Applicable</label>
-                      <MasterSelect value={eOvertimeApplicable} onChange={(v) => { setEOvertimeApplicable(v); if (v !== 'Yes') setEOvertime(''); }} options={YES_NO_OPTIONS} placeholder="Select" />
-                    </Col>
-                    {eOvertimeApplicable === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Overtime Rate<span className="req">*</span></label>
-                        <MasterSelect value={eOvertime} onChange={(v) => { setEOvertime(v); clearEErr('overtime'); }} options={overtimeRateSelectOptions} onOpen={() => reloadMasters()} invalid={!!eErrors.overtime} placeholder={overtimeRateOptions.length ? 'Select overtime rate' : 'No rates — add in Master › Overtime (OT)'} />
-                        {eErrors.overtime && <small className="emp-err">{eErrors.overtime}</small>}
+                        <label className="emp-label">Expense Policy<span className="req">*</span></label>
+                        <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select expense policy" invalid={!!eErrors.expense_policy} />
+                        {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
                       </Col>
-                    )}
-                    <Col md={4}>
-                      <label className="emp-label">Expense Policy<span className="req">*</span></label>
-                      <MasterSelect value={eExpensePolicy} onChange={(v) => { setEExpensePolicy(v); clearEErr('expense_policy'); }} options={EXPENSE_POLICY_OPTIONS} placeholder="Select expense policy" invalid={!!eErrors.expense_policy} />
-                      {eErrors.expense_policy && <small className="emp-err">{eErrors.expense_policy}</small>}
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title" style={{ color: '#0c63b0' }}>
-                    <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
+                    </Row>
                   </div>
-                  <Row className="g-3">
-                    <Col md={4}>
-                      <label className="emp-label">Laptop Assigned</label>
-                      <MasterSelect
-                        value={eLaptopAssigned}
-                        onChange={(v) => {
-                          setELaptopAssigned(v);
-                          if (v !== 'Yes') {
-                            setELaptopMasterAssetId('');
-                            clearEErr('laptop_master_asset_id');
-                          }
-                        }}
-                        options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
-                      />
-                    </Col>
-                    {eLaptopAssigned === 'Yes' && (
+
+                  <div className="emp-section">
+                    <div className="emp-section-title" style={{ color: '#0c63b0' }}>
+                      <i className="ri-computer-line" style={{ color: '#299cdb' }} /> Assets &amp; Security
+                    </div>
+                    <Row className="g-3">
                       <Col md={4}>
-                        <label className="emp-label">Laptop Device<span className="req">*</span></label>
+                        <label className="emp-label">Laptop Assigned</label>
                         <MasterSelect
-                          value={eLaptopMasterAssetId}
-                          onChange={(v) => { setELaptopMasterAssetId(v); clearEErr('laptop_master_asset_id'); }}
-                          options={laptopAssetOpts}
-                          placeholder={laptopAssetOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
-                          disabled={laptopAssetOpts.length === 0}
-                          invalid={!!eErrors.laptop_master_asset_id}
+                          value={eLaptopAssigned}
+                          onChange={(v) => {
+                            setELaptopAssigned(v);
+                            if (v !== 'Yes') {
+                              setELaptopMasterAssetId('');
+                              clearEErr('laptop_master_asset_id');
+                            }
+                          }}
+                          options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                         />
-                        {eErrors.laptop_master_asset_id && <small className="emp-err">{eErrors.laptop_master_asset_id}</small>}
                       </Col>
-                    )}
+                      {eLaptopAssigned === 'Yes' && (
+                        <Col md={4}>
+                          <label className="emp-label">Laptop Device<span className="req">*</span></label>
+                          <MasterSelect
+                            value={eLaptopMasterAssetId}
+                            onChange={(v) => { setELaptopMasterAssetId(v); clearEErr('laptop_master_asset_id'); }}
+                            options={laptopAssetOpts}
+                            placeholder={laptopAssetOpts.length === 0 ? 'No laptops available' : 'Select laptop (Serial — Name)'}
+                            disabled={laptopAssetOpts.length === 0}
+                            invalid={!!eErrors.laptop_master_asset_id}
+                          />
+                          {eErrors.laptop_master_asset_id && <small className="emp-err">{eErrors.laptop_master_asset_id}</small>}
+                        </Col>
+                      )}
 
-                    <Col md={4}>
-                      <label className="emp-label">Mobile Assigned</label>
-                      <MasterSelect
-                        value={eMobileAssigned}
-                        onChange={(v) => {
-                          setEMobileAssigned(v);
-                          if (v !== 'Yes') {
-                            setEMobileMasterAssetId('');
-                            clearEErr('mobile_master_asset_id');
-                          }
-                        }}
-                        options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
-                      />
-                    </Col>
-                    {eMobileAssigned === 'Yes' && (
                       <Col md={4}>
-                        <label className="emp-label">Mobile Device<span className="req">*</span></label>
+                        <label className="emp-label">Mobile Assigned</label>
                         <MasterSelect
-                          value={eMobileMasterAssetId}
-                          onChange={(v) => { setEMobileMasterAssetId(v); clearEErr('mobile_master_asset_id'); }}
-                          options={mobileAssetOpts}
-                          placeholder={mobileAssetOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
-                          disabled={mobileAssetOpts.length === 0}
-                          invalid={!!eErrors.mobile_master_asset_id}
+                          value={eMobileAssigned}
+                          onChange={(v) => {
+                            setEMobileAssigned(v);
+                            if (v !== 'Yes') {
+                              setEMobileMasterAssetId('');
+                              clearEErr('mobile_master_asset_id');
+                            }
+                          }}
+                          options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                         />
-                        {eErrors.mobile_master_asset_id && <small className="emp-err">{eErrors.mobile_master_asset_id}</small>}
                       </Col>
-                    )}
+                      {eMobileAssigned === 'Yes' && (
+                        <Col md={4}>
+                          <label className="emp-label">Mobile Device<span className="req">*</span></label>
+                          <MasterSelect
+                            value={eMobileMasterAssetId}
+                            onChange={(v) => { setEMobileMasterAssetId(v); clearEErr('mobile_master_asset_id'); }}
+                            options={mobileAssetOpts}
+                            placeholder={mobileAssetOpts.length === 0 ? 'No mobiles available' : 'Select mobile (Serial — Name)'}
+                            disabled={mobileAssetOpts.length === 0}
+                            invalid={!!eErrors.mobile_master_asset_id}
+                          />
+                          {eErrors.mobile_master_asset_id && <small className="emp-err">{eErrors.mobile_master_asset_id}</small>}
+                        </Col>
+                      )}
 
-                    <Col md={12}>
-                      <label className="emp-label">Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
-                      <MasterMultiSelect
-                        value={eOtherMasterAssetIds}
-                        onChange={setEOtherMasterAssetIds}
-                        options={otherAssetOpts}
-                        placeholder={otherAssetOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
-                        disabled={otherAssetOpts.length === 0}
-                      />
-                    </Col>
-                  </Row>
-                </div>
-
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-file-text-line" /> Documents
+                      <Col md={12}>
+                        <label className="emp-label">Other Assets <span style={{ color: '#94a3b8', fontWeight: 400, marginLeft: 4 }}>(optional)</span></label>
+                        <MasterMultiSelect
+                          value={eOtherMasterAssetIds}
+                          onChange={setEOtherMasterAssetIds}
+                          options={otherAssetOpts}
+                          placeholder={otherAssetOpts.length === 0 ? 'No other assets available' : 'Pick one or more'}
+                          disabled={otherAssetOpts.length === 0}
+                        />
+                      </Col>
+                    </Row>
                   </div>
-                  <Row className="g-3">
-                    {[
-                      { key: 'aadhaar', label: 'Aadhar Card',         required: true,  file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png',                hint: '(format .pdf, .jpg, .png)' as string },
-                      { key: 'pan',     label: 'Pan Card',             required: true,  file: ePanFile,    set: setEPanFile,    accept: '.pdf,.jpg,.jpeg,.png',                hint: '(format .pdf, .jpg, .png)' as string },
-                      { key: 'photo',   label: 'Passport Size Photo',  required: false, file: ePhotoFile,  set: setEPhotoFile,  accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
-                    ].map(d => {
-                      const srv = eExistingDocs[d.key];
-                      const busy = !!eDocBusy[d.key];
-                      const hasUpload = !!srv;
-                      const errKey = d.key === 'aadhaar' ? 'doc_aadhaar'
-                                   : d.key === 'pan'     ? 'doc_pan'
-                                   : null;
-                      const tileError = errKey ? eErrors[errKey] : undefined;
-                      return (
-                        <Col md={4} key={d.key}>
-                          <label className="emp-label">
-                            {d.label}{d.required && <span className="req">*</span>}
-                            {d.hint && <span className="hint">{d.hint}</span>}
-                          </label>
 
-                          {hasUpload ? (
-                            <div
-                              className="emp-doc-tile-uploaded"
-                              style={{
-                                borderRadius: 8,
-                                padding: '8px 12px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                fontSize: 12.5,
-                                minHeight: 38,
-                              }}
-                            >
-                              <i className="ri-checkbox-circle-line emp-doc-check" />
-                              <span className="emp-doc-fname" style={{ flexGrow: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                {srv.original_name || `${d.label} uploaded`}
-                              </span>
-                              {srv.url && (
-                                <a
-                                  href={srv.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  title="View document"
-                                  style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
-                                >
-                                  <i className="ri-eye-line" />
-                                </a>
-                              )}
-                              <label
-                                title="Replace"
-                                className="mb-0"
-                                style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1, margin: 0, display: 'inline-flex', alignItems: 'center' }}
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-file-text-line" /> Documents
+                    </div>
+                    <Row className="g-3">
+                      {[
+                        { key: 'aadhaar', label: 'Aadhar Card', required: true, file: eAadharFile, set: setEAadharFile, accept: '.pdf,.jpg,.jpeg,.png', hint: '(format .pdf, .jpg, .png)' as string },
+                        { key: 'pan', label: 'Pan Card', required: true, file: ePanFile, set: setEPanFile, accept: '.pdf,.jpg,.jpeg,.png', hint: '(format .pdf, .jpg, .png)' as string },
+                        { key: 'photo', label: 'Passport Size Photo', required: false, file: ePhotoFile, set: setEPhotoFile, accept: 'image/jpeg,image/png,.jpg,.jpeg,.png', hint: '(format .jpg, .png)' },
+                      ].map(d => {
+                        const srv = eExistingDocs[d.key];
+                        const busy = !!eDocBusy[d.key];
+                        const hasUpload = !!srv;
+                        const errKey = d.key === 'aadhaar' ? 'doc_aadhaar'
+                          : d.key === 'pan' ? 'doc_pan'
+                            : null;
+                        const tileError = errKey ? eErrors[errKey] : undefined;
+                        return (
+                          <Col md={4} key={d.key}>
+                            <label className="emp-label">
+                              {d.label}{d.required && <span className="req">*</span>}
+                              {d.hint && <span className="hint">{d.hint}</span>}
+                            </label>
+
+                            {hasUpload ? (
+                              <div
+                                className="emp-doc-tile-uploaded"
+                                style={{
+                                  borderRadius: 8,
+                                  padding: '8px 12px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  fontSize: 12.5,
+                                  minHeight: 38,
+                                }}
                               >
-                                <i className={busy ? 'ri-loader-line' : 'ri-refresh-line'} />
+                                <i className="ri-checkbox-circle-line emp-doc-check" />
+                                <span className="emp-doc-fname" style={{ flexGrow: 1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {srv.original_name || `${d.label} uploaded`}
+                                </span>
+                                {srv.url && (
+                                  <a
+                                    href={srv.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="View document"
+                                    style={{ color: '#0c63b0', fontSize: 16, lineHeight: 1, display: 'inline-flex', alignItems: 'center' }}
+                                  >
+                                    <i className="ri-eye-line" />
+                                  </a>
+                                )}
+                                <label
+                                  title="Replace"
+                                  className="mb-0"
+                                  style={{ color: '#7c5cfc', cursor: busy ? 'wait' : 'pointer', fontSize: 16, lineHeight: 1, opacity: busy ? 0.5 : 1, margin: 0, display: 'inline-flex', alignItems: 'center' }}
+                                >
+                                  <i className={busy ? 'ri-loader-line' : 'ri-refresh-line'} />
+                                  <input
+                                    type="file"
+                                    accept={d.accept}
+                                    disabled={busy}
+                                    style={{ display: 'none' }}
+                                    onChange={e => {
+                                      const f = e.target.files?.[0];
+                                      e.target.value = '';
+                                      if (!f) return;
+                                      if (!isAcceptedFile(f, d.accept)) {
+                                        toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
+                                        return;
+                                      }
+                                      if (f.size > 2 * 1024 * 1024) {
+                                        toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
+                                        return;
+                                      }
+                                      d.set(f);
+                                      uploadEmpDoc(d.key, d.label, f);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                            ) : (
+                              <label
+                                className={`emp-doc-tile-empty d-flex align-items-center justify-content-center gap-2${tileError ? ' has-error' : ''}`}
+                                style={{
+                                  height: 38,
+                                  borderRadius: 8,
+                                  cursor: busy ? 'wait' : 'pointer',
+                                  fontSize: 12.5,
+                                  fontWeight: 600,
+                                  opacity: busy ? 0.6 : 1,
+                                }}
+                              >
+                                <i className={busy ? 'ri-loader-line' : 'ri-upload-2-line'} />
+                                {busy ? 'Uploading…' : (d.file ? d.file.name : 'Choose file')}
                                 <input
                                   type="file"
                                   accept={d.accept}
@@ -4336,210 +4265,44 @@ export default function HrEmployees() {
                                       return;
                                     }
                                     d.set(f);
+                                    if (errKey) clearEErr(errKey);
                                     uploadEmpDoc(d.key, d.label, f);
                                   }}
                                 />
                               </label>
-                            </div>
-                          ) : (
-                            <label
-                              className={`emp-doc-tile-empty d-flex align-items-center justify-content-center gap-2${tileError ? ' has-error' : ''}`}
-                              style={{
-                                height: 38,
-                                borderRadius: 8,
-                                cursor: busy ? 'wait' : 'pointer',
-                                fontSize: 12.5,
-                                fontWeight: 600,
-                                opacity: busy ? 0.6 : 1,
-                              }}
-                            >
-                              <i className={busy ? 'ri-loader-line' : 'ri-upload-2-line'} />
-                              {busy ? 'Uploading…' : (d.file ? d.file.name : 'Choose file')}
-                              <input
-                                type="file"
-                                accept={d.accept}
-                                disabled={busy}
-                                style={{ display: 'none' }}
-                                onChange={e => {
-                                  const f = e.target.files?.[0];
-                                  e.target.value = '';
-                                  if (!f) return;
-                                  if (!isAcceptedFile(f, d.accept)) {
-                                    toast.error('Unsupported file type', `${d.label} accepts ${d.accept}`);
-                                    return;
-                                  }
-                                  if (f.size > 2 * 1024 * 1024) {
-                                    toast.error('File too large', `${d.label} must be ≤ 2 MB (this file is ${(f.size / 1048576).toFixed(1)} MB)`);
-                                    return;
-                                  }
-                                  d.set(f);
-                                  if (errKey) clearEErr(errKey);
-                                  uploadEmpDoc(d.key, d.label, f);
-                                }}
-                              />
-                            </label>
-                          )}
-                          {tileError && <small className="emp-err">{tileError}</small>}
-                        </Col>
-                      );
-                    })}
-                  </Row>
-                </div>
-              </>
-            )}
-
-            {empStep === 4 && (
-              <>
-                <div className="emp-section">
-                  <div className="emp-section-title">
-                    <i className="ri-money-dollar-circle-line" /> Payroll Configuration
+                            )}
+                            {tileError && <small className="emp-err">{tileError}</small>}
+                          </Col>
+                        );
+                      })}
+                    </Row>
                   </div>
-                  <div
-                    className="emp-payroll-banner d-flex align-items-center gap-2 mb-3"
-                    style={{
-                      padding: '10px 14px',
-                      borderRadius: 10,
-                    }}
-                  >
-                    <button
-                      type="button"
-                      aria-pressed={eEnablePayroll}
-                      onClick={() => setEEnablePayroll(v => !v)}
-                      className="btn p-0 border-0 d-inline-flex align-items-center"
+                </>
+              )}
+
+              {empStep === 4 && (
+                <>
+                  <div className="emp-section">
+                    <div className="emp-section-title">
+                      <i className="ri-money-dollar-circle-line" /> Payroll Configuration
+                    </div>
+                    <div
+                      className="emp-payroll-banner d-flex align-items-center gap-2 mb-3"
                       style={{
-                        width: 36, height: 20, borderRadius: 999,
-                        background: eEnablePayroll ? '#7c5cfc' : '#e5e7eb',
-                        position: 'relative',
-                        transition: 'background .15s ease',
+                        padding: '10px 14px',
+                        borderRadius: 10,
                       }}
                     >
-                      <span
-                        style={{
-                          width: 14, height: 14, borderRadius: '50%',
-                          background: '#fff',
-                          boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                          position: 'absolute', top: 3,
-                          left: eEnablePayroll ? 19 : 3, transition: 'left .15s ease',
-                        }}
-                      />
-                    </button>
-                    <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
-                      {/* This gates the whole Compensation step (CTC, effective
-                          date, breakup) — `enable_payroll`. It said "Enable PF",
-                          which is the PF Applicable dropdown right below it, so
-                          the two read as contradicting each other on screen. */}
-                      Enable payroll for this employee
-                    </span>
-                  </div>
-                  <Row className="g-3">
-                    <Col md={6}>
-                      <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>
-                      {/* ₹ prefix — the amount is always INR here (the payroll
-                          breakup rows below already show it), so the symbol sits
-                          inside the field rather than in the label. Absolutely
-                          positioned + extra left padding on the input so it
-                          can't overlap the typed value. */}
-                      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                        <span
-                          style={{
-                            position: 'absolute', left: 11, fontSize: 13,
-                            color: 'var(--vz-secondary-color)', pointerEvents: 'none', lineHeight: 1,
-                          }}
-                        >
-                          ₹
-                        </span>
-                        <input
-                          className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
-                          type="number"
-                          placeholder="Enter annual amount"
-                          value={eAnnualSalary}
-                          max={999999999999}
-                          step="1"
-                          inputMode="numeric"
-                          /* Locked while the saved structure is still in flight.
-                             The response overwrites the whole breakup when it
-                             lands, so a CTC typed during the fetch was silently
-                             thrown away a moment later — the one point in this
-                             form where the server can actually outrun the user. */
-                          disabled={eBreakupLoading}
-                          onChange={e => {
-                            const raw = e.target.value;
-                            if (raw === '') { setEAnnualSalary(''); setBreakupRecalcing(false); clearEErr('annual_salary'); return; }
-                            // Whole rupees only — a CTC is never quoted in paise,
-                            // and the decimals only ever reached the breakup as
-                            // rounding noise across the 50 / 30 / 20 split.
-                            if (!/^\d{0,12}$/.test(raw)) return;
-                            setEAnnualSalary(raw);
-                            if (eDetailedBreakup) setBreakupRecalcing(true);
-                            clearEErr('annual_salary');
-                          }}
-                          style={{ width: '100%', paddingLeft: 25, cursor: eBreakupLoading ? 'not-allowed' : undefined }}
-                        />
-                      </div>
-                      {eBreakupLoading && (
-                        <small className="text-muted d-block mt-1" style={{ fontSize: 11 }}>
-                          <i className="ri-loader-4-line emp-spin" /> Loading the saved breakup — CTC unlocks in a moment.
-                        </small>
-                      )}
-                      {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
-                    </Col>
-                    <Col md={6}>
-                      <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
-                      <MasterDatePicker
-                        value={eSalaryFrom}
-                        onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
-                        placeholder="dd-mm-yyyy"
-                        minDate={eJoinDate || undefined}
-                        maxDate={salaryEffectiveCap || undefined}
-                        invalid={!!eErrors.salary_effective_from}
-                      />
-                      {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
-                    </Col>
-                  </Row>
-                  {/* PF setup — Applicable on/off, then the calculation method.
-                      Statutory caps basic at ₹15k (EPF ceiling); Standard uses
-                      the full basic. Read by the payroll engine. */}
-                  {eEnablePayroll && (
-                    <Row className="g-3 mt-0">
-                      <Col md={6}>
-                        <label className="emp-label">PF Applicable<span className="req">*</span></label>
-                        <MasterSelect
-                          value={ePfEligible ? 'Yes' : 'No'}
-                          onChange={(v) => setEPfEligible(v === 'Yes')}
-                          options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
-                        />
-                      </Col>
-                      {ePfEligible && (
-                        <Col md={6}>
-                          <label className="emp-label">PF Type</label>
-                          <MasterSelect
-                            value={ePfType || 'Statutory'}
-                            onChange={(v) => setEPfType(v)}
-                            options={[{ value: 'Statutory', label: 'Statutory (₹15k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
-                          />
-                        </Col>
-                      )}
-                    </Row>
-                  )}
-                </div>
-
-                <div className="emp-section">
-                  <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
-                    <div className="emp-section-title mb-0">
-                      <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
-                    </div>
-                    <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
                       <button
                         type="button"
-                        aria-pressed={eDetailedBreakup}
-                        onClick={() => setEDetailedBreakup(v => !v)}
+                        aria-pressed={eEnablePayroll}
+                        onClick={() => setEEnablePayroll(v => !v)}
                         className="btn p-0 border-0 d-inline-flex align-items-center"
                         style={{
                           width: 36, height: 20, borderRadius: 999,
-                          background: eDetailedBreakup ? '#0ab39c' : '#e5e7eb',
+                          background: eEnablePayroll ? '#7c5cfc' : '#e5e7eb',
                           position: 'relative',
                           transition: 'background .15s ease',
-                          cursor: 'pointer',
                         }}
                       >
                         <span
@@ -4548,198 +4311,327 @@ export default function HrEmployees() {
                             background: '#fff',
                             boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
                             position: 'absolute', top: 3,
-                            left: eDetailedBreakup ? 19 : 3, transition: 'left .15s ease',
+                            left: eEnablePayroll ? 19 : 3, transition: 'left .15s ease',
                           }}
                         />
                       </button>
-                      <span
-                        onClick={() => setEDetailedBreakup(v => !v)}
-                        style={{ cursor: 'pointer', userSelect: 'none' }}
-                      >
-                        Detailed breakup
+                      <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
+                        {/* This gates the whole Compensation step (CTC, effective
+                          date, breakup) — `enable_payroll`. It said "Enable PF",
+                          which is the PF Applicable dropdown right below it, so
+                          the two read as contradicting each other on screen. */}
+                        Enable payroll for this employee
                       </span>
-                    </span>
-                  </div>
-                  <div className="emp-label mb-1">Salary Effective From</div>
-                  <div className="text-muted mb-3" style={{ fontSize: 13 }}>
-                    {(() => {
-                      if (!eSalaryFrom) return '—';
-                      const [y, m, d] = eSalaryFrom.slice(0, 10).split('-');
-                      const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m) - 1];
-                      return mon ? `${d}-${mon}-${y}` : eSalaryFrom;
-                    })()}
+                    </div>
+                    <Row className="g-3">
+                      <Col md={6}>
+                        <label className="emp-label">Annual CTC{eEnablePayroll && <span className="req">*</span>}</label>
+                        {/* ₹ prefix — the amount is always INR here (the payroll
+                          breakup rows below already show it), so the symbol sits
+                          inside the field rather than in the label. Absolutely
+                          positioned + extra left padding on the input so it
+                          can't overlap the typed value. */}
+                        <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                          <span
+                            style={{
+                              position: 'absolute', left: 11, fontSize: 13,
+                              color: 'var(--vz-secondary-color)', pointerEvents: 'none', lineHeight: 1,
+                            }}
+                          >
+                            ₹
+                          </span>
+                          <input
+                            className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                            type="number"
+                            placeholder="Enter annual amount"
+                            value={eAnnualSalary}
+                            max={999999999999}
+                            step="1"
+                            inputMode="numeric"
+                            /* Locked while the saved structure is still in flight.
+                               The response overwrites the whole breakup when it
+                               lands, so a CTC typed during the fetch was silently
+                               thrown away a moment later — the one point in this
+                               form where the server can actually outrun the user. */
+                            disabled={eBreakupLoading}
+                            onChange={e => {
+                              const raw = e.target.value;
+                              if (raw === '') { setEAnnualSalary(''); setBreakupRecalcing(false); clearEErr('annual_salary'); return; }
+                              // Whole rupees only — a CTC is never quoted in paise,
+                              // and the decimals only ever reached the breakup as
+                              // rounding noise across the 50 / 30 / 20 split.
+                              if (!/^\d{0,12}$/.test(raw)) return;
+                              setEAnnualSalary(raw);
+                              if (eDetailedBreakup) setBreakupRecalcing(true);
+                              clearEErr('annual_salary');
+                            }}
+                            style={{ width: '100%', paddingLeft: 25, cursor: eBreakupLoading ? 'not-allowed' : undefined }}
+                          />
+                        </div>
+                        {eBreakupLoading && (
+                          <small className="text-muted d-block mt-1" style={{ fontSize: 11 }}>
+                            <i className="ri-loader-4-line emp-spin" /> Loading the saved breakup — CTC unlocks in a moment.
+                          </small>
+                        )}
+                        {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
+                      </Col>
+                      <Col md={6}>
+                        <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
+                        <MasterDatePicker
+                          value={eSalaryFrom}
+                          onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
+                          placeholder="dd-mm-yyyy"
+                          minDate={eJoinDate || undefined}
+                          maxDate={salaryEffectiveCap || undefined}
+                          invalid={!!eErrors.salary_effective_from}
+                        />
+                        {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
+                      </Col>
+                    </Row>
+                    {/* PF setup — Applicable on/off, then the calculation method.
+                      Statutory caps basic at ₹15k (EPF ceiling); Standard uses
+                      the full basic. Read by the payroll engine. */}
+                    {eEnablePayroll && (
+                      <Row className="g-3 mt-0">
+                        <Col md={6}>
+                          <label className="emp-label">PF Applicable<span className="req">*</span></label>
+                          <MasterSelect
+                            value={ePfEligible ? 'Yes' : 'No'}
+                            onChange={(v) => setEPfEligible(v === 'Yes')}
+                            options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
+                          />
+                        </Col>
+                        {ePfEligible && (
+                          <Col md={6}>
+                            <label className="emp-label">PF Type</label>
+                            <MasterSelect
+                              value={ePfType || 'Statutory'}
+                              onChange={(v) => setEPfType(v)}
+                              options={[{ value: 'Statutory', label: 'Statutory (₹15k cap)' }, { value: 'Standard', label: 'Standard (full basic)' }]}
+                            />
+                          </Col>
+                        )}
+                      </Row>
+                    )}
                   </div>
 
-                  {!eDetailedBreakup ? (
-                    <div
-                      className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
-                      style={{
-                        borderRadius: 10,
-                        padding: '14px 16px',
-                        gap: 12,
-                      }}
-                    >
-                      <div className="text-center" style={{ flex: 1 }}>
-                        <div className="emp-label mb-1">Regular Salary</div>
-                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
-                          INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                  <div className="emp-section">
+                    <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                      <div className="emp-section-title mb-0">
+                        <i className="ri-calculator-line" style={{ color: '#0c63b0' }} /> Salary Breakup
+                      </div>
+                      <span className="d-inline-flex align-items-center gap-2 mb-0" style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)' }}>
+                        <button
+                          type="button"
+                          aria-pressed={eDetailedBreakup}
+                          onClick={() => setEDetailedBreakup(v => !v)}
+                          className="btn p-0 border-0 d-inline-flex align-items-center"
+                          style={{
+                            width: 36, height: 20, borderRadius: 999,
+                            background: eDetailedBreakup ? '#0ab39c' : '#e5e7eb',
+                            position: 'relative',
+                            transition: 'background .15s ease',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 14, height: 14, borderRadius: '50%',
+                              background: '#fff',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                              position: 'absolute', top: 3,
+                              left: eDetailedBreakup ? 19 : 3, transition: 'left .15s ease',
+                            }}
+                          />
+                        </button>
+                        <span
+                          onClick={() => setEDetailedBreakup(v => !v)}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          Detailed breakup
+                        </span>
+                      </span>
+                    </div>
+                    <div className="emp-label mb-1">Salary Effective From</div>
+                    <div className="text-muted mb-3" style={{ fontSize: 13 }}>
+                      {(() => {
+                        if (!eSalaryFrom) return '—';
+                        const [y, m, d] = eSalaryFrom.slice(0, 10).split('-');
+                        const mon = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(m) - 1];
+                        return mon ? `${d}-${mon}-${y}` : eSalaryFrom;
+                      })()}
+                    </div>
+
+                    {!eDetailedBreakup ? (
+                      <div
+                        className="emp-ctc-card d-flex align-items-center justify-content-between flex-wrap"
+                        style={{
+                          borderRadius: 10,
+                          padding: '14px 16px',
+                          gap: 12,
+                        }}
+                      >
+                        <div className="text-center" style={{ flex: 1 }}>
+                          <div className="emp-label mb-1">Regular Salary</div>
+                          <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
+                            INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                        <div className="emp-ctc-plus" style={{ fontSize: 18 }}>+</div>
+                        <div className="text-center" style={{ flex: 1 }}>
+                          <div className="emp-label mb-1">Bonus</div>
+                          <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>INR 0</div>
+                        </div>
+                        <div className="emp-ctc-plus" style={{ fontSize: 18 }}>=</div>
+                        <div className="text-center emp-ctc-total" style={{ flex: 1, borderRadius: 8, padding: '6px 8px' }}>
+                          <div className="emp-label mb-1">Total CTC</div>
+                          <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
+                            INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
+                          </div>
                         </div>
                       </div>
-                      <div className="emp-ctc-plus" style={{ fontSize: 18 }}>+</div>
-                      <div className="text-center" style={{ flex: 1 }}>
-                        <div className="emp-label mb-1">Bonus</div>
-                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>INR 0</div>
+                    ) : eBreakupLoading ? (
+                      <div className="text-center py-4 text-muted" style={{ fontSize: 13 }}>
+                        <i className="ri-loader-4-line emp-spin" /> Loading breakup…
                       </div>
-                      <div className="emp-ctc-plus" style={{ fontSize: 18 }}>=</div>
-                      <div className="text-center emp-ctc-total" style={{ flex: 1, borderRadius: 8, padding: '6px 8px' }}>
-                        <div className="emp-label mb-1">Total CTC</div>
-                        <div className="emp-ctc-num" style={{ fontSize: 18, fontWeight: 800 }}>
-                          INR {Number(eAnnualSalary || 0).toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                    </div>
-                  ) : eBreakupLoading ? (
-                    <div className="text-center py-4 text-muted" style={{ fontSize: 13 }}>
-                      <i className="ri-loader-4-line emp-spin" /> Loading breakup…
-                    </div>
-                  ) : (
-                    <div style={{ position: 'relative' }}>
-                      {/* Scrim + label, not a replacement: the figures stay in
+                    ) : (
+                      <div style={{ position: 'relative' }}>
+                        {/* Scrim + label, not a replacement: the figures stay in
                           place underneath so the section doesn't collapse and
                           jump the page every time the CTC is edited. */}
-                      {breakupRecalcing && (
-                        <>
-                          <div style={{
-                            position: 'absolute', inset: -6, zIndex: 3, borderRadius: 10,
-                            background: 'var(--vz-card-bg, #fff)', opacity: 0.72,
-                          }} />
-                          <div style={{
-                            position: 'absolute', inset: -6, zIndex: 4,
-                            display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40,
-                          }}>
-                            <span className="d-inline-flex align-items-center gap-2 px-3 py-2"
-                              style={{
-                                fontSize: 12.5, fontWeight: 600, color: 'var(--vz-secondary-color)',
-                                background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)',
-                                borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
-                              }}>
-                              <i className="ri-loader-4-line emp-spin" /> Recalculating breakup…
-                            </span>
-                          </div>
-                        </>
-                      )}
-                      <div className="text-muted mb-2" style={{ fontSize: 12 }}>
-                        Monthly component breakup. Saved as the employee's active salary
-                        structure — payroll runs read these figures.
-                      </div>
-                      {/* How the auto-split + statutory deductions are derived,
-                          so anyone reading the breakup understands the figures. */}
-                      <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
-                        <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
-                        <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
-                        <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
-                        <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by the <em>PF Type</em> above). Toggle PF on/off via <em>PF Applicable</em> above.</li>
-                      </ul>
-                      <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
-                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={eEsiApplicable} onChange={e => setStatutoryToggle('esi', e.target.checked)} /> ESI
-                        </label>
-                        <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
-                          <input type="checkbox" checked={ePtApplicable} onChange={e => setStatutoryToggle('pt', e.target.checked)} /> Professional Tax
-                        </label>
-                        <span className="text-muted" style={{ fontSize: 11 }}>
-                          Ticking one adds it to Fixed Deductions — editable, and payroll uses what's saved here.
-                        </span>
-                      </div>
-                      {statutoryDrift && (
-                        <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2 p-2 px-3"
-                          style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 8, fontSize: 11.5 }}>
-                          <span className="text-muted">
-                            Professional Tax is ₹{statutoryDrift.typed.toLocaleString('en-IN')}; the slab for this salary works out to ₹{statutoryDrift.should.toLocaleString('en-IN')}.
-                          </span>
-                          <button type="button" onClick={applyStatutoryFigures}
-                            style={{ fontSize: 11, fontWeight: 700, color: '#5a3fd1', background: '#5a3fd112', border: '1px solid #5a3fd133', borderRadius: 8, padding: '3px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                            Use slab figure
-                          </button>
-                        </div>
-                      )}
-                      <Row className="g-4">
-                        <Col md={6}>{renderBreakTable('earn', '#108548', 'Earnings')}</Col>
-                        <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
-                      </Row>
-
-                      <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
-                        style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
-                        {/* Gross — sum of all earning components (NOT CTC; CTC also
-                            includes employer PF/ESI/gratuity, which aren't here). */}
-                        <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
-                        <div className="text-end">
-                          <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>
-                            ₹{breakupGross.toLocaleString('en-IN')}
-                          </div>
-                          {/* Annualised gross vs the entered Salary Amount —
-                              red when components exceed the CTC, green when at/under. */}
-                          <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
-                            ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
-                          </div>
-                          {salaryAnnual > 0 && breakupDiff !== 0 && (
-                            <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
-                              {breakupOverSalary
-                                ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
-                                : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
+                        {breakupRecalcing && (
+                          <>
+                            <div style={{
+                              position: 'absolute', inset: -6, zIndex: 3, borderRadius: 10,
+                              background: 'var(--vz-card-bg, #fff)', opacity: 0.72,
+                            }} />
+                            <div style={{
+                              position: 'absolute', inset: -6, zIndex: 4,
+                              display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 40,
+                            }}>
+                              <span className="d-inline-flex align-items-center gap-2 px-3 py-2"
+                                style={{
+                                  fontSize: 12.5, fontWeight: 600, color: 'var(--vz-secondary-color)',
+                                  background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)',
+                                  borderRadius: 999, boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+                                }}>
+                                <i className="ri-loader-4-line emp-spin" /> Recalculating breakup…
+                              </span>
                             </div>
-                          )}
-                          {salaryAnnual > 0 && breakupDiff === 0 && (
-                            <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
-                          )}
+                          </>
+                        )}
+                        <div className="text-muted mb-2" style={{ fontSize: 12 }}>
+                          Monthly component breakup. Saved as the employee's active salary
+                          structure — payroll runs read these figures.
                         </div>
-                      </div>
-                      {/* Live deduction estimate + net — Net = Gross − PF − ESI −
+                        {/* How the auto-split + statutory deductions are derived,
+                          so anyone reading the breakup understands the figures. */}
+                        <ul className="mb-3 ps-3" style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', lineHeight: 1.7 }}>
+                          <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
+                          <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
+                          <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
+                          <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by the <em>PF Type</em> above). Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                        </ul>
+                        <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
+                          <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={eEsiApplicable} onChange={e => setStatutoryToggle('esi', e.target.checked)} /> ESI
+                          </label>
+                          <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={ePtApplicable} onChange={e => setStatutoryToggle('pt', e.target.checked)} /> Professional Tax
+                          </label>
+                          <span className="text-muted" style={{ fontSize: 11 }}>
+                            Ticking one adds it to Fixed Deductions — editable, and payroll uses what's saved here.
+                          </span>
+                        </div>
+                        {statutoryDrift && (
+                          <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2 p-2 px-3"
+                            style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 8, fontSize: 11.5 }}>
+                            <span className="text-muted">
+                              Professional Tax is ₹{statutoryDrift.typed.toLocaleString('en-IN')}; the slab for this salary works out to ₹{statutoryDrift.should.toLocaleString('en-IN')}.
+                            </span>
+                            <button type="button" onClick={applyStatutoryFigures}
+                              style={{ fontSize: 11, fontWeight: 700, color: '#5a3fd1', background: '#5a3fd112', border: '1px solid #5a3fd133', borderRadius: 8, padding: '3px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                              Use slab figure
+                            </button>
+                          </div>
+                        )}
+                        <Row className="g-4">
+                          <Col md={6}>{renderBreakTable('earn', '#108548', 'Earnings')}</Col>
+                          <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
+                        </Row>
+
+                        <div className="d-flex align-items-center justify-content-between mt-3 p-2 px-3"
+                          style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                          {/* Gross — sum of all earning components (NOT CTC; CTC also
+                            includes employer PF/ESI/gratuity, which aren't here). */}
+                          <span className="fw-semibold" style={{ fontSize: 13 }}>Monthly Gross</span>
+                          <div className="text-end">
+                            <div className="fw-bold" style={{ fontSize: 18, color: '#5a3fd1' }}>
+                              ₹{breakupGross.toLocaleString('en-IN')}
+                            </div>
+                            {/* Annualised gross vs the entered Salary Amount —
+                              red when components exceed the CTC, green when at/under. */}
+                            <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (breakupOverSalary ? '#dc2626' : '#0a8754') }}>
+                              ≈ ₹{breakupAnnual.toLocaleString('en-IN')} / year
+                            </div>
+                            {salaryAnnual > 0 && breakupDiff !== 0 && (
+                              <div style={{ fontSize: 10.5, fontWeight: 600, color: breakupOverSalary ? '#dc2626' : '#0a8754' }}>
+                                {breakupOverSalary
+                                  ? `₹${breakupDiff.toLocaleString('en-IN')} over the salary (₹${salaryAnnual.toLocaleString('en-IN')})`
+                                  : `₹${Math.abs(breakupDiff).toLocaleString('en-IN')} under the salary (₹${salaryAnnual.toLocaleString('en-IN')})`}
+                              </div>
+                            )}
+                            {salaryAnnual > 0 && breakupDiff === 0 && (
+                              <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
+                            )}
+                          </div>
+                        </div>
+                        {/* Live deduction estimate + net — Net = Gross − PF − ESI −
                           PT − fixed deductions. Updates with PF / ESI / PT
                           selections and any Fixed Deductions added. */}
-                      {(ePfEligible || breakupDed > 0) && (
-                        <>
-                          {ePfEligible && (
-                            <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
-                              <span className="text-muted">
-                                Provident Fund (PF) — {ePfType === 'Standard'
-                                  ? '12% of full basic'
-                                  : `12% of ₹${Math.min(breakupBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
-                              </span>
-                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
-                            </div>
-                          )}
-                          {breakupDedExPf > 0 && (
-                            <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
-                              <span className="text-muted">Fixed Deductions</span>
-                              <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupDedExPf.toLocaleString('en-IN')}/mo</span>
-                            </div>
-                          )}
-                          <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3"
-                            style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
-                            <span className="fw-semibold" style={{ fontSize: 13 }}>Net (Monthly)</span>
-                            <div className="text-end">
-                              <div className="fw-bold" style={{ fontSize: 18, color: '#0a8754' }}>
-                                ₹{breakupNet.toLocaleString('en-IN')}
+                        {(ePfEligible || breakupDed > 0) && (
+                          <>
+                            {ePfEligible && (
+                              <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                                <span className="text-muted">
+                                  Provident Fund (PF) — {ePfType === 'Standard'
+                                    ? '12% of full basic'
+                                    : `12% of ₹${Math.min(breakupBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
+                                </span>
+                                <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
                               </div>
-                              <div className="text-muted" style={{ fontSize: 11.5 }}>
-                                Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
+                            )}
+                            {breakupDedExPf > 0 && (
+                              <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
+                                <span className="text-muted">Fixed Deductions</span>
+                                <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupDedExPf.toLocaleString('en-IN')}/mo</span>
+                              </div>
+                            )}
+                            <div className="d-flex align-items-center justify-content-between mt-2 p-2 px-3"
+                              style={{ background: 'var(--vz-secondary-bg)', borderRadius: 10, border: '1px solid var(--vz-border-color)' }}>
+                              <span className="fw-semibold" style={{ fontSize: 13 }}>Net (Monthly)</span>
+                              <div className="text-end">
+                                <div className="fw-bold" style={{ fontSize: 18, color: '#0a8754' }}>
+                                  ₹{breakupNet.toLocaleString('en-IN')}
+                                </div>
+                                <div className="text-muted" style={{ fontSize: 11.5 }}>
+                                  Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        </>
-                      )}
-                      {(eErrors.salary_breakup || breakupErrors.form) && (
-                        <small className="emp-err d-block mt-2">{eErrors.salary_breakup || breakupErrors.form}</small>
-                      )}
-                      <div className="text-muted mt-2" style={{ fontSize: 11 }}>
-                        Net shown is an estimate (PF / ESI / PT + fixed deductions); LOP and any final adjustments apply at payroll run-time.
+                          </>
+                        )}
+                        {(eErrors.salary_breakup || breakupErrors.form) && (
+                          <small className="emp-err d-block mt-2">{eErrors.salary_breakup || breakupErrors.form}</small>
+                        )}
+                        <div className="text-muted mt-2" style={{ fontSize: 11 }}>
+                          Net shown is an estimate (PF / ESI / PT + fixed deductions); LOP and any final adjustments apply at payroll run-time.
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
+                    )}
+                  </div>
+                </>
+              )}
             </fieldset>
           </div>
 
