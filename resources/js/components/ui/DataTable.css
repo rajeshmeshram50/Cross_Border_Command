@@ -101,7 +101,9 @@
   display: flex; align-items: center; gap: 10px 12px;
   /* Wrapping is the SMALL-SCREEN fallback only — see the nowrap rule below. */
   flex-wrap: wrap;
-  padding: 12px 14px;
+  /* Uniform padding — equal on all four sides so the tab rail / search sit with
+     the same gap top, bottom, left and right. */
+  padding: 8px;
   background: linear-gradient(110deg, var(--dt-a-50) 0%, var(--dt-a-100) 35%, var(--dt-a-150) 70%, var(--dt-a-200) 100%);
   border-bottom: 1px solid var(--dt-a-200);
   position: relative;

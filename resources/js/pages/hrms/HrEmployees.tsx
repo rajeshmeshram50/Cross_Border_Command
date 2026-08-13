@@ -349,7 +349,9 @@ export default function HrEmployees() {
     [mDesignations],
   );
   const primaryRoleOptions = useMemo(
-    () => mRoles.map(r => ({ value: String(r.id), label: r.name })),
+    // Carry department_id so the form can filter roles to the chosen department
+    // (CR-013). A role with no department = "All Departments" → shown everywhere.
+    () => mRoles.map(r => ({ value: String(r.id), label: r.name, deptId: r.department_id ?? null })),
     [mRoles],
   );
   const ancillaryRoleOptions = primaryRoleOptions;
@@ -630,14 +632,35 @@ export default function HrEmployees() {
   // Primary & Ancillary share the SAME role list, but a role can't be BOTH for
   // one employee: exclude the other side's current pick from each dropdown so
   // the clash is physically unselectable (a save-time guard backs it up too).
+  // CR-013: Primary/Ancillary roles are filtered STRICTLY to the selected
+  // Department — pick the department first, and the role list follows it. A role
+  // with no department ("All Departments") is available under every department;
+  // a role tied to another department is hidden.
+  const inSelectedDept = (o: { deptId: number | null }) =>
+    o.deptId == null || String(o.deptId) === eDept;
   const primaryRoleOptionsX = useMemo(
-    () => primaryRoleOptions.filter(o => !eAncillaryRole.includes(o.value)),
-    [primaryRoleOptions, eAncillaryRole],
+    () => primaryRoleOptions.filter(o => inSelectedDept(o) && !eAncillaryRole.includes(o.value)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primaryRoleOptions, eAncillaryRole, eDept],
   );
   const ancillaryRoleOptionsX = useMemo(
-    () => primaryRoleOptions.filter(o => o.value !== ePrimaryRole),
-    [primaryRoleOptions, ePrimaryRole],
+    () => primaryRoleOptions.filter(o => inSelectedDept(o) && o.value !== ePrimaryRole),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [primaryRoleOptions, ePrimaryRole, eDept],
   );
+  // CR-013: when the Department changes, drop any Primary/Ancillary role that
+  // doesn't belong to the new department so the selection always matches it.
+  useEffect(() => {
+    if (!eDept || mRoles.length === 0) return;
+    const validIds = new Set(
+      mRoles
+        .filter((r: any) => r.department_id == null || String(r.department_id) === eDept)
+        .map((r: any) => String(r.id)),
+    );
+    setEPrimaryRole(prev => (prev && !validIds.has(prev) ? '' : prev));
+    setEAncillaryRole(prev => prev.filter(id => validIds.has(id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eDept, mRoles]);
   const [eLegalEntity, setELegalEntity] = useState('');
   /* Display name for the read-only Legal Entity field. Held separately from the
      id because when editing an employee of another branch the saved entity may

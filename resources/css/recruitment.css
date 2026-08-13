@@ -766,7 +766,11 @@
   border-color: #f06548 !important;
   box-shadow: 0 0 0 3px rgba(240,101,72,0.20), 0 4px 12px rgba(240,101,72,0.15) !important;
 }
+/* One line. The messages are kept to a few words in HrRecruitment.tsx (the
+   validators and shortenServerError) so this never needs to wrap; nowrap on the
+   icon just stops it being squashed to a sliver if one ever runs long. */
 .rec-error { color: #f06548; font-size: 11.5px; margin-top: 3px; display: flex; align-items: center; gap: 4px; }
+.rec-error i { flex-shrink: 0; }
 
 /* ---------------------------------------------------------------------
    3. Work-mode segmented buttons + urgency pills — compact + glossy
@@ -949,6 +953,13 @@
 [data-bs-theme="dark"] .rec-form-footer { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 .rec-form-footer .hint { font-size: 11.5px; color: var(--vz-secondary-color); }
 /* Primary CTA — vivid purple gradient (#865ce2 → lavender) */
+/* Header action buttons (Create Recruitment / View Hiring Requests) sit at the
+   tab-GROUP height (~48px) so they line up with the tab box below. Scoped to the
+   page header so modal-footer buttons that share the class stay 36px. */
+.rec-hero-actions .rec-btn-primary,
+.rec-hero-actions .rec-btn-teal {
+  height: 40px; padding-top: 0; padding-bottom: 0; border-radius: 12px;
+}
 .rec-btn-primary {
   padding: 6px 18px; height: 36px; border-radius: 10px;
   font-size: 12.5px; font-weight: 700; color: #fff;
@@ -1418,13 +1429,22 @@
    the modal read as one continuous block with no boundary between the summary
    and the list. */
 .rec-req-stats {
-  display: grid; grid-template-columns: repeat(5, minmax(0,1fr)); gap: 12px;
+  display: grid; grid-template-columns: repeat(5, minmax(0,1fr));
+  /* All three gaps are the Recruitment Management page's, so the modal spaces
+     its summary exactly the way the page does. The page does NOT use the 16px
+     its mb-3 classes imply — app.css overrides both down to 8px:
+       above cards   = 8px  (div.frm-cstrip margin-bottom, app.css:151)
+       below cards   = 8px  (the KPI row's margin-bottom, app.css:170)
+       card-to-card  = 4px  (--bs-gutter-x/y on that same rule)
+     The 8px below lives in this block's padding-bottom with
+     .rec-req-tablewrap contributing 0 on top, so the two never stack. */
+  gap: 4px;
   /* 19px so a KPI card's left edge lands on the tab rail's left edge below it.
      That 19 is the sum of what sits between the modal edge and the rail:
      .rec-req-tablewrap padding (4) + .dt-root border (1) + .dt-toolbar
      padding-left (14). Change any of those three and this has to follow, or
      the cards and the tabs stop starting at the same point. */
-  padding: 18px 19px;
+  padding: 8px 19px;
   border-bottom: 1px solid #ede9fe;
   background:
     radial-gradient(800px 240px at 0% 0%, rgba(124,92,252,0.06) 0%, transparent 55%),
@@ -1434,18 +1454,23 @@
 
 /* Table panel — the second of the two containers. Plain surface (no violet
    wash) so it separates cleanly from the KPI band, with the requested 4px
-   left/right inset. The vertical padding is what actually lets the DataTable's
-   16px corner radius and its shadow render instead of being clipped flush
-   against the modal edges. */
+   left/right inset. padding-top is 0 on purpose: the 8px cards-to-table gap is
+   owned entirely by .rec-req-stats' padding-bottom, so the two don't stack into
+   a double gap. padding-bottom is the SAME 8px, so the space under the table
+   matches the space above it — and it still clears the DataTable's 16px corner
+   radius and shadow off the modal edge. */
 .rec-req-tablewrap {
-  padding: 14px 4px 16px;
+  padding: 0 4px 8px;
   background: #ffffff;
 }
 [data-bs-theme="dark"] .rec-req-tablewrap {
   background: var(--vz-secondary-bg, #1a1d21);
 }
 @media (max-width: 1199px) { .rec-req-stats { grid-template-columns: repeat(3, minmax(0,1fr)); } }
-@media (max-width: 575px)  { .rec-req-stats { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; } }
+/* Column count drops with width, but the gap does NOT — the page's g-1 gutter
+   is the same at every breakpoint, so this used to widen to 8px and stop
+   matching. */
+@media (max-width: 575px)  { .rec-req-stats { grid-template-columns: repeat(2, minmax(0,1fr)); } }
 [data-bs-theme="dark"] .rec-req-stats {
   background: var(--vz-card-bg);
   border-color: var(--vz-border-color);
@@ -1573,19 +1598,41 @@
 .rec-act-reject:hover   { background: #fecaca; }
 .rec-act-sendback { background: #fef3c7; color: #92400e; border-color: #fde68a; }
 .rec-act-sendback:hover { background: #fde68a; }
+/* Create Recruitment — the in-row primary action. Styled to MATCH
+   `.onb-init-btn.is-compact` (the Employee Onboarding list's "Initiate
+   Onboarding" pill) so the two primary in-row actions in HRMS read as the same
+   control: 34px tall, 9px radius, 4-stop violet gradient with a lit top edge
+   (the ::before sheen) and a text-shadow that keeps the label crisp on it.
+   Duplicated rather than borrowing the class — .onb-init-btn lives in
+   HrEmployeeOnboarding.css, which only enters the bundle when that lazy-loaded
+   page is visited, so referencing it from here would style correctly or not
+   depending on where the user had been first.
+   Overrides the base .rec-act pill (26px, radius 999) on every property that
+   differs, so the two do not have to be untangled. */
 .rec-act-create {
-  background: linear-gradient(135deg,#5b3fd1,#7c5cfc);
-  color: #ffffff;
-  border-color: transparent;
-  box-shadow: 0 2px 6px rgba(91,63,209,0.25), inset 0 1px 0 rgba(255,255,255,0.18);
-  padding: 0 12px;
-  font-weight: 500;
+  position: relative; overflow: hidden;
+  height: 34px; width: auto; flex-shrink: 0;
+  gap: 8px; padding: 0 17px;
+  font-family: inherit; font-size: 12px; font-weight: 700; letter-spacing: .012em;
+  color: #fff; border: none; border-radius: 9px;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 38%, #7c3aed 70%, #6d28d9 100%);
+  box-shadow: 0 4px 12px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.4) inset, 0 -2px 6px rgba(91,33,182,.3) inset;
+  text-shadow: 0 1px 2px rgba(76,29,149,.4);
+  justify-content: center;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  text-shadow: 0 1px 0 rgba(0,0,0,0.10);
-  letter-spacing: 0.02em;
 }
-.rec-act-create:hover { background: linear-gradient(135deg,#4338ca,#6366f1); transform: translateY(-1px); box-shadow: 0 4px 10px rgba(91,63,209,0.35), inset 0 1px 0 rgba(255,255,255,0.22); }
+.rec-act-create::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  background: linear-gradient(180deg, rgba(255,255,255,.28), transparent);
+  pointer-events: none;
+}
+.rec-act-create > * { position: relative; z-index: 1; }
+.rec-act-create i { font-size: 13px; }
+.rec-act-create:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 7px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.4) inset;
+}
 
 /* ── Dark mode — the action pills are light-tinted by default; swap to
    translucent colour fills + light text so they read on the dark table. ── */
@@ -1739,6 +1786,13 @@
 /* ---------------------------------------------------------------------
    9. View Request detail modal — read-only field grid
    --------------------------------------------------------------------- */
+/* Wider than Bootstrap's modal-lg (800px), which was cramping the 4-column
+   field grids inside — "Legal Compliance Associate" wrapped onto two lines in a
+   column that had room to spare. Still narrower than the Hiring Requests list
+   behind it (min(1380px, 97vw)) so this reads as a panel ON TOP of that list
+   rather than replacing it. Beats size="lg" on specificity, so the modal-lg
+   class staying on the dialog is harmless. */
+.rec-view-modal .modal-dialog { max-width: min(1080px, 96vw); }
 .rec-view-content { border-radius: 16px !important; overflow: hidden; box-shadow: 0 24px 60px rgba(91,63,209,0.20); }
 .rec-view-body {
   background: #f8f9fc;
