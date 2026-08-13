@@ -215,8 +215,11 @@ body {
   letter-spacing: -0.02em;
 }
 ::-webkit-scrollbar {
-  width: 2px;
-  height: 2px;
+  /* Restored to a visible, grabbable width — a prior "changes" commit dropped
+     this to 2px, which made every scrollbar app-wide (modals, tables, the
+     agreement popup) look removed. */
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {

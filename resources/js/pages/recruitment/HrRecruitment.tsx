@@ -1345,7 +1345,11 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
   const rejectedCount = useMemo(() => requests.filter(r => r.status === 'Rejected').length, [requests, linkedHrIds]);
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     8+10+9+10+5+8+10+10+10+20. Request Type was dropped from the grid; the field
+     8+10+9+9+8+8+10+9+9+20. Openings went 5% -> 8%: at 5% the header word plus
+     the sort arrows had no room and the arrows collided with the label. The 3%
+     comes off Requested By and the two date columns (10% -> 9% each), all of
+     which had slack — the dates render a fixed "13-Aug-2026" and the name cell
+     already truncates. Request Type was dropped from the grid; the field
      is still mapped on the row (and still saved), it just isn't a column any
      more — nothing else on this screen renders it, so removing the column is
      the only place it was visible.
@@ -1385,13 +1389,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
       // than meaning anything.
       header: 'Requested By',
       accessorKey: 'requestedByName',
-      meta: { width: '10%' },
+      meta: { width: '9%' },
       cell: info => <TruncCell value={info.row.original.requestedByName} caseSensitive />,
     },
     {
       header: () => <div className="text-center">Openings</div>,
       accessorKey: 'openings',
-      meta: { width: '5%', align: 'center' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <span className="rec-num">{String(info.getValue() ?? '')}</span>,
     },
     {
@@ -1416,8 +1420,8 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         );
       },
     },
-    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
-    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '10%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
+    { header: 'Req Date',    accessorKey: 'requestDate',    meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.requestDate)}</span> },
+    { header: 'Target Join', accessorKey: 'targetJoinDate', meta: { width: '9%' }, cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.targetJoinDate)}</span> },
     {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
@@ -1502,7 +1506,13 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
             NOT autoFitRows (the one HRMS table without it): auto-fit measures
             from the card top to the viewport bottom, which inside a modal body
             would ask for more rows than the modal can show. Fixed page size
-            instead; the Rows-per-page selector still works. */}
+            instead; the Rows-per-page selector still works.
+
+            The wrapper is what separates this panel from the KPI band above:
+            the band keeps its tinted violet wash, the table sits on a plain
+            surface, and the 4px side inset lets the card's rounded corners
+            read as a card instead of butting into the modal edge. */}
+        <div className="rec-req-tablewrap">
         <DataTable<HiringRequestRow>
           data={filtered}
           columns={columns}
@@ -1535,8 +1545,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
             </>
           }
         />
-
-        
+        </div>
       </ModalBody>
 
       <ViewHiringRequestModal

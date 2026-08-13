@@ -112,7 +112,10 @@ interface Props {
 export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved }: Props) {
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
-  useScrollLock(open);      // freeze background page scroll while open
+  // Freeze the BACKGROUND page scroll, but exclude this modal's own subtree —
+  // without the exceptSelector the lock also froze `.agw-body`, so the form
+  // content couldn't scroll internally.
+  useScrollLock(open, '.agw-overlay');
   const editingId = existing?.id ?? null;
 
   const [step, setStep] = useState<1 | 2>(1);
