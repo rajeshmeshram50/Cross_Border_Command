@@ -171,6 +171,14 @@ class PayrollService
             // Keep the identity / linkage columns; overwrite the computed ones.
             unset($data['client_id'], $data['branch_id']);
             $slip->fill($data)->save();
+            // Keep the advance-recovery ledger in step with the recomputed slip.
+            // generate() writes it, but this correction path did not — so after
+            // an attendance/leave fix changed the EMI actually recovered, the
+            // ledger kept the pre-correction figure and the advance's
+            // recovered/carried balance drifted from the payslip. The write is
+            // keyed (advance, stream, year, month), so re-running it overwrites
+            // rather than adding a row. (PAY-50)
+            $this->recordRecoveryLedger($period, $employeeId, $this->lastRecoveryBreakdown);
             $updated++;
             $touchedRuns[$slip->payroll_run_id] = $slip->run;
         }
@@ -710,7 +718,18 @@ class PayrollService
                 && in_array((string) $e->status, ['Inactive', 'Resigned', 'Terminated'], true)
                 && in_array($e->id, $paidLast, true);
 
-            if (!$earlyExit && !$exitedInCycle && !$halfOnboarded && !$payrollOff && !$statusGone) {
+            /* Removed from the Employees list (EmployeeController::destroy soft-
+               deletes and disables the login) WITHOUT going through Exit
+               Management, so there is no last working day and the status is
+               often still "Active". None of the branches above fire, and the
+               employee simply disappeared from the run — the exact silent drop
+               this panel exists to prevent. Bounded by paidLast for the same
+               reason statusGone is: only a person the previous cycle actually
+               paid makes their absence a change worth explaining, and the bound
+               keeps every long-disabled record out of every future panel. */
+            $disabledNoExit = !$lwd && $e->trashed() && in_array($e->id, $paidLast, true);
+
+            if (!$earlyExit && !$exitedInCycle && !$halfOnboarded && !$payrollOff && !$statusGone && !$disabledNoExit) {
                 continue;
             }
 
@@ -801,9 +820,13 @@ class PayrollService
                                 . ' of 6) — excluded from payroll until onboarding is completed.'
                             : ($payrollOff
                                 ? 'Payroll is switched off on this employee record — no payslip is generated for them.'
+                                : ($disabledNoExit
+                                ? 'Employee record was removed/disabled — paid last cycle, not this one.'
+                                    . ' No exit record with a last working day exists, so any dues must be'
+                                    . ' settled manually or through Exit Management.'
                                 : 'Employee status is ' . $e->status . ' — paid last cycle, not this one.'
                                     . ' No exit record with a last working day exists, so any dues must be'
-                                    . ' settled manually or through Exit Management.'))))
+                                    . ' settled manually or through Exit Management.')))))
                     . ($probationLeaver
                         ? ' Left before completing probation (probation ran to '
                             . $probationEnd->format('j M Y') . ') — notice period was not applicable.'
@@ -1123,11 +1146,44 @@ class PayrollService
         );
 
         if ($gross <= 0) {
-            // No structure and no fallback salary → cannot pay. Block it.
-            $base['exceptions'] = $this->withException($exceptions, 'blocking',
-                'No active salary structure or salary on file — employee skipped.');
+            /* Rule 26 — nothing payable, so the employee is held rather than
+             * paid ₹0. The reason has to say WHICH of these it is: all four
+             * used to read "No active salary structure or salary on file",
+             * which sends HR hunting for a structure that in three of the four
+             * cases already exists — it is merely a draft, future-dated, or
+             * priced at zero. Naming the actual cause turns a support ticket
+             * into a two-minute fix. */
+            $anyStructure = SalaryStructure::where('employee_id', $employee->id)
+                ->orderByDesc('effective_from')->orderByDesc('version')
+                ->first(['status', 'effective_from', 'monthly_gross']);
+
+            [$holdReason, $detail] = match (true) {
+                $anyStructure === null => [
+                    'Missing salary structure',
+                    'No salary structure and no annual salary on file — nothing to pay.',
+                ],
+                (float) $anyStructure->monthly_gross <= 0 => [
+                    'Salary structure has no value',
+                    'The salary structure on file has a monthly gross of ₹0 — set the amounts before running payroll.',
+                ],
+                Carbon::parse($anyStructure->effective_from)->gt($winEnd) => [
+                    'Salary structure not yet effective',
+                    'The salary structure starts on ' . Carbon::parse($anyStructure->effective_from)->format('d M Y')
+                        . ', after this cycle ends — no version is in force for ' . $period->label . '.',
+                ],
+                strtolower((string) $anyStructure->status) === 'draft' => [
+                    'Salary structure is still a draft',
+                    'The salary structure is saved as a draft — publish it (Active) so payroll can use it.',
+                ],
+                default => [
+                    'Missing salary structure',
+                    'No active salary structure or salary on file — employee skipped.',
+                ],
+            };
+
+            $base['exceptions'] = $this->withException($exceptions, 'blocking', $detail);
             $base['status']      = 'On Hold';
-            $base['hold_reason'] = 'Missing salary structure';
+            $base['hold_reason'] = $holdReason;
             return $base;
         }
 
@@ -1160,8 +1216,15 @@ class PayrollService
             : $empWorkingDays;
 
         // ── Rules 2 & 3 — attendance + leave ───────────────────────────────
+        // Short-hours policy comes from the employee's own branch; an employee
+        // with no branch gets the disabled defaults, so nothing is demoted.
+        $shortBranch = $employee->relationLoaded('branch') ? $employee->getRelation('branch') : $employee->branch;
+        $shortPolicy = $shortBranch
+            ? $shortBranch->shortHoursPolicy()
+            : \App\Models\Branch::normalizeShortHoursPolicy(null);
+
         $att = $this->attendanceAggregates(
-            $employee->id, $winStart, $winEnd, $employee->resolveShiftWindow()[0]
+            $employee->id, $winStart, $winEnd, $employee->resolveShiftWindow()[0], $shortPolicy
         );
         $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
         // Holidays from the employee's assigned holiday group that fall on a
@@ -1182,42 +1245,98 @@ class PayrollService
                 "{$missingPunch} day(s) with a missing punch — verify attendance before approving.");
         }
 
-        // Paid days = present + paid leave + group holidays (capped to the
-        // window). The min() cap means holidays only ever fill the unpaid gap
-        // up to the working-day ceiling — they can never inflate paid days for
-        // an employee who was already present every working day.
-        $paidDays = min($effectiveWorkingDays, $presentDays + $paidLeaveDays + $holidayDays);
+        /* PAY-17 — days the short-hours policy demoted. Named individually with
+         * the hours actually worked, because this is pay coming off the back of
+         * a threshold the employee cannot see on their own clock-in screen; HR
+         * has to be able to check the claim day by day before approving. */
+        $shortDays = $att['short_days'] ?? [];
+        if ($shortDays) {
+            $detail = implode(', ', array_map(
+                fn ($d) => Carbon::parse($d['date'])->format('d M')
+                    . ' (' . ($d['hours'] !== null ? $this->trimNum((float) $d['hours']) . 'h' : 'unmeasured')
+                    . ' → ' . $this->trimNum((float) $d['credit']) . ' day)',
+                array_slice($shortDays, 0, 8),
+            ));
+            $more = count($shortDays) > 8 ? ' +' . (count($shortDays) - 8) . ' more' : '';
+            $exceptions = $this->withException($exceptions, 'warning',
+                count($shortDays) . " day(s) short of this branch's "
+                . $this->trimNum((float) $shortPolicy['half_day_below']) . "h minimum: {$detail}{$more}.");
+        }
 
-        /* PAY-13 — paid leave that OVERLAPS days already credited.
+        /* Paid days, reconciled DATE BY DATE (PAY-13 / PAY-14).
          *
-         * The min() above protects the money ceiling but destroys the evidence:
-         * when present + paid leave + holidays exceed the working days, the
-         * surplus is silently absorbed. That is harmless when the employee was
-         * present every day anyway, but it also means a paid leave filed on
-         * days the employee was ALREADY marked present backfills the loss of
-         * pay for unrelated days they never turned up for — 23 present days,
-         * 3 unexplained absences and a 3-day paid leave over the present ones
-         * nets a full month's salary with LOP 0 and nothing on the slip.
+         * This used to be three independent running totals added together and
+         * capped: min(workingDays, present + paidLeave + holidays). The cap
+         * kept the ceiling honest, but the arithmetic was blind to WHICH dates
+         * each total came from, and that silently mispaid two shapes:
          *
-         * The unpaid side already reports its version of this a few lines down.
-         * Same treatment here: flag it for HR to reconcile before approving
-         * rather than change the number, because either source can be the wrong
-         * one — a duplicate leave request or a bad attendance punch. */
+         *   · A paid leave filed on dates the employee was ALREADY marked
+         *     present freed up head-room that then backfilled unrelated days
+         *     they never turned up for. 23 present + 3 unexplained absences +
+         *     a 3-day paid leave over the present ones = 26 paid, 0 LOP, a
+         *     full month's salary, and nothing on the slip.
+         *   · An approved UNPAID leave on dates attendance also marked present
+         *     deducted nothing at all: LOP is whatever is left of the working
+         *     days, those days were already filled by the present credit, and
+         *     so unpaid_leave_days was a label with no money behind it.
+         *
+         * Both disappear once each date is settled on its own:
+         *
+         *     payable(d) = min(1 - unpaidLeave(d), present(d) + paidLeave(d) + holiday(d))
+         *
+         * An approved unpaid leave now RESERVES its share of the day and
+         * nothing can pay it back — a present punch on an LWP day no longer
+         * cancels the deduction. Conversely a paid leave can only ever pay for
+         * its own dates, so it can never mask an absence somewhere else.
+         *
+         * Half days survive intact: 0.5 present + 0.5 paid leave = 1 payable;
+         * 0.5 present + 0.5 unpaid = min(0.5, 0.5) = 0.5 payable, 0.5 LOP.
+         *
+         * Only the employee's OWN working dates are walked. Attendance on a
+         * weekly off is deliberately not payable here — those days are not in
+         * the working-day denominator the money is built from, so crediting
+         * them would let a Sunday shift cancel a Monday absence. Hours worked
+         * on an off-day are paid through overtime, not by offsetting LOP. */
+        $holidaySet   = $this->holidayDateSet($employee, $winStart, $winEnd);
+        $workedDates  = $att['worked_dates'] ?? [];
+        $paidDates    = $leave['paid_dates'] ?? [];
+        $unpaidDates  = $leave['unpaid_dates'] ?? [];
+        $weeklyOffLbl = (string) ($employee->weekly_off ?? '');
+
+        $paidDays    = 0.0;
         $overlapDays = 0.0;
-        foreach (($leave['paid_dates'] ?? []) as $date => $leaveCredit) {
-            $bothCredit = $leaveCredit + (float) (($att['worked_dates'] ?? [])[$date] ?? 0);
-            if ($bothCredit > 1.001) {
-                // A half-day leave on a half-day present totals 1 — that is the
-                // legitimate shape and must not be flagged. Only the surplus
-                // past a whole day counts as double-credited.
-                $overlapDays += $bothCredit - 1;
+        /* Work credit earned on the employee's OWN working dates. This is what
+         * "did this person actually attend?" means — distinct from $presentDays,
+         * which also counts punches on weekly offs. Used by the zero-attendance
+         * check further down. */
+        $workedOnWorkingDays = 0.0;
+        for ($d = $winStart->copy(); $d->lte($winEnd); $d->addDay()) {
+            if (\App\Support\WeekOff::isOff($weeklyOffLbl, $d)) {
+                continue;
+            }
+            $ds       = $d->toDateString();
+            $worked   = (float) ($workedDates[$ds] ?? 0);
+            $workedOnWorkingDays += $worked;
+            $paidLv   = (float) ($paidDates[$ds] ?? 0);
+            $unpaidLv = (float) ($unpaidDates[$ds] ?? 0);
+            $holiday  = isset($holidaySet[$ds]) ? 1.0 : 0.0;
+
+            $credited = $worked + $paidLv + $holiday;
+            $paidDays += max(0.0, min(1.0 - $unpaidLv, $credited));
+
+            // Two sources claiming the same day is a data-quality problem even
+            // now that the money is right — HR should still be told that the
+            // punch and the leave request disagree.
+            if ($credited + $unpaidLv > 1.001) {
+                $overlapDays += $credited + $unpaidLv - 1;
             }
         }
+        $paidDays    = round(min($effectiveWorkingDays, $paidDays), 2);
         $overlapDays = round($overlapDays, 2);
         if ($overlapDays > 0) {
             $exceptions = $this->withException($exceptions, 'warning',
-                "{$overlapDays} day(s) counted twice — attendance marks the employee present on dates their approved "
-                . "paid leave also covers. Verify before approving: this can mask loss of pay for other days.");
+                "{$overlapDays} day(s) where attendance and an approved leave request cover the same date. "
+                . "The leave request has been taken as the truth for pay — verify the punches before approving.");
         }
 
         /* Weekly offs in the active window.
@@ -1309,17 +1428,34 @@ class PayrollService
         $proratedGross = round($gross * $proration, 2);
         $proratedBasic = round($basic * $proration, 2);
 
-        // Daily salary is computed on the TOTAL CALENDAR DAYS of the month
-        // (e.g. ÷30 or ÷31), NOT on working days (÷26). So one loss-of-pay day
-        // always costs the same regardless of how many Sundays the month has.
         $totalMonthDays = max(1, $calDays);
 
-        // Loss-of-pay is charged on the BASIC monthly salary — NOT on the total
-        // monthly earning (gross). Per-day = basic ÷ total month days, times the
-        // absent working days. Allowances (HRA / special / etc.) are not clawed
-        // back for an absence. The deduction is capped at the pro-rated basic so
-        // it can never exceed the basic actually payable this cycle.
-        $lopAmount = round(($basic / $totalMonthDays) * $lopDays, 2);
+        /* Rule 3 (PAY-15) — what one absent day costs, per the EMPLOYEE'S
+         * BRANCH policy (Branch → LOP Policy):
+         *
+         *     per-day = (basic | gross) ÷ (calendar days | working days)
+         *
+         * A branch that was never configured falls back to the legacy rule
+         * inside Branch::lopPolicy() — BASIC ÷ CALENDAR DAYS — so historic runs
+         * stay reproducible and nothing moves until an admin changes it.
+         *
+         * Dividing by calendar days rather than working days means one LOP day
+         * costs the same no matter how many Sundays the month happens to have.
+         * Charging on basic rather than gross means allowances (HRA / special)
+         * are not clawed back for an absence — which is why an employee absent
+         * for a whole month still receives the allowance half of their salary.
+         * Both are now deliberate settings rather than buried constants.
+         *
+         * The deduction is capped at the pro-rated BASIC either way, so it can
+         * never exceed the basic actually payable this cycle. */
+        $lopBranch = $employee->relationLoaded('branch') ? $employee->getRelation('branch') : $employee->branch;
+        $lopPolicy = $lopBranch
+            ? $lopBranch->lopPolicy()
+            : \App\Models\Branch::normalizeLopPolicy(null);
+        $lopPerDay = \App\Models\Branch::lopPerDayFor(
+            $lopPolicy, $basic, $gross, $totalMonthDays, (float) $effectiveWorkingDays,
+        );
+        $lopAmount = round($lopPerDay * $lopDays, 2);
         $lopAmount = min($lopAmount, $proratedBasic);
 
         // Earned pay = pro-rated gross minus the basic-based LOP. earnedBasic
@@ -1404,6 +1540,24 @@ class PayrollService
                 $rate['rate_found'] ? ' ' . $rate['rate_name'] : '× (no active OT rate — 1× hourly)',
                 number_format($amount, 2),
             ));
+
+            /* PAY-21 — the employee is assigned an OT rate that no longer
+             * resolves against the Overtime Rate master (renamed, deactivated,
+             * deleted, or scoped to another tenant). The multiplier silently
+             * falls back to 1×, which on a "Double Time" employee is half the
+             * overtime they were promised — and the line above said so only as
+             * `info`, leaving the slip Ready. Somebody deactivating one master
+             * row could quietly halve overtime for everyone on it with nothing
+             * on the run to show for it. Warned, so the slip goes to Pending
+             * Review and HR fixes the master or the employee record. */
+            if (!$rate['rate_found'] && $rate['rate_name'] !== null) {
+                $exceptions = $this->withException($exceptions, 'warning', sprintf(
+                    'Overtime rate "%s" is not an active rate in the Overtime Rate master — '
+                    . 'overtime paid at 1× hourly instead. Fix the rate or the employee\'s '
+                    . 'overtime setting before approving.',
+                    $rate['rate_name'],
+                ));
+            }
         } elseif ($otDetected['hours'] > 0) {
             // An adjustment overrode the detected hours — say so, so a figure
             // that doesn't match the attendance isn't mistaken for a bug.
@@ -1541,11 +1695,36 @@ class PayrollService
          * reads "Ready" with a large net. Flagged as a warning rather than a
          * hold, because tenants that do not track attendance at all would
          * otherwise have their entire run blocked. */
-        if (($att['rows'] ?? 0) === 0 && $effectiveWorkingDays > 0 && $paidDays <= 0) {
+        /* The test is "did this employee earn ANY work credit on a day they were
+         * due to work, while still losing pay?" — not "does the attendance
+         * table have zero rows for them".
+         *
+         * Keying off the row count let a single meaningless row switch the
+         * warning off while the employee stayed fully docked. All three of
+         * these silently read "Ready" with a five-figure deduction and nothing
+         * on the slip:
+         *   · one row whose status is 'Absent' — the marker a missed import
+         *     often leaves behind;
+         *   · punches on weekly offs only, which are not payable and so paid
+         *     for nothing, yet counted as "rows exist";
+         *   · a public holiday inside the cycle, which credited paid days above
+         *     zero and defeated the old $paidDays <= 0 half of the test.
+         *
+         * Work credit on the employee's own working dates answers the question
+         * directly, and $lopDays > 0 keeps a legitimately fully-covered month
+         * (all approved paid leave) from being flagged as a data problem. */
+        if ($workedOnWorkingDays <= 0 && $effectiveWorkingDays > 0 && $lopDays > 0) {
+            // An approved unpaid leave covering the cycle explains the absence,
+            // so don't send HR hunting for a broken device sync in that case.
+            $explained = $unpaidLeaveDays > 0
+                && $unpaidLeaveDays + 0.005 >= $effectiveWorkingDays;
             $exceptions = $this->withException($exceptions, 'warning',
                 'No attendance recorded at all this cycle — ' . $this->trimNum($lopDays)
-                . ' day(s) charged as loss of pay. Verify the attendance data before approving;'
-                . ' a missing device sync looks exactly like this.');
+                . ' day(s) charged as loss of pay.'
+                . ($explained
+                    ? ' Covered by approved unpaid leave; confirm that is correct before approving.'
+                    : ' Verify the attendance data before approving;'
+                      . ' a missing device sync looks exactly like this.'));
         }
         if ($netPay <= 0 && $proratedGross > 0) {
             $exceptions = $this->withException($exceptions, 'warning',
@@ -1915,16 +2094,33 @@ class PayrollService
         return $dates;
     }
 
-    private function attendanceAggregates(int $employeeId, Carbon $start, Carbon $end, ?string $shiftStart = null): array
-    {
+    private function attendanceAggregates(
+        int $employeeId,
+        Carbon $start,
+        Carbon $end,
+        ?string $shiftStart = null,
+        array $shortHours = [],
+    ): array {
         if (!Schema::hasTable('attendances')) {
-            return ['present' => 0, 'late' => 0, 'missing' => 0, 'rows' => 0, 'worked_dates' => []];
+            return ['present' => 0, 'late' => 0, 'missing' => 0, 'rows' => 0,
+                    'worked_dates' => [], 'short_days' => []];
         }
         $rows = DB::table('attendances')
             ->where('employee_id', $employeeId)
             ->whereNull('deleted_at')
             ->whereBetween('attendance_date', [$start->toDateString(), $end->toDateString()])
-            ->get(['attendance_date', 'status', 'check_in_at', 'check_out_at']);
+            ->get(['id', 'attendance_date', 'status', 'check_in_at', 'check_out_at']);
+
+        /* Minutes actually worked per day, only fetched when the branch runs a
+         * short-hours policy — otherwise this is a punch-table scan nobody
+         * needs. Measured from completed in→out pairs so a lunch break is not
+         * counted as time worked; a day whose pairs don't close falls back to
+         * the first-in → last-out span, and a day missing one side entirely
+         * measures to null and is left alone (see Branch::shortHoursCreditFor). */
+        $shortPolicy   = \App\Models\Branch::normalizeShortHoursPolicy($shortHours ?: null);
+        $workedMinutes = $shortPolicy['enabled']
+            ? $this->workedMinutesByDate($rows)
+            : [];
 
         // The face-clock flow always stores 'Present' on first punch — the
         // 'Late' status is derived at READ time from the shift-start heuristic
@@ -1941,17 +2137,23 @@ class PayrollService
          * approved leave covers?" — a question the running total can't answer.
          * See the overlap guard in computeForEmployee(). */
         $workedDates = [];
+        /** Days the short-hours policy demoted, for the payslip warning. */
+        $shortDays = [];
         foreach ($rows as $r) {
             $status = (string) ($r->status ?? '');
             $hasIn  = !empty($r->check_in_at);
             $hasOut = !empty($r->check_out_at);
-            // Promote Present → Late when first-in is >10 min past shift start
-            // (10-min grace + UTC→local conversion mirror the attendance module).
-            if (strcasecmp($status, 'Present') === 0 && $hasIn) {
+            /* Is the first punch past the shift start? 10-minute grace, and the
+             * UTC→local conversion mirrors the attendance module. */
+            $arrivedLate = false;
+            if ($hasIn && in_array(strtolower($status), ['present', 'half day'], true)) {
                 $localIn = Carbon::parse($r->check_in_at, 'UTC')->setTimezone(self::DISPLAY_TZ)->format('H:i');
-                if ($this->minutesBetween($shiftStart, $localIn) > 10) {
-                    $status = 'Late';
-                }
+                $arrivedLate = $this->minutesBetween($shiftStart, $localIn) > 10;
+            }
+            // Promote Present → Late so the payslip's Late Marks column and the
+            // Biometric Input table are not permanently zero (#34).
+            if ($arrivedLate && strcasecmp($status, 'Present') === 0) {
+                $status = 'Late';
             }
 
             $worked = false;
@@ -1965,7 +2167,19 @@ class PayrollService
                 case 'Late':
                     $present += 1; $late++; $worked = true; break;
                 case 'Half Day':
-                    $present += 0.5; $worked = true; break;
+                    /* A half day counts a late mark too when the employee
+                     * arrived after the grace window. It used to be invisible:
+                     * the promotion above only ran on 'Present', so someone who
+                     * turned up at 10:30 and worked a half day recorded ZERO
+                     * late marks and the slip carried no late-mark line at all —
+                     * turning up late was free as long as the day was short.
+                     * The day's credit is untouched at 0.5; only the late count
+                     * changes, and that still only costs pay once the branch's
+                     * threshold is reached. */
+                    $present += 0.5;
+                    if ($arrivedLate) $late++;
+                    $worked = true;
+                    break;
                 case 'Missing In':
                 case 'Missing Out':
                     $present += 1; $missing++; $worked = true; break;
@@ -1982,15 +2196,106 @@ class PayrollService
             }
 
             $credit = round($present - $creditBefore, 2);
+            $key    = Carbon::parse($r->attendance_date)->toDateString();
+
+            /* Rule 3 (PAY-17) — short hours demote a full day to half (or to
+             * nothing) per the branch policy. Applied here, at the point the
+             * day earns its credit, so every downstream figure — present days,
+             * paid days, LOP, the per-date overlap reconciliation — sees one
+             * consistent number. A day the policy demotes is reported so the
+             * slip can say why it was not a full day. */
+            if ($shortPolicy['enabled'] && $credit >= 1.0) {
+                $mins    = $workedMinutes[$key] ?? null;
+                $allowed = \App\Models\Branch::shortHoursCreditFor($shortPolicy, $mins, $credit);
+                if ($allowed < $credit) {
+                    $shortDays[] = [
+                        'date'    => $key,
+                        'hours'   => $mins !== null ? round($mins / 60, 2) : null,
+                        'credit'  => $allowed,
+                    ];
+                    $present = round($present - ($credit - $allowed), 2);
+                    $credit  = $allowed;
+                }
+            }
+
             if ($credit > 0) {
-                $key = Carbon::parse($r->attendance_date)->toDateString();
                 $workedDates[$key] = round(($workedDates[$key] ?? 0) + $credit, 2);
             }
         }
         return [
             'present' => round($present, 2), 'late' => $late, 'missing' => $missing,
             'rows' => $rows->count(), 'worked_dates' => $workedDates,
+            'short_days' => $shortDays,
         ];
+    }
+
+    /**
+     * Minutes actually worked per attendance date, for the short-hours policy.
+     *
+     * Preference order, per day:
+     *   1. Sum of COMPLETED in→out punch pairs. This is the only figure that
+     *      excludes breaks — an employee who punches out for two hours at lunch
+     *      did not work them, and a policy measured on the raw span would say
+     *      otherwise.
+     *   2. First-in → last-out span, when the day has both header timestamps
+     *      but no usable pairs (older rows, imported days with no punch detail).
+     *   3. null — the hours cannot be measured, so the policy leaves the day
+     *      alone rather than docking pay on a guess.
+     *
+     * @return array<string,int|null> Y-m-d => minutes worked
+     */
+    private function workedMinutesByDate($rows): array
+    {
+        $out = [];
+        $ids = [];
+        foreach ($rows as $r) {
+            $ids[] = $r->id;
+        }
+
+        $punchesByAttendance = [];
+        if ($ids && Schema::hasTable('attendance_punches')) {
+            $punches = DB::table('attendance_punches')
+                ->whereIn('attendance_id', $ids)
+                ->orderBy('attendance_id')->orderBy('punched_at')
+                ->get(['attendance_id', 'punched_at', 'direction']);
+            foreach ($punches as $p) {
+                $punchesByAttendance[$p->attendance_id][] = $p;
+            }
+        }
+
+        foreach ($rows as $r) {
+            $date = Carbon::parse($r->attendance_date)->toDateString();
+
+            $paired  = 0;
+            $openIn  = null;
+            foreach ($punchesByAttendance[$r->id] ?? [] as $p) {
+                if (strcasecmp((string) $p->direction, 'in') === 0) {
+                    // Two INs in a row: keep the first, the alternation guard
+                    // upstream should have prevented this.
+                    $openIn = $openIn ?: Carbon::parse($p->punched_at);
+                    continue;
+                }
+                if ($openIn) {
+                    $paired += max(0, $openIn->diffInMinutes(Carbon::parse($p->punched_at)));
+                    $openIn = null;
+                }
+            }
+
+            if ($paired > 0) {
+                $out[$date] = $paired;
+                continue;
+            }
+
+            if (!empty($r->check_in_at) && !empty($r->check_out_at)) {
+                $out[$date] = max(0, Carbon::parse($r->check_in_at)
+                    ->diffInMinutes(Carbon::parse($r->check_out_at)));
+                continue;
+            }
+
+            $out[$date] = null;   // unmeasurable — policy must not guess
+        }
+
+        return $out;
     }
 
     /** Minutes from $from ("HH:MM") to $to ("HH:MM"); negative if $to earlier. */
@@ -2072,7 +2377,7 @@ class PayrollService
     private function leaveAggregates(int $employeeId, Carbon $start, Carbon $end): array
     {
         if (!Schema::hasTable('leave_requests')) {
-            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0, 'paid_dates' => []];
+            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0, 'paid_dates' => [], 'unpaid_dates' => []];
         }
 
         // The employee's own weekly-off pattern decides which days inside a
@@ -2088,7 +2393,7 @@ class PayrollService
             ->get(['leave_type_id', 'from_date', 'to_date', 'days', 'day_type', 'sandwich_waived']);
 
         if ($rows->isEmpty()) {
-            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0, 'paid_dates' => []];
+            return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0, 'paid_dates' => [], 'unpaid_dates' => []];
         }
 
         $paidMap = $this->leaveTypePaidMap($rows->pluck('leave_type_id')->unique()->all());
@@ -2125,6 +2430,7 @@ class PayrollService
         $paid = 0.0;
         $unpaid = 0.0;
         $paidDates = [];
+        $unpaidDates = [];
         /* Sandwiched off-days on an UNPAID leave, charged straight to LOP.
          *
          * On a PAID leave the sandwich is charged to the leave BALANCE, and
@@ -2185,9 +2491,18 @@ class PayrollService
             if ((float) $r->days > 0 && (float) $r->days < $span) {
                 $span = (float) $r->days;
             }
+            // Per-date credit for the date-by-date reconciliation in
+            // computeForEmployee(): the span is spread evenly over the working
+            // dates it covers, so a half-day lands as 0.5 on its one date and
+            // a 3-day leave as 1.0 on each of its three.
+            $per = $spanDates ? round($span / count($spanDates), 2) : 0.0;
+
             $flag = strtolower((string) ($paidMap[$r->leave_type_id] ?? 'paid'));
             if (in_array($flag, ['unpaid', 'lwp', 'loss of pay', 'loss_of_pay'], true)) {
                 $unpaid += $span;
+                foreach ($spanDates as $sd) {
+                    $unpaidDates[$sd] = round(min(1.0, ($unpaidDates[$sd] ?? 0) + $per), 2);
+                }
                 // Waived by HR on the payroll review — the same flag the paid
                 // side honours, so one decision covers both.
                 if ($sandwichOn && $employee && !$r->sandwich_waived) {
@@ -2195,12 +2510,8 @@ class PayrollService
                 }
             } else {
                 $paid += $span;
-                // Per-date credit for the overlap guard: the span is spread
-                // evenly over the working dates it covers, so a half-day lands
-                // as 0.5 on its one date and a 3-day leave as 1.0 on each.
-                $per = $spanDates ? round($span / count($spanDates), 2) : 0.0;
                 foreach ($spanDates as $sd) {
-                    $paidDates[$sd] = round(($paidDates[$sd] ?? 0) + $per, 2);
+                    $paidDates[$sd] = round(min(1.0, ($paidDates[$sd] ?? 0) + $per), 2);
                 }
             }
         }
@@ -2209,6 +2520,7 @@ class PayrollService
             'unpaid' => round($unpaid, 2),
             'sandwich_lop' => round($sandwichLop, 2),
             'paid_dates' => $paidDates,
+            'unpaid_dates' => $unpaidDates,
         ];
     }
 

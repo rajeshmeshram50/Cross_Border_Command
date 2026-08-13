@@ -131,6 +131,15 @@ class AttendanceRegularizationController extends Controller
             abort(422, 'You cannot regularize a future date. Pick today or a past day.');
         }
 
+        // Payroll gate — once the month's payroll is paid (period locked), its
+        // attendance is closed. Filing here would raise a request that can never
+        // legitimately be applied, so it is refused at the door.
+        if ($this->payrollLocked($employee, $dateStr)) {
+            abort(422, 'Payroll for ' . Carbon::parse($dateStr)->format('F Y')
+                . ' is already processed and locked — attendance for this month can no longer be regularized.'
+                . ' Ask HR to post an adjustment in the next payroll cycle.');
+        }
+
         // For an "adjust" request at least one usable punch entry is required.
         $punches = [];
         foreach (($data['punches'] ?? []) as $p) {
@@ -431,6 +440,25 @@ class AttendanceRegularizationController extends Controller
             abort(403, 'You cannot approve your own regularization request.');
         }
 
+        /* Payroll gate, re-checked at DECISION time.
+         *
+         * The store() gate is not enough: a request filed on the 30th while the
+         * cycle was open can sit in the approver's queue until after payroll has
+         * been paid. Approving it then would rewrite the punches behind a paid
+         * payslip. Approval is blocked; REJECTING remains allowed so the stale
+         * request can still be cleared out of the queue. */
+        if ($next === 'Approved') {
+            $emp = Employee::find($row->employee_id);
+            $dStr = $row->regularization_date instanceof \Carbon\CarbonInterface
+                ? $row->regularization_date->toDateString()
+                : Carbon::parse((string) $row->regularization_date)->toDateString();
+            if ($emp && $this->payrollLocked($emp, $dStr)) {
+                abort(422, 'Payroll for ' . Carbon::parse($dStr)->format('F Y')
+                    . ' has been processed and locked since this request was raised — it can no longer be approved.'
+                    . ' Reject it and post an adjustment in the next payroll cycle.');
+            }
+        }
+
         // Record the decision on the current chain entry.
         $chain = $row->approval_chain ?? [];
         $level = max(1, (int) ($row->current_approval_level ?? 1));
@@ -496,11 +524,97 @@ class AttendanceRegularizationController extends Controller
      * Best-effort: a failure here is logged but never rolls back the approval
      * decision itself (the request is already Approved and visible).
      */
+    /**
+     * Is the payroll cycle covering this employee's date already LOCKED (fully
+     * disbursed)? A locked cycle's payslips are immutable — Rule 14/15 sends the
+     * money side to the next cycle as an adjustment — so rewriting the punches
+     * behind it would leave attendance and a paid payslip permanently
+     * disagreeing, with no way to reconcile them. Regularization is therefore
+     * closed for that month at both ends: filing and approving.
+     *
+     * A client-wide cycle (branch_id NULL) pays this employee too, so a locked
+     * one counts exactly as their own branch's would. An employee with NO
+     * branch is only ever covered by that client-wide cycle — matching every
+     * branch's period for them would block corrections because some OTHER
+     * branch had closed its payroll.
+     */
+    private function payrollLocked(Employee $employee, string $dateStr): bool
+    {
+        $when = Carbon::parse($dateStr);
+        $bId  = $employee->branch_id;
+
+        return \App\Models\PayrollPeriod::query()
+            ->where('client_id', $employee->client_id)
+            ->where(fn ($w) => $bId
+                ? $w->where('branch_id', $bId)->orWhereNull('branch_id')
+                : $w->whereNull('branch_id'))
+            ->where('month', (int) $when->month)
+            ->where('year', (int) $when->year)
+            ->where('status', 'locked')
+            ->exists();
+    }
+
+    /**
+     * Write an approved "exempt" regularization into the attendance ledger.
+     *
+     * An exemption (On Duty, client visit, work from home) has no punches by
+     * definition — the employee genuinely wasn't at the device. Until now the
+     * approval was recorded on the request and nowhere else, and NOTHING reads
+     * the request: payroll aggregates the `attendances` rows. So an approved OD
+     * day still counted as Absent, cost a day of LOP, and an approved late-
+     * coming exemption still carried its late mark. The approval was decoration.
+     *
+     * The engine already credits the 'On Duty' and 'Work From Home' attendance
+     * statuses as a full present day, and neither is eligible for the late-mark
+     * promotion — so the fix is to stamp the day with the status the exemption
+     * type means, not to invent a parallel mechanism in payroll.
+     *
+     * Punches are deliberately left alone: if the employee did punch and is
+     * merely being excused for arriving late, that timeline stays true.
+     */
+    private function applyApprovedExemption(AttendanceRegularization $row, Employee $employee, string $dateStr): void
+    {
+        // Which credited status does this exemption mean? WFH is its own status;
+        // everything else (On Duty, client visit, official work) is On Duty.
+        $type   = strtolower(trim((string) ($row->type ?? '')));
+        $status = (str_contains($type, 'work from home') || str_contains($type, 'wfh'))
+            ? 'Work From Home'
+            : 'On Duty';
+
+        $attendance = Attendance::where('employee_id', $employee->id)
+            ->whereDate('attendance_date', $dateStr)
+            ->lockForUpdate()
+            ->first();
+
+        if (!$attendance) {
+            $attendance = Attendance::create([
+                'client_id'       => $employee->client_id,
+                'branch_id'       => $employee->branch_id,
+                'user_id'         => $employee->user_id,
+                'employee_id'     => $employee->id,
+                'attendance_date' => $dateStr,
+                'status'          => $status,
+            ]);
+        } else {
+            // Record what the day looked like before the exemption, once, so the
+            // approver's decision stays auditable (mirrors the punch snapshot on
+            // the adjust path).
+            if (empty($row->original_summary)) {
+                $row->forceFill(['original_summary' => 'Status was: ' . ($attendance->status ?: '—')])->save();
+            }
+            $attendance->update(['status' => $status]);
+        }
+
+        if ((int) $row->attendance_id !== (int) $attendance->id) {
+            $row->forceFill(['attendance_id' => $attendance->id])->save();
+        }
+    }
+
     private function applyApprovedAdjustment(AttendanceRegularization $row): void
     {
-        if ($row->mode !== 'adjust') return;
-        $punches = is_array($row->punches) ? $row->punches : [];
-        if (empty($punches)) return;
+        $isExempt = $row->mode === 'exempt';
+        $punches  = is_array($row->punches) ? $row->punches : [];
+        if (!$isExempt && ($row->mode !== 'adjust' || empty($punches))) return;
 
         $employee = Employee::find($row->employee_id);
         if (!$employee) return;
@@ -508,6 +622,34 @@ class AttendanceRegularizationController extends Controller
         $dateStr = $row->regularization_date instanceof \Carbon\CarbonInterface
             ? $row->regularization_date->toDateString()
             : Carbon::parse((string) $row->regularization_date)->toDateString();
+
+        // Last line of defence. The filing and approval gates both ran earlier;
+        // payroll could still have been disbursed in the gap between the
+        // approval check and this write (and the auto-approve path reaches here
+        // straight from store()). Writing is the irreversible part, so it
+        // re-checks rather than trusting the earlier answer.
+        if ($this->payrollLocked($employee, $dateStr)) {
+            Log::warning('[regularization] apply skipped — payroll locked for the period', [
+                'request_id' => $row->id, 'employee_id' => $employee->id, 'date' => $dateStr,
+            ]);
+            return;
+        }
+
+        // An exemption stamps the day's status and touches no punches, so it
+        // takes its own short path and then shares the payslip refresh below.
+        if ($isExempt) {
+            try {
+                DB::transaction(fn () => $this->applyApprovedExemption($row, $employee, $dateStr));
+            } catch (\Throwable $e) {
+                Log::warning('[regularization] apply-exemption failed', [
+                    'request_id' => $row->id,
+                    'error'      => $e->getMessage(),
+                ]);
+                return;
+            }
+            $this->refreshPayslipsAfterApply($row, (int) $employee->id);
+            return;
+        }
 
         try {
             DB::transaction(function () use ($row, $employee, $dateStr, $punches) {
@@ -630,6 +772,32 @@ class AttendanceRegularizationController extends Controller
             });
         } catch (\Throwable $e) {
             Log::warning('[regularization] apply-to-attendance failed', [
+                'request_id' => $row->id,
+                'error'      => $e->getMessage(),
+            ]);
+            return; // nothing was written — don't recompute payroll off a failed apply
+        }
+
+        $this->refreshPayslipsAfterApply($row, (int) $employee->id);
+    }
+
+    /**
+     * The correction must reach the money, not just the timeline.
+     *
+     * Payslips in DRAFT / GENERATED runs are recomputed IN PLACE (same row,
+     * recomputed columns), so a regularization approved after payroll was
+     * generated but before it was approved/paid shows the corrected salary
+     * without anyone re-running it, and without a second payslip appearing.
+     * Approved/paid runs and locked periods are skipped by the service. (PAY-50)
+     */
+    private function refreshPayslipsAfterApply(AttendanceRegularization $row, int $employeeId): void
+    {
+        try {
+            app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employeeId);
+        } catch (\Throwable $e) {
+            // Distinct message: the attendance correction DID land; only the
+            // payslip refresh failed, and re-running payroll still fixes it.
+            Log::warning('[regularization] payslip recompute after apply failed', [
                 'request_id' => $row->id,
                 'error'      => $e->getMessage(),
             ]);

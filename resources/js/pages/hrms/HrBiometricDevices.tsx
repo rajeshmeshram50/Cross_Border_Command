@@ -272,7 +272,14 @@ export default function HrBiometricDevices() {
       const res = await api.post('/attendance/import', fd);
       const summary = res.data?.data || res.data;
       setImportResult(summary);
-      toast.success('Imported', `${summary.imported} punch(es) imported`);
+      // Say when the correction also flowed into money — an import that fixes
+      // attendance for an already-generated (not yet approved) cycle updates
+      // those payslips in place, and HR needs to know it happened. (PAY-50)
+      toast.success(
+        'Imported',
+        `${summary.imported} punch(es) imported`
+          + (summary.payslips_recomputed ? ` · ${summary.payslips_recomputed} payslip(s) updated` : ''),
+      );
       load();
     } catch (err: any) {
       toast.error('Import Failed', err.response?.data?.message || 'Could not import the file');

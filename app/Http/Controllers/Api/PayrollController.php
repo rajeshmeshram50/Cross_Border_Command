@@ -166,6 +166,7 @@ class PayrollController extends Controller
                 'range'  => $cursor->copy()->startOfMonth()->format('d M') . '–' . $cursor->copy()->endOfMonth()->format('d M'),
                 'month'  => $m,
                 'year'   => $y,
+                'financial_year' => PayrollPeriod::financialYearFor($m, $y),
                 'status' => $this->cycleDisplayStatus($existing, $cursor, $existing ? $latestRuns->get($existing->id) : null),
             ];
             $cursor->addMonth();
@@ -219,6 +220,7 @@ class PayrollController extends Controller
                 'label'            => $p->label,
                 'month'            => $p->month,
                 'year'             => $p->year,
+                'financial_year'   => $p->financial_year,
                 'status'           => $p->status,
                 'attendance_final' => (bool) $p->attendance_finalized,
                 'run_status'       => $r?->status,
@@ -544,10 +546,69 @@ class PayrollController extends Controller
         if ($run->isLocked()) return response()->json(['message' => 'Run is already approved/paid.'], 422);
         if ($run->total_employees === 0) return response()->json(['message' => 'Nothing to approve — generate payroll first.'], 422);
 
-        $run->forceFill(['status' => 'approved', 'approved_by' => $request->user()?->id, 'approved_at' => now()])->save();
-        $this->audit($request, 'approve', $run, "Payroll approved for run #{$run->id}", ['status' => 'generated'], ['status' => 'approved']);
+        /* Rule 19 — unresolved slips must be dealt with BEFORE approval.
+         *
+         * "On Hold" means a blocking problem (no salary structure); "Pending
+         * Review" means payroll wants a human to check something it could not
+         * settle itself — a missing punch, an attendance/leave conflict, a
+         * month with no attendance at all. Both were already blocked from
+         * producing a payslip PDF, yet the RUN itself could be approved with
+         * any number of them outstanding: the flag was raised and then had no
+         * effect on the one decision it exists to gate.
+         *
+         * Not a hard block, deliberately. Some warnings cannot be "corrected"
+         * away — an employee who was genuinely late three times leaves a slip
+         * that will read Pending Review no matter how many times it is
+         * regenerated, and there is no endpoint to clear a slip's status by
+         * hand. A hard block would leave those runs unapprovable forever.
+         * Instead approval stops once, states exactly what is unresolved, and
+         * proceeds only when the caller acknowledges it explicitly — with who
+         * did so and what they waved through recorded in the audit log. */
+        $unresolved = Payslip::where('payroll_run_id', $run->id)
+            ->whereIn('status', ['On Hold', 'Pending Review'])
+            ->get(['id', 'employee_name', 'status']);
 
-        return response()->json(['message' => 'Payroll approved.', 'data' => $this->serializeRun($run)]);
+        if ($unresolved->isNotEmpty() && !$request->boolean('acknowledge_unresolved')) {
+            $onHold  = $unresolved->where('status', 'On Hold')->count();
+            $review  = $unresolved->where('status', 'Pending Review')->count();
+            $parts   = [];
+            if ($onHold) $parts[] = "{$onHold} on hold";
+            if ($review) $parts[] = "{$review} pending review";
+
+            return response()->json([
+                'message' => 'Payroll not approved — ' . implode(' and ', $parts)
+                    . '. Correct the attendance or salary data and regenerate, or re-send with '
+                    . 'acknowledge_unresolved to approve them as they stand.',
+                'errors'  => ['unresolved' => [implode(' and ', $parts) . ' need attention.']],
+                'data'    => [
+                    'on_hold'        => $onHold,
+                    'pending_review' => $review,
+                    // Named so HR can go straight to them rather than hunting
+                    // through the payslip list for whatever tripped the flag.
+                    'employees'      => $unresolved->take(25)->map(fn ($s) => [
+                        'payslip_id' => $s->id,
+                        'employee'   => $s->employee_name,
+                        'status'     => $s->status,
+                    ])->values(),
+                ],
+            ], 422);
+        }
+
+        $run->forceFill(['status' => 'approved', 'approved_by' => $request->user()?->id, 'approved_at' => now()])->save();
+
+        $note = "Payroll approved for run #{$run->id}";
+        if ($unresolved->isNotEmpty()) {
+            $note .= ' — acknowledged ' . $unresolved->count() . ' unresolved slip(s): '
+                . $unresolved->take(10)->map(fn ($s) => $s->employee_name . ' (' . $s->status . ')')->implode(', ');
+        }
+        $this->audit($request, 'approve', $run, $note, ['status' => 'generated'], ['status' => 'approved']);
+
+        return response()->json([
+            'message' => $unresolved->isEmpty()
+                ? 'Payroll approved.'
+                : 'Payroll approved with ' . $unresolved->count() . ' unresolved slip(s) acknowledged.',
+            'data'    => $this->serializeRun($run),
+        ]);
     }
 
     /**
@@ -666,6 +727,14 @@ class PayrollController extends Controller
     public function employeePayslips(Request $request, int $employeeId)
     {
         $user = $request->user();
+        /* PAY-45 — same self-guard as ownsRow(). This endpoint was tenant-gated
+           only, so any employee could read a colleague's whole salary history
+           (net pay per cycle) by changing the id in the URL. HR/admin tiers are
+           unaffected; the employee tier gets its own history and nothing else. */
+        if ($user && $user->user_type === 'employee'
+            && (int) $employeeId !== (int) ($user->employee_id ?? 0)) {
+            return response()->json(['message' => 'You can only view your own salary history.'], 403);
+        }
         $slips = Payslip::with(['run:id,status', 'period:id,label,month,year'])
             ->where('employee_id', $employeeId)
             ->when($user && $user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
@@ -679,6 +748,7 @@ class PayrollController extends Controller
                 'label'      => $s->period?->label ?? '',
                 'month'      => $s->period?->month,
                 'year'       => $s->period?->year,
+                'financial_year' => $s->period?->financial_year,
                 'net_pay'    => (float) $s->net_pay,
                 'status'     => $s->status,
                 'is_final'   => in_array($s->run?->status, ['approved', 'paid'], true),
@@ -903,7 +973,9 @@ class PayrollController extends Controller
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
             ->orderBy('employee_name');
 
-        $filename = 'payroll_' . $period->label . '.csv';
+        // Filename carries the cycle AND its financial year so a Jan-2027 export
+        // can't be mistaken for FY 2027-28 once it's off the screen. (PAY-49)
+        $filename = 'payroll_' . $period->label . '_FY' . $period->financial_year . '.csv';
         $headers = [
             'Content-Type'        => 'text/csv',
             'Content-Disposition' => "attachment; filename=\"$filename\"",
@@ -958,7 +1030,15 @@ class PayrollController extends Controller
         if ($user->user_type === 'super_admin') return true;
         // Strict match — a null client_id on the slip must NOT pass for a scoped
         // user (that previously let any tenant read client-less payslips).
-        return (int) $slip->client_id === (int) $user->client_id;
+        if ((int) $slip->client_id !== (int) $user->client_id) return false;
+        /* PAY-45 — the employee tier sees ONLY its own slip. Tenant match alone
+           let any logged-in employee read a colleague's payslip (and its PDF, and
+           email it to themselves) just by walking the id. A user with no linked
+           employee record has no own slip to read, so 0 matches nothing. */
+        if ($user->user_type === 'employee') {
+            return (int) $slip->employee_id === (int) ($user->employee_id ?? 0);
+        }
+        return true;
     }
 
     private function canExport(Request $request): bool
@@ -997,6 +1077,7 @@ class PayrollController extends Controller
             'month'                => $p->month,
             'year'                 => $p->year,
             'label'                => $p->label,
+            'financial_year'       => $p->financial_year,
             'working_days'         => $p->working_days,
             // Total calendar days of the month — the basis salary & loss-of-pay
             // are computed on (÷30/31), so the payslip shows it as the day count.

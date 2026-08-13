@@ -32,6 +32,24 @@ class PayrollPeriod extends Model
         'locked_at'            => 'datetime',
     ];
 
+    /**
+     * Indian financial year the cycle belongs to — Apr..Mar, rendered
+     * "2026-27". Derived (not stored) so it can never drift out of sync with
+     * month/year, and so existing rows need no backfill. Jan/Feb/Mar belong to
+     * the FY that STARTED the previous calendar year: Jan 2027 → "2026-27".
+     */
+    public static function financialYearFor(int $month, int $year): string
+    {
+        $startYear = $month >= 4 ? $year : $year - 1;
+        return $startYear . '-' . substr((string) ($startYear + 1), -2);
+    }
+
+    /** Accessor: $period->financial_year */
+    public function getFinancialYearAttribute(): string
+    {
+        return static::financialYearFor((int) $this->month, (int) $this->year);
+    }
+
     public function runs(): HasMany
     {
         return $this->hasMany(PayrollRun::class);
