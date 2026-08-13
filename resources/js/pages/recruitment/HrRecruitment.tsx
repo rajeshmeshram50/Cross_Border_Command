@@ -1670,7 +1670,26 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
     return (
       <div style={{ padding: '10px 14px', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginBottom: 10 }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-        <div style={{ fontSize: 13, color: 'var(--vz-body-color)', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{value}</div>
+        {/* Clamped to 2 lines, then ellipsised, with the full text on hover.
+            Two separate problems were showing here:
+              1. an unbroken run of characters (no spaces) never found a wrap
+                 point, so it ran straight off the card — `overflowWrap:
+                 anywhere` forces a break mid-word;
+              2. a genuinely long description grew the block without limit and
+                 pushed the sections below it out of the modal.
+            -webkit-line-clamp is the only cross-browser 2-line ellipsis, and it
+            needs the -webkit-box display + orient pair to engage; pre-wrap is
+            swapped for pre-line so the clamp isn't defeated by trailing
+            whitespace while newlines in the value still break. */}
+        <div
+          title={String(value)}
+          style={{
+            fontSize: 13, color: 'var(--vz-body-color)', lineHeight: 1.5,
+            whiteSpace: 'pre-line', overflowWrap: 'anywhere', wordBreak: 'break-word',
+            display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
+            overflow: 'hidden',
+          }}
+        >{value}</div>
       </div>
     );
   };
@@ -2799,10 +2818,13 @@ function CancelConfirmModal({
                 <i className={isComplete ? 'ri-information-line' : 'ri-alert-line'} />
                 <div>
                   {isComplete ? (
+                    /* Two lines. The old four-line version spelled out that the
+                       SERVER does the checking and what a validation error looks
+                       like — mechanism the user doesn't act on. What they need is
+                       the precondition and the consequence. */
                     <>
-                      <strong>Heads-up:</strong> The server will only accept this if the recruitment has
-                      enough <em>Selected</em> candidates to cover every opening — otherwise you'll see
-                      a validation error and the requisition stays open.
+                      <strong>Heads-up:</strong> Every opening needs a <em>Selected</em> candidate —
+                      otherwise this is rejected and the requisition stays open.
                     </>
                   ) : (
                     <>
@@ -2850,16 +2872,17 @@ function CancelConfirmModal({
               </div>
             </div>
 
+            {/* Confirm is the only footer action — "Keep Active" did the same
+                job as the header ×, which stays. The complete variant carries a
+                modifier class rather than an inline `background`: overriding only
+                the background left .rec-cancel-confirm's ORANGE shadow glowing
+                under a green button. */}
             <div className="rec-cancel-footer">
-              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={confirming}>
-                Keep Active
-              </button>
               <button
                 type="button"
-                className="rec-cancel-confirm"
+                className={`rec-cancel-confirm${isComplete ? ' rec-cancel-confirm--complete' : ''}`}
                 onClick={handleConfirm}
                 disabled={confirming}
-                style={isComplete ? { background: 'linear-gradient(135deg, #047857 0%, #10b981 100%)' } : undefined}
               >
                 {confirming ? (
                   <>
