@@ -726,27 +726,11 @@ export default function HrEmployeeOnboarding() {
       meta: { width: '13%', wrap: true },
       cell: info => {
         const r = info.row.original;
+        /* Avatar removed — it told the reader nothing the name beside it didn't,
+           and took 42px off a column whose names already clip. Matches the
+           employee list, which dropped its circle for the same reason. */
         return (
           <div className="d-flex align-items-center gap-2">
-            {r.photoUrl ? (
-              <img
-                src={r.photoUrl}
-                alt={r.name}
-                className="rounded-circle flex-shrink-0"
-                style={{ width: 34, height: 34, objectFit: 'cover', border: '1px solid rgba(128,128,128,0.2)' }}
-              />
-            ) : (
-              <div
-                className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-                style={{
-                  width: 34, height: 34, fontSize: 12,
-                  background: `linear-gradient(135deg, ${r.accent}, ${r.accent}cc)`,
-                  boxShadow: `0 2px 6px ${r.accent}40`,
-                }}
-              >
-                {r.initials}
-              </div>
-            )}
             <div className="min-w-0">
               {/* Long names clip to the column width — hover shows the full one. */}
               <Tooltip label={r.name} maxWidth={360}>
@@ -758,13 +742,16 @@ export default function HrEmployeeOnboarding() {
         );
       },
     },
-    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
+    /* Pills and chips are centred across every HR list — a badge is a fixed
+       shape, so left-aligning it leaves a ragged gap on the right of each cell
+       that reads as mis-alignment. Plain-text columns stay left. */
+    { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%', align: 'center' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       /* Long role names ellipsise inside the pill and reveal on hover instead
          of spilling under the next column — same contract as Designation. */
       cell: info => <ChipCell value={info.getValue() as string} className="onb-role-pill" />,
@@ -773,6 +760,8 @@ export default function HrEmployeeOnboarding() {
       header: 'Ancillary Role',
       id: 'ancillary',
       enableSorting: false,
+      /* LEFT — variable chip count plus a "+N" counter, so the cell width
+         changes row to row and centring made each row start at a different x. */
       meta: { width: '9%' },
       cell: info => {
         const r = info.row.original;
@@ -793,22 +782,12 @@ export default function HrEmployeeOnboarding() {
          * inside (the old path) made the row taller than its neighbours and
          * pulled the column out of alignment with the header. */
         if (r.managerName === '—') return <span style={{ fontSize: 13 }} className="text-muted">—</span>;
+        // Avatar removed here too — the manager's name is the whole point of
+        // the column, and the initials bubble was crowding a 9% -wide cell.
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 28, height: 28, fontSize: 10.5,
-                background: `linear-gradient(135deg, ${r.managerAccent}, ${r.managerAccent}cc)`,
-                boxShadow: `0 2px 5px ${r.managerAccent}40`,
-              }}
-            >
-              {r.managerInitials}
-            </div>
-            <Tooltip label={r.managerName} maxWidth={360}>
-              <span style={{ fontSize: 13 }} className="text-truncate">{r.managerName}</span>
-            </Tooltip>
-          </div>
+          <Tooltip label={r.managerName} maxWidth={360}>
+            <span style={{ fontSize: 13 }} className="text-truncate d-block">{r.managerName}</span>
+          </Tooltip>
         );
       },
     },
@@ -818,7 +797,7 @@ export default function HrEmployeeOnboarding() {
          floating badge is not clipped by the cell. */
       header: 'Profile %',
       accessorKey: 'profile',
-      meta: { width: '8%', wrap: true },
+      meta: { width: '8%', wrap: true, align: 'center' },
       cell: info => {
         const p = info.row.original.profile;
         const T = p >= 90 ? { dark: '#0ab39c', light: '#4dd4be' }

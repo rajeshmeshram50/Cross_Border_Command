@@ -5103,7 +5103,9 @@
    crisp percent in the centre, soft uppercase caption. */
 .ep-dial {
   position: relative;
-  width: 80px; height: 80px;
+  /* 58 (was 80) — it is a status read-out beside the title, not the subject of
+     the header, and at 80px it competed with the "Evidence Vault" heading. */
+  width: 58px; height: 58px;
   flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center;
   filter: drop-shadow(0 4px 14px rgba(15,23,42,0.18));
@@ -5128,7 +5130,7 @@
   pointer-events: none;
 }
 .ep-dial-num {
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -5137,15 +5139,7 @@
     0 2px 4px rgba(45,31,110,0.45);
   line-height: 1;
 }
-.ep-dial-label {
-  font-size: 7.5px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  color: rgba(255,255,255,0.82);
-  text-transform: uppercase;
-  margin-top: 3px;
-  text-shadow: 0 1px 2px rgba(45,31,110,0.40);
-}
+/* .ep-dial-label removed with the "COMPLETE" caption it styled. */
 .ep-close {
   width: 32px; height: 32px;
   border-radius: 9px;
@@ -6856,16 +6850,26 @@
 
 /* Status pill — colour-coded by document state */
 .ev-doc-status {
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
+  /* Fixed width so every pill in the list shares one left and right edge —
+     "Uploaded" and "Pending" are different lengths, and ragged pills read as
+     rows that don't line up. */
+  min-width: 92px;
+  justify-content: center;
 }
+.ev-doc-status i { font-size: 12px; line-height: 1; }
+/* Uploaded and Signed join Verified in green: all three mean the document is
+   IN the vault, and colouring them blue/violet made a complete row look like it
+   was still mid-flight. Amber (Pending) and grey (missing) stay as they were —
+   those are the states that still owe something. */
 .ev-doc-status--verified      { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
-.ev-doc-status--uploaded      { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
-.ev-doc-status--signed        { background: #ede9fe; color: #5b3fd1; border: 1px solid #ddd6fe; }
+.ev-doc-status--uploaded      { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
+.ev-doc-status--signed        { background: #dcfce7; color: #15803d; border: 1px solid #bbf7d0; }
 .ev-doc-status--sent          { background: #dbeafe; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .ev-doc-status--pending       { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .ev-doc-status--not-generated { background: #f3f4f6; color: var(--vz-secondary-color); border: 1px solid #e5e7eb; }
@@ -6892,30 +6896,51 @@
 [data-bs-theme="dark"] .ev-group-icon { background: rgba(124,92,252,0.18) !important; color: #c4b5fd !important; }
 
 /* Action buttons */
+/* Sized and shaped like the app's standard buttons (.rec-btn-ghost /
+   .rec-btn-primary) rather than the one-off 28px/7px pair this used to be —
+   same 10px radius, same 12.5px label, same gap. Height stays a notch under
+   the 36px page buttons because these live inside a list row. */
 .ev-doc-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 28px;
-  padding: 0 12px;
-  border-radius: 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: 32px;
+  padding: 0 16px;
+  min-width: 108px;
+  border-radius: 10px;
   border: 1px solid transparent;
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 700;
   cursor: pointer;
-  transition: transform .15s ease, filter .15s ease, background .15s ease;
+  transition: transform .15s ease, filter .15s ease, background .15s ease, border-color .15s ease;
   flex-shrink: 0;
   white-space: nowrap;
 }
 .ev-doc-btn i { font-size: 13px; }
+/* Icon-only variant — square, so it reads as an icon button rather than a
+   label button with the text knocked out and the padding left behind. */
+.ev-doc-btn--icon {
+  min-width: 0;
+  width: 32px;
+  padding: 0;
+  gap: 0;
+}
+/* 14px, not 16 — Remix's line icons scale their stroke with the glyph, so the
+   larger size was reading as a heavier eye than the 14px action icons it sits
+   alongside (ActionBtn uses .fs-14). */
+.ev-doc-btn--icon i { font-size: 14px; }
 .ev-doc-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Matches ActionBtn in the employee table — the app's standard icon button:
+   secondary surface, --vz-border-color outline, grey glyph, and the border +
+   icon taking the accent only on hover. Both are theme tokens, so dark mode
+   needs no separate block. */
 .ev-doc-btn--view {
-  background: #ffffff;
+  background: var(--vz-secondary-bg);
   color: var(--vz-secondary-color);
-  border-color: #e5e7eb;
+  border-color: var(--vz-border-color);
+  font-weight: 600;
 }
 .ev-doc-btn--view:hover:not(:disabled) {
-  background: #f9fafb;
-  border-color: #d1d5db;
-  color: var(--vz-body-color);
+  border-color: #7c5cfc;
+  color: #7c5cfc;
 }
 .ev-doc-btn--preview {
   background: #ffffff;
@@ -6923,10 +6948,13 @@
   border-color: #a7f3d0;
 }
 .ev-doc-btn--preview:hover:not(:disabled) { background: #ecfdf5; }
+/* Standard primary — the same violet gradient + lift as .rec-btn-primary,
+   instead of the flat #6d28d9 block this carried on its own. */
 .ev-doc-btn--download {
-  background: #6d28d9;
+  background: linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
   color: #ffffff;
-  border-color: #6d28d9;
+  border: 0;
+  box-shadow: 0 6px 16px rgba(147,51,234,0.40), inset 0 1px 0 rgba(255,255,255,0.30);
 }
 .ev-doc-btn--download:hover:not(:disabled) {
   background: #5b21b6;
@@ -12242,7 +12270,9 @@
           .assign-error i { font-size: 13px; }
           .assign-save-btn {
             display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 22px; border-radius: 999px;
+            /* 8px vertical (was 10) — the button sets the footer's height, so
+               trimming the bar's own padding alone left it taller than asked. */
+            padding: 8px 22px; border-radius: 999px;
             font-size: 13.5px; font-weight: 600; color: #fff;
             border: none;
             background: linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #7c5cfc 100%);

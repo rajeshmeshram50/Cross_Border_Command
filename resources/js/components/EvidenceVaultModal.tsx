@@ -4,9 +4,15 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
 import ProgressDial from './ui/ProgressDial';
+import Tooltip from './ui/Tooltip';
 import '../../css/recruitment.css';
 
 type DocStatus = 'Verified' | 'Uploaded' | 'Signed' | 'Sent' | 'Pending' | 'Not Generated' | 'Optional' | 'Generated' | 'Completed';
+
+/** States that mean the document is actually IN the vault — these carry the
+ *  green pill and the tick. 'Sent' and 'Pending' deliberately don't: something
+ *  is still owed on those. */
+const DONE_STATUSES = new Set<DocStatus>(['Uploaded', 'Verified', 'Signed', 'Generated', 'Completed']);
 
 export type VaultTab = 'employee' | 'organizational' | 'exit';
 
@@ -396,17 +402,34 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                         <div className="ev-doc-name">{d.name}</div>
                         <div className="ev-doc-sub">{d.sub}</div>
                       </div>
-                      <span className="ev-doc-cat">{d.category}</span>
-                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>{status}</span>
-                      <button type="button"
-                        className={`ev-doc-btn ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
-                        disabled={disabled || busyKey === d.key}
-                        onClick={() => handleViewRow(d)}
-                      >
-                        {busyKey === d.key && busyAction === 'view'
-                          ? <><span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true" />Opening…</>
-                          : <><i className="ri-eye-line" />{status === 'Generated' ? 'Preview' : 'View'}</>}
-                      </button>
+                      {/* Category chip dropped — the row already sits under a
+                          group heading that names the category ("Identity",
+                          "Other"), so it repeated the line above it on every
+                          row and pushed the status pill out of alignment. */}
+                      <span className={`ev-doc-status ev-doc-status--${status.toLowerCase().replace(/\s+/g, '-')}`}>
+                        {/* Tick on the states that mean "this document is in" —
+                            the pill's colour says it, the mark confirms it at a
+                            glance without reading. */}
+                        {DONE_STATUSES.has(status) && <i className="ri-check-line" />}
+                        {status}
+                      </span>
+                      {/* Icon only, and labelled by the app's own Tooltip rather
+                          than the browser's `title` — same treatment as the
+                          ActionBtn icons in the employee table, so the two read
+                          as the same kind of control. aria-label stays for
+                          screen readers; a tooltip is not an accessible name. */}
+                      <Tooltip label={status === 'Generated' ? 'Preview' : 'View'}>
+                        <button type="button"
+                          className={`ev-doc-btn ev-doc-btn--icon ev-doc-btn--view${status === 'Generated' ? ' ev-doc-btn--preview' : ''}`}
+                          disabled={disabled || busyKey === d.key}
+                          onClick={() => handleViewRow(d)}
+                          aria-label={status === 'Generated' ? 'Preview' : 'View'}
+                        >
+                          {busyKey === d.key && busyAction === 'view'
+                            ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true" />
+                            : <i className="ri-eye-line" />}
+                        </button>
+                      </Tooltip>
                       <button type="button"
                         className="ev-doc-btn ev-doc-btn--download"
                         disabled={disabled || busyKey === d.key}
