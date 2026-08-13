@@ -15,7 +15,8 @@ class ModuleSeeder extends Seeder
             ['name' => 'Dashboard',   'slug' => 'dashboard',   'icon' => 'LayoutGrid',  'sort_order' => 1,  'is_default' => true],
             ['name' => 'Clients',     'slug' => 'clients',     'icon' => 'Building2',   'sort_order' => 2,  'is_default' => false, 'description' => 'Manage client organizations'],
             ['name' => 'Branches',    'slug' => 'branches',    'icon' => 'GitBranch',   'sort_order' => 3,  'is_default' => false, 'description' => 'Manage branches/companies'],
-            ['name' => 'Employees',   'slug' => 'employees',   'icon' => 'UserCheck',   'sort_order' => 4,  'is_default' => false, 'description' => 'Employee management'],
+            // Standalone "Employees" module removed — the single Employee
+            // permission now lives at HRMS → HR Core → Employee (hr.employee).
             ['name' => 'Plans',       'slug' => 'plans',       'icon' => 'CreditCard',  'sort_order' => 5,  'is_default' => false, 'description' => 'Subscription plans'],
             ['name' => 'Payments',    'slug' => 'payments',    'icon' => 'IndianRupee', 'sort_order' => 6,  'is_default' => false, 'description' => 'Payment transactions'],
             ['name' => 'Permissions', 'slug' => 'permissions', 'icon' => 'ShieldCheck', 'sort_order' => 7,  'is_default' => false, 'description' => 'Access control'],
@@ -80,7 +81,8 @@ class ModuleSeeder extends Seeder
                 ['name' => 'Departments',       'slug' => 'master.departments',       'icon' => 'Building2',      'description' => 'Organizational units for staff assignment'],
                 ['name' => 'Roles',             'slug' => 'master.roles',             'icon' => 'UserCog',        'description' => 'Access roles for module control'],
                 ['name' => 'Designations',      'slug' => 'master.designations',      'icon' => 'BadgeCheck',     'description' => 'Job titles on HR docs and letters'],
-                ['name' => 'Employees',         'slug' => 'master.employees',         'icon' => 'Users',          'description' => 'Employee master with login provisioning'],
+                // `master.employees` removed — merged into HRMS → HR Core →
+                // Employee (hr.employee), which now gates both API and UI.
                 ['name' => 'KPIs',              'slug' => 'master.kpis',              'icon' => 'Target',         'description' => 'KPI catalogue mapped to roles'],
             ],
             'master.geography' => [

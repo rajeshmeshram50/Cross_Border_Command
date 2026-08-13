@@ -464,7 +464,13 @@ class OnboardingController extends Controller
      */
     private function grantSelfServicePermissions(User $user, $clientId, $branchId, $grantedBy): void
     {
-        $alwaysOnSlugs = ['profile', 'dashboard', 'master.employees'];
+        // Baseline for a freshly self-onboarded hire: Dashboard + Profile only.
+        // The old `master.employees` view-grant was dropped when the Employee
+        // permission was consolidated into `hr.employee` — granting that here
+        // would expose the full Employee-management menu to every new hire.
+        // Their own profile still loads via EmployeeController's self-exemption
+        // (show()/authorizeViewOrSelf), so no self-service access is lost.
+        $alwaysOnSlugs = ['profile', 'dashboard'];
         $adminMasterIds = [];
         if ($grantedBy) {
             $adminMasterIds = Permission::where('user_id', $grantedBy)
