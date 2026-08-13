@@ -425,7 +425,7 @@ export default function HrRecruitment() {
       id: 'code',
       accessorFn: (r: RecruitmentRow) => r.code || r.id,
       sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     {
@@ -440,12 +440,12 @@ export default function HrRecruitment() {
         </Tooltip>
       ),
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '8%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '9%', align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Employment',
       accessorKey: 'employmentType',
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => {
         const et = EMPLOY_TYPE_TONES[info.row.original.employmentType];
         return <span className="rec-pill" style={{ background: et.bg, color: et.fg }}>{info.row.original.employmentType}</span>;
@@ -466,7 +466,7 @@ export default function HrRecruitment() {
     {
       header: 'Work Mode',
       accessorKey: 'workMode',
-      meta: { width: '7%' },
+      meta: { width: '7%', align: 'center' },
       cell: info => {
         const wm = WORK_MODE_TONES[info.row.original.workMode];
         return <span className="rec-pill" style={{ background: wm.bg, color: wm.fg }}>{info.row.original.workMode}</span>;
@@ -475,7 +475,7 @@ export default function HrRecruitment() {
     {
       header: 'Priority',
       accessorKey: 'priority',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => {
         const pri = PRIORITY_TONES[info.row.original.priority];
         return <span className="rec-pill" style={{ background: pri.bg, color: pri.fg }}>{info.row.original.priority}</span>;
@@ -484,17 +484,11 @@ export default function HrRecruitment() {
     {
       header: 'Hiring Manager',
       accessorKey: 'hiringManagerName',
-      meta: { width: '11%' },
+      meta: { width: '11%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.hiringManagerAccent}, ${r.hiringManagerAccent}cc)` }}
-            >
-              {r.hiringManagerInitials}
-            </div>
+          <div className="d-flex align-items-center justify-content-center gap-2">
             <span className="fs-13 text-truncate">{r.hiringManagerRole ? `${r.hiringManagerRole} – ` : ''}{r.hiringManagerName}</span>
             {(r.hiringManagerState === 'disabled' || r.hiringManagerState === 'inactive') && (
               <span className={`rec-mgr-flag rec-mgr-flag--${r.hiringManagerState}`}>{r.hiringManagerState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
@@ -506,17 +500,11 @@ export default function HrRecruitment() {
     {
       header: 'Assigned HR',
       accessorKey: 'assignedHrName',
-      meta: { width: '10%' },
+      meta: { width: '10%', align: 'center' },
       cell: info => {
         const r = info.row.original;
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{ width: 26, height: 26, fontSize: 10, background: `linear-gradient(135deg, ${r.assignedHrAccent}, ${r.assignedHrAccent}cc)` }}
-            >
-              {r.assignedHrInitials}
-            </div>
+          <div className="d-flex align-items-center justify-content-center gap-2">
             <span className="fs-13 text-truncate">{r.assignedHrName}</span>
             {(r.assignedHrState === 'disabled' || r.assignedHrState === 'inactive') && (
               <span className={`rec-mgr-flag rec-mgr-flag--${r.assignedHrState}`}>{r.assignedHrState === 'disabled' ? 'Disabled' : 'Inactive'}</span>
@@ -530,13 +518,13 @@ export default function HrRecruitment() {
          not alphabetical on the dd-Mon-yyyy label. */
       header: 'Start Date',
       accessorKey: 'startDate',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.startDate)}</span>,
     },
     {
       header: 'Deadline',
       accessorKey: 'deadline',
-      meta: { width: '6%' },
+      meta: { width: '6%', align: 'center' },
       cell: info => <span className="rec-date fs-13">{formatDate(info.row.original.deadline)}</span>,
     },
     {
@@ -1518,7 +1506,7 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
         <DataTable<HiringRequestRow>
           data={filtered}
           columns={columns}
-          serial
+          serial={{ width: 52 }}
           accent="violet"
           minWidth={1150}
           pageSize={8}
