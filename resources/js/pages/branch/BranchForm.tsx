@@ -166,7 +166,13 @@ function computePasswordStrength(pw: string) {
   return { level, text: levels[level], color: textColors[level], barColor: barColors[level] };
 }
 
-function validateBranchForm(form: FormState, isEdit: boolean): Record<string, string> {
+/**
+ * @param stateGstCode Statutory GST code of the state picked in the address
+ *        ("27" for Maharashtra), resolved from the form bundle. Undefined when
+ *        no state is picked or the master carries no code for it — the
+ *        state-based checks below are then skipped, never guessed.
+ */
+function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: string): Record<string, string> {
   const e: Record<string, string> = {};
 
   // ── Branch name ──
@@ -246,6 +252,34 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
         e.pan_number = 'Invalid PAN format. Example: AADCI6120M (5 letters + 4 digits + 1 letter)';
       }
     }
+    /* ── GSTIN ↔ PAN ↔ State must agree (QA #1) ──
+       A GSTIN is not an independent number, it is assembled from the other
+       two fields:
+
+           2 7 A A F C D 5 6 7 8 L 1 Z 5
+           └┬┘ └─────┬─────────┘
+            │        └── characters 3-12 ARE the PAN of the same entity
+            └─────────── the state code of the registration
+
+       Format-only rules happily accept a GSTIN from one company in one state
+       next to the PAN of a different company — and those three numbers then
+       print together on every quotation, PI and export document. */
+
+    // GSTIN chars 3-12 vs the PAN field. Only when both pass their own format
+    // check, so a mistyped PAN reports one problem instead of two.
+    if (form.gst_number && form.pan_number && !e.gst_number && !e.pan_number) {
+      const embeddedPan = form.gst_number.slice(2, 12);
+      if (embeddedPan !== form.pan_number.trim()) {
+        e.pan_number = `PAN inside the GSTIN is ${embeddedPan} — a GSTIN's characters 3-12 are the PAN of the same entity, so these must match`;
+      }
+    }
+
+    // GSTIN's first two digits vs the state picked in the address.
+    if (form.gst_number && !e.gst_number && stateGstCode
+        && form.gst_number.slice(0, 2) !== stateGstCode) {
+      e.gst_number = `This GSTIN is registered in state code ${form.gst_number.slice(0, 2)}, but the address state is ${form.state} (${stateGstCode})`;
+    }
+
     /* The GST state code is the FIRST TWO DIGITS of the GSTIN — it is not an
        independent value. It also decides the tax split on every document
        raised from this branch (same state as the party → CGST+SGST, otherwise
@@ -258,6 +292,12 @@ function validateBranchForm(form: FormState, isEdit: boolean): Record<string, st
       && form.gst_state_code.trim() !== form.gst_number.slice(0, 2)
     ) {
       e.gst_state_code = `GST State Code must match the first two digits of the GSTIN (${form.gst_number.slice(0, 2)})`;
+    } else if (
+      form.gst_state_code && stateGstCode && form.gst_state_code.trim() !== stateGstCode
+    ) {
+      // Reached when the GSTIN itself is missing/malformed — the code still
+      // has to agree with the state, otherwise the tax split is wrong.
+      e.gst_state_code = `GST State Code for ${form.state} is ${stateGstCode}, not ${form.gst_state_code.trim()}`;
     }
   }
 
@@ -591,6 +631,11 @@ export default function BranchForm({ onBack, editId }: Props) {
   // the same canonical dataset.
   const [countries, setCountries] = useState<Array<{ id: number; name: string; iso_code: string; status: string }>>([]);
   const [statesAll, setStatesAll] = useState<Array<{ id: number; country_id: string; name: string; status: string }>>([]);
+  /* Statutory GST state codes keyed by state id ("27" for Maharashtra), from
+   * the same bundle. Used only to validate the GSTIN against the address
+   * state — an empty list (older cached bundle, offline) just means that one
+   * check is skipped client-side; the API enforces it either way. */
+  const [stateCodes, setStateCodes] = useState<Array<{ state_id: string; state_code: string }>>([]);
   /* True until /branches/form-bundle resolves (or the sessionStorage cache
    * hits). Drives the form shimmer below — flips to false the moment the
    * masters land OR cache hit fires (whichever comes first). */
@@ -613,21 +658,23 @@ export default function BranchForm({ onBack, editId }: Props) {
     type Bundle = {
       countries: Array<{ id: number; name: string; iso_code: string; status: string }>;
       states: Array<{ id: number; country_id: string; name: string; status: string }>;
+      state_codes?: Array<{ state_id: string; state_code: string }>;
       next_code?: string;
       prefix?: string;
     };
 
-    const hydrateMasters = (b: Pick<Bundle, 'countries' | 'states'>) => {
+    const hydrateMasters = (b: Pick<Bundle, 'countries' | 'states' | 'state_codes'>) => {
       // Server already returns active+sorted rows — no client filter/sort needed.
       setCountries(Array.isArray(b.countries) ? b.countries : []);
       setStatesAll(Array.isArray(b.states) ? b.states : []);
+      setStateCodes(Array.isArray(b.state_codes) ? b.state_codes : []);
     };
 
     // Cache hit — populate dropdowns immediately so loadingLookups flips
     // false in the same tick. The fresh bundle call still fires below
     // (we need an up-to-date next_code), but the user already sees the
     // form ready for input.
-    const cached = readBranchFormBundle<Pick<Bundle, 'countries' | 'states'>>();
+    const cached = readBranchFormBundle<Pick<Bundle, 'countries' | 'states' | 'state_codes'>>();
     if (cached) {
       hydrateMasters(cached);
       setLoadingLookups(false);
@@ -640,6 +687,7 @@ export default function BranchForm({ onBack, editId }: Props) {
         writeBranchFormBundle({
           countries: res.data.countries,
           states: res.data.states,
+          state_codes: res.data.state_codes ?? [],
         });
         // Reuse the bundled next_code so we don't fire a second round-trip
         // to /branches/next-code (the legacy effect below is now removed).
@@ -675,6 +723,20 @@ export default function BranchForm({ onBack, editId }: Props) {
       .map(s => ({ label: s.name, value: s.name }));
   }, [form.country, countries, statesAll]);
 
+  /* Statutory GST code of the state currently picked in the address, e.g.
+   * Maharashtra → "27". The form stores the state by NAME, so resolve name →
+   * id → code. Undefined when nothing is picked or the master has no code for
+   * that state (non-Indian states have none) — the validator then skips the
+   * GSTIN/state checks rather than inventing a code. */
+  const selectedStateGstCode = useMemo(() => {
+    if (!form.state || stateCodes.length === 0) return undefined;
+    const state = statesAll.find(s => s.name === form.state);
+    if (!state) return undefined;
+    const row = stateCodes.find(c => String(c.state_id) === String(state.id));
+    const code = String(row?.state_code ?? '').trim();
+    return code ? code.padStart(2, '0') : undefined;
+  }, [form.state, statesAll, stateCodes]);
+
   // Password strength meter for the branch admin password (mirrors ClientForm).
   const pwStrength = useMemo(() => computePasswordStrength(form.user_password || ''), [form.user_password]);
 
@@ -691,7 +753,7 @@ export default function BranchForm({ onBack, editId }: Props) {
   const touch = useCallback((key: string) => {
     touchedRef.current[key] = true;
     setForm(current => {
-      const liveErrors = validateBranchForm(current, isEdit);
+      const liveErrors = validateBranchForm(current, isEdit, selectedStateGstCode);
       setValidationErrors(prev => {
         const next = { ...prev };
         Object.keys(touchedRef.current).forEach(k => { if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k]; });
@@ -699,7 +761,23 @@ export default function BranchForm({ onBack, editId }: Props) {
       });
       return current;
     });
-  }, [isEdit]);
+  }, [isEdit, selectedStateGstCode]);
+
+  /* Picking a state can invalidate a GSTIN typed earlier (and fix one flagged
+   * a moment ago), but the state dropdown lives in another section and never
+   * blurs the tax fields. Re-run the validator on every state change so the
+   * GSTIN/state verdict is never one interaction stale. Touched fields only —
+   * this must not start flagging fields the user hasn't reached yet. */
+  useEffect(() => {
+    if (!touchedRef.current.gst_number && !touchedRef.current.gst_state_code) return;
+    const liveErrors = validateBranchForm(form, isEdit, selectedStateGstCode);
+    setValidationErrors(prev => {
+      const next = { ...prev };
+      Object.keys(touchedRef.current).forEach(k => { if (liveErrors[k]) next[k] = liveErrors[k]; else delete next[k]; });
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStateGstCode]);
 
   const fieldError = useCallback((key: string) => serverErrors[key]?.[0] || validationErrors[key], [serverErrors, validationErrors]);
   const fieldInvalid = (key: string) => !!fieldError(key);
@@ -806,7 +884,7 @@ export default function BranchForm({ onBack, editId }: Props) {
     e?.preventDefault();
     const allKeys = Object.keys(empty) as (keyof FormState)[];
     allKeys.forEach(k => { touchedRef.current[k] = true; });
-    const errs = validateBranchForm(form, isEdit);
+    const errs = validateBranchForm(form, isEdit, selectedStateGstCode);
     if (Object.keys(errs).length) {
       setValidationErrors(errs);
       const missing = Object.keys(errs).slice(0, 3).map(k => FIELD_LABELS[k] || k).join(', ');

@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\Masters\Countries;
 use App\Models\Masters\States;
 use App\Models\User;
+use App\Support\Gst;
 use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -136,13 +137,13 @@ class BranchController extends Controller
                paperwork, and gst_state_code decides the CGST+SGST vs IGST
                split on every one of them. Server-side twin of the SPA rules
                in BranchForm.tsx — the form can be bypassed, the API can't. */
-            'gst_number' => [
+            'gst_number' => array_merge([
                 'required', 'string', 'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
                     ->where(fn ($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
-            ],
+            ], $this->gstNumberConsistencyRules($request)),
             'pan_number' => [
                 'required', 'string', 'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
@@ -153,7 +154,10 @@ class BranchController extends Controller
             'registration_number' => 'required|string|max:50',
             // Letterhead / export-house compliance fields — all optional,
             // surface on the Quotation/PI PDF when filled.
-            'gst_state_code'   => 'required|string|max:10',
+            'gst_state_code'   => array_merge(
+                ['required', 'string', 'max:10'],
+                $this->gstStateCodeConsistencyRules($request),
+            ),
             'cin'              => 'required|string|max:30',
             'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
@@ -481,14 +485,14 @@ class BranchController extends Controller
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             // Mandatory on edit too — see the matching block in store().
-            'gst_number' => [
+            'gst_number' => array_merge([
                 'required', 'string', 'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
                     ->ignore($branch->id)
                     ->where(fn ($q) => $q->where('client_id', $branch->client_id))
                     ->whereNull('deleted_at'),
-            ],
+            ], $this->gstNumberConsistencyRules($request, $branch->state)),
             'pan_number' => [
                 'required', 'string', 'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
@@ -498,7 +502,10 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'required|string|max:50',
-            'gst_state_code'   => 'required|string|max:10',
+            'gst_state_code'   => array_merge(
+                ['required', 'string', 'max:10'],
+                $this->gstStateCodeConsistencyRules($request, $branch->state),
+            ),
             'cin'              => 'required|string|max:30',
             'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
@@ -771,6 +778,103 @@ class BranchController extends Controller
             }
         }
         if ($patch) $request->merge($patch);
+    }
+
+    /**
+     * Cross-field consistency closures for `gst_number` (QA #1).
+     *
+     * The three legal-identity fields are NOT independent — a GSTIN is built
+     * out of the other two:
+     *
+     *     2 7 A A F C D 5 6 7 8 L 1 Z 5
+     *     └┬┘ └─────┬─────────┘
+     *      │        └── characters 3-12 ARE the PAN of the same entity
+     *      └─────────── the state code of the registration
+     *
+     * Format rules alone accept 27AAFCD5678L1Z5 alongside PAN AAECS1234W and
+     * state code 07 — three numbers belonging to three different entities in
+     * two different states — and every quotation, PI and export document then
+     * prints that contradiction. Worse, `gst_state_code` decides the CGST+SGST
+     * vs IGST split, so a code that disagrees with the GSTIN mis-taxes invoices
+     * silently rather than failing loudly.
+     *
+     * Server-side twin of the SPA rules in BranchForm.tsx — the form can be
+     * bypassed, the API can't.
+     *
+     * @param string|null $fallbackState State to compare against when the
+     *        request omits the key entirely (an edit that PATCHes only the tax
+     *        fields must still be checked against the branch's stored state).
+     */
+    private function gstNumberConsistencyRules(Request $request, ?string $fallbackState = null): array
+    {
+        return [
+            /* GSTIN chars 3-12 vs the PAN Number field. Skipped unless BOTH are
+             * well-formed — otherwise a user who mistyped the PAN gets this
+             * mismatch on top of the format error, which reads as two problems
+             * when there is one. */
+            function ($attribute, $value, $fail) use ($request) {
+                $gstin = strtoupper(trim((string) $value));
+                $pan   = strtoupper(trim((string) $request->input('pan_number')));
+                if ($pan === '' || !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $pan)) return;
+                if (!preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/', $gstin)) return;
+
+                $embedded = substr($gstin, 2, 10);
+                if ($embedded !== $pan) {
+                    $fail("The PAN inside this GSTIN ({$embedded}) does not match the PAN Number entered ({$pan}). A GSTIN's characters 3-12 are the PAN of the same entity.");
+                }
+            },
+            /* GSTIN's first two digits vs the address state's statutory code.
+             * Resolved from the state NAME via the master table (not from the
+             * request's gst_state_code) so a direct API call can't slip a
+             * mismatched pair through by sending a code that doesn't belong to
+             * its state — same approach as CustomerController. Skipped when the
+             * master has no code for that state (non-Indian addresses), so a
+             * foreign branch isn't made unsaveable. */
+            function ($attribute, $value, $fail) use ($request, $fallbackState) {
+                $gstin = strtoupper(trim((string) $value));
+                $prefix = Gst::stateCodeFromGstin($gstin);
+                if ($prefix === null) return;
+
+                $state = $request->has('state') ? $request->input('state') : $fallbackState;
+                $expected = Gst::stateCodeFor($state);
+                if ($expected && $prefix !== $expected) {
+                    $fail("This GSTIN is registered in state code {$prefix}, but the address state is " . trim((string) $state) . " ({$expected}). Correct the GSTIN or the state.");
+                }
+            },
+        ];
+    }
+
+    /**
+     * Cross-field consistency closures for `gst_state_code` — see
+     * gstNumberConsistencyRules() for why these fields can't disagree.
+     */
+    private function gstStateCodeConsistencyRules(Request $request, ?string $fallbackState = null): array
+    {
+        return [
+            function ($attribute, $value, $fail) use ($request, $fallbackState) {
+                $code = trim((string) $value);
+                if ($code === '') return;
+
+                if (!preg_match('/^[0-9]{2}$/', $code)) {
+                    $fail('GST State Code must be exactly 2 digits. Example: 27 for Maharashtra.');
+                    return;
+                }
+
+                // The GSTIN wins the tie-break: it's the registration itself,
+                // while gst_state_code is a derived convenience column.
+                $prefix = Gst::stateCodeFromGstin($request->input('gst_number'));
+                if ($prefix && $prefix !== $code) {
+                    $fail("GST State Code ({$code}) must match the first two digits of the GST Number ({$prefix}).");
+                    return;
+                }
+
+                $state = $request->has('state') ? $request->input('state') : $fallbackState;
+                $expected = Gst::stateCodeFor($state);
+                if ($expected && $expected !== $code) {
+                    $fail("GST State Code ({$code}) does not match the address state " . trim((string) $state) . ", whose code is {$expected}.");
+                }
+            },
+        ];
     }
 
     public function destroy(Branch $branch, Request $request)
@@ -1262,6 +1366,21 @@ class BranchController extends Controller
                     ->tap($scope)
                     ->orderBy('name')
                     ->get(['id', 'country_id', 'name', 'status']),
+                /* Statutory GST state codes (state_id → "27"), so the form can
+                 * tell the user their GSTIN doesn't belong to the state they
+                 * picked BEFORE they submit. Read globally (client_id IS NULL,
+                 * how they're seeded) and deliberately NOT tenant-scoped — the
+                 * CBIC list is the same for every client. Matches
+                 * App\Support\Gst::stateCodeFor(), which is what the server-side
+                 * twin of this rule resolves against.
+                 *
+                 * state_id is varchar while master_states.id is bigint, hence
+                 * the ::text comparison everywhere else in this codebase — here
+                 * we just hand the raw pair to the client and let it match. */
+                'state_codes' => DB::table('master_state_codes')
+                    ->whereNull('client_id')
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->get(['state_id', 'state_code']),
             ];
         });
 
@@ -1272,8 +1391,12 @@ class BranchController extends Controller
             : 'BR-001';
 
         return response()->json([
-            'countries' => $masters['countries'],
-            'states'    => $masters['states'],
+            'countries'   => $masters['countries'],
+            'states'      => $masters['states'],
+            // May be absent from a cache entry written before this key existed;
+            // the SPA treats a missing list as "no codes known" and skips the
+            // state/GSTIN check, which the API still enforces.
+            'state_codes' => $masters['state_codes'] ?? [],
             'next_code' => $nextCode,
             'prefix'    => 'BR-',
         ]);

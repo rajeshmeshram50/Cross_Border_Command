@@ -31,7 +31,11 @@
 // written before MasterVisibility::applyReadScope was added to the
 // server bundle. Without bumping, browsers would keep serving the
 // older potentially-leaky payload until the 5-min TTL expired.
-const KEY = 'branch:form-bundle:v2';
+// v3 bump — the payload now carries `state_codes` (statutory GST state codes)
+// so the form can check a GSTIN against the state picked in the address. A v2
+// entry has no such list; bumping avoids serving one for up to 5 minutes and
+// silently skipping that check.
+const KEY = 'branch:form-bundle:v3';
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 type Envelope<T> = { v: 1; ts: number; data: T };
