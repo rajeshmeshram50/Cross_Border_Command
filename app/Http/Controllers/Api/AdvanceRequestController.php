@@ -17,7 +17,14 @@ use Illuminate\Support\Facades\DB;
 class AdvanceRequestController extends Controller
 {
     private const STATUSES         = ['pending', 'approved', 'rejected'];
-    private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Other'];
+    /* 'Loan' shares this whole pipeline rather than getting a module of its own.
+     * A staff loan IS an advance with a longer EMI schedule — same sanction,
+     * same recovery modes, same arrears ledger, same FOI headroom — so a
+     * parallel implementation would have been a second copy of all of it,
+     * drifting out of step. What a loan does get is its own payslip line:
+     * PayrollService splits Loan-type recoveries into `loan_recovery`, which
+     * until now was hardcoded to 0 (Rule 11). */
+    private const ADVANCE_TYPES    = ['Travel Advance', 'Salary Advance', 'Medical Advance', 'Loan', 'Other'];
     private const RECOVERY_MODES   = ['emi', 'lumpsum', 'bimonthly'];
 
 

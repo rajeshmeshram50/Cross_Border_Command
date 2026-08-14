@@ -662,8 +662,182 @@ class PayrollController extends Controller
 
     /** Rule 21 — Full & Final Settlement preview for an exited employee.
      *  Optional query params: leave_encashment_days, notice_recovery_amount,
-     *  other_dues, other_deductions. */
+     *  other_dues, other_deductions.
+     *
+     *  Still computes LIVE — this is the working view HR adjusts before saving.
+     *  Any settlement already saved for the employee is returned alongside it as
+     *  `saved`, so the screen can show what was previously agreed (and, once it
+     *  is approved or paid, show those frozen figures instead of the live ones).
+     */
     public function fnf(Request $request, int $employeeId)
+    {
+        $employee = $this->fnfEmployee($request, $employeeId);
+        if ($employee instanceof \Illuminate\Http\JsonResponse) {
+            return $employee;
+        }
+
+        // Validate the HR-decided numeric inputs (were taken raw from the query —
+        // negatives/garbage flowed straight into the calc). (P24)
+        $request->validate([
+            'leave_encashment_days'  => ['nullable', 'numeric', 'min:0', 'max:365'],
+            'notice_recovery_amount' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_dues'             => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_deductions'       => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+        ]);
+
+        $saved = $this->latestFnf($employee->id);
+        // Reopening a saved draft with no inputs in the URL must not silently
+        // reset the encashment days HR entered last time.
+        $opts = $this->fnfOpts($request, $saved);
+
+        return response()->json([
+            'data'  => $this->payroll->computeFnf($employee, $opts),
+            'saved' => $saved ? $this->serializeFnf($saved) : null,
+        ]);
+    }
+
+    /**
+     * Rule 21 — save (or update) the settlement.
+     *
+     * Writes the inputs AND the computed breakdown, so the settlement stops
+     * being a number that changes every time someone opens the screen. An
+     * approved or paid settlement is frozen: it must be reopened deliberately
+     * rather than silently overwritten by the next save.
+     */
+    public function fnfSave(Request $request, int $employeeId)
+    {
+        $employee = $this->fnfEmployee($request, $employeeId);
+        if ($employee instanceof \Illuminate\Http\JsonResponse) {
+            return $employee;
+        }
+
+        $request->validate([
+            'leave_encashment_days'  => ['nullable', 'numeric', 'min:0', 'max:365'],
+            'notice_recovery_amount' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_dues'             => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'other_deductions'       => ['nullable', 'numeric', 'min:0', 'max:100000000'],
+            'notes'                  => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        $existing = $this->latestFnf($employee->id);
+        if ($existing && !$existing->isEditable()) {
+            return response()->json([
+                'message' => "This settlement is already {$existing->status} and can no longer be edited. Reopen it to make changes.",
+            ], 422);
+        }
+
+        $opts = $this->fnfOpts($request, null);
+        $calc = $this->payroll->computeFnf($employee, $opts);
+
+        $exitId = \Illuminate\Support\Facades\Schema::hasTable('employee_exits')
+            ? \Illuminate\Support\Facades\DB::table('employee_exits')->where('employee_id', $employee->id)->value('id')
+            : null;
+
+        $payload = [
+            'client_id'        => $employee->client_id,
+            'branch_id'        => $employee->branch_id,
+            'employee_id'      => $employee->id,
+            'employee_exit_id' => $exitId,
+            'employee_code'    => $calc['employee_code'] ?? null,
+            'employee_name'    => $calc['employee_name'] ?? null,
+            'last_working_day' => $calc['last_working_day'] ?? null,
+            'exit_type'        => $calc['exit_type'] ?? null,
+            'inputs'           => $opts,
+            'breakdown'        => $calc,
+            'total_earnings'   => $calc['total_earnings'] ?? 0,
+            'total_deductions' => $calc['total_deductions'] ?? 0,
+            'net_settlement'   => $calc['net_settlement'] ?? 0,
+            'status'           => 'draft',
+            'notes'            => $request->input('notes'),
+        ];
+
+        if ($existing) {
+            $existing->update($payload);
+            $record = $existing->fresh();
+        } else {
+            $payload['created_by'] = $request->user()?->id;
+            $record = \App\Models\FnfSettlement::create($payload);
+        }
+
+        $this->audit($request, 'fnf_save', $record,
+            "Full & final settlement saved for {$record->employee_name} (net ₹{$record->net_settlement})");
+
+        return response()->json([
+            'message' => 'Full & final settlement saved.',
+            'data'    => $this->serializeFnf($record),
+        ]);
+    }
+
+    /**
+     * Rule 21 — move a saved settlement along: approve → pay, or reopen a
+     * non-paid one back to draft. Mirrors the payroll run's own lifecycle so
+     * the two behave the same way (Rule 14).
+     */
+    public function fnfStatus(Request $request, int $employeeId)
+    {
+        $employee = $this->fnfEmployee($request, $employeeId);
+        if ($employee instanceof \Illuminate\Http\JsonResponse) {
+            return $employee;
+        }
+
+        $data = $request->validate([
+            'action' => ['required', 'in:approve,pay,reopen'],
+        ]);
+
+        $record = $this->latestFnf($employee->id);
+        if (!$record) {
+            return response()->json(['message' => 'No saved settlement for this employee.'], 404);
+        }
+
+        $from = $record->status;
+        $userId = $request->user()?->id;
+
+        switch ($data['action']) {
+            case 'approve':
+                if ($from !== 'draft') {
+                    return response()->json(['message' => "Only a draft settlement can be approved (this one is {$from})."], 422);
+                }
+                $record->update(['status' => 'approved', 'approved_by' => $userId, 'approved_at' => now()]);
+                break;
+
+            case 'pay':
+                if ($from !== 'approved') {
+                    return response()->json(['message' => "Approve the settlement before marking it paid (this one is {$from})."], 422);
+                }
+                $record->update(['status' => 'paid', 'paid_by' => $userId, 'paid_at' => now()]);
+                break;
+
+            case 'reopen':
+                // A paid settlement is money out of the door — correcting it is
+                // a new transaction, not an edit to the record of the old one.
+                if ($from === 'paid') {
+                    return response()->json(['message' => 'A paid settlement cannot be reopened.'], 422);
+                }
+                $record->update(['status' => 'draft', 'approved_by' => null, 'approved_at' => null]);
+                break;
+        }
+
+        $record = $record->fresh();
+        $this->audit($request, 'fnf_' . $data['action'], $record,
+            "Full & final settlement {$data['action']}d for {$record->employee_name}",
+            ['status' => $from], ['status' => $record->status]);
+
+        return response()->json([
+            'message' => "Settlement {$record->status}.",
+            'data'    => $this->serializeFnf($record),
+        ]);
+    }
+
+    /**
+     * Shared guard for every FnF endpoint: permission, tenant match, and the
+     * exit record the settlement depends on.
+     *
+     * Returns the Employee, or the JsonResponse to send back — the caller
+     * checks the type. Written this way so the three endpoints cannot drift
+     * apart on which checks they apply, which is exactly how the employee tier
+     * got read access to colleagues' settlements once before (P25).
+     */
+    private function fnfEmployee(Request $request, int $employeeId)
     {
         $user = $request->user();
         // FnF exposes full salary + settlement figures — manage-only, never the
@@ -689,22 +863,58 @@ class PayrollController extends Controller
             return response()->json(['message' => 'This employee has no exit record. Initiate the exit before computing a full & final settlement.'], 422);
         }
 
-        // Validate the HR-decided numeric inputs (were taken raw from the query —
-        // negatives/garbage flowed straight into the calc). (P24)
-        $request->validate([
-            'leave_encashment_days'  => ['nullable', 'numeric', 'min:0', 'max:365'],
-            'notice_recovery_amount' => ['nullable', 'numeric', 'min:0', 'max:100000000'],
-            'other_dues'             => ['nullable', 'numeric', 'min:0', 'max:100000000'],
-            'other_deductions'       => ['nullable', 'numeric', 'min:0', 'max:100000000'],
-        ]);
+        return $employee;
+    }
 
-        $opts = [
-            'leave_encashment_days'  => $request->query('leave_encashment_days'),
-            'notice_recovery_amount' => $request->query('notice_recovery_amount'),
-            'other_dues'             => $request->query('other_dues'),
-            'other_deductions'       => $request->query('other_deductions'),
+    /** The employee's current settlement, if one has been saved. */
+    private function latestFnf(int $employeeId): ?\App\Models\FnfSettlement
+    {
+        return \App\Models\FnfSettlement::where('employee_id', $employeeId)->latest('id')->first();
+    }
+
+    /**
+     * The HR-decided inputs for a computation. Falls back to a saved draft's
+     * stored inputs when the request omits them, so reopening the screen does
+     * not quietly zero the encashment days someone entered earlier.
+     */
+    private function fnfOpts(Request $request, ?\App\Models\FnfSettlement $saved): array
+    {
+        $stored = $saved?->inputs ?? [];
+        $pick = function (string $key) use ($request, $stored) {
+            $v = $request->input($key, $request->query($key));
+            return $v !== null && $v !== '' ? $v : ($stored[$key] ?? null);
+        };
+
+        return [
+            'leave_encashment_days'  => $pick('leave_encashment_days'),
+            'notice_recovery_amount' => $pick('notice_recovery_amount'),
+            'other_dues'             => $pick('other_dues'),
+            'other_deductions'       => $pick('other_deductions'),
         ];
-        return response()->json(['data' => $this->payroll->computeFnf($employee, $opts)]);
+    }
+
+    /** API shape for a saved settlement. */
+    private function serializeFnf(\App\Models\FnfSettlement $r): array
+    {
+        return [
+            'id'               => $r->id,
+            'employee_id'      => $r->employee_id,
+            'employee_code'    => $r->employee_code,
+            'employee_name'    => $r->employee_name,
+            'last_working_day' => $r->last_working_day?->toDateString(),
+            'exit_type'        => $r->exit_type,
+            'inputs'           => $r->inputs,
+            'breakdown'        => $r->breakdown,
+            'total_earnings'   => $r->total_earnings,
+            'total_deductions' => $r->total_deductions,
+            'net_settlement'   => $r->net_settlement,
+            'status'           => $r->status,
+            'editable'         => $r->isEditable(),
+            'notes'            => $r->notes,
+            'approved_at'      => $r->approved_at?->toDateTimeString(),
+            'paid_at'          => $r->paid_at?->toDateTimeString(),
+            'created_at'       => $r->created_at?->toDateTimeString(),
+        ];
     }
 
     /** Rule 16 — single payslip (full component breakdown + finalization flag). */
@@ -967,10 +1177,24 @@ class PayrollController extends Controller
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
+        /* Rule 17 — branch filter. Only meaningful for a caller who can see more
+         * than one branch: $ctx already pins a branch_user to their own, and
+         * narrowing further is fine, but a requested branch OUTSIDE the caller's
+         * scope must not widen it. Cross-checking against $ctx['branch_id']
+         * keeps the filter from becoming a tenant-isolation hole (Rule 20). */
+        $branchFilter = (int) $request->query('branch_id') ?: null;
+        if ($branchFilter && $ctx['branch_id'] && $branchFilter !== (int) $ctx['branch_id']) {
+            abort(403, 'You are not allowed to export payroll for that branch.');
+        }
+
         $q = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
             ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
+            ->when($branchFilter, fn ($q, $b) => $q->where('branch_id', $b))
+            // Employment type reads the payslip's own snapshot, so an old export
+            // stays reproducible after the employee's type changes.
+            ->when($request->query('employee_type'), fn ($q, $t) => $q->where('employee_type', $t))
             ->orderBy('employee_name');
 
         // Filename carries the cycle AND its financial year so a Jan-2027 export
@@ -984,18 +1208,19 @@ class PayrollController extends Controller
         return response()->stream(function () use ($q) {
             $out = fopen('php://output', 'w');
             fputcsv($out, [
-                'Emp Code', 'Employee', 'Department', 'Designation',
+                'Emp Code', 'Employee', 'Department', 'Designation', 'Employment Type',
                 'Working Days', 'Paid Days', 'LOP Days',
-                'Gross', 'PF', 'ESI', 'PT', 'TDS', 'LOP Amt', 'Advance Rec',
+                'Gross', 'PF', 'ESI', 'PT', 'TDS', 'LOP Amt', 'Advance Rec', 'Loan Rec',
                 'Total Deductions', 'Net Pay', 'Status',
             ]);
             $q->chunk(200, function ($slips) use ($out) {
                 foreach ($slips as $s) {
                     fputcsv($out, [
                         $s->employee_code, $s->employee_name, $s->department, $s->designation,
+                        $s->employee_type,
                         $s->working_days, $s->paid_days, $s->lop_days,
                         $s->gross_earnings, $s->pf_employee, $s->esi, $s->pt, $s->tds,
-                        $s->lop_amount, $s->advance_recovery,
+                        $s->lop_amount, $s->advance_recovery, $s->loan_recovery,
                         $s->total_deductions, $s->net_pay, $s->status,
                     ]);
                 }

@@ -822,6 +822,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/payroll/payslip/{id}',        [\App\Http\Controllers\Api\PayrollController::class, 'payslip'])->whereNumber('id');
     Route::get ('/payroll/employee/{employeeId}/payslips', [\App\Http\Controllers\Api\PayrollController::class, 'employeePayslips'])->whereNumber('employeeId');
     Route::get ('/payroll/fnf/{employeeId}',    [\App\Http\Controllers\Api\PayrollController::class, 'fnf'])->whereNumber('employeeId');
+    // Rule 21 — the settlement is a saved document, not just a live preview.
+    Route::post('/payroll/fnf/{employeeId}',        [\App\Http\Controllers\Api\PayrollController::class, 'fnfSave'])->whereNumber('employeeId');
+    Route::post('/payroll/fnf/{employeeId}/status', [\App\Http\Controllers\Api\PayrollController::class, 'fnfStatus'])->whereNumber('employeeId');
     Route::get ('/payroll',                      [\App\Http\Controllers\Api\PayrollController::class, 'index']);
     Route::post('/payroll/finalize-attendance', [\App\Http\Controllers\Api\PayrollController::class, 'finalizeAttendance']);
     Route::post('/payroll/run',                  [\App\Http\Controllers\Api\PayrollController::class, 'run']);

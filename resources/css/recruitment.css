@@ -2687,6 +2687,14 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--vz-heading-color, var(--vz-body-color));
+  /* Truncates instead of shoving the REC-### pill off the right edge. The row
+     is flex-nowrap so the pill can hold its position; min-width:0 is what lets
+     this item shrink below its text width, which a flex item will not do by
+     default however much overflow you set on it. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rec-cancel-summary-meta {
   display: flex; align-items: center; gap: 7px;

@@ -25,6 +25,36 @@ class AuthController extends Controller
 
     /** Lowercased + trimmed cache key shared across all login paths so an
      *  attacker can't bypass rate-limiting by switching login methods. */
+    /**
+     * True when a posted face descriptor is not a real capture.
+     *
+     * A face-api.js descriptor is a 128-float embedding whose magnitude sits
+     * around 1. An all-zero (or near-zero) vector has no such magnitude: it
+     * lands an equal, small distance from every enrolled face, so it is both
+     * useless as a credential and dangerous as a probe. Non-finite values are
+     * rejected for the same reason — they poison the distance sum.
+     *
+     * Shared by the login, enrollment and punch paths so all three agree on
+     * what counts as a usable capture.
+     */
+    public static function isDegenerateDescriptor(?array $descriptor): bool
+    {
+        if (!is_array($descriptor) || count($descriptor) !== 128) {
+            return true;
+        }
+        $sum = 0.0;
+        foreach ($descriptor as $v) {
+            if (!is_numeric($v) || !is_finite((float) $v)) {
+                return true;
+            }
+            $sum += ((float) $v) * ((float) $v);
+        }
+
+        // Magnitude of a genuine descriptor is ~1; 0.1 is far below anything a
+        // real capture produces while still admitting unusual but valid faces.
+        return sqrt($sum) < 0.1;
+    }
+
     private function bruteForceKey(?string $email): string
     {
         return 'login_attempts:' . strtolower(trim((string) $email));
@@ -186,10 +216,23 @@ class AuthController extends Controller
         $request->validate([
             'email'        => 'required|email',
             'descriptor'   => 'required|array|size:128',
-            'descriptor.*' => 'required|numeric',
+            // Bounds match the attendance punch path, which has always had
+            // them. A face-api.js descriptor is a unit-ish vector; anything
+            // outside ±5 is not a face, and without the bound a caller could
+            // post huge or INF values and skew the distance arithmetic.
+            'descriptor.*' => 'required|numeric|between:-5,5',
             // Optional org pick when the email exists in multiple clients.
             'client_id'    => 'nullable|integer',
         ]);
+
+        // A degenerate vector (all zeros / near-zero) is not a face either; it
+        // sits an equal distance from everything and would otherwise be a
+        // legitimate-looking probe against every enrolled descriptor.
+        if ($this->isDegenerateDescriptor($request->input('descriptor'))) {
+            throw ValidationException::withMessages([
+                'descriptor' => ['That face capture was not usable. Please try again.'],
+            ]);
+        }
 
         $lockKey = $this->bruteForceKey($request->email);
 
@@ -210,10 +253,12 @@ class AuthController extends Controller
 
         $captured = $request->input('descriptor');
         $threshold = 0.50;
-        $bestUser = null;
-        $bestEmployee = null;
-        $bestDistance = INF;
         $anyFaceOnFile = false;
+        // Every candidate that matched under threshold, not just the closest.
+        // Keeping them all is what lets an INACTIVE nearest account stop
+        // shadowing a valid active one, and what makes multi-org detection
+        // possible below.
+        $matches = [];
 
         foreach ($accounts as $candidate) {
             $emp = \App\Models\Employee::where('user_id', $candidate->id)->first();
@@ -227,12 +272,50 @@ class AuthController extends Controller
                 $sum += $d * $d;
             }
             $dist = sqrt($sum);
-            if ($dist < $bestDistance) {
-                $bestDistance = $dist;
-                $bestUser = $candidate;
-                $bestEmployee = $emp;
+            if ($dist <= $threshold) {
+                $matches[] = ['user' => $candidate, 'employee' => $emp, 'distance' => $dist];
             }
         }
+
+        usort($matches, fn ($a, $b) => $a['distance'] <=> $b['distance']);
+
+        /* Prefer ACTIVE accounts. The old code took the numerically closest
+         * match and only then checked status, so a disabled account that
+         * happened to be a hair closer locked the employee out of the active
+         * account they were actually trying to reach. If nothing active
+         * matched, the inactive match is kept so the honest "your account is
+         * not active" message still fires below rather than "face did not
+         * match". */
+        $activeMatches = array_values(array_filter($matches, fn ($m) => $m['user']->status === 'active'));
+        $usable = $activeMatches !== [] ? $activeMatches : $matches;
+
+        /* Org selection — the same gate password and Google login already
+         * apply. With one face enrolled in two tenants, the winner used to be
+         * decided by capture noise: which tenant you landed in changed between
+         * attempts. The face has been proven against both, so listing them and
+         * asking is safe. Skipped when the caller already named a client_id. */
+        if (count($usable) > 1 && !$request->filled('client_id')) {
+            $orgs = collect($usable)
+                ->map(fn ($m) => $m['user'])
+                ->unique('client_id');
+            if ($orgs->count() > 1) {
+                Cache::forget($lockKey);
+                return response()->json([
+                    'needs_org_selection' => true,
+                    'message' => 'This email is registered with more than one organization. Choose which one to sign in to.',
+                    'organizations' => $orgs->map(fn ($u) => [
+                        'client_id' => $u->client_id,
+                        'name'      => $u->effectiveClient()?->org_name
+                            ?? ($u->user_type === 'super_admin' ? 'Platform Admin' : 'Organization'),
+                    ])->values(),
+                ], 409);
+            }
+        }
+
+        $best = $usable[0] ?? null;
+        $bestUser     = $best['user'] ?? null;
+        $bestEmployee = $best['employee'] ?? null;
+        $bestDistance = $best['distance'] ?? INF;
 
         // No account with this email has a face enrolled. Generic message so we
         // don't leak which condition failed (mirrors the original guard).

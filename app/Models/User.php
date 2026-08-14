@@ -143,6 +143,12 @@ class User extends Authenticatable
         return $this->user_type === 'branch_user';
     }
 
+    /** A staff login paired to an `employees` row (the bottom tier). */
+    public function isEmployee(): bool
+    {
+        return $this->user_type === 'employee';
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

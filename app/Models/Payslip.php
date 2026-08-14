@@ -16,7 +16,7 @@ class Payslip extends Model
 
     protected $fillable = [
         'client_id', 'branch_id', 'payroll_run_id', 'payroll_period_id', 'employee_id',
-        'employee_code', 'employee_name', 'department', 'designation',
+        'employee_code', 'employee_name', 'department', 'designation', 'employee_type',
         'working_days', 'present_days', 'paid_days', 'lop_days',
         'paid_leave_days', 'unpaid_leave_days', 'late_marks', 'missing_punches',
         'overtime_hours', 'att_source',

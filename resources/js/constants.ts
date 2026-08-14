@@ -476,9 +476,13 @@ export const MENU_ITEMS: MenuItem[] = [
   // employee role so admins don't see a dead-end menu entry.
   { id: 'clock-in', icon: 'CalendarCheck', label: 'Clock-In', roles: ['employee'] },
 
-  // Permissions panel — only admins should grant. Employees never manage
-  // their peers' access, so no `employee` here.
-  { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user'] },
+  /* Permissions panel — visible to EVERY role, because granting is delegated
+     down the reporting line: a manager configures the people under them. The
+     role no longer decides whether you see the page, only who appears in its
+     picker (PermissionController::manageableUsers) and how much you may hand
+     out (never more than you hold). An employee with no reports sees the page
+     with an empty picker, which is a clearer answer than a hidden menu. */
+  { id: 'permissions', icon: 'ShieldCheck', label: 'Permissions', roles: ['super_admin', 'client_admin', 'branch_user', 'employee'] },
 
   { id: 'settings', icon: 'Settings', label: 'Settings', roles: ['super_admin'] },
   { id: 'profile', icon: 'UserCircle', label: 'Profile', roles: ALL_TENANT_ROLES },
