@@ -114,6 +114,20 @@ const FIELD_LABELS: Record<string, string> = {
   user_password_confirmation: 'Confirm Password',
 };
 
+/* Email shape, TLD REQUIRED (QA #4).
+ *
+ *   test@mailinator.com  → ok
+ *   test@mailinator      → rejected — no top-level domain
+ *   test@mailinator.c    → rejected — a TLD is 2+ letters
+ *
+ * The old rule here was /^[^\s@]+@[^\s@]+\.[^\s@]+$/, which only asked for a
+ * dot somewhere after the @ — "test@mailinator." and "a@b.1" both slipped
+ * through. Note that a bare hostname like `test@mailinator` is legal to an
+ * RFC parser (and to PHP's FILTER_VALIDATE_EMAIL, which is why the API let it
+ * past too); it just can't receive mail from the public internet, which is the
+ * only thing these addresses are for here. */
+const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/;
+
 // Website / URL validator. Accepts:
 //   www.example.com         → ok
 //   example.com             → ok
@@ -194,8 +208,8 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
 
   // ── Branch email ──
   if (form.email) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      e.email = 'Enter a valid email like: branch@company.com';
+    if (!EMAIL_RE.test(form.email.trim())) {
+      e.email = 'Enter a valid email like: branch@company.com (a domain ending such as .com is required)';
     } else if (form.email.length > 100) {
       e.email = 'Email is too long (max 100 characters)';
     }
@@ -313,20 +327,29 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  // ── Branch admin user fields (only when creating a new branch) ──
+  /* ── Branch admin email ──
+     Checked in BOTH modes, unlike the rest of the admin block below (QA #4).
+     The whole section used to sit behind `if (!isEdit)`, which meant an EDIT
+     could put anything at all in the login email — test@mailinator, or the
+     branch's own address — and save it without a word. Only the "is it filled
+     in" rule is create-only: on edit a blank field means "leave the admin
+     alone", not "clear the login". */
+  if (form.user_email?.trim()) {
+    if (!EMAIL_RE.test(form.user_email.trim())) {
+      e.user_email = 'Enter a valid email like: admin@company.com (a domain ending such as .com is required)';
+    } else if (form.email && form.user_email.trim().toLowerCase() === form.email.trim().toLowerCase()) {
+      e.user_email = 'Admin email should differ from the branch email';
+    }
+  } else if (!isEdit) {
+    e.user_email = 'Admin email is required';
+  }
+
+  // ── Remaining branch admin fields (only when creating a new branch) ──
   if (!isEdit) {
     if (!form.user_name?.trim()) {
       e.user_name = 'Admin user name is required';
     } else if (form.user_name.trim().length < 2) {
       e.user_name = 'Admin name must be at least 2 characters';
-    }
-
-    if (!form.user_email?.trim()) {
-      e.user_email = 'Admin email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.user_email)) {
-      e.user_email = 'Enter a valid email like: admin@company.com';
-    } else if (form.email && form.user_email.toLowerCase() === form.email.toLowerCase()) {
-      e.user_email = 'Admin email should differ from the branch email';
     }
 
     if (!form.user_password) {
@@ -1765,8 +1788,13 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Email</Lbl>
+                {/* Lower-cased as typed (QA #3) — same treatment GST/PAN get in
+                    the opposite direction. Emails are stored lowercase because
+                    both the duplicate check and login look them up with an
+                    exact match, so a stray capital creates a second account
+                    for the same mailbox and then fails to sign in. */}
                 <Input name="email" style={css.input} type="email" value={form.email} invalid={fieldInvalid('email')}
-                  onChange={e => set('email', e.target.value)} onBlur={() => touch('email')}
+                  onChange={e => set('email', e.target.value.toLowerCase())} onBlur={() => touch('email')}
                   placeholder="branch@company.com" />
                 <FormFeedback style={css.formFeedback}>{fieldError('email')}</FormFeedback>
               </Col>
@@ -2316,8 +2344,10 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Email {!isEdit && <span className="text-danger">*</span>}</Lbl>
+                {/* Lower-cased as typed — this one is a LOGIN credential, see
+                    the branch email above. */}
                 <Input name="user_email" style={css.input} type="email" value={form.user_email} invalid={fieldInvalid('user_email')}
-                  onChange={e => set('user_email', e.target.value)} onBlur={() => touch('user_email')}
+                  onChange={e => set('user_email', e.target.value.toLowerCase())} onBlur={() => touch('user_email')}
                   placeholder="user@branch.com" />
                 <FormFeedback style={css.formFeedback}>{fieldError('user_email')}</FormFeedback>
               </Col>
