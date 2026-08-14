@@ -496,6 +496,10 @@ export default function HrCustomFields() {
             columns={columns}
             serial
             accent="violet"
+            /* Stretches the card to the viewport so a short list doesn't
+               collapse into a strip above an empty page — paired with
+               autoFitRows, which then fills that height with rows. */
+            fitToViewport
             autoFitRows
             minWidth={1100}
             loading={loading}

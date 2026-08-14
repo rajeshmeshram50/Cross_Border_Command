@@ -1729,6 +1729,10 @@ export default function HrPayroll() {
               className="pay-tbl-run"
               serial={{ header: 'Sr. No.' }}
               accent="violet"
+              /* Fills the viewport instead of collapsing to row count — each of
+                 these tables is the only one on its tab, so it owns the space
+                 left under whatever the tab renders above it. */
+              fitToViewport
               autoFitRows
               minWidth={1500}
               loading={loading}
@@ -1786,6 +1790,7 @@ export default function HrPayroll() {
                 columns={biometricColumns}
                 accent="violet"
                 className="pay-tbl-att"
+                fitToViewport
                 autoFitRows
                 minWidth={1100}
                 loading={loading}
@@ -1836,6 +1841,7 @@ export default function HrPayroll() {
                 columns={reportColumns}
                 accent="violet"
                 className="pay-tbl-report"
+                fitToViewport
                 autoFitRows
                 minWidth={1900}
                 loading={loading}
@@ -1867,6 +1873,7 @@ export default function HrPayroll() {
                 columns={rosterColumns}
                 className="pay-tbl-roster"
                 accent="violet"
+                fitToViewport
                 autoFitRows
                 /* Floor raised 1100 → 1200 so the Action column's 12% still
                    clears the Set Salary pill on a narrow window; below that the

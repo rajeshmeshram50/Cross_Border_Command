@@ -12443,6 +12443,11 @@
              close button (see .emp-close-btn on the Add/Edit Employee modal). */
           .assign-close-x { transition: background .15s ease, transform .15s ease; }
           .assign-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
+          /* Broadcast Centre's header X — same treatment. It is the only way out
+             of that wizard now that the footer Cancel is gone, so it has to read
+             as a control rather than a faint patch on the gradient. */
+          .brd-close-x { transition: background .15s ease, transform .15s ease; }
+          .brd-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
           .assign-close-x:active { transform: scale(0.95); }
 
         .mschips-toggle {
