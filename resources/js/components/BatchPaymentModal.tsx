@@ -187,8 +187,70 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             <button onClick={onClose} style={xBtn} aria-label="Close">✕</button>
           </div>
 
-          {/* Boxed wizard stepper (matches the Return-payment flow). */}
-          {view !== 'history' && (
+          {/* HISTORY is the base popup's only content. */}
+          <div style={body}>
+            <div style={rowBetween}>
+              <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>Previous batch payments</div>
+              <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><span style={{ fontSize: 16 }}>＋</span> Make New Payment</button>
+            </div>
+            <div style={tableWrap}>
+              <table style={table}>
+                <thead><tr>{['SR NO', 'DATE', 'EMPLOYEE', 'EXPENSE IDS', 'METHOD', 'UTR / REFERENCE', 'AMOUNT', 'NOTE', 'ZOHO', 'PROOF'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
+                    : history.length === 0 ? <tr><td colSpan={10} style={emptyTd}>No batch payments yet.</td></tr>
+                      : histSlice.map((b, i) => (
+                        <tr key={b.id}>
+                          <td style={td}>{(histPage - 1) * PAGE + i + 1}</td>
+                          <td style={td}>{fmtDate(b.paid_at)}</td>
+                          <td style={td}><div style={{ fontWeight: 600 }}>{b.employee_name}</div><div style={{ fontSize: 11, color: '#64748b' }}>{b.employee_code}</div></td>
+                          <td style={td}><ExpenseIds nos={b.exp_nos} /></td>
+                          <td style={td}>{b.payment_type}</td>
+                          <td style={{ ...td, fontFamily: 'monospace' }}>{b.reference_number}</td>
+                          <td style={{ ...td, fontWeight: 700 }}>{inr(b.total_amount)}</td>
+                          <td style={{ ...td, maxWidth: 150, color: '#64748b' }} title={b.note ?? ''}>{b.note || '—'}</td>
+                          <td style={td}>{b.zoho_status === 'synced' && b.zoho_url
+                            ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={link}>View</a>
+                            : <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }} disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>{syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}</button>}</td>
+                          <td style={td}>{b.proof_url ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
+                        </tr>
+                      ))}
+                </tbody>
+              </table>
+            </div>
+            {history.length > PAGE && <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />}
+          </div>
+          <div style={footer}>
+            <div style={{ fontSize: 12.5, color: '#64748b' }}>Pay several small approved claims of one employee at once.</div>
+            <button style={ghostBtn} onClick={onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+
+      {/* ═══ Nested wizard popup — opens ON TOP of the history popup when the
+          user clicks "Make New Payment" (view select/pay). Closing it (✕ /
+          backdrop / History) returns to the history popup underneath. ═══ */}
+      {(view === 'select' || view === 'pay') && (
+        <div style={{ ...backdrop, zIndex: 9100 }} onMouseDown={saving ? undefined : () => { resetForm(); setView('history'); }}>
+          <div style={{ ...card, position: 'relative' }} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            {saving && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(255,255,255,.72)', backdropFilter: 'blur(1.5px)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+                <svg className="bpw-spin" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2.4" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#0e7490' }}>Processing payment…</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Please don’t close this window.</div>
+              </div>
+            )}
+            <div style={header}>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                <span style={heroIco}><i className="ri-stack-line" /></span>
+                <div>
+                  <div style={{ fontSize: 11.5, letterSpacing: 1, opacity: .85, textTransform: 'uppercase' }}>HRMS · Expense Management</div>
+                  <div style={{ fontSize: 23, fontWeight: 800 }}>Pay Multiple Claims</div>
+                  <div style={{ fontSize: 13, opacity: .92 }}>Pay several small approved claims of one employee together — one UTR, one proof, one Zoho expense.</div>
+                </div>
+              </div>
+              <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close">✕</button>
+            </div>
             <div style={rail}>
               <div className="bpw-stepper">
                 {[
@@ -216,45 +278,8 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                 })}
               </div>
             </div>
-          )}
 
           <div style={body}>
-            {/* ───── HISTORY ───── */}
-            {view === 'history' && (
-              <>
-                <div style={rowBetween}>
-                  <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>Previous batch payments</div>
-                  <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><span style={{ fontSize: 16 }}>＋</span> Make New Payment</button>
-                </div>
-                <div style={tableWrap}>
-                  <table style={table}>
-                    <thead><tr>{['SR NO', 'DATE', 'EMPLOYEE', 'EXPENSE IDS', 'METHOD', 'UTR / REFERENCE', 'AMOUNT', 'NOTE', 'ZOHO', 'PROOF'].map(h => <th key={h} style={th}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {loading ? <tr><td colSpan={10} style={emptyTd}>Loading…</td></tr>
-                        : history.length === 0 ? <tr><td colSpan={10} style={emptyTd}>No batch payments yet.</td></tr>
-                          : histSlice.map((b, i) => (
-                            <tr key={b.id}>
-                              <td style={td}>{(histPage - 1) * PAGE + i + 1}</td>
-                              <td style={td}>{fmtDate(b.paid_at)}</td>
-                              <td style={td}><div style={{ fontWeight: 600 }}>{b.employee_name}</div><div style={{ fontSize: 11, color: '#64748b' }}>{b.employee_code}</div></td>
-                              <td style={td}><ExpenseIds nos={b.exp_nos} /></td>
-                              <td style={td}>{b.payment_type}</td>
-                              <td style={{ ...td, fontFamily: 'monospace' }}>{b.reference_number}</td>
-                              <td style={{ ...td, fontWeight: 700 }}>{inr(b.total_amount)}</td>
-                              <td style={{ ...td, maxWidth: 150, color: '#64748b' }} title={b.note ?? ''}>{b.note || '—'}</td>
-                              <td style={td}>{b.zoho_status === 'synced' && b.zoho_url
-                                ? <a href={b.zoho_url} target="_blank" rel="noreferrer" style={link}>View</a>
-                                : <button style={{ ...syncBtn, opacity: syncingId === b.id ? .6 : 1 }} disabled={syncingId === b.id} onClick={() => syncZoho(b.id)}>{syncingId === b.id ? 'Syncing…' : 'Zoho Sync'}</button>}</td>
-                              <td style={td}>{b.proof_url ? <a href={tokenUrl(resolveFileUrl(b.proof_url))} target="_blank" rel="noreferrer" style={link}>File</a> : '—'}</td>
-                            </tr>
-                          ))}
-                    </tbody>
-                  </table>
-                </div>
-                {history.length > PAGE && <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />}
-              </>
-            )}
-
             {/* ───── STEP 1 — select employee + claims ───── */}
             {view === 'select' && (
               <>
@@ -409,12 +434,15 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               )}
             </div>
           </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Per-claim review (approve a pending claim) / view (an approved one). */}
-      <ExpenseSettlementModal claimId={reviewId} review onClose={() => { setReviewId(null); if (empId) loadPayable(Number(empId)); }} onDone={() => { if (empId) loadPayable(Number(empId)); }} />
-      <ExpenseSettlementModal claimId={viewId} readOnly onClose={() => setViewId(null)} onDone={() => {}} />
+      {/* Opened from the wizard popup (z-index 9100) — layer above it (9300) so
+          the review/view modal isn't hidden behind the wizard. */}
+      <ExpenseSettlementModal claimId={reviewId} review zIndexBase={9300} onClose={() => { setReviewId(null); if (empId) loadPayable(Number(empId)); }} onDone={() => { if (empId) loadPayable(Number(empId)); }} />
+      <ExpenseSettlementModal claimId={viewId} readOnly zIndexBase={9300} onClose={() => setViewId(null)} onDone={() => {}} />
     </>,
     document.body,
   );

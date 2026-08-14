@@ -201,16 +201,27 @@
 }
 .hrexp-export-item:hover { background: var(--shim-secondary-bg, #f3f4f6); }
 
-/* ── Compact table toolbar on the Expense page ────────────────────────────
-   This page's header is tall (hero + 5 KPI cards + Spend Analytics), so the
-   table's tab rail is shrunk here to keep more rows above the fold. Scoped to
-   .hrexp-page so every OTHER table keeps the standard 40px tabs. Smaller tabs
-   also fit all four (All/Pending/Approved/Rejected) on ONE line, removing the
-   second row that was doubling the toolbar height. */
-.hrexp-page .dt-toolbar { padding: 6px 8px; row-gap: 8px; }
-.hrexp-page .dt-tabs { padding: 3px; }
-.hrexp-page .dt-tab { height: 32px; padding: 0 9px; font-size: 12px; }
-.hrexp-page .dt-tab .dt-tab-count { padding: 0 5px; min-width: 16px; }
-/* Narrower search on this page — on a big screen the default 600px field
-   stretched almost half the toolbar and dwarfed the tabs. */
-.hrexp-page .dt-search { height: 32px; flex: 0 1 360px; max-width: 360px; }
+/* ── Expense page toolbar ──────────────────────────────────────────────────
+   48px tab rail; the four tabs (All/Pending/Approved/Rejected) still fit on one
+   line. Scoped to .hrexp-page so other tables keep the standard 40px tabs. */
+.hrexp-page .dt-toolbar { padding: 8px; row-gap: 8px; }
+.hrexp-page .dt-tabs { padding: 4px; }
+/* Vertical divider between the Company/Self toggle (leadingToolbar) and the
+   status tabs, so the two groups read as separate. */
+.hrexp-page .dt-lead { position: relative; padding-right: 14px; margin-right: 4px; }
+.hrexp-page .dt-lead::after {
+  content: ''; position: absolute; right: 0; top: 6px; bottom: 6px;
+  width: 2px; border-radius: 2px; background: var(--vz-border-color);
+}
+.hrexp-page .dt-tab { height: 48px; padding: 0 14px; font-size: 12.5px; }
+/* Toolbar order: [tabs] ……… [search] [Batch Payment] [Export]. The search's
+   margin-left:auto claims the free space so it + the action buttons group on
+   the RIGHT (the date filter now lives in the page header, not the toolbar).
+   The actions' own auto-margin is zeroed so they sit right after the search
+   instead of splitting the gap and leaving the search centred. */
+/* Wider search — extends left to about the Proof-of-Payment column while
+   staying right-anchored (margin-left:auto). */
+.hrexp-page .dt-search { height: 48px; flex: 0 1 520px; max-width: 520px; margin-left: auto; }
+.hrexp-page .dt-toolbar-actions { margin-left: 8px; }
+/* Batch Payment / Export buttons match the 48px search + tab height. */
+.hrexp-page .dt-toolbar-actions .hrexp-cta { height: 48px; padding: 0 18px; }
