@@ -2010,9 +2010,13 @@
   margin-top: 0;
   height: 40px; min-height: 40px;
   padding: 5px 12px;
-  border: 1px solid #ececf2;
-  border-radius: 10px;
-  background: #fafbfc;
+  /* Match the form's input boxes (.rec-input): white fill, same border, radius
+     and subtle shadow — so the attached-CV card reads as a proper field, not a
+     grey panel. */
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.03);
   min-width: 0;
 }
 [data-bs-theme="dark"] .cand-cv-file { border-color: var(--vz-border-color); background: rgba(255,255,255,0.03); }

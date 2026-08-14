@@ -788,7 +788,10 @@ export default function IdimsHeader() {
                     </div>
                     <div className="idims-profile-head-info">
                       <div className="idims-profile-head-name">{user?.name || 'User'}</div>
-                      <span className="idims-profile-head-badge">{IC.shield}{ROLE_LABEL[user?.user_type || ''] || 'User'}</span>
+                      {/* Show the employee's HR designation (HOD / Team Leader / …)
+                          when the login is linked to an employee; otherwise fall
+                          back to the generic user-type label. */}
+                      <span className="idims-profile-head-badge">{IC.shield}{user?.employee_designation || ROLE_LABEL[user?.user_type || ''] || 'User'}</span>
                       {user?.user_type === 'branch_user' && (
                         <span className="idims-profile-head-badge ceo">Director / CEO</span>
                       )}
