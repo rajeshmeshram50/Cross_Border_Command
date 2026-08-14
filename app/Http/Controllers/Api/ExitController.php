@@ -107,7 +107,12 @@ class ExitController extends Controller
     public function upsert(Request $request, $employee)
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
-        $this->guardSameTenant($request, $employee);
+        /* Opening a case is an ADD, continuing one is an EDIT — the same split
+           the Exit Management list draws between its "Initiate Exit" and
+           "Continue" buttons, so a grant that hides one of those buttons also
+           refuses the matching call. */
+        $isNewCase = !EmployeeExit::where('employee_id', $employee->id)->exists();
+        $this->guardSameTenant($request, $employee, $isNewCase ? 'can_add' : 'can_edit');
         $this->guardNotSelf($request, $employee);
         $data = $this->validatePayload($request);
 
@@ -190,7 +195,7 @@ class ExitController extends Controller
     public function complete(Request $request, $employee)
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
-        $this->guardSameTenant($request, $employee);
+        $this->guardSameTenant($request, $employee, 'can_edit');
         $this->guardNotSelf($request, $employee);
         $data = $this->validatePayload($request);
 
@@ -365,7 +370,7 @@ class ExitController extends Controller
     public function uploadFnfAttachment(Request $request, $employee)
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
-        $this->guardSameTenant($request, $employee);
+        $this->guardSameTenant($request, $employee, 'can_edit');
         $this->guardNotSelf($request, $employee);
 
         /* Sealed once the settlement is paid. This document is what finance
@@ -454,7 +459,7 @@ class ExitController extends Controller
     public function rehire(Request $request, $employee)
     {
         $employee = Employee::withTrashed()->findOrFail($employee);
-        $this->guardSameTenant($request, $employee);
+        $this->guardSameTenant($request, $employee, 'can_edit');
         $this->guardNotSelf($request, $employee);
 
         $data = $request->validate([
@@ -1186,12 +1191,16 @@ class ExitController extends Controller
     }
 
     /** Same scope rule as EmployeeController. Super admins see everything;
-     *  other roles must share the employee's client_id. */
-    private function guardSameTenant(Request $request, Employee $employee): void
+     *  other roles must share the employee's client_id.
+     *
+     *  @param string $flag Permission column this endpoint needs — 'can_view'
+     *         for reads, 'can_add' to open a case, 'can_edit' to change one.
+     */
+    private function guardSameTenant(Request $request, Employee $employee, string $flag = 'can_view'): void
     {
         $user = $request->user();
         if (!$user) abort(401);
-        $this->authorizeMaster($user);
+        $this->authorizeExit($user, $flag);
         if ($user->isSuperAdmin()) return;
         if ($employee->client_id && $user->client_id !== $employee->client_id) {
             abort(403, 'Employee belongs to a different organization.');
@@ -1232,21 +1241,36 @@ class ExitController extends Controller
             'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.');
     }
 
-    /** Cap the granular permission check to the 'hr.employee' module —
-     *  exit management piggy-backs on it since it's a per-employee action. */
-    private function authorizeMaster($user): void
+    /**
+     * Granular check against the EXIT module (`hr.exit`), per action.
+     *
+     * This used to demand `can_edit` on hr.employee for every endpoint, which
+     * was wrong in both directions once Exit Management became its own module:
+     * reading a case required edit rights (so a view-only user couldn't open
+     * the page the menu offered them), and the flags an admin actually ticks
+     * on the Exit Management row governed nothing. The menu and route guard
+     * have keyed off hr.exit all along; the API now agrees with them.
+     *
+     *   show / fnfSummary            → can_view
+     *   upsert on a NEW case         → can_add    (initiating an exit)
+     *   upsert on an existing case,
+     *   complete / F&F / rehire      → can_edit
+     */
+    private function authorizeExit($user, string $flag): void
     {
         if ($user->isSuperAdmin()) return;
-        $moduleId = Module::where('slug', 'hr.employee')->value('id');
+        $moduleId = Module::where('slug', 'hr.exit')->value('id');
         if (!$moduleId) {
+            // First-run: module row not seeded yet. Same fallback the other
+            // controllers use — admins pass, everyone else is refused.
             if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
-            abort(403, 'Employees module not enabled.');
+            abort(403, 'Exit Management module not enabled.');
         }
         $allowed = Permission::where('user_id', $user->id)
             ->where('module_id', $moduleId)
-            ->where('can_edit', true)
+            ->where($flag, true)
             ->exists();
-        if (!$allowed) abort(403, 'Missing can_edit on hr.employee');
+        if (!$allowed) abort(403, "Missing {$flag} on hr.exit");
     }
 
     /**

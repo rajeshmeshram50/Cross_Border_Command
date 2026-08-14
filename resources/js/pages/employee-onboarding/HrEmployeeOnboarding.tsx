@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 /* Same rules as the Add/Edit Employee wizard — imported, not re-implemented,
    so a fix to the split or the slabs lands on both screens at once. */
@@ -575,6 +576,11 @@ export default function HrEmployeeOnboarding() {
   // open the full 4-step wizard for the chosen row.
   const navigate = useNavigate();
 
+  /* Per-action grants for the Onboarding hub. Starting the wizard creates an
+     onboarding record → can_add; editing the employee behind a row → can_edit.
+     View-only reads the lists, the checklist and the evidence vault. */
+  const perm = useModulePermission('hr.onboarding', 'onboarding records');
+
   const [tab, setTab] = useState<'pending' | 'completed'>('pending');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -887,8 +893,18 @@ export default function HrEmployeeOnboarding() {
         const notJoinedYet = !!r.joinDateIso && r.joinDateIso > new Date().toISOString().slice(0, 10);
         return (
           <div className="d-flex align-items-center justify-content-center gap-2 flex-nowrap">
-            <Tooltip label="Edit Employee">
-              <button type="button" className="onb-edit-btn flex-shrink-0" aria-label="Edit Employee" onClick={() => openEdit(r)}>
+            {/* Greyed but still clickable when the grant is missing, so the
+                click can name the permission — a `disabled` button would
+                swallow it and say nothing. */}
+            <Tooltip label={perm.lockedTitle('edit') ?? 'Edit Employee'}>
+              <button
+                type="button"
+                className="onb-edit-btn flex-shrink-0"
+                aria-label="Edit Employee"
+                aria-disabled={!perm.canEdit || undefined}
+                style={perm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
+                onClick={() => perm.guard('edit', () => openEdit(r))}
+              >
                 <i className="ri-pencil-line" style={{ fontSize: 14 }} />
               </button>
             </Tooltip>
@@ -897,17 +913,24 @@ export default function HrEmployeeOnboarding() {
                 created — HR needs to see them coming — but starting the wizard
                 then would stamp joining-day paperwork months early. Enabled ON
                 the joining date, not after it. */}
+            {/* Two different blocks stack here. `notJoinedYet` is a fact about
+                the employee — hard-disabled, tooltip says why. A missing grant
+                is about the USER — greyed but clickable, so the toast can name
+                the permission. */}
             <Tooltip label={notJoinedYet
               ? `Joins on ${r.joinDate} — onboarding opens that day`
-              : 'Start the onboarding wizard for this employee'}>
+              : (perm.lockedTitle('add') ?? 'Start the onboarding wizard for this employee')}>
               <span className="d-inline-flex">
                 <button
                   type="button"
                   className="onb-init-btn is-compact flex-shrink-0"
                   aria-label="Initiate Onboarding"
                   disabled={notJoinedYet}
-                  style={notJoinedYet ? { opacity: .5, cursor: 'not-allowed' } : undefined}
-                  onClick={() => openInitiate(r)}
+                  aria-disabled={!perm.canAdd || undefined}
+                  style={notJoinedYet || !perm.canAdd
+                    ? { opacity: .5, cursor: 'not-allowed', filter: perm.canAdd ? undefined : 'grayscale(0.7)' }
+                    : undefined}
+                  onClick={() => perm.guard('add', () => openInitiate(r))}
                 >
                   <i className="ri-add-line" style={{ fontSize: 13 }} />
                   Initiate Onboarding
@@ -918,8 +941,10 @@ export default function HrEmployeeOnboarding() {
         );
       },
     },
+    // perm.* included so the action cells re-render when a grant refresh lands
+    // after mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [tab]);
+  ], [tab, perm.canAdd, perm.canEdit]);
 
   return (
     <>
