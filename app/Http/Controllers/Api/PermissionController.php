@@ -12,6 +12,79 @@ use Illuminate\Support\Facades\DB;
 
 class PermissionController extends Controller
 {
+    /** The flags a permission row carries. */
+    private const FLAGS = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+
+    private function subordinateUserIds(User $granter): array
+    {
+        $granterEmpId = Employee::where('user_id', $granter->id)->value('id');
+
+        // Level 0: reports of the granter, by either manager column.
+        $frontier = Employee::query()
+            ->where('client_id', $granter->client_id)
+            ->where(function ($q) use ($granterEmpId, $granter) {
+                if ($granterEmpId) $q->where('reporting_manager_id', $granterEmpId);
+                $q->orWhere('reporting_manager_user_id', $granter->id);
+            })
+            ->pluck('id')
+            ->all();
+
+        $seen = [];
+        for ($depth = 0; $depth < 20 && $frontier !== []; $depth++) {
+            $frontier = array_values(array_diff($frontier, $seen));
+            if ($frontier === []) break;
+
+            foreach ($frontier as $id) $seen[] = $id;
+
+            $frontier = Employee::query()
+                ->where('client_id', $granter->client_id)
+                ->whereIn('reporting_manager_id', $frontier)
+                ->pluck('id')
+                ->all();
+        }
+
+        if ($seen === []) return [];
+
+        // Only subordinates who actually have a login can hold permissions.
+        return User::whereIn('id', Employee::whereIn('id', $seen)->whereNotNull('user_id')->pluck('user_id'))
+            ->where('client_id', $granter->client_id)
+            ->where('user_type', 'employee')
+            ->where('status', 'active')
+            ->pluck('id')
+            ->all();
+    }
+
+
+    private function delegationDenial(User $granter, array $payload)
+    {
+        $myPerms = Permission::where('user_id', $granter->id)->get()->keyBy('module_id');
+
+        foreach ($payload as $perm) {
+            $myPerm = $myPerms->get($perm['module_id'] ?? null);
+
+            if (!$myPerm) {
+                foreach (self::FLAGS as $field) {
+                    if ($perm[$field] ?? false) {
+                        return response()->json([
+                            'message' => 'You cannot grant permissions for modules you don\'t have access to',
+                        ], 422);
+                    }
+                }
+                continue;
+            }
+
+            foreach (self::FLAGS as $field) {
+                if (($perm[$field] ?? false) && !$myPerm->$field) {
+                    return response()->json([
+                        'message' => "You cannot grant '{$field}' permission that you don't have",
+                    ], 422);
+                }
+            }
+        }
+
+        return null;
+    }
+
     public function modules()
     {
         $modules = Module::where('is_active', true)
@@ -43,11 +116,17 @@ class PermissionController extends Controller
             && $authUser->client_id === $targetUser->client_id
             && $authUser->branch_id === $targetUser->branch_id;
 
+        $subordinateAllowed = $authUser->isEmployee()
+            && $targetUser->user_type === 'employee'
+            && $authUser->client_id === $targetUser->client_id
+            && in_array((int) $targetUser->id, $this->subordinateUserIds($authUser), true);
+
         $allowed = $authUser->id === $targetUser->id
             || $authUser->isSuperAdmin()
             || ($isPrivilegedGranter && $authUser->client_id === $targetUser->client_id)
             || ($isPrivilegedGranter && $targetUser->client_id === null)
-            || $subBranchAllowed;
+            || $subBranchAllowed
+            || $subordinateAllowed;
 
         if (!$allowed) {
             return response()->json(['message' => 'Unauthorized'], 403);
@@ -86,10 +165,10 @@ class PermissionController extends Controller
                 ->where(function ($q) {
                     // branch_user must have an active branch; employees pass through.
                     $q->where('user_type', 'employee')
-                      ->orWhere(function ($qq) {
-                          $qq->where('user_type', 'branch_user')
-                             ->whereHas('branch', fn($qb) => $qb->where('status', 'active'));
-                      });
+                        ->orWhere(function ($qq) {
+                            $qq->where('user_type', 'branch_user')
+                                ->whereHas('branch', fn($qb) => $qb->where('status', 'active'));
+                        });
                 })
                 ->with('branch:id,name,status');
 
@@ -107,12 +186,19 @@ class PermissionController extends Controller
 
             $users = $query->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } elseif ($authUser->isBranchUser()) {
-            // Branch user — picker shows every active employee across ALL
-            // branches in their client (not limited to their own branch).
             $users = User::where('client_id', $authUser->client_id)
+                ->where('branch_id', $authUser->branch_id)
                 ->where('id', '!=', $authUser->id)
                 ->where('user_type', 'employee')
                 ->where('status', 'active')
+                ->with('branch:id,name,status')
+                ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
+        } elseif ($authUser->isEmployee()) {
+
+            $subordinateIds = $this->subordinateUserIds($authUser);
+            $users = $subordinateIds === []
+                ? collect()
+                : User::whereIn('id', $subordinateIds)
                 ->with('branch:id,name,status')
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
         } else {
@@ -145,10 +231,16 @@ class PermissionController extends Controller
             'permissions.*.can_approve' => 'boolean',
         ]);
 
-        // Authorization — per spec §5 "Grant scope" table:
-        //   super_admin   → client_admin only
-        //   client_admin  → branch_user only  (NOT employees)
-        //   branch_user   → employees in same (client_id, branch_id)
+        /* Authorization — grant scope:
+         *   super_admin   → client_admin only
+         *   client_admin  → branch_user only  (NOT employees)
+         *   branch_user   → employees in same (client_id, branch_id)
+         *   employee      → employees in their own reporting sub-tree
+         *
+         * The employee tier is the delegation rule the tenants asked for: a
+         * manager hands out access to their own people, capped at the access
+         * they hold themselves. Both halves are enforced below — who (the
+         * sub-tree walk) and how much (delegationDenial). */
         if ($authUser->isSuperAdmin()) {
             if (!$targetUser->isClientAdmin()) {
                 return response()->json([
@@ -165,8 +257,10 @@ class PermissionController extends Controller
             // orphans to branch users, so we mirror the implicit ownership
             // and clean up the data on first interaction. Without this the
             // ===-comparison below 403's every orphan grant.
-            if ($targetUser->client_id === null
-                && in_array($targetUser->user_type, $manageableTypes, true)) {
+            if (
+                $targetUser->client_id === null
+                && in_array($targetUser->user_type, $manageableTypes, true)
+            ) {
                 $targetUser->update([
                     'client_id' => $authUser->client_id,
                     'branch_id' => $authUser->branch_id,
@@ -193,30 +287,8 @@ class PermissionController extends Controller
             }
 
             // Cannot grant any flag the granter doesn't already have themselves
-            $myPerms = Permission::where('user_id', $authUser->id)->get()->keyBy('module_id');
-            $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
-
-            foreach ($request->permissions as $perm) {
-                $myPerm = $myPerms->get($perm['module_id']);
-
-                if (!$myPerm) {
-                    foreach ($fields as $field) {
-                        if ($perm[$field] ?? false) {
-                            return response()->json([
-                                'message' => 'You cannot grant permissions for modules you don\'t have access to',
-                            ], 422);
-                        }
-                    }
-                    continue;
-                }
-
-                foreach ($fields as $field) {
-                    if (($perm[$field] ?? false) && !$myPerm->$field) {
-                        return response()->json([
-                            'message' => "You cannot grant '{$field}' permission that you don't have",
-                        ], 422);
-                    }
-                }
+            if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
+                return $denial;
             }
         } elseif ($authUser->isBranchUser()) {
             // Branch user — can only grant to employees in their own
@@ -239,28 +311,30 @@ class PermissionController extends Controller
             // Same can't-grant-what-you-don't-have rule as the privileged
             // path above. Without this a sub-branch user could escalate an
             // employee past their own access.
-            $myPerms = Permission::where('user_id', $authUser->id)->get()->keyBy('module_id');
-            $fields = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
+            if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
+                return $denial;
+            }
+        } elseif ($authUser->isEmployee()) {
+            /* Employee granter — target must sit under them in the reporting
+             * tree. Deliberately NOT "same branch": the tree is the authority,
+             * and a manager whose report was moved to another branch still
+             * manages that person. Peers and managers are unreachable because
+             * the walk only ever descends. */
+            $allowed = $targetUser->user_type === 'employee'
+                && $targetUser->client_id === $authUser->client_id
+                && $targetUser->id !== $authUser->id
+                && in_array((int) $targetUser->id, $this->subordinateUserIds($authUser), true);
 
-            foreach ($request->permissions as $perm) {
-                $myPerm = $myPerms->get($perm['module_id']);
-                if (!$myPerm) {
-                    foreach ($fields as $field) {
-                        if ($perm[$field] ?? false) {
-                            return response()->json([
-                                'message' => 'You cannot grant permissions for modules you don\'t have access to',
-                            ], 422);
-                        }
-                    }
-                    continue;
-                }
-                foreach ($fields as $field) {
-                    if (($perm[$field] ?? false) && !$myPerm->$field) {
-                        return response()->json([
-                            'message' => "You cannot grant '{$field}' permission that you don't have",
-                        ], 422);
-                    }
-                }
+            if (!$allowed) {
+                return response()->json([
+                    'message' => 'You can only grant permissions to employees who report to you.',
+                ], 403);
+            }
+
+            // And never more than they hold themselves — an HRMS-only team
+            // lead can hand out HRMS and nothing else.
+            if ($denial = $this->delegationDenial($authUser, $request->permissions)) {
+                return $denial;
             }
         } else {
             return response()->json(['message' => 'Unauthorized'], 403);

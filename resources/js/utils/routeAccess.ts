@@ -9,8 +9,11 @@
  *
  * `canAccessPath` closes that hole. It re-derives, for a given pathname, the
  * SAME visibility decision the menu makes, so the two never drift:
- *   - platform modules (clients / plans / payments / master / permissions) → super_admin
- *   - account modules (branches / master / permissions / my-plan)          → client_admin
+ *   - platform modules (clients / plans / payments / master)               → super_admin
+ *   - account modules (branches / master / my-plan)                        → client_admin
+ *   - permissions                                                          → EVERY role
+ *     (granting is delegated down the reporting line; the API scopes who a
+ *      given granter may target and caps it at their own access)
  *   - business modules (HR / Sales / CLM / P2P / GTS / Inventory / Dev …)   → branch_user
  *     & employee, gated per-leaf on the exact `perms['<slug>'].can_view` grant
  *   - self / utility pages (dashboard, profile, settings, my-team, inbox …) → any role
@@ -163,8 +166,7 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
 
   // 3) Account modules — client_admin.
   if (path === '/branches' || path.startsWith('/branches/')) return isClientAdmin;
-  // Permissions: super_admin / client_admin / branch_user grant access; employees never.
-  if (path === '/permissions') return isSuper || isClientAdmin || isBranchUser;
+  if (path === '/permissions') return isSuper || isClientAdmin || isBranchUser || isEmployee;
 
   // 4) Master — admins get the whole area; tenants need a master.* grant.
   //    MasterPage self-guards the specific leaf, so module-level access is enough here.

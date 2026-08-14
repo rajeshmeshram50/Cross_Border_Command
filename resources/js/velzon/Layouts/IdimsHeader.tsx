@@ -407,10 +407,11 @@ export default function IdimsHeader() {
     if (can('gts')) items.push({ id: 'gts', label: 'GTS (E-Docs)', icon: IC.globe });
     if (can('inventory')) items.push({ id: 'inventory', label: 'Inventory Management System', icon: IC.box });
     if (hasGroupView('master.')) items.push({ id: 'master', label: 'Master', icon: IC.db });
-    // Permissions — branch admins manage their team's access (employees do
-    // not; they can't grant permissions). Super-admin / client-admin already
-    // returned above with their own Permissions entry.
-    if (role === 'branch_user') {
+    /* Permissions — every remaining role gets the tab. Branch admins manage
+       their branch's employees; an employee manages the people reporting to
+       them, and only up to the access they hold themselves. Super-admin /
+       client-admin already returned above with their own entry. */
+    if (role === 'branch_user' || role === 'employee') {
       items.push({ id: 'permissions', label: 'Permissions', icon: IC.shield });
     }
     // Dev Tools — kept LAST (permission-gated read-only Zoho inspector).

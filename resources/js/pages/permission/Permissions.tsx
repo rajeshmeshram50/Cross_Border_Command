@@ -45,11 +45,16 @@ export default function Permissions() {
   const isSuperAdmin  = authUser?.user_type === 'super_admin';
   const isClientAdmin = authUser?.user_type === 'client_admin';
   const isBranchUser  = authUser?.user_type === 'branch_user';
+  // An employee granter manages their own reporting sub-tree. The picker is
+  // already narrowed to that sub-tree server-side; nothing here has to know
+  // the tree, only that the targets are employees.
+  const isEmployee    = authUser?.user_type === 'employee';
 
   const manageableType: 'client_admin' | 'branch_user' | 'employee' | null =
     isSuperAdmin  ? 'client_admin' :
     isClientAdmin ? 'branch_user'  :
-    isBranchUser  ? 'employee'     : null;
+    isBranchUser  ? 'employee'     :
+    isEmployee    ? 'employee'     : null;
   const targetLabel = manageableType === 'client_admin' ? 'Client Admin'
     : manageableType === 'branch_user' ? 'Branch User'
     : manageableType === 'employee' ? 'Employee'
@@ -206,6 +211,25 @@ export default function Permissions() {
   const showDeptTab = isBranchUser || isClientAdmin;
   const departmentOptions = departments.map(d => ({ value: String(d.id), raw: d }));
 
+  /* Nobody this granter can configure. Distinct from "nobody picked yet": the
+     picker and Save button are meaningless here, so the header controls come
+     off and the card carries a real empty state instead of a stub card with a
+     one-line alert floating above an empty page. */
+  const noTargets = mode === 'employee' && visibleUsers.length === 0;
+
+  // Copy for that state, per granter role — what's missing and what fixes it.
+  const noTargetsCopy = isSuperAdmin
+    ? { icon: 'ri-building-line', title: 'No Client Admins Yet',
+        body: 'Create a client organization first — its admin account is what you grant platform access to.' }
+    : isClientAdmin
+    ? { icon: 'ri-git-branch-line', title: 'No Branch Users Yet',
+        body: 'Create a branch first. Each branch gets an admin login, and those logins are what you configure here.' }
+    : isBranchUser
+    ? { icon: 'ri-user-search-line', title: 'No Employees In Your Branch',
+        body: 'Once employees are added to your branch and given a login, they will appear here for you to configure.' }
+    : { icon: 'ri-organization-chart', title: 'No One Reports To You Yet',
+        body: 'Access is granted down the reporting line, so this page lists only the people who report to you. Ask HR to set you as the reporting manager on their employee record — then they will appear here.' };
+
   // Options for the searchable Select. Keep the original user record on `raw`
   // so the custom Option / SingleValue components can render rich rows.
   const userOptions = visibleUsers.map(u => {
@@ -271,6 +295,11 @@ export default function Permissions() {
         }
         .pm-cstrip-back:hover { background: #f5f3ff; border-color: #c4b5fd; transform: translateY(-1px); }
         .pm-cstrip-back i { font-size: 16px; }
+        /* Shared by BOTH empty states (nobody-to-configure and nobody-picked-
+           yet). Lives here, at page level, because the two blocks render
+           exclusively — keeping it inside one of them left the other with an
+           undefined animation name. */
+        @keyframes perm-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         [data-bs-theme="dark"] .pm-cstrip { background: var(--vz-card-bg); border-color: rgba(167,139,250,0.40); box-shadow: 0 6px 18px rgba(0,0,0,0.30); }
         [data-bs-theme="dark"] .pm-cstrip-back { background: transparent; color: #c4b5fd; }
         [data-bs-theme="dark"] .pm-cstrip-back:hover { background: rgba(124,58,237,.14); }
@@ -313,6 +342,10 @@ export default function Permissions() {
                   ))}
                 </div>
               )}
+              {/* Picker + Save come off entirely when there is nobody to
+                  configure — an empty dropdown next to a dead button reads as
+                  a broken page. The empty state below explains it instead. */}
+              {!noTargets && (
               <Row className="align-items-center gy-3">
                 {mode === 'employee' && (
                 <Col md={7}>
@@ -499,16 +532,63 @@ export default function Permissions() {
                   </Button>
                 </Col>
               </Row>
+              )}
             </CardHeader>
 
-            {mode === 'employee' && visibleUsers.length === 0 && (
-              <CardBody>
-                <Alert color="warning" className="mb-0">
-                  <i className="ri-alert-line me-1"></i>
-                  {manageableType === 'client_admin' && 'No client admins found. Create a client first to assign permissions.'}
-                  {manageableType === 'branch_user'  && 'No branch users found. Create a branch first to assign permissions.'}
-                  {manageableType === 'employee'     && 'No employees found in your branch yet.'}
-                </Alert>
+            {/* ── Nobody to configure ──
+                Same visual shell as the "Select a … to Begin" state below
+                (floating gradient badge, gradient heading, one paragraph) so
+                the two empty states read as one design rather than a styled
+                page and a bare warning strip. */}
+            {noTargets && (
+              <CardBody className="py-5 text-center position-relative" style={{ overflow: 'hidden', minHeight: 420 }}>
+                <div style={{
+                  position: 'absolute', top: '-30%', left: '50%', transform: 'translateX(-50%)',
+                  width: 380, height: 380, borderRadius: '50%',
+                  background: 'radial-gradient(circle, rgba(124,58,237,0.08) 0%, transparent 70%)',
+                  pointerEvents: 'none',
+                }} />
+
+                <div style={{
+                  position: 'relative',
+                  width: 60, height: 60, margin: '0 auto',
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: '0 18px 40px rgba(124,58,237,0.35)',
+                }}>
+                  <i className={noTargetsCopy.icon} style={{ fontSize: 30, color: '#fff' }} />
+                </div>
+
+                <div style={{ animation: 'perm-fade .5s ease-out .1s both' }}>
+                  <h4 style={{
+                    marginTop: 22, marginBottom: 6, fontWeight: 700,
+                    background: 'linear-gradient(135deg,#8b5cf6,#7c3aed)',
+                    WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text', display: 'inline-block',
+                  }}>
+                    {noTargetsCopy.title}
+                  </h4>
+                  <p style={{ color: '#6b7280', fontSize: 13.5, maxWidth: 520, margin: '0 auto', lineHeight: 1.6 }}>
+                    {noTargetsCopy.body}
+                  </p>
+                </div>
+
+                {/* The delegation rule itself — the one thing that makes an
+                    empty picker make sense at a glance. */}
+                <div
+                  className="d-inline-flex align-items-center gap-2 mt-4 px-3 py-2"
+                  style={{
+                    background: 'rgba(124,58,237,0.08)',
+                    border: '1px solid rgba(124,58,237,0.20)',
+                    borderRadius: 999, color: '#6d28d9',
+                    fontSize: 12, fontWeight: 600,
+                    animation: 'perm-fade .5s ease-out .25s both',
+                  }}
+                >
+                  <i className="ri-shield-check-line" style={{ fontSize: 14 }} />
+                  You can only grant access you already hold, and only to your own team
+                </div>
               </CardBody>
             )}
 
@@ -516,7 +596,9 @@ export default function Permissions() {
               <CardBody className="pt-0">
                 <Alert color="info" className="mb-0" style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)', color: '#6d28d9' }}>
                   <i className="ri-shield-check-line me-1"></i>
-                  You can only grant permissions that you have. Disabled checkboxes indicate permissions you don't have.
+                  {isEmployee
+                    ? 'This list shows only the employees who report to you. You can grant them any access you hold yourself — disabled checkboxes are permissions you don\'t have.'
+                    : 'You can only grant permissions that you have. Disabled checkboxes indicate permissions you don\'t have.'}
                 </Alert>
               </CardBody>
             )}
@@ -524,12 +606,8 @@ export default function Permissions() {
             {/* ── Animated empty state when no user is selected ── */}
             {!activeId && (mode === 'department' || visibleUsers.length > 0) && (
               <CardBody className="py-5 text-center position-relative" style={{ overflow: 'hidden' }}>
-                <style>{`
-                  @keyframes perm-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
-                  @keyframes perm-ring-1 { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(2.1); opacity: 0; } }
-                  @keyframes perm-ring-2 { 0% { transform: scale(1); opacity: .4; } 100% { transform: scale(2.6); opacity: 0; } }
-                  @keyframes perm-fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-                `}</style>
+                {/* perm-fade now lives in the page-level <style> — shared with
+                    the nobody-to-configure state above. */}
 
                 {/* Decorative background glow */}
                 <div style={{
@@ -567,7 +645,9 @@ export default function Permissions() {
                     backgroundClip: 'text',
                     display: 'inline-block',
                   }}>
-                    Select a {mode === 'department' ? 'Department' : (isSuperAdmin ? 'Client Admin' : 'Branch User')} to Begin
+                    {/* targetLabel, not a hardcoded "Branch User" — a branch
+                        admin and an employee both pick employees here. */}
+                    Select a {mode === 'department' ? 'Department' : targetLabel} to Begin
                   </h4>
                   <p style={{ color: '#6b7280', fontSize: 13.5, maxWidth: 480, margin: '0 auto 24px', lineHeight: 1.6 }}>
                     Choose a {mode === 'department' ? 'department' : 'user'} from the dropdown above to view and configure which modules {mode === 'department' ? 'that department' : 'they'} can access — from viewing records to approving workflows.
