@@ -4906,10 +4906,10 @@ export default function HrEmployees() {
             style={{ padding: '10px 24px', borderTop: '1px solid var(--vz-border-color)' }}
           >
             <span />
+            {/* Cancel dropped — the header X already dismisses this dialog, and
+                two ways out sitting on the same screen made the footer read as
+                a choice between them. */}
             <div className="d-flex align-items-center gap-2">
-              <Button onClick={closeAssign} className="master-modal-cancel d-inline-flex align-items-center gap-1">
-                <i className="ri-close-line" style={{ fontSize: 15 }} /> Cancel
-              </Button>
               <button
                 type="button"
                 onClick={handleSaveAssign}

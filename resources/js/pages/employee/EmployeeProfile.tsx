@@ -360,6 +360,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     footer_config: any;
     signers: Array<{ name: string; role_name: string; action: string; status: string; acted_at: string | null }>;
     updated_at: string;
+    /* Set by HrDocumentSignatureController::index and used right below to split
+       organizational from exit documents — it was missing from the type, so the
+       two filters that read it were type errors the build never surfaced. */
+    trigger_keyword?: string | null;
+    trigger_point_name?: string | null;
   };
   const [signedDocs, setSignedDocs] = useState<SignedDoc[]>([]);
   const [signedLoading, setSignedLoading] = useState(false);
@@ -394,8 +399,24 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     (async () => {
       try {
         setSignedLoading(true);
-        const { data } = await api.get('/hr-document-signatures', { params: { employee_id: Number(employeeId) || employeeId } });
-        if (!cancelled) setSignedDocs(Array.isArray(data) ? data : []);
+        /* The NUMERIC id, resolved from the record — never the route slug.
+           `employeeId` is whatever is in the URL, which is an ENCRYPTED id
+           (or an EMP-### code), so `Number(employeeId) || employeeId` sent the
+           encrypted string. The controller reads it with `$request->integer()`,
+           which turns a non-numeric string into 0, and its filter is
+           `if ($empId = ...)` — so the where clause was skipped entirely and
+           the endpoint returned every signature run in the tenant. That is the
+           "other employees' documents appear in Organizational Documents" bug:
+           the vault was rendering the whole company's signed files. */
+        const empId = Number(empDetail?.id);
+        if (!Number.isFinite(empId) || empId <= 0) {
+          // Record not resolved yet — show nothing rather than everything. The
+          // effect re-runs once empDetail lands.
+          if (!cancelled) setSignedDocs([]);
+        } else {
+          const { data } = await api.get('/hr-document-signatures', { params: { employee_id: empId } });
+          if (!cancelled) setSignedDocs(Array.isArray(data) ? data : []);
+        }
       } catch {
         if (!cancelled) setSignedDocs([]);
       } finally {
@@ -418,8 +439,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
     })();
     return () => { cancelled = true; };
+    /* empDetail.id joins the deps: the signed-docs fetch now needs the resolved
+       numeric id, and on a cold open the vault tab can render before the
+       record has landed. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, employeeId]);
+  }, [tab, employeeId, empDetail?.id]);
 
   // Pretty-print a document_key like `aadhaar` → "Aadhaar", `prev_3_relieving` → "Prev 3 Relieving"
   const prettyDocKey = (key: string): string =>
