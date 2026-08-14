@@ -457,6 +457,10 @@ export default function HrEmployees() {
      EmployeeController::authorize() resolves 'hr.employee' — so a button the
      UI allows is a call the server will accept, and vice versa. */
   const perm = useModulePermission('hr.employee', 'employees');
+  /* Leave Plan on the employee form is Leave-module data (QA #13). Editing an
+     employee doesn't imply access to the leave configuration, so the field is
+     gated on hr.leave rather than on hr.employee. */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
@@ -702,6 +706,13 @@ export default function HrEmployees() {
   const [eLeavePlan, setELeavePlan] = useState('');
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
+    /* Leave plans belong to the Leave module, not this one. Without a grant
+       there the list isn't fetched at all — so the dropdown offers nothing
+       instead of exposing (and letting someone assign) plans they have no
+       access to. The "required" rule below only bites when options exist, so
+       the form stays completable. */
+    if (!leavePerm.canView) { setLeavePlanOptions([]); return; }
+
     leavePlansApi.list()
       .then(plans => {
         // Only configured plans (quota setup complete) may be assigned to an
@@ -713,7 +724,7 @@ export default function HrEmployees() {
         );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
-  }, []);
+  }, [leavePerm.canView]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const holidayGroupSelectOptions = useMemo(() => {
@@ -4154,7 +4165,19 @@ export default function HrEmployees() {
                     <Row className="g-3">
                       <Col md={4}>
                         <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                        <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
+                        <MasterSelect
+                          value={eLeavePlan}
+                          onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
+                          options={leavePlanOptions}
+                          // Greyed shut without the Leave grant — the list is
+                          // never fetched in that case, so there is nothing to
+                          // open and nothing to assign.
+                          disabled={!leavePerm.canView}
+                          placeholder={!leavePerm.canView
+                            ? 'Requires Leave module access'
+                            : (leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave')}
+                          invalid={!!eErrors.leave_plan}
+                        />
                         {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                       </Col>
                       <Col md={4}>

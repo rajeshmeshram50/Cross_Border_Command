@@ -1893,6 +1893,9 @@ function InitiateOnboardingModal({
   onSaved?: () => void;
 }) {
   const toast = useToast();
+  /* Leave Plan on stage 1 is Leave-module data — gated on hr.leave, not on
+     whoever may run onboarding (QA #13). */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const [activeStage, setActiveStage] = useState(1);
   // Stage 5 (Policies & Agreements) live signing status: total matched
   // agreement templates vs how many have a COMPLETED signing run. Lets the
@@ -2056,17 +2059,22 @@ function InitiateOnboardingModal({
           : merged;
         setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label, deptId: m.department_id != null ? String(m.department_id) : undefined, isHod: !!m.is_hod })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
-      api.get('/leave-plans').then(r => {
-        if (cancelled) return;
-        const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        // Only surface plans whose quota setup is fully complete — draft /
-        // unconfigured plans must not be assignable to an employee.
-        setLeavePlanOpts(
-          plans
-            .filter((p: any) => p.setup_complete)
-            .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
-        );
-      }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
+      /* Leave plans are Leave-module data — not fetched at all without a grant
+         there, so the dropdown can't offer plans the user has no access to
+         (QA #13). Same rule as the Add/Edit Employee form. */
+      (leavePerm.canView
+        ? api.get('/leave-plans').then(r => {
+            if (cancelled) return;
+            const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+            // Only surface plans whose quota setup is fully complete — draft /
+            // unconfigured plans must not be assignable to an employee.
+            setLeavePlanOpts(
+              plans
+                .filter((p: any) => p.setup_complete)
+                .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+            );
+          }).catch(() => { if (!cancelled) setLeavePlanOpts([]); })
+        : Promise.resolve(setLeavePlanOpts([]))),
       // Overtime (OT) Master — active rate names for the Overtime picker.
       reloadOvertimeRates(() => cancelled),
       api.get('/holiday-groups')
@@ -4448,7 +4456,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
