@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Col, Row, Modal, ModalBody, Spinner, Input } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -460,6 +460,12 @@ export default function HrBroadcastCentre() {
               columns={columns}
               serial
               accent="violet"
+              /* Stretches the card to the viewport instead of collapsing to the
+                 height of however many rows there are — one announcement left a
+                 short strip of table above an empty page. `autoFitRows` then
+                 fills that height with rows and pins the pager to the bottom,
+                 the same pairing every other list in the app uses. */
+              fitToViewport
               autoFitRows
               minWidth={1250}
               loading={loading}
@@ -877,7 +883,9 @@ function CreateAnnouncementModal({
         <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #0ea5e9 0%, #38bdf8 60%, #7dd3fc 100%)' }}>
           <div className="d-flex align-items-center justify-content-between gap-3">
             <div className="d-flex align-items-center gap-2">
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,0.18)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              {/* Ringed like the other module dialogs — at 18% fill with no
+                  outline the tile dissolved into the sky-blue band behind it. */}
+              <span style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,0.22)', border: '2px solid rgba(255,255,255,0.55)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <i className="ri-send-plane-line" style={{ fontSize: 18, color: '#fff' }} />
               </span>
               <div>
@@ -885,21 +893,28 @@ function CreateAnnouncementModal({
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage company-wide communications and notifications</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} aria-label="Close" style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+            {/* The only way out of this dialog now, so it gets an outline of its
+                own rather than sitting as a faint patch on the gradient. */}
+            <button type="button" onClick={onClose} aria-label="Close" className="brd-close-x" style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff', borderRadius: 8, width: 32, height: 32, flexShrink: 0 }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
         </div>
 
-        {/* Step indicator */}
+        {/* Step indicator — steps at their natural width with a CONNECTOR line
+            between each pair taking the slack, the same shape the Add/Edit
+            Employee wizard uses (.emp-stepper-line). Spreading the buttons
+            themselves filled the row but left them floating unrelated; the line
+            is what makes it read as one track, and it doubles as the progress
+            bar — each segment turns solid once its step is behind you. */}
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--vz-border-color, #e5e7eb)', overflowX: 'auto' }}>
-          <div className="d-flex align-items-center" style={{ gap: 16, flexWrap: 'nowrap' }}>
-            {STEPS.map(s => {
+          <div className="d-flex align-items-center" style={{ gap: 0, flexWrap: 'nowrap', minWidth: 620 }}>
+            {STEPS.map((s, idx, arr) => {
               const active = step === s.key;
               const done = step > s.key;
               return (
+                <Fragment key={s.key}>
                 <button
-                  key={s.key}
                   type="button"
                   onClick={() => { if (done || active) setStep(s.key); }}
                   disabled={!done && !active}
@@ -907,7 +922,9 @@ function CreateAnnouncementModal({
                   style={{
                     gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
                     color: active ? '#0ea5e9' : (done ? '#0ea5e9' : '#9ca3af'),
-                    cursor: (done || active) ? 'pointer' : 'default', flexShrink: 0,
+                    cursor: (done || active) ? 'pointer' : 'default',
+                    // Natural width — the connector lines take the slack.
+                    flexShrink: 0,
                   }}
                 >
                   <span
@@ -917,23 +934,49 @@ function CreateAnnouncementModal({
                       color: (active || done) ? '#fff' : '#6b7280',
                       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 12, fontWeight: 700,
+                      // The step now lives in a shrinkable slot, so the circle
+                      // has to hold its 26px or it squashes into an oval.
+                      flexShrink: 0,
                     }}
                   >
                     {done ? <i className="ri-check-line" /> : s.key}
                   </span>
-                  <div style={{ textAlign: 'left' }}>
+                  <div style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>
                     <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.1 }}>{s.label}</div>
                     <div style={{ fontSize: 10.5, opacity: 0.75 }}>{s.sub}</div>
                   </div>
                 </button>
+                {/* Connector — `flex: 1` so it absorbs whatever width is left,
+                    which is what spaces the four steps evenly. Solid once the
+                    step before it is behind you, so the rail also reads as a
+                    progress bar. Aligned to the circle's centre, not the block's,
+                    or it would sit against the two-line label. */}
+                {idx < arr.length - 1 && (
+                  <div
+                    aria-hidden
+                    style={{
+                      flex: 1, height: 2, minWidth: 16, margin: '0 4px',
+                      alignSelf: 'flex-start', marginTop: 17,
+                      background: done ? '#0ea5e9' : 'var(--vz-border-color, #e5e7eb)',
+                      transition: 'background .2s ease',
+                    }}
+                  />
+                )}
+                </Fragment>
               );
             })}
           </div>
         </div>
 
-        {/* Body — split: form left, live preview right */}
-        <div className="d-flex" style={{ minHeight: 360 }}>
-          <div style={{ flex: '1 1 0', padding: 20, overflowY: 'auto', maxHeight: '70vh' }}>
+        {/* Body — split: form left, live preview right.
+            The ROW owns the height cap; each column then scrolls inside that one
+            box. Both children used to carry `maxHeight: 70vh` of their own, so
+            each computed its own limit and a tall step could put a scrollbar on
+            both halves of the same dialog. `minHeight: 0` is what actually lets
+            a flex child scroll — without it the child's min-content height wins
+            and the overflow escapes the row instead. */}
+        <div className="d-flex" style={{ minHeight: 360, maxHeight: '70vh' }}>
+          <div style={{ flex: '1 1 0', minWidth: 0, minHeight: 0, padding: 18, overflowY: 'auto' }}>
             {/* View mode = 100% read-only. The disabled fieldset blocks native
                 inputs/buttons/checkboxes; pointerEvents:none additionally
                 neutralises the div-based handlers (audience-type pills, the
@@ -986,7 +1029,9 @@ function CreateAnnouncementModal({
           </div>
 
           {/* Live preview — sits on the right of every step */}
-          <div style={{ flex: '0 0 320px', borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 16, background: 'var(--vz-secondary-bg, #fafafa)', maxHeight: '70vh', overflowY: 'auto' }}>
+          {/* 18px, matching the form side — at 16 against the form's 20 the
+              divider sat off-centre in its own gutter. */}
+          <div style={{ flex: '0 0 320px', minHeight: 0, borderLeft: '1px solid var(--vz-border-color, #e5e7eb)', padding: 18, background: 'var(--vz-secondary-bg, #fafafa)', overflowY: 'auto' }}>
             <div className="text-uppercase fw-semibold mb-2" style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color, #6b7280)' }}>Live Preview</div>
             {/* Translucent sky tint instead of a solid light-blue fill so the
                 preview card + status box stay legible in dark mode (the solid
@@ -1051,17 +1096,25 @@ function CreateAnnouncementModal({
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span className="text-muted" style={{ fontSize: 12 }}>Step {step} of {TOTAL_STEPS}</span>
+        {/* 10px vertical (was 12) — the bar carries 36px buttons and needed no
+            more than that; the step counter sits on the same line, so the extra
+            padding only made the footer taller. */}
+        {/* "Step n of N" removed — the rail above already numbers the steps,
+            ticks the finished ones and fills its connectors as you go, so the
+            counter was a third telling of the same fact. Buttons close to the
+            right now that nothing balances them on the left. */}
+        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--vz-border-color, #e5e7eb)', background: 'var(--vz-secondary-bg, #fafafa)', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={!!saving}>Cancel</button>
+            {/* Cancel dropped — the header X already closes this, and a footer
+                full of "leave" next to "Back", "Save Draft" and "Save & Next"
+                made four buttons compete where three are real choices. */}
             {step > 1 && (
               <button type="button" className="rec-btn-ghost" onClick={handleBack} disabled={!!saving}>
-                <i className="ri-arrow-left-line" />Back
+                <i className="ri-arrow-left-line" />Previous
               </button>
             )}
             {/* Read-only (published) → no Save Draft / Publish; just let the
-                user page through to view, with Cancel to close. */}
+                user page through to view, closing via the header X. */}
             {readOnly ? (
               step < TOTAL_STEPS && (
                 <button type="button" className="rec-btn-primary" onClick={() => setStep(s => Math.min(TOTAL_STEPS, s + 1))}>
@@ -1153,15 +1206,27 @@ function Step1Basic({
     if (fileRef.current) fileRef.current.value = '';
   };
   return (
-    <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
+    /* ONE rhythm for the whole step. Each block used to carry its own `mb-3`
+       while the Type/Priority row used Bootstrap's `g-3` gutters — margins and
+       gutters are measured differently (a `.row` pulls itself up by the gutter
+       and the columns pad it back), so the gaps never quite matched. A single
+       `gap` on the column makes every interval identical by construction, and
+       there is nothing left to keep in sync when a block is added. */
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* line-height 1 — without it the heading inherits the body's ~1.5, and
+          that leading sits UNDER the caps as extra space the column gap knows
+          nothing about. The interval measured 18px like every other one and
+          still read as the biggest gap on the form. The field labels below
+          already run at 1.15 (.rec-form-label), which is why only this line
+          looked loose. */}
+      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-checkbox-blank-line" /> Basic Details
       </div>
       {/* Both fields are LENGTH-CAPPED at the input, with a live counter, so a
           pasted wall of text is stopped where it is typed rather than at the
           review step (or, for the title, by a 422 from the server's max:191).
           The counter turns amber near the cap so it isn't a surprise. */}
-      <div className="mb-3">
+      <div>
         <label className="rec-form-label d-flex align-items-center justify-content-between">
           <span>Announcement Title<span className="req">*</span></span>
           <span style={{ fontSize: 11, fontWeight: 500, color: title.length >= TITLE_MAX ? '#b45309' : 'var(--vz-secondary-color, #9ca3af)' }}>
@@ -1178,7 +1243,7 @@ function Step1Basic({
         />
         {errors.title && <div className="rec-error"><i className="ri-error-warning-line" />{errors.title}</div>}
       </div>
-      <div className="mb-3">
+      <div>
         <label className="rec-form-label d-flex align-items-center justify-content-between">
           <span>Description<span className="req">*</span></span>
           <span style={{ fontSize: 11, fontWeight: 500, color: description.length >= DESC_MAX ? '#b45309' : 'var(--vz-secondary-color, #9ca3af)' }}>
@@ -1195,8 +1260,13 @@ function Step1Basic({
         />
         {errors.description && <div className="rec-error"><i className="ri-error-warning-line" />{errors.description}</div>}
       </div>
-      <Row className="g-3">
-        <Col md={6}>
+      {/* Plain flex, not <Row g-3>. Bootstrap's gutter classes pull the row up
+          by the gutter and pad the columns back down; inside a gap-based column
+          that arithmetic landed this block a few pixels off every other one.
+          A flex row with its own gap has no such offset, and it still wraps to
+          one column when the dialog is narrow. */}
+      <div className="d-flex flex-wrap" style={{ gap: 18 }}>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
           <label className="rec-form-label">Type</label>
           <div className="d-flex gap-2 flex-wrap">
             {(['General','Policy','Urgent'] as AnnType[]).map(v => (
@@ -1212,8 +1282,8 @@ function Step1Basic({
                 } : undefined}>{v}</button>
             ))}
           </div>
-        </Col>
-        <Col md={6}>
+        </div>
+        <div style={{ flex: '1 1 240px', minWidth: 0 }}>
           <label className="rec-form-label">Priority<span className="req">*</span></label>
           <div className="d-flex gap-2 flex-wrap">
             {(['Normal','High','Critical'] as AnnPriority[]).map(v => (
@@ -1225,9 +1295,11 @@ function Step1Basic({
                 } : undefined}>{v}</button>
             ))}
           </div>
-        </Col>
-      </Row>
-      <div className="mt-3">
+        </div>
+      </div>
+      {/* No `mt-3` — the column's gap already sets this interval. Carrying its
+          own top margin on top of that made this the one gap that differed. */}
+      <div>
         <label className="rec-form-label">Attachment (Optional)</label>
         {/* Once a file is attached the drop zone becomes a FILE ROW: name plus
             View / Replace / Delete. Before this the picked file was just a
@@ -1339,7 +1411,7 @@ function Step1Basic({
         </div>
         {fileError && <div className="rec-error mt-1"><i className="ri-error-warning-line" />{fileError}</div>}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1360,11 +1432,16 @@ function Step2Audience({
   const recipientCount = employees.filter((e: any) => !excludeSet.has(e.id)).length;
 
   return (
-    <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
+    /* One rhythm for the step — see Step1Basic. Every gap here came from a
+       per-block `mb-3`; a single `gap` makes them equal by construction and
+       leaves nothing to forget when a block is added or reordered. */
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* line-height 1 — see the note on Step 1's heading: the inherited ~1.5
+          leaves leading under the caps that reads as a wider gap. */}
+      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-user-line" /> Audience Selection
       </div>
-      <div className="mb-3">
+      <div>
         <label className="rec-form-label">Target Audience<span className="req">*</span></label>
         <div className="d-flex gap-2 flex-wrap">
           {([
@@ -1384,21 +1461,21 @@ function Step2Audience({
         </div>
       </div>
 
-      {/* All Employees → green delivered banner + tiny "x selected" chip. */}
+      {/* All Employees → one banner with the recipient count.
+          The cyan "N employees selected" chip that used to sit under this said
+          the same number in different words, directly below a line that had
+          just said it — two blocks, one fact, and the step read as clutter.
+          The `marginBottom` both carried is gone too: the column's gap sets
+          every interval here, and inline margins stacked on top of it. */}
       {audienceType === 'all_employees' && (
-        <>
-          <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.30)', borderRadius: 10, padding: '12px 16px', marginBottom: 10, color: 'var(--vz-body-color, #15803d)', fontSize: 13 }}>
-            <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to {recipientCount === totalEmps ? 'all ' : ''}<strong>{recipientCount}</strong> employee{recipientCount === 1 ? '' : 's'}.
-          </div>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 18, background: 'rgba(34,211,238,0.14)', color: 'var(--vz-body-color, #0e7490)', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(34,211,238,0.30)', marginBottom: 14 }}>
-            <i className="ri-user-line" /> {recipientCount} employee{recipientCount === 1 ? '' : 's'} selected
-          </span>
-        </>
+        <div style={{ background: 'rgba(34,197,94,0.12)', border: '1px solid rgba(34,197,94,0.30)', borderRadius: 10, padding: '12px 16px', color: 'var(--vz-body-color, #15803d)', fontSize: 13 }}>
+          <i className="ri-checkbox-circle-line me-1" style={{ color: '#22c55e' }} /> Announcement delivered to {recipientCount === totalEmps ? 'all ' : ''}<strong>{recipientCount}</strong> employee{recipientCount === 1 ? '' : 's'}.
+        </div>
       )}
 
       {/* Role-Based → bordered card with an inline checkbox per role. */}
       {audienceType === 'roles' && (
-        <div className="mb-3">
+        <div>
           <label className="rec-form-label">SELECT ROLES<span className="req">*</span></label>
           <CheckboxBox
             options={roles.map((r: any) => ({ id: r.id, label: r.name }))}
@@ -1412,7 +1489,7 @@ function Step2Audience({
 
       {/* Designation-Based → same checkbox card, sourced from designations. */}
       {audienceType === 'designations' && (
-        <div className="mb-3">
+        <div>
           <label className="rec-form-label">SELECT DESIGNATIONS<span className="req">*</span></label>
           <CheckboxBox
             options={designations.map((d: any) => ({ id: d.id, label: d.name }))}
@@ -1443,7 +1520,7 @@ function Step2Audience({
           placeholder="Names or departments to exclude…"
         />
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1557,15 +1634,18 @@ function MultiPicker({ options, selected, onChange, placeholder }: {
 // false for all of them so a previously-checked value gets cleared on edit.
 function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; setNotifyEmail: (v: boolean) => void }) {
   return (
-    <>
-      <div className="d-flex align-items-center gap-2 mb-3" style={{ color: '#0ea5e9' }}>
+    /* Same single-gap column as the other steps. */
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="d-flex align-items-center gap-2" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-notification-3-line" />
         <span className="fw-semibold" style={{ fontSize: 14 }}>Notification Channels</span>
       </div>
-      <hr className="mt-1 mb-3" style={{ borderColor: '#e5e7eb' }} />
+      {/* my-0: the rule's own margins stacked on top of the column gap and made
+          this the widest pair of gaps in the wizard. */}
+      <hr className="my-0" style={{ borderColor: '#e5e7eb' }} />
 
       <label
-        className="d-flex align-items-center gap-3 p-3 mb-3"
+        className="d-flex align-items-center gap-3 p-3"
         style={{
           border: notifyEmail ? '1.5px solid #0ea5e9' : '1px solid var(--vz-border-color, #e5e7eb)',
           borderRadius: 10, cursor: 'pointer',
@@ -1586,7 +1666,7 @@ function Step3Notify({ notifyEmail, setNotifyEmail }: { notifyEmail: boolean; se
           <span style={{ fontSize: 12, color: 'var(--vz-secondary-color, #6b7280)' }}>Send directly to each recipient's inbox when you publish</span>
         </div>
       </label>
-    </>
+    </div>
   );
 }
 
@@ -1627,11 +1707,14 @@ function Step4Review({
   const shownDesc  = showFullText || !longDesc  ? fullDesc  : `${fullDesc.slice(0, REVIEW_DESC_PREVIEW).trimEnd()}…`;
 
   return (
-    <>
-      <div className="text-uppercase fw-semibold mb-3" style={{ color: '#0ea5e9' }}>
+    /* Same single-gap column as the other steps. */
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* line-height 1 — see the note on Step 1's heading: the inherited ~1.5
+          leaves leading under the caps that reads as a wider gap. */}
+      <div className="text-uppercase fw-semibold" style={{ color: '#0ea5e9', lineHeight: 1 }}>
         <i className="ri-file-text-line" /> Review & Publish
       </div>
-      <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, marginBottom: 16, maxWidth: '100%', overflow: 'hidden' }}>
+      <div style={{ border: '1px solid var(--vz-border-color, #e5e7eb)', borderRadius: 12, padding: 16, maxWidth: '100%', overflow: 'hidden' }}>
         <Tooltip label={fullTitle} disabled={!longTitle} maxWidth={420} position="bottom">
           <div className="fw-bold" style={{ fontSize: 16, ...wrapStyle }}>
             {shownTitle || '—'}
@@ -1650,7 +1733,9 @@ function Step4Review({
               : `Read more (${(fullTitle.length + fullDesc.length).toLocaleString()} characters)`}
           </button>
         )}
-        <div className="mb-3" />
+        {/* 18px, the same interval the step uses between its own blocks —
+            this spacer was a bare `mb-3` div doing the job by hand. */}
+        <div style={{ height: 18 }} />
         <Row className="g-2">
           <Col md={3}><Field label="Type" value={type} /></Col>
           <Col md={3}><Field label="Priority" value={priority} /></Col>
@@ -1666,10 +1751,10 @@ function Step4Review({
           {editing.creator?.name ? <> by {editing.creator.name}</> : null}
         </div>
       )}
-      <div style={{ background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, color: 'var(--vz-body-color, #0c4a6e)', fontSize: 13, marginTop: 12 }}>
+      <div style={{ background: 'rgba(56,189,248,0.10)', border: '1px solid rgba(56,189,248,0.22)', borderRadius: 10, padding: 12, color: 'var(--vz-body-color, #0c4a6e)', fontSize: 13 }}>
         <i className="ri-information-line" /> Clicking <strong>Publish</strong> will make this announcement live immediately
         {notifyEmail ? ' and email every selected recipient.' : '.'}
       </div>
-    </>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import { Col, Row, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
@@ -83,10 +84,19 @@ const CANDIDATE_STATUS_COLOR: Record<CandidateStatus, 'success' | 'danger' | 'wa
   'On Hold':         'secondary',
 };
 
+/* Greying for a control the user lacks the grant for. No `pointer-events:
+   none` — the click still has to reach the handler that raises the toast. */
+const LOCKED_STYLE = { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' } as const;
+
 export default function HrCandidates() {
   const { id: recruitmentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const toast = useToast();
+  /* Candidates have no module of their own — the pipeline belongs to the
+     recruitment it hangs off, so Add/Edit on `hr.recruitment` is what unlocks
+     adding, importing, editing and selecting/rejecting candidates. View-only
+     reads the whole pipeline and changes none of it. */
+  const perm = useModulePermission('hr.recruitment', 'candidates');
   const { theme } = useTheme();
   const dark = theme === 'dark';
 
@@ -280,37 +290,45 @@ export default function HrCandidates() {
                 </button>
               </Tooltip>
             )}
+            {/* Without Edit this becomes a VIEW button rather than a locked
+                one — the profile is still readable, which is exactly the
+                "can see candidates, can't modify them" rule. The form already
+                has a read-only mode (rejected candidates use it). */}
             {c.status !== 'Rejected' && (
-              <Tooltip label="Edit Candidate">
+              <Tooltip label={perm.canEdit ? 'Edit Candidate' : 'View Candidate (no edit permission)'}>
                 <button
                   type="button"
                   className="rec-act rec-act-view rec-act--icon"
-                  aria-label="Edit Candidate"
-                  onClick={() => { setEditing(c); setViewOnly(false); setModalOpen(true); }}
+                  aria-label={perm.canEdit ? 'Edit Candidate' : 'View Candidate'}
+                  onClick={() => { setEditing(c); setViewOnly(!perm.canEdit); setModalOpen(true); }}
                 >
-                  <i className="ri-pencil-line" />
+                  <i className={perm.canEdit ? 'ri-pencil-line' : 'ri-eye-line'} />
                 </button>
               </Tooltip>
             )}
             {c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected' && (
-              <Tooltip label="Mark Selected">
+              <Tooltip label={perm.lockedTitle('edit') ?? 'Mark Selected'}>
                 <button
                   type="button"
                   className="rec-act rec-act-approve rec-act--icon"
                   aria-label="Mark Selected"
-                  onClick={() => setConfirming({ row: c, mode: 'select' })}
+                  aria-disabled={!perm.canEdit || undefined}
+                  style={perm.canEdit ? undefined : LOCKED_STYLE}
+                  onClick={() => perm.guard('edit', () => setConfirming({ row: c, mode: 'select' }))}
                 >
                   <i className="ri-check-line" />
                 </button>
               </Tooltip>
             )}
             {c.status !== 'Rejected' && (
-              <Tooltip label="Mark Rejected">
+              <Tooltip label={perm.lockedTitle('edit') ?? 'Mark Rejected'}>
                 <button
                   type="button"
                   className="rec-act rec-act-reject rec-act--icon"
                   aria-label="Mark Rejected"
-                  onClick={() => setConfirming({ row: c, mode: 'reject' })}
+                  aria-disabled={!perm.canEdit || undefined}
+                  style={perm.canEdit ? undefined : LOCKED_STYLE}
+                  onClick={() => perm.guard('edit', () => setConfirming({ row: c, mode: 'reject' }))}
                 >
                   <i className="ri-close-line" />
                 </button>
@@ -321,7 +339,10 @@ export default function HrCandidates() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], []);
+    // Grants can arrive after mount (auth refresh), and they decide whether the
+    // row shows an Edit or a View button — so the cells must re-render on change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ], [perm.canEdit]);
 
   const KPI_CARDS = [
     { key: 'total',       label: 'Total',        value: totals.total,        icon: 'ri-team-line',            gradient: 'linear-gradient(135deg, #047857 0%, #10b981 60%, #34d399 100%)', deep: '#047857' },
@@ -381,13 +402,15 @@ export default function HrCandidates() {
                 <button type="button" className="cand-pill-btn cand-pill-btn--blue" title="Download a sample CSV" onClick={() => setSampleOpen(true)}>
                   <i className="ri-download-line" />Sample
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--violet" disabled={recClosed} title={recClosed ? recClosedMsg : 'Import candidates from CSV'} onClick={() => setImportOpen(true)}>
+                {/* Import is a bulk ADD of candidates, so it rides on can_add
+                    — the same grant the Add button needs. */}
+                <button type="button" className="cand-pill-btn cand-pill-btn--violet" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Import candidates from CSV')} onClick={() => perm.guard('add', () => setImportOpen(true))}>
                   <i className="ri-upload-2-line" />Import
                 </button>
                 <button type="button" className="cand-pill-btn cand-pill-btn--green" title="Export candidates" onClick={() => setExportOpen(true)}>
                   <i className="ri-external-link-line" />Export
                 </button>
-                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} title={recClosed ? recClosedMsg : 'Add a candidate'} onClick={() => { setEditing(null); setViewOnly(false); setModalOpen(true); }}>
+                <button type="button" className="cand-pill-btn cand-pill-btn--primary" disabled={recClosed} aria-disabled={!perm.canAdd || undefined} style={perm.canAdd ? undefined : LOCKED_STYLE} title={recClosed ? recClosedMsg : (perm.lockedTitle('add') ?? 'Add a candidate')} onClick={() => perm.guard('add', () => { setEditing(null); setViewOnly(false); setModalOpen(true); })}>
                   <i className="ri-add-line" />Add Candidate
                 </button>
                 {/* Back nav sits at the far-right corner, after the action buttons. */}

@@ -480,6 +480,10 @@ export default function MyTeam() {
                 columns={employeeColumns}
                 serial
                 accent="violet"
+                /* Stretches the card to the viewport so a short list doesn't
+                   collapse into a strip above an empty page — paired with
+                   autoFitRows, which then fills that height with rows. */
+                fitToViewport
                 autoFitRows
                 minAutoRows={8}
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}
@@ -495,6 +499,10 @@ export default function MyTeam() {
                 columns={approvalColumns}
                 serial
                 accent="violet"
+                // Same as the Employees tab above — the two swap in the same
+                // slot, so only one filling the viewport would make the page
+                // jump height when you switch tabs.
+                fitToViewport
                 autoFitRows
                 minAutoRows={8}
                 tabs={TEAM_TABS(employees.length, approvalCounts.total)}

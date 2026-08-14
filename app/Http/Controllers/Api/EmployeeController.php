@@ -1490,7 +1490,43 @@ class EmployeeController extends Controller
             ->where('module_id', $moduleId)
             ->where($perm, true)
             ->exists();
-        if (!$allowed) abort(403, "Missing {$perm} on hr.employee");
+        if (!$allowed) abort(403, $this->permissionDeniedMessage($perm, $user->id, $moduleId));
+    }
+
+    /**
+     * The sentence a user sees when this module refuses them.
+     *
+     * It used to abort with "Missing can_edit on hr.employee" — a column name
+     * and a slug, which is what the toaster then showed to a branch employee
+     * who had simply been given view-only access. The user cannot act on that,
+     * and it names internals to someone who has no business seeing them.
+     *
+     * The distinction that matters is view-only versus no-access-at-all: the
+     * first is a normal, deliberate grant and the message should say so plainly,
+     * the second means the module should not have been reachable at all.
+     */
+    private function permissionDeniedMessage(string $perm, int $userId, int $moduleId): string
+    {
+        if ($perm === 'can_view') {
+            return 'You do not have access to the Employee module. Ask your administrator if you need it.';
+        }
+
+        $canView = Permission::where('user_id', $userId)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+
+        $action = match ($perm) {
+            'can_add'    => 'add employees',
+            'can_delete' => 'delete employees',
+            'can_export' => 'export employees',
+            'can_import' => 'import employees',
+            default      => 'edit this form',
+        };
+
+        return $canView
+            ? "You have view-only access to the Employee module — you cannot {$action}."
+            : "You do not have permission to {$action}. Ask your administrator for access.";
     }
 
     /** Pick (client_id, branch_id) for a new row, mirroring MasterController::resolveOwnership. */

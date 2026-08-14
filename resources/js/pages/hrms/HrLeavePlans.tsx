@@ -1428,6 +1428,10 @@ function LeaveBalancesTab() {
         columns={balanceColumns}
         serial={{ header: 'Sr. No.' }}
         accent="violet"
+        /* Stretches the card to the viewport so a short list doesn't
+           collapse into a strip above an empty page — paired with
+           autoFitRows, which then fills that height with rows. */
+        fitToViewport
         autoFitRows
         /* 3 identity columns + a variable number of leave-type columns; below
            this the wrapper scrolls sideways rather than crushing the bars. */

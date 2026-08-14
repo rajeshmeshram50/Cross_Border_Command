@@ -224,9 +224,13 @@ class HrGeneratedDocumentController extends Controller
         $last   = trim((string) ($emp->last_name ?? ''));
         $full   = trim($first . ' ' . ($middle ? $middle . ' ' : '') . $last);
 
+        // One format string for every date the template can print, so a letter
+        // never mixes "14 Aug 2026" with another rendering of the same field.
+        $dateFormat = 'd M Y';
         $joining = $emp->date_of_joining
-            ? Carbon::parse($emp->date_of_joining)->format('d M Y')
+            ? Carbon::parse($emp->date_of_joining)->format($dateFormat)
             : '';
+        $today = now()->format($dateFormat);
 
         $manager = $emp->reportingManager;
         $managerName = $manager
@@ -275,6 +279,18 @@ class HrGeneratedDocumentController extends Controller
             'CompanyName'    => $companyName,
             'CompanyAddress' => '',
             'CompanyLogo'    => '',
+
+            /* Date of generation. Templates were already written against
+             * {{Currentdate}} with no entry here, so an offer letter went out
+             * with the literal braces printed where the date belonged. Unknown
+             * tokens are deliberately left as-is — right for a typo, wrong for
+             * a field the author had every reason to expect.
+             * Only the canonical spellings are listed; renderTemplate() matches
+             * case-insensitively, so {{Currentdate}} and {{currentdate}} both
+             * resolve without an entry each. */
+            'CurrentDate'    => $today,
+            'Date'           => $today,
+            'Today'          => $today,
         ];
 
         // Signer slot tokens — until the e-sign loop runs, the name/date
@@ -304,10 +320,17 @@ class HrGeneratedDocumentController extends Controller
      * in the preview. Placeholder-chip wrappers are stripped before
      * substitution so the rendered output isn't full of indigo pills.
      *
-     * @param  string[] $boldNames  token names whose substituted value should
-     *                              be wrapped in <strong> in the output —
-     *                              used for operator-supplied custom field
-     *                              values so they pop visually.
+     * Token names are matched exactly first, then case-insensitively. Template
+     * authors type {{JoiningDate}}, {{Joiningdate}} and {{joiningdate}}
+     * interchangeably, and an exact-match-only lookup printed the raw braces
+     * into a document going out to a new hire. A genuine typo still falls
+     * through untouched — that is what makes it visible in the preview.
+     *
+     * @param  array<string,string> $tokens     token name => resolved value
+     * @param  string[]             $boldNames  token names whose substituted
+     *                              value should be wrapped in <strong> — used
+     *                              for operator-supplied custom field values so
+     *                              they pop visually.
      */
     private function renderTemplate(string $html, array $tokens, array $boldNames = []): string
     {
@@ -321,11 +344,23 @@ class HrGeneratedDocumentController extends Controller
 
         $boldSet = array_flip($boldNames);
 
+        /* Lowercased name => canonical name, built ONCE. Scanning the whole
+         * token map inside the callback made the fallback O(tokens × matches)
+         * on every render. First key wins, so the result does not depend on
+         * hash order when two names differ only in case. */
+        $canonicalByLowerName = [];
+        foreach (array_keys($tokens) as $tokenName) {
+            $canonicalByLowerName[strtolower($tokenName)] ??= $tokenName;
+        }
+
         return preg_replace_callback(
             '/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u',
-            function ($m) use ($tokens, $boldSet) {
+            function (array $m) use ($tokens, $boldSet, $canonicalByLowerName): string {
                 $name = $m[1];
-                if (!array_key_exists($name, $tokens)) return $m[0];
+                if (!array_key_exists($name, $tokens)) {
+                    $name = $canonicalByLowerName[strtolower($name)] ?? null;
+                    if ($name === null) return $m[0];   // unknown — leave it visible
+                }
                 $val = htmlspecialchars((string) $tokens[$name], ENT_QUOTES, 'UTF-8');
                 // Operator-supplied values render bold so reviewers can spot
                 // the human-curated bits at a glance — and so the bold

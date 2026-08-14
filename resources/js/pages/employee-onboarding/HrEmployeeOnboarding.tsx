@@ -31,6 +31,32 @@ import './HrEmployeeOnboarding.css';
 
 import '../../../css/recruitment.css';
 
+/**
+ * Toast copy for a save that was REFUSED rather than rejected.
+ *
+ * A 403 is not a validation failure, and reporting it as one ("Save failed" +
+ * the server's sentence) told a view-only user their data was wrong — nothing
+ * they could type would ever have fixed it. Older builds also surfaced the raw
+ * refusal, so the toast read "Missing can_edit on hr.employee": a column name
+ * and a module slug shown to a branch employee.
+ *
+ * The server's own message is preferred when it is a real sentence; the guard
+ * below only steps in for those internal strings, so a backend that words its
+ * refusal properly stays in control of what the user reads.
+ */
+const forbiddenToast = (err: any): { title: string; message: string } => {
+  const serverMsg = String(err?.response?.data?.message ?? '').trim();
+  const looksInternal = /^missing\s|\bcan_(view|add|edit|delete|export|import)\b/i.test(serverMsg);
+  return {
+    title: 'View-only access',
+    message: (serverMsg && !looksInternal)
+      ? serverMsg
+      : 'You have view-only access to this form — you cannot edit it. Ask your administrator if you need edit rights.',
+  };
+};
+
+const isForbidden = (err: any): boolean => err?.response?.status === 403;
+
 const OPT = (...vals: string[]) => vals.map(v => ({ value: v, label: v }));
 const ONB_GENDER       = OPT('Male', 'Female', 'Other');
 const ONB_NATIONALITY  = OPT('Indian', 'Other');
@@ -1893,6 +1919,9 @@ function InitiateOnboardingModal({
   onSaved?: () => void;
 }) {
   const toast = useToast();
+  /* Leave Plan on stage 1 is Leave-module data — gated on hr.leave, not on
+     whoever may run onboarding (QA #13). */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const [activeStage, setActiveStage] = useState(1);
   // Stage 5 (Policies & Agreements) live signing status: total matched
   // agreement templates vs how many have a COMPLETED signing run. Lets the
@@ -2056,17 +2085,22 @@ function InitiateOnboardingModal({
           : merged;
         setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label, deptId: m.department_id != null ? String(m.department_id) : undefined, isHod: !!m.is_hod })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
-      api.get('/leave-plans').then(r => {
-        if (cancelled) return;
-        const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        // Only surface plans whose quota setup is fully complete — draft /
-        // unconfigured plans must not be assignable to an employee.
-        setLeavePlanOpts(
-          plans
-            .filter((p: any) => p.setup_complete)
-            .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
-        );
-      }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
+      /* Leave plans are Leave-module data — not fetched at all without a grant
+         there, so the dropdown can't offer plans the user has no access to
+         (QA #13). Same rule as the Add/Edit Employee form. */
+      (leavePerm.canView
+        ? api.get('/leave-plans').then(r => {
+            if (cancelled) return;
+            const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+            // Only surface plans whose quota setup is fully complete — draft /
+            // unconfigured plans must not be assignable to an employee.
+            setLeavePlanOpts(
+              plans
+                .filter((p: any) => p.setup_complete)
+                .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+            );
+          }).catch(() => { if (!cancelled) setLeavePlanOpts([]); })
+        : Promise.resolve(setLeavePlanOpts([]))),
       // Overtime (OT) Master — active rate names for the Overtime picker.
       reloadOvertimeRates(() => cancelled),
       api.get('/holiday-groups')
@@ -3171,6 +3205,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       }
       return true;
     } catch (err: any) {
+      if (isForbidden(err)) {
+        const t = forbiddenToast(err);
+        toast.error(t.title, t.message);
+        return false;
+      }
       // Surface the failure so the user knows their edit didn't persist.
       // Pull the first validation error if present, fall back to the
       // server's top-level message, then to a generic notice.
@@ -3420,6 +3459,11 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       onSaved?.();
       return true;
     } catch (err: any) {
+      if (isForbidden(err)) {
+        const t = forbiddenToast(err);
+        toast.error(t.title, t.message);
+        return false;
+      }
       const errors = err?.response?.data?.errors;
       const firstFieldMsg = errors && typeof errors === 'object'
         ? (Object.values(errors)[0] as any[] | undefined)?.[0]
@@ -3845,8 +3889,18 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   // itself is no longer enough to mark the wizard as Completed.
   const allPriorStagesDone =
     stage1IsDone && stage2IsDone && stage3IsDone && stage4IsDone && stage5IsDone;
-  const isActivated =
-    macroCompleted >= 6 || String(emp?.raw?.status ?? '').toLowerCase() === 'active';
+  /* ONLY the macro watermark. `status === 'Active'` used to count as activated
+     too, but an employee can be Active for reasons that have nothing to do with
+     onboarding — created Active in the employee master, re-enabled after a
+     disable — so Stage 6 flipped to "Completed / 100%" on records where nobody
+     had ever pressed Complete Onboarding. The same screen then contradicted
+     itself: header "ONBOARDING IN PROGRESS", sidebar "Stage 6 · COMPLETED", and
+     the footer still offering the Complete Onboarding button. It also left
+     profile% stuck at 92 — that figure is half data fields, half stage
+     progress, and the stage half was still reading 5 of 6.
+     `onboarding_stage_completed` is stamped by exactly one action, which is the
+     definition of "onboarding finished". */
+  const isActivated = macroCompleted >= 6;
   const stage6Done = isActivated && allPriorStagesDone;
 
   const stagesView = ONB_STAGES.map(s => {
@@ -4448,7 +4502,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
@@ -8076,9 +8130,11 @@ function Stage6Verify({
   // check below (activated AND every prior stage Completed). Activation on its
   // own is not enough: a row that slipped through with stages 2–5 pending
   // would otherwise make the wizard mis-report 6/6 Verified.
-  const isActivated =
-    String(emp?.raw?.status ?? '').toLowerCase() === 'active'
-    || Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
+  /* Macro watermark only — see the matching note on `isActivated` in the wizard
+     shell. Reading `status === 'Active'` as "onboarding done" made this summary
+     report 6/6 Verified for an employee whose onboarding had never been
+     completed. */
+  const isActivated = Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
   const isStageDone = (num: number): boolean =>
     !!stagesView.find(s => s.num === num && s.status === 'Completed');
   const allPriorStagesDone =

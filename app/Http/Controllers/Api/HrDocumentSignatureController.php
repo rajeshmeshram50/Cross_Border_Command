@@ -342,11 +342,10 @@ class HrDocumentSignatureController extends Controller
 
                 $rowHtml = $row->content_html ?: '';
                 $n = $idx + 1;
-                $signMarker = $signImgUrl
-                    ? sprintf('<img src="%s" alt="Signature of %s" style="max-height: 60px; max-width: 220px; vertical-align: middle;" />', htmlspecialchars($signImgUrl, ENT_QUOTES), htmlspecialchars($name, ENT_QUOTES))
-                    : sprintf('<span style="font-family: \'Brush Script MT\', cursive; font-size: 22px; color: #1d4ed8;">%s</span>', htmlspecialchars($name, ENT_QUOTES));
-                $rowHtml = str_replace("{{Signer{$n}Sign}}", $signMarker, $rowHtml);
-                $rowHtml = str_replace("{{Signer{$n}Date}}", date('d M Y'), $rowHtml);
+                $rowHtml = str_replace("{{Signer{$n}Sign}}", $this->signatureMarkup($signImgUrl, $name), $rowHtml);
+                // now(), not date() — date() reads the SERVER timezone and would
+                // stamp a signature with a different day than the rest of the app.
+                $rowHtml = str_replace("{{Signer{$n}Date}}", now()->format('d M Y'), $rowHtml);
                 $row->content_html = $rowHtml;
             } else {
                 $current['note'] = $data['note'] ?? null;
@@ -638,34 +637,55 @@ class HrDocumentSignatureController extends Controller
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $logoUrl = null;
-        // Prefer the path saved in header_config; if the frontend never
-        // persisted it, fall back to the most recently uploaded logo for this
-        // client — the same fallback the DOCX renderer uses — so the PDF
-        // header still carries a logo instead of just the company text.
-        $logoPath = !empty($headerCfg['logo_path'])
-            ? (string) $headerCfg['logo_path']
-            : (new HrDocumentTemplateController())->latestClientLogo($row->client_id);
-        if (!empty($logoPath)) {
-            $disk = Storage::disk('public');
-            $logoPath = ltrim($logoPath, '/');
-            if ($disk->exists($logoPath)) {
-                // Inline as data URI — DomPDF can't reach the storage URL
-                // because of relative-path resolution in headless renders, and
-                // reading through the disk (not storage_path) keeps this
-                // working when the public disk is Azure Blob on the server.
-                // Normalise the extension to a valid MIME — "jpg" is the
-                // common file extension but "image/jpg" is not a valid type;
-                // it must be "image/jpeg" or some PDF readers refuse to
-                // decode the embedded image.
-                $ext = strtolower((string) pathinfo($logoPath, PATHINFO_EXTENSION));
-                $mime = match ($ext) {
-                    'jpg', 'jpeg' => 'image/jpeg',
-                    'svg'         => 'image/svg+xml',
-                    ''            => 'image/png',
-                    default       => 'image/' . $ext,
-                };
-                $logoUrl = 'data:' . $mime . ';base64,' . base64_encode((string) $disk->get($logoPath));
-            }
+        /* header_config carries the SAME logo twice — `logo_path` (disk path)
+         * and `logo_url` (public URL) — and they are written together on
+         * upload. This only ever read logo_path, so a run whose config carried
+         * just the URL (older templates, or a config saved before logo_path
+         * existed) looked pathless and dropped into the client-logo fallback:
+         * the on-screen viewer, which reads logo_url, showed one company's logo
+         * while the downloaded PDF of the SAME signed document showed another.
+         * On an offer letter that is the wrong letterhead, not a cosmetic slip.
+         *
+         * The URL step is not a corner case: a header seeded from /me's
+         * branch_logo carries ONLY the URL — no path — which is the same thing
+         * ClmSignatureController::renderSignatureDocPdf already works around.
+         *
+         * Order: the saved path, the saved URL resolved back to a disk path,
+         * then the employing BRANCH's own logo — the branch is the legal entity
+         * printed as "FROM:" on the letter, so it is the right letterhead when
+         * the config names none — and only then the client's most recent
+         * template logo, a guess and the last resort it was always meant to be. */
+        $disk = Storage::disk('public');
+        $row->loadMissing('branch:id,logo');
+        $logoCandidates = [
+            (string) ($headerCfg['logo_path'] ?? ''),
+            $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
+            $this->diskPathFromUrl((string) ($row->branch?->logo ?? '')) ?? '',
+            (string) ((new HrDocumentTemplateController())->latestClientLogo($row->client_id) ?? ''),
+        ];
+        foreach ($logoCandidates as $candidate) {
+            // Each candidate must exist before it wins. A logo_path pointing at
+            // a deleted file used to end the search and leave the header blank,
+            // even though the URL beside it named a file that was still there.
+            $candidate = ltrim($candidate, '/');
+            if ($candidate === '' || !$disk->exists($candidate)) continue;
+
+            // Inline as data URI — DomPDF can't reach the storage URL because
+            // of relative-path resolution in headless renders, and reading
+            // through the disk (not storage_path) keeps this working when the
+            // public disk is Azure Blob on the server.
+            // Normalise the extension to a valid MIME — "jpg" is the common
+            // file extension but "image/jpg" is not a valid type; it must be
+            // "image/jpeg" or some PDF readers refuse to decode the image.
+            $ext = strtolower((string) pathinfo($candidate, PATHINFO_EXTENSION));
+            $mime = match ($ext) {
+                'jpg', 'jpeg' => 'image/jpeg',
+                'svg'         => 'image/svg+xml',
+                ''            => 'image/png',
+                default       => 'image/' . $ext,
+            };
+            $logoUrl = 'data:' . $mime . ';base64,' . base64_encode((string) $disk->get($candidate));
+            break;
         }
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
@@ -827,6 +847,38 @@ class HrDocumentSignatureController extends Controller
     }
 
     /**
+     * The markup that replaces a {{SignerNSign}} token — a drawn/uploaded
+     * signature when one was supplied, otherwise the typed name in cursive.
+     *
+     * Both branches carry the SAME vertical metrics on purpose. The typed span
+     * used to have none, so its 22px cursive sat on the surrounding text's
+     * baseline and grew upwards — the signature rendered a line above the label
+     * it belongs to ("Dhanashri" floating over "Reporting Manager").
+     * `inline-block` + `line-height: 1` keeps it from stretching the line box,
+     * and `vertical-align: middle` centres it against the label.
+     *
+     * Both the URL and the name are escaped: the name is signer-supplied.
+     */
+    private function signatureMarkup(?string $imageUrl, string $name): string
+    {
+        $safeName = htmlspecialchars($name, ENT_QUOTES);
+
+        if ($imageUrl !== null && $imageUrl !== '') {
+            return sprintf(
+                '<img src="%s" alt="Signature of %s" style="max-height:48px;max-width:220px;vertical-align:middle;" />',
+                htmlspecialchars($imageUrl, ENT_QUOTES),
+                $safeName,
+            );
+        }
+
+        return sprintf(
+            '<span style="font-family:\'Brush Script MT\',cursive;font-size:22px;line-height:1;'
+            . 'display:inline-block;vertical-align:middle;color:#1d4ed8;">%s</span>',
+            $safeName,
+        );
+    }
+
+    /**
      * Decode a `data:image/...;base64,...` payload from the SignaturePad
      * (Type/Draw modes emit PNG, Upload mode can yield PNG/JPG/GIF/WEBP/SVG)
      * and persist it under the tenant's public-disk folder. Returns the
@@ -867,6 +919,42 @@ class HrDocumentSignatureController extends Controller
     }
 
     /**
+     * Resolve an image reference to a path on the PUBLIC disk, or null when it
+     * points somewhere we can't read (a remote host, a data URI, an app route).
+     *
+     * Accepts every shape these columns and editors produce: an absolute URL
+     * served off this app's /storage, a /storage/... path, a `public/...` or
+     * `storage/...` prefixed path, a Windows path with backslashes, and a bare
+     * disk-relative path. The normalisation mirrors file_url() in helpers.php —
+     * branch.logo and friends are stored raw, so a caller that only stripped a
+     * leading slash would hand Storage a path it can never find.
+     */
+    private function diskPathFromUrl(string $src): ?string
+    {
+        $src = trim($src);
+        if ($src === '' || str_starts_with($src, 'data:')) return null;
+
+        $parsed = parse_url($src);
+        $path = $parsed['path'] ?? $src;
+        $path = ltrim(str_replace('\\', '/', $path), '/');
+
+        // Absolute URL or /storage/... path — everything after /storage is the
+        // disk-relative part.
+        if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) {
+            return $m[1];
+        }
+        // A remote host we can't read from.
+        if (isset($parsed['scheme'])) return null;
+
+        if (str_starts_with($path, 'public/')) {
+            $path = substr($path, strlen('public/'));
+        }
+        // A bare basename with no folder is a stale row from a buggy save —
+        // resolving it yields a confident-looking path that doesn't exist.
+        return str_contains($path, '/') ? $path : null;
+    }
+
+    /**
      * Rewrite every <img src="..."> in $html that points to a storage-served
      * URL (or a /storage/... relative path) into a base64 data URI, reading
      * the file from the public disk. Skips srcs that are already data URIs
@@ -882,17 +970,7 @@ class HrDocumentSignatureController extends Controller
                 [$full, $pre, $quote, $src, $post] = $mm;
                 if ($src === '' || str_starts_with($src, 'data:')) return $full;
 
-                // Resolve the src to a path on the public disk. Handle three
-                // common shapes: absolute URLs hosted on this app's storage,
-                // /storage/... relative paths, and bare disk-relative paths.
-                $diskPath = null;
-                $parsed = parse_url($src);
-                $path = $parsed['path'] ?? $src;
-                if (preg_match('#/storage/(.+)$#', $path, $sm)) {
-                    $diskPath = $sm[1];
-                } elseif (!isset($parsed['scheme']) && !str_starts_with($path, '/')) {
-                    $diskPath = ltrim($path, '/');
-                }
+                $diskPath = $this->diskPathFromUrl($src);
                 if (!$diskPath) return $full;
 
                 try {

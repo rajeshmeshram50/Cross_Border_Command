@@ -459,6 +459,10 @@ export default function HrEmployees() {
      EmployeeController::authorize() resolves 'hr.employee' — so a button the
      UI allows is a call the server will accept, and vice versa. */
   const perm = useModulePermission('hr.employee', 'employees');
+  /* Leave Plan on the employee form is Leave-module data (QA #13). Editing an
+     employee doesn't imply access to the leave configuration, so the field is
+     gated on hr.leave rather than on hr.employee. */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
@@ -704,6 +708,13 @@ export default function HrEmployees() {
   const [eLeavePlan, setELeavePlan] = useState('');
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
+    /* Leave plans belong to the Leave module, not this one. Without a grant
+       there the list isn't fetched at all — so the dropdown offers nothing
+       instead of exposing (and letting someone assign) plans they have no
+       access to. The "required" rule below only bites when options exist, so
+       the form stays completable. */
+    if (!leavePerm.canView) { setLeavePlanOptions([]); return; }
+
     leavePlansApi.list()
       .then(plans => {
         // Only configured plans (quota setup complete) may be assigned to an
@@ -715,7 +726,7 @@ export default function HrEmployees() {
         );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
-  }, []);
+  }, [leavePerm.canView]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const holidayGroupSelectOptions = useMemo(() => {
@@ -2801,7 +2812,9 @@ export default function HrEmployees() {
         // Edit and Permissions on the logged-in user's own row (QA #150). Match
         // by linked user id, falling back to the linked employee id.
         const isSelf = !!authUser && (
-          (e.user_id != null && Number(e.user_id) === Number(authUser.id)) ||
+          // `user_id` rides on the row payload but isn't in EmployeeRow's type
+          // — same cast the _dbId lookup below already uses.
+          ((e as any).user_id != null && Number((e as any).user_id) === Number(authUser.id)) ||
           ((authUser as any).employee_id != null && Number((e as any)._dbId) === Number((authUser as any).employee_id))
         );
         // EXITED employees (exit case completed → status Resigned/Terminated)
@@ -2810,13 +2823,21 @@ export default function HrEmployees() {
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
-            <ActionBtn title={isSelf ? "You can't edit your own record" : 'Edit'} icon="ri-pencil-line" color="info" onClick={() => openEditEmployee(e)} disabled={rowDisabled || isSelf} />
-            <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
+            {/* Two independent rules sit on this button, and they behave
+                differently on purpose:
+                  disabled → a fact about the ROW (deactivated, or your own
+                             record — you can't edit yourself, QA #150). Inert;
+                             the tooltip is the whole explanation.
+                  locked   → a fact about the USER (no can_edit). Greyed but
+                             still clickable, so the click names the missing
+                             permission instead of doing nothing. */}
             <ActionBtn
-              title={perm.lockedTitle('edit') ?? 'Edit'}
+              title={isSelf
+                ? "You can't edit your own record"
+                : (perm.lockedTitle('edit') ?? 'Edit')}
               icon="ri-pencil-line" color="info"
               onClick={() => perm.guard('edit', () => openEditEmployee(e))}
-              disabled={rowDisabled}
+              disabled={rowDisabled || isSelf}
               locked={!perm.canEdit}
             />
             {/* Asset assignment saves through PUT /employees/{id}, which the
@@ -2841,8 +2862,19 @@ export default function HrEmployees() {
               badge={(e as any).faceRegistered ? 'dot' : undefined}
               onClick={() => perm.guard('edit', () => setFaceRegEmployeeId((e as any)._dbId))}
               disabled={rowDisabled}
+              locked={!perm.canEdit}
             />
-            <ActionBtn title={isSelf ? "You can't change your own permissions" : 'Permissions'} icon="ri-lock-2-line" color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled || isSelf} />
+            {/* Changing what someone else can access is the furthest-reaching
+                edit on this page — view-only must not reach it. */}
+            <ActionBtn
+              title={isSelf
+                ? "You can't change your own permissions"
+                : (perm.lockedTitle('edit') ?? 'Permissions')}
+              icon="ri-lock-2-line" color="warning"
+              onClick={() => perm.guard('edit', () => openPermissions(e))}
+              disabled={rowDisabled || isSelf}
+              locked={!perm.canEdit}
+            />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
             {tab === 'disabled' && (
               <ActionBtn
@@ -4153,7 +4185,19 @@ export default function HrEmployees() {
                     <Row className="g-3">
                       <Col md={4}>
                         <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                        <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
+                        <MasterSelect
+                          value={eLeavePlan}
+                          onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
+                          options={leavePlanOptions}
+                          // Greyed shut without the Leave grant — the list is
+                          // never fetched in that case, so there is nothing to
+                          // open and nothing to assign.
+                          disabled={!leavePerm.canView}
+                          placeholder={!leavePerm.canView
+                            ? 'Requires Leave module access'
+                            : (leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave')}
+                          invalid={!!eErrors.leave_plan}
+                        />
                         {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                       </Col>
                       <Col md={4}>
