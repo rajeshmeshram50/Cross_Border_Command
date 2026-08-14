@@ -181,10 +181,10 @@ export function advanceRequestColumns({
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<AdvanceRequestRow>[] {
   return [
     {
-      header: 'Adv ID',
+      header: () => <div className="text-center">Adv ID</div>,
       id: 'advance_no',
       accessorFn: (r: AdvanceRequestRow) => r.advance_no || `#${r.id}`,
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => (
         <span
           className="font-monospace fw-semibold adv-id-badge"
@@ -203,31 +203,19 @@ export function advanceRequestColumns({
         const r = info.row.original;
         const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 24, height: 24, fontSize: 10,
-                background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                boxShadow: `0 2px 6px ${accent}40`,
-              }}
-            >
-              {initialsFromName(r.employee_name, fallbackInitials)}
-            </div>
-            <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
-              <span className="fw-semibold text-truncate">{empName}</span>
-              {r.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>}
-            </div>
+          <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
+            <span className="fw-semibold text-truncate">{empName}</span>
+            {r.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>}
           </div>
         );
       },
     },
     {
-      header: 'Advance Type',
+      header: () => <div className="text-center">Advance Type</div>,
       id: 'advance_type',
       // "Other" carries the free-text detail, so sort/search see the full label.
       accessorFn: (r: AdvanceRequestRow) => (r.advance_type === 'Other' && r.advance_type_other ? `Other · ${r.advance_type_other}` : r.advance_type),
-      meta: { width: '11%' },
+      meta: { width: '11%', align: 'center' },
       cell: info => (
         <span
           className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
@@ -250,16 +238,16 @@ export function advanceRequestColumns({
     },
     ] as DataTableColumn<AdvanceRequestRow>[]),
     {
-      header: 'Amount',
+      header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
-      meta: { width: '9%', align: 'right' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
     },
     {
-      header: 'Requested',
+      header: () => <div className="text-center">Requested</div>,
       id: 'requested_date',
       accessorFn: (r: AdvanceRequestRow) => (r.requested_date ? new Date(r.requested_date).getTime() : 0),
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <span className="text-muted">{fmtDate(info.row.original.requested_date)}</span>,
     },
     // Recovery Start / Recovery / Monthly EMI apply to a SELF advance only — a
@@ -319,10 +307,10 @@ export function advanceRequestColumns({
     },
     ] as DataTableColumn<AdvanceRequestRow>[]),
     {
-      header: () => <div className="text-center">Attachments</div>,
+      header: 'Attachments',
       id: '__attachments',
       enableSorting: false,
-      meta: { align: 'center', width: '11%' },
+      meta: { align: 'left', width: '11%' },
       /* First receipt inline; extras collapse into a "+N more" popover so
          multiple uploads never expand the row height. */
       cell: info => (
@@ -336,7 +324,7 @@ export function advanceRequestColumns({
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '8%', align: 'center' },
+      meta: { width: '8%', align: 'center', wrap: true },
       cell: info => {
         const s = info.row.original.status;
         const tone = STATUS_TONE[s];
@@ -356,7 +344,7 @@ export function advanceRequestColumns({
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (r: AdvanceRequestRow) => paymentStatusOf(r) ?? '',
-      meta: { width: '10%', align: 'center' },
+      meta: { width: '10%', align: 'center', wrap: true },
       cell: info => {
         // A rejected request is never paid — read "N/A" rather than a bare "—"
         // so it looks intentional, not like a missing value (QA #122).
@@ -385,7 +373,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Confirmation</div>,
       id: 'settle',
       enableSorting: false,
-      meta: { width: '10%', align: 'center' },
+      meta: { width: '10%', align: 'center', wrap: true },
       cell: (info: any) => {
         const r = info.row.original;
         // A rejected request is never settled — "N/A" instead of a bare "—" (QA #122).
@@ -456,7 +444,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Recovery Status</div>,
       id: 'recovery_status',
       enableSorting: false,
-      meta: { width: '11%', align: 'center' },
+      meta: { width: '11%', align: 'center', wrap: true },
       cell: (info: any) => {
         const r = info.row.original;
         const pill = (icon: string, label: string, bg: string, fg: string) => (
@@ -486,7 +474,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Zoho Sync</div>,
       id: 'zoho_sync',
       enableSorting: false,
-      meta: { width: '9%', align: 'center' },
+      meta: { width: '9%', align: 'center', wrap: true },
       cell: (info: any) => {
         const z = (info.row.original.zoho_sync ?? 'na') as 'na' | 'pending' | 'partial' | 'completed';
         if (z === 'na') return <span className="text-muted">—</span>;

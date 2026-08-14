@@ -8,6 +8,7 @@ import { ShimmerTableRows } from '../components/ui/Shimmer';
 import Tooltip from '../components/ui/Tooltip';
 import WorklistPager from '../components/ui/WorklistPager';
 import DataTable, { type DataTableColumn } from '../components/ui/DataTable';
+import ExpenseSettlementModal from '../components/ExpenseSettlementModal';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -35,7 +36,7 @@ interface TeamEmployee {
   status: string;
 }
 
-type ApprovalModule = 'document_signature' | 'expense' | 'leave';
+type ApprovalModule = 'document_signature' | 'expense' | 'leave' | 'advance';
 interface ApprovalItem {
   module: ApprovalModule;
   id: number;
@@ -132,7 +133,22 @@ export default function MyTeam() {
   useEffect(() => { loadEmployees(); loadApprovals(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
   // ── Action handlers ───────────────────────────────────────────────────────
+  // Expense / advance approvals open the FULL Review & Approve modal
+  // (ExpenseSettlementModal) — the same rich popup the HR Expense page and the
+  // profile use — instead of the generic Review & Decide dialog. No onGoToInbox
+  // is passed, so the manager-stage approve/reject works right here (My Team is
+  // the manager's action queue, like the Inbox).
+  const [settleModal, setSettleModal] = useState<{ id: number; basePath: string; kind: 'expense' | 'advance' } | null>(null);
+
   const openAction = (item: ApprovalItem) => {
+    if (item.module === 'expense' || item.module === 'advance') {
+      setSettleModal({
+        id: item.id,
+        basePath: item.module === 'advance' ? '/advance-requests' : '/expense-claims',
+        kind: item.module === 'advance' ? 'advance' : 'expense',
+      });
+      return;
+    }
     setActionItem(item);
     // Pre-fill the typed-signature field with the user's name for Sign rows.
     setActionName(user?.name || '');
@@ -526,6 +542,19 @@ export default function MyTeam() {
           item={viewItem}
           onClose={() => setViewItem(null)}
           onTakeAction={() => { const v = viewItem; setViewItem(null); openAction(v); }}
+        />
+      )}
+
+      {/* Full Review & Approve modal for expense / advance approvals (same rich
+          popup as the HR Expense page). review mode → Approve / Reject footer. */}
+      {settleModal && (
+        <ExpenseSettlementModal
+          claimId={settleModal.id}
+          basePath={settleModal.basePath}
+          kind={settleModal.kind}
+          review
+          onClose={() => setSettleModal(null)}
+          onDone={() => { setSettleModal(null); loadApprovals(); }}
         />
       )}
     </>

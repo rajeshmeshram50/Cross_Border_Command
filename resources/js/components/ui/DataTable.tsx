@@ -63,6 +63,9 @@ export interface DataTableProps<T> {
   filterChips?: DataTableChip[];
   onClearFilters?: () => void;
   toolbarActions?: ReactNode;
+  /** Rendered at the START of the toolbar, BEFORE the tabs (e.g. a date-range
+   *  filter that should sit to the left of the status tabs). */
+  leadingToolbar?: ReactNode;
   initialSort?: SortingState;
   disableSorting?: boolean;
   leading?: DataTableColumn<T>[];
@@ -143,6 +146,7 @@ export default function DataTable<T extends object>({
   filterChips,
   onClearFilters,
   toolbarActions,
+  leadingToolbar,
   initialSort,
   disableSorting = false,
   leading,
@@ -345,7 +349,7 @@ export default function DataTable<T extends object>({
     </div>
   ) : null;
   const searchInToolbar = searchable && !searchHost;
-  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions);
+  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions || leadingToolbar);
   const start = pageIndex * pageSize;
   const shownFrom = filteredCount === 0 ? 0 : start + 1;
   const shownTo = paginate ? Math.min(start + pageSize, filteredCount) : filteredCount;
@@ -358,6 +362,7 @@ export default function DataTable<T extends object>({
     >
       {showToolbar && (
         <div className="dt-toolbar">
+          {leadingToolbar && <div className="dt-lead">{leadingToolbar}</div>}
           {!!tabs?.length && (
             <div className="dt-tabs" role="tablist">
               {tabs.map(t => {

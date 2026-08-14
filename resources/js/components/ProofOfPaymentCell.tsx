@@ -78,12 +78,9 @@ function fmtSize(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Tooltip text: what the file is, how big, and what a click does. */
-function hint(name: string, size: number | undefined, typeLabel: string): string {
-  const parts = [name, typeLabel];
-  const s = fmtSize(size);
-  if (s) parts.push(s);
-  return `${parts.join(' · ')} — opens in a new tab`;
+/** Tooltip text: what the file is and what a click does (size is not shown). */
+function hint(name: string, _size: number | undefined, typeLabel: string): string {
+  return `${name} · ${typeLabel} — opens in a new tab`;
 }
 
 /* Hover affordance: the chip lifts and underlines, so it reads as a link
@@ -160,7 +157,7 @@ export default function ProofOfPaymentCell({
 
   const chipStyle: React.CSSProperties = {
     fontSize: 11, padding: '3px 9px', borderRadius: 8,
-    background: accent.bg, color: accent.fg, fontWeight: 600,
+    background: accent.bg, color: accent.fg, fontWeight: 500,
     border: `1px solid ${accent.border}`,
   };
 
@@ -219,7 +216,6 @@ export default function ProofOfPaymentCell({
               {rest.map((att, i) => {
                 const nm = att.name || `Receipt ${i + 2}`;
                 const m = fileMeta(extOf(att.name, att.url));
-                const size = fmtSize(att.size);
                 return (
                   <a
                     key={`${att.url}-${i}`}
@@ -228,16 +224,15 @@ export default function ProofOfPaymentCell({
                     rel="noreferrer"
                     className="d-flex align-items-center gap-2 text-decoration-none pop-proof-item"
                     title={hint(nm, att.size, m.label)}
-                    style={{ padding: '7px 9px', borderRadius: 8, color: accent.fg, fontSize: 12, fontWeight: 600 }}
+                    style={{ padding: '7px 9px', borderRadius: 8, color: accent.fg, fontSize: 12, fontWeight: 500 }}
                   >
                     <i className={m.icon} style={{ flexShrink: 0, fontSize: 14 }} />
                     <span className="d-flex flex-column" style={{ minWidth: 0, lineHeight: 1.2 }}>
                       <span className="proof-chip-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {nm}
                       </span>
-                      {size && (
-                        <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.7 }}>{m.label} · {size}</span>
-                      )}
+                      {/* File type only — size is not shown. */}
+                      <span style={{ fontSize: 10, fontWeight: 400, opacity: 0.7 }}>{m.label}</span>
                     </span>
                     <i className="ri-external-link-line ms-auto" style={{ flexShrink: 0, fontSize: 12, opacity: 0.7 }} />
                   </a>

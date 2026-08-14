@@ -198,7 +198,7 @@ export function expenseClaimColumns({
 }: Omit<Props, 'rows' | 'loading'>): DataTableColumn<ExpenseClaimRow>[] {
   return [
     {
-      header: 'Exp ID',
+      header: () => <div className="text-center">Exp ID</div>,
       id: 'claim_no',
       accessorFn: (c: ExpenseClaimRow) => c.claim_no || `#${c.id}`,
       // Sort strictly by the ID's numeric sequence (EXP-0002 < EXP-0028), not a
@@ -215,7 +215,7 @@ export function expenseClaimColumns({
       // out of the table's default ellipsis clipping — the ID used to render
       // as "EXP-0002…" in an 8% column even though it fits. `title` still
       // gives the full ID on hover as a safety net.
-      meta: { width: 104, wrap: true },
+      meta: { width: 104, wrap: true, align: 'center' },
       cell: info => {
         const id = info.row.original.claim_no || `#${info.row.original.id}`;
         return (
@@ -233,35 +233,23 @@ export function expenseClaimColumns({
       header: 'Employee',
       id: 'employee',
       accessorFn: (c: ExpenseClaimRow) => c.employee_name || fallbackName || `#${c.employee_id}`,
-      meta: { width: '14%' },
+      meta: { width: '14%', align: 'left' },
       cell: info => {
         const c = info.row.original;
         const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
         return (
-          <div className="d-flex align-items-center gap-2">
-            <div
-              className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold flex-shrink-0"
-              style={{
-                width: 24, height: 24, fontSize: 10,
-                background: `linear-gradient(135deg, ${accent}, ${accent}cc)`,
-                boxShadow: `0 2px 6px ${accent}40`,
-              }}
-            >
-              {initialsFromName(c.employee_name, fallbackInitials)}
-            </div>
-            <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
-              <span className="fw-semibold text-truncate">{empName}</span>
-              {c.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{c.employee_code}</small>}
-            </div>
+          <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
+            <span className="fw-semibold text-truncate">{empName}</span>
+            {c.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{c.employee_code}</small>}
           </div>
         );
       },
     },
     {
-      header: 'Category',
+      header: () => <div className="text-center">Category</div>,
       id: 'category',
       accessorFn: (c: ExpenseClaimRow) => c.category_name ?? '',
-      meta: { width: '11%' },
+      meta: { width: '11%', align: 'center' },
       cell: info => (
         <span
           className="d-inline-flex align-items-center gap-1 fw-semibold exp-cat-badge"
@@ -294,30 +282,30 @@ export function expenseClaimColumns({
     {
       /* Sorts on the real date, not the dd-Mon-yyyy label — the formatted
          string would order 01-Dec before 02-Jan. */
-      header: 'Expense Date',
+      header: () => <div className="text-center">Expense Date</div>,
       id: 'expense_date',
       accessorFn: (c: ExpenseClaimRow) => (c.expense_date ? new Date(c.expense_date).getTime() : 0),
-      meta: { width: '10%' },
+      meta: { width: '10%', align: 'center' },
       cell: info => <span className="text-muted">{fmtDate(info.row.original.expense_date)}</span>,
     },
     {
-      header: 'Amount',
+      header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
-      meta: { width: '9%', align: 'right' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
     },
     {
-      header: () => <div className="text-center">Proof of Payment</div>,
+      header: 'Proof of Payment',
       id: '__proof',
       enableSorting: false,
-      meta: { align: 'center', width: '13%' },
+      meta: { align: 'left', width: '13%' },
       /* Only the first receipt shows in the cell; extras collapse into a
          "+N more" popover so multiple uploads can't expand the row height. */
       cell: info => (
         <ProofOfPaymentCell
           attachments={info.row.original.attachments}
           withAuthToken={withAuthToken}
-          accent={{ bg: 'rgba(239,68,68,0.10)', fg: '#dc2626', border: 'rgba(239,68,68,0.25)' }}
+          accent={{ bg: 'rgba(37,99,235,0.10)', fg: '#2563eb', border: 'rgba(37,99,235,0.25)' }}
         />
       ),
     },
@@ -743,7 +731,7 @@ function ExpenseClaimRowView({
         <ProofOfPaymentCell
           attachments={c.attachments}
           withAuthToken={withAuthToken}
-          accent={{ bg: 'rgba(239,68,68,0.10)', fg: '#dc2626', border: 'rgba(239,68,68,0.25)' }}
+          accent={{ bg: 'rgba(37,99,235,0.10)', fg: '#2563eb', border: 'rgba(37,99,235,0.25)' }}
         />
       </td>
       <td className="exp-col-status">
