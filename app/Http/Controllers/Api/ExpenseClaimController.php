@@ -137,7 +137,11 @@ class ExpenseClaimController extends Controller
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
-                $q->whereIn('employee_id', $teamIds ?: [-1]);
+                // Include the manager's OWN claims — the "My Team" surface shows
+                // the whole team and a manager is part of their team, so their
+                // own claims must appear alongside their reports' (QA #144).
+                if ($myEmployeeId) $teamIds[] = $myEmployeeId;
+                $q->whereIn('employee_id', array_values(array_unique($teamIds)) ?: [-1]);
             }
         } else {
             // scope=all — for HR/admin views. No additional filter beyond

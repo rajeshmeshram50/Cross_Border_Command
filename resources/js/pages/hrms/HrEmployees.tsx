@@ -2639,13 +2639,13 @@ export default function HrEmployees() {
     {
       header: 'Department',
       accessorKey: 'department',
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Designation',
       accessorKey: 'designation',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -4719,7 +4719,7 @@ export default function HrEmployees() {
                           through (handleNextStep PUTs before advancing), and a
                           plain "Next" read like the work was being carried
                           along unsaved until the final button. */}
-                      <i className="ri-check-line" /> Save &amp; Next <i className="ri-arrow-right-s-line" />
+                      Save &amp; Next <i className="ri-arrow-right-s-line" />
                     </>
                   )}
                 </button>

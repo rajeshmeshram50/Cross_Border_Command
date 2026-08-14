@@ -88,7 +88,11 @@ class AdvanceRequestController extends Controller
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
-                $q->whereIn('employee_id', $teamIds ?: [-1]);
+                // Include the manager's OWN advances too — a manager is part of
+                // their team, so the "My Team" surface must show their own rows
+                // alongside their reports' (mirrors QA #144 for expense claims).
+                if ($myEmployeeId) $teamIds[] = $myEmployeeId;
+                $q->whereIn('employee_id', array_values(array_unique($teamIds)) ?: [-1]);
             }
         } else {
             $this->guardHrPermission($user, 'can_view');

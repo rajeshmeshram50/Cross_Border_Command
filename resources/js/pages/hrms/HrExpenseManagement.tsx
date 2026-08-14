@@ -1112,12 +1112,13 @@ export default function HrExpenseManagement() {
             data={filteredAdvances}
             columns={advanceColumns}
             accent="violet"
-            /* Same sizing as My Workplace: autoFitRows picks the rows-per-page
-               from the space available, fitToViewport pins the card to the fold
-               so the footer sits at the bottom instead of floating up under a
-               short result set. */
+            /* autoFitRows picks the rows-per-page from the space available.
+               This page has a tall header (hero + 5 KPI cards + Spend Analytics
+               + tabs), so pinning the card to the fold squeezed it to ~2 rows on
+               a big screen. minAutoRows floors it at 8 and we drop fitToViewport
+               so the extra rows spill below the fold and the page scrolls. */
             autoFitRows
-            fitToViewport
+            minAutoRows={8}
             minWidth={1500}
             loading={advanceLoading || switching}
             searchValue={search}
@@ -1182,7 +1183,7 @@ export default function HrExpenseManagement() {
             columns={claimColumns}
             accent="violet"
             autoFitRows
-            fitToViewport
+            minAutoRows={8}
             minWidth={1150}
             loading={loading || switching}
             searchValue={search}

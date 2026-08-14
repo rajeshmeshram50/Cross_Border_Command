@@ -1926,9 +1926,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         // No future dates; only the last 30 days are claimable.
         const todayIso = new Date().toISOString().slice(0, 10);
         const minIso = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+        // Can't claim an expense dated before the employee actually joined
+        // (QA #136) — checked before the 30-day window so the joining-date
+        // message wins when a new hire is still inside their first month.
+        const dojIso = empDetail?.date_of_joining ? String(empDetail.date_of_joining).slice(0, 10) : '';
         if (d.date > todayIso) {
           draftErrs.date = 'Expense date cannot be in the future';
           errors.push(`${label}: Expense date cannot be in the future`);
+        } else if (dojIso && d.date < dojIso) {
+          draftErrs.date = `Expense date cannot be earlier than the joining date (${fmtDate(dojIso)})`;
+          errors.push(`${label}: Expense date cannot be earlier than the joining date (${fmtDate(dojIso)})`);
         } else if (d.date < minIso) {
           draftErrs.date = 'Expense date must be within the last 30 days';
           errors.push(`${label}: Expense date must be within the last 30 days`);
@@ -2227,10 +2234,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     rejected: activeClaimsSource.filter(c => c.status === 'rejected').length,
     pending:  activeClaimsSource.filter(c => c.status === 'pending').length,
   };
-  // Total Claimed reflects only approved claims — pending/rejected rows are
-  // excluded so the hero figure represents money actually owed/reimbursed.
+  // Total Claimed = gross amount claimed across ALL rows, matching the hero
+  // label ("Total Claimed") and the main Expense page's TOTAL AMOUNT card.
+  // A pending claim of ₹X must not read as ₹0; the approved/pending split is
+  // already shown in the sub-line beneath the figure.
   const totalClaimed = activeClaimsSource
-    .filter(c => c.status === 'approved')
     .reduce((sum, c) => sum + Number(c.amount || 0), 0);
   // Status filter first, then the free-text search. The search matches across
   // the columns the table renders (claim no, description, category, supplier,

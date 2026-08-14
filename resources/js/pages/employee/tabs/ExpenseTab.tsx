@@ -92,10 +92,11 @@ export default function ExpenseTab() {
                     {expenseModuleTab === 'advance' ? 'Total Requested' : 'Total Claimed'}:{' '}
                     <span className="ext-hero-amount">
                       ₹{(expenseModuleTab === 'advance'
-                          // Only approved advances count toward Total Requested —
-                          // pending/rejected are excluded (mirrors Total Claimed).
+                          // Total Requested = gross amount across ALL advances,
+                          // matching the label and the main Expense page total.
+                          // A pending ₹X advance must not read as ₹0; the
+                          // approved/pending split shows in the sub-line below.
                           ? activeAdvancesSource
-                              .filter(a => a.status === 'approved')
                               .reduce((s, a) => s + Number(a.amount || 0), 0)
                           : totalClaimed
                         ).toLocaleString('en-IN')}

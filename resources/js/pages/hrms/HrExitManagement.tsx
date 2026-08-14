@@ -277,8 +277,8 @@ export default function HrExitManagement() {
       meta: { width: w(130, 108), wrap: true, align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118) },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124) }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
@@ -1177,11 +1177,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (stage > stageCount) setStage(stageCount);
   }, [stageCount, stage]);
 
-  // Prefill the monthly figure from the employee's package the first time the
-  // settlement is looked at; HR can overwrite it.
+  /* Monthly basic resolved by the server (GET /exit → monthly_basic), which
+     reads the employee's in-force SALARY STRUCTURE first and only falls back to
+     annual_salary ÷ 12 × 50% — the same precedence PayrollService uses.
+     Held separately from the list row's `monthlySalary`, which knows only about
+     annual_salary: an employee paid through a structure with no annual figure
+     had no package to derive from, so Monthly Basic, the per-day rate and the
+     payable all showed ₹0 (bug #82). */
+  const [serverMonthlyBasic, setServerMonthlyBasic] = useState<number | null>(null);
+
+  // Prefill the monthly figure the first time the settlement is looked at; HR
+  // can overwrite it. Server figure wins — the row's annual-only derivation is
+  // the fallback for a case whose exit record hasn't loaded yet.
   useEffect(() => {
-    if (!monthlyAmount && employee?.monthlySalary) setMonthlyAmount(String(employee.monthlySalary));
-  }, [employee?.monthlySalary, monthlyAmount]);
+    if (monthlyAmount) return;
+    const basis = serverMonthlyBasic && serverMonthlyBasic > 0
+      ? serverMonthlyBasic
+      : employee?.monthlySalary;
+    if (basis) setMonthlyAmount(String(basis));
+  }, [serverMonthlyBasic, employee?.monthlySalary, monthlyAmount]);
 
   /* The settlement figures. Overtime-style rule set:
        · days served  = last working day − notice start, clamped to the period
@@ -1766,6 +1780,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         const savedStage = Number(data.current_stage);
         if (savedStage >= 1 && savedStage <= 6) setStage(savedStage);
 
+        // Monthly basic resolved from the salary structure (or the annual
+        // fallback) server-side — feeds the settlement prefill (#82).
+        const mb = Number(data.monthly_basic);
+        setServerMonthlyBasic(Number.isFinite(mb) && mb > 0 ? mb : null);
+
         // Notice-period settlement + FnF. The basis is no longer loaded — it's
         // always monthly basic now, so a stored 'gross' must not resurrect.
         setSettleStatus(String(data.notice_settlement_status ?? 'NA'));
@@ -1971,7 +1990,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     if (n === 'documents') {
       const total = exitTemplates.length;
-      if (total === 0) return 0;
+      /* No exit-document template matches this employee → there is nothing to
+         generate and nothing to sign, so the stage holds no work. Reads 100,
+         not 0: same reasoning as fnfNothingToSettle above, where a measure with
+         a zero denominator would otherwise sit at 0% forever.
+         This was the 0% in bug #81. It mattered because every completion gate
+         that mentions documents is written `exitTemplates.length > 0 && …`, so
+         with no templates the stage showed Pending while nothing blocked the
+         close — and once completion gates on all stages being Completed (see
+         completeExit), a permanent 0% here would deadlock the case instead. */
+      if (total === 0) return 100;
       const done = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
       return Math.round((done / total) * 100);
     }
@@ -2023,7 +2051,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // Merely sending one (run Pending/In Progress) must not flip it to 100%.
     if (n === 'documents') {
       const total = exitTemplates.length;
-      const allSigned = total > 0 && exitTemplates.every(t => runByTemplateId.get(t.id)?.status === 'Completed');
+      // `total === 0` counts as signed — nothing was matched, so there is
+      // nothing outstanding. Matches rawStagePct's zero-denominator branch;
+      // the old `total > 0 &&` pinned this stage to Pending forever (#81).
+      const allSigned = total === 0 || exitTemplates.every(t => runByTemplateId.get(t.id)?.status === 'Completed');
       if (!allSigned) {
         const anySent = exitTemplates.some(t => runByTemplateId.has(t.id));
         return (n === currentKey || anySent || rawStagePct('documents') > 0 || stageStatus.documents === 'In Progress') ? 'In Progress' : 'Pending';
@@ -2211,6 +2242,27 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         exitPending.join('  •  '),
       );
       setStage(clearances.some(c => c.status !== 'Approved') ? 2 : 4);
+      return;
+    }
+
+    /* FINAL gate (#81): every stage on the stepper must read Completed.
+       The checks above are better error messages — they name the exact asset or
+       document and jump to it — but they are a hand-maintained list, and a stage
+       whose measure is not mirrored in `exitPending` could sit Pending while
+       completion sailed straight past it. That is what let an exit close with
+       "Stage 4 — Exit Documents Management" at Pending / 0%.
+       Gating on the stage model itself means the rule is "all stages complete",
+       stated once, and a new stage or a changed measure is covered without
+       having to remember to add it here as well. */
+    const incompleteStages = stages.filter(s => effStatusOf(s.key) !== 'Completed');
+    if (incompleteStages.length) {
+      toast.error(
+        `Exit can't be completed — ${incompleteStages.length} stage${incompleteStages.length > 1 ? 's' : ''} not complete`,
+        incompleteStages
+          .map(s => `Stage ${s.num}: ${s.title} (${stagePctOf(s.key)}%)`)
+          .join('  •  '),
+      );
+      setStage(incompleteStages[0].num);
       return;
     }
 
