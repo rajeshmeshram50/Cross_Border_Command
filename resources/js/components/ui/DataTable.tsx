@@ -513,6 +513,20 @@ export default function DataTable<T extends object>({
                   </tr>
                 ))
               )}
+              {/* Blank rows padding a short page out to the fitted height.
+                  `fitToViewport` stretches the card to the bottom of the window
+                  and `autoFitRows` sizes the page to match — but a tab with two
+                  results still drew two rows and left the rest of that height as
+                  one white slab, which reads as a broken layout rather than as
+                  an empty table. These keep the ruled lines and zebra running to
+                  the pager. Rendered only when the page is genuinely short, and
+                  never in place of the empty state. */}
+              {!loading && rows.length > 0 && autoFitRows && pageSize > rows.length &&
+                Array.from({ length: pageSize - rows.length }, (_, i) => (
+                  <tr key={`dt-fill-${i}`} className="dt-fill-row" aria-hidden>
+                    <td colSpan={colCount}>&nbsp;</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
