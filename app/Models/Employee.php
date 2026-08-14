@@ -37,6 +37,9 @@ class Employee extends Model
         'department_id', 'designation_id',
         'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
         'work_type',
+        // Canonical employment type (Rule 8) — PF eligibility and the payroll
+        // export read this in preference to the free-text work_type.
+        'employee_type',
         'reporting_manager_id', 'reporting_manager_user_id', 'has_prior_experience', 'date_of_joining',
 
         'probation_policy', 'probation_months', 'probation_end_date', 'probation_completion_emailed_at',

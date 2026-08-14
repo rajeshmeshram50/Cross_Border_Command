@@ -95,7 +95,7 @@ if (!$period->attendance_finalized) {
 
 ---
 
-## RULE 2 — Late Mark Deduction ⚠️ (auto-adds LOP + warning; NO auto-hold, NO auto hours-waiver)
+## RULE 2 — Late Mark Deduction ✅ (per-branch policy; configurable, can be switched off)
 
 **Rule:** 3 late marks = 1 day LOP. Exception: late-sitting se hours cover hue to deduction hold / HR-review.
 
@@ -425,7 +425,7 @@ if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee
 
 ---
 
-## RULE 9 — Professional Tax (PT) ⚠️ (Maharashtra slab hardcoded; work-state IGNORED)
+## RULE 9 — Professional Tax (PT) ✅ (state-wise slab master; work state honoured)
 
 **Rule:** PT state-wise slab; consider work state, gender, gross, state slab.
 
@@ -475,7 +475,7 @@ return $month === 2 ? 300 : 200;                    // Feb top-up → ₹2,500/y
 
 ---
 
-## RULE 11 — Loan / Advance Recovery ⚠️ (Advance only; loan_recovery always 0)
+## RULE 11 — Loan / Advance Recovery ✅ (advance AND loan; each on its own column)
 
 **Rule:** Loan EMI / advance recovery net se deduct; EMI net se zyada na ho.
 
@@ -619,7 +619,7 @@ $bankOk = preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc) && preg_match('/^\d{6,18
 
 ---
 
-## RULE 17 — Export ⚠️ (only month/department/status; branch & employee-type missing)
+## RULE 17 — Export ✅ (month/department/status/branch/employee_type)
 
 **Rule:** Export applied filters ke according; unauthorized user ko na mile.
 
@@ -710,7 +710,7 @@ SalaryStructure::create([... version, effective_from, status='active',
 
 ---
 
-## RULE 21 — Full & Final Settlement (FnF) ✅ (computed live, not persisted)
+## RULE 21 — Full & Final Settlement (FnF) ✅ (live preview + saved, status-tracked settlement)
 
 **Rule:** Exited employee regular payroll mein nahi; FnF mein salary-till-LWD, leave encashment, bonus, loan recovery, notice recovery.
 
@@ -738,7 +738,7 @@ SalaryStructure::create([... version, effective_from, status='active',
 | Item | Status | Code | Logic |
 |---|---|---|---|
 | **ESI** | ✅ | [:677-680](../app/Services/PayrollService.php#L677) | 0.75% of earned gross if `esi_applicable` & gross ≤ ₹21,000 → `esi` column |
-| **TDS** | ⚠️ | [:687](../app/Services/PayrollService.php#L687) | No slab engine — only honours a `tds` line on the structure |
+| **TDS** | ✅ opt-in | `PayrollService::tdsForCycle()` | New-regime FY25-26 slabs + std deduction + 87A + cess, spread over remaining FY months. OFF unless `salary_structures.tds_applicable`; a manual `tds` line always wins |
 | **Holiday credit** | ✅ | [:893-927](../app/Services/PayrollService.php#L893) | Holidays from employee `holiday_group` falling on working days (not Sundays) count as paid; recurring anchored to window year; never inflates beyond working-day ceiling |
 | **Other structure deductions** | ✅ | [:690-697](../app/Services/PayrollService.php#L690) | Fixed deductions scaled by earnedFactor (unpaid months don't collect full amounts) |
 | **One-off adjustment deduction** | ✅ | [:700](../app/Services/PayrollService.php#L700) | `type='deduction'` adjustments applied at full amount (not pro-rated) |
@@ -766,27 +766,27 @@ SalaryStructure::create([... version, effective_from, status='active',
 | # | Rule | Status | Primary code |
 |---|---|---|---|
 | 1 | Attendance finalization | ✅ | PayrollService:427 |
-| 2 | Late mark deduction | ⚠️ warning, no auto-hold/waiver | PayrollService:634 |
+| 2 | Late mark deduction | ✅ per-branch policy | Branch::lateMarkLopFor() |
 | 3 | Leave salary impact | ✅ | PayrollService:1012, 1005, 619 |
 | 4 | Overtime approved-only, priced `hourly × multiplier × hours` | ✅ | `PayrollService::overtimeForCycle()` |
 | 4a | Regularization can never create overtime (shift-bounded + rest-day safe) | ✅ | `AttendanceRegularizationController::boundPunchesToShift()`, `PayrollService::restDayKind()` |
 | 5 | Salary structure mandatory | ✅ | PayrollService:571 |
 | 6 | Joining/exit pro-rata | ✅ | PayrollService:585 |
 | 7 | Inactive/terminated exclusion | ✅ | PayrollService:380 |
-| 8 | PF eligibility/calc | ✅ (no employee_type field) | PayrollService:673 |
-| 9 | Professional Tax | ⚠️ MH hardcoded, state ignored | PayrollService:1043 |
+| 8 | PF eligibility/calc | ✅ (reads employee_type) | PayrollService::isPfEligibleType() |
+| 9 | Professional Tax | ✅ state-wise slab master | PayrollService::professionalTax() |
 | 10 | Bonus/incentive approved-only | ✅ | PayrollService:1102 |
-| 11 | Loan/advance recovery | ⚠️ advance only, loan=0 | PayrollService:1063, 703 |
+| 11 | Loan/advance recovery | ✅ both, split by type | PayrollService::recoveryKind() |
 | 12 | Bank details gate | ✅ | PayrollService:196, 754 |
 | 13 | Duplicate prevention | ✅ | PayrollService:467, 440 |
 | 14 | Status & locking | ✅ | PayrollController:408 |
 | 15 | Approved-change next cycle | ✅ | PayrollService:125 |
 | 16 | Payslip | ✅ | PayrollController:payslip* |
-| 17 | Export | ⚠️ branch/emp-type filters missing | PayrollController:750 |
+| 17 | Export | ✅ incl. branch + employee_type | PayrollController::export() |
 | 18 | Audit trail | ✅ | PayrollController:954 |
 | 19 | Salary structure versioning | ✅ | SalaryStructureController:145 |
 | 20 | Tenant/branch isolation | ✅ | PayrollController:800,817 |
-| 21 | Full & Final settlement | ✅ live (not persisted) | PayrollController:469 |
+| 21 | Full & Final settlement | ✅ live + persisted | PayrollController::fnfSave() |
 
 ---
 
@@ -1101,15 +1101,130 @@ A complete in/out pair is an **interval** (dropped when it misses the shift enti
 
 ---
 
-## Known limitations — log as separate tickets if the spec requires
+## Known limitations — ALL SEVEN CLOSED (2026-08-13)
 
-1. **PT Maharashtra-only & hardcoded** — work state ignored; no state-wise PT master (Rule 9).
-2. **Loan recovery not implemented** — `loan_recovery` always 0; only advance recovery works (Rule 11).
-3. **Export filters incomplete** — branch & employee_type not built (Rule 17).
-4. **No `employee_type` field** — full-time/part-time/contract unmodelled; PF uses free-text `work_type` (Rule 8).
-5. **Late-mark = warning, not auto-hold** — LOP added with an HR-review warning; no automatic hours-covered waiver (Rule 2).
-6. **TDS has no slab engine** — relies on a manual structure line (extra).
-7. **FnF & leave-encashment not persisted** — computed live from query params each call (Rule 21).
+Every item on this list has been implemented. Kept here with its resolution so
+a tester who remembers the old behaviour knows what changed.
+
+1. ~~**PT Maharashtra-only & hardcoded**~~ → **RESOLVED.** New `master_pt_slabs`
+   master, seeded with the statutory tables for every Indian state and UT
+   (including explicit ₹0 rows for the states that levy no PT). The slab is
+   chosen by the employee's **work state** — the branch address first, their own
+   `state_id` as fallback. A tenant may override any state by adding its own
+   rows (tenant rows replace the seeded table for that state wholesale). An
+   unconfigured state still falls back to the Maharashtra ladder but now raises a
+   **warning** on the payslip instead of doing it silently. The legacy MH results
+   (cases I1–I9) are unchanged — verified.
+2. ~~**Loan recovery not implemented**~~ → **RESOLVED.** `Loan` is now an advance
+   type, so a staff loan reuses the whole advance pipeline (EMI/lump-sum
+   schedule, arrears ledger, 70% FOI cap, oldest-first allocation, outstanding
+   cap) rather than a second copy of it. Loan-type recoveries report on their own
+   `loan_recovery` column and their own payslip line (`code: loan`); everything
+   else stays on `advance_recovery`. Both compete for the same FOI headroom,
+   because both come out of the same net pay.
+3. ~~**Export filters incomplete**~~ → **RESOLVED.** `GET /payroll/export` now
+   accepts `branch_id` and `employee_type`. The branch filter may only NARROW the
+   caller's scope — a branch outside it returns **403**, so the filter cannot
+   become a tenant-isolation hole. Two new CSV columns: **Employment Type** and
+   **Loan Rec**.
+4. ~~**No `employee_type` field**~~ → **RESOLVED.** `employees.employee_type`
+   added with a closed vocabulary (Full-time / Part-time / Contract / Intern /
+   Consultant), backfilled from the free-text `work_type` (which held both
+   "Full Time" and "Full-time" for the same thing). PF eligibility reads the new
+   column and only falls back to `work_type` for rows the backfill could not
+   classify. A record with neither is still treated as full-time — the
+   long-standing default — but now says so via an **info** line on the payslip.
+   Snapshotted onto the payslip too, so an old export stays reproducible after a
+   promotion.
+5. ~~**Late-mark = warning, not auto-hold**~~ → **ALREADY RESOLVED** (this sheet
+   was stale). The rule is configurable per branch via **Branch → Attendance
+   Policy** (`late_mark_policy`: every N late marks = half / full day, and it can
+   be switched **off** entirely, which is the waiver). See
+   `Branch::lateMarkLopFor()`. A branch that was never configured keeps the
+   legacy 3 → half-day rule, so old runs stay reproducible. There is still no
+   *automatic* hours-covered waiver — that stays a deliberate HR review step.
+6. ~~**TDS has no slab engine**~~ → **RESOLVED**, opt-in. New
+   `salary_structures.tds_applicable`, defaulting to **false** so no existing
+   payslip moves. With it on, the engine projects the annual liability on the
+   **new regime FY 2025-26** (slabs verified), applies the ₹75,000 standard
+   deduction, the §87A rebate and 4% cess, subtracts what has already been
+   deducted this financial year, and spreads the balance over the remaining
+   months — so a mid-year revision self-corrects. A **manual `tds` line on the
+   structure always wins.** Investment declarations / old regime / previous-
+   employer income are not modelled; the slip carries an info line saying so.
+7. ~~**FnF & leave-encashment not persisted**~~ → **RESOLVED.** New
+   `fnf_settlements` table + `FnfSettlement` model. `POST /payroll/fnf/{id}`
+   saves the HR inputs **and** the computed breakdown; `POST
+   /payroll/fnf/{id}/status` moves it `draft → approved → paid` (and reopens a
+   non-paid one). The breakdown is snapshotted, not recomputed on read, so a
+   salary revision months later cannot restate a settlement that was already
+   paid. `GET` still previews live and now returns any saved settlement as
+   `saved`, carrying the stored inputs forward so reopening the screen no longer
+   discards the encashment days someone entered.
+
+---
+
+### O. NEW — the seven closed gaps (2026-08-13)
+
+**O1–O6 · State-wise PT (Rule 9).** Set the employee's **branch address state**,
+then run and read the `pt` column. Cases I1–I9 above must still give the old
+Maharashtra figures — those are the regression check.
+
+| TC | Branch state | Gender | Gross | Month | Expected PT | Result |
+|---|---|---|---|---|---|---|
+| O1 | Karnataka | any | ₹30,000 | any | **₹200** | ☐ |
+| O2 | Karnataka | any | ₹20,000 | any | **₹0** (nil below ₹25,000) | ☐ |
+| O3 | West Bengal | any | ₹30,000 | any | **₹150** | ☐ |
+| O4 | Gujarat | any | ₹15,000 | any | **₹200** | ☐ |
+| O5 | Delhi / Haryana / UP | any | any | any | **₹0**, no warning — these states levy no PT | ☐ |
+| O6 | A state with no slab rows (e.g. type a nonsense state) | any | ₹12,000 | any | Falls back to the MH slab (**₹200**) **plus a warning** naming the state | ☐ |
+| O7 | Master › PT Slabs — add tenant rows for Karnataka | any | ₹30,000 | any | Tenant table **replaces** the seeded one for that state | ☐ |
+
+**O8–O11 · Employment type + PF (Rule 8).**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| O8 | Existing employees after migrating | `employee_type` backfilled: both "Full Time" and "Full-time" → **Full-time** | ☐ |
+| O9 | Set Employment Type = **Part-time** | PF = **₹0** (the type gate now fails on the canonical column) | ☐ |
+| O10 | Employee with **neither** type on file | PF still charged (unchanged default) **+ an info line** saying it was assumed | ☐ |
+| O11 | Promote Contract → Full-time, re-open an OLD export | Old CSV still shows **Contract** — the type is snapshotted per payslip | ☐ |
+
+**O12–O15 · Loan recovery (Rule 11).**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| O12 | Raise an advance with type **Loan**, approve, EMI ₹2,000 | Deducted into **`loan_recovery`**, NOT `advance_recovery`; payslip line reads "Loan Recovery – Loan (…)" | ☐ |
+| O13 | One Loan + one Travel Advance running together | Split across the two columns; `total_deductions` and `net_pay` include **both** | ☐ |
+| O14 | O13 in a lean month where both EMIs won't fit | Combined recovery capped at **70% FOI** of net-before-recovery; oldest recovered first, remainder carried + warning | ☐ |
+| O15 | Tenant that raises no Loan advances | `loan_recovery` stays **₹0** (no behaviour change) | ☐ |
+
+**O16–O19 · Export filters (Rule 17).**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| O16 | `GET /payroll/export?employee_type=Full-time` | Only Full-time rows | ☐ |
+| O17 | `?branch_id=` a branch inside your scope | Only that branch's slips | ☐ |
+| O18 | As a **branch user**, `?branch_id=` **another** branch | **403** "not allowed to export payroll for that branch" | ☐ |
+| O19 | Any export | CSV carries the new **Employment Type** and **Loan Rec** columns | ☐ |
+
+**O20–O23 · TDS (opt-in).**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| O20 | Existing structure (flag off, the default) | TDS unchanged — **₹0** unless a manual `tds` line exists | ☐ |
+| O21 | `tds_applicable = true`, monthly gross ₹50,000 (₹6L/yr) | **₹0** — under the §87A rebate ceiling after the ₹75,000 standard deduction | ☐ |
+| O22 | `tds_applicable = true`, monthly gross ₹2,00,000 (₹24L/yr) | Non-zero instalment; the info line shows the annual figure, what's already been deducted, and the months it's spread over | ☐ |
+| O23 | O22 **plus** a manual `tds` line on the structure | The **manual** figure wins; the engine does not compute | ☐ |
+
+**O24–O28 · FnF persistence (Rule 21).**
+
+| TC | Input | Expected Result | Result |
+|---|---|---|---|
+| O24 | `POST /payroll/fnf/{id}` with encashment days + notice recovery | Settlement saved as **draft**; inputs AND the full breakdown stored | ☐ |
+| O25 | Re-open with `GET /payroll/fnf/{id}` (no query params) | `saved` returned, and the preview reuses the **stored inputs** — encashment days are not reset to 0 | ☐ |
+| O26 | `POST /payroll/fnf/{id}/status {action: approve}` then `pay` | draft → approved → paid; `approved_at` / `paid_at` stamped | ☐ |
+| O27 | Try to **save** over an approved settlement | **422** — reopen it first | ☐ |
+| O28 | Try to **reopen** a **paid** settlement | **422** "A paid settlement cannot be reopened" | ☐ |
 
 ---
 

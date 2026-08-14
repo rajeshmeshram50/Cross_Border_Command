@@ -78,6 +78,7 @@ class MasterController extends Controller
         'leave_type' => \App\Models\Masters\LeaveTypes::class,
         'leave_plan' => \App\Models\Masters\LeavePlans::class,
         'overtime_rates' => \App\Models\Masters\OvertimeRates::class,
+        'pt_slabs' => \App\Models\Masters\PtSlabs::class,
         'trigger_point' => \App\Models\Masters\TriggerPoints::class,
     ];
 
@@ -184,6 +185,10 @@ class MasterController extends Controller
         // `multiplier` is the factor applied to the base hourly rate
         // (1 = normal, 1.5 = time-and-a-half, 2 = double time, …).
         'overtime_rates' => ['fields' => [['n' => 'rate_name', 't' => 'text', 'r' => true], ['n' => 'multiplier', 't' => 'number', 'r' => true, 'min' => 0, 'max' => 100], ['n' => 'description', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['rate_name']],
+        // Rule 9 — Professional Tax bands. Uniqueness is the whole band, not the
+        // state: a state legitimately has many rows (one per gross slab), and a
+        // gendered state such as Maharashtra has parallel male/female ladders.
+        'pt_slabs' => ['fields' => [['n' => 'state', 't' => 'text', 'r' => true], ['n' => 'gender', 't' => 'select', 'r' => true, 'opts' => ['any', 'male', 'female']], ['n' => 'min_gross', 't' => 'number', 'r' => true, 'min' => 0], ['n' => 'max_gross', 't' => 'number', 'min' => 0], ['n' => 'amount', 't' => 'number', 'r' => true, 'min' => 0], ['n' => 'feb_amount', 't' => 'number', 'min' => 0], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['state', 'gender', 'min_gross']],
     ];
 
     /**

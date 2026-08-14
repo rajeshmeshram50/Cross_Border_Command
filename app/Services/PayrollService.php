@@ -60,6 +60,14 @@ class PayrollService
      *  reads this straight after computeForEmployee() to write the ledger. */
     private array $lastRecoveryBreakdown = [];
 
+    /**
+     * Set by professionalTax() when the slab it used needed explaining — an
+     * unconfigured work state falling back to Maharashtra, or a gross that no
+     * band covers. Read once, immediately after the call, and raised onto the
+     * payslip as an exception. Null when the slab resolved cleanly.
+     */
+    private ?string $lastPtNote = null;
+
     /** Resolve the period for a month/year, creating it open+unfinalized.
      *  Race-safe: the unique (client,branch,month,year) index means a
      *  concurrent create throws; we swallow that and re-select. */
@@ -571,7 +579,9 @@ class PayrollService
             // Branch carries the shift windows AND the late-mark policy, both
             // read per employee inside computeForEmployee() — eager-load to
             // keep a 400-employee run from firing 800 queries.
-            ->with('branch:id,shifts,late_mark_policy')
+            // `state` joins them: it decides which Professional Tax slab the
+            // employee is taxed on (Rule 9).
+            ->with('branch:id,shifts,late_mark_policy,state')
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             // Only fully-onboarded staff belong in payroll. Half-onboarded /
             // in-progress employees (onboarding_stage_completed < 6) don't have
@@ -1067,6 +1077,10 @@ class PayrollService
             'employee_name' => trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? '')) ?: $employee->display_name,
             'department'    => $deptName,
             'designation'   => $desigName,
+            // Snapshotted, not joined at read time (Rule 17): a later promotion
+            // from Contract to Full-time must not change which rows an old
+            // export returns.
+            'employee_type' => $employee->employee_type,
             // Per-employee, not the period's company-wide figure — the payslip's
             // "Total Days" has to match the denominator the pay is divided by.
             'working_days'  => $this->employeeWorkingDays(
@@ -1606,6 +1620,14 @@ class PayrollService
                 ? $earnedBasic
                 : min($earnedBasic, self::PF_WAGE_CEILING);
             $pf = round($pfBase * self::PF_RATE, 2);
+            // PF was charged on an assumption, not a recorded employment type.
+            // Info rather than warning: it is the correct default and holding
+            // every half-filled record for review would drown the run.
+            if ($this->employmentTypeUnknown($employee)) {
+                $exceptions = $this->withException($exceptions, 'info',
+                    'No employment type on file — PF charged on the assumption this employee is full-time. '
+                    . 'Set Employment Type on the employee record to confirm.');
+            }
         }
         // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
         // the amount in the salary breakup); fall back to the statutory 0.75%
@@ -1620,18 +1642,36 @@ class PayrollService
         }
 
         // Professional Tax — manual structure 'pt' line if present, else the
-        // statutory Maharashtra slab.
+        // statutory slab for the employee's WORK STATE (Rule 9).
         $ptManual = $this->structureDeduction($structDeductions, 'pt');
         $pt = 0;
         if ($ptManual > 0) {
             $pt = round($ptManual * $earnedFactor, 2);
         } elseif ($ptApplicable && $earnedGross > 0) {
             $pt = $this->professionalTax($employee, $earnedGross, $period->month);
+            // A fallback or an uncovered gross is a configuration gap HR needs
+            // to see. Warning, not blocking: the run must not stop because one
+            // state master is missing, but the slip should not read clean.
+            if ($this->lastPtNote !== null) {
+                $exceptions = $this->withException($exceptions, 'warning', $this->lastPtNote);
+            }
         }
 
-        // TDS — no slab engine yet; honour a structure 'tds' deduction line if
-        // present (only when there's earned pay).
-        $tds = $earnedGross > 0 ? $this->structureDeduction($structDeductions, 'tds') : 0;
+        /* TDS — a MANUAL 'tds' line on the structure always wins: accounts may
+         * have worked the figure out from declarations and proofs this module
+         * never sees. Only when there is no manual line, and the structure opts
+         * in via tds_applicable, does the slab engine compute one. */
+        $tds = 0;
+        if ($earnedGross > 0) {
+            $tds = $this->structureDeduction($structDeductions, 'tds');
+            if ($tds <= 0 && $structure && $structure->tds_applicable) {
+                $tds = $this->tdsForCycle($employee, $structure, $period, $earnedGross);
+                if ($tds > 0) {
+                    $exceptions = $this->withException($exceptions, 'info', $this->lastTdsNote
+                        ?? 'Income tax computed on the new regime and spread over the remaining months of the financial year.');
+                }
+            }
+        }
 
         // Other fixed deductions from the structure (anything not pf/esi/pt/tds)
         // — scaled to earned pay so they don't apply to an unpaid month.
@@ -1656,7 +1696,13 @@ class PayrollService
         // to its next cycle instead of being silently dropped.
         $netBeforeRecovery = $earnedGross - ($pf + $esi + $pt + $tds + $other);
         $foiCap = round(max(0, $netBeforeRecovery) * 0.70, 2);
-        $advanceRec = $this->advanceRecovery($employee->id, $period, $foiCap);
+        // Total recovered across every stream, then split by kind for reporting.
+        // The FOI cap, the oldest-first allocation and the arrears carry all
+        // operate on the COMBINED figure — a loan and an advance compete for the
+        // same 70% headroom, because they come out of the same net pay.
+        $totalRec   = $this->advanceRecovery($employee->id, $period, $foiCap);
+        $loanRec    = $this->recoveredOfKind('loan');
+        $advanceRec = round($totalRec - $loanRec, 2);
         $carried = round(array_sum(array_column($this->lastRecoveryBreakdown, 'carried')), 2);
         if ($carried > 0.01) {
             $exceptions = $this->withException($exceptions, 'warning',
@@ -1672,10 +1718,10 @@ class PayrollService
         $overtimeHours  = $ot['hours'];
         $bonusAmount    = $this->approvedBonusAmount($employee->id, $period);
 
-        $totalDeductions = round($pf + $esi + $pt + $tds + $lopAmount + $advanceRec + $other, 2);
+        $totalDeductions = round($pf + $esi + $pt + $tds + $lopAmount + $advanceRec + $loanRec + $other, 2);
         // Net = earned pay + approved OT/bonus − non-LOP deductions (LOP is
         // already embodied in earnedGross < proratedGross).
-        $netPay = round($earnedGross + $overtimeAmount + $bonusAmount - ($pf + $esi + $pt + $tds + $advanceRec + $other), 2);
+        $netPay = round($earnedGross + $overtimeAmount + $bonusAmount - ($pf + $esi + $pt + $tds + $advanceRec + $loanRec + $other), 2);
         if ($netPay < 0) {
             // Fixed deductions exceeded earned pay — floor to zero and flag so
             // HR can carry the shortfall to the next cycle.
@@ -1741,22 +1787,30 @@ class PayrollService
         // Advance recovery — ONE line per advance (its own EMI), not a lump sum,
         // so the payslip shows exactly which advance each rupee went to. Falls
         // back to a single "Advance Recovery" line if the split is unavailable.
-        if ($advanceRec > 0) {
+        if ($advanceRec > 0 || $loanRec > 0) {
             $advLines = array_values(array_filter(
                 $this->lastRecoveryBreakdown,
                 fn ($b) => ($b['recovered'] ?? 0) > 0
             ));
             if (!empty($advLines)) {
                 foreach ($advLines as $b) {
+                    // Loan rows carry code 'loan' so the PDF and the deduction
+                    // totals can tell the two apart without re-parsing labels.
+                    $isLoan = ($b['kind'] ?? 'advance') === 'loan';
                     $deductions[] = [
-                        'code'       => 'advance',
-                        'label'      => $b['label'] ?? 'Advance Recovery',
+                        'code'       => $isLoan ? 'loan' : 'advance',
+                        'label'      => $b['label'] ?? ($isLoan ? 'Loan Recovery' : 'Advance Recovery'),
                         'amount'     => round((float) $b['recovered'], 2),
                         'advance_no' => $b['advance_no'] ?? null,
                     ];
                 }
             } else {
-                $deductions[] = ['code' => 'advance', 'label' => 'Advance Recovery', 'amount' => $advanceRec];
+                if ($advanceRec > 0) {
+                    $deductions[] = ['code' => 'advance', 'label' => 'Advance Recovery', 'amount' => $advanceRec];
+                }
+                if ($loanRec > 0) {
+                    $deductions[] = ['code' => 'loan', 'label' => 'Loan Recovery', 'amount' => $loanRec];
+                }
             }
         }
         // Structure "other" portion (excludes the adjustment deductions, which
@@ -1818,7 +1872,9 @@ class PayrollService
             'tds'            => $tds,
             'lop_amount'     => $lopAmount,
             'advance_recovery' => $advanceRec,
-            'loan_recovery'  => 0,
+            // Rule 11 — a real figure now: Loan-type requests recovered this
+            // cycle. Still 0 for every tenant that raises no Loan advances.
+            'loan_recovery'  => $loanRec,
             'other_deductions' => $other,
             'total_deductions' => $totalDeductions,
             'net_pay'        => $netPay,
@@ -2002,11 +2058,32 @@ class PayrollService
         return 0;
     }
 
-    /** PF applies to full-time staff; treat unknown work_type as eligible. */
+    /**
+     * Rule 8 — PF applies to full-time staff.
+     *
+     * Reads the canonical `employee_type` first and only falls back to the
+     * free-text `work_type` for rows the backfill could not classify. An
+     * employee with neither on file stays eligible, which is the long-standing
+     * behaviour: PF is the norm, and holding a payslip over a blank dropdown
+     * would stop runs on data that is merely incomplete. The blank case is
+     * flagged separately on the slip so it does not stay invisible.
+     */
     private function isPfEligibleType(Employee $employee): bool
     {
-        $type = strtolower((string) ($employee->work_type ?? ''));
-        return $type === '' || str_contains($type, 'full');
+        $type = strtolower(trim((string) ($employee->employee_type ?? '')));
+        if ($type !== '') {
+            return $type === 'full-time';
+        }
+
+        $legacy = strtolower((string) ($employee->work_type ?? ''));
+        return $legacy === '' || str_contains($legacy, 'full');
+    }
+
+    /** True when neither employment-type column is set — PF assumed, not known. */
+    private function employmentTypeUnknown(Employee $employee): bool
+    {
+        return trim((string) ($employee->employee_type ?? '')) === ''
+            && trim((string) ($employee->work_type ?? '')) === '';
     }
 
     // ── Attendance / leave aggregates ──────────────────────────────────────
@@ -2565,23 +2642,256 @@ class PayrollService
     // ── Statutory + recovery helpers ───────────────────────────────────────
 
     /**
-     * Rule 9 — Professional Tax by state slab + gender. Defaults to the
-     * Maharashtra slab (the primary test tenant is Pune/MH); unknown states
-     * fall back to the same slab. Women are exempt up to ₹25,000 gross.
+     * Rule 9 — Professional Tax from the state slab master.
+     *
+     * The employee's WORK state decides the table — PT is levied by the state
+     * the office sits in, not the one the employee's home address is in, so the
+     * branch is asked first and the employee's own state_id is only a fallback
+     * for tenants that have not filled the branch address in.
+     *
+     * A state with no slab on file falls back to the Maharashtra table and says
+     * so through $lastPtNote, so the figure is never silently wrong for a state
+     * nobody has configured. States that genuinely levy no PT are seeded with an
+     * explicit ₹0 row and so resolve quietly.
      */
     public function professionalTax(Employee $employee, float $gross, int $month): float
     {
-        $gender = strtolower((string) ($employee->gender ?? ''));
-        $isFemale = str_starts_with($gender, 'f');
+        $this->lastPtNote = null;
+        $state = $this->workState($employee);
 
-        // Maharashtra slab.
+        $rows = $this->ptSlabsFor($employee, $state);
+        if ($rows === []) {
+            $this->lastPtNote = $state === null
+                ? 'No work state on file for this employee — Professional Tax charged on the Maharashtra slab.'
+                : "No Professional Tax slab configured for {$state} — charged on the Maharashtra slab. "
+                  . 'Add the state in Master › PT Slabs to tax it correctly.';
+            return $this->maharashtraPt($employee, $gross, $month);
+        }
+
+        $isFemale = str_starts_with(strtolower((string) ($employee->gender ?? '')), 'f');
+        $band = $isFemale ? 'female' : 'male';
+
+        foreach ($rows as $row) {
+            // 'any' rows apply to everyone; gendered rows only to their band.
+            $g = strtolower((string) $row->gender);
+            if ($g !== 'any' && $g !== $band) {
+                continue;
+            }
+            if ($gross + 0.001 < (float) $row->min_gross) {
+                continue;
+            }
+            if ($row->max_gross !== null && $gross > (float) $row->max_gross + 0.001) {
+                continue;
+            }
+            // February carries the top-up where a state uses one to reach its
+            // annual cap (Maharashtra's ₹2,500, and the same trick elsewhere).
+            $amount = $month === 2 && $row->feb_amount !== null
+                ? (float) $row->feb_amount
+                : (float) $row->amount;
+
+            return round($amount, 2);
+        }
+
+        // Slabs exist but none covers this gross — a hole in the ladder rather
+        // than a nil rating, so flag it instead of quietly charging nothing.
+        $this->lastPtNote = "Professional Tax slabs for {$state} do not cover a gross of ₹"
+            . number_format($gross, 2) . ' — no PT deducted. Check the bands in Master › PT Slabs.';
+
+        return 0.0;
+    }
+
+    /**
+     * Income-tax slabs, NEW REGIME, FY 2025-26 (AY 2026-27). Each entry is
+     * [upper bound of the band, rate]; the last band is open-ended.
+     */
+    private const TDS_SLABS = [
+        [400000, 0.00],
+        [800000, 0.05],
+        [1200000, 0.10],
+        [1600000, 0.15],
+        [2000000, 0.20],
+        [2400000, 0.25],
+        [PHP_INT_MAX, 0.30],
+    ];
+
+    /** Standard deduction available to salaried staff on the new regime. */
+    private const TDS_STANDARD_DEDUCTION = 75000;
+
+    /** Section 87A — full rebate while taxable income stays at or under this. */
+    private const TDS_REBATE_CEILING = 1200000;
+
+    /** Health & education cess on the computed tax. */
+    private const TDS_CESS_RATE = 0.04;
+
+    /** Explanation of the last computed TDS figure, raised onto the payslip. */
+    private ?string $lastTdsNote = null;
+
+    /**
+     * This cycle's TDS instalment.
+     *
+     * Projects the year: annual salary is taken from the structure's monthly
+     * gross (the contracted figure, NOT this month's earned pay — a single
+     * unpaid week would otherwise collapse the projection and under-deduct for
+     * the rest of the year), the standard deduction and the 87A rebate are
+     * applied, cess is added, and the result is spread evenly over the months
+     * of the financial year still to be paid. Deducting the whole annual
+     * liability in one month, or restarting the spread each month, are both
+     * wrong; the remaining-months divisor is what makes a mid-year salary
+     * revision self-correct over the rest of the year.
+     *
+     * Deliberately NOT modelled: old-regime elections, Chapter VI-A
+     * declarations, house-property loss, previous-employer income and
+     * proof-of-investment reconciliation. Those need a declarations module.
+     * Until one exists this is a new-regime estimate, and the manual structure
+     * line remains the way to enter a figure worked out properly — which is why
+     * the manual line takes precedence and why this raises an info line saying
+     * what it assumed.
+     */
+    private function tdsForCycle(Employee $employee, $structure, PayrollPeriod $period, float $earnedGross): float
+    {
+        $this->lastTdsNote = null;
+
+        $monthlyGross = (float) ($structure->monthly_gross ?? 0);
+        if ($monthlyGross <= 0) {
+            $monthlyGross = $earnedGross;
+        }
+        if ($monthlyGross <= 0) {
+            return 0.0;
+        }
+
+        $annualGross  = $monthlyGross * 12;
+        $taxable      = max(0.0, $annualGross - self::TDS_STANDARD_DEDUCTION);
+        $tax          = $this->slabTax($taxable);
+
+        // Section 87A — the rebate wipes the liability out entirely at or below
+        // the ceiling, which is why most salaries under ~₹12.75L pay nil.
+        if ($taxable <= self::TDS_REBATE_CEILING) {
+            $tax = 0.0;
+        }
+        if ($tax <= 0) {
+            return 0.0;
+        }
+
+        $annualTds = round($tax * (1 + self::TDS_CESS_RATE), 2);
+
+        // Months of THIS financial year still to be paid, counting the current
+        // one. India's FY runs April–March, so April is month 1 of 12.
+        $monthsElapsed  = ((int) $period->month >= 4) ? ((int) $period->month - 3) : ((int) $period->month + 9);
+        $monthsRemaining = max(1, 12 - $monthsElapsed + 1);
+
+        // Already deducted this financial year, so the spread self-corrects
+        // after a mid-year revision instead of compounding the old estimate.
+        $paidSoFar  = $this->tdsPaidThisFinancialYear($employee->id, $period);
+        $instalment = round(max(0.0, $annualTds - $paidSoFar) / $monthsRemaining, 2);
+
+        $this->lastTdsNote = 'Income tax ₹' . number_format($annualTds, 2)
+            . ' estimated for the year on the new regime (₹' . number_format($annualGross, 2)
+            . ' projected gross, ₹' . number_format(self::TDS_STANDARD_DEDUCTION, 2) . ' standard deduction), '
+            . '₹' . number_format($paidSoFar, 2) . ' already deducted, balance spread over '
+            . $monthsRemaining . ' remaining month(s) of the financial year. '
+            . 'Investment declarations are not modelled — enter a manual TDS line on the salary structure to override.';
+
+        return $instalment;
+    }
+
+    /** Tax on a taxable income, walking the slab ladder band by band. */
+    private function slabTax(float $taxable): float
+    {
+        $tax = 0.0;
+        $lower = 0.0;
+        foreach (self::TDS_SLABS as [$upper, $rate]) {
+            if ($taxable <= $lower) {
+                break;
+            }
+            $inBand = min($taxable, (float) $upper) - $lower;
+            $tax += $inBand * $rate;
+            $lower = (float) $upper;
+        }
+        return round($tax, 2);
+    }
+
+    /** TDS already deducted for this employee in the current financial year. */
+    private function tdsPaidThisFinancialYear(int $employeeId, PayrollPeriod $period): float
+    {
+        // FY starts in April: a January cycle belongs to the FY that began the
+        // previous April.
+        $fyStartYear = ((int) $period->month >= 4) ? (int) $period->year : (int) $period->year - 1;
+
+        return (float) Payslip::query()
+            ->where('employee_id', $employeeId)
+            ->whereHas('period', function ($q) use ($fyStartYear, $period) {
+                $q->where(function ($q2) use ($fyStartYear) {
+                    $q2->where('year', $fyStartYear)->where('month', '>=', 4);
+                })->orWhere(function ($q2) use ($fyStartYear) {
+                    $q2->where('year', $fyStartYear + 1)->where('month', '<=', 3);
+                });
+                // Exclude the cycle being computed — regenerating a month must
+                // not count its own previous figure as already paid.
+                $q->where('id', '!=', $period->id);
+            })
+            ->sum('tds');
+    }
+
+    /** The legacy hardcoded Maharashtra ladder, kept as the fallback. */
+    private function maharashtraPt(Employee $employee, float $gross, int $month): float
+    {
+        $isFemale = str_starts_with(strtolower((string) ($employee->gender ?? '')), 'f');
         if ($isFemale) {
             return $gross <= 25000 ? 0 : 200;
         }
         if ($gross <= 7500)  return 0;
         if ($gross <= 10000) return 175;
-        // February carries the ₹300 top-up (₹2,500 annual cap).
+
         return $month === 2 ? 300 : 200;
+    }
+
+    /**
+     * Active PT bands for a state, tenant rows preferred over the seeded
+     * statutory globals — the same precedence master_overtime_rates uses.
+     */
+    private function ptSlabsFor(Employee $employee, ?string $state): array
+    {
+        if ($state === null || !Schema::hasTable('master_pt_slabs')) {
+            return [];
+        }
+
+        $rows = DB::table('master_pt_slabs')
+            ->whereRaw('LOWER(state) = ?', [mb_strtolower($state)])
+            ->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
+            ->where(fn ($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
+            ->whereRaw('LOWER(status) = ?', ['active'])
+            ->orderBy('min_gross')
+            ->get(['client_id', 'gender', 'min_gross', 'max_gross', 'amount', 'feb_amount'])
+            ->all();
+
+        // If the tenant has defined its own table for this state, that table
+        // replaces the statutory one wholesale — mixing a tenant band into the
+        // seeded ladder would leave overlapping or gapped bands.
+        $own = array_values(array_filter($rows, fn ($r) => $r->client_id !== null));
+
+        return $own !== [] ? $own : $rows;
+    }
+
+    /**
+     * The state whose PT table applies: the employee's branch address first,
+     * then their own state_id. Returns null when neither is on file.
+     */
+    private function workState(Employee $employee): ?string
+    {
+        $branch = $employee->relationLoaded('branch') ? $employee->getRelation('branch') : $employee->branch;
+        $state = $branch?->state;
+        if (is_string($state) && trim($state) !== '') {
+            return trim($state);
+        }
+
+        if ($employee->state_id && Schema::hasTable('master_states')) {
+            $name = DB::table('master_states')->where('id', $employee->state_id)->value('name');
+            if (is_string($name) && trim($name) !== '') {
+                return trim($name);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -2648,7 +2958,11 @@ class PayrollService
                 // originally-claimed amount. The last EMI trims to this total.
                 'amount'     => (float) ($r->sanctioned_amount ?? $r->amount),
                 'advance_no' => $r->advance_no,
-                'label'      => 'Advance Recovery – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
+                // Rule 11 — a Loan-type request is recovered by the same
+                // machinery but reported on its own payslip line.
+                'kind'       => $this->recoveryKind($r->advance_type),
+                'label'      => ($this->recoveryKind($r->advance_type) === 'loan' ? 'Loan Recovery – ' : 'Advance Recovery – ')
+                                . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
             ];
         }
 
@@ -2681,6 +2995,10 @@ class PayrollService
                 'emi'        => (float) ($r->settle_return_monthly ?: 0),
                 'amount'     => $retAmount,
                 'advance_no' => $r->advance_no,
+                // An UNUSED-money return is an advance being handed back, not a
+                // loan being serviced — it stays on the advance line whatever
+                // the original request was typed as.
+                'kind'       => 'advance',
                 'label'      => 'Advance Return – ' . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
             ];
         }
@@ -2740,6 +3058,7 @@ class PayrollService
                 'advance_request_id' => $s['advance_request_id'],
                 'stream'             => $s['stream'],
                 'advance_no'         => $s['advance_no'],
+                'kind'               => $s['kind'] ?? 'advance',
                 'label'              => $s['label'],
                 'due'                => $due,
                 'recovered'          => $take,
@@ -2773,6 +3092,27 @@ class PayrollService
             return intdiv($monthIndex, 2) < $n ? $per : 0.0;
         }
         return $monthIndex < $n ? $per : 0.0; // plain monthly EMI
+    }
+
+    /**
+     * Rule 11 — which payslip column a recovery belongs on. Loan-type requests
+     * report as `loan_recovery`; everything else stays `advance_recovery`.
+     */
+    private function recoveryKind(?string $advanceType): string
+    {
+        return str_contains(strtolower((string) $advanceType), 'loan') ? 'loan' : 'advance';
+    }
+
+    /** The recovered total for one kind, from the last recovery breakdown. */
+    private function recoveredOfKind(string $kind): float
+    {
+        $sum = 0.0;
+        foreach ($this->lastRecoveryBreakdown as $b) {
+            if (($b['kind'] ?? 'advance') === $kind) {
+                $sum += (float) $b['recovered'];
+            }
+        }
+        return round($sum, 2);
     }
 
     /** Friendly advance-type label ("Other" falls back to the free-text type). */

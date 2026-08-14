@@ -19,7 +19,7 @@ class SalaryStructure extends Model
         'version', 'effective_from', 'status',
         'earnings', 'deductions',
         'monthly_gross', 'monthly_ctc',
-        'pf_applicable', 'esi_applicable', 'pt_applicable',
+        'pf_applicable', 'esi_applicable', 'pt_applicable', 'tds_applicable',
         'approval_status', 'approved_by', 'approved_at', 'revision_note',
         'created_by',
     ];
@@ -33,6 +33,7 @@ class SalaryStructure extends Model
         'pf_applicable'  => 'boolean',
         'esi_applicable' => 'boolean',
         'pt_applicable'  => 'boolean',
+        'tds_applicable' => 'boolean',
         'approved_at'    => 'datetime',
         'version'        => 'integer',
     ];

@@ -3407,7 +3407,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     <MasterSelect
                       value={advType}
                       placeholder="Select type..."
-                      options={['Travel Advance','Medical Advance','Other'].map(o => ({ value: o, label: o }))}
+                      /* Kept in step with AdvanceRequestController::ADVANCE_TYPES.
+                         'Salary Advance' was already accepted by the API but had
+                         no option here, and 'Loan' is the type payroll reports on
+                         the payslip's Loan Recovery line (Rule 11). */
+                      options={['Travel Advance','Salary Advance','Medical Advance','Loan','Other'].map(o => ({ value: o, label: o }))}
                       onChange={(v) => { setAdvType(v); clearAdvErr('type'); }}
                       invalid={!!advErrors.type}
                     />

@@ -2015,6 +2015,10 @@ class EmployeeController extends Controller
             'ancillary_role_ids'   => 'nullable|array',
             'ancillary_role_ids.*' => 'integer',
             'work_type' => 'nullable|string|max:50',
+            // Rule 8 — canonical employment type; PF eligibility reads this.
+            // Closed vocabulary so the substring guessing work_type forced is
+            // no longer needed.
+            'employee_type' => 'nullable|string|in:Full-time,Part-time,Contract,Intern,Consultant',
             'reporting_manager_id'      => 'nullable|integer',
             'reporting_manager_user_id' => 'nullable|integer',
             // Stage 2 Yes/No — "Has the employee worked anywhere before?".

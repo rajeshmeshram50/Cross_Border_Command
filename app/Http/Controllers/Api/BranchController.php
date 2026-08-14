@@ -8,6 +8,7 @@ use App\Models\Employee;
 use App\Models\Masters\Countries;
 use App\Models\Masters\States;
 use App\Models\User;
+use App\Support\Gst;
 use App\Support\Settings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -26,6 +27,13 @@ use App\Support\BrandingResolver;
 
 class BranchController extends Controller
 {
+    // Deliverable-email shape — a TLD is REQUIRED (QA #4). Laravel's `email`
+    // rule alone accepts test@mailinator, because a bare hostname is valid to
+    // an RFC parser (root@localhost is a real address). Nothing here mails an
+    // intranet host — these addresses get welcome credentials and branch
+    // correspondence over the public internet. Twin of EMAIL_RE in BranchForm.tsx.
+    private const EMAIL_REGEX = '/^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}$/';
+
     public function index(Request $request)
     {
         $user = $request->user();
@@ -43,21 +51,19 @@ class BranchController extends Controller
         } elseif ($request->query('client_id')) {
             $query->where('client_id', $request->query('client_id'));
         }
- 
-        
         if (!$request->boolean('include_head_office')) {
             $query->where(function ($q) {
                 $q->where('code', '!=', 'HO')
-                  ->orWhere('name', 'not ilike', '% — Head Office');
+                    ->orWhere('name', 'not ilike', '% — Head Office');
             });
         }
 
         if ($search = $request->query('search')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'ilike', "%{$search}%")
-                  ->orWhere('code', 'ilike', "%{$search}%")
-                  ->orWhere('city', 'ilike', "%{$search}%")
-                  ->orWhere('industry', 'ilike', "%{$search}%");
+                    ->orWhere('code', 'ilike', "%{$search}%")
+                    ->orWhere('city', 'ilike', "%{$search}%")
+                    ->orWhere('industry', 'ilike', "%{$search}%");
             });
         }
 
@@ -106,19 +112,22 @@ class BranchController extends Controller
             }
         }
 
-        // Normalize GST/PAN to uppercase before validation so the unique
-        // check is case-canonical (Indian GSTIN/PAN are uppercase).
-        $this->normalizeGstPanInput($request);
+        // Canonicalise identifier case before validation — GSTIN/PAN upper,
+        // emails lower — so the unique checks and the stored values agree.
+        $this->normalizeIdentifierCasing($request);
 
         $request->validate([
             'name' => [
-                'required', 'string', 'max:255',
+                'required',
+                'string',
+                'max:255',
                 Rule::unique('branches', 'name')
-                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->where(fn($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
             ],
             'code' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
+            // `email` alone would accept test@mailinator — see EMAIL_REGEX.
+            'email' => ['nullable', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
             'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
@@ -136,24 +145,31 @@ class BranchController extends Controller
                paperwork, and gst_state_code decides the CGST+SGST vs IGST
                split on every one of them. Server-side twin of the SPA rules
                in BranchForm.tsx — the form can be bypassed, the API can't. */
-            'gst_number' => [
-                'required', 'string', 'max:20',
+            'gst_number' => array_merge([
+                'required',
+                'string',
+                'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
-                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->where(fn($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
-            ],
+            ], $this->gstNumberConsistencyRules($request)),
             'pan_number' => [
-                'required', 'string', 'max:20',
+                'required',
+                'string',
+                'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
                 Rule::unique('branches', 'pan_number')
-                    ->where(fn ($q) => $q->where('client_id', $clientId))
+                    ->where(fn($q) => $q->where('client_id', $clientId))
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'required|string|max:50',
             // Letterhead / export-house compliance fields — all optional,
             // surface on the Quotation/PI PDF when filled.
-            'gst_state_code'   => 'required|string|max:10',
+            'gst_state_code'   => array_merge(
+                ['required', 'string', 'max:10'],
+                $this->gstStateCodeConsistencyRules($request),
+            ),
             'cin'              => 'required|string|max:30',
             'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
@@ -199,12 +215,14 @@ class BranchController extends Controller
             // Email is unique PER TENANT — scope the dup check to THIS branch's
             // client so the same email used in a different client doesn't block
             // creation here. Matches the users_email_client_unique DB index.
-            'user_email' => ['required', 'email', Rule::unique('users', 'email')->where(fn ($q) => $q->where('client_id', $clientId))->whereNull('deleted_at')],
+            'user_email' => ['required', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->where(fn($q) => $q->where('client_id', $clientId))->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'required|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
         ], [
+            'email.regex'       => 'Enter a valid email like branch@company.com — a domain ending such as .com is required.',
+            'user_email.regex'  => 'Enter a valid email like admin@company.com — a domain ending such as .com is required.',
             'gst_number.unique' => 'This GSTIN is already registered to another branch.',
             'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
             'pan_number.unique' => 'This PAN is already registered to another branch.',
@@ -216,109 +234,109 @@ class BranchController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $clientId, $user) {
-            // Auto-allocate BR-### when the user didn't supply a code.
-            // Race-safe — allocateBranchCode() uses lockForUpdate() inside
-            // the surrounding transaction so two concurrent creates can't
-            // both grab the same number.
-            $branchCode = trim((string) $request->code);
-            if ($branchCode === '') {
-                $branchCode = $this->allocateBranchCode($clientId);
-            }
+                // Auto-allocate BR-### when the user didn't supply a code.
+                // Race-safe — allocateBranchCode() uses lockForUpdate() inside
+                // the surrounding transaction so two concurrent creates can't
+                // both grab the same number.
+                $branchCode = trim((string) $request->code);
+                if ($branchCode === '') {
+                    $branchCode = $this->allocateBranchCode($clientId);
+                }
 
-            $branch = Branch::create([
-                'client_id' => $clientId,
-                'name' => $request->name,
-                'code' => $branchCode,
-                'email' => $request->email,
-                'phone' => $request->phone,
-                'website' => $request->website,
-                'contact_person' => $request->contact_person,
-                'branch_type' => $request->branch_type,
-                'sandwich_policy' => $request->boolean('sandwich_policy'),
-                'industry' => $request->industry,
-                'description' => $request->description,
-                'gst_number' => $request->gst_number,
-                'pan_number' => $request->pan_number,
-                'registration_number' => $request->registration_number,
-                'gst_state_code'   => $request->gst_state_code,
-                'cin'              => $request->cin,
-                'iec'              => $request->iec,
-                'drug_license'     => $request->drug_license,
-                'pcpndt_no'        => $request->pcpndt_no,
-                'aeo_code'         => $request->aeo_code,
-                'one_star_file_no' => $request->one_star_file_no,
-                'one_star_udin_no' => $request->one_star_udin_no,
-                'address' => $request->address,
-                'city' => $request->city,
-                'district' => $request->district,
-                'taluka' => $request->taluka,
-                'state' => $request->state,
-                'pincode' => $request->pincode,
-                'country' => $request->country ?? 'India',
-                'max_users' => $request->max_users ?? 0,
-                'established_at' => $request->established_at,
-                'status' => $request->status ?? 'active',
-                'notes' => $request->notes,
-                'shifts' => $this->normalizeShifts($request->input('shifts')),
-                'late_mark_policy' => Branch::normalizeLateMarkPolicy($request->input('late_mark_policy')),
-                'bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts')),
-                'primary_color' => $request->primary_color,
-                'secondary_color' => $request->secondary_color,
-                'created_by' => $user->id,
-            ]);
-
-            // Store relative path so it resolves correctly across local and
-            // Azure disks. URL is generated at read time via file_url().
-            if ($request->hasFile('logo')) {
-                $logoPath = $request->file('logo')->store('branches/logos', 'public');
-                $branch->update(['logo' => $logoPath]);
-                \App\Services\LogoDarkVariantGenerator::generate($logoPath);
-            }
-            if ($request->hasFile('profile_photo')) {
-                $branch->update([
-                    'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                $branch = Branch::create([
+                    'client_id' => $clientId,
+                    'name' => $request->name,
+                    'code' => $branchCode,
+                    'email' => $request->email,
+                    'phone' => $request->phone,
+                    'website' => $request->website,
+                    'contact_person' => $request->contact_person,
+                    'branch_type' => $request->branch_type,
+                    'sandwich_policy' => $request->boolean('sandwich_policy'),
+                    'industry' => $request->industry,
+                    'description' => $request->description,
+                    'gst_number' => $request->gst_number,
+                    'pan_number' => $request->pan_number,
+                    'registration_number' => $request->registration_number,
+                    'gst_state_code'   => $request->gst_state_code,
+                    'cin'              => $request->cin,
+                    'iec'              => $request->iec,
+                    'drug_license'     => $request->drug_license,
+                    'pcpndt_no'        => $request->pcpndt_no,
+                    'aeo_code'         => $request->aeo_code,
+                    'one_star_file_no' => $request->one_star_file_no,
+                    'one_star_udin_no' => $request->one_star_udin_no,
+                    'address' => $request->address,
+                    'city' => $request->city,
+                    'district' => $request->district,
+                    'taluka' => $request->taluka,
+                    'state' => $request->state,
+                    'pincode' => $request->pincode,
+                    'country' => $request->country ?? 'India',
+                    'max_users' => $request->max_users ?? 0,
+                    'established_at' => $request->established_at,
+                    'status' => $request->status ?? 'active',
+                    'notes' => $request->notes,
+                    'shifts' => $this->normalizeShifts($request->input('shifts')),
+                    'late_mark_policy' => Branch::normalizeLateMarkPolicy($request->input('late_mark_policy')),
+                    'bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts')),
+                    'primary_color' => $request->primary_color,
+                    'secondary_color' => $request->secondary_color,
+                    'created_by' => $user->id,
                 ]);
-            }
-            // Authorised-signatory image — used by the Quotation/PI PDF's
-            // with-signature variant. PNG with transparent background works
-            // best because the stamp + signature sit on the branded footer.
-            if ($request->hasFile('signature_path')) {
-                $branch->update([
-                    'signature_path' => $request->file('signature_path')->store('branches/signatures', 'public'),
+
+                // Store relative path so it resolves correctly across local and
+                // Azure disks. URL is generated at read time via file_url().
+                if ($request->hasFile('logo')) {
+                    $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                    $branch->update(['logo' => $logoPath]);
+                    \App\Services\LogoDarkVariantGenerator::generate($logoPath);
+                }
+                if ($request->hasFile('profile_photo')) {
+                    $branch->update([
+                        'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                    ]);
+                }
+                // Authorised-signatory image — used by the Quotation/PI PDF's
+                // with-signature variant. PNG with transparent background works
+                // best because the stamp + signature sit on the branded footer.
+                if ($request->hasFile('signature_path')) {
+                    $branch->update([
+                        'signature_path' => $request->file('signature_path')->store('branches/signatures', 'public'),
+                    ]);
+                }
+
+                // Create branch user. We store TWO copies of the password:
+                //   - `password`           — bcrypt hash, used for auth.
+                //   - `password_encrypted` — reversibly encrypted (Crypt::encryptString)
+                //     so Super Admin / Client Admin can read the original on edit.
+                $branchUser = User::create([
+                    'name' => $request->user_name,
+                    'email' => $request->user_email,
+                    'password' => Hash::make($request->user_password),
+                    'password_encrypted' => Crypt::encryptString($request->user_password),
+                    'phone' => $request->user_phone,
+                    'user_type' => 'branch_user',
+                    'client_id' => $clientId,
+                    'branch_id' => $branch->id,
+                    'status' => $request->user_status ?? 'active',
+                    'designation' => $request->user_designation,
                 ]);
-            }
 
-            // Create branch user. We store TWO copies of the password:
-            //   - `password`           — bcrypt hash, used for auth.
-            //   - `password_encrypted` — reversibly encrypted (Crypt::encryptString)
-            //     so Super Admin / Client Admin can read the original on edit.
-            $branchUser = User::create([
-                'name' => $request->user_name,
-                'email' => $request->user_email,
-                'password' => Hash::make($request->user_password),
-                'password_encrypted' => Crypt::encryptString($request->user_password),
-                'phone' => $request->user_phone,
-                'user_type' => 'branch_user',
-                'client_id' => $clientId,
-                'branch_id' => $branch->id,
-                'status' => $request->user_status ?? 'active',
-                'designation' => $request->user_designation,
-            ]);
+                $branch->loadCount(['users', 'departments']);
 
-            $branch->loadCount(['users', 'departments']);
+                // Send welcome email — gated by Settings → Notifications →
+                // newUser (and the master emailNotif). Non-fatal so branch
+                // creation succeeds even if mail fails or is disabled. When it
+                // DOES fail, the reason is bubbled up in $mailWarning so the UI
+                // can tell the admin the credentials email didn't go out (and
+                // why) instead of silently logging it.
+                $mailWarning = null;
+                if (Settings::shouldSendMail('newUser')) {
+                    try {
+                        $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
 
-            // Send welcome email — gated by Settings → Notifications →
-            // newUser (and the master emailNotif). Non-fatal so branch
-            // creation succeeds even if mail fails or is disabled. When it
-            // DOES fail, the reason is bubbled up in $mailWarning so the UI
-            // can tell the admin the credentials email didn't go out (and
-            // why) instead of silently logging it.
-            $mailWarning = null;
-            if (Settings::shouldSendMail('newUser')) {
-                try {
-                    $clientName = \App\Models\Client::find($clientId)?->org_name ?? 'Your Organization';
-
-                    /* Mail goes to the branch USER who'll actually log in
+                        /* Mail goes to the branch USER who'll actually log in
                      * (user_email), and is CC'd to the branch's own
                      * organisation inbox (the `email` field on the
                      * Branch Details form, e.g. ops@gurgaon.acme.com)
@@ -327,40 +345,40 @@ class BranchController extends Controller
                      * admin / operations inbox a record of the
                      * credentials handover without duplicating the
                      * message to the same address. */
-                    $branchEmail = trim((string) $request->email);
-                    $userEmail   = trim((string) $request->user_email);
-                    $mail = Mail::to($userEmail);
-                    if ($branchEmail !== '' && strcasecmp($branchEmail, $userEmail) !== 0) {
-                        $mail = $mail->cc($branchEmail);
+                        $branchEmail = trim((string) $request->email);
+                        $userEmail   = trim((string) $request->user_email);
+                        $mail = Mail::to($userEmail);
+                        if ($branchEmail !== '' && strcasecmp($branchEmail, $userEmail) !== 0) {
+                            $mail = $mail->cc($branchEmail);
+                        }
+                        $mail->send(new WelcomeCredentialsMail(
+                            $request->user_name,
+                            $request->user_email,
+                            $request->user_password,
+                            'branch_user',
+                            $clientName,
+                            PasswordChangedMail::resolveLoginUrl($request),
+                        ));
+                    } catch (\Exception $e) {
+                        Log::warning('Branch welcome mail failed', [
+                            'branch_id' => $branch->id,
+                            'user_email' => $request->user_email,
+                            'branch_email' => $request->email,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $mailWarning = 'Branch created, but the welcome email could not be sent to '
+                            . $request->user_email . ': ' . $e->getMessage();
                     }
-                    $mail->send(new WelcomeCredentialsMail(
-                        $request->user_name,
-                        $request->user_email,
-                        $request->user_password,
-                        'branch_user',
-                        $clientName,
-                        PasswordChangedMail::resolveLoginUrl($request),
-                    ));
-                } catch (\Exception $e) {
-                    Log::warning('Branch welcome mail failed', [
-                        'branch_id' => $branch->id,
-                        'user_email' => $request->user_email,
-                        'branch_email' => $request->email,
-                        'error' => $e->getMessage(),
-                    ]);
-                    $mailWarning = 'Branch created, but the welcome email could not be sent to '
-                        . $request->user_email . ': ' . $e->getMessage();
                 }
-            }
 
-            return response()->json([
-                'message' => 'Branch created successfully',
-                'branch' => $branch,
-                'branch_user' => $branchUser->only(['id', 'name', 'email', 'user_type', 'status']),
-                // null when the mail sent fine (or notifications are off);
-                // otherwise the exact reason the welcome email failed.
-                'mail_warning' => $mailWarning,
-            ], 201);
+                return response()->json([
+                    'message' => 'Branch created successfully',
+                    'branch' => $branch,
+                    'branch_user' => $branchUser->only(['id', 'name', 'email', 'user_type', 'status']),
+                    // null when the mail sent fine (or notifications are off);
+                    // otherwise the exact reason the welcome email failed.
+                    'mail_warning' => $mailWarning,
+                ], 201);
             });
         } catch (QueryException $e) {
             if ($this->isUniqueEmailViolation($e)) {
@@ -423,7 +441,7 @@ class BranchController extends Controller
                 ->where('branch_id', $branch->id)
                 ->where(function ($w) {
                     $w->whereNull('status')
-                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                        ->orWhereNotIn('status', ['Resigned', 'Terminated']);
                 })
                 ->whereRaw('LOWER(TRIM(shift)) = ?', [mb_strtolower($name)])
                 ->count();
@@ -448,9 +466,9 @@ class BranchController extends Controller
             ->where('user_type', 'branch_user')
             ->first();
 
-        // Normalize GST/PAN to uppercase before validation so the unique
-        // check matches case-insensitively (Indian GSTIN/PAN are uppercase).
-        $this->normalizeGstPanInput($request);
+        // Canonicalise identifier case before validation — GSTIN/PAN upper,
+        // emails lower — so the unique checks and the stored values agree.
+        $this->normalizeIdentifierCasing($request);
 
         // Only enforce per-client name uniqueness when the user is actually
         // RENAMING the branch. If the name is unchanged we skip the check —
@@ -460,14 +478,15 @@ class BranchController extends Controller
         if ($request->input('name') !== $branch->name) {
             $nameRules[] = Rule::unique('branches', 'name')
                 ->ignore($branch->id)
-                ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                ->where(fn($q) => $q->where('client_id', $branch->client_id))
                 ->whereNull('deleted_at');
         }
 
         $request->validate([
             'name' => $nameRules,
             'code' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
+            // `email` alone would accept test@mailinator — see EMAIL_REGEX.
+            'email' => ['nullable', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
             'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
             'contact_person' => 'nullable|string|max:255',
@@ -481,24 +500,31 @@ class BranchController extends Controller
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             // Mandatory on edit too — see the matching block in store().
-            'gst_number' => [
-                'required', 'string', 'max:20',
+            'gst_number' => array_merge([
+                'required',
+                'string',
+                'max:20',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/',
                 Rule::unique('branches', 'gst_number')
                     ->ignore($branch->id)
-                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                    ->where(fn($q) => $q->where('client_id', $branch->client_id))
                     ->whereNull('deleted_at'),
-            ],
+            ], $this->gstNumberConsistencyRules($request, $branch->state)),
             'pan_number' => [
-                'required', 'string', 'max:20',
+                'required',
+                'string',
+                'max:20',
                 'regex:/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/',
                 Rule::unique('branches', 'pan_number')
                     ->ignore($branch->id)
-                    ->where(fn ($q) => $q->where('client_id', $branch->client_id))
+                    ->where(fn($q) => $q->where('client_id', $branch->client_id))
                     ->whereNull('deleted_at'),
             ],
             'registration_number' => 'required|string|max:50',
-            'gst_state_code'   => 'required|string|max:10',
+            'gst_state_code'   => array_merge(
+                ['required', 'string', 'max:10'],
+                $this->gstStateCodeConsistencyRules($request, $branch->state),
+            ),
             'cin'              => 'required|string|max:30',
             'iec'              => 'required|string|max:30',
             'drug_license'     => 'nullable|string|max:60',
@@ -538,12 +564,14 @@ class BranchController extends Controller
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
             'user_name' => 'nullable|string|max:255',
-            'user_email' => ['nullable', 'email', Rule::unique('users', 'email')->ignore($branchUser?->id)->where(fn ($q) => $q->where('client_id', $branch->client_id))->whereNull('deleted_at')],
+            'user_email' => ['nullable', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->ignore($branchUser?->id)->where(fn($q) => $q->where('client_id', $branch->client_id))->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
             'user_password' => 'nullable|string|min:6',
             'user_status' => 'nullable|in:active,inactive,pending',
         ], [
+            'email.regex'       => 'Enter a valid email like branch@company.com — a domain ending such as .com is required.',
+            'user_email.regex'  => 'Enter a valid email like admin@company.com — a domain ending such as .com is required.',
             'gst_number.unique' => 'This GSTIN is already registered to another branch.',
             'gst_number.regex'  => 'Invalid GSTIN format. Example: 27AADCI6120M1ZH',
             'pan_number.unique' => 'This PAN is already registered to another branch.',
@@ -556,50 +584,74 @@ class BranchController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $branch, $branchUser) {
-            // Detect status transition from active → inactive. Existing user
-            // sessions need to be revoked otherwise the login guard only blocks
-            // FRESH logins; users already logged in keep working with their
-            // existing Sanctum tokens.
-            $statusBecomingInactive = $request->filled('status')
-                && $branch->status === 'active'
-                && $request->input('status') !== 'active';
+                // Detect status transition from active → inactive. Existing user
+                // sessions need to be revoked otherwise the login guard only blocks
+                // FRESH logins; users already logged in keep working with their
+                // existing Sanctum tokens.
+                $statusBecomingInactive = $request->filled('status')
+                    && $branch->status === 'active'
+                    && $request->input('status') !== 'active';
 
-            // Reverse transition — when an admin flips an inactive branch
-            // back to active we need to restore the users / employees
-            // we soft-deleted during the deactivation cascade. Otherwise
-            // the branch returns "live" but with zero people in it.
-            $statusBecomingActive = $request->filled('status')
-                && $branch->status !== 'active'
-                && $request->input('status') === 'active';
+                // Reverse transition — when an admin flips an inactive branch
+                // back to active we need to restore the users / employees
+                // we soft-deleted during the deactivation cascade. Otherwise
+                // the branch returns "live" but with zero people in it.
+                $statusBecomingActive = $request->filled('status')
+                    && $branch->status !== 'active'
+                    && $request->input('status') === 'active';
 
-            $branch->update($request->only([
-                'name', 'code', 'email', 'phone', 'website', 'contact_person',
-                'branch_type', 'industry', 'description',
-                'gst_number', 'pan_number', 'registration_number',
-                'gst_state_code', 'cin', 'iec',
-                'drug_license', 'pcpndt_no', 'aeo_code',
-                'one_star_file_no', 'one_star_udin_no',
-                'address', 'city', 'district', 'taluka', 'state', 'pincode', 'country',
-                'max_users', 'established_at', 'status', 'notes',
-                'primary_color', 'secondary_color',
-            ]));
+                $branch->update($request->only([
+                    'name',
+                    'code',
+                    'email',
+                    'phone',
+                    'website',
+                    'contact_person',
+                    'branch_type',
+                    'industry',
+                    'description',
+                    'gst_number',
+                    'pan_number',
+                    'registration_number',
+                    'gst_state_code',
+                    'cin',
+                    'iec',
+                    'drug_license',
+                    'pcpndt_no',
+                    'aeo_code',
+                    'one_star_file_no',
+                    'one_star_udin_no',
+                    'address',
+                    'city',
+                    'district',
+                    'taluka',
+                    'state',
+                    'pincode',
+                    'country',
+                    'max_users',
+                    'established_at',
+                    'status',
+                    'notes',
+                    'primary_color',
+                    'secondary_color',
+                ]));
 
-            // Deliberately NOT in the ->only() list above. Branch edits post as
-            // multipart (logo / signature uploads), so a false arrives as the
-            // STRING "false" or "0" — and Eloquent's boolean cast is a plain
-            // (bool), which reads any non-empty string as true. A branch could
-            // therefore never be switched back off. $request->boolean()
-            // interprets "0"/"false"/"off"/"" correctly.
-            if ($request->has('sandwich_policy')) {
-                $branch->update(['sandwich_policy' => $request->boolean('sandwich_policy')]);
-            }
+                // Deliberately NOT in the ->only() list above. Branch edits post as
+                // multipart (logo / signature uploads), so a false arrives as the
+                // STRING "false" or "0" — and Eloquent's boolean cast is a plain
+                // (bool), which reads any non-empty string as true. A branch could
+                // therefore never be switched back off. $request->boolean()
+                // interprets "0"/"false"/"off"/"" correctly.
+                if ($request->has('sandwich_policy')) {
+                    $branch->update(['sandwich_policy' => $request->boolean('sandwich_policy')]);
+                }
 
-            // Shifts / bank accounts handled separately — the array cast would
-            // double-encode the JSON string that arrives on multipart uploads.
-            if ($request->has('shifts')) {
-                $incoming = $this->normalizeShifts($request->input('shifts'));
+                // Shifts / bank accounts handled separately — the array cast would
+                // double-encode the JSON string that arrives on multipart uploads.
+                if ($request->has('shifts')) {
+                    $incoming = $this->normalizeShifts($request->input('shifts'));
 
-                /* Refuse to drop a shift that people are actually working.
+                    /* Refuse to drop a shift that people are actually working.
                  *
                  * employees.shift stores the shift NAME, not an id, so deleting
                  * the row here does not cascade — it orphans. The employee keeps
@@ -613,136 +665,136 @@ class BranchController extends Controller
                  * Renaming counts as deleting for the same reason — the old name
                  * stops resolving.
                  */
-                $inUse = $this->shiftsInUse($branch, $incoming);
-                if (!empty($inUse)) {
-                    $parts = [];
-                    foreach ($inUse as $name => $count) {
-                        $parts[] = "\"{$name}\" ({$count} employee" . ($count === 1 ? '' : 's') . ')';
+                    $inUse = $this->shiftsInUse($branch, $incoming);
+                    if (!empty($inUse)) {
+                        $parts = [];
+                        foreach ($inUse as $name => $count) {
+                            $parts[] = "\"{$name}\" ({$count} employee" . ($count === 1 ? '' : 's') . ')';
+                        }
+                        return response()->json([
+                            'message' => 'Cannot remove ' . implode(', ', $parts)
+                                . ' — reassign those employees to another shift first.',
+                            'errors'  => ['shifts' => ['This shift is assigned to employees in this branch.']],
+                        ], 422);
                     }
-                    return response()->json([
-                        'message' => 'Cannot remove ' . implode(', ', $parts)
-                            . ' — reassign those employees to another shift first.',
-                        'errors'  => ['shifts' => ['This shift is assigned to employees in this branch.']],
-                    ], 422);
+
+                    $branch->update(['shifts' => $incoming]);
                 }
+                if ($request->has('bank_accounts')) {
+                    $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
+                }
+                // Same reason as shifts — normalise before writing so the array cast
+                // doesn't double-encode the JSON string multipart sends.
+                if ($request->has('late_mark_policy')) {
+                    $before = Branch::normalizeLateMarkPolicy($branch->late_mark_policy);
+                    $after  = Branch::normalizeLateMarkPolicy($request->input('late_mark_policy'));
+                    $branch->update(['late_mark_policy' => $after]);
 
-                $branch->update(['shifts' => $incoming]);
-            }
-            if ($request->has('bank_accounts')) {
-                $branch->update(['bank_accounts' => $this->normalizeBankAccounts($request->input('bank_accounts'))]);
-            }
-            // Same reason as shifts — normalise before writing so the array cast
-            // doesn't double-encode the JSON string multipart sends.
-            if ($request->has('late_mark_policy')) {
-                $before = Branch::normalizeLateMarkPolicy($branch->late_mark_policy);
-                $after  = Branch::normalizeLateMarkPolicy($request->input('late_mark_policy'));
-                $branch->update(['late_mark_policy' => $after]);
-
-                /* The rule feeds payroll's LOP, so an already-generated draft
+                    /* The rule feeds payroll's LOP, so an already-generated draft
                  * payslip is stale the moment it changes — HR would edit the
                  * branch, reopen payroll and see the OLD deduction with no hint
                  * why. Every other payroll input (salary structure, leave
                  * approval, adjustments) already recomputes on save; this now
                  * matches. Locked/paid runs are frozen and skipped inside
                  * recomputeEmployeePayslips(). */
-                if ($before !== $after) {
-                    $this->recomputeBranchPayslips($branch);
-                }
-            }
-
-            if ($request->hasFile('logo')) {
-                if ($branch->logo) {
-                    \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($branch->logo));
-                    Storage::disk('public')->delete($this->relativePath($branch->logo));
-                }
-                $logoPath = $request->file('logo')->store('branches/logos', 'public');
-                $branch->update(['logo' => $logoPath]);
-                \App\Services\LogoDarkVariantGenerator::generate($logoPath);
-            }
-            if ($request->hasFile('profile_photo')) {
-                if ($branch->profile_photo) {
-                    Storage::disk('public')->delete($this->relativePath($branch->profile_photo));
-                }
-                $branch->update(['profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public')]);
-            }
-            // Replace the signature image when a new file comes in;
-            // the old one is deleted from storage so we don't leak files.
-            if ($request->hasFile('signature_path')) {
-                if ($branch->signature_path) {
-                    Storage::disk('public')->delete($this->relativePath($branch->signature_path));
-                }
-                $branch->update(['signature_path' => $request->file('signature_path')->store('branches/signatures', 'public')]);
-            }
-
-            if ($statusBecomingInactive) {
-                $this->revokeAllUserTokensForBranch($branch->id);
-                // Mirror the deactivation cascade so newly-disabled
-                // branches don't leave their users / employees alive in
-                // an inactive container.
-                User::where('branch_id', $branch->id)->delete();
-                Employee::where('branch_id', $branch->id)->delete();
-            }
-
-            if ($statusBecomingActive) {
-                // Bring back the people who were soft-deleted when the
-                // branch was deactivated. We can't tell apart "deleted
-                // because the branch was deactivated" from "deleted for
-                // their own reasons", so the restore is conservative:
-                // only rows whose deleted_at falls within the branch's
-                // current inactive window are restored.
-                User::withTrashed()->where('branch_id', $branch->id)->restore();
-                Employee::withTrashed()->where('branch_id', $branch->id)->restore();
-            }
-
-            // Update branch user if provided
-            if ($branchUser && $request->user_name) {
-                $userData = array_filter([
-                    'name' => $request->user_name,
-                    'email' => $request->user_email,
-                    'phone' => $request->user_phone,
-                    'designation' => $request->user_designation,
-                    'status' => $request->user_status,
-                ], fn($v) => $v !== null);
-
-                $passwordChanged = false;
-                if ($request->user_password) {
-                    $userData['password'] = Hash::make($request->user_password);
-                    // Keep the readable mirror in sync with the new password.
-                    $userData['password_encrypted'] = Crypt::encryptString($request->user_password);
-                    $passwordChanged = true;
-                }
-
-                $branchUser->update($userData);
-
-                // Confirmation mail goes to the branch user whenever the
-                // admin actually rotates their password from the Branch form.
-                // Use the post-update email so a simultaneous email change
-                // delivers to the new mailbox, not the stale one.
-                if ($passwordChanged && Settings::shouldSendMail()) {
-                    try {
-                        Mail::to($branchUser->email)->send(new PasswordChangedMail(
-                            $branchUser->name,
-                            $branchUser->email,
-                            $request->user_password,
-                            PasswordChangedMail::resolveLoginUrl($request),
-                            BrandingResolver::forUser($branchUser),
-                        ));
-                    } catch (\Throwable $e) {
-                        Log::warning('Password-changed confirmation mail failed (branch update)', [
-                            'user_id' => $branchUser->id,
-                            'email'   => $branchUser->email,
-                            'error'   => $e->getMessage(),
-                        ]);
+                    if ($before !== $after) {
+                        $this->recomputeBranchPayslips($branch);
                     }
                 }
-            }
 
-            $branch->loadCount(['users', 'departments']);
+                if ($request->hasFile('logo')) {
+                    if ($branch->logo) {
+                        \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($branch->logo));
+                        Storage::disk('public')->delete($this->relativePath($branch->logo));
+                    }
+                    $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                    $branch->update(['logo' => $logoPath]);
+                    \App\Services\LogoDarkVariantGenerator::generate($logoPath);
+                }
+                if ($request->hasFile('profile_photo')) {
+                    if ($branch->profile_photo) {
+                        Storage::disk('public')->delete($this->relativePath($branch->profile_photo));
+                    }
+                    $branch->update(['profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public')]);
+                }
+                // Replace the signature image when a new file comes in;
+                // the old one is deleted from storage so we don't leak files.
+                if ($request->hasFile('signature_path')) {
+                    if ($branch->signature_path) {
+                        Storage::disk('public')->delete($this->relativePath($branch->signature_path));
+                    }
+                    $branch->update(['signature_path' => $request->file('signature_path')->store('branches/signatures', 'public')]);
+                }
 
-            return response()->json([
-                'message' => 'Branch updated successfully',
-                'branch' => $branch,
-            ]);
+                if ($statusBecomingInactive) {
+                    $this->revokeAllUserTokensForBranch($branch->id);
+                    // Mirror the deactivation cascade so newly-disabled
+                    // branches don't leave their users / employees alive in
+                    // an inactive container.
+                    User::where('branch_id', $branch->id)->delete();
+                    Employee::where('branch_id', $branch->id)->delete();
+                }
+
+                if ($statusBecomingActive) {
+                    // Bring back the people who were soft-deleted when the
+                    // branch was deactivated. We can't tell apart "deleted
+                    // because the branch was deactivated" from "deleted for
+                    // their own reasons", so the restore is conservative:
+                    // only rows whose deleted_at falls within the branch's
+                    // current inactive window are restored.
+                    User::withTrashed()->where('branch_id', $branch->id)->restore();
+                    Employee::withTrashed()->where('branch_id', $branch->id)->restore();
+                }
+
+                // Update branch user if provided
+                if ($branchUser && $request->user_name) {
+                    $userData = array_filter([
+                        'name' => $request->user_name,
+                        'email' => $request->user_email,
+                        'phone' => $request->user_phone,
+                        'designation' => $request->user_designation,
+                        'status' => $request->user_status,
+                    ], fn($v) => $v !== null);
+
+                    $passwordChanged = false;
+                    if ($request->user_password) {
+                        $userData['password'] = Hash::make($request->user_password);
+                        // Keep the readable mirror in sync with the new password.
+                        $userData['password_encrypted'] = Crypt::encryptString($request->user_password);
+                        $passwordChanged = true;
+                    }
+
+                    $branchUser->update($userData);
+
+                    // Confirmation mail goes to the branch user whenever the
+                    // admin actually rotates their password from the Branch form.
+                    // Use the post-update email so a simultaneous email change
+                    // delivers to the new mailbox, not the stale one.
+                    if ($passwordChanged && Settings::shouldSendMail()) {
+                        try {
+                            Mail::to($branchUser->email)->send(new PasswordChangedMail(
+                                $branchUser->name,
+                                $branchUser->email,
+                                $request->user_password,
+                                PasswordChangedMail::resolveLoginUrl($request),
+                                BrandingResolver::forUser($branchUser),
+                            ));
+                        } catch (\Throwable $e) {
+                            Log::warning('Password-changed confirmation mail failed (branch update)', [
+                                'user_id' => $branchUser->id,
+                                'email'   => $branchUser->email,
+                                'error'   => $e->getMessage(),
+                            ]);
+                        }
+                    }
+                }
+
+                $branch->loadCount(['users', 'departments']);
+
+                return response()->json([
+                    'message' => 'Branch updated successfully',
+                    'branch' => $branch,
+                ]);
             });
         } catch (QueryException $e) {
             if ($this->isUniqueEmailViolation($e)) {
@@ -760,8 +812,26 @@ class BranchController extends Controller
             && str_contains($e->getMessage(), 'users_email_unique');
     }
 
- 
-    private function normalizeGstPanInput(Request $request): void
+    /**
+     * Canonicalise the case of identifier fields BEFORE validation, so that
+     * what we validate is exactly what we store.
+     *
+     * GSTIN / PAN are uppercase by statute; email addresses are stored
+     * lowercase (QA #3). Case matters for more than tidiness here:
+     *
+     *   • The unique rules below compare with `=`, and Postgres string
+     *     comparison is case-SENSITIVE — without this, Admin@x.com and
+     *     admin@x.com both pass the "already registered" check and land as two
+     *     accounts sharing one mailbox.
+     *   • Login looks the user up with where('email', …) — also exact — so a
+     *     stored capital letter forces the user to reproduce it every time,
+     *     and Google sign-in (which lowercases the Google payload) never
+     *     matches at all.
+     *
+     * Blank strings are left alone rather than normalised to '', so a field the
+     * request never meant to touch stays absent for the validator.
+     */
+    private function normalizeIdentifierCasing(Request $request): void
     {
         $patch = [];
         foreach (['gst_number', 'pan_number'] as $field) {
@@ -770,7 +840,111 @@ class BranchController extends Controller
                 $patch[$field] = strtoupper(trim($val));
             }
         }
+        // Branch contact email + the branch admin's login email.
+        foreach (['email', 'user_email'] as $field) {
+            $val = $request->input($field);
+            if (is_string($val) && $val !== '') {
+                $patch[$field] = strtolower(trim($val));
+            }
+        }
         if ($patch) $request->merge($patch);
+    }
+
+    /**
+     * Cross-field consistency closures for `gst_number` (QA #1).
+     *
+     * The three legal-identity fields are NOT independent — a GSTIN is built
+     * out of the other two:
+     *
+     *     2 7 A A F C D 5 6 7 8 L 1 Z 5
+     *     └┬┘ └─────┬─────────┘
+     *      │        └── characters 3-12 ARE the PAN of the same entity
+     *      └─────────── the state code of the registration
+     *
+     * Format rules alone accept 27AAFCD5678L1Z5 alongside PAN AAECS1234W and
+     * state code 07 — three numbers belonging to three different entities in
+     * two different states — and every quotation, PI and export document then
+     * prints that contradiction. Worse, `gst_state_code` decides the CGST+SGST
+     * vs IGST split, so a code that disagrees with the GSTIN mis-taxes invoices
+     * silently rather than failing loudly.
+     *
+     * Server-side twin of the SPA rules in BranchForm.tsx — the form can be
+     * bypassed, the API can't.
+     *
+     * @param string|null $fallbackState State to compare against when the
+     *        request omits the key entirely (an edit that PATCHes only the tax
+     *        fields must still be checked against the branch's stored state).
+     */
+    private function gstNumberConsistencyRules(Request $request, ?string $fallbackState = null): array
+    {
+        return [
+            /* GSTIN chars 3-12 vs the PAN Number field. Skipped unless BOTH are
+             * well-formed — otherwise a user who mistyped the PAN gets this
+             * mismatch on top of the format error, which reads as two problems
+             * when there is one. */
+            function ($attribute, $value, $fail) use ($request) {
+                $gstin = strtoupper(trim((string) $value));
+                $pan   = strtoupper(trim((string) $request->input('pan_number')));
+                if ($pan === '' || !preg_match('/^[A-Z]{5}[0-9]{4}[A-Z]$/', $pan)) return;
+                if (!preg_match('/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]/', $gstin)) return;
+
+                $embedded = substr($gstin, 2, 10);
+                if ($embedded !== $pan) {
+                    $fail("The PAN inside this GSTIN ({$embedded}) does not match the PAN Number entered ({$pan}). A GSTIN's characters 3-12 are the PAN of the same entity.");
+                }
+            },
+            /* GSTIN's first two digits vs the address state's statutory code.
+             * Resolved from the state NAME via the master table (not from the
+             * request's gst_state_code) so a direct API call can't slip a
+             * mismatched pair through by sending a code that doesn't belong to
+             * its state — same approach as CustomerController. Skipped when the
+             * master has no code for that state (non-Indian addresses), so a
+             * foreign branch isn't made unsaveable. */
+            function ($attribute, $value, $fail) use ($request, $fallbackState) {
+                $gstin = strtoupper(trim((string) $value));
+                $prefix = Gst::stateCodeFromGstin($gstin);
+                if ($prefix === null) return;
+
+                $state = $request->has('state') ? $request->input('state') : $fallbackState;
+                $expected = Gst::stateCodeFor($state);
+                if ($expected && $prefix !== $expected) {
+                    $fail("This GSTIN is registered in state code {$prefix}, but the address state is " . trim((string) $state) . " ({$expected}). Correct the GSTIN or the state.");
+                }
+            },
+        ];
+    }
+
+    /**
+     * Cross-field consistency closures for `gst_state_code` — see
+     * gstNumberConsistencyRules() for why these fields can't disagree.
+     */
+    private function gstStateCodeConsistencyRules(Request $request, ?string $fallbackState = null): array
+    {
+        return [
+            function ($attribute, $value, $fail) use ($request, $fallbackState) {
+                $code = trim((string) $value);
+                if ($code === '') return;
+
+                if (!preg_match('/^[0-9]{2}$/', $code)) {
+                    $fail('GST State Code must be exactly 2 digits. Example: 27 for Maharashtra.');
+                    return;
+                }
+
+                // The GSTIN wins the tie-break: it's the registration itself,
+                // while gst_state_code is a derived convenience column.
+                $prefix = Gst::stateCodeFromGstin($request->input('gst_number'));
+                if ($prefix && $prefix !== $code) {
+                    $fail("GST State Code ({$code}) must match the first two digits of the GST Number ({$prefix}).");
+                    return;
+                }
+
+                $state = $request->has('state') ? $request->input('state') : $fallbackState;
+                $expected = Gst::stateCodeFor($state);
+                if ($expected && $expected !== $code) {
+                    $fail("GST State Code ({$code}) does not match the address state " . trim((string) $state) . ", whose code is {$expected}.");
+                }
+            },
+        ];
     }
 
     public function destroy(Branch $branch, Request $request)
@@ -807,7 +981,7 @@ class BranchController extends Controller
         return response()->json(['message' => 'Branch deactivated successfully']);
     }
 
-   
+
     private function revokeAllUserTokensForBranch(int $branchId): int
     {
         $userIds = User::where('branch_id', $branchId)->pluck('id');
@@ -819,7 +993,7 @@ class BranchController extends Controller
             ->delete();
     }
 
-    
+
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
@@ -847,15 +1021,15 @@ class BranchController extends Controller
      */
     private function shiftsInUse(Branch $branch, array $incoming): array
     {
-        $names = fn (array $rows) => collect($rows)
+        $names = fn(array $rows) => collect($rows)
             ->pluck('name')
-            ->filter(fn ($n) => trim((string) $n) !== '')
-            ->map(fn ($n) => trim((string) $n))
+            ->filter(fn($n) => trim((string) $n) !== '')
+            ->map(fn($n) => trim((string) $n))
             ->values();
 
-        $keptLower = $names($incoming)->map(fn ($n) => mb_strtolower($n))->all();
+        $keptLower = $names($incoming)->map(fn($n) => mb_strtolower($n))->all();
         $dropped   = $names((array) ($branch->shifts ?? []))
-            ->reject(fn ($n) => in_array(mb_strtolower($n), $keptLower, true))
+            ->reject(fn($n) => in_array(mb_strtolower($n), $keptLower, true))
             ->values();
 
         if ($dropped->isEmpty()) {
@@ -874,7 +1048,7 @@ class BranchController extends Controller
                 // on and would come back to a shift that no longer exists.
                 ->where(function ($w) {
                     $w->whereNull('status')
-                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                        ->orWhereNotIn('status', ['Resigned', 'Terminated']);
                 })
                 ->whereRaw('LOWER(TRIM(shift)) = ?', [mb_strtolower($name)])
                 ->count();
@@ -900,7 +1074,7 @@ class BranchController extends Controller
     {
         try {
             $employeeIds = \App\Models\Payslip::query()
-                ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated']))
+                ->whereHas('run', fn($q) => $q->whereIn('status', ['draft', 'generated']))
                 ->whereIn('employee_id', Employee::where('branch_id', $branch->id)->pluck('id'))
                 ->distinct()
                 ->pluck('employee_id');
@@ -1057,12 +1231,21 @@ class BranchController extends Controller
             ->where('name', 'not ilike', '% — Head Office');
 
         $rows = $query->orderBy('name')->get([
-            'id', 'name', 'code', 'city', 'state', 'country',
-            'gst_number', 'pan_number', 'email', 'phone', 'logo',
+            'id',
+            'name',
+            'code',
+            'city',
+            'state',
+            'country',
+            'gst_number',
+            'pan_number',
+            'email',
+            'phone',
+            'logo',
         ]);
 
         return response()->json([
-            'data' => $rows->map(fn (Branch $b) => [
+            'data' => $rows->map(fn(Branch $b) => [
                 'id'         => $b->id,
                 'name'       => $b->name,
                 'code'       => $b->code,
@@ -1100,7 +1283,7 @@ class BranchController extends Controller
         $rows = $query->orderBy('name')->get(['id', 'name', 'code', 'city', 'state', 'country']);
 
         return response()->json([
-            'legal_entities' => $rows->map(fn (Branch $b) => [
+            'legal_entities' => $rows->map(fn(Branch $b) => [
                 'id'       => $b->id,
                 'name'     => $b->name,
                 'code'     => $b->code,
@@ -1148,7 +1331,7 @@ class BranchController extends Controller
         return implode(', ', array_filter([
             trim((string) $branch->city),
             trim((string) $branch->country),
-        ], fn ($v) => $v !== ''));
+        ], fn($v) => $v !== ''));
     }
 
     public function nextCode(Request $request)
@@ -1242,15 +1425,15 @@ class BranchController extends Controller
         return 'BR-' . str_pad((string) ($max + 1), 3, '0', STR_PAD_LEFT);
     }
 
-    
+
     public function formBundle(Request $request)
     {
         $user = $request->user();
         $cacheKey = \App\Support\MasterBundleCache::key('branch:form-bundle:masters', $user?->id);
 
-       
+
         $masters = Cache::remember($cacheKey, now()->addMinutes(5), function () use ($user) {
-            $scope = fn ($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
+            $scope = fn($q) => \App\Support\MasterVisibility::applyReadScope($q, $user);
             return [
                 'countries' => Countries::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
@@ -1262,21 +1445,39 @@ class BranchController extends Controller
                     ->tap($scope)
                     ->orderBy('name')
                     ->get(['id', 'country_id', 'name', 'status']),
+                /* Statutory GST state codes (state_id → "27"), so the form can
+                 * tell the user their GSTIN doesn't belong to the state they
+                 * picked BEFORE they submit. Read globally (client_id IS NULL,
+                 * how they're seeded) and deliberately NOT tenant-scoped — the
+                 * CBIC list is the same for every client. Matches
+                 * App\Support\Gst::stateCodeFor(), which is what the server-side
+                 * twin of this rule resolves against.
+                 *
+                 * state_id is varchar while master_states.id is bigint, hence
+                 * the ::text comparison everywhere else in this codebase — here
+                 * we just hand the raw pair to the client and let it match. */
+                'state_codes' => DB::table('master_state_codes')
+                    ->whereNull('client_id')
+                    ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->get(['state_id', 'state_code']),
             ];
         });
 
-       
+
         $clientId = $user?->client_id;
         $nextCode = $clientId
             ? $this->peekNextBranchCode($clientId)
             : 'BR-001';
 
         return response()->json([
-            'countries' => $masters['countries'],
-            'states'    => $masters['states'],
+            'countries'   => $masters['countries'],
+            'states'      => $masters['states'],
+            // May be absent from a cache entry written before this key existed;
+            // the SPA treats a missing list as "no codes known" and skips the
+            // state/GSTIN check, which the API still enforces.
+            'state_codes' => $masters['state_codes'] ?? [],
             'next_code' => $nextCode,
             'prefix'    => 'BR-',
         ]);
     }
-    
 }
