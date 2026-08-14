@@ -7,6 +7,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { ShimmerTableRows } from '../components/ui/Shimmer';
 import Tooltip from '../components/ui/Tooltip';
 import WorklistPager from '../components/ui/WorklistPager';
+import DataTable, { type DataTableColumn } from '../components/ui/DataTable';
 import SignaturePad, { consentLabel } from '../components/ui/SignaturePad';
 import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
@@ -28,6 +29,8 @@ interface TeamEmployee {
   department?: { id: number; name: string } | null;
   designation?: { id: number; name: string; level?: string | null } | null;
   reportingManager?: { id: number; display_name: string; emp_code: string } | null;
+  // Server-resolved manager name (employee OR Branch User), for "Reports To".
+  reports_to?: string | null;
   branch?: { id: number; name: string } | null;
   status: string;
 }
@@ -52,6 +55,13 @@ interface ApprovalsResponse {
   approvals: ApprovalItem[];
   counts: { total: number; document_signature: number; expense: number; leave: number };
 }
+
+// Tab rail shared by both DataTable instances so the two-tab switcher renders
+// identically whichever view is active.
+const TEAM_TABS = (empCount: number, apprCount: number) => [
+  { key: 'employees', label: 'Employee List', icon: 'ri-team-line',            count: empCount },
+  { key: 'approvals', label: 'Approval List', icon: 'ri-checkbox-circle-line', count: apprCount },
+];
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 export default function MyTeam() {
@@ -347,6 +357,63 @@ export default function MyTeam() {
     );
   }, [employees, empSearch]);
 
+  // ── Column defs for the shared DataTable (one table, two tab views) ──────────
+  const employeeColumns = useMemo<DataTableColumn<TeamEmployee>[]>(() => [
+    {
+      header: 'Employee',
+      // Accessor feeds search + sort; includes email so the search box matches it.
+      accessorFn: (r) => `${r.display_name || `${r.first_name || ''} ${r.last_name || ''}`.trim()} ${r.email || ''}`,
+      meta: { width: '24%' },
+      cell: info => {
+        const e = info.row.original;
+        const nm = e.display_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || '—';
+        return (
+          <div className="d-flex align-items-center gap-2">
+            <span style={{ width: 32, height: 32, borderRadius: '50%', background: '#eef2ff', color: '#4338ca', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 12, flexShrink: 0 }}>
+              {(e.display_name || e.first_name || 'E').split(/\s+/).slice(0, 2).map(s => s[0]).join('').toUpperCase()}
+            </span>
+            <div className="min-w-0">
+              <div style={{ fontWeight: 700 }}>{nm}</div>
+              <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.email || '—'}</div>
+            </div>
+          </div>
+        );
+      },
+    },
+    { header: 'Code', accessorFn: r => r.emp_code || '', meta: { width: '9%' }, cell: info => <code style={{ fontSize: 11, background: '#fef3c7', color: '#a16207', padding: '2px 6px', borderRadius: 4 }}>{info.row.original.emp_code || '—'}</code> },
+    { header: 'Designation', accessorFn: r => r.designation?.name || '', cell: info => { const e = info.row.original; return <div><div style={{ fontWeight: 600 }}>{e.designation?.name || '—'}</div>{e.designation?.level && <div style={{ fontSize: 11.5, color: '#6b7280' }}>{e.designation.level}</div>}</div>; } },
+    { header: 'Department', accessorFn: r => r.department?.name || '—' },
+    { header: 'Branch', accessorFn: r => r.branch?.name || '—' },
+    { header: 'Reports To', accessorFn: r => r.reports_to || r.reportingManager?.display_name || '—' },
+    { header: 'Status', accessorFn: r => r.status || 'Active', meta: { align: 'center' }, cell: info => <span style={{ padding: '2px 9px', borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: '#dcfce7', color: '#15803d' }}>{info.row.original.status || 'Active'}</span> },
+  ], []);
+
+  const approvalColumns = useMemo<DataTableColumn<ApprovalItem>[]>(() => [
+    { header: 'Module', accessorFn: r => moduleLabel(r.module), meta: { width: '12%' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.module === 'expense' ? '#fef3c7' : r.module === 'leave' ? '#dcfce7' : '#dbeafe', color: r.module === 'expense' ? '#a16207' : r.module === 'leave' ? '#15803d' : '#1d4ed8' }}><i className={r.module === 'expense' ? 'ri-bill-line me-1' : r.module === 'leave' ? 'ri-calendar-2-line me-1' : 'ri-quill-pen-line me-1'} />{moduleLabel(r.module)}</span>; } },
+    { header: 'Document / Request', accessorFn: r => `${r.title} ${r.code || ''}`, cell: info => { const r = info.row.original; return <div><div style={{ fontWeight: 700 }}>{r.title}</div>{r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>; } },
+    { header: 'Subject', accessorFn: r => `${r.subject_name} ${r.subject_dept}`, cell: info => { const r = info.row.original; return <div><div>{r.subject_name}</div><div style={{ fontSize: 11.5, color: '#6b7280' }}>{r.subject_dept}</div></div>; } },
+    { header: 'Action', accessorFn: r => r.action, meta: { align: 'center' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.action === 'Sign' ? '#fef3c7' : r.action === 'Approve' ? '#dcfce7' : '#e0e7ff', color: r.action === 'Sign' ? '#92400e' : r.action === 'Approve' ? '#15803d' : '#4338ca' }}>{r.action}</span>; } },
+    { header: 'Sent', accessorFn: r => r.created_at, cell: info => <span style={{ fontSize: 12, color: '#6b7280' }}>{new Date(info.row.original.created_at).toLocaleString()}</span> },
+    {
+      header: () => <div className="text-center">Take Action</div>, id: '__take', enableSorting: false, meta: { align: 'center', width: '18%' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <div className="d-flex gap-1 flex-wrap justify-content-center">
+            {r.module === 'document_signature' && (
+              <Tooltip label="Preview the document before taking action">
+                <button type="button" onClick={() => setViewItem(r)} aria-label="Preview document" style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-eye-line me-1" />View</button>
+              </Tooltip>
+            )}
+            <Tooltip label="Open the decision dialog to Approve or Reject">
+              <button type="button" onClick={() => openAction(r)} aria-label="Review and decide" style={{ padding: '6px 12px', borderRadius: 8, border: 0, background: 'linear-gradient(135deg,#6366f1,#8b5cf6)', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}><i className="ri-checkbox-circle-line me-1" />Review &amp; Decide</button>
+            </Tooltip>
+          </div>
+        );
+      },
+    },
+  ], []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <>
       <Row>
@@ -365,38 +432,61 @@ export default function MyTeam() {
               </div>
             </div>
 
-            {/* Tabs */}
-            <div className="d-flex gap-2 mb-3">
-              <button type="button" onClick={() => setTab('employees')}
-                className={`myteam-tab${tab === 'employees' ? ' is-active' : ''}`}
-                style={tabBtnStyle(tab === 'employees', '#6366f1')}>
-                <i className="ri-team-line me-1" /> Employee List
-                <span className={`myteam-tab-count${tab === 'employees' ? ' is-active' : ''}`} style={countPillStyle(tab === 'employees')}>{employees.length}</span>
-              </button>
-              <button type="button" onClick={() => setTab('approvals')}
-                className={`myteam-tab${tab === 'approvals' ? ' is-active' : ''}`}
-                style={tabBtnStyle(tab === 'approvals', '#16a34a')}>
-                <i className="ri-checkbox-circle-line me-1" /> Approval List
-                <span className={`myteam-tab-count${tab === 'approvals' ? ' is-active' : ''}`} style={countPillStyle(tab === 'approvals')}>{approvalCounts.total}</span>
-              </button>
+            {/* KPI cards — ABOVE the tabs, always visible (pending-approval
+                summary), reusing the Recruitment page's rec-kpi-card look. */}
+            <div className="row g-1 mb-3 align-items-stretch">
+              {[
+                { label: 'Total Pending',     value: approvalCounts.total,              icon: 'ri-inbox-line',      gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)', deep: '#4338ca' },
+                { label: 'Document Signing',  value: approvalCounts.document_signature, icon: 'ri-quill-pen-line',  gradient: 'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)', deep: '#1d4ed8' },
+                { label: 'Expense Approvals', value: approvalCounts.expense,            icon: 'ri-bill-line',       gradient: 'linear-gradient(135deg,#f7b84b 0%,#fbc763 100%)', deep: '#a16207' },
+                { label: 'Leave Approvals',   value: approvalCounts.leave,              icon: 'ri-calendar-2-line', gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
+              ].map(k => (
+                <div key={k.label} className="col-md-3 col-sm-6">
+                  <div className="rec-kpi-card h-100">
+                    <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                    <div className="rec-kpi-text">
+                      <span className="rec-kpi-label">{k.label}</span>
+                      <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
+                    </div>
+                    <span className="rec-kpi-icon" style={{ background: k.gradient }}><i className={k.icon} /></span>
+                  </div>
+                </div>
+              ))}
             </div>
 
-            {tab === 'employees' && (
-              <EmployeesPanel
-                rows={filteredEmployees}
+            {/* One shared DataTable — the two tabs + search share a single toolbar
+                line, and the table swaps content per tab. Two typed instances keep
+                the column generics clean; the identical `tabs` array renders the
+                same rail on both. */}
+            {tab === 'employees' ? (
+              <DataTable<TeamEmployee>
+                data={employees}
+                columns={employeeColumns}
+                serial
+                accent="violet"
+                autoFitRows
+                minAutoRows={8}
+                tabs={TEAM_TABS(employees.length, approvalCounts.total)}
+                activeTab="employees"
+                onTabChange={(k) => setTab(k as 'employees' | 'approvals')}
+                searchPlaceholder="Search by name, code, email…"
                 loading={empLoading}
-                search={empSearch}
-                setSearch={setEmpSearch}
+                emptyMessage="No employees in your team yet."
               />
-            )}
-
-            {tab === 'approvals' && (
-              <ApprovalsPanel
-                rows={approvals}
+            ) : (
+              <DataTable<ApprovalItem>
+                data={approvals}
+                columns={approvalColumns}
+                serial
+                accent="violet"
+                autoFitRows
+                minAutoRows={8}
+                tabs={TEAM_TABS(employees.length, approvalCounts.total)}
+                activeTab="approvals"
+                onTabChange={(k) => setTab(k as 'employees' | 'approvals')}
+                searchPlaceholder="Search approvals…"
                 loading={apprLoading}
-                counts={approvalCounts}
-                onAct={openAction}
-                onView={(item) => setViewItem(item)}
+                emptyMessage="No pending approvals — you're all caught up."
               />
             )}
           </div>
@@ -542,8 +632,9 @@ function ApprovalsPanel({
 }) {
   return (
     <>
-      {/* KPI strip — module breakdown */}
-      <div className="row g-2 mb-3">
+      {/* KPI strip — reuses the Recruitment page's rec-kpi-card so both modules
+          read as one design (left accent strip, label over number, icon). */}
+      <div className="row g-1 mb-3 align-items-stretch">
         {[
           { label: 'Total Pending',     value: counts.total,              icon: 'ri-inbox-line',         gradient: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)', deep: '#4338ca' },
           { label: 'Document Signing',  value: counts.document_signature, icon: 'ri-quill-pen-line',     gradient: 'linear-gradient(135deg,#0ea5e9 0%,#3b82f6 100%)', deep: '#1d4ed8' },
@@ -551,17 +642,15 @@ function ApprovalsPanel({
           { label: 'Leave Approvals',   value: counts.leave,              icon: 'ri-calendar-2-line',    gradient: 'linear-gradient(135deg,#0ab39c 0%,#22c8a9 100%)', deep: '#089d7a' },
         ].map(k => (
           <div key={k.label} className="col-md-3 col-sm-6">
-            <div className="myteam-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden', cursor: 'default' }}>
-              <div style={{ height: 4, background: k.gradient }} />
-              <div className="d-flex align-items-center justify-content-between" style={{ padding: '12px 14px' }}>
-                <div>
-                  <div className="myteam-kpi-num" style={{ fontSize: 24, fontWeight: 800, color: k.deep, lineHeight: 1 }}>{k.value}</div>
-                  <div className="myteam-kpi-label" style={{ fontSize: 10.5, fontWeight: 700, color: '#6b7280', letterSpacing: 0.05, textTransform: 'uppercase', marginTop: 6 }}>{k.label}</div>
-                </div>
-                <span className="myteam-kpi-icon" style={{ width: 40, height: 40, borderRadius: 10, background: k.gradient, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(0,0,0,0.10)' }}>
-                  <i className={k.icon} style={{ fontSize: 18, color: '#fff' }} />
-                </span>
+            <div className="rec-kpi-card h-100">
+              <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num" style={{ color: k.deep }}>{k.value}</span>
               </div>
+              <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                <i className={k.icon} />
+              </span>
             </div>
           </div>
         ))}

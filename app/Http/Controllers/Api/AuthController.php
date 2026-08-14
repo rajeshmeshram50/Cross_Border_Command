@@ -717,8 +717,8 @@ class AuthController extends Controller
         // frontend can detect "is this my own profile?" regardless of which
         // form the URL slug carries — without an extra round-trip.
         $linkedEmployee = \App\Models\Employee::where('user_id', $user->id)
-            ->select(['id', 'emp_code', 'onboarding_stage_completed', 'department_id'])
-            ->with(['photoDocument:id,employee_id,document_key,file_path', 'department:id,name'])
+            ->select(['id', 'emp_code', 'onboarding_stage_completed', 'department_id', 'designation_id'])
+            ->with(['photoDocument:id,employee_id,document_key,file_path', 'department:id,name', 'designation:id,name'])
             ->first();
         $linkedEmployeeId = $linkedEmployee?->id;
         $linkedEmployeeCode = $linkedEmployee?->emp_code;
@@ -727,6 +727,9 @@ class AuthController extends Controller
         // department-based UI gating (e.g. Product view: Sales hides Mapped
         // Suppliers, Purchase locks the selling price).
         $linkedEmployeeDepartment = $linkedEmployee?->department?->name;
+        // Employee's HR designation (HOD / Team Leader / Executive / …) — the SPA
+        // shows this in the profile badge instead of the generic user-type label.
+        $linkedEmployeeDesignation = $linkedEmployee?->designation?->name;
 
         // Onboarding gate. An employee whose onboarding isn't fully complete
         // (onboarding_stage_completed < 6) CAN log in, but the SPA restricts
@@ -823,6 +826,7 @@ class AuthController extends Controller
             'onboarding_stage'     => $onboardingStage,
             'status' => $user->status,
             'designation' => $user->designation,
+            'employee_designation' => $linkedEmployeeDesignation,
             'department' => $linkedEmployeeDepartment,
             'phone' => $user->phone,
             'avatar' => $user->avatar,

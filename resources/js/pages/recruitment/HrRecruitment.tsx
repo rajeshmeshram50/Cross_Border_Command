@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reactstrap';
 import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
+import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
@@ -158,9 +160,18 @@ function formatDate(raw: any): string {
  * typed (PHP's ucfirst, not a title-caser) — so "compliance associate" becomes
  * "Compliance associate" and an intentional "iOS Engineer" is never mangled.
  *
- * Applied on every keystroke of the free-text recruitment fields. Only index 0
- * is ever rewritten and the length never changes, so the caret does not jump
- * when the user is typing further along the string.
+ * Applied when the form is SAVED and when an existing record is loaded for
+ * edit — never on keystroke.
+ *
+ * It used to run on every keystroke, and the "the length never changes so the
+ * caret is safe" reasoning behind that was wrong. React only restores the caret
+ * when the value it renders matches what the DOM already has. Retype the FIRST
+ * letter of an existing title — put the caret at position 0 of "enior
+ * Accountant" and type "s" — and the state becomes "Senior…" while the input
+ * holds "senior…". React rewrites the whole value, the browser drops the caret
+ * at the END, and the next keystrokes land there: "Senior Accountant" turns
+ * into things like "ANior Accountantsd". Capitalising once, at save, gives the
+ * same stored result with no cursor to fight.
  *
  * Leading whitespace is skipped rather than blocking the capital: a value that
  * starts with a space or newline capitalises its first real character instead
@@ -349,6 +360,11 @@ const REC_EMPLOYMENT_OPTIONS = [
 
 export default function HrRecruitment() {
   const toast = useToast();
+  /* One module governs this whole area: recruitments, hiring requests and the
+     candidate pipeline all key off `hr.recruitment`. View-only therefore reads
+     every list — recruitments, requests, candidates — and changes nothing;
+     granting Add or Edit here is what unlocks the candidate actions too. */
+  const perm = useModulePermission('hr.recruitment', 'recruitments');
   const navigate = useNavigate();
 
   const [recruitments, setRecruitments] = useState<RecruitmentRow[]>([]);
@@ -584,16 +600,20 @@ export default function HrRecruitment() {
         const r = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center">
+            {/* Status blocks are facts about the ROW (hard-disabled); the
+                permission block is about the USER, so it stays clickable and
+                explains itself. */}
             <ActionBtn
               title={
                 r.status === 'Cancelled' ? 'Cannot edit — recruitment is cancelled'
                 : r.status === 'Completed' ? 'Cannot edit — recruitment is completed'
-                : 'Edit Recruitment'
+                : (perm.lockedTitle('edit') ?? 'Edit Recruitment')
               }
               icon="ri-pencil-line"
               color="info"
               disabled={r.status === 'Cancelled' || r.status === 'Completed'}
-              onClick={() => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); }}
+              locked={!perm.canEdit}
+              onClick={() => perm.guard('edit', () => { setCreateMode('edit'); setCreateEditingId(r.id); setCreateOpen(true); })}
             />
             <ActionBtn
               title={
@@ -611,31 +631,34 @@ export default function HrRecruitment() {
                 r.status === 'Cancelled' ? 'Already Cancelled'
                 : r.status === 'Completed' ? 'Already Completed'
                 : r.status === 'Expired' ? 'Recruitment expired — cannot complete'
-                : 'Mark Recruitment Completed'
+                : (perm.lockedTitle('edit') ?? 'Mark Recruitment Completed')
               }
               icon="ri-checkbox-circle-line"
               color="success"
               disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
-              onClick={() => { setCancelInitialAction('complete'); setCancelTarget(r); }}
+              locked={!perm.canEdit}
+              onClick={() => perm.guard('edit', () => { setCancelInitialAction('complete'); setCancelTarget(r); })}
             />
             <ActionBtn
               title={
                 r.status === 'Cancelled' ? 'Already Cancelled'
                 : r.status === 'Completed' ? 'Already Completed'
                 : r.status === 'Expired' ? 'Recruitment expired — cannot cancel'
-                : 'Cancel Recruitment'
+                : (perm.lockedTitle('edit') ?? 'Cancel Recruitment')
               }
               icon="ri-forbid-2-line"
               color="danger"
               disabled={r.status === 'Cancelled' || r.status === 'Completed' || r.status === 'Expired'}
-              onClick={() => { setCancelInitialAction('cancel'); setCancelTarget(r); }}
+              locked={!perm.canEdit}
+              onClick={() => perm.guard('edit', () => { setCancelInitialAction('cancel'); setCancelTarget(r); })}
             />
           </div>
         );
       },
     },
+    // perm.* so the action cells re-render when a grant refresh lands.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [navigate]);
+  ], [navigate, perm.canEdit]);
 
   return (
     <>
@@ -658,10 +681,15 @@ export default function HrRecruitment() {
                 </div>
               </div>
               <div className="rec-hero-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                {/* Greyed without Add, but still clickable so the toast can
+                    name the missing permission. */}
                 <button
                   type="button"
                   className="rec-btn-primary"
-                  onClick={() => { setCreateMode('add'); setCreateEditingId(null); setCreateOpen(true); }}
+                  aria-disabled={!perm.canAdd || undefined}
+                  title={perm.lockedTitle('add')}
+                  style={perm.canAdd ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
+                  onClick={() => perm.guard('add', () => { setCreateMode('add'); setCreateEditingId(null); setCreateOpen(true); })}
                 >
                   <i className="ri-add-line" />Create Recruitment
                 </button>
@@ -745,13 +773,16 @@ export default function HrRecruitment() {
         isOpen={requestsOpen}
         refreshKey={hiringRefreshKey}
         onClose={() => setRequestsOpen(false)}
-        onCreateRecruitment={(req) => {
+        /* Both "Create Recruitment" buttons inside the requests modal (the row
+           action and the detail footer) funnel through here, so one guard
+           covers both — it still creates a recruitment, hence can_add. */
+        onCreateRecruitment={(req) => perm.guard('add', () => {
           setRequestsOpen(false);
           setCreateMode('add');
           setCreateEditingId(null);
           setCreatePrefillFromHr(req?._raw || null);
           setCreateOpen(true);
-        }}
+        })}
       />
 
       <CreateRecruitmentModal
@@ -1909,6 +1940,13 @@ type RecMastersCache = {
   hiringManagerOptions: { value: string; label: string }[];
 };
 let recMastersCache: RecMastersCache | null = null;
+/* Which branch the cache above was built for. The employee list is
+   branch-scoped (the Axios interceptor injects branch_id), so a cache filled
+   under one branch must not paint the picker after the user switches to
+   another — they'd see, and could assign, the previous branch's people until
+   the refetch landed. A mismatch skips the instant paint; the fetch below
+   still runs either way. */
+let recMastersCacheBranch: number | null | undefined;
 
 function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: any): RecMastersCache {
   const asRows = (d: any): any[] => Array.isArray(d) ? d : (Array.isArray(d?.data) ? d.data : []);
@@ -1955,38 +1993,34 @@ function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: 
     const desig = e?.designation?.name ? ` — ${e.designation.name}` : '';
     return { value: String(e.id), label: `${name}${desig}` };
   };
-  // An employee counts as "HR" when their PRIMARY role is HR — either the Role
-  // Master category is HR, or the role name itself reads HR / Human Resources.
-  const isHrEmp = (e: any) => {
-    const cat  = String(e?.primary_role?.role_category ?? '').trim().toLowerCase();
-    const name = String(e?.primary_role?.name ?? '');
-    return cat === 'hr' || /\bhr\b|human\s*resource/i.test(name);
-  };
-  // An employee counts as an "Intern" when their designation tier/name or their
-  // primary role reads Intern / Trainee. Word-boundaried so it does NOT falsely
-  // match "Internal Auditor" / "International Sales Manager" (which contain the
-  // substring "intern" but are not interns).
-  const INTERN_RE = /\bintern\b|\btrainee\b/i;
-  const isInternEmp = (e: any) => {
-    const desig = `${e?.designation?.name ?? ''} ${e?.designation?.level ?? ''}`;
-    const role  = String(e?.primary_role?.name ?? '');
-    return INTERN_RE.test(desig) || INTERN_RE.test(role);
-  };
-
   const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
-  // Full list — kept so edit-mode can inject an already-assigned person who no
-  // longer matches the role filters (see employeeOptionsForEdit).
+  /* Every employee of the branch is selectable for BOTH roles.
+   *
+   * `empRows` comes from GET /employees, which the Axios interceptor scopes to
+   * the active branch, so "all employees" already means "all employees of this
+   * branch" — no extra filter needed here.
+   *
+   * This replaces two earlier role filters: Assigned HR used to be restricted
+   * to employees whose primary role read HR (bug #38), and Hiring Manager
+   * excluded HR and Intern/Trainee roles (bug #39). Tenants staff these two
+   * fields from whoever is actually running the hire — often someone whose
+   * role master entry says nothing about HR — and the filters left those people
+   * unpickable. The three lists are now the same list; they stay separate names
+   * because edit-mode injects an already-assigned person into each
+   * independently (see the *ForEdit memos).
+   */
   const employeeOptions = empRows.map(empToOpt).sort(byLabel);
-  // Assigned HR → HR employees only (bug #38).
-  const hrEmployeeOptions = empRows.filter(isHrEmp).map(empToOpt).sort(byLabel);
-  // Hiring Manager → everyone EXCEPT HR and Intern roles (bug #39).
-  const hiringManagerOptions = empRows.filter(e => !isHrEmp(e) && !isInternEmp(e)).map(empToOpt).sort(byLabel);
+  const hrEmployeeOptions = employeeOptions;
+  const hiringManagerOptions = employeeOptions;
 
   return { deptOptions, desigOptions, desigByDept, roleOptions, employeeOptions, hrEmployeeOptions, hiringManagerOptions };
 }
 
 function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefillFromHr, onSaved, onClose }: CreateRecruitmentModalProps) {
   const toast = useToast();
+  // The employee pickers below list this branch's people, so the masters cache
+  // has to follow the branch switcher rather than outlive it.
+  const { selectedBranchId } = useBranchSwitcher();
   const editing = mode === 'edit' && editingId ? recruitments.find(r => String(r.id) === String(editingId)) : null;
 
   const [jobTitle, setJobTitle]               = useState('');
@@ -2073,7 +2107,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setHiringManagerOptions(c.hiringManagerOptions);
     };
 
-    if (recMastersCache) {
+    if (recMastersCache && recMastersCacheBranch === selectedBranchId) {
       hydrate(recMastersCache);
       setMastersLoading(false);
     } else {
@@ -2091,6 +2125,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
         if (cancelled) return;
         const cache = buildRecMasters(deptRes.data, desigRes.data, roleRes.data, empRes.data);
         recMastersCache = cache;
+        recMastersCacheBranch = selectedBranchId;
         hydrate(cache);
       } catch {
         if (!cancelled && !recMastersCache) {
@@ -2105,7 +2140,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       }
     })();
     return () => { cancelled = true; };
-  }, [isOpen]);
+    // Refetch on branch change too — the employee list differs per branch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, selectedBranchId]);
 
   const filteredDesigOptions = useMemo(() => {
     if (departmentId && desigByDept[departmentId]?.length) {
@@ -2294,8 +2331,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       return;
     }
 
+    /* Capitalise HERE rather than on keystroke — the stored value is the same
+       as before, so an edit re-opens with the capital already in place, but
+       the user's cursor is left alone while they type. */
     const payload: Record<string, any> = {
-      job_title:             jobTitle.trim(),
+      job_title:             ucFirst(jobTitle.trim()),
       department_id:         Number(departmentId),
       designation_id:        Number(designationId),
       primary_role_id:       primaryRoleId ? Number(primaryRoleId) : null,
@@ -2309,8 +2349,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       assigned_hr_id:        assignedHrId ? Number(assignedHrId) : null,
       start_date:            startDate || null,
       deadline:              deadline || null,
-      job_description:       jobDescription || null,
-      requirements:          requirements || null,
+      job_description:       jobDescription ? ucFirst(jobDescription) : null,
+      requirements:          requirements ? ucFirst(requirements) : null,
       post_on_portal:        !!postOnPortal,
       notify_team_leads:     !!notifyTeamLeads,
       enable_referral_bonus: !!enableReferralBonus,
@@ -2434,7 +2474,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                     className={`rec-input has-leading-icon${errors.jobTitle ? ' is-invalid' : ''}`}
                     placeholder="e.g. Senior Backend Engineer"
                     value={jobTitle}
-                    onChange={e => { setJobTitle(ucFirst(e.target.value)); clear('jobTitle'); }}
+                    /* Raw while typing — see ucFirst's note. Capitalisation
+                       happens once, in the save payload below. */
+                    onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
                   />
                 </div>
                 {errors.jobTitle && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobTitle}</div>}
@@ -2663,7 +2705,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.jobDescription ? ' is-invalid' : ''}`}
                   placeholder="Key responsibilities, expectations, and role overview…"
                   value={jobDescription}
-                  onChange={e => { setJobDescription(ucFirst(e.target.value)); clear('jobDescription'); }}
+                  onChange={e => { setJobDescription(e.target.value); clear('jobDescription'); }}
                 />
                 {errors.jobDescription && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobDescription}</div>}
               </Col>
@@ -2673,7 +2715,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.requirements ? ' is-invalid' : ''}`}
                   placeholder="Required skills, qualifications, certifications…"
                   value={requirements}
-                  onChange={e => { setRequirements(ucFirst(e.target.value)); clear('requirements'); }}
+                  onChange={e => { setRequirements(e.target.value); clear('requirements'); }}
                 />
                 {errors.requirements && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requirements}</div>}
               </Col>
@@ -2964,9 +3006,15 @@ function CandidatesPlaceholderModal({
 }
 
 
+/**
+ * `disabled` = the row can't take this action (cancelled / completed /
+ * expired) — truly inert, the tooltip carries the reason.
+ * `locked`   = the USER lacks the permission — looks the same but stays
+ * clickable, so the handler can raise the "you don't have permission" toast.
+ */
 function ActionBtn({
-  title, icon, color, onClick, disabled,
-}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean }) {
+  title, icon, color, onClick, disabled, locked,
+}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; locked?: boolean }) {
   const toneClass =
     color === 'info' || color === 'primary' ? 'rec-act-tone-info'
     : color === 'success' ? 'rec-act-tone-success'
@@ -2978,7 +3026,9 @@ function ActionBtn({
         type="button"
         aria-label={title}
         disabled={disabled}
+        aria-disabled={locked || undefined}
         onClick={onClick}
+        style={locked && !disabled ? { opacity: .45, cursor: 'not-allowed', filter: 'grayscale(0.7)' } : undefined}
         className={`rec-act-icon ${toneClass}`}
       >
         <i className={icon} />

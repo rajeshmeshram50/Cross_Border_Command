@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
+use App\Models\Module;
+use App\Models\Permission;
 use Illuminate\Http\Request;
 
 class FaceBiometricController extends Controller
@@ -167,6 +169,26 @@ class FaceBiometricController extends Controller
      *     act on another employee in the SAME tenant.
      *   - Everyone else acts on their own employee row (via user.employee_id).
      */
+    /**
+     * `can_edit` on hr.employee — a copy of EmployeeController::authorize()'s
+     * rule, including its first-run fallback for a not-yet-seeded module row,
+     * so the two surfaces can't disagree about who may change an employee.
+     */
+    private function assertMayEditEmployees($user): void
+    {
+        $moduleId = Module::where('slug', 'hr.employee')->value('id');
+        if (!$moduleId) {
+            if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
+            abort(403, 'Employees module not enabled.');
+        }
+
+        $allowed = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_edit', true)
+            ->exists();
+        if (!$allowed) abort(403, 'Missing can_edit on hr.employee');
+    }
+
     private function resolveTarget(Request $request): Employee
     {
         $user = $request->user();
@@ -188,6 +210,16 @@ class FaceBiometricController extends Controller
         if (!$row) abort(404, 'Employee not found.');
 
         if ($user->user_type === 'super_admin') return $row;
+
+        /* Enrolling or revoking SOMEONE ELSE's face rewrites their record and
+         * hands them (or removes) a login credential — an edit of that
+         * employee, so it needs `can_edit` on hr.employee, exactly like the
+         * profile edit does. Being in the same tenant was the only bar before,
+         * which meant a view-only branch user could re-enrol anyone's face.
+         *
+         * Self-enrolment never reaches this line (it returned above), so the
+         * Clock-In screen's "register my own face" flow is untouched. */
+        $this->assertMayEditEmployees($user);
 
         // Tenant users can act on:
         //   - rows matching their own client_id, AND

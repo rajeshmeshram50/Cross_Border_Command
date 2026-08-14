@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 /* Same rules as the Add/Edit Employee wizard — imported, not re-implemented,
    so a fix to the split or the slabs lands on both screens at once. */
@@ -601,6 +602,11 @@ export default function HrEmployeeOnboarding() {
   // open the full 4-step wizard for the chosen row.
   const navigate = useNavigate();
 
+  /* Per-action grants for the Onboarding hub. Starting the wizard creates an
+     onboarding record → can_add; editing the employee behind a row → can_edit.
+     View-only reads the lists, the checklist and the evidence vault. */
+  const perm = useModulePermission('hr.onboarding', 'onboarding records');
+
   const [tab, setTab] = useState<'pending' | 'completed'>('pending');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -913,8 +919,18 @@ export default function HrEmployeeOnboarding() {
         const notJoinedYet = !!r.joinDateIso && r.joinDateIso > new Date().toISOString().slice(0, 10);
         return (
           <div className="d-flex align-items-center justify-content-center gap-2 flex-nowrap">
-            <Tooltip label="Edit Employee">
-              <button type="button" className="onb-edit-btn flex-shrink-0" aria-label="Edit Employee" onClick={() => openEdit(r)}>
+            {/* Greyed but still clickable when the grant is missing, so the
+                click can name the permission — a `disabled` button would
+                swallow it and say nothing. */}
+            <Tooltip label={perm.lockedTitle('edit') ?? 'Edit Employee'}>
+              <button
+                type="button"
+                className="onb-edit-btn flex-shrink-0"
+                aria-label="Edit Employee"
+                aria-disabled={!perm.canEdit || undefined}
+                style={perm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
+                onClick={() => perm.guard('edit', () => openEdit(r))}
+              >
                 <i className="ri-pencil-line" style={{ fontSize: 14 }} />
               </button>
             </Tooltip>
@@ -923,17 +939,24 @@ export default function HrEmployeeOnboarding() {
                 created — HR needs to see them coming — but starting the wizard
                 then would stamp joining-day paperwork months early. Enabled ON
                 the joining date, not after it. */}
+            {/* Two different blocks stack here. `notJoinedYet` is a fact about
+                the employee — hard-disabled, tooltip says why. A missing grant
+                is about the USER — greyed but clickable, so the toast can name
+                the permission. */}
             <Tooltip label={notJoinedYet
               ? `Joins on ${r.joinDate} — onboarding opens that day`
-              : 'Start the onboarding wizard for this employee'}>
+              : (perm.lockedTitle('add') ?? 'Start the onboarding wizard for this employee')}>
               <span className="d-inline-flex">
                 <button
                   type="button"
                   className="onb-init-btn is-compact flex-shrink-0"
                   aria-label="Initiate Onboarding"
                   disabled={notJoinedYet}
-                  style={notJoinedYet ? { opacity: .5, cursor: 'not-allowed' } : undefined}
-                  onClick={() => openInitiate(r)}
+                  aria-disabled={!perm.canAdd || undefined}
+                  style={notJoinedYet || !perm.canAdd
+                    ? { opacity: .5, cursor: 'not-allowed', filter: perm.canAdd ? undefined : 'grayscale(0.7)' }
+                    : undefined}
+                  onClick={() => perm.guard('add', () => openInitiate(r))}
                 >
                   <i className="ri-add-line" style={{ fontSize: 13 }} />
                   Initiate Onboarding
@@ -944,8 +967,10 @@ export default function HrEmployeeOnboarding() {
         );
       },
     },
+    // perm.* included so the action cells re-render when a grant refresh lands
+    // after mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [tab]);
+  ], [tab, perm.canAdd, perm.canEdit]);
 
   return (
     <>
@@ -1894,6 +1919,9 @@ function InitiateOnboardingModal({
   onSaved?: () => void;
 }) {
   const toast = useToast();
+  /* Leave Plan on stage 1 is Leave-module data — gated on hr.leave, not on
+     whoever may run onboarding (QA #13). */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const [activeStage, setActiveStage] = useState(1);
   // Stage 5 (Policies & Agreements) live signing status: total matched
   // agreement templates vs how many have a COMPLETED signing run. Lets the
@@ -2057,17 +2085,22 @@ function InitiateOnboardingModal({
           : merged;
         setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label, deptId: m.department_id != null ? String(m.department_id) : undefined, isHod: !!m.is_hod })));
       }).catch(() => { if (!cancelled) setManagerOpts([]); }),
-      api.get('/leave-plans').then(r => {
-        if (cancelled) return;
-        const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-        // Only surface plans whose quota setup is fully complete — draft /
-        // unconfigured plans must not be assignable to an employee.
-        setLeavePlanOpts(
-          plans
-            .filter((p: any) => p.setup_complete)
-            .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
-        );
-      }).catch(() => { if (!cancelled) setLeavePlanOpts([]); }),
+      /* Leave plans are Leave-module data — not fetched at all without a grant
+         there, so the dropdown can't offer plans the user has no access to
+         (QA #13). Same rule as the Add/Edit Employee form. */
+      (leavePerm.canView
+        ? api.get('/leave-plans').then(r => {
+            if (cancelled) return;
+            const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
+            // Only surface plans whose quota setup is fully complete — draft /
+            // unconfigured plans must not be assignable to an employee.
+            setLeavePlanOpts(
+              plans
+                .filter((p: any) => p.setup_complete)
+                .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+            );
+          }).catch(() => { if (!cancelled) setLeavePlanOpts([]); })
+        : Promise.resolve(setLeavePlanOpts([]))),
       // Overtime (OT) Master — active rate names for the Overtime picker.
       reloadOvertimeRates(() => cancelled),
       api.get('/holiday-groups')
@@ -4469,7 +4502,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} placeholder={leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave'} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
+                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>

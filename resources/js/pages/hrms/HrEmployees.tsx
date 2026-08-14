@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -26,6 +27,7 @@ import {
   seedBreakup, absorbIntoSpecial, statutoryPt, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import '../../../css/recruitment.css';
 
 
@@ -283,6 +285,7 @@ type ExpiryDays = 3 | 7 | 15;
 export default function HrEmployees() {
   // Active branch — the auto-fetched Legal Entity resolves against it.
   const { selectedBranchId } = useBranchSwitcher();
+  const { user: authUser } = useAuth();
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
   const [tabSwitching, setTabSwitching] = useState(false);
   useEffect(() => {
@@ -452,6 +455,14 @@ export default function HrEmployees() {
 
   const toast = useToast();
   const confirmDialog = useConfirm();
+  /* Per-action grants for this page. Slug matches what the API checks —
+     EmployeeController::authorize() resolves 'hr.employee' — so a button the
+     UI allows is a call the server will accept, and vice versa. */
+  const perm = useModulePermission('hr.employee', 'employees');
+  /* Leave Plan on the employee form is Leave-module data (QA #13). Editing an
+     employee doesn't imply access to the leave configuration, so the field is
+     gated on hr.leave rather than on hr.employee. */
+  const leavePerm = useModulePermission('hr.leave', 'leave plans');
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   type OnbErrors = { name?: string; email?: string; dept?: string; date?: string };
@@ -697,6 +708,13 @@ export default function HrEmployees() {
   const [eLeavePlan, setELeavePlan] = useState('');
   const [leavePlanOptions, setLeavePlanOptions] = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
+    /* Leave plans belong to the Leave module, not this one. Without a grant
+       there the list isn't fetched at all — so the dropdown offers nothing
+       instead of exposing (and letting someone assign) plans they have no
+       access to. The "required" rule below only bites when options exist, so
+       the form stays completable. */
+    if (!leavePerm.canView) { setLeavePlanOptions([]); return; }
+
     leavePlansApi.list()
       .then(plans => {
         // Only configured plans (quota setup complete) may be assigned to an
@@ -708,7 +726,7 @@ export default function HrEmployees() {
         );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
-  }, []);
+  }, [leavePerm.canView]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const holidayGroupSelectOptions = useMemo(() => {
@@ -964,6 +982,9 @@ export default function HrEmployees() {
   const [toggling, setToggling] = useState(false);
 
   const requestToggle = (employee: EmployeeRow, next: boolean, commit: () => void) => {
+    // Backstop for the switch's own permission lock — this is the only path
+    // that reaches the enable/disable API, so the check belongs here too.
+    if (!perm.canEdit) { perm.deny('edit'); return; }
     setTogglePending({ employee, next, commit });
   };
   const cancelToggle = () => { if (!toggling) setTogglePending(null); };
@@ -2787,31 +2808,94 @@ export default function HrEmployees() {
       cell: info => {
         const e = info.row.original;
         const rowDisabled = !e.enabled;
+        // An employee must not edit their OWN record from this list — freeze
+        // Edit and Permissions on the logged-in user's own row (QA #150). Match
+        // by linked user id, falling back to the linked employee id.
+        const isSelf = !!authUser && (
+          // `user_id` rides on the row payload but isn't in EmployeeRow's type
+          // — same cast the _dbId lookup below already uses.
+          ((e as any).user_id != null && Number((e as any).user_id) === Number(authUser.id)) ||
+          ((authUser as any).employee_id != null && Number((e as any)._dbId) === Number((authUser as any).employee_id))
+        );
         // EXITED employees (exit case completed → status Resigned/Terminated)
         // are PERMANENTLY disabled and cannot be re-enabled here; a plain
         // soft-disable (Inactive) stays reversible.
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
-            <ActionBtn title="Edit" icon="ri-pencil-line" color="info" onClick={() => openEditEmployee(e)} disabled={rowDisabled} />
-            <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
+            {/* Two independent rules sit on this button, and they behave
+                differently on purpose:
+                  disabled → a fact about the ROW (deactivated, or your own
+                             record — you can't edit yourself, QA #150). Inert;
+                             the tooltip is the whole explanation.
+                  locked   → a fact about the USER (no can_edit). Greyed but
+                             still clickable, so the click names the missing
+                             permission instead of doing nothing. */}
             <ActionBtn
-              title={(e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face'}
+              title={isSelf
+                ? "You can't edit your own record"
+                : (perm.lockedTitle('edit') ?? 'Edit')}
+              icon="ri-pencil-line" color="info"
+              onClick={() => perm.guard('edit', () => openEditEmployee(e))}
+              disabled={rowDisabled || isSelf}
+              locked={!perm.canEdit}
+            />
+            {/* Asset assignment saves through PUT /employees/{id}, which the
+                API gates on can_edit — so a view-only user would otherwise
+                fill the whole panel only to meet a raw 403 on save. */}
+            <ActionBtn
+              title={perm.lockedTitle('edit') ?? 'Asset'}
+              icon="ri-computer-line" color="primary"
+              onClick={() => perm.guard('edit', () => openAssignAssets(e))}
+              disabled={rowDisabled}
+              locked={!perm.canEdit}
+            />
+            {/* Enrolling someone's face writes a biometric to their record —
+                a change to the employee, so it follows can_edit. (A user
+                enrolling their OWN face from the Clock-In screen is a separate
+                path and is not affected by this.) */}
+            <ActionBtn
+              title={perm.lockedTitle('edit')
+                ?? ((e as any).faceRegistered ? 'Re-register Face (already enrolled)' : 'Register Face')}
               icon="ri-user-smile-line"
               color={(e as any).faceRegistered ? 'success' : 'secondary'}
               badge={(e as any).faceRegistered ? 'dot' : undefined}
-              onClick={() => setFaceRegEmployeeId((e as any)._dbId)}
+              onClick={() => perm.guard('edit', () => setFaceRegEmployeeId((e as any)._dbId))}
               disabled={rowDisabled}
+              locked={!perm.canEdit}
             />
-            <ActionBtn title="Permissions" icon="ri-lock-2-line" color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled} />
+            {/* Changing what someone else can access is the furthest-reaching
+                edit on this page — view-only must not reach it. */}
+            <ActionBtn
+              title={isSelf
+                ? "You can't change your own permissions"
+                : (perm.lockedTitle('edit') ?? 'Permissions')}
+              icon="ri-lock-2-line" color="warning"
+              onClick={() => perm.guard('edit', () => openPermissions(e))}
+              disabled={rowDisabled || isSelf}
+              locked={!perm.canEdit}
+            />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
             {tab === 'disabled' && (
-              <ActionBtn title="Delete permanently" icon="ri-delete-bin-line" color="danger" onClick={() => setConfirmDelete(e)} />
+              <ActionBtn
+                title={perm.lockedTitle('delete') ?? 'Delete permanently'}
+                icon="ri-delete-bin-line" color="danger"
+                onClick={() => perm.guard('delete', () => setConfirmDelete(e))}
+                locked={!perm.canDelete}
+              />
             )}
+            {/* Enabling / disabling an employee IS an edit of their record —
+                and disabling routes through the delete endpoint — so the
+                switch needs both flags before it will move. */}
             <ToggleSwitch
               initial={e.enabled}
-              locked={exited}
-              lockedTitle="This employee has exited (exit process completed) and cannot be re-enabled."
+              locked={exited || !perm.canEdit}
+              lockedTitle={exited
+                ? 'This employee has exited (exit process completed) and cannot be re-enabled.'
+                : (perm.lockedTitle('edit') ?? '')}
+              // Only the permission lock explains itself on click; an exited
+              // employee is a hard stop with nothing to grant.
+              onLockedClick={exited ? undefined : () => perm.deny('edit')}
               onRequestToggle={(next, commit) => requestToggle(e, next, commit)}
             />
           </div>
@@ -2819,7 +2903,10 @@ export default function HrEmployees() {
       },
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [isDark, tab, openEditEmployee, openAssignAssets, openPermissions, openVault, requestToggle]);
+  ], [isDark, tab, openEditEmployee, openAssignAssets, openPermissions, openVault, requestToggle,
+      // Grants can change mid-session (a manager saves new permissions and the
+      // auth refresh lands) — the action column has to re-render when they do.
+      perm.canEdit, perm.canDelete]);
 
   return (
     <>
@@ -2838,25 +2925,40 @@ export default function HrEmployees() {
                 </div>
               </div>
               <div className="d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
+                {/* Each toolbar action is greyed when its flag is missing, but
+                    still clickable so the toast can say WHICH permission is
+                    missing. `disabled` would swallow the click and leave the
+                    user staring at a dead button. `lockedStyle` carries the
+                    greying; see the helper at the bottom of this file. */}
                 <Button
-                  onClick={handleExportEmployees}
+                  onClick={() => perm.guard('export', handleExportEmployees)}
                   disabled={exporting}
+                  aria-disabled={!perm.canExport || undefined}
+                  style={lockedStyle(!perm.canExport)}
                   className="rounded-pill px-3 hr-emp-onboard-btn"
-                  title="Export the current employee list to Excel"
+                  title={perm.lockedTitle('export') ?? 'Export the current employee list to Excel'}
                 >
                   <i className={`align-bottom me-1 ${exporting ? 'ri-loader-4-line' : 'ri-file-excel-2-line'}`}></i>
                   {exporting ? 'Exporting…' : 'Export'}
                 </Button>
+                {/* An onboarding invite is how an employee joins the roster —
+                    the same outcome as Add, so it rides on the same flag. */}
                 <Button
-                  onClick={() => setOnboardOpen(true)}
+                  onClick={() => perm.guard('add', () => setOnboardOpen(true))}
+                  aria-disabled={!perm.canAdd || undefined}
+                  style={lockedStyle(!perm.canAdd)}
                   className="rounded-pill px-3 hr-emp-onboard-btn"
+                  title={perm.lockedTitle('add') ?? 'Send an onboarding link to a new joiner'}
                 >
                   <i className="ri-user-add-line align-bottom me-1"></i>Onboarding Link
                 </Button>
                 <Button
-                  onClick={openAddEmployee}
+                  onClick={() => perm.guard('add', openAddEmployee)}
                   color="secondary"
+                  aria-disabled={!perm.canAdd || undefined}
+                  style={lockedStyle(!perm.canAdd)}
                   className="btn-label waves-effect waves-light rounded-pill"
+                  title={perm.lockedTitle('add')}
                 >
                   <i className="ri-add-line label-icon align-middle rounded-pill fs-16 me-2"></i>
                   Add Employee
@@ -4083,7 +4185,19 @@ export default function HrEmployees() {
                     <Row className="g-3">
                       <Col md={4}>
                         <label className="emp-label">Leave Plan<span className="req">*</span></label>
-                        <MasterSelect value={eLeavePlan} onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }} options={leavePlanOptions} placeholder={leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave'} invalid={!!eErrors.leave_plan} />
+                        <MasterSelect
+                          value={eLeavePlan}
+                          onChange={(v) => { setELeavePlan(v); clearEErr('leave_plan'); }}
+                          options={leavePlanOptions}
+                          // Greyed shut without the Leave grant — the list is
+                          // never fetched in that case, so there is nothing to
+                          // open and nothing to assign.
+                          disabled={!leavePerm.canView}
+                          placeholder={!leavePerm.canView
+                            ? 'Requires Leave module access'
+                            : (leavePlanOptions.length ? 'Select a leave plan' : 'No plans found — create one in HR > Leave')}
+                          invalid={!!eErrors.leave_plan}
+                        />
                         {eErrors.leave_plan && <small className="emp-err">{eErrors.leave_plan}</small>}
                       </Col>
                       <Col md={4}>
@@ -4982,15 +5096,40 @@ export default function HrEmployees() {
    into the shared one and this page kept rendering the local copy, so the
    popover here never changed. Deleted; the shared component is imported. */
 
+/**
+ * Greying for a control the user lacks the permission for. Returns undefined
+ * when allowed so the element keeps its own styling untouched.
+ *
+ * Note it does NOT set `pointer-events: none` — the control must still receive
+ * the click that triggers the explanatory toast.
+ */
+function lockedStyle(locked: boolean): React.CSSProperties | undefined {
+  return locked
+    ? { opacity: 0.5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }
+    : undefined;
+}
+
+/**
+ * `disabled` and `locked` look identical but behave differently on purpose.
+ *
+ *   disabled — the action is impossible for this ROW (employee is deactivated).
+ *              Truly inert; there is nothing to explain.
+ *   locked   — the action is possible but this USER lacks the permission flag.
+ *              Stays clickable so the handler can raise the "you don't have
+ *              permission" toast. A greyed button that swallows the click
+ *              leaves the user guessing whether the app is broken.
+ */
 function ActionBtn({
-  title, icon, color, onClick, disabled, badge,
-}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; badge?: 'dot' }) {
+  title, icon, color, onClick, disabled, locked, badge,
+}: { title: string; icon: string; color: string; onClick: () => void; disabled?: boolean; locked?: boolean; badge?: 'dot' }) {
+  const dim = disabled || locked;
   return (
     <Tooltip label={title}>
       <button
         type="button"
         aria-label={title}
         disabled={disabled}
+        aria-disabled={locked || undefined}
         className="btn p-0 d-inline-flex align-items-center justify-content-center position-relative"
         style={{
           width: 30, height: 30, borderRadius: 8,
@@ -4998,17 +5137,17 @@ function ActionBtn({
           border: '1px solid var(--vz-border-color)',
           color: 'var(--vz-secondary-color)',
           transition: 'all .15s ease',
-          opacity: disabled ? 0.4 : 1,
-          cursor: disabled ? 'not-allowed' : 'pointer',
+          opacity: dim ? 0.4 : 1,
+          cursor: dim ? 'not-allowed' : 'pointer',
         }}
         onMouseEnter={e => {
-          if (disabled) return;
+          if (dim) return;
           const el = e.currentTarget as HTMLButtonElement;
           el.style.borderColor = `var(--vz-${color})`;
           el.style.color = `var(--vz-${color})`;
         }}
         onMouseLeave={e => {
-          if (disabled) return;
+          if (dim) return;
           const el = e.currentTarget as HTMLButtonElement;
           el.style.borderColor = 'var(--vz-border-color)';
           el.style.color = 'var(--vz-secondary-color)';
@@ -5183,6 +5322,7 @@ function ToggleSwitch({
   onRequestToggle,
   locked = false,
   lockedTitle,
+  onLockedClick,
 }: {
   initial: boolean;
   onRequestToggle?: (next: boolean, commit: () => void) => void;
@@ -5190,11 +5330,16 @@ function ToggleSwitch({
   // re-enabled). It renders disabled with an explanatory tooltip.
   locked?: boolean;
   lockedTitle?: string;
+  /* Supplied when the lock is a missing PERMISSION rather than a fact about
+     the employee. The switch then stays clickable (aria-disabled, not
+     disabled) so the click can raise a toast naming the missing flag — an
+     inert switch would read as a bug. */
+  onLockedClick?: () => void;
 }) {
   const [on, setOn] = useState(initial);
   const commit = () => setOn(v => !v);
   const handleClick = () => {
-    if (locked) return;
+    if (locked) { onLockedClick?.(); return; }
     if (onRequestToggle) onRequestToggle(!on, commit);
     else commit();
   };
@@ -5203,7 +5348,8 @@ function ToggleSwitch({
       type="button"
       onClick={handleClick}
       aria-pressed={on}
-      disabled={locked}
+      disabled={locked && !onLockedClick}
+      aria-disabled={locked || undefined}
       title={locked ? (lockedTitle || 'This employee has exited and cannot be re-enabled.') : undefined}
       className={`btn p-0 border-0 d-inline-flex align-items-center emp-toggle${on ? ' is-on' : ''}`}
       style={{

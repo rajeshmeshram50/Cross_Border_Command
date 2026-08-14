@@ -4,6 +4,7 @@ import { MasterSelect, MasterDatePicker, MasterFormStyles } from '../master/mast
 import api from '../../api';
 import { useToast } from '../../contexts/ToastContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useModulePermission } from '../../hooks/useModulePermission';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
@@ -111,6 +112,11 @@ export default function HrExitManagement() {
     (selfEmployeeId != null && Number(e.id) === Number(selfEmployeeId))
     || (!!selfEmployeeCode && e.empId.trim().toLowerCase() === selfEmployeeCode)
   ), [selfEmployeeId, selfEmployeeCode]);
+  /* Per-action grants for Exit Management. Initiating a case is an ADD (a new
+     exit record); continuing / rehiring edits one. View-only therefore reads
+     the list and opens the evidence vault, and nothing else. */
+  const perm = useModulePermission('hr.exit', 'exit records');
+
   const SELF_EXIT_MSG = 'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.';
   const denySelfExit = useCallback(() => {
     toast.warning('Self exit not allowed', SELF_EXIT_MSG);
@@ -453,9 +459,11 @@ export default function HrExitManagement() {
              tooltip instead of the action simply being absent. */
           /* Rehiring yourself is the same self-dealing as exiting yourself —
              it reverses a terminal decision about your own employment. */
+          /* Rehire reverses a completed exit — an edit of the record, so it
+             needs can_edit on top of the self / eligibility rules. */
           const rehireBlocked = isSelf(e)
             ? 'You cannot rehire yourself. Ask another user with Exit Management access.'
-            : rehireBlockedReason(e);
+            : (perm.lockedTitle('edit') ?? rehireBlockedReason(e));
           const canRehire = !rehireBlocked;
           const rehireWhy = rehireBlocked ?? 'Reactivate this employee';
           return (
@@ -475,7 +483,12 @@ export default function HrExitManagement() {
                   aria-label="Rehire employee"
                   className={`exit-action-btn exit-action-btn--icon exit-action-btn--rehire${canRehire ? '' : ' is-off'}`}
                   aria-disabled={!canRehire}
-                  onClick={() => { if (canRehire) setRehiring(e); }}
+                  onClick={() => {
+                    if (canRehire) { setRehiring(e); return; }
+                    // Only the permission block has something to say; the
+                    // eligibility rules are already in the tooltip.
+                    if (!perm.canEdit && !isSelf(e)) perm.deny('edit');
+                  }}
                 >
                   <i className="ri-user-follow-line" />
                 </button>
@@ -489,15 +502,24 @@ export default function HrExitManagement() {
            disabled button swallows pointer events, so neither the tooltip nor
            the click-through message would ever fire. */
         const self = isSelf(e);
+        /* Permission locks reuse the self-exit treatment exactly: greyed via
+           `is-off`, aria-disabled (never `disabled`, which would swallow the
+           click), and the click explains itself through a toast. */
         if (isInProgress || isScheduled) {
+          const blocked = self || !perm.canEdit;
           return (
-            <Tooltip label={self ? SELF_EXIT_MSG : (isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process')} position="left" themed>
+            <Tooltip label={self
+              ? SELF_EXIT_MSG
+              : (perm.lockedTitle('edit')
+                ?? (isScheduled ? `Exit scheduled — notice starts ${noticeFromLabel || 'later'}. Continue editing.` : 'Continue exit process'))}
+              position="left" themed>
               {/* A case saved before the type question existed still has to
                   answer it before the wizard can pick its stages. */}
-              <button type="button" className={`exit-action-btn exit-action-btn--continue${self ? ' is-off' : ''}`}
-                      aria-disabled={self}
+              <button type="button" className={`exit-action-btn exit-action-btn--continue${blocked ? ' is-off' : ''}`}
+                      aria-disabled={blocked}
                       onClick={() => {
                         if (self) { denySelfExit(); return; }
+                        if (!perm.canEdit) { perm.deny('edit'); return; }
                         e.exitType.trim() ? setProcessing(e) : setInitiating(e);
                       }}>
                 <i className="ri-arrow-right-line" />Continue
@@ -505,12 +527,18 @@ export default function HrExitManagement() {
             </Tooltip>
           );
         }
+        // Starting a case creates an exit record → can_add.
+        const initiateBlocked = self || !perm.canAdd;
         return (
-          <Tooltip label={self ? SELF_EXIT_MSG : 'Initiate exit process'} position="left" themed>
-            <button type="button" className={`exit-action-btn exit-action-btn--initiate${self ? ' is-off' : ''}`}
-                    aria-disabled={self}
-                    onClick={() => { if (self) { denySelfExit(); return; } setInitiating(e); }}>
-              <i className="ri-logout-box-r-line" />Initiate Exit
+          <Tooltip label={self ? SELF_EXIT_MSG : (perm.lockedTitle('add') ?? 'Initiate exit process')} position="left" themed>
+            <button type="button" className={`exit-action-btn exit-action-btn--initiate${initiateBlocked ? ' is-off' : ''}`}
+                    aria-disabled={initiateBlocked}
+                    onClick={() => {
+                      if (self) { denySelfExit(); return; }
+                      if (!perm.canAdd) { perm.deny('add'); return; }
+                      setInitiating(e);
+                    }}>
+            <i className="ri-logout-box-r-line" />Initiate Exit
             </button>
           </Tooltip>
         );
@@ -522,8 +550,10 @@ export default function HrExitManagement() {
     // `isSelf` too: it resolves once /me lands, and without it the actions
     // column would keep the pre-auth cells that treat every row as someone
     // else's.
+    // Grants can land after mount (auth refresh), so the action cells have to
+    // re-render when they do — same reasoning as `isSelf`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [tab, isSelf]);
+  ], [tab, isSelf, perm.canAdd, perm.canEdit]);
 
 
   const KPI_CARDS = [
@@ -1376,6 +1406,33 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const lwdMin = noticeServed
     ? (noticePeriodEnd || noticeDate || todayIso)
     : (noticeDate || todayIso);
+
+  /* FLOOR for every money-movement date on this case (QA #89).
+   *
+   * A settlement cannot be paid — nor a recovery received — before the exit
+   * that produced it was initiated. Stage 4's Payment Date had no minimum at
+   * all, so the picker offered every past date back through the calendar, and
+   * a settlement could be dated months before the resignation.
+   *
+   * The floor is the notice date, i.e. the day the exit was initiated. Left
+   * empty (no minimum) when stage 1 hasn't been filled in yet, rather than
+   * falling back to today — a case being back-filled would otherwise be unable
+   * to record its own real payment date. */
+  const exitStartIso = noticeDate || lwd || '';
+
+  /* The picker greys out-of-range days, but a date can still arrive from
+     state saved earlier — e.g. a payment date typed on stage 4, then stage 1's
+     notice date pushed later. Re-checked at submit so the stored value can
+     never sit outside the case's own timeline. Returns a message, or '' when
+     the date is fine. */
+  const paymentDateProblem = (iso: string): string => {
+    if (!iso) return '';
+    if (exitStartIso && iso < exitStartIso) {
+      return `The exit was initiated on ${fmtDateShort(exitStartIso)} — a payment cannot be dated before it.`;
+    }
+    if (iso > todayIso) return 'A payment cannot be dated in the future.';
+    return '';
+  };
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
      what a standard resignation looks like). The notice period end is the last
@@ -2432,6 +2489,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.warning('Complete the payment details', `${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} required.`);
       return;
     }
+    const rcvDateProblem = paymentDateProblem(rcv.date);
+    if (rcvDateProblem) { toast.warning('Check the payment date', rcvDateProblem); return; }
     if (verdict === 'approved' && got + 0.005 < settle.amount) {
       toast.warning('Amount is short',
         `${fmtMoney(got)} received against ${fmtMoney(settle.amount)} due — collect the balance, or reject this payment.`);
@@ -2534,6 +2593,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return;
     }
     if (!fnfMeta.payDate) { toast.warning('Payment date required', 'Enter the date the payment was made.'); return; }
+    const payDateProblem = paymentDateProblem(fnfMeta.payDate);
+    if (payDateProblem) { toast.warning('Check the payment date', payDateProblem); return; }
     if (fnfMeta.approval !== 'Approved') {
       toast.warning('Finance approval pending', 'The finance controller must approve the settlement before it can be marked paid.');
       return;
@@ -2971,7 +3032,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         </Col>
                         <Col md={4}>
                           <EpField label="Payment Date" required>
-                            <EpInput type="date" value={rcv.date} onChange={v => setRcv(s => ({ ...s, date: v }))} max={todayIso} />
+                            <EpInput type="date" value={rcv.date} onChange={v => setRcv(s => ({ ...s, date: v }))} min={exitStartIso || undefined} max={todayIso} />
                           </EpField>
                         </Col>
                         <Col md={4}>
@@ -3225,7 +3286,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </Col>
                     <Col md={6}>
                       <EpField label="Payment Date" required >
-                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid} />
+                        {/* Bounded to [exit initiated .. today]: a settlement
+                            can be neither paid before the exit began nor dated
+                            in the future — this records a payment that has
+                            already happened. */}
+                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid} min={exitStartIso || undefined} max={todayIso} />
                       </EpField>
                     </Col>
                   </Row>
