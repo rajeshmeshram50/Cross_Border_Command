@@ -55,10 +55,19 @@ class FaceBiometricController extends Controller
     {
         $data = $request->validate([
             'descriptor'   => 'required|array|size:' . self::DESCRIPTOR_LEN,
-            'descriptor.*' => 'required|numeric',
+            // Same bounds the punch path has always applied — enrolment had
+            // none, so a degenerate or wildly-scaled vector could be stored as
+            // someone's permanent credential.
+            'descriptor.*' => 'required|numeric|between:-5,5',
             'consent'      => 'required|accepted',
             'employee_id'  => 'nullable|integer',
         ]);
+
+        if (AuthController::isDegenerateDescriptor($data['descriptor'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'descriptor' => ['That face capture was not usable. Please re-capture in better lighting.'],
+            ]);
+        }
 
         $employee = $this->resolveTarget($request);
         // A disabled employee (soft-deleted or terminal status) has no active
@@ -75,29 +84,43 @@ class FaceBiometricController extends Controller
         // person's face under two employee records, which would then make
         // face login / clock-in ambiguous. Re-enrolment of the SAME employee
         // is excluded from the scan.
-        $conflict = $this->findDuplicateOwner($employee, $captured);
-        if ($conflict !== null) {
-            $who = $conflict->display_name ?: ('Employee #' . $conflict->id);
-            $code = $conflict->emp_code ? " ({$conflict->emp_code})" : '';
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'descriptor' => [sprintf(
-                    'This face is already registered for %s%s. Each face can only be linked to one employee.',
-                    $who, $code,
-                )],
-            ]);
-        }
+        /* The duplicate scan and the write have to be ONE atomic step. Checked
+         * outside a transaction, two enrolments of the same face submitted at
+         * the same moment both scanned before either wrote, both saw no
+         * conflict, and the face ended up linked to two employees — precisely
+         * the state this guard exists to prevent. The row lock serialises
+         * enrolments within the tenant, which is a rare, human-paced action, so
+         * the contention cost is nil. */
+        \Illuminate\Support\Facades\DB::transaction(function () use ($employee, $captured) {
+            \App\Models\Employee::where('client_id', $employee->client_id)
+                ->whereNotNull('face_descriptor')
+                ->lockForUpdate()
+                ->get(['id']);
 
-        $employee->update([
-            'face_descriptor'          => $captured,
-            'face_registered_at'       => now(),
-            // Only stamp consent_given_at the FIRST time. Re-enrolment keeps
-            // the original opt-in date so the audit trail isn't smashed.
-            'face_consent_given_at'    => $employee->face_consent_given_at ?: now(),
-            'face_consent_revoked_at'  => null,
-            // Once a face is registered the physical biometric_status column
-            // transitions to "Registered" so the existing HR view reflects it.
-            'biometric_status'         => 'Registered',
-        ]);
+            $conflict = $this->findDuplicateOwner($employee, $captured);
+            if ($conflict !== null) {
+                $who = $conflict->display_name ?: ('Employee #' . $conflict->id);
+                $code = $conflict->emp_code ? " ({$conflict->emp_code})" : '';
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'descriptor' => [sprintf(
+                        'This face is already registered for %s%s. Each face can only be linked to one employee.',
+                        $who, $code,
+                    )],
+                ]);
+            }
+
+            $employee->update([
+                'face_descriptor'          => $captured,
+                'face_registered_at'       => now(),
+                // Only stamp consent_given_at the FIRST time. Re-enrolment keeps
+                // the original opt-in date so the audit trail isn't smashed.
+                'face_consent_given_at'    => $employee->face_consent_given_at ?: now(),
+                'face_consent_revoked_at'  => null,
+                // Once a face is registered the physical biometric_status column
+                // transitions to "Registered" so the existing HR view reflects it.
+                'biometric_status'         => 'Registered',
+            ]);
+        });
 
         return response()->json([
             'message'       => 'Face enrolment saved.',

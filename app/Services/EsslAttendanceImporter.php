@@ -113,17 +113,38 @@ class EsslAttendanceImporter
 
         $uids = array_values(array_unique(array_column($clean, 'user_id')));
 
-        // Resolve employees by tenant + attendance_number (the mapping key).
+        /* Leading zeros: devices pad the user id ("001") while the employee
+         * record holds "1", or the reverse. A plain string match silently
+         * dropped every one of those punches into unmatched_user_ids, which
+         * reads like an unenrolled employee rather than a formatting
+         * mismatch. Query on both spellings and key the lookup on a normalised
+         * form so either side can be padded.
+         *
+         * Only NUMERIC ids are normalised — an alphanumeric badge id is taken
+         * literally, since stripping characters there could collide two real
+         * employees. */
+        $uidVariants = $uids;
+        foreach ($uids as $u) {
+            if (ctype_digit($u)) {
+                $uidVariants[] = ltrim($u, '0') ?: '0';
+            }
+        }
+        $uidVariants = array_values(array_unique($uidVariants));
+
+        $normalise = static fn ($v) => ctype_digit((string) $v)
+            ? (ltrim((string) $v, '0') ?: '0')
+            : (string) $v;
+
         $employees = Employee::query()
             ->when($clientId, fn ($q) => $q->where('client_id', $clientId))
-            ->whereIn('attendance_number', $uids)
+            ->whereIn('attendance_number', $uidVariants)
             ->get()
-            ->keyBy(fn ($e) => (string) $e->attendance_number);
+            ->keyBy(fn ($e) => $normalise($e->attendance_number));
 
         // Bucket punches by (employee, local date).
         $buckets = [];
         foreach ($clean as $c) {
-            $emp = $employees->get($c['user_id']);
+            $emp = $employees->get($normalise($c['user_id']));
             if (!$emp) {
                 $unmatched[$c['user_id']] = true;
                 continue;
@@ -138,9 +159,28 @@ class EsslAttendanceImporter
                 continue;
             }
 
-            try {
-                $local = Carbon::parse($c['ts'], $tz);
-            } catch (\Throwable $e) {
+            /* STRICT parse. Carbon::parse() is lenient and rolls impossible
+             * clock times over instead of refusing them: a corrupted row
+             * reading "25:00:00" became 01:00 the NEXT day, landing a punch on
+             * the wrong date with nothing logged. The device format is fixed,
+             * so demand it exactly and treat anything else as the bad data it
+             * is. The seconds-less variant is accepted because some firmware
+             * omits them. */
+            $local = null;
+            foreach (['Y-m-d H:i:s', 'Y-m-d H:i'] as $fmt) {
+                try {
+                    $candidate = Carbon::createFromFormat($fmt, $c['ts'], $tz);
+                    // createFromFormat still tolerates overflow (25:00 → +1 day)
+                    // unless the round-trip is checked, so compare it back.
+                    if ($candidate && $candidate->format($fmt) === $c['ts']) {
+                        $local = $candidate;
+                        break;
+                    }
+                } catch (\Throwable $e) {
+                    // try the next format
+                }
+            }
+            if (!$local) {
                 $errors[] = ['user_id' => $c['user_id'], 'punched_at' => $c['ts'], 'reason' => 'unparseable timestamp'];
                 continue;
             }

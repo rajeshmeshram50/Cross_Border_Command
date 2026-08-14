@@ -29,17 +29,23 @@
 
 ---
 
-## ⏳ OPEN — recommended, not fixed this pass (larger / design decisions)
+## ✅ SECOND PASS (2026-08-13) — 7 further items fixed
+
+Marked inline below. Face auth: org-selection, active-account preference,
+enrolment race, descriptor validation. Importer: strict timestamps,
+leading-zero device ids. Plus Half-Day, resolved by the short-hours policy.
+
+## ⏳ OPEN — recommended, not fixed (larger / design decisions)
 
 ### Face authentication
 | Sev | Bug | file:line | Recommendation |
 |---|---|---|---|
-| **HIGH** | `faceLogin` has **no org-selection** — with the same email in multiple tenants it logs into whichever stored descriptor is numerically closest (noise decides the tenant). Password/Google login return `needs_org_selection`; face does not. | `AuthController.php:206-256` | Return `needs_org_selection` (409) when >1 same-email account has a face / matches; require `client_id`. |
-| **HIGH/MED** | Closest-match winner may be an **inactive/terminated** account → blocks an otherwise-valid login. | `AuthController.php:230-286` | Filter candidates to active/eligible BEFORE closest-match selection. |
+| ~~HIGH~~ **✅ FIXED 2026-08-13** | `faceLogin` had **no org-selection**. | `AuthController::faceLogin` | Now collects EVERY match under threshold and returns `needs_org_selection` (409) with the org list when the face matches accounts in more than one client and no `client_id` was sent — same shape as the password and Google paths. |
+| ~~HIGH/MED~~ **✅ FIXED 2026-08-13** | Closest-match winner could be an **inactive** account, locking the user out of their valid active one. | `AuthController::faceLogin` | Active accounts are now preferred before the closest-match pick. If ONLY an inactive account matched it is still selected, so the honest "your account is not active" message fires instead of "face did not match". |
 | **MEDIUM** | **No liveness / replay protection** — server trusts any POSTed 128-float descriptor; geo is advisory. Buddy/remote punch + a leaked descriptor is a reusable credential against the public `/login/face`. | `AttendanceController.php:1080+`, `AuthController.php:218+` | Document as an assurance gap; add challenge-nonce + optional geofence if enforcement needed. |
 | **MEDIUM** | **Face descriptors stored plaintext at rest** (passwords are Crypt-encrypted; biometrics are not). | migration `2026_05_12_042448:23`, `Employee.php:113` | Cast `'face_descriptor' => 'encrypted:array'`. |
-| **MEDIUM** | **Enrollment dedup is a TOCTOU race** (no lock) → one face → two employees. | `FaceBiometricController.php:78-100` | Wrap dedup+update in a locked transaction. |
-| **LOW-MED** | **Inconsistent descriptor validation** — `faceLogin`/`register` have no value bounds or length re-check (punch has `between:-5,5`); degenerate all-zero / `INF` vectors accepted. | AuthController:188, FaceBiometricController:57 | Apply `size:128` + `between:-5,5` on all three paths; reject degenerate vectors. |
+| ~~MEDIUM~~ **✅ FIXED 2026-08-13** | **Enrollment dedup was a TOCTOU race** → one face could link to two employees. | `FaceBiometricController::register` | Duplicate scan + write now run inside one transaction under `lockForUpdate()` on the tenant's enrolled rows. Enrolment is human-paced, so the contention cost is nil. |
+| ~~LOW-MED~~ **✅ FIXED 2026-08-13** | **Inconsistent descriptor validation** — login/enrolment accepted degenerate all-zero and `INF` vectors. | `AuthController`, `FaceBiometricController` | `between:-5,5` applied on all three paths, plus a shared `AuthController::isDegenerateDescriptor()` that rejects wrong-length, non-finite and near-zero-magnitude vectors (an all-zero vector sits an equal distance from every enrolled face — a perfect probe). |
 | **LOW** | Brute-force lockout is settings-gated (**default OFF**); face relies solely on 20/min IP throttle. | `AuthController.php:35-51` | Enable brute-force for the face route regardless of tenant setting. |
 
 ### Payroll / status interaction
@@ -54,14 +60,14 @@
 | Sev | Bug | Recommendation |
 |---|---|---|
 | **HIGH** | **Overnight / night-shift = 0 worked hours** (bucketed by local date; the 21:00 auto-checkout cap zeroes a >21:00 open `in`; a leading `out` next day is skipped). `Attendance.php:93-152` | Make auto-checkout shift-aware; pair a trailing open `in` with next-day leading `out`. |
-| **LOW-MED** | `Carbon::parse` non-strict (rolls over `25:00`); embedded offsets ignore terminal tz. `EsslAttendanceImporter.php:92` | `createFromFormat('Y-m-d H:i:s', …, $tz)` strict. |
-| **LOW-MED** | **Leading-zero device IDs** (`001` vs `1`) never match → silently unmatched. | Normalise numeric IDs on both sides. |
+| ~~LOW-MED~~ **✅ FIXED 2026-08-13** | `Carbon::parse` was non-strict — `25:00:00` silently rolled over to 01:00 the NEXT day, landing a punch on the wrong date. `EsslAttendanceImporter` | Now `createFromFormat` against the fixed device formats WITH a round-trip check (createFromFormat alone still tolerates overflow). `25:00:00`, `2026-13-45` and garbage are rejected into `errors[]`. Seconds-less firmware still accepted. |
+| ~~LOW-MED~~ **✅ FIXED 2026-08-13** | **Leading-zero device IDs** (`001` vs `1`) never matched and looked like unenrolled employees. | `EsslAttendanceImporter` | Numeric ids are normalised on BOTH sides (query widened to both spellings, lookup keyed on the normalised form). Alphanumeric badge ids are left literal, since stripping characters there could collide two real employees. |
 | **LOW-MED** | Dead `$branchId` param; `import()`'s `branch_id` input has no effect. | Wire it through or remove. |
 | **LOW-MED** | `import()` trusts body `client_id` for super-admin (client-less). `AttendanceController.php:101` | Require a validated `device_terminal_id` instead. |
 | **LOW** | Serial is the sole credential; default `allowed_ips` blank = any IP; `ingest_token` unused; TrustProxies dependency. | Require `ingest_token` and/or default IP allow-list; document TrustProxies. |
 | **LOW** | `employee_id` FKs `cascadeOnDelete` — a hard `forceDelete` wipes all attendance/punch history. | `restrictOnDelete` or archival guard. |
 | **LOW** | IST hardcoded for the face path & worked-time while the importer honours per-terminal tz — day-boundary divergence for non-IST tenants. | Thread terminal/employee tz into the worked-seconds accessor. |
-| **INFO** | **Half-Day is never computed** anywhere (dead enum + dead branch). | Implement or remove the concept. |
+| ~~INFO~~ **✅ RESOLVED SINCE** | **Half-Day is never computed.** | Superseded by the per-branch **short-hours policy** (`branches.short_hours_policy`, `Branch::shortHoursCreditFor()`): a worked day under the configured hours now earns 0.5 day credit (or 0). Off by default, so no existing payslip moved. |
 
 ---
 
