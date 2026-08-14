@@ -33,6 +33,15 @@ function fmtDateLabel(iso: string): string {
   return `${Number(d)} ${MONTHS_LONG[Number(mo) - 1]} ${y}`;
 }
 
+/** "HH:MM" → minutes past midnight, or null when unparseable. */
+function toMinutes(hhmm?: string): number | null {
+  const m = /^(\d{1,2}):(\d{2})$/.exec((hhmm || '').trim());
+  if (!m) return null;
+  const h = Number(m[1]);
+  const i = Number(m[2]);
+  return h > 23 || i > 59 ? null : h * 60 + i;
+}
+
 /** "09:40" → "09:40 AM", "18:30" → "06:30 PM" for the shift-timings display. */
 function fmt12h(hhmm?: string): string {
   const m = /^(\d{1,2}):(\d{2})/.exec((hhmm || '').trim());
@@ -83,18 +92,47 @@ export default function RegularizationModal({
       : inOuts.map(io => ({ action: 'keep' as const, oldIn: io.in, oldOut: io.out, newIn: io.in ?? '', newOut: io.out ?? '' }));
   }, [initialPunches]);
 
-  /* The time columns are NOT clamped to the shift window — any time of day can
-     be picked. Regularization exists precisely for the days attendance got the
-     times wrong, and the real cases routinely sit outside the shift: an early
-     arrival, work past the shift end, a night shift crossing midnight, or a
-     shift that was changed after the fact. Greying those hours out blocked the
-     correction the screen is for. The shift window is still SHOWN above as
-     context, so it is obvious what the expected hours were. */
+  /* The pickers stay UNRESTRICTED — any time of day can be typed. Greying the
+     out-of-shift hours out would block the correction the screen exists for
+     (an early arrival, a shift changed after the fact, a night shift crossing
+     midnight). What is enforced instead is what gets STORED: the server bounds
+     every punch to the assigned shift, because regularization corrects a day
+     the reader got wrong — it is not a way to claim overtime, which has to come
+     from a real punch at the device. So rather than disable the input, we warn
+     below the moment a picked time falls outside the window. */
 
   const [punchEdits, setPunchEdits] = useState<PunchEdit[]>(initialEdits);
   const [reason, setReason]       = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches', string>>>({});
+
+  /* Mirrors the server's shift bounding so the requester learns their 22:00 will
+     be trimmed BEFORE they submit, rather than discovering it on the approved
+     row. Falls back to the same 09:30–18:30 office default the backend uses when
+     the employee's shift resolves to no timing. */
+  const outOfShift = useMemo(() => {
+    const sMin = toMinutes(shiftStart) ?? toMinutes('09:30')!;
+    let eMin  = toMinutes(shiftEnd) ?? toMinutes('18:30')!;
+    const crossesMidnight = eMin <= sMin;
+    if (crossesMidnight) eMin += 1440;
+
+    // Matches the server's nearestToWindow: on a night shift "05:00" is the
+    // tail of the window while "21:00" is the hour before it — pick whichever
+    // reading sits nearer, so the warning and the trim never disagree.
+    const dist = (v: number) => (v < sMin ? sMin - v : v > eMin ? v - eMin : 0);
+    const lift = (v: number) =>
+      crossesMidnight && dist(v + 1440) < dist(v) ? v + 1440 : v;
+
+    return punchEdits.some(e => {
+      if (e.action === 'delete') return false;
+      return [e.newIn, e.newOut].some(t => {
+        const v = toMinutes(t);
+        if (v === null) return false;
+        const lifted = lift(v);
+        return lifted < sMin || lifted > eMin;
+      });
+    });
+  }, [punchEdits, shiftStart, shiftEnd]);
 
   useEffect(() => { setPunchEdits(initialEdits); }, [initialEdits]);
   // Reset transient fields each time the modal (re)opens for a fresh day.
@@ -168,7 +206,13 @@ export default function RegularizationModal({
             : managerName
               ? `Routed to ${managerName} for approval`
               : 'Routed for approval';
-      toast.success('Submitted', approverText);
+      // A trim is not a failure, but the requester must not believe times they
+      // never got were recorded — say so instead of a bare success.
+      if (row.shift_notice) {
+        toast.warning('Times trimmed to shift', `${row.shift_notice} ${approverText}`);
+      } else {
+        toast.success('Submitted', approverText);
+      }
       onSubmitted?.(row);
       onClose();
     } catch (err: any) {
@@ -284,6 +328,13 @@ export default function RegularizationModal({
                   )}
                 </div>
                 {errors.punches && <small className="att-reg-keka-error">{errors.punches}</small>}
+                {outOfShift && !errors.punches && (
+                  <small className="att-reg-keka-error" style={{ color: '#d98c00' }}>
+                    <i className="ri-error-warning-line me-1" />
+                    Some times fall outside the shift{shiftStart && shiftEnd ? ` (${fmt12h(shiftStart)} - ${fmt12h(shiftEnd)})` : ''}.
+                    Regularization can only correct hours within the shift — the extra time will be trimmed and will not be paid as overtime.
+                  </small>
+                )}
               </>
             )}
 

@@ -2043,6 +2043,30 @@ class PayrollService
     }
 
     /**
+     * Is this date a REST day for the employee, and which kind?
+     *
+     * Returns 'Holiday', 'Weekly Off', or null for an ordinary working day.
+     *
+     * Overtime detection treats a rest day specially (PAY-23: every hour worked
+     * on one is overtime), so anything that WRITES an attendance status has to
+     * be able to ask the same question this service answers — otherwise it can
+     * silently convert a rest day into a working day, or the reverse. Exposed
+     * for AttendanceRegularizationController, which must not let an approved
+     * correction restamp a weekly off as 'Present' and thereby turn the whole
+     * day into auto-paid overtime.
+     */
+    public function restDayKind(Employee $employee, Carbon $date): ?string
+    {
+        if (isset($this->holidayDateSet($employee, $date, $date)[$date->toDateString()])) {
+            return 'Holiday';
+        }
+
+        return \App\Support\WeekOff::isOff((string) ($employee->weekly_off ?? ''), $date)
+            ? 'Weekly Off'
+            : null;
+    }
+
+    /**
      * Holiday dates for this employee's group within [start, end], as a
      * Y-m-d => true lookup, with recurring entries re-anchored to the window.
      *

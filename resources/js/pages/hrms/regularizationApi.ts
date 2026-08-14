@@ -38,6 +38,9 @@ export interface ApiRegularization {
   // success toast instead of guessing from the org chart (bug #29).
   auto_approved?: boolean;
   pending_approver_label?: { name: string | null; role: string } | null;
+  // Set when the server trimmed requested times back to the assigned shift —
+  // regularization cannot be used to claim overtime.
+  shift_notice?: string | null;
   created_at: string;
   updated_at: string;
   approver?: { id: number; name: string } | null;

@@ -200,3 +200,17 @@
   cursor: pointer; text-align: left;
 }
 .hrexp-export-item:hover { background: var(--shim-secondary-bg, #f3f4f6); }
+
+/* ── Compact table toolbar on the Expense page ────────────────────────────
+   This page's header is tall (hero + 5 KPI cards + Spend Analytics), so the
+   table's tab rail is shrunk here to keep more rows above the fold. Scoped to
+   .hrexp-page so every OTHER table keeps the standard 40px tabs. Smaller tabs
+   also fit all four (All/Pending/Approved/Rejected) on ONE line, removing the
+   second row that was doubling the toolbar height. */
+.hrexp-page .dt-toolbar { padding: 6px 8px; row-gap: 8px; }
+.hrexp-page .dt-tabs { padding: 3px; }
+.hrexp-page .dt-tab { height: 32px; padding: 0 9px; font-size: 12px; }
+.hrexp-page .dt-tab .dt-tab-count { padding: 0 5px; min-width: 16px; }
+/* Narrower search on this page — on a big screen the default 600px field
+   stretched almost half the toolbar and dwarfed the tabs. */
+.hrexp-page .dt-search { height: 32px; flex: 0 1 360px; max-width: 360px; }

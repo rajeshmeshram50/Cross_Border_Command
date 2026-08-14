@@ -277,8 +277,8 @@ export default function HrExitManagement() {
       meta: { width: w(130, 108), wrap: true, align: 'center' },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118) },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124) }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: w(140, 118), align: 'center' },  cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: w(150, 124), align: 'center' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',

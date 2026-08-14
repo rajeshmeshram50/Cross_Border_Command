@@ -2004,8 +2004,12 @@
    TRUNCATED name and Download + Reupload icon actions. */
 .cand-cv-file {
   display: flex; align-items: center; gap: 10px;
-  margin-top: 8px;
-  padding: 9px 12px;
+  /* #28 — match the field's own drop-zone / the Source & Candidate Status
+     selects: no extra top margin (the label already has margin-bottom) and a
+     fixed 40px height instead of growing to ~64px around the 2-line info. */
+  margin-top: 0;
+  height: 40px; min-height: 40px;
+  padding: 5px 12px;
   border: 1px solid #ececf2;
   border-radius: 10px;
   background: #fafbfc;
@@ -2013,10 +2017,20 @@
 }
 [data-bs-theme="dark"] .cand-cv-file { border-color: var(--vz-border-color); background: rgba(255,255,255,0.03); }
 .cand-cv-file-icon {
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center;
-  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
-  background: rgba(59,130,246,0.12); color: #2563eb; font-size: 17px;
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  background: rgba(59,130,246,0.12); color: #2563eb; font-size: 16px;
 }
+/* Green "uploaded" tick — a file is attached, shown as a badge on the icon. */
+.cand-cv-file-check {
+  position: absolute; right: -4px; bottom: -4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%;
+  background: #16a34a; color: #fff; font-size: 11px;
+  border: 2px solid #fff;
+}
+[data-bs-theme="dark"] .cand-cv-file-check { border-color: var(--vz-card-bg); }
 .cand-cv-file-info { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; flex: 1; }
 .cand-cv-file-name {
   font-size: 12.5px; font-weight: 700; color: var(--vz-heading-color, var(--vz-body-color));
@@ -3322,11 +3336,13 @@
 }
 .cand-sample-table thead th {
   padding: 10px 12px;
-  background: #fafbfc;
+  /* Distinct blue header strip (matches the Sample popup's blue theme) so the
+     column names read as a header band, not another data row. */
+  background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
   font-weight: 700;
-  color: var(--vz-body-color);
+  color: #fff;
   text-align: left;
-  border-bottom: 1px solid #ececf2;
+  border-bottom: 1px solid #1d4ed8;
   white-space: nowrap;
 }
 .cand-sample-table tbody td {
@@ -3342,9 +3358,9 @@
 .cand-sample-table th:not(:nth-child(1)):not(:nth-child(2)),
 .cand-sample-table td:not(:nth-child(1)):not(:nth-child(2)) { text-align: center; }
 [data-bs-theme="dark"] .cand-sample-table thead th {
-  background: color-mix(in srgb, #ffffff 4%, var(--vz-card-bg));
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
   color: #ffffff;
-  border-bottom-color: var(--vz-border-color);
+  border-bottom-color: #1e40af;
 }
 [data-bs-theme="dark"] .cand-sample-table tbody td {
   color: rgba(255,255,255,0.78);
@@ -3801,23 +3817,25 @@
 .cand-export-submit:active { transform: translateY(0); filter: brightness(0.98); }
 .cand-export-submit i { font-size: 14px; }
 
-/* #26 — full-width, solid primary action in the Import / Export popups. The
-   footer stacks (primary on top, Close below), and both buttons fill the width
-   so the main action reads as one solid full-width bar. */
+/* #26 — Import / Export popup actions sit side by side, right-aligned (Close +
+   primary on one row) rather than stacked full-width. */
 .cand-import-footer,
 .cand-export-footer {
-  flex-direction: column-reverse;
-  align-items: stretch;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
 }
 .cand-import-submit,
 .cand-export-submit {
-  width: 100%;
+  width: auto;
+  min-width: 160px;
   justify-content: center;
 }
 .cand-import-footer .rec-btn-ghost,
 .cand-export-footer .rec-btn-ghost {
-  width: 100%;
+  width: auto;
+  min-width: 110px;
   justify-content: center;
 }
 

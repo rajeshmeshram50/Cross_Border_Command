@@ -158,7 +158,9 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
         style={{
           background: 'var(--vz-card-bg, #fff)', borderRadius: 16,
           boxShadow: '0 24px 60px rgba(0,0,0,0.30)',
-          width: '100%', maxWidth: 560, maxHeight: 'calc(100vh - 32px)',
+          /* 680, not 560 — the consent copy was wrapping to three lines and each
+             guarantee to two, which made a short disclosure look long. */
+          width: '100%', maxWidth: 680, maxHeight: 'calc(100vh - 32px)',
           overflow: 'hidden', display: 'flex', flexDirection: 'column',
         }}
       >
@@ -180,27 +182,38 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
 
           /* Each guarantee gets its own icon + line. As a bare <ul> the three
              points ran together as one grey block that nobody reads before
-             ticking a consent box. */
+             ticking a consent box.
+             NO box, though: a grey fill inside a 1px border is exactly what a
+             disabled text input looks like in this app, so the three read as
+             fields waiting to be filled rather than as statements. The icon
+             carries the structure instead. */
           .frm-point {
             display: flex; align-items: flex-start; gap: 10px;
-            padding: 9px 12px;
-            border-radius: 10px;
-            background: var(--vz-secondary-bg);
-            border: 1px solid var(--vz-border-color);
-            font-size: 12.5px; line-height: 1.5;
+            padding: 5px 2px;
+            font-size: 12.5px; line-height: 1.55;
+            color: var(--vz-body-color);
           }
-          .frm-point i { font-size: 15px; line-height: 1.4; flex-shrink: 0; color: #7c5cfc; }
+          .frm-point i {
+            font-size: 14px; flex-shrink: 0;
+            width: 26px; height: 26px; border-radius: 8px;
+            display: inline-flex; align-items: center; justify-content: center;
+            background: rgba(124,92,252,0.12);
+            color: #7c5cfc;
+          }
 
-          /* The consent tick is the gate on this dialog, so it is framed rather
-             than left as a loose checkbox under the text. */
+          /* The consent tick IS the gate on this dialog, so unlike the points
+             above it keeps a frame — but a violet one, and it sits above a rule
+             so it reads as the decision rather than another field. */
           .frm-consent {
             display: flex; align-items: flex-start; gap: 10px;
-            margin-top: 14px; padding: 12px 14px;
+            margin-top: 16px; padding: 12px 14px;
             border-radius: 10px;
-            background: rgba(124,92,252,0.07);
-            border: 1px solid rgba(124,92,252,0.28);
+            background: rgba(124,92,252,0.08);
+            border: 1.5px solid rgba(124,92,252,0.45);
             cursor: pointer;
+            transition: background .15s ease, border-color .15s ease;
           }
+          .frm-consent:hover { background: rgba(124,92,252,0.14); border-color: rgba(124,92,252,0.70); }
           .frm-consent input { margin-top: 1px; width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
         `}</style>
         {/* Gradient header, matching Assign Assets and the Add/Edit Employee
@@ -345,7 +358,7 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
                 We extract a 128-number mathematical signature from the image and store that — it cannot
                 be reversed into a recognisable face.
               </p>
-              <div className="d-flex flex-column gap-2">
+              <div className="d-flex flex-column gap-1">
                 <div className="frm-point">
                   <i className="ri-fingerprint-line" />
                   <span>The signature is kept on your employee record and used to verify clock-in / clock-out.</span>
@@ -451,7 +464,7 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
                 style={!consent ? { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' } : undefined}
                 title={!consent ? 'Tick the consent box to continue' : undefined}
               >
-                <i className="ri-check-line" /> I Agree, Continue
+                I Agree, Continue
               </button>
             </>
           )}

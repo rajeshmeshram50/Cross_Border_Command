@@ -1235,11 +1235,17 @@ export default function HrEmployees() {
     () => Number(eEarnings.find(c => c.code === 'basic')?.amount) || 0,
     [eEarnings],
   );
+  /* PF only applies while the employee is ON payroll. The PF Applicable field
+     is hidden when the payroll toggle is off, but its value stays `true`
+     underneath — so the PF row went on sitting in the deductions, and the ₹1,800
+     went on coming off the net, for an employee who had just been taken off
+     payroll and had no field on screen to turn it back off with. */
+  const pfActive = eEnablePayroll && ePfEligible;
   const breakupPf = useMemo(() => {
-    if (!ePfEligible) return 0;
+    if (!pfActive) return 0;
     const base = ePfType === 'Standard' ? breakupBasic : Math.min(breakupBasic, 15000);
     return Math.round(base * 0.12);
-  }, [ePfEligible, ePfType, breakupBasic]);
+  }, [pfActive, ePfType, breakupBasic]);
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
   // auto-computed — they're added as editable rows in Fixed Deductions
   // (so they're part of breakupDed when present), filled by HR / accounts.
@@ -1289,7 +1295,7 @@ export default function HrEmployees() {
          so the row is kept in step with that figure rather than left for
          someone to type. */
       const pfIdx = next.findIndex(d => d.code === 'pf');
-      if (ePfEligible) {
+      if (pfActive) {
         const row = { code: 'pf', label: 'Provident Fund (PF)', amount: breakupPf };
         if (pfIdx < 0) next = [...next, row];
         else if (Number(next[pfIdx].amount) !== breakupPf) {
@@ -1301,7 +1307,7 @@ export default function HrEmployees() {
       return next === prev ? prev : next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [eEsiApplicable, ePtApplicable, ePfEligible, breakupPf]);
+  }, [eEsiApplicable, ePtApplicable, pfActive, breakupPf]);
 
   const breakupErrors = useMemo(
     () => validateBreakup(eEarnings, eDeductions, eDetailedBreakup),
@@ -2633,13 +2639,13 @@ export default function HrEmployees() {
     {
       header: 'Department',
       accessorKey: 'department',
-      meta: { width: '8%' },
+      meta: { width: '8%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Designation',
       accessorKey: 'designation',
-      meta: { width: '9%' },
+      meta: { width: '9%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -4621,9 +4627,9 @@ export default function HrEmployees() {
                         {/* Live deduction estimate + net — Net = Gross − PF − ESI −
                           PT − fixed deductions. Updates with PF / ESI / PT
                           selections and any Fixed Deductions added. */}
-                        {(ePfEligible || breakupDed > 0) && (
+                        {(pfActive || breakupDed > 0) && (
                           <>
-                            {ePfEligible && (
+                            {pfActive && (
                               <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                 <span className="text-muted">
                                   Provident Fund (PF) — {ePfType === 'Standard'
@@ -4647,7 +4653,7 @@ export default function HrEmployees() {
                                   ₹{breakupNet.toLocaleString('en-IN')}
                                 </div>
                                 <div className="text-muted" style={{ fontSize: 11.5 }}>
-                                  Gross ₹{breakupGross.toLocaleString('en-IN')}{ePfEligible ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
+                                  Gross ₹{breakupGross.toLocaleString('en-IN')}{pfActive ? ` − PF ₹${breakupPf.toLocaleString('en-IN')}` : ''}{breakupDedExPf > 0 ? ` − Deductions ₹${breakupDedExPf.toLocaleString('en-IN')}` : ''}
                                 </div>
                               </div>
                             </div>
@@ -4713,7 +4719,7 @@ export default function HrEmployees() {
                           through (handleNextStep PUTs before advancing), and a
                           plain "Next" read like the work was being carried
                           along unsaved until the final button. */}
-                      <i className="ri-check-line" /> Save &amp; Next <i className="ri-arrow-right-s-line" />
+                      Save &amp; Next <i className="ri-arrow-right-s-line" />
                     </>
                   )}
                 </button>

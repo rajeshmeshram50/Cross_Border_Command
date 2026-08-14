@@ -111,16 +111,22 @@ export default function ProofOfPaymentCell({
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
 
   const place = () => {
     const b = btnRef.current?.getBoundingClientRect();
     if (!b) return;
     const left = Math.min(Math.max(8, b.left), window.innerWidth - POP_W - 8);
-    // Flip above the trigger when it would overflow the viewport bottom.
-    let top = b.bottom + 6;
-    if (top + POP_MAXH > window.innerHeight - 8) top = Math.max(8, b.top - 6 - POP_MAXH);
-    setPos({ top, left });
+    const below = b.bottom + 6;
+    if (below + POP_MAXH > window.innerHeight - 8) {
+      // Not enough room below → flip ABOVE the trigger. Anchor by the BOTTOM
+      // edge (not top-minus-POP_MAXH): a short list is much smaller than the max
+      // height, so anchoring by top left the popover floating ~100px above the
+      // button with a visible gap — reading as "detached" (QA #137/140/141).
+      setPos({ bottom: Math.max(8, window.innerHeight - b.top + 6), left });
+    } else {
+      setPos({ top: below, left });
+    }
   };
 
   useEffect(() => {
@@ -201,7 +207,9 @@ export default function ProofOfPaymentCell({
               ref={popRef}
               className="pop-proof"
               style={{
-                position: 'fixed', top: pos.top, left: pos.left, zIndex: 3000,
+                position: 'fixed',
+                ...(pos.top != null ? { top: pos.top } : { bottom: pos.bottom }),
+                left: pos.left, zIndex: 3000,
                 width: POP_W, maxHeight: POP_MAXH, overflowY: 'auto',
                 background: 'var(--vz-secondary-bg, #ffffff)',
                 border: '1px solid rgba(128,128,128,0.30)',
