@@ -262,6 +262,20 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
             box-shadow: 0 8px 20px rgba(0,0,0,0.45);
           }
           .ep-save-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+
+          /* The footer's Save — identical geometry to the header's, filled
+             violet because it sits on a light surface instead of navy. */
+          .ep-save-btn--solid {
+            background: linear-gradient(135deg, #a855f7 0%, #9333ea 60%, #7c3aed 100%);
+            color: #fff; border: 1.5px solid transparent;
+            box-shadow: 0 6px 16px rgba(147,51,234,0.35);
+          }
+          .ep-save-btn--solid:hover:not(:disabled) {
+            color: #fff;
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(147,51,234,0.45);
+          }
+          .ep-save-btn--solid:disabled { opacity: 0.7; cursor: not-allowed; }
         `}</style>
 
         {/* Slim hero strip */}
@@ -288,28 +302,10 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                 </div>
               </div>
             </div>
-            {/* Back moved out of the title block and in beside Save. The two
-                controls that leave or commit this screen now sit together, so
-                the pointer doesn't cross the full width of the page to go from
-                one to the other. The breadcrumb below the title still walks
-                back too. */}
+            {/* Save first, Back second — swapped from the other way round. Both
+                are 40px / 10px-radius so the pair reads as one control block;
+                the breadcrumb under the title still walks back as well. */}
             <div className="d-flex align-items-center gap-2 flex-shrink-0">
-            {/* Labelled, like "Back to Recruitment List" on Candidate
-                Management, and sized to the same 40px / 10px radius the header
-                pills use everywhere else. A bare icon circle beside a wide
-                labelled button read as two unrelated controls. */}
-            <button
-              type="button"
-              onClick={onBack}
-              className="ep-hdr-btn ep-back-btn flex-shrink-0"
-            >
-              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
-            </button>
-            {/* Same 40px / 10px box as Back. It was a `btn-sm rounded-pill`, so
-                the pair sat at different heights with different corners.
-                `btn-label` dropped too — it positions the icon as a separate
-                labelled block, which fought the flex gap and left the label
-                off-centre. */}
             <button
               type="button"
               className="ep-hdr-btn ep-save-btn flex-shrink-0"
@@ -330,6 +326,13 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                   Save Permissions
                 </>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={onBack}
+              className="ep-hdr-btn ep-back-btn flex-shrink-0"
+            >
+              <i className="ri-arrow-left-line" style={{ fontSize: 16 }} /> Back to Employees
             </button>
             </div>
           </div>
@@ -457,12 +460,17 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
             <i className="ri-edit-box-line me-1 text-primary"></i>
             Editing: <strong className="text-dark">{employee?.name || employeeId}</strong>
           </span>
-          <Button
-            color="primary"
-            className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
+          {/* Same button as the header's — same 40px / 10px box, same label and
+              icon, same hover. The FILL differs on purpose: the header's is
+              white because it sits on navy, and white on this light footer
+              would be invisible. Geometry is what makes them read as the same
+              control; colour is what makes each readable where it sits. */}
+          <button
+            type="button"
+            className="ep-hdr-btn ep-save-btn--solid"
             onClick={handleSave}
             disabled={saving}
-            style={{ minWidth: 180, justifyContent: 'center' }}
+            style={{ minWidth: 180 }}
           >
             {saving ? (
               <>
@@ -471,11 +479,11 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
               </>
             ) : (
               <>
-                <i className="ri-shield-check-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+                <i className="ri-shield-check-line" style={{ fontSize: 16 }}></i>
                 Save Permissions
               </>
             )}
-          </Button>
+          </button>
         </CardBody>
       </Card>
     </>

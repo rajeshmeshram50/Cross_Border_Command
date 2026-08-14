@@ -55,7 +55,15 @@ class HrDocumentSignatureController extends Controller
         $q = HrDocumentSignature::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
 
-        if ($empId  = $request->integer('employee_id'))   $q->where('employee_id', $empId);
+        /* An employee_id that is PRESENT but not a positive integer must narrow
+         * to nothing, never widen to everything. `$request->integer()` turns a
+         * non-numeric value into 0, and the old `if ($empId = ...)` then read
+         * that as "no filter asked for" and returned every run in the tenant —
+         * so a caller passing an encrypted id (as the employee profile did) got
+         * the whole company's signed documents back. Filters fail closed. */
+        if ($request->has('employee_id')) {
+            $q->where('employee_id', $request->integer('employee_id'));
+        }
         if ($status = $request->query('status'))          $q->where('status', $status);
         if ($tplId  = $request->integer('template_id'))   $q->where('template_id', $tplId);
 

@@ -18,6 +18,10 @@ interface ManagedUser {
   client_id?: number; branch_id?: number;
   client?: { id: number; org_name: string };
   branch?: { id: number; name: string };
+  /* Department of the paired employee record, from the API. Only populated for
+     employee targets (branch-user and employee granters) — it's what
+     identifies a person once the branch column becomes redundant. */
+  department?: string | null;
   status: string;
 }
 
@@ -230,19 +234,34 @@ export default function Permissions() {
     : { icon: 'ri-organization-chart', title: 'No One Reports To You Yet',
         body: 'Access is granted down the reporting line, so this page lists only the people who report to you. Ask HR to set you as the reporting manager on their employee record — then they will appear here.' };
 
+  /* Whose name leads the row.
+     Branch users and employees both pick EMPLOYEES, and for them the branch is
+     noise: a branch user only ever sees their own branch, and an employee only
+     their own reports — so every row would repeat the same branch name while
+     the person's name sat on the second line. For those two, the person leads
+     and their DEPARTMENT is the distinguishing tag. Admins keep the
+     organisation / branch heading, where it genuinely separates rows. */
+  const personFirst = isBranchUser || isEmployee;
+
   // Options for the searchable Select. Keep the original user record on `raw`
   // so the custom Option / SingleValue components can render rich rows.
   const userOptions = visibleUsers.map(u => {
     // Super admin scans by organization; client admin scans by branch.
-    const primary = isSuperAdmin
-      ? (u.client?.org_name || 'No Organization')
-      : (u.branch?.name   || 'No Branch');
-    const context = isSuperAdmin
-      ? (u.branch?.name     ? ` · ${u.branch.name}` : '')
-      : (u.client?.org_name ? ` · ${u.client.org_name}` : '');
+    const primary = personFirst
+      ? u.name
+      : isSuperAdmin
+        ? (u.client?.org_name || 'No Organization')
+        : (u.branch?.name   || 'No Branch');
+    const context = personFirst
+      ? (u.department ? ` · ${u.department}` : '')
+      : isSuperAdmin
+        ? (u.branch?.name     ? ` · ${u.branch.name}` : '')
+        : (u.client?.org_name ? ` · ${u.client.org_name}` : '');
     return {
       value: String(u.id),
-      label: `${primary} — ${u.name} (${u.email})${context}`,
+      label: personFirst
+        ? `${primary} (${u.email})${context}`
+        : `${primary} — ${u.name} (${u.email})${context}`,
       raw: u,
     };
   });
@@ -363,18 +382,25 @@ export default function Permissions() {
                       : `Search ${targetLabel.toLowerCase()} by name, email or branch...`}
                     emptyLabel="No match — try a different search"
                     getSearchText={(u: ManagedUser) =>
-                      [u.client?.org_name, u.name, u.email, u.branch?.name, u.user_type]
+                      // Department is searchable too — it's now the visible tag,
+                      // so "logistics" has to find the Logistics people.
+                      [u.client?.org_name, u.name, u.email, u.department, u.branch?.name, u.user_type]
                         .filter(Boolean)
                         .join(' ')
                     }
                     renderTrigger={(u: ManagedUser) => {
-                      // Super admin picks client admins → show org name as title.
-                      // Client admin picks branch users → show branch name as title.
+                      // Branch user / employee → the PERSON leads, tagged with
+                      // their department. Super admin picks client admins → org
+                      // name; client admin picks branch users → branch name.
                       const roleLabel = (u.user_type || '').replace(/_/g, ' ');
-                      const title     = isSuperAdmin
-                        ? (u.client?.org_name || 'No Organization')
-                        : (u.branch?.name   || 'No Branch');
-                      const titleIcon = isSuperAdmin ? 'ri-building-line' : 'ri-git-branch-line';
+                      const title     = personFirst
+                        ? u.name
+                        : isSuperAdmin
+                          ? (u.client?.org_name || 'No Organization')
+                          : (u.branch?.name   || 'No Branch');
+                      const titleIcon = personFirst
+                        ? 'ri-user-3-line'
+                        : isSuperAdmin ? 'ri-building-line' : 'ri-git-branch-line';
                       return (
                         <span className="d-inline-flex align-items-center gap-2 text-truncate">
                           <i className={`${titleIcon} text-primary`} />
@@ -382,7 +408,9 @@ export default function Permissions() {
                           <span className="badge bg-primary-subtle text-primary text-capitalize" style={{ fontSize: 10 }}>
                             {roleLabel}
                           </span>
-                          <span className="text-muted" style={{ fontSize: 12 }}>{u.name}</span>
+                          <span className="text-muted" style={{ fontSize: 12 }}>
+                            {personFirst ? (u.department || 'No Department') : u.name}
+                          </span>
                         </span>
                       );
                     }}
@@ -391,17 +419,26 @@ export default function Permissions() {
                       const isActive  = u.status === 'active';
                       const muted     = isSelected ? 'rgba(255,255,255,0.82)' : 'var(--vz-secondary-color)';
 
-                      // Super admin view → org-first; client admin view → branch-first.
-                      const title    = isSuperAdmin
-                        ? (u.client?.org_name || 'No Organization')
-                        : (u.branch?.name   || 'No Branch');
+                      /* Branch user / employee view → the PERSON heads the row;
+                         admin views keep org-first / branch-first. */
+                      const title    = personFirst
+                        ? u.name
+                        : isSuperAdmin
+                          ? (u.client?.org_name || 'No Organization')
+                          : (u.branch?.name   || 'No Branch');
+                      // Initials follow the heading, so they read as the
+                      // person's monogram instead of one repeated branch letter.
                       const initials = (title.split(' ').map(w => w.charAt(0)).join('') || '?').slice(0, 2).toUpperCase();
 
                       // Second supporting line (after email): for super admin we show the branch,
                       // for client admin we show the parent org instead (useful context across multi-org setups).
-                      const secondaryTag = isSuperAdmin
-                        ? (u.branch?.name ? { icon: 'ri-git-branch-line', text: u.branch.name } : null)
-                        : (u.client?.org_name ? { icon: 'ri-building-line',  text: u.client.org_name } : null);
+                      // Person-first rows drop it — department is already on the
+                      // heading line and the branch is the same for every row.
+                      const secondaryTag = personFirst
+                        ? null
+                        : isSuperAdmin
+                          ? (u.branch?.name ? { icon: 'ri-git-branch-line', text: u.branch.name } : null)
+                          : (u.client?.org_name ? { icon: 'ri-building-line',  text: u.client.org_name } : null);
 
                       return (
                         <div className="d-flex align-items-center gap-2">
@@ -423,24 +460,46 @@ export default function Permissions() {
                               <span className="fw-bold text-truncate" style={{ fontSize: 13.5 }}>
                                 {title}
                               </span>
-                              <span
-                                className="badge rounded-pill border text-uppercase fw-semibold flex-shrink-0"
-                                style={{
-                                  fontSize: 8.5,
-                                  padding: '1px 6px',
-                                  borderColor: isSelected ? 'rgba(255,255,255,0.55)' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
-                                  color:       isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
-                                }}
-                              >
+                              {/* Person-first rows carry the DEPARTMENT here.
+                                  The status badge it replaces said ACTIVE on
+                                  every row — the picker only ever returns
+                                  active users — so it distinguished nothing.
+                                  Admin views keep it: their pools can contain
+                                  differing statuses. */}
+                              {personFirst ? (
                                 <span
-                                  className="d-inline-block rounded-circle me-1"
+                                  className="badge rounded-pill border fw-semibold flex-shrink-0"
                                   style={{
-                                    width: 5, height: 5, verticalAlign: 'middle',
-                                    background: isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                    fontSize: 8.5,
+                                    padding: '1px 6px',
+                                    borderColor: isSelected ? 'rgba(255,255,255,0.55)' : 'rgba(124,58,237,0.45)',
+                                    color:       isSelected ? '#fff' : '#7c3aed',
+                                    background:  isSelected ? 'rgba(255,255,255,0.16)' : 'rgba(124,58,237,0.10)',
                                   }}
-                                />
-                                {u.status}
-                              </span>
+                                >
+                                  <i className="ri-building-2-line me-1" style={{ fontSize: 9 }} />
+                                  {u.department || 'No Department'}
+                                </span>
+                              ) : (
+                                <span
+                                  className="badge rounded-pill border text-uppercase fw-semibold flex-shrink-0"
+                                  style={{
+                                    fontSize: 8.5,
+                                    padding: '1px 6px',
+                                    borderColor: isSelected ? 'rgba(255,255,255,0.55)' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                    color:       isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                  }}
+                                >
+                                  <span
+                                    className="d-inline-block rounded-circle me-1"
+                                    style={{
+                                      width: 5, height: 5, verticalAlign: 'middle',
+                                      background: isSelected ? '#fff' : (isActive ? 'var(--vz-success)' : 'var(--vz-secondary)'),
+                                    }}
+                                  />
+                                  {u.status}
+                                </span>
+                              )}
                             </div>
                             <div className="d-flex align-items-center gap-1 mt-1" style={{ fontSize: 11 }}>
                               <span
@@ -454,7 +513,10 @@ export default function Permissions() {
                               >
                                 <i className="ri-user-settings-line me-1" />{roleLabel}
                               </span>
-                              <span className="fw-medium text-truncate">{u.name}</span>
+                              {/* Name omitted on person-first rows — it's the
+                                  heading above, and repeating it just crowds
+                                  the badge. Admin views still need it here. */}
+                              {!personFirst && <span className="fw-medium text-truncate">{u.name}</span>}
                             </div>
                             <div className="d-flex align-items-center gap-2 text-truncate" style={{ fontSize: 10.5, marginTop: 1, color: muted }}>
                               <span className="d-inline-flex align-items-center gap-1 text-truncate">
@@ -505,6 +567,45 @@ export default function Permissions() {
                 </Col>
                 )}
                 <Col md={5} className="text-md-end">
+                  {/* Column, not inline: the Button carries Bootstrap's
+                      .d-inline-flex, which is defined AFTER .d-block in the
+                      utilities sheet and therefore wins any display override
+                      put on the button itself — the note ended up sitting
+                      beside it. Stacking is enforced by the parent instead. */}
+                  <div className="d-flex flex-column align-items-start align-items-md-end gap-2">
+                  {/* Delegation note — sits directly above Save, in both
+                      Employee and Department modes, so the limit is read at the
+                      moment of saving rather than skimmed past at the top of
+                      the page. Amber because it's a constraint on what the save
+                      will actually store, not neutral information. */}
+                  {!isSuperAdmin && (
+                    <div
+                      className="d-flex align-items-center gap-2 px-3 py-2 text-start"
+                      /* Long form on hover — the visible line stays one row. */
+                      title={isEmployee
+                        ? 'This list shows only the employees who report to you. You can grant them any access you hold yourself — disabled checkboxes are permissions you don\'t have.'
+                        : 'You can only grant permissions that you have. Disabled checkboxes indicate permissions you don\'t have.'}
+                      style={{
+                        background: 'rgba(245,158,11,0.10)',
+                        border: '1px solid rgba(245,158,11,0.40)',
+                        borderRadius: 12,
+                        color: '#92400e',
+                        fontSize: 11.5,
+                        lineHeight: 1.5,
+                        /* One row: the copy below is trimmed to fit, and nowrap
+                           keeps a narrow viewport from folding it into three
+                           lines the way the full sentence did. */
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      <i className="ri-alert-line flex-shrink-0" style={{ fontSize: 13 }} />
+                      <span>
+                        {isEmployee
+                          ? 'You can grant only access you hold, and only to your reports.'
+                          : 'You can grant only permissions you already hold.'}
+                      </span>
+                    </div>
+                  )}
                   <Button
                     color="primary"
                     className={`waves-effect waves-light rounded-pill d-inline-flex align-items-center gap-2 ${saving ? '' : 'btn-label'}`}
@@ -530,6 +631,7 @@ export default function Permissions() {
                       </>
                     )}
                   </Button>
+                  </div>
                 </Col>
               </Row>
               )}
@@ -592,16 +694,9 @@ export default function Permissions() {
               </CardBody>
             )}
 
-            {!isSuperAdmin && visibleUsers.length > 0 && (
-              <CardBody className="pt-0">
-                <Alert color="info" className="mb-0" style={{ background: 'rgba(124,58,237,0.08)', borderColor: 'rgba(124,58,237,0.25)', color: '#6d28d9' }}>
-                  <i className="ri-shield-check-line me-1"></i>
-                  {isEmployee
-                    ? 'This list shows only the employees who report to you. You can grant them any access you hold yourself — disabled checkboxes are permissions you don\'t have.'
-                    : 'You can only grant permissions that you have. Disabled checkboxes indicate permissions you don\'t have.'}
-                </Alert>
-              </CardBody>
-            )}
+            {/* The delegation note used to live here, as a full-width violet
+                strip under the header. It now sits directly above the Save
+                button (see the header Row) so it's read where it matters. */}
 
             {/* ── Animated empty state when no user is selected ── */}
             {!activeId && (mode === 'department' || visibleUsers.length > 0) && (

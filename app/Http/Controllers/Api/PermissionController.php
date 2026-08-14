@@ -85,6 +85,36 @@ class PermissionController extends Controller
         return null;
     }
 
+    /**
+     * Attach each employee-login's DEPARTMENT name to the picker payload.
+     *
+     * The Permissions picker identifies an employee by name + department (the
+     * branch is redundant there — a branch user only ever sees their own branch,
+     * and an employee only their own reports). Department is what actually tells
+     * two same-named rows apart.
+     *
+     * Resolved through `employees.department_id` → `master_departments`, NOT
+     * `users.department_id`: that column points at the legacy `departments`
+     * table, which is empty in this schema. The employee row is the source of
+     * truth for org placement.
+     *
+     * @param  \Illuminate\Support\Collection $users
+     */
+    private function withDepartments($users)
+    {
+        if ($users->isEmpty()) return $users;
+
+        $byUser = Employee::query()
+            ->whereIn('user_id', $users->pluck('id'))
+            ->leftJoin('master_departments as d', 'd.id', '=', 'employees.department_id')
+            ->pluck('d.name', 'employees.user_id');
+
+        return $users->each(function ($u) use ($byUser) {
+            // record" apart from "this payload doesn't carry departments".
+            $u->department = $byUser[$u->id] ?? null;
+        });
+    }
+
     public function modules()
     {
         $modules = Module::where('is_active', true)
@@ -193,14 +223,17 @@ class PermissionController extends Controller
                 ->where('status', 'active')
                 ->with('branch:id,name,status')
                 ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
+            $users = $this->withDepartments($users);
         } elseif ($authUser->isEmployee()) {
 
             $subordinateIds = $this->subordinateUserIds($authUser);
             $users = $subordinateIds === []
                 ? collect()
-                : User::whereIn('id', $subordinateIds)
-                ->with('branch:id,name,status')
-                ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status']);
+                : $this->withDepartments(
+                    User::whereIn('id', $subordinateIds)
+                        ->with('branch:id,name,status')
+                        ->get(['id', 'name', 'email', 'user_type', 'client_id', 'branch_id', 'status'])
+                );
         } else {
             $users = collect();
         }

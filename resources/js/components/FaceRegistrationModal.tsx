@@ -440,12 +440,14 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
           )}
         </div>
 
+        {/* No Cancel / Close down here — the header X dismisses the dialog, and
+            carrying a second way out in the footer made every step end in a
+            choice between "leave" and "leave". */}
         <div className="d-flex justify-content-end gap-2 px-3 py-3" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
           {step === 'already' && (
             <>
-              <button type="button" className="rec-btn-ghost" onClick={onClose}>Close</button>
               {/* Destructive action keeps its own red outline — it must not
-                  look like the two neutral buttons beside it. */}
+                  look like the button beside it. */}
               <Button color="danger" outline onClick={handleRevoke} style={{ height: 36, borderRadius: 10, fontSize: 12.5, fontWeight: 700 }}>
                 <i className="ri-delete-bin-line me-1" /> Remove Face Data
               </Button>
@@ -456,7 +458,6 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
           )}
           {step === 'consent' && (
             <>
-              <button type="button" className="rec-btn-ghost" onClick={onClose}>Cancel</button>
               {/* Held until the box is ticked — consent is the whole point of
                   this step, so the button states it plainly rather than sitting
                   there looking merely faded. */}
@@ -470,7 +471,6 @@ export default function FaceRegistrationModal({ open, onClose, employeeId, onReg
           )}
           {(step === 'capture' || step === 'saving') && (
             <>
-              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={step === 'saving'}>Cancel</button>
               <button type="button" className="rec-btn-primary" onClick={handleSave} disabled={!result || step === 'saving'}
                 style={(!result || step === 'saving') ? { opacity: 0.45, cursor: 'not-allowed', boxShadow: 'none' } : undefined}
               >

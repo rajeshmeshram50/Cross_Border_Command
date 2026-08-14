@@ -158,9 +158,18 @@ function formatDate(raw: any): string {
  * typed (PHP's ucfirst, not a title-caser) — so "compliance associate" becomes
  * "Compliance associate" and an intentional "iOS Engineer" is never mangled.
  *
- * Applied on every keystroke of the free-text recruitment fields. Only index 0
- * is ever rewritten and the length never changes, so the caret does not jump
- * when the user is typing further along the string.
+ * Applied when the form is SAVED and when an existing record is loaded for
+ * edit — never on keystroke.
+ *
+ * It used to run on every keystroke, and the "the length never changes so the
+ * caret is safe" reasoning behind that was wrong. React only restores the caret
+ * when the value it renders matches what the DOM already has. Retype the FIRST
+ * letter of an existing title — put the caret at position 0 of "enior
+ * Accountant" and type "s" — and the state becomes "Senior…" while the input
+ * holds "senior…". React rewrites the whole value, the browser drops the caret
+ * at the END, and the next keystrokes land there: "Senior Accountant" turns
+ * into things like "ANior Accountantsd". Capitalising once, at save, gives the
+ * same stored result with no cursor to fight.
  *
  * Leading whitespace is skipped rather than blocking the capital: a value that
  * starts with a space or newline capitalises its first real character instead
@@ -2294,8 +2303,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       return;
     }
 
+    /* Capitalise HERE rather than on keystroke — the stored value is the same
+       as before, so an edit re-opens with the capital already in place, but
+       the user's cursor is left alone while they type. */
     const payload: Record<string, any> = {
-      job_title:             jobTitle.trim(),
+      job_title:             ucFirst(jobTitle.trim()),
       department_id:         Number(departmentId),
       designation_id:        Number(designationId),
       primary_role_id:       primaryRoleId ? Number(primaryRoleId) : null,
@@ -2309,8 +2321,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       assigned_hr_id:        assignedHrId ? Number(assignedHrId) : null,
       start_date:            startDate || null,
       deadline:              deadline || null,
-      job_description:       jobDescription || null,
-      requirements:          requirements || null,
+      job_description:       jobDescription ? ucFirst(jobDescription) : null,
+      requirements:          requirements ? ucFirst(requirements) : null,
       post_on_portal:        !!postOnPortal,
       notify_team_leads:     !!notifyTeamLeads,
       enable_referral_bonus: !!enableReferralBonus,
@@ -2434,7 +2446,9 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                     className={`rec-input has-leading-icon${errors.jobTitle ? ' is-invalid' : ''}`}
                     placeholder="e.g. Senior Backend Engineer"
                     value={jobTitle}
-                    onChange={e => { setJobTitle(ucFirst(e.target.value)); clear('jobTitle'); }}
+                    /* Raw while typing — see ucFirst's note. Capitalisation
+                       happens once, in the save payload below. */
+                    onChange={e => { setJobTitle(e.target.value); clear('jobTitle'); }}
                   />
                 </div>
                 {errors.jobTitle && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobTitle}</div>}
@@ -2663,7 +2677,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.jobDescription ? ' is-invalid' : ''}`}
                   placeholder="Key responsibilities, expectations, and role overview…"
                   value={jobDescription}
-                  onChange={e => { setJobDescription(ucFirst(e.target.value)); clear('jobDescription'); }}
+                  onChange={e => { setJobDescription(e.target.value); clear('jobDescription'); }}
                 />
                 {errors.jobDescription && <div className="rec-error"><i className="ri-error-warning-line" />{errors.jobDescription}</div>}
               </Col>
@@ -2673,7 +2687,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   className={`rec-input rec-textarea${errors.requirements ? ' is-invalid' : ''}`}
                   placeholder="Required skills, qualifications, certifications…"
                   value={requirements}
-                  onChange={e => { setRequirements(ucFirst(e.target.value)); clear('requirements'); }}
+                  onChange={e => { setRequirements(e.target.value); clear('requirements'); }}
                 />
                 {errors.requirements && <div className="rec-error"><i className="ri-error-warning-line" />{errors.requirements}</div>}
               </Col>

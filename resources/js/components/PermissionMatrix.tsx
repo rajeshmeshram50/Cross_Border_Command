@@ -459,10 +459,15 @@ export default function PermissionMatrix({
 
   return (
     <>
-      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '12px 20px' }}>
+      {/* 18px to match the hero card above — the employee avatar and the page
+          title both start there, so this row lines up with them instead of
+          sitting on its own inset. */}
+      <CardBody className="border-top border-bottom" style={{ background: 'var(--vz-secondary-bg)', padding: '12px 18px' }}>
         <div className="d-flex align-items-center gap-2 flex-wrap">
-          {/* Label */}
-          <span className="  text-dark fs-11 fw-semibold text-uppercase  px-3 py-2 ">
+          {/* `px-3` dropped: the CardBody already sets the left inset, and the
+              label's own 16px on top of it pushed "QUICK ACTIONS" a clear 36px
+              in — visibly further right than everything above it. */}
+          <span className="text-dark fs-11 fw-semibold text-uppercase py-2">
             <i className="ri-flashlight-line me-1"></i> Quick Actions :
           </span>
 
@@ -580,15 +585,21 @@ export default function PermissionMatrix({
                   <th className="ps-3 py-3 fw-bold text-uppercase align-items-center fs-11" style={{ width: '34%', color: 'var(--vz-primary)', letterSpacing: '0.04em' }}>
                     Module
                   </th>
+                  {/* `justify-content-center` on the inner flex, not just
+                      `text-center` on the th. The div is a block filling the
+                      cell and its children default to flex-start, so the
+                      icon + label sat hard LEFT while the checkboxes below were
+                      centred — every column header read as offset from its own
+                      column. text-align does nothing to flex children. */}
                   <th className="text-center py-3" style={{ width: '8%' }}>
-                    <div className="d-flex flex-row align-items-center gap-1">
+                    <div className="d-flex flex-row align-items-center justify-content-center gap-1">
                       <i className="ri-checkbox-multiple-line fs-14" style={{ color: 'var(--vz-primary)' }}></i>
                       <span className="fs-11 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>All</span>
                     </div>
                   </th>
                   {PERMS.map(p => (
                     <th key={p.key} className="text-center py-3" style={{ width: `${58 / PERMS.length}%` }}>
-                      <div className="d-flex flex-row align-items-center gap-1">
+                      <div className="d-flex flex-row align-items-center justify-content-center gap-1">
                         <i className={`${p.icon} fs-14`} style={{ color: 'var(--vz-primary)' }}></i>
                         <span className="fs-11 fw-bold text-uppercase" style={{ color: 'var(--vz-primary)', letterSpacing: '0.05em' }}>{p.label}</span>
                       </div>

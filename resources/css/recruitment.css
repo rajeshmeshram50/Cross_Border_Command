@@ -6725,10 +6725,14 @@
 }
 
 /* Header — calm violet banner with employee meta + dial */
+/* The rest of the dialog runs on 8px, but the header carries a 40px icon tile,
+   a three-line text block and the dial — at 8px they all sat hard against the
+   gradient's edges with nothing to separate the banner from the KPI strip
+   below it. 12/14 is still far tighter than the 16/22 it started at. */
 .ev-head {
   position: relative;
   display: flex; align-items: flex-start; gap: 14px;
-  padding: 16px 22px;
+  padding: 12px 14px;
   background: linear-gradient(135deg, #4c2d9c 0%, #6d28d9 100%);
   color: #ffffff;
 }
@@ -6763,10 +6767,17 @@
   padding: 2px 9px;
 }
 
+/* Centred against the header's full height. The row is `align-items:
+   flex-start` for the icon and title, which left the dial pinned to the top
+   while the text block ran three lines below it — the two read as sitting on
+   different baselines. `margin-right` keeps it off the close button, which the
+   14px flex gap alone wasn't doing. */
 .ev-head-status {
   display: flex; align-items: center; gap: 10px;
   padding: 0;
   flex-shrink: 0;
+  align-self: center;
+  margin-right: 6px;
 }
 .ev-head-status-text { display: flex; flex-direction: column; }
 .ev-head-status-label {
@@ -6795,8 +6806,11 @@
 .ev-kpis {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  padding: 12px 20px;
+  /* 6px — the cards each carry their own border and top accent strip, so the
+     visual gap between two of them reads wider than the number suggests. 8px
+     matched the padding on paper but still looked loose on screen. */
+  gap: 6px;
+  padding: 8px;
   background: #ffffff;
   border-bottom: 1px solid #ececf2;
 }
@@ -6807,7 +6821,7 @@
   display: flex;
   background: #ffffff;
   border-bottom: 1px solid #ececf2;
-  padding: 0 20px;
+  padding: 0 8px;
 }
 [data-bs-theme="dark"] .ev-tabs { background: var(--vz-card-bg); border-bottom-color: var(--vz-border-color); }
 .ev-tab {
@@ -6842,7 +6856,9 @@
 /* Body */
 .ev-body {
   background: #f8f9fb;
-  padding: 16px 20px 20px;
+  /* Bottom keeps a little more than 8 so the last group card doesn't sit flush
+     against the scroll end. */
+  padding: 8px 8px 12px;
   max-height: 56vh;
   overflow-y: auto;
 }
