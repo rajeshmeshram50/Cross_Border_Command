@@ -11,6 +11,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
+import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
@@ -284,6 +285,7 @@ type ExpiryDays = 3 | 7 | 15;
 export default function HrEmployees() {
   // Active branch — the auto-fetched Legal Entity resolves against it.
   const { selectedBranchId } = useBranchSwitcher();
+  const { user: authUser } = useAuth();
   const [tab, setTab] = useState<'active' | 'disabled'>('active');
   const [tabSwitching, setTabSwitching] = useState(false);
   useEffect(() => {
@@ -2806,12 +2808,21 @@ export default function HrEmployees() {
       cell: info => {
         const e = info.row.original;
         const rowDisabled = !e.enabled;
+        // An employee must not edit their OWN record from this list — freeze
+        // Edit and Permissions on the logged-in user's own row (QA #150). Match
+        // by linked user id, falling back to the linked employee id.
+        const isSelf = !!authUser && (
+          (e.user_id != null && Number(e.user_id) === Number(authUser.id)) ||
+          ((authUser as any).employee_id != null && Number((e as any)._dbId) === Number((authUser as any).employee_id))
+        );
         // EXITED employees (exit case completed → status Resigned/Terminated)
         // are PERMANENTLY disabled and cannot be re-enabled here; a plain
         // soft-disable (Inactive) stays reversible.
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
+            <ActionBtn title={isSelf ? "You can't edit your own record" : 'Edit'} icon="ri-pencil-line" color="info" onClick={() => openEditEmployee(e)} disabled={rowDisabled || isSelf} />
+            <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
             <ActionBtn
               title={perm.lockedTitle('edit') ?? 'Edit'}
               icon="ri-pencil-line" color="info"
@@ -2841,20 +2852,8 @@ export default function HrEmployees() {
               badge={(e as any).faceRegistered ? 'dot' : undefined}
               onClick={() => perm.guard('edit', () => setFaceRegEmployeeId((e as any)._dbId))}
               disabled={rowDisabled}
-              locked={!perm.canEdit}
             />
-            {/* Changing what someone else can access is the furthest-reaching
-                edit on this page — view-only must not reach it. */}
-            <ActionBtn
-              title={perm.lockedTitle('edit') ?? 'Permissions'}
-              icon="ri-lock-2-line" color="warning"
-              onClick={() => perm.guard('edit', () => openPermissions(e))}
-              disabled={rowDisabled}
-              locked={!perm.canEdit}
-            />
-            {/* Documents stay open to view-only on purpose — reading an
-                employee's file is a view, and the vault enforces its own
-                tenant/ownership rules server-side. */}
+            <ActionBtn title={isSelf ? "You can't change your own permissions" : 'Permissions'} icon="ri-lock-2-line" color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled || isSelf} />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
             {tab === 'disabled' && (
               <ActionBtn

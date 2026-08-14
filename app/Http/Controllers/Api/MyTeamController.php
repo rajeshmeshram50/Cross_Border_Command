@@ -19,7 +19,7 @@ class MyTeamController extends Controller
     private const EMP_COLUMNS = [
         'id', 'emp_code', 'display_name', 'first_name', 'last_name',
         'email', 'mobile', 'department_id', 'designation_id',
-        'reporting_manager_id', 'date_of_joining', 'status',
+        'reporting_manager_id', 'reporting_manager_user_id', 'date_of_joining', 'status',
         'client_id', 'branch_id',
     ];
 
@@ -27,9 +27,32 @@ class MyTeamController extends Controller
         'department:id,name',
         'designation:id,name,level',
         'reportingManager:id,display_name,first_name,last_name,emp_code',
+        // A manager can be a Branch User (reporting_manager_user_id) rather than
+        // an employee — load that too so "Reports To" resolves either kind.
+        'reportingManagerUser:id,name',
         'branch:id,name',
         'photoDocument:id,employee_id,document_key,file_path',
     ];
+
+    /**
+     * Resolve an employee's reporting-manager NAME, handling either kind — an
+     * employee manager (reporting_manager_id → reportingManager) or a Branch /
+     * login user (reporting_manager_user_id → reportingManagerUser). Requires
+     * both relations to be eager-loaded on $emp.
+     */
+    private function reportsToName($emp): ?string
+    {
+        if (!$emp) return null;
+        $name = null;
+        if ($emp->reportingManager) {
+            $m = $emp->reportingManager;
+            $name = $m->display_name ?: trim(($m->first_name ?? '') . ' ' . ($m->last_name ?? ''));
+        }
+        if (!$name && $emp->reportingManagerUser) {
+            $name = $emp->reportingManagerUser->name;
+        }
+        return $name ?: null;
+    }
 
     public function employees(Request $request)
     {
@@ -51,9 +74,25 @@ class MyTeamController extends Controller
         }
         if ($status = $request->query('status')) $q->where('status', $status);
 
+        $employees = $q->orderBy('display_name')->limit(500)->get()->map(function ($e) {
+            // Resolve "Reports To" from either manager kind (employee or Branch
+            // User) into one string the SPA can render directly.
+            $name = null;
+            if ($e->reportingManager) {
+                $m = $e->reportingManager;
+                $name = $m->display_name ?: trim(($m->first_name ?? '') . ' ' . ($m->last_name ?? ''));
+            }
+            if (!$name && $e->reportingManagerUser) {
+                $name = $e->reportingManagerUser->name;
+            }
+            $arr = $e->toArray();
+            $arr['reports_to'] = $name ?: null;
+            return $arr;
+        });
+
         return response()->json([
             'scope'      => $this->describeScope($user),
-            'employees'  => $q->orderBy('display_name')->limit(500)->get(),
+            'employees'  => $employees,
         ]);
     }
 
@@ -272,8 +311,10 @@ class MyTeamController extends Controller
 
         $q = ExpenseClaim::query()
             ->with([
-                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
                 'category:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
                 'creator:id,name',
@@ -358,10 +399,13 @@ class MyTeamController extends Controller
                     'purpose'        => $row->purpose,
                     'manager_status' => $row->manager_status,
                     'hr_status'      => $row->hr_status,
-                    'manager_name'   => $row->manager
-                        ? ($row->manager->display_name
-                            ?: trim(($row->manager->first_name ?? '') . ' ' . ($row->manager->last_name ?? '')))
-                        : null,
+                    // The subject employee's reporting manager (employee OR Branch
+                    // User); fall back to the request's assigned approver.
+                    'manager_name'   => $this->reportsToName($emp)
+                        ?: ($row->manager
+                            ? ($row->manager->display_name
+                                ?: trim(($row->manager->first_name ?? '') . ' ' . ($row->manager->last_name ?? '')))
+                            : null),
                     'employee_name'  => $employeeName,
                     'employee_code'  => $emp?->emp_code,
                     'department_name'=> $emp?->department?->name,
@@ -471,8 +515,10 @@ class MyTeamController extends Controller
 
         $q = AdvanceRequest::query()
             ->with([
-                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
                 'creator:id,name',
             ])
@@ -556,10 +602,13 @@ class MyTeamController extends Controller
                     'reason'         => $row->reason,
                     'manager_status' => $row->manager_status,
                     'hr_status'      => $row->hr_status,
-                    'manager_name'   => $row->manager
-                        ? ($row->manager->display_name
-                            ?: trim(($row->manager->first_name ?? '') . ' ' . ($row->manager->last_name ?? '')))
-                        : null,
+                    // The subject employee's reporting manager (employee OR Branch
+                    // User); fall back to the request's assigned approver.
+                    'manager_name'   => $this->reportsToName($emp)
+                        ?: ($row->manager
+                            ? ($row->manager->display_name
+                                ?: trim(($row->manager->first_name ?? '') . ' ' . ($row->manager->last_name ?? '')))
+                            : null),
                     'employee_name'  => $employeeName,
                     'employee_code'  => $emp?->emp_code,
                     'department_name'=> $emp?->department?->name,

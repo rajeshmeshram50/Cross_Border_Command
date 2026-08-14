@@ -1277,7 +1277,7 @@ function CandidateFormModal({
 
     const fd = new FormData();
     fd.append('recruitment_id', String(recruitmentId));
-    fd.append('name', name.trim());
+    fd.append('name', titleCaseName(name.trim()));
     if (email)          fd.append('email', email.trim());
     if (mobile)         fd.append('mobile', mobile.trim());
     if (address)        fd.append('current_address', address.trim());
@@ -1384,7 +1384,7 @@ function CandidateFormModal({
               <Row className="g-2">
                 <Col md={4}>
                   <label className="rec-form-label">Name<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} disabled={readOnly} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} />
+                  <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="Full name" value={name} disabled={readOnly} onChange={e => setName(e.target.value.replace(/[^a-zA-Z .'\-]/g, ''))} onBlur={() => setName(prev => titleCaseName(prev))} />
                   {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
                 </Col>
                 <Col md={4}>
@@ -1408,11 +1408,11 @@ function CandidateFormModal({
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Current Address</label>
-                  <input type="text" className="rec-input" placeholder="Full residential address" value={address} disabled={readOnly} onChange={e => setAddress(e.target.value)} />
+                  <input type="text" className="rec-input" placeholder="Full residential address" value={address} disabled={readOnly} onChange={e => setAddress(e.target.value)} onBlur={() => setAddress(prev => titleCaseWords(prev))} />
                 </Col>
                 <Col md={6}>
                   <label className="rec-form-label">Qualification<span className="req">*</span></label>
-                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} disabled={readOnly} onChange={e => setQualification(e.target.value)} />
+                  <input type="text" className={`rec-input${errors.qualification ? ' is-invalid' : ''}`} placeholder="e.g. B.Tech Computer Science" value={qualification} disabled={readOnly} onChange={e => setQualification(e.target.value)} onBlur={() => setQualification(prev => titleCaseWords(prev))} />
                   {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
                 </Col>
                 <Col md={4}>
@@ -1654,13 +1654,10 @@ function CandidateFormModal({
               ? <><i className="ri-lock-line align-bottom" /> Read-only — this candidate is out of the pipeline</>
               : <><i className="ri-information-line align-bottom" /> All fields marked <span style={{ color: '#f06548', fontWeight: 700 }}>*</span> are required</>}
           </span>
-          {/* Read-only has nothing to submit, so the header ✕ is the only close
-              affordance — a footer Close next to it would be a second one. */}
+          {/* The header ✕ is the only close affordance — a footer Close would be
+              a second one — so the footer carries just the primary Submit. */}
           {!readOnly && (
             <div className="d-flex gap-2">
-              <button type="button" className="rec-btn-ghost" onClick={onClose} disabled={saving}>
-                <i className="ri-close-line" />Close
-              </button>
               <button type="button" className="rec-btn-primary" onClick={handleSubmit} disabled={saving}>
                 {saving ? (<><Spinner size="sm" style={{ width: 14, height: 14 }} /><span>Saving…</span></>) : (<><i className="ri-check-line" />Submit</>)}
               </button>
@@ -1701,6 +1698,14 @@ function titleCaseName(s: string): string {
   return (s || '')
     .toLowerCase()
     .replace(/\b([a-z])/g, (_, c: string) => c.toUpperCase());
+}
+
+/** Capitalise the first letter of each word but leave the rest untouched, so
+ *  acronyms survive ("bba" → "Bba" would be wrong; "BBA" stays "BBA",
+ *  "b.tech computer science" → "B.Tech Computer Science"). Used for the
+ *  Current Address and Qualification fields. */
+function titleCaseWords(s: string): string {
+  return (s || '').replace(/\b([a-z])/g, (_, c: string) => c.toUpperCase());
 }
 
 function CandidateConfirmModal({

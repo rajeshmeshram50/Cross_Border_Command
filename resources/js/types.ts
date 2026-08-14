@@ -52,6 +52,10 @@ export interface AuthUser {
   inbox_count?: number;
   status: string;
   designation?: string;
+  // Linked employee's HR designation (HOD / Team Leader / Executive / …), shown
+  // in the profile badge instead of the generic user-type label. Null for
+  // logins with no employee record (super_admin, some admins).
+  employee_designation?: string | null;
   department?: string;   // employee's department name (for department-based UI gating)
   phone?: string;
   avatar?: string;
