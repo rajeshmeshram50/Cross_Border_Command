@@ -46,12 +46,6 @@ export default function Permissions() {
   const isClientAdmin = authUser?.user_type === 'client_admin';
   const isBranchUser  = authUser?.user_type === 'branch_user';
 
-  // Scope of users an admin can grant permissions to:
-  //   super_admin  → client_admin only  (manages tenants)
-  //   client_admin → branch_user only   (manages branch staff, NOT employees)
-  //   branch_user  → employee only      (manages their own team)
-  // The /permissions/users API may return a wider set (legacy/joined data);
-  // we filter client-side so the picker matches the role's mandate.
   const manageableType: 'client_admin' | 'branch_user' | 'employee' | null =
     isSuperAdmin  ? 'client_admin' :
     isClientAdmin ? 'branch_user'  :
@@ -69,8 +63,6 @@ export default function Permissions() {
       const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
       setModules(mods);
       setUsers(usersRes.data);
-      // Deep-link support: /permissions?user=<id> (e.g. from the dashboard
-      // Access & Permissions card) preselects that user if manageable.
       const pre = searchParams.get('user');
       if (pre && (usersRes.data as ManagedUser[]).some(u => String(u.id) === pre)) {
         setSelectedUserId(pre);
@@ -93,8 +85,6 @@ export default function Permissions() {
       });
     }
 
-    // Department-wise granting is available to the branch's director
-    // (branch_user) and the client admin — load the department list for the tab.
     if (isBranchUser || isClientAdmin) {
       api.get('/master/departments')
         .then(r => setDepartments((Array.isArray(r.data) ? r.data : []).map((d: any) => ({ id: d.id, name: d.name }))))
