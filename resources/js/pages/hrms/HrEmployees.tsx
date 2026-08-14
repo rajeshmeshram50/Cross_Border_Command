@@ -2812,7 +2812,9 @@ export default function HrEmployees() {
         // Edit and Permissions on the logged-in user's own row (QA #150). Match
         // by linked user id, falling back to the linked employee id.
         const isSelf = !!authUser && (
-          (e.user_id != null && Number(e.user_id) === Number(authUser.id)) ||
+          // `user_id` rides on the row payload but isn't in EmployeeRow's type
+          // — same cast the _dbId lookup below already uses.
+          ((e as any).user_id != null && Number((e as any).user_id) === Number(authUser.id)) ||
           ((authUser as any).employee_id != null && Number((e as any)._dbId) === Number((authUser as any).employee_id))
         );
         // EXITED employees (exit case completed → status Resigned/Terminated)
@@ -2821,13 +2823,21 @@ export default function HrEmployees() {
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
-            <ActionBtn title={isSelf ? "You can't edit your own record" : 'Edit'} icon="ri-pencil-line" color="info" onClick={() => openEditEmployee(e)} disabled={rowDisabled || isSelf} />
-            <ActionBtn title="Asset" icon="ri-computer-line" color="primary" onClick={() => openAssignAssets(e)} disabled={rowDisabled} />
+            {/* Two independent rules sit on this button, and they behave
+                differently on purpose:
+                  disabled → a fact about the ROW (deactivated, or your own
+                             record — you can't edit yourself, QA #150). Inert;
+                             the tooltip is the whole explanation.
+                  locked   → a fact about the USER (no can_edit). Greyed but
+                             still clickable, so the click names the missing
+                             permission instead of doing nothing. */}
             <ActionBtn
-              title={perm.lockedTitle('edit') ?? 'Edit'}
+              title={isSelf
+                ? "You can't edit your own record"
+                : (perm.lockedTitle('edit') ?? 'Edit')}
               icon="ri-pencil-line" color="info"
               onClick={() => perm.guard('edit', () => openEditEmployee(e))}
-              disabled={rowDisabled}
+              disabled={rowDisabled || isSelf}
               locked={!perm.canEdit}
             />
             {/* Asset assignment saves through PUT /employees/{id}, which the
@@ -2852,8 +2862,19 @@ export default function HrEmployees() {
               badge={(e as any).faceRegistered ? 'dot' : undefined}
               onClick={() => perm.guard('edit', () => setFaceRegEmployeeId((e as any)._dbId))}
               disabled={rowDisabled}
+              locked={!perm.canEdit}
             />
-            <ActionBtn title={isSelf ? "You can't change your own permissions" : 'Permissions'} icon="ri-lock-2-line" color="warning" onClick={() => openPermissions(e)} disabled={rowDisabled || isSelf} />
+            {/* Changing what someone else can access is the furthest-reaching
+                edit on this page — view-only must not reach it. */}
+            <ActionBtn
+              title={isSelf
+                ? "You can't change your own permissions"
+                : (perm.lockedTitle('edit') ?? 'Permissions')}
+              icon="ri-lock-2-line" color="warning"
+              onClick={() => perm.guard('edit', () => openPermissions(e))}
+              disabled={rowDisabled || isSelf}
+              locked={!perm.canEdit}
+            />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
             {tab === 'disabled' && (
               <ActionBtn
