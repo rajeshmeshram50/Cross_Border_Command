@@ -348,6 +348,17 @@ export default function HrEmployees() {
     },
     [mDesignations],
   );
+  // Reporting-manager position hierarchy (mirrors app/Support/PositionHierarchy):
+  // Branch User (top) > HOD > Team Leader > Executive > Employee > Intern/Trainee.
+  // Lower number = higher position; a manager must rank strictly higher.
+  const rankForDesignationName = (name?: string | null): number | null => {
+    const MAP: Record<string, number> = {
+      'Head of Department (HOD)': 2, 'Team Leader': 3, 'Executive': 4,
+      'Employee': 5, 'Intern / Trainee': 6,
+    };
+    const n = (name ?? '').trim();
+    return n in MAP ? MAP[n] : null;
+  };
   const primaryRoleOptions = useMemo(
     // Carry department_id so the form can filter roles to the chosen department
     // (CR-013). A role with no department = "All Departments" → shown everywhere.
@@ -970,6 +981,9 @@ export default function HrEmployees() {
             await api.patch(`/employees/${dbId}/restore`);
             toast.success('Employee enabled', `${pending.employee.name} can sign in again.`);
             await reloadEmployees();
+            // Re-enabled employee becomes an eligible manager again — refresh
+            // the pool so the dropdown reflects it without a page reload.
+            reloadManagers().catch(() => { /* swallow */ });
           } catch (err: any) {
             toast.error('Could not enable employee', err?.response?.data?.message || err?.message || 'Try again');
             setTogglePending(null);
@@ -1960,10 +1974,10 @@ export default function HrEmployees() {
     // Auto-fetched, so it can only be empty when no single branch resolved
     // (client_admin on "All Branches") — say what to do rather than "required".
     if (!eLegalEntity) e.legal_entity_id = 'Pick a branch in the branch switcher — the legal entity is taken from it';
+    // Reporting manager is required; the POSITION-hierarchy eligibility is
+    // enforced by the filtered dropdown (only strictly-higher positions are
+    // selectable) and by the server on save, so no extra check is needed here.
     if (!eReportingMgr) e.reporting_manager_id = 'Reporting manager is required';
-    else if (hodDesignationId && String(eDesignation) === hodDesignationId
-      && !String(eReportingMgr).startsWith('branch_user:'))
-      e.reporting_manager_id = 'An HOD must report to a Branch User (Director / CEO).';
     if (!eProbationPolicy) e.probation_policy = 'Probation policy is required';
     if (eProbationPolicy === CUSTOM_PROBATION_VALUE) {
       const n = parseInt(eCustomProbation, 10);
@@ -1989,7 +2003,7 @@ export default function HrEmployees() {
     }
     return e;
   }, [eJoinDate, eDept, eDesignation, ePrimaryRole, eWorkType, eLegalEntity, eReportingMgr,
-    hodDesignationId, eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
+    eProbationPolicy, eCustomProbation, eNoticePeriod, eCustomNotice]);
 
   const validateStep3 = useCallback((): Record<string, string> => {
     const e: Record<string, string> = {};
@@ -2370,6 +2384,9 @@ export default function HrEmployees() {
       await api.delete(`/employees/${dbId}`);
       toast.success('Employee removed', `${name} disabled.`);
       await reloadEmployees();
+      // A disabled employee is no longer a valid manager — refresh the pool so
+      // the Reporting Manager dropdown drops them without a page reload.
+      reloadManagers().catch(() => { /* swallow */ });
     } catch (err: any) {
       const apiMsg = err?.response?.data?.message || err?.message || 'Delete failed';
       toast.error('Could not delete employee', String(apiMsg));
@@ -2466,13 +2483,13 @@ export default function HrEmployees() {
     };
   }, [apiRows]);
 
-  const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]>([]);
+  const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean; rank?: number | null }[]>([]);
   const reloadManagers = useCallback(async () => {
     try {
       const r = await api.get('/employees/managers');
       const merged = [
-        ...((r?.data?.employees ?? []) as { id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean }[]),
-        ...((r?.data?.login_users ?? []) as { id: number; kind: string; label: string }[]),
+        ...((r?.data?.employees ?? []) as { id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean; rank?: number | null }[]),
+        ...((r?.data?.login_users ?? []) as { id: number; kind: string; label: string; rank?: number | null }[]),
       ];
       setManagerCandidates(merged);
     } catch {
@@ -2482,31 +2499,32 @@ export default function HrEmployees() {
   useEffect(() => { reloadManagers(); }, [reloadManagers]);
   const reportingManagerOptions = useMemo(
     () => {
-      // Org hierarchy: employee → dept HOD → Branch User (Director / CEO).
-      //  - HOD hire → Branch Users only.
-      //  - non-HOD → Branch Users (always) + employees scoped to the SELECTED
-      //    department, so the list reacts to the chosen department instead of
-      //    listing the whole company. No department yet → full pool.
-      const isHod = !!hodDesignationId && String(eDesignation) === hodDesignationId;
-      const deptId = String(eDept || '');
+      // Reporting-manager eligibility is driven by POSITION ONLY (see
+      // PositionHierarchy) — a manager from ANY department is allowed, as long as
+      // they rank STRICTLY higher than the hire (Branch User > HOD > Team Leader >
+      // Executive > Employee > Intern/Trainee). Department scoping was removed per
+      // request. This still subsumes the old "HOD → Branch User only" rule.
+      const hireRank = rankForDesignationName(
+        mDesignations.find(x => String(x.id) === String(eDesignation))?.name,
+      );
+      const rankOk = (r?: number | null) =>
+        hireRank == null || r == null || r < hireRank;
       let base = managerCandidates
         .filter(m => !(editingDbId && m.kind === 'employee' && m.id === editingDbId))
-        .filter(m => {
-          if (isHod) return m.kind === 'branch_user';
-          if (m.kind === 'branch_user') return true;
-          if (!deptId) return true;
-          return m.department_id != null && String(m.department_id) === deptId;
-        })
+        .filter(m => rankOk(m.rank)) // strictly higher position, any department
         .map(m => ({ value: `${m.kind}:${m.id}`, label: m.label }));
       if (savedMgrOption && !base.some(o => o.value === savedMgrOption.value)) {
-        // keep the previously-saved manager only if it still satisfies the HOD rule
-        if (!isHod || String(savedMgrOption.value).startsWith('branch_user:')) {
+        // Keep the previously-saved manager visible only if it's still eligible
+        // (a Branch User is always eligible; otherwise check its rank if known).
+        const savedCand = managerCandidates.find(m => `${m.kind}:${m.id}` === savedMgrOption.value);
+        if (String(savedMgrOption.value).startsWith('branch_user:') || rankOk(savedCand?.rank)) {
           base = [savedMgrOption, ...base];
         }
       }
       return base;
     },
-    [managerCandidates, editingDbId, savedMgrOption, hodDesignationId, eDesignation, eDept]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [managerCandidates, editingDbId, savedMgrOption, mDesignations, eDesignation]
   );
 
   // Auto-point a non-HOD hire at their department's HOD when one exists — only

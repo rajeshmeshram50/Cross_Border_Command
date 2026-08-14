@@ -389,6 +389,9 @@ class EmployeeController extends Controller
                 // client; an employee reports to their department's HOD.
                 'department_id' => $e->department_id,
                 'is_hod'        => in_array((int) $e->designation_id, $hodIds, true),
+                // Position rank (drives the reporting-manager hierarchy filter on
+                // the client — a manager must rank strictly higher than the hire).
+                'rank'          => \App\Support\PositionHierarchy::rankForDesignationName($e->designation?->name),
                 // Show the employee's DESIGNATION in brackets (e.g. "Anushka
                 // Bakde (HOD)") rather than the generic "(Employee)" kind.
                 // Falls back to "Employee" only when no designation is set.
@@ -438,6 +441,9 @@ class EmployeeController extends Controller
         $loginUsers = $loginUsers->map(fn($u) => [
             'id'    => $u->id,
             'kind'  => $u->user_type,
+            // A login user (Branch User / admin) is the top of the org chart, so
+            // it is an eligible manager for every designation.
+            'rank'  => \App\Support\PositionHierarchy::TOP_RANK,
             // Designation in brackets — the linked employee's designation
             // first, then the user's own designation, finally the readable
             // user type (e.g. "Client Admin") when none is set.
@@ -907,6 +913,9 @@ class EmployeeController extends Controller
                 // (within a branch) — the branch's single sales/ops head.
                 $this->assertSingleHodPerDepartment($data, $clientId, $branchId, null);
 
+                // Reporting manager must hold a strictly higher position.
+                $this->assertReportingManagerEligible($data, null);
+
                 // Enforce the per-branch user cap before we provision a
                 // new User row. Every employee gets a login account
                 // (User::create below) so each new hire consumes one
@@ -1107,6 +1116,11 @@ class EmployeeController extends Controller
         // One HOD per department (branch-scoped). Fall back to the row's own
         // department/branch when a partial wizard PUT omits them.
         $this->assertSingleHodPerDepartment($data, $row->client_id, $row->branch_id, $row->id, $row);
+
+        // Reporting manager must hold a strictly higher position (and can't be
+        // the employee themselves). Fall back to the row's own designation when a
+        // partial PUT omits it.
+        $this->assertReportingManagerEligible($data, $row->id, $row);
 
         // Track wizard progress as a high-watermark — never decrease it.
         // The frontend posts the step number it just completed; we keep
@@ -1724,6 +1738,54 @@ class EmployeeController extends Controller
         if ($dupe) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'designation_id' => ['This department already has a Head of Department (HOD). Only one HOD is allowed per department.'],
+            ]);
+        }
+    }
+
+    /**
+     * The reporting manager must hold a STRICTLY higher position than the hire
+     * (Branch User > HOD > Team Leader > Executive > Employee > Intern/Trainee),
+     * and an employee can never be their own manager. Mirrors the client-side
+     * dropdown filter so an ineligible pick is rejected even if the UI is
+     * bypassed. See \App\Support\PositionHierarchy.
+     */
+    private function assertReportingManagerEligible(array $data, ?int $employeeId = null, $existing = null): void
+    {
+        $mgrEmpId  = $data['reporting_manager_id']      ?? null;
+        $mgrUserId = $data['reporting_manager_user_id'] ?? null;
+
+        // Self-reference guard (an employee can't report to themselves).
+        if ($employeeId && $mgrEmpId && (int) $mgrEmpId === (int) $employeeId) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reporting_manager_id' => ['An employee cannot be their own reporting manager.'],
+            ]);
+        }
+        if (!$mgrEmpId && !$mgrUserId) return; // no manager set / cleared
+
+        // Hire rank from its designation (fall back to the existing row on a
+        // partial update that omits designation_id).
+        $designationId = $data['designation_id'] ?? ($existing->designation_id ?? null);
+        $hireName = $designationId
+            ? \App\Models\Masters\Designations::where('id', $designationId)->value('name')
+            : null;
+        $hireRank = \App\Support\PositionHierarchy::rankForDesignationName($hireName);
+
+        // Manager rank — an employee via its designation, a login user via user_type.
+        $mgrRank = null;
+        if ($mgrEmpId) {
+            $mgrDesigId = \App\Models\Employee::where('id', $mgrEmpId)->value('designation_id');
+            $mgrName = $mgrDesigId
+                ? \App\Models\Masters\Designations::where('id', $mgrDesigId)->value('name')
+                : null;
+            $mgrRank = \App\Support\PositionHierarchy::rankForDesignationName($mgrName);
+        } elseif ($mgrUserId) {
+            $ut = \App\Models\User::where('id', $mgrUserId)->value('user_type');
+            $mgrRank = \App\Support\PositionHierarchy::rankForUserType($ut);
+        }
+
+        if (!\App\Support\PositionHierarchy::eligible($hireRank, $mgrRank)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'reporting_manager_id' => ['The selected reporting manager is not eligible for this position — a manager must hold a higher position in the hierarchy.'],
             ]);
         }
     }
