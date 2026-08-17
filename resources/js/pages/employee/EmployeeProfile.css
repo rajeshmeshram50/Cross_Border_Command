@@ -3397,6 +3397,24 @@
   box-shadow: 0 6px 16px rgba(244,63,94,0.35);
 }
 .ep-pw-close { width: 30px; height: 30px; }
+/* Password-state banner. The text stays on the normal body colour and only the
+   icon, tint and border carry the tone — a fully coloured sentence sits at the
+   edge of readable contrast on the amber variant, and worse again in dark mode
+   where the tint darkens but a fixed text colour would not. */
+.ep-pw-state {
+  padding: 8px 10px;
+  border-radius: 10px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+  color: var(--vz-body-color);
+}
+.ep-pw-state-icon { flex: 0 0 auto; margin-top: 1px; }
+.ep-pw-state-success { background: rgba(10,179,156,0.10); border-color: rgba(10,179,156,0.25); }
+.ep-pw-state-success .ep-pw-state-icon { color: #0ab39c; }
+.ep-pw-state-warning { background: rgba(247,184,75,0.12); border-color: rgba(247,184,75,0.30); }
+.ep-pw-state-warning .ep-pw-state-icon { color: #f7b84b; }
+.ep-pw-state-danger  { background: rgba(240,101,72,0.10); border-color: rgba(240,101,72,0.28); }
+.ep-pw-state-danger .ep-pw-state-icon { color: #f06548; }
 .ep-pw-input { padding-right: 38px; border-radius: 10px; }
 .ep-pw-eye { right: 10px; top: 50%; transform: translateY(-50%); color: var(--vz-secondary-color); }
 .ep-pw-strength-track { flex: 1; height: 6px; background: var(--vz-secondary-bg); border-radius: 999px; overflow: hidden; }

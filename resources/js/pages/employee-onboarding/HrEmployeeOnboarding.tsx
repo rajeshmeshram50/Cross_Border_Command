@@ -6105,6 +6105,15 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       toast.error('Cannot upload', 'Save the employee first — no record id yet.');
       return;
     }
+    /* Hard guard, not just the disabled buttons. The picker is a detached
+       <input> created here, so a click that lands before React re-renders — or
+       any future caller — could still start a second upload while one is in
+       flight. Two concurrent uploads share one `uploadingKey`, and whichever
+       finished first cleared it. */
+    if (uploadingKey) {
+      toast.info('One at a time', 'Wait for the current upload to finish before starting another.');
+      return;
+    }
     // Per-doc cap, clamped to the backend ceiling — never let a doc
     // demand more than the server can actually accept.
     const cap = Math.min(maxMb ?? DOC_MAX_MB, DOC_MAX_MB);
@@ -6296,6 +6305,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   ? 'image/jpeg,image/png,application/pdf'
                   : DOC_ACCEPT_ATTR;
               const isBusy = uploadingKey === d.id;
+              /* One upload at a time, across the WHOLE stage. `isBusy` only
+                 disabled the row being uploaded, so a second file could be
+                 started while the first was still in flight — and the first
+                 request to finish cleared the shared uploadingKey, so the UI
+                 stopped showing "Uploading…" while an upload was still running
+                 and its success toast landed on a stage that was not settled.
+                 That is the "toast appears before the upload completes" report. */
+              const isLocked = !!uploadingKey && !isBusy;
               return (
                 <div key={d.id} className="onb-doc-row">
                   <span className="onb-doc-row-icon"><i className="ri-file-text-line" /></span>
@@ -6330,24 +6347,32 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       </a>
                     </Tooltip>
                   )}
-                  <Tooltip label={isBusy ? 'Uploading…' : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)}>
+                  <Tooltip label={
+                    isBusy   ? 'Uploading…'
+                    : isLocked ? 'Another document is uploading — wait for it to finish'
+                    : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
+                  }>
                     <button
                       type="button"
                       className="onb-doc-upload-btn"
                       onClick={() => triggerUpload(d.id, d.name, accept, d.maxMb)}
-                      disabled={isBusy}
-                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
+                      disabled={isBusy || isLocked}
+                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : (isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined)}
                     >
                       <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
                       {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
                   </Tooltip>
                   {srv && (
-                    <Tooltip label="Remove this document">
+                    <Tooltip label={isLocked ? 'Another document is uploading — wait for it to finish' : 'Remove this document'}>
                       <button
                         type="button"
                         className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
                         onClick={() => triggerDelete(srv.id, d.name)}
+                        // Deleting mid-upload would race the reload the upload
+                        // runs when it lands.
+                        disabled={isLocked || isBusy}
+                        style={(isLocked || isBusy) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                       >
                         <i className="ri-delete-bin-line" />
                       </button>

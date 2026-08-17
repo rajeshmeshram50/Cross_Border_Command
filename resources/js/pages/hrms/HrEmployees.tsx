@@ -1500,7 +1500,7 @@ export default function HrEmployees() {
                     inputMode="decimal"
                     style={{ width: '100%', border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', textAlign: 'right', fontSize: 13, fontWeight: 700, padding: '3px 2px 3px 15px', outline: 'none', color: computedAmount ? 'var(--vz-secondary-color)' : 'var(--vz-body-color)', cursor: computedAmount ? 'not-allowed' : undefined }}
                     value={c.amount}
-                    readOnly={computedAmount}
+                    readOnly={computedAmount} 
                     title={computedAmount ? 'Calculated from Basic Salary and PF Type — not editable' : undefined}
                     onChange={e => { if (!computedAmount) updateBreakRow(which, i, 'amount', e.target.value); }}
                     onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
@@ -2876,14 +2876,20 @@ export default function HrEmployees() {
               locked={!perm.canEdit}
             />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
-            {tab === 'disabled' && (
+            {/* Permanent-delete button — hidden for now. A disabled employee is
+                kept as a record (attendance, payroll history and documents all
+                hang off it), so the toggle below is the intended way to take
+                someone out of circulation. Re-enable this block if a hard
+                delete is ever wanted again; handleForceDelete + the
+                DeleteConfirmModal are still wired up below. */}
+            {/* {tab === 'disabled' && (
               <ActionBtn
                 title={perm.lockedTitle('delete') ?? 'Delete permanently'}
                 icon="ri-delete-bin-line" color="danger"
                 onClick={() => perm.guard('delete', () => setConfirmDelete(e))}
                 locked={!perm.canDelete}
               />
-            )}
+            )} */}
             {/* Enabling / disabling an employee IS an edit of their record —
                 and disabling routes through the delete endpoint — so the
                 switch needs both flags before it will move. */}

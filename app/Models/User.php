@@ -64,6 +64,12 @@ class User extends Authenticatable
             'login_count' => 'integer',
             'email_active' => 'boolean',
             'must_reset_password' => 'boolean',
+            // Deliberately NOT in $fillable: these are stamped only by
+            // PasswordHistory::recordPasswordHistory(), never mass-assigned
+            // from a request — a client that could set them could fake the
+            // audit trail the password screen reads.
+            'password_change_count' => 'integer',
+            'password_changed_at' => 'datetime',
         ];
     }
 
