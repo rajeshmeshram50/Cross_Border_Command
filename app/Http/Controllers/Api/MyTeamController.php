@@ -113,8 +113,11 @@ class MyTeamController extends Controller
         $q = HrDocumentSignature::query()
             ->with([
                 'template:id,code,name,doc_type',
-                'employee:id,display_name,first_name,last_name,emp_code,department_id',
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                // Needed by reportsToName() for the approval row's manager.
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
             ])
             ->whereIn('status', ['Pending', 'In Progress']);
 
@@ -144,6 +147,10 @@ class MyTeamController extends Controller
                 'title'         => $row->template?->name ?? '(template removed)',
                 'subject_name'  => $row->employee?->display_name ?? '—',
                 'subject_dept'  => $row->employee?->department?->name ?? '—',
+                // Who the subject reports to. The Approval List showed the
+                // employee and their department but never the manager, so a
+                // reviewer could not tell whose line the request came up.
+                'subject_manager' => $this->reportsToName($row->employee) ?? '—',
                 'action'        => $current['action'] ?? 'Sign',
                 'status'        => $row->status,
                 'days_left'     => isset($current['days']) ? (int) $current['days'] : null,
@@ -227,8 +234,10 @@ class MyTeamController extends Controller
 
         $q = LeaveRequest::query()
             ->with([
-                'employee:id,emp_code,display_name,first_name,last_name,department_id,reporting_manager_id',
+                'employee:id,emp_code,display_name,first_name,last_name,department_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
                 'leaveType:id,name,short_code',
             ])
             ->where('status', 'Pending')
@@ -281,6 +290,7 @@ class MyTeamController extends Controller
                                   (string) $row->from_date . ' → ' . (string) $row->to_date)),
                 'subject_name' => $name ?: '—',
                 'subject_dept' => $emp?->department?->name ?? '—',
+                'subject_manager' => $this->reportsToName($emp) ?? '—',
                 'action'       => 'Approve',
                 'status'       => $row->status,
                 'days_left'    => null,
@@ -383,6 +393,7 @@ class MyTeamController extends Controller
                 'title'         => $row->title ?: 'Expense Claim',
                 'subject_name'  => $employeeName ?: '—',
                 'subject_dept'  => $emp?->department?->name ?? '—',
+                'subject_manager' => $this->reportsToName($emp) ?? '—',
                 'action'        => 'Approve',
                 'status'        => $row->status,
                 'days_left'     => null,
@@ -433,8 +444,10 @@ class MyTeamController extends Controller
         // every HR-acted claim in the tenant to any HR user. (Bug 50)
         $q = ExpenseClaim::query()
             ->with([
-                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
                 'category:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
             ])
@@ -478,6 +491,7 @@ class MyTeamController extends Controller
                 'title'        => $row->title ?: 'Expense Claim',
                 'subject_name' => $employeeName ?: '—',
                 'subject_dept' => $emp?->department?->name ?? '—',
+                'subject_manager' => $this->reportsToName($emp) ?? '—',
                 'verdict'      => $verdict,                 // approved | rejected
                 'acted_at'     => optional($row->updated_at)->toIso8601String(),
                 'status'       => $row->status,
@@ -589,6 +603,7 @@ class MyTeamController extends Controller
                 'title'         => $typeLabel,
                 'subject_name'  => $employeeName ?: '—',
                 'subject_dept'  => $emp?->department?->name ?? '—',
+                'subject_manager' => $this->reportsToName($emp) ?? '—',
                 'action'        => 'Approve',
                 'status'        => $row->status,
                 'days_left'     => null,
@@ -632,8 +647,11 @@ class MyTeamController extends Controller
         // the HR stage they recorded via hr_user_id). (Bug 50)
         $q = AdvanceRequest::query()
             ->with([
-                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id',
+                'employee:id,display_name,first_name,last_name,emp_code,department_id,branch_id,client_id,reporting_manager_id,reporting_manager_user_id',
                 'employee.department:id,name',
+                // reportsToName() needs both manager kinds loaded.
+                'employee.reportingManager:id,display_name,first_name,last_name',
+                'employee.reportingManagerUser:id,name',
                 'manager:id,display_name,first_name,last_name,emp_code',
             ])
             ->where(function ($w) use ($myEmployeeId, $uid) {
@@ -675,6 +693,7 @@ class MyTeamController extends Controller
                     : 'Advance Request',
                 'subject_name' => $employeeName ?: '—',
                 'subject_dept' => $emp?->department?->name ?? '—',
+                'subject_manager' => $this->reportsToName($emp) ?? '—',
                 'verdict'      => $verdict,
                 'acted_at'     => optional($row->updated_at)->toIso8601String(),
                 'status'       => $row->status,

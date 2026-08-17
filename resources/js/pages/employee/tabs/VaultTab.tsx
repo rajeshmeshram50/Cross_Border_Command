@@ -115,6 +115,14 @@ export default function VaultTab() {
     },
   ], [prettyDocKey, formatBytes]);
 
+  /** Latest `acted_at` across a run's signers — i.e. when the last one signed. */
+  const completedAt = (d: any): Date | null => {
+    const times = (Array.isArray(d?.signers) ? d.signers : [])
+      .map((s: any) => (s?.acted_at ? new Date(s.acted_at).getTime() : NaN))
+      .filter((t: number) => Number.isFinite(t));
+    return times.length ? new Date(Math.max(...times)) : null;
+  };
+
   const signedColumns = useMemo<DataTableColumn<any>[]>(() => [
     {
       id: 'document',
@@ -154,13 +162,16 @@ export default function VaultTab() {
     {
       id: 'completed',
       header: 'Completed',
-      accessorFn: (d: any) => (d.updated_at ? new Date(d.updated_at).getTime() : 0),
+      // When the LAST signer acted — not `updated_at`, which any later edit
+      // bumps, so a run nobody had finished still showed a confident date.
+      // There is no completed_at column; the signer log is the only record of
+      // when the run actually closed.
+      accessorFn: (d: any) => completedAt(d)?.getTime() ?? 0,
       meta: { width: 130 },
-      cell: info => (
-        <span className="font-monospace vt-mono-sm">
-          {info.row.original.updated_at ? new Date(info.row.original.updated_at).toLocaleDateString() : '—'}
-        </span>
-      ),
+      cell: info => {
+        const at = completedAt(info.row.original);
+        return <span className="font-monospace vt-mono-sm">{at ? at.toLocaleDateString() : '—'}</span>;
+      },
     },
     {
       id: 'actions',
@@ -316,12 +327,20 @@ export default function VaultTab() {
                 </div>
               </div>
               <div className="px-3 pb-3 pt-2 flex-grow-1 d-flex flex-column">
+                {/* fitToViewport + autoFitRows: the same fill behaviour as the
+                    other list screens — the card stretches to the bottom of the
+                    viewport with the pager pinned to its lower edge, and the
+                    page size becomes however many rows that height holds.
+                    Without it a short (or empty) result left the pager floating
+                    mid-card above a band of dead white space. */}
                 <DataTable
                   data={uploadedDocs}
                   columns={uploadedColumns}
                   serial={{ header: 'SR' }}
                   accent="violet"
                   pageSize={10}
+                  fitToViewport
+                  autoFitRows
                   minWidth={1130}
                   loading={uploadedLoading}
                   searchHost={uploadedSearchHost}
@@ -386,6 +405,8 @@ export default function VaultTab() {
                   serial={{ header: 'SR' }}
                   accent="violet"
                   pageSize={10}
+                  fitToViewport
+                  autoFitRows
                   minWidth={1030}
                   loading={signedLoading}
                   searchHost={signedSearchHost}
@@ -436,6 +457,8 @@ export default function VaultTab() {
                   serial={{ header: 'SR' }}
                   accent="violet"
                   pageSize={10}
+                  fitToViewport
+                  autoFitRows
                   minWidth={1030}
                   loading={signedLoading}
                   searchHost={signedSearchHost}

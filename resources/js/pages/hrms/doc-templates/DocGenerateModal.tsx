@@ -3,6 +3,9 @@ import { Modal } from 'reactstrap';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
+import { saveApiBlob } from '../../../utils/downloadFile';
+/* .rec-form-content — the shared dialog shell used by every other popup. */
+import '../../../../css/recruitment.css';
 
 interface HeaderConfig {
   logo_path?: string | null;
@@ -88,6 +91,9 @@ export default function DocGenerateModal({
   const [sending, setSending]       = useState(false);
   // Synchronous double-submit guard — `sending` only disables on next render.
   const sendingRef = useRef(false);
+  /** Set the first time a custom value is edited, so the debounced preview
+   *  below doesn't fire a duplicate render right after the mount one. */
+  const valuesTouched = useRef(false);
 
   // ── Bootstrap: load template + known tokens whenever the modal opens ──────
   useEffect(() => {
@@ -98,6 +104,7 @@ export default function DocGenerateModal({
     setValues({});
     setPreviewHtml('');
     setTokensFailed(false);
+    valuesTouched.current = false;   // fresh open — nothing edited yet
     (async () => {
       try {
         const [tplRes, tokRes] = await Promise.all([
@@ -167,8 +174,10 @@ export default function DocGenerateModal({
   const displayName = template?.name || templateName || 'Document';
   const displayCode = template?.code || templateCode || '';
 
-  const setVal = (name: string, val: string) =>
+  const setVal = (name: string, val: string) => {
+    valuesTouched.current = true;   // arms the debounced preview below
     setValues(prev => ({ ...prev, [name]: val }));
+  };
 
   // ── Preview ───────────────────────────────────────────────────────────────
   const refreshPreview = async () => {
@@ -194,8 +203,30 @@ export default function DocGenerateModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, template, employeeId]);
 
-  // ── Generate + download the filled DOCX ───────────────────────────────────
-  const onDownload = async () => {
+  /* Re-render when a filled value settles. The preview used to build ONCE on
+     open and then only on an explicit click, so typing into a custom field left
+     the panel showing the document without it — the operator had to know to
+     press Refresh, and reviewing a stale preview is exactly the mistake this
+     step exists to prevent. Debounced so it isn't a request per keystroke, and
+     skipped while a save/send is in flight (that request carries the values;
+     re-rendering underneath it races what is being written).
+     `valuesTouched` keeps this from firing a second, identical preview straight
+     after the mount one. */
+  useEffect(() => {
+    if (!isOpen || !template || !employeeId) return;
+    if (!valuesTouched.current || busy) return;
+    const t = setTimeout(() => refreshPreview(), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values]);
+
+  /* Saves the generated-document record, then streams it back in the chosen
+     format. Both formats come off the SAME saved row, so the DOCX and the PDF
+     of one click are the same document — the format only decides how it is
+     read. PDF exists because PhpWord writes images in the legacy VML form,
+     which Word/LibreOffice/Google Docs render but some readers (WordPad) do
+     not, so a DOCX letterhead could go missing depending on the opener. */
+  const onDownload = async (format: 'docx' | 'pdf' = 'docx') => {
     if (!templateId || !employeeId) return;
     if (!isActive) {
       toast.error('Not active', 'Only Active templates can be generated. Publish this template first.');
@@ -209,20 +240,18 @@ export default function DocGenerateModal({
       });
       const docs: Array<{ id: number }> = data?.documents ?? [];
       for (const g of docs) {
-        const resp = await api.get(`/hr-generated-documents/${g.id}/download`, { responseType: 'blob' });
-        const url = URL.createObjectURL(new Blob([resp.data]));
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${displayCode || 'doc'}-${(employeeName || `emp${employeeId}`).replace(/\s+/g, '-')}.docx`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
+        const path = format === 'pdf'
+          ? `/hr-generated-documents/${g.id}/download-pdf`
+          : `/hr-generated-documents/${g.id}/download`;
+        const resp = await api.get(path, { responseType: 'blob' });
+        const name = `${displayCode || 'doc'}-${(employeeName || `emp${employeeId}`).replace(/\s+/g, '-')}.${format}`;
+        // Verify it really is one before handing the user a file named .pdf/.docx.
+        await saveApiBlob(new Blob([resp.data]), name, format);
       }
-      toast.success('Document saved', `${displayCode || displayName} generated & downloaded.`);
+      toast.success('Document saved', `${displayCode || displayName} generated & downloaded as ${format.toUpperCase()}.`);
       onGenerated?.();
     } catch (err: any) {
-      toast.error('Could not generate', err?.response?.data?.message || 'Please try again.');
+      toast.error('Could not generate', err?.response?.data?.message || err?.message || 'Please try again.');
     } finally {
       setSaving(false);
     }
@@ -256,9 +285,15 @@ export default function DocGenerateModal({
 
   const busy = saving || sending || previewing;
 
+  /* `rec-form-content` is the app's standard dialog shell (18px radius, the
+     premium shadow, and overflow:hidden so a gradient header is CLIPPED by the
+     corners). Without it this modal fell back to reactstrap's default radius
+     while the gradient header inside kept square corners, so the curve read as
+     broken against every other popup in the app. */
   return (
     <Modal isOpen={isOpen} toggle={busy ? undefined : onClose} centered size="lg"
-      contentClassName="border-0" backdrop="static" keyboard={!busy}>
+      className="dgm-dialog" contentClassName="rec-form-content border-0"
+      backdrop="static" keyboard={!busy}>
       <ScopedStyles />
       <div className="dgm">
         {/* Header */}
@@ -395,11 +430,27 @@ export default function DocGenerateModal({
               the label alone ("Saving…" / "Sending…") read as a dead button on a
               slow render/upload, and Send had no busy affordance at all. */}
           <div className="d-flex gap-2">
-            <button type="button" className="dgm-btn dgm-btn-outline" onClick={onDownload} disabled={busy || !isActive || loading}
-              title="Save this generated document (counts toward Generated) and download the DOCX">
-              <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-save-3-line'} me-1`} />
-              {saving ? 'Saving…' : 'Save Generated'}
+            {/* Both buttons SAVE the same record — the format only decides how
+                the copy is read. PDF first because it is the safe one to send
+                on: it looks identical in every reader. DOCX is for editing.
+                Each names the save AND the download, since the old "Save
+                Generated" mentioned only the save and the file arriving in the
+                browser came as a surprise. */}
+            <button type="button" className="dgm-btn dgm-btn-outline" onClick={() => onDownload('pdf')} disabled={busy || !isActive || loading}
+              title="Saves this document against the employee (counts toward Generated) and downloads a PDF — renders identically in every reader">
+              <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-file-pdf-2-line'} me-1`} />
+              {saving ? 'Saving…' : 'Save & PDF'}
             </button>
+            {/* Save & DOCX — hidden on request. PhpWord writes images in the
+                legacy VML form, so the letterhead can vanish depending on the
+                reader; PDF above is the reliable copy. onDownload('docx') and
+                its route are left intact so this is a one-line restore.
+            <button type="button" className="dgm-btn dgm-btn-outline" onClick={() => onDownload('docx')} disabled={busy || !isActive || loading}
+              title="Saves this document against the employee (counts toward Generated) and downloads an editable DOCX">
+              <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-file-word-2-line'} me-1`} />
+              {saving ? 'Saving…' : 'Save & DOCX'}
+            </button>
+            */}
             <button type="button" className="dgm-btn dgm-btn-primary" onClick={onSend} disabled={busy || !isActive || loading}>
               <i className={`${sending ? 'ri-loader-4-line dgm-spin' : 'ri-quill-pen-line'} me-1`} />
               {sending ? 'Sending…' : 'Send for Signature'}
@@ -462,6 +513,11 @@ function DocFooter({ cfg }: { cfg?: FooterConfig | null }) {
 function ScopedStyles() {
   return (
     <style>{`
+      /* Wider than Bootstrap's 800px "lg": this popup shows a rendered A4 page,
+         and at 800px the preview sheet left too little room for the document to
+         read like the page it becomes. Still capped by the viewport so nothing
+         overflows on a small laptop screen. */
+      .modal-dialog.dgm-dialog { max-width: min(980px, calc(100vw - 32px)); }
       .dgm { display: flex; flex-direction: column; max-height: 86vh; }
       .dgm-head {
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -504,7 +560,7 @@ function ScopedStyles() {
       .dgm-refresh:disabled { opacity: 0.6; cursor: default; }
       .dgm-preview-stage { background: #f1f5f9; border-radius: 10px; padding: 18px; }
       .dgm-preview-paper {
-        max-width: 720px; margin: 0 auto; background: #fff; border-radius: 6px; overflow: hidden;
+        max-width: 820px; margin: 0 auto; background: #fff; border-radius: 6px; overflow: hidden;
         box-shadow: 0 10px 30px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
       }
       .dgm-doc-header { display: flex; align-items: center; gap: 16px; padding: 16px 28px; }

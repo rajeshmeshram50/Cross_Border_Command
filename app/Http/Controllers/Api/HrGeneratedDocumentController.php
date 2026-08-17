@@ -58,7 +58,7 @@ class HrGeneratedDocumentController extends Controller
         // fields like LastWorkingDate, EffectiveDate, etc.) and need to pop
         // visually so reviewers can verify them at a glance.
         $boldNames = array_keys(array_filter($customValues, fn ($v) => $v !== '' && $v !== null));
-        $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames);
+        $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames, $this->rawHtmlTokenNames($customValues));
 
         return response()->json([
             'rendered_html' => $html,
@@ -116,7 +116,7 @@ class HrGeneratedDocumentController extends Controller
                     // Bold operator-supplied values — same rule as the preview
                     // endpoint, so what they see in Step 3 is what gets stored.
                     $boldNames = array_keys(array_filter($custom, fn ($v) => $v !== '' && $v !== null));
-                    $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames);
+                    $html   = $this->renderTemplate((string) $tpl->content_html, $tokens, $boldNames, $this->rawHtmlTokenNames($custom));
 
                     $row = HrGeneratedDocument::create([
                         'client_id'     => $tpl->client_id,
@@ -205,6 +205,188 @@ class HrGeneratedDocumentController extends Controller
         return \App\Services\HrTemplateDocxRenderer::render($clone, $filename);
     }
 
+    /**
+     * Same document as downloadDocx, rendered to PDF.
+     *
+     * DOCX is the editable copy, but PhpWord can only write images in the
+     * legacy VML form (<w:pict>) — Word, LibreOffice, Google Docs and Office
+     * Online all render it, WordPad does not, so a letterhead could silently
+     * go missing depending on what opened the file. A PDF looks the same in
+     * every reader, which is what a document being sent OUT needs.
+     *
+     * Reuses the signed-document blade and DomPDF, so the header strip, the
+     * footer and the page numbering match the signed copies exactly.
+     */
+    public function downloadPdf(Request $request, $id)
+    {
+        $this->authorize($request, 'can_view');
+        $row = $this->resolveRow($request, (int) $id);
+
+        $tpl = HrDocumentTemplate::find($row->template_id);
+        if (!$tpl) abort(404, 'Source template missing.');
+
+        $headerCfg = is_array($tpl->header_config) ? $tpl->header_config : [];
+        $footerCfg = is_array($tpl->footer_config) ? $tpl->footer_config : [];
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
+            'row'         => $tpl,          // blade only reads ->template?->name
+            'header'      => $headerCfg,
+            'footer'      => $footerCfg,
+            'logoDataUri' => $this->headerLogoDataUri($headerCfg, $row),
+            // DomPDF runs headless and cannot fetch /storage over HTTP, so every
+            // local <img> — the body's company logo included — is inlined first.
+            'bodyHtml'    => $this->inlineLocalImagesAsDataUris(
+                (string) ($row->rendered_html ?: '<p>(empty document)</p>')
+            ),
+        ])->setPaper('A4');
+
+        $tplCode = $tpl->code ?: 'doc';
+        $empCode = $row->employee?->emp_code ?: ('emp' . $row->employee_id);
+        return $pdf->download("{$tplCode}-{$empCode}.pdf");
+    }
+
+    /**
+     * Header-strip logo as a base64 data URI. Same candidate order as the
+     * signed-PDF path: the config's saved path, the same config's URL resolved
+     * back to a disk path, then the employee's branch logo.
+     */
+    private function headerLogoDataUri(array $headerCfg, HrGeneratedDocument $row): ?string
+    {
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        $branchLogo = $row->employee?->branch?->logo;
+
+        foreach ([
+            (string) ($headerCfg['logo_path'] ?? ''),
+            $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
+            $this->diskPathFromUrl((string) ($branchLogo ?? '')) ?? '',
+        ] as $candidate) {
+            $candidate = ltrim($candidate, '/');
+            if ($candidate === '' || !$disk->exists($candidate)) continue;
+
+            return $this->imageDataUri($candidate);
+        }
+        return null;
+    }
+
+    /**
+     * Read an image off the public disk as a base64 data URI, DOWNSCALED to a
+     * sane print size first.
+     *
+     * Branch logos are uploaded at whatever the source file happened to be —
+     * one in this tenant is 9653 × 3094 and 1.1 MB, for a mark that renders
+     * about 64px tall. Base64 inflates that by a third, it went in twice (the
+     * header strip and the body's {{CompanyLogo}}), and the result was a 2 MB
+     * PDF for a one-page letter, slow to build and heavy to ship.
+     *
+     * The cap is generous — 900px still prints crisply at any letterhead size —
+     * and anything already smaller is passed through untouched, so nothing is
+     * re-encoded for no reason.
+     */
+    private function imageDataUri(string $diskPath): ?string
+    {
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        try {
+            if (!$disk->exists($diskPath)) return null;
+            $bytes = (string) $disk->get($diskPath);
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $ext = strtolower((string) pathinfo($diskPath, PATHINFO_EXTENSION));
+        // "image/jpg" is not a valid type — some readers refuse to decode it.
+        $mime = match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'svg'         => 'image/svg+xml',
+            ''            => 'image/png',
+            default       => 'image/' . $ext,
+        };
+
+        // SVG is already small and resolution-independent; GD can't read it anyway.
+        if ($mime === 'image/svg+xml' || !function_exists('imagecreatefromstring')) {
+            return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+        }
+
+        $maxWidth = 900;
+        $info = @getimagesizefromstring($bytes);
+        if (!$info || $info[0] <= $maxWidth) {
+            return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+        }
+
+        try {
+            $src = @imagecreatefromstring($bytes);
+            if (!$src) return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+
+            $w = imagesx($src);
+            $h = imagesy($src);
+            $newW = $maxWidth;
+            $newH = (int) max(1, round($h * ($maxWidth / $w)));
+
+            $dst = imagecreatetruecolor($newW, $newH);
+            // Keep transparency — a logo flattened onto black is worse than a
+            // large one.
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
+
+            ob_start();
+            if ($mime === 'image/jpeg') { imagejpeg($dst, null, 85); }
+            else                        { imagepng($dst); $mime = 'image/png'; }
+            $resized = (string) ob_get_clean();
+
+            imagedestroy($src);
+            imagedestroy($dst);
+
+            // Only take the resized copy if it actually helped.
+            if ($resized !== '' && strlen($resized) < strlen($bytes)) $bytes = $resized;
+        } catch (\Throwable $e) {
+            Log::warning('Logo downscale failed; embedding the original', [
+                'path'  => $diskPath,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
+    }
+
+    /** Resolve an image reference to a path on the public disk, or null. */
+    private function diskPathFromUrl(string $src): ?string
+    {
+        $src = trim($src);
+        if ($src === '' || str_starts_with($src, 'data:')) return null;
+
+        $parsed = parse_url($src);
+        $path = ltrim(str_replace('\\', '/', $parsed['path'] ?? $src), '/');
+
+        if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) return $m[1];
+        if (isset($parsed['scheme'])) return null;              // remote host
+        if (str_starts_with($path, 'public/')) $path = substr($path, strlen('public/'));
+        // A bare basename with no folder is a stale row from a buggy save.
+        return str_contains($path, '/') ? $path : null;
+    }
+
+    /**
+     * Rewrite local <img src> values into base64 data URIs so DomPDF, which
+     * runs headless, can embed them.
+     */
+    private function inlineLocalImagesAsDataUris(string $html): string
+    {
+        return preg_replace_callback(
+            '#<img\b([^>]*?)\bsrc=([\'"])(.*?)\2([^>]*?)/?>#i',
+            function (array $m) {
+                [$full, $pre, $q, $src, $post] = $m;
+                if ($src === '' || str_starts_with($src, 'data:')) return $full;
+                $path = $this->diskPathFromUrl($src);
+                if (!$path) return $full;
+                // Same downscaling as the header logo — the body carries the
+                // very same file via {{CompanyLogo}}.
+                $uri = $this->imageDataUri($path);
+                return $uri ? '<img' . $pre . 'src=' . $q . $uri . $q . $post . '/>' : $full;
+            },
+            $html,
+        ) ?? $html;
+    }
+
     /* ───── VARIABLE RESOLVER ───── */
 
     /**
@@ -245,6 +427,31 @@ class HrGeneratedDocumentController extends Controller
             ?: $emp->branch?->client?->org_name
             ?: '';
 
+        /* CompanyLogo and CompanyAddress were both hardcoded to '' — a template
+         * that used them rendered a blank line where the letterhead belonged,
+         * which is the "half the fields come through" report. Both come off the
+         * employing BRANCH, the same entity CompanyName resolves to.
+         * The logo is emitted as an <img>: file_url() gives a /storage URL,
+         * which the on-screen preview loads directly and the PDF path rewrites
+         * into a data URI (inlineLocalImagesAsDataUris) because DomPDF cannot
+         * fetch over HTTP. */
+        $branch = $emp->branch;
+        $logoUrl = $branch ? file_url($branch->logo) : null;
+        $companyLogo = $logoUrl
+            ? sprintf(
+                '<img src="%s" alt="%s" style="max-height:64px;max-width:220px;" />',
+                htmlspecialchars($logoUrl, ENT_QUOTES),
+                htmlspecialchars($companyName ?: 'Company logo', ENT_QUOTES),
+            )
+            : '';
+        $companyAddress = $branch
+            ? trim(implode(', ', array_filter([
+                trim((string) ($branch->address ?? '')),
+                trim((string) ($branch->city ?? '')),
+                trim((string) ($branch->pincode ?? '')),
+            ], fn ($v) => $v !== '')))
+            : '';
+
         $tokens = [
             // Basic
             'FirstName'      => $first,
@@ -277,8 +484,8 @@ class HrGeneratedDocumentController extends Controller
 
             // Organization
             'CompanyName'    => $companyName,
-            'CompanyAddress' => '',
-            'CompanyLogo'    => '',
+            'CompanyAddress' => $companyAddress,
+            'CompanyLogo'    => $companyLogo,
 
             /* Date of generation. Templates were already written against
              * {{Currentdate}} with no entry here, so an offer letter went out
@@ -293,12 +500,22 @@ class HrGeneratedDocumentController extends Controller
             'Today'          => $today,
         ];
 
-        // Signer slot tokens — until the e-sign loop runs, the name/date
-        // come from the template configuration, not from the actual signer.
+        /* Signer slot tokens. The NAME is the real person the role resolves to
+         * for this employee, not the role label: {{Signer1Name}} on a template
+         * whose first signer is "Employee" used to render the word "Employee"
+         * where that employee's own name belonged, and "Reporting Manager"
+         * instead of the manager's. Same resolver the send path uses
+         * (App\Support\SignerResolver), so the preview names the same people
+         * who will actually be asked to sign.
+         * Sign/Date stay blank here — they are filled when each signer acts. */
         if ($tpl && is_array($tpl->signers)) {
             foreach ($tpl->signers as $i => $s) {
                 $n = $i + 1;
-                $tokens["Signer{$n}Name"]        = (string) ($s['role_name'] ?? '');
+                $roleName = (string) ($s['role_name'] ?? '');
+                $tokens["Signer{$n}Role"]        = $roleName;
+                $tokens["Signer{$n}Name"]        = $roleName !== ''
+                    ? \App\Support\SignerResolver::name($roleName, $emp)
+                    : '';
                 $tokens["Signer{$n}Designation"] = (string) ($s['designation_name'] ?? '');
                 $tokens["Signer{$n}Date"]        = '';
             }
@@ -312,6 +529,26 @@ class HrGeneratedDocumentController extends Controller
         }
 
         return $tokens;
+    }
+
+    /**
+     * Tokens whose value is MARKUP this controller built, not text — they must
+     * reach the document unescaped or the <img> prints as visible tag soup.
+     *
+     * Derived AFTER the operator overrides above and with anything the operator
+     * supplied removed: a custom field named "CompanyLogo" would otherwise be a
+     * route for arbitrary HTML into every generated document.
+     *
+     * @param  array<string,mixed> $customValues
+     * @return array<int,string>
+     */
+    private function rawHtmlTokenNames(array $customValues): array
+    {
+        $raw = ['CompanyLogo'];
+        return array_values(array_filter(
+            $raw,
+            fn (string $name) => !array_key_exists($name, $customValues),
+        ));
     }
 
     /**
@@ -331,8 +568,13 @@ class HrGeneratedDocumentController extends Controller
      *                              value should be wrapped in <strong> — used
      *                              for operator-supplied custom field values so
      *                              they pop visually.
+     * @param  string[]             $rawHtmlNames  tokens whose value is markup
+     *                              THIS controller built (the company logo's
+     *                              <img>) and must not be escaped. Never pass
+     *                              an operator-supplied name — see
+     *                              rawHtmlTokenNames().
      */
-    private function renderTemplate(string $html, array $tokens, array $boldNames = []): string
+    private function renderTemplate(string $html, array $tokens, array $boldNames = [], array $rawHtmlNames = []): string
     {
         // Strip Tiptap PlaceholderNode chip wrappers — keep only the inner
         // {{Name}} text so the regex below can substitute it.
@@ -343,6 +585,7 @@ class HrGeneratedDocumentController extends Controller
         );
 
         $boldSet = array_flip($boldNames);
+        $rawSet  = array_flip($rawHtmlNames);
 
         /* Lowercased name => canonical name, built ONCE. Scanning the whole
          * token map inside the callback made the fallback O(tokens × matches)
@@ -355,12 +598,15 @@ class HrGeneratedDocumentController extends Controller
 
         return preg_replace_callback(
             '/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/u',
-            function (array $m) use ($tokens, $boldSet, $canonicalByLowerName): string {
+            function (array $m) use ($tokens, $boldSet, $rawSet, $canonicalByLowerName): string {
                 $name = $m[1];
                 if (!array_key_exists($name, $tokens)) {
                     $name = $canonicalByLowerName[strtolower($name)] ?? null;
                     if ($name === null) return $m[0];   // unknown — leave it visible
                 }
+                // Markup we generated ourselves goes through untouched; escaping
+                // it would print the <img> tag as visible text.
+                if (isset($rawSet[$name])) return (string) $tokens[$name];
                 $val = htmlspecialchars((string) $tokens[$name], ENT_QUOTES, 'UTF-8');
                 // Operator-supplied values render bold so reviewers can spot
                 // the human-curated bits at a glance — and so the bold

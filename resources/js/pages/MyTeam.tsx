@@ -44,6 +44,9 @@ interface ApprovalItem {
   title: string;
   subject_name: string;
   subject_dept: string;
+  /** Who the subject reports to — shown in its own column so a reviewer can
+   *  see whose line the request came up. Optional: older API builds omit it. */
+  subject_manager?: string | null;
   action: string;            // Sign | Approve | Review & Acknowledge
   status: string;
   days_left: number | null;
@@ -408,6 +411,12 @@ export default function MyTeam() {
     { header: 'Module', accessorFn: r => moduleLabel(r.module), meta: { width: '12%' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.module === 'expense' ? '#fef3c7' : r.module === 'leave' ? '#dcfce7' : '#dbeafe', color: r.module === 'expense' ? '#a16207' : r.module === 'leave' ? '#15803d' : '#1d4ed8' }}><i className={r.module === 'expense' ? 'ri-bill-line me-1' : r.module === 'leave' ? 'ri-calendar-2-line me-1' : 'ri-quill-pen-line me-1'} />{moduleLabel(r.module)}</span>; } },
     { header: 'Document / Request', accessorFn: r => `${r.title} ${r.code || ''}`, cell: info => { const r = info.row.original; return <div><div style={{ fontWeight: 700 }}>{r.title}</div>{r.code && <code style={{ fontSize: 10.5, background: '#fef3c7', color: '#a16207', padding: '1px 6px', borderRadius: 4 }}>{r.code}</code>}</div>; } },
     { header: 'Subject', accessorFn: r => `${r.subject_name} ${r.subject_dept}`, cell: info => { const r = info.row.original; return <div><div>{r.subject_name}</div><div style={{ fontSize: 11.5, color: '#6b7280' }}>{r.subject_dept}</div></div>; } },
+    /* Reporting manager of the SUBJECT — the Employee List tab has carried a
+       "Reports To" column all along, but the Approval List showed only the
+       employee and their department, so a reviewer had no way to see whose
+       line a request had come up. Same resolver server-side, so a Branch-User
+       manager reads the same here as it does there. */
+    { header: 'Reporting Manager', accessorFn: r => r.subject_manager || '', meta: { width: '12%' }, cell: info => { const v = info.row.original.subject_manager; return v ? <span style={{ fontSize: 12.5 }}>{v}</span> : <span style={{ fontSize: 12.5, color: '#9ca3af' }}>—</span>; } },
     { header: 'Action', accessorFn: r => r.action, meta: { align: 'center' }, cell: info => { const r = info.row.original; return <span style={{ padding: '3px 9px', borderRadius: 6, fontSize: 11.5, fontWeight: 700, background: r.action === 'Sign' ? '#fef3c7' : r.action === 'Approve' ? '#dcfce7' : '#e0e7ff', color: r.action === 'Sign' ? '#92400e' : r.action === 'Approve' ? '#15803d' : '#4338ca' }}>{r.action}</span>; } },
     { header: 'Sent', accessorFn: r => r.created_at, cell: info => <span style={{ fontSize: 12, color: '#6b7280' }}>{new Date(info.row.original.created_at).toLocaleString()}</span> },
     {

@@ -2251,8 +2251,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
   const employeeDocCount       = uploadedDocs.length;
 
-  const exitDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() === 'exit');
-  const organizationalDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() !== 'exit');
+  /* Both vault tables show SIGNED copies only.
+   *
+   * `/hr-document-signatures` returns every run for the employee whatever its
+   * status, and these two lists only split them by trigger point — so a run
+   * still waiting on a signer appeared under "Final, fully-signed copies",
+   * complete with a Download PDF button. The employee read that as done. It
+   * also put the header KPI (which counts Completed) at 0 while the table
+   * below it showed rows. Filter first, then split. */
+  const completedSignedDocs = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed');
+  const isExitDoc = (d: SignedDoc) => String(d.trigger_keyword || '').toLowerCase() === 'exit';
+
+  const exitDocs = completedSignedDocs.filter(isExitDoc);
+  const organizationalDocs = completedSignedDocs.filter(d => !isExitDoc(d));
 
   const organizationalDocCount = organizationalDocs.length;
   const exitDocCount = exitDocs.length;
