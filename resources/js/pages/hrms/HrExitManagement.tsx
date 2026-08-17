@@ -11,6 +11,7 @@ import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../comp
 import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
+import ReportingManagerDependencyModal from './exit/ReportingManagerDependencyModal';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
 /* Every file URL on this page goes through resolveFileUrl, like the rest of the
    app. The API returns Storage::url() paths — bare "/storage/…" strings — which
@@ -666,12 +667,16 @@ export default function HrExitManagement() {
         current=""
         busy={initiatingBusy}
         onClose={() => setInitiating(null)}
-        onPick={async (value) => {
+        onPick={async (value, noticeChoice) => {
           const emp = initiating;
           if (!emp || initiatingBusy) return;
           setInitiatingBusy(true);
           try {
-            await api.put(`/employees/${emp.id}/exit`, { exit_type: value });
+            /* The notice answer travels WITH the type on the opening save. Sent
+               separately it would leave a termination briefly stored with no
+               choice, which the server reads as pay-in-lieu — so a crash between
+               the two calls would silently price a notice nobody agreed to. */
+            await api.put(`/employees/${emp.id}/exit`, { exit_type: value, notice_payment_choice: noticeChoice });
             setInitiating(null);
             setProcessing(emp);
           } catch (err: any) {
@@ -924,11 +929,21 @@ const STAGE_DEFS: Record<StageKey, { title: string; short: string; sub: string; 
 
 type Settlement = 'served' | 'recover' | 'pay_in_lieu';
 
+/* HR's answer to "is the notice period paid on this termination?". Only a
+   Termination carries one; null means either "not a termination" or a case
+   opened before the question existed — both of which settle as pay-in-lieu,
+   so nothing already recorded changes meaning. */
+type NoticeChoice = 'pay' | 'no_pay' | null;
+
 /** Mirrors ExitController::resolveSettlementMode() — keep the two in step. */
-function settlementOf(exitType: string): Settlement {
+function settlementOf(exitType: string, noticeChoice: NoticeChoice = null): Settlement {
   const t = String(exitType || '').trim();
   if (t === 'Resignation without notice period' || t === 'Absconding') return 'recover';
-  if (t === 'Termination') return 'pay_in_lieu';
+  /* Termination is the one type the exit type alone does not settle. 'no_pay'
+     resolves to 'served' — nothing paid AND nothing recovered — rather than to
+     a mode of its own, so no recovery stage opens against someone who was
+     dismissed. Same branch as the server's resolveSettlementMode(). */
+  if (t === 'Termination') return noticeChoice === 'no_pay' ? 'served' : 'pay_in_lieu';
   return 'served';
 }
 
@@ -1019,9 +1034,32 @@ const EXIT_TYPE_CHOICES: { value: string; label: string; desc: string; icon: str
   {
     value: 'Termination',
     label: 'Termination',
-    desc: 'Company terminates and can relieve the same day, paying salary in lieu of notice through the Full & Final settlement.',
+    desc: 'Company terminates and can relieve the same day. HR chooses whether the notice period is paid in lieu through the Full & Final settlement.',
     icon: 'ri-close-circle-line',
     accent: '#7c3aed',
+  },
+];
+
+/* Step 2 of the Initiate-Exit picker, shown for Termination only. Neither is
+   the default — the wrong answer here silently changes what the employee is
+   paid, so it has to be chosen deliberately rather than accepted. */
+const NOTICE_CHOICES: { value: Exclude<NoticeChoice, null>; label: string; desc: string; icon: string; accent: string }[] = [
+  {
+    value: 'pay',
+    label: 'Pay for Notice Period',
+    desc: 'Notice amount is calculated and added to Full & Final.',
+    /* NOT ri-money-rupee-circle-line — that glyph is absent from the icon font
+       this project bundles and renders as an empty box. ri-hand-coin-line is
+       present. (Four other screens still reference the missing rupee icon.) */
+    icon: 'ri-hand-coin-line',
+    accent: '#0d9488',
+  },
+  {
+    value: 'no_pay',
+    label: 'No Pay for Notice Period',
+    desc: 'No notice amount. Full & Final shows Not Applicable.',
+    icon: 'ri-forbid-2-line',
+    accent: '#b45309',
   },
 ];
 
@@ -1105,6 +1143,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      read-only for the life of the case — it decides the stage list and the
      notice settlement, so it can't move underneath work already recorded. */
   const [exitType, setExitType]           = useState('');
+  /* Termination only: whether the notice period is paid in lieu. Unlike the
+     exit type this stays editable until the F&F is paid — HR can correct the
+     answer, and both the notice fields and the F&F total re-derive from it. */
+  const [noticeChoice, setNoticeChoice]   = useState<NoticeChoice>(null);
   const [reasonForExit, setReasonForExit] = useState('');
   const [noticeDate, setNoticeDate]       = useState('');
   const [lwd, setLwd]                     = useState('');
@@ -1190,8 +1232,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      Do Payment). HR verifies these rather than retyping them. */
   const [empPayments, setEmpPayments] = useState<any[]>([]);
   const [empPayLoading, setEmpPayLoading] = useState(false);
+  /* How many people still report to this employee. Completing the exit disables
+     their login, so the org chart would dead-end at a switched-off row — the
+     reports must be moved first. Server enforces the same gate in complete(). */
+  const [directReportCount, setDirectReportCount] = useState(0);
+  /* Set once a reassignment has been saved in this sitting, so the panel stays
+     on screen to show its confirmation table instead of vanishing the instant
+     the count reaches zero. Session-only — it resets per employee. */
+  const [rmReassigned, setRmReassigned] = useState(false);
 
-  const settlement = settlementOf(exitType);
+  const settlement = settlementOf(exitType, noticeChoice);
+  /* A termination is not a resignation, and the form should not ask as though
+     it were: HR is recording WHY the company ended the employment, so the field
+     reads "Reason for Termination" there and "Reason for Exit" everywhere else.
+     Label only — the value is stored in the same `reason_for_exit` column for
+     every exit type, so nothing downstream has to know which wording was shown. */
+  const isTermination = exitType.trim() === 'Termination';
+  const reasonLabel   = isTermination ? 'Reason for Termination' : 'Reason for Exit';
+  /* No-Pay termination: nothing is priced against the notice period, so the
+     notice dates stop being mandatory (FDD §5.5). They stay VISIBLE and
+     editable rather than hidden — the notice date is also the day the exit was
+     initiated, which is the floor every payment date on this case is checked
+     against, so removing it would widen an unrelated rule. */
+  const noticeNotApplicable = isTermination && noticeChoice === 'no_pay';
   /* Blacklist is asked on EVERY exit type. Someone who served their notice
      properly can still be barred from re-hire (conduct, a failed handover, a
      background finding), so gating the question on the settlement was wrong —
@@ -1354,7 +1417,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      lock/disable semantics on the F&F inputs keep using `fnfPaid`, which means
      strictly "HR pressed Mark F&F Paid". */
   const fnfSettled = fnfPaid || fnfNothingToSettle;
-  type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd';
+  type Stage1FieldKey = 'exitType' | 'reasonForExit' | 'noticeDate' | 'lwd' | 'noticeChoice';
   const [s1Errors, setS1Errors] = useState<Set<Stage1FieldKey>>(new Set());
   const clearS1Err = (k: Stage1FieldKey) => setS1Errors(prev => {
     if (!prev.has(k)) return prev;
@@ -1398,7 +1461,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      "Resignation without notice period" exit to the notice-end date, making
      the type impossible to actually express. An already-saved value is still
      accepted as-is so reopening a case never invalidates it. */
-  const noticeServed = !noticeWaived && settlement === 'served';
+  /* `isTermination` is part of the test, not just the settlement mode. A No-Pay
+     termination settles as 'served' — nothing paid, nothing recovered — but the
+     employee did NOT work a notice period, and the block comment above is
+     explicit that a termination can relieve immediately. Without this guard the
+     No-Pay choice would pin the last working day to the notice END date and
+     re-create, for terminations, exactly the bug described above for
+     "Resignation without notice period". */
+  const noticeServed = !noticeWaived && settlement === 'served' && !isTermination;
   /* With no derivable end date (the employee record carries no notice period)
      there is no notice length to hold them to, so the floor is simply the
      notice start — you cannot stop working before you resign. It used to be
@@ -1779,7 +1849,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     api.get(`/employees/${employee.id}/exit`)
       .then(({ data }) => {
         if (cancelled || !data) return;
+        /* Drop any validation errors before the loaded values land.
+           s1Errors was only ever cleared per-field on EDIT or by a successful
+           save, so an error raised against an empty form — Next Stage pressed
+           before the fetch returned, or a previous employee's case in the same
+           mounted modal — stayed on screen against fields that now hold values.
+           The result was a fully populated Stage 1 shouting "is required" at
+           every field. */
+        setS1Errors(new Set());
         setExitType(String(data.exit_type ?? ''));
+        /* NULL on a saved termination means the case predates the question.
+           Left null it settles as pay-in-lieu (same as the server), so the
+           case renders exactly as it did before this field existed. */
+        setNoticeChoice(
+          data.notice_payment_choice === 'pay' || data.notice_payment_choice === 'no_pay'
+            ? data.notice_payment_choice
+            : null,
+        );
         setReasonForExit(String(data.reason_for_exit ?? ''));
         setNoticeDate(data.notice_date ? String(data.notice_date) : '');
         setLwd(data.last_working_day ? String(data.last_working_day) : '');
@@ -1898,6 +1984,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       items.push('Reporting manager is disabled / exited — change it on the employee record');
     }
 
+    // 2a. …and this employee must not still BE a reporting manager. Closing the
+    //     exit disables their login, which would strand everyone reporting to
+    //     them. Cleared from the Reporting Manager Dependency panel below.
+    if (directReportCount > 0) {
+      items.push(`${directReportCount} employee${directReportCount > 1 ? 's' : ''} still report${directReportCount > 1 ? '' : 's'} to this employee — assign them a new reporting manager`);
+    }
+
     // 2b. The notice-period settlement has to have been closed out — money
     //     recovered and approved, or paid in full. Mirrored server-side in
     //     ExitController::complete().
@@ -1956,7 +2049,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lwdReached, lwd, reportingManagerDisabled, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, blacklistApplies, blacklisted, blacklistReason]);
+  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, blacklistApplies, blacklisted, blacklistReason]);
+
+  /* Direct-report count, refreshed whenever the wizard opens and after each
+     reassignment. Loaded up-front rather than on the closure stage so the
+     blocker appears in the pending list from the start — HR can clear it while
+     working through the earlier stages instead of discovering it at the gate. */
+  const loadDirectReports = useCallback(() => {
+    if (!employee) return;
+    api.get(`/employees/${employee.id}/exit/direct-reports`)
+      .then(({ data }) => setDirectReportCount(Array.isArray(data?.reports) ? data.reports.length : 0))
+      .catch(() => setDirectReportCount(0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id]);
+
+  // Also clears the sitting's confirmation state — a different employee's exit
+  // must not open showing the previous one's reassignments.
+  useEffect(() => { setRmReassigned(false); loadDirectReports(); }, [loadDirectReports]);
 
   /* Payments the EMPLOYEE submitted from their own Payroll Details tab, loaded
      when the recovery stage is opened. MUST stay above the early return below —
@@ -2176,6 +2285,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
   const buildExitPayload = () => ({
     exit_type:             exitType || null,
+    notice_payment_choice: noticeChoice,
     reason_for_exit:       reasonForExit.trim() || null,
     notice_date:           noticeDate || null,
     last_working_day:      lwd || null,
@@ -2342,8 +2452,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     const missing: string[] = [];
     const errs = new Set<Stage1FieldKey>();
     if (!exitType.trim())      { missing.push('Exit Type');        errs.add('exitType'); }
-    if (!reasonForExit.trim()) { missing.push('Reason for Exit');  errs.add('reasonForExit'); }
-    if (!noticeDate)           { missing.push('Notice Start Date'); errs.add('noticeDate'); }
+    if (!reasonForExit.trim()) { missing.push(reasonLabel);         errs.add('reasonForExit'); }
+    /* A termination cannot proceed without the Pay / No-Pay answer — it is what
+       decides whether the F&F carries a notice amount. Normally supplied by the
+       Initiate Exit picker; this catches a case opened before the question
+       existed, reopened after the type was set some other way. */
+    if (isTermination && !noticeChoice) { missing.push('Notice Period Payment'); errs.add('noticeChoice'); }
+    /* Mandatory except on a No-Pay termination, where nothing is calculated
+       from them (FDD §5.4 / §5.5). */
+    if (!noticeDate && !noticeNotApplicable) { missing.push('Notice Start Date'); errs.add('noticeDate'); }
     if (!lwd)                  { missing.push('Last Working Day'); errs.add('lwd'); }
     if (missing.length) {
       setS1Errors(errs);
@@ -2387,6 +2504,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     try {
       await api.put(`/employees/${employee.id}/exit`, {
         exit_type:            exitType || null,
+        notice_payment_choice: noticeChoice,
         reason_for_exit:      reasonForExit.trim() || null,
         notice_date:          noticeDate || null,
         last_working_day:     lwd || null,
@@ -2751,23 +2869,105 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     </EpField>
                   </Col>
                   <Col md={6}>
-                    <EpField label="Reason for Exit" required invalid={s1Errors.has('reasonForExit')}>
+                    <EpField label={reasonLabel} required invalid={s1Errors.has('reasonForExit')}>
                       <EpInput
                         value={reasonForExit}
                         onChange={(v) => { setReasonForExit(v); clearS1Err('reasonForExit'); }}
-                        placeholder="Describe the reason for exit"
+                        placeholder={isTermination ? 'Describe the reason for termination' : 'Describe the reason for exit'}
                         maxLength={60}
                         invalid={s1Errors.has('reasonForExit')}
                       />
                       {s1Errors.has('reasonForExit') && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <i className="ri-error-warning-line" />Reason for exit is required.
+                          <i className="ri-error-warning-line" />{reasonLabel} is required.
                         </div>
                       )}
                     </EpField>
                   </Col>
+                  {/* Notice Period Payment — Termination only. Answered in the
+                      Initiate Exit picker, restated here so HR can see and
+                      correct it without cancelling the case. Locked once the
+                      F&F is paid: by then it has priced money that already
+                      moved (the server enforces the same freeze). */}
+                  {isTermination && (
+                    <Col md={12}>
+                      <EpField label="Notice Period Payment" required invalid={s1Errors.has('noticeChoice')}>
+                        <div className="ep-notice-choice" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {/* Locked once the F&F is paid. The state is carried by
+                              the CONTROLS — the chosen one keeps its colour and
+                              gains a padlock, the other greys right out — rather
+                              than by a sentence beside them. The reason still
+                              reaches anyone who wants it, via the tooltip. */}
+                          {NOTICE_CHOICES.map(c => {
+                            const on = noticeChoice === c.value;
+                            const dimmed = fnfPaid && !on;
+                            return (
+                              <button
+                                key={c.value}
+                                type="button"
+                                /* aria-disabled, NOT disabled: a disabled button
+                                   swallows the click, so the user gets silence
+                                   when they try a locked option. Intercepting it
+                                   here lets the toast explain why instead. */
+                                aria-disabled={fnfPaid}
+                                aria-pressed={on}
+                                onClick={() => {
+                                  if (fnfPaid) {
+                                    toast.warning(
+                                      'Full & Final already paid',
+                                      'The notice-period choice priced that settlement, so it can no longer be changed.',
+                                    );
+                                    return;
+                                  }
+                                  setNoticeChoice(c.value);
+                                  clearS1Err('noticeChoice');
+                                }}
+                                title={fnfPaid
+                                  ? 'Locked — the Full & Final settlement has been paid.'
+                                  : c.desc}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  padding: '9px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 700,
+                                  cursor: fnfPaid ? 'not-allowed' : 'pointer',
+                                  /* Unpicked + locked reads as properly dead:
+                                     muted fill, muted text, dashed border. The
+                                     picked one stays legible — it is the answer
+                                     of record, not a disabled control. */
+                                  opacity: dimmed ? 0.45 : 1,
+                                  background: on ? `${c.accent}14` : 'var(--vz-secondary-bg)',
+                                  color: on ? c.accent : (dimmed ? 'var(--vz-secondary-color)' : 'var(--vz-body-color)'),
+                                  border: `1.5px ${dimmed ? 'dashed' : 'solid'} ${on ? c.accent : 'var(--vz-border-color)'}`,
+                                  filter: dimmed ? 'grayscale(1)' : undefined,
+                                }}
+                              >
+                                <i className={c.icon} style={{ fontSize: 15 }} />
+                                {c.label}
+                                {on && (
+                                  <i
+                                    className={fnfPaid ? 'ri-lock-line' : 'ri-check-line'}
+                                    style={{ fontSize: 14 }}
+                                  />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {s1Errors.has('noticeChoice') ? (
+                          <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <i className="ri-error-warning-line" />Select how the notice period is handled for this termination.
+                          </div>
+                        ) : (
+                          <div className="ep-hint" style={{ fontSize: 11, color: noticeNotApplicable ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            {noticeNotApplicable
+                              ? 'No notice amount in Full & Final.'
+                              : 'Notice amount is added to Full & Final.'}
+                          </div>
+                        )}
+                      </EpField>
+                    </Col>
+                  )}
                   <Col md={6}>
-                    <EpField label="Notice Start Date" required invalid={!onProbation && (s1Errors.has('noticeDate') || noticeDateInvalid)}>
+                    <EpField label="Notice Start Date" required={!noticeNotApplicable} invalid={!onProbation && !noticeNotApplicable && (s1Errors.has('noticeDate') || noticeDateInvalid)}>
                       {/* Frozen on probation, exactly like the end date beside
                           it: there is no notice period to start, so the date is
                           fixed at the immediate exit rather than picked. */}
@@ -3150,6 +3350,34 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       monthly={monthlyAmount}
                       fmtMoney={fmtMoney}
                     />
+                  </>
+                )}
+
+                {/* No-Pay termination — state it, don't just omit the section.
+                    Finance is verifying a settlement here: a missing notice
+                    block reads as "not calculated yet", which is the same shape
+                    as an unfinished case. Saying Not Applicable is the
+                    difference between an answer and a gap (FDD §5.5, §7.1). */}
+                {noticeNotApplicable && (
+                  <>
+                    <div className="ep-section-label">Notice Period — Payment in Lieu</div>
+                    <div
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '12px 14px', borderRadius: 10, marginTop: 6,
+                        background: 'rgba(180,83,9,0.07)', border: '1px solid rgba(180,83,9,0.25)',
+                      }}
+                    >
+                      <i className="ri-forbid-2-line" style={{ fontSize: 18, color: '#b45309' }} />
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: '#b45309' }}>
+                          Not Applicable — {fmtMoney(0)}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)', marginTop: 2 }}>
+                          <strong>No Pay for Notice Period</strong> — nothing added to Net F&amp;F Payable.
+                        </div>
+                      </div>
+                    </div>
                   </>
                 )}
 
@@ -3870,6 +4098,51 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   )}
                 </Row>
 
+                {/* Reporting Manager Dependency — shown only while this
+                    employee still manages people. It is the one blocker on this
+                    stage that can't be cleared from the checklist above, so it
+                    gets its own panel with the action attached rather than a
+                    line in the pending list telling HR to go elsewhere. */}
+                {/* Stays mounted after the count hits zero when something was
+                    reassigned in this sitting, so the confirmation table below
+                    survives long enough to be read. */}
+                {(directReportCount > 0 || rmReassigned) && (
+                  <div
+                    style={{
+                      padding: '14px 16px', borderRadius: 12, marginBottom: 12,
+                      background: directReportCount > 0 ? 'rgba(180,83,9,0.07)' : 'rgba(13,148,136,0.06)',
+                      border: `1px solid ${directReportCount > 0 ? 'rgba(180,83,9,0.28)' : 'rgba(13,148,136,0.25)'}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                      <i className="ri-organization-chart" style={{ fontSize: 20, color: directReportCount > 0 ? '#b45309' : '#0d9488', marginTop: 1 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: directReportCount > 0 ? '#b45309' : '#0d9488' }}>
+                          Reporting Manager Dependency
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 3 }}>
+                          {directReportCount > 0
+                            ? <><strong>{directReportCount}</strong> {directReportCount === 1 ? 'employee reports' : 'employees report'} to
+                              this person. Assign them a new manager before completing the exit.</>
+                            : <>Done — no one reports to this person any more. This no longer blocks the exit.</>}
+                        </div>
+                      </div>
+                    </div>
+                    {/* The affected people and their new manager are shown HERE,
+                        beside the rest of the blockers. It used to be a Reassign
+                        button opening a modal, which meant HR had to leave the
+                        checklist to find out who was actually blocking the exit. */}
+                    <ReportingManagerDependencyModal
+                      inline
+                      open={false}
+                      employeeId={employee?.id ?? null}
+                      employeeName={employee?.name || 'This employee'}
+                      onClose={() => {}}
+                      onResolved={() => { setRmReassigned(true); loadDirectReports(); }}
+                    />
+                  </div>
+                )}
+
                 {exitPending.length === 0 ? (
                   <div className="ep-close-case">
                     <i className="ri-flag-line" />
@@ -4229,30 +4502,54 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
   employee: EmployeeRow | null;
   current: string;
   onClose: () => void;
-  onPick: (value: string) => void;
+  onPick: (value: string, noticeChoice: NoticeChoice) => void;
   busy?: boolean;
 }) {
   /* Two-step: pick a tile, then Continue. Committing on the first click made
      an irreversible choice (the type is locked for the life of the case) a
      single mis-click away. */
   const [selected, setSelected] = useState(current || '');
-  useEffect(() => { if (open) setSelected(current || ''); }, [open, current]);
+  /* Termination asks a SECOND question before the case opens: is the notice
+     period being paid in lieu, or not? It cannot be derived — the same
+     dismissal can go either way and only HR knows which — and it prices the
+     F&F, so it is answered here rather than discovered on Stage 3.
+     Rendered as a second step of THIS modal, not a modal on top of it: the
+     wizard already stacks (see BatchPaymentModal's z-index fix) and a popup
+     over a popup is where those bugs come from. */
+  const [step, setStep]     = useState<'type' | 'notice'>('type');
+  const [choice, setChoice] = useState<NoticeChoice>(null);
+  useEffect(() => {
+    if (!open) return;
+    setSelected(current || '');
+    setStep('type');
+    setChoice(null);          // never pre-selected — FDD §4.1
+  }, [open, current]);
+
+  const needsNoticeChoice = selected === 'Termination';
 
   return (
+    /* Narrower on the notice step — two cards, not three, so the lg width left
+       a lot of empty space either side and stretched each card wider than its
+       own text needed. */
     <Modal isOpen={open && !!employee} toggle={() => { if (!busy) onClose(); }}
-           centered size="lg" backdrop="static" contentClassName="border-0 ep-modal">
+           centered size="lg" backdrop="static" contentClassName="border-0 ep-modal"
+           style={step === 'notice' ? { maxWidth: 640 } : undefined}>
       <ModalBody className="p-0" style={{ borderRadius: 16, overflow: 'hidden' }}>
         <div className="ep-head">
           <div className="ep-head-top">
             <span className="ep-head-avatar" style={{ background: 'linear-gradient(135deg,#7c3aed,#a855f7)' }}>
-              <i className="ri-logout-box-r-line" />
+              <i className={step === 'notice' ? 'ri-time-line' : 'ri-logout-box-r-line'} />
             </span>
             <div className="ep-head-text">
               <div className="ep-head-title-row">
-                <div className="ep-head-title">{current ? 'Change Exit Type' : 'Initiate Exit'}</div>
+                <div className="ep-head-title">
+                  {step === 'notice' ? 'Termination Notice Period' : (current ? 'Change Exit Type' : 'Initiate Exit')}
+                </div>
               </div>
               <div className="ep-head-sub">
-                {employee?.name} · {employee?.empId} — choose the exit type to start the process
+                {employee?.name} · {employee?.empId} — {step === 'notice'
+                  ? 'how is the notice period handled?'
+                  : 'choose the exit type to start the process'}
               </div>
             </div>
             {/* Always closable. Backing out of a first-time initiation is safe
@@ -4264,47 +4561,101 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
           </div>
         </div>
         <div style={{ padding: 18, background: 'var(--vz-secondary-bg)' }}>
-          {/* --tiles: three square boxes side by side. The Rehire picker reuses
-              .etp-grid without this modifier and stays as stacked rows. */}
-          <div className="etp-grid etp-grid--tiles">
-            {EXIT_TYPE_CHOICES.map(c => (
-              <button
-                key={c.value}
-                type="button"
-                disabled={busy}
-                aria-pressed={selected === c.value}
-                className={`etp-card${selected === c.value ? ' is-on' : ''}`}
-                style={{ ['--etp-accent' as any]: c.accent }}
-                onClick={() => setSelected(c.value)}
-              >
-                <span className="etp-ico"><i className={c.icon} /></span>
-                <span className="etp-body">
-                  <span className="etp-title">{c.label}</span>
-                  <span className="etp-desc">{c.desc}</span>
-                </span>
-              </button>
-            ))}
-          </div>
+          {step === 'type' ? (
+            /* --tiles: three square boxes side by side. The Rehire picker reuses
+               .etp-grid without this modifier and stays as stacked rows. */
+            <div className="etp-grid etp-grid--tiles">
+              {EXIT_TYPE_CHOICES.map(c => (
+                <button
+                  key={c.value}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={selected === c.value}
+                  className={`etp-card${selected === c.value ? ' is-on' : ''}`}
+                  style={{ ['--etp-accent' as any]: c.accent }}
+                  onClick={() => setSelected(c.value)}
+                >
+                  <span className="etp-ico"><i className={c.icon} /></span>
+                  <span className="etp-body">
+                    <span className="etp-title">{c.label}</span>
+                    <span className="etp-desc">{c.desc}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            /* --tiles, same as the exit-type step: the two options are a
+               side-by-side choice, not a list. The modifier is count-agnostic
+               (grid-auto-flow: column / 1fr), so two cards split the row
+               evenly, and it collapses back to stacked rows under 720px. */
+            <div className="etp-grid etp-grid--tiles">
+              {NOTICE_CHOICES.map(c => (
+                <button
+                  key={c.value}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={choice === c.value}
+                  className={`etp-card${choice === c.value ? ' is-on' : ''}`}
+                  /* The shared --tiles rule sets min-height 172px and top-aligns,
+                     which suits the three exit-type cards and their longer copy.
+                     Two short cards left a block of dead space underneath, so
+                     these centre their content and stand shorter. Inline rather
+                     than in recruitment.css — that file is shared with the
+                     recruitment pages and this is the only caller that wants it. */
+                  style={{ ['--etp-accent' as any]: c.accent, minHeight: 138, justifyContent: 'center' }}
+                  onClick={() => setChoice(c.value)}
+                >
+                  <span className="etp-ico"><i className={c.icon} /></span>
+                  <span className="etp-body" style={{ flex: 'none' }}>
+                    <span className="etp-title">{c.label}</span>
+                    <span className="etp-desc">{c.desc}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="etp-foot">
             {/* Note sits on the SAME row as the actions, filling the space to
                 their left. */}
             <div className="etp-note">
               <i className="ri-alert-line" />
-              <span>
-                The type sets how the notice period is settled and which stages the exit runs through.
-                <strong> It cannot be changed once the exit has started</strong> — pick carefully.
-              </span>
+              {step === 'type' ? (
+                <span>
+                  The type sets how the notice period is settled and which stages the exit runs through.
+                  <strong> It cannot be changed once the exit has started</strong> — pick carefully.
+                </span>
+              ) : (
+                <span>Can be changed on Stage 1 — <strong>locked once the F&amp;F is paid</strong>.</span>
+              )}
             </div>
             <div className="etp-actions">
-              <button type="button" className="etp-cancel" onClick={onClose} disabled={busy}>
-                Cancel
-              </button>
+              {step === 'notice' ? (
+                <button type="button" className="etp-cancel" onClick={() => setStep('type')} disabled={busy}>
+                  <i className="ri-arrow-left-line" />Back
+                </button>
+              ) : (
+                <button type="button" className="etp-cancel" onClick={onClose} disabled={busy}>
+                  Cancel
+                </button>
+              )}
               <button
                 type="button"
                 className="etp-continue"
-                disabled={busy || !selected}
-                title={selected ? 'Start the exit with this type' : 'Select an exit type first'}
-                onClick={() => selected && onPick(selected)}
+                /* Step 1 needs a type; step 2 needs an answer. Nothing is
+                   pre-selected on either, so Continue starts disabled both
+                   times — the user cannot fall through the notice question. */
+                disabled={busy || (step === 'type' ? !selected : !choice)}
+                title={step === 'notice'
+                  ? (choice ? 'Start the exit' : 'Select how the notice period is handled')
+                  : (selected ? 'Continue' : 'Select an exit type first')}
+                onClick={() => {
+                  if (!selected) return;
+                  /* A termination detours through the notice question before
+                     anything is written; every other type opens the case now. */
+                  if (step === 'type' && needsNoticeChoice) { setStep('notice'); return; }
+                  if (step === 'notice' && !choice) return;
+                  onPick(selected, needsNoticeChoice ? choice : null);
+                }}
               >
                 {busy ? <><i className="ri-loader-4-line ri-spin" />Starting…</> : <>Continue<i className="ri-arrow-right-line" /></>}
               </button>

@@ -53,6 +53,80 @@ class ExitController extends Controller
         return response()->json($this->format($row, $employee));
     }
 
+    /** Statuses that mean the person is no longer on the active roll. */
+    private const EXITED_STATUSES = ['Resigned', 'Terminated', 'Inactive'];
+
+    /**
+     * Employee ids with an exit already in progress.
+     *
+     * They are still `Active` — the status only flips at complete() — so the
+     * status filter alone would happily offer them as replacement managers, and
+     * handing reports to someone who is themselves leaving just moves the
+     * blocker onto their case.
+     */
+    private function employeeIdsExiting(?int $clientId): array
+    {
+        return EmployeeExit::query()
+            ->when($clientId !== null, fn ($q) => $q->where('client_id', $clientId))
+            ->whereNotNull('exit_type')
+            ->where('exit_case_status', 'Open')
+            ->whereNull('rehired_at')
+            ->pluck('employee_id')
+            ->map(fn ($v) => (int) $v)
+            ->all();
+    }
+
+    /**
+     * Would making $managerId the manager of $reportId create a loop?
+     *
+     * PositionHierarchy::eligible() is deliberately LENIENT when either rank is
+     * unknown (a custom designation outside the seeded map) — it allows the
+     * pairing rather than blocking a legitimate save over an unrecognised
+     * title. That leniency is the gap: two employees whose designations are
+     * both unranked can be pointed at each other, and A → B → A makes every
+     * reader that walks the chart (My Team, the permission subordinate check,
+     * approval routing) loop forever.
+     *
+     * So the chain is walked upward from the proposed manager: if the report
+     * appears anywhere above, the assignment is a cycle. The depth cap is a
+     * backstop against a loop that ALREADY exists in the data — without it this
+     * guard would itself hang on the corruption it is meant to detect.
+     */
+    private function wouldCycle(int $reportId, int $managerId): bool
+    {
+        $seen    = [];
+        $current = $managerId;
+        for ($depth = 0; $depth < 64 && $current; $depth++) {
+            if ($current === $reportId) return true;
+            if (isset($seen[$current])) return true;   // pre-existing loop
+            $seen[$current] = true;
+            $current = (int) Employee::whereKey($current)->value('reporting_manager_id');
+        }
+        return false;
+    }
+
+    /**
+     * Everyone who still reports to this employee and is still on the roll.
+     *
+     * A manager cannot be deactivated while people report to them — the org
+     * chart would keep pointing at a disabled row, and every reader that walks
+     * it (My Team, leave and expense approvals, the permission subordinate
+     * check) would dead-end there. So the exit is blocked until each of these
+     * is moved to someone else. See complete().
+     *
+     * Soft-deleted reports are excluded: they are already switched off, so they
+     * have no live approval chain to strand.
+     */
+    private function activeDirectReports(Employee $employee)
+    {
+        return Employee::query()
+            ->where('reporting_manager_id', $employee->id)
+            ->whereNotIn('status', self::EXITED_STATUSES)
+            ->with(['department:id,name', 'designation:id,name'])
+            ->orderBy('display_name')
+            ->get();
+    }
+
     /**
      * Columns that belong to ONE exit case. Cleared when a rehired employee
      * starts a new exit, so the previous employment's answers can't bleed into
@@ -66,7 +140,8 @@ class ExitController extends Controller
         'clearances', 'asset_returns', 'handover_notes',
         'validation', 'final_employee_status', 'profile_lock',
         'exit_case_status', 'hr_sign_off', 'stage_status', 'current_stage', 'completed_at',
-        'notice_settlement_mode', 'notice_days_required', 'notice_days_served',
+        'notice_settlement_mode', 'notice_payment_choice',
+        'notice_days_required', 'notice_days_served',
         'notice_days_unserved', 'notice_settlement_basis', 'notice_per_day_rate',
         'notice_settlement_amount', 'notice_settlement_status', 'notice_payment', 'fnf',
         'blacklisted', 'blacklist_reason',
@@ -149,10 +224,17 @@ class ExitController extends Controller
            net no longer matches the transfer, with nothing to reconcile them.
            The SPA locks every field on that stage; this is the server-side twin,
            so a stale tab opened before the payment can't post over it. */
-        $lockedFnf      = $row->exists && $this->isFnfPaid($row) ? $row->fnf : null;
+        $fnfIsPaid      = $row->exists && $this->isFnfPaid($row);
+        $lockedFnf      = $fnfIsPaid ? $row->fnf : null;
+        /* The Pay / No-Pay answer is frozen by the same payment. It is what
+           priced the notice line inside that settled F&F, so flipping it
+           afterwards would restate an amount that has already been transferred
+           — and 'no_pay' would zero a figure the employee was actually paid. */
+        $lockedChoice   = $fnfIsPaid ? $row->notice_payment_choice : null;
         $row->fill($data);
-        if ($lockedFnf !== null) {
-            $row->fnf = $lockedFnf;
+        if ($fnfIsPaid) {
+            $row->fnf                   = $lockedFnf;
+            $row->notice_payment_choice = $lockedChoice;
         }
 
         /* Closing the case is complete()'s job ALONE — that is what stamps the
@@ -170,9 +252,22 @@ class ExitController extends Controller
         $row->employee_id          = $employee->id;
         $row->client_id            = $employee->client_id;
         $row->branch_id            = $employee->branch_id;
-        $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
-        // Never trust a client-sent settlement mode — it follows the exit type.
-        $row->notice_settlement_mode = $this->resolveSettlementMode((string) ($row->exit_type ?? ''));
+        /* Mirror the employee master, don't snapshot it. An open case must name
+           the employee's CURRENT reporting manager — reassign them mid-exit and
+           the next save picks the new one up. Only falls back to the stored
+           value when the master has none, so a case that recorded a manager
+           before the employee record was cleared doesn't lose it. See format(),
+           which applies the same rule on read. */
+        $row->reporting_manager_id = $employee->reporting_manager_id ?? $row->reporting_manager_id;
+        /* Never trust a client-sent settlement mode — it follows the exit type,
+           and for a Termination also HR's Pay / No-Pay answer. The choice is
+           normalised FIRST so a type switch can't leave a stale one behind for
+           the mode to read. */
+        $this->applyNoticeChoice($row);
+        $row->notice_settlement_mode = $this->resolveSettlementMode(
+            (string) ($row->exit_type ?? ''),
+            $row->notice_payment_choice,
+        );
         $this->applyNoticeWaiver($row, $employee);
         $this->applyTerminationBlacklist($row);
         if (!$row->exists) $row->created_by = $request->user()?->id;
@@ -203,7 +298,14 @@ class ExitController extends Controller
            Money owed in either direction (recovered from the employee, or paid
            to them in lieu) is a hard gate — the SPA greys the button, and this
            is the server-side twin so a crafted request can't slip past it. */
-        $mode   = $this->resolveSettlementMode((string) ($data['exit_type'] ?? ''));
+        $mode   = $this->resolveSettlementMode(
+            (string) ($data['exit_type'] ?? ''),
+            /* Falls back to the SAVED choice when the payload omits it, so the
+               gate reads the same answer the row will store — a Complete Exit
+               posted without the field must not silently re-price the notice. */
+            $data['notice_payment_choice']
+                ?? EmployeeExit::where('employee_id', $employee->id)->value('notice_payment_choice'),
+        );
         $amount = (float) ($data['notice_settlement_amount'] ?? 0);
         $status = (string) ($data['notice_settlement_status'] ?? 'NA');
         /* No notice period applies (probation, or resigned within 15 days of
@@ -243,6 +345,25 @@ class ExitController extends Controller
                 . '. Settle, return the balance (with each payment approved), or raise the reimbursement before completing the exit.');
         }
 
+        /* An employee who still manages people cannot be deactivated. Completing
+           the exit flips their status and disables their login, and every reader
+           that walks the org chart — My Team, leave and expense approval chains,
+           the permission subordinate check — would then dead-end at a switched-
+           off row. HR reassigns the reports first (reassignReports above); this
+           is the gate that makes that mandatory rather than advisory.
+
+           Checked LAST of the three gates and outside the transaction, same as
+           the others, so the message names the real blocker. */
+        $orphans = $this->activeDirectReports($employee);
+        if ($orphans->isNotEmpty()) {
+            $names = $orphans->take(5)
+                ->map(fn ($e) => $e->display_name ?: $e->emp_code)
+                ->filter()->implode(', ');
+            $more = $orphans->count() > 5 ? ' and ' . ($orphans->count() - 5) . ' more' : '';
+            abort(422, $orphans->count() . ' employee(s) still report to this person (' . $names . $more
+                . '). Assign them a new reporting manager before completing the termination.');
+        }
+
         $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             // Same clean slate as upsert(): a rehired employee's old case must
@@ -254,18 +375,26 @@ class ExitController extends Controller
             $lockedType = $this->lockedExitType($row);
             $storedLwd  = $row->last_working_day;   // captured BEFORE fill()
             // Same freeze as upsert(): completing the exit must not be a way to
-            // rewrite an F&F that has already been paid.
-            $lockedFnf  = $row->exists && $this->isFnfPaid($row) ? $row->fnf : null;
+            // rewrite an F&F that has already been paid, nor the Pay / No-Pay
+            // answer that priced its notice line.
+            $fnfIsPaid    = $row->exists && $this->isFnfPaid($row);
+            $lockedFnf    = $fnfIsPaid ? $row->fnf : null;
+            $lockedChoice = $fnfIsPaid ? $row->notice_payment_choice : null;
             $row->fill($data);
-            if ($lockedFnf !== null) {
-                $row->fnf = $lockedFnf;
+            if ($fnfIsPaid) {
+                $row->fnf                   = $lockedFnf;
+                $row->notice_payment_choice = $lockedChoice;
             }
             $this->assertExitTypeUnchanged($lockedType, $row);
             $this->assertLastWorkingDayWithinNotice($row, $employee, $storedLwd);
             $row->employee_id          = $employee->id;
             $row->client_id            = $employee->client_id;
             $row->branch_id            = $employee->branch_id;
-            $row->reporting_manager_id = $row->reporting_manager_id ?? $employee->reporting_manager_id;
+            /* Last write of the live value: this is the manager the exit closed
+               under, and format() stops re-syncing once the case is Closed, so
+               what lands here is what the finished record keeps. */
+            $row->reporting_manager_id = $employee->reporting_manager_id ?? $row->reporting_manager_id;
+            $this->applyNoticeChoice($row);
             $row->notice_settlement_mode = $mode;
             $this->applyNoticeWaiver($row, $employee);
             $this->applyTerminationBlacklist($row);
@@ -324,6 +453,283 @@ class ExitController extends Controller
         return response()->json([
             'message' => 'Exit completed — employee marked as exited and login disabled.',
             'exit'    => $this->format($row, $employee->fresh()),
+        ]);
+    }
+
+    /**
+     * Who still reports to this employee, and who could take them on.
+     *
+     * Drives the Reporting Manager Dependency step on the closure stage. Returns
+     * the affected employees plus the pool of eligible replacements, so the SPA
+     * never has to guess which managers the server will accept.
+     */
+    public function directReports(Request $request, $employee)
+    {
+        $employee = Employee::withTrashed()->findOrFail($employee);
+        $this->guardSameTenant($request, $employee);
+
+        $reports = $this->activeDirectReports($employee);
+
+        /* Replacement pool — active employees of the same client, minus the
+           person being exited. Deliberately NOT filtered by branch: an HOD's
+           reports may need to move to a manager in another branch when the
+           branch has no one senior left, and blocking that would deadlock the
+           termination with no way out from this screen. */
+        $exiting = $this->employeeIdsExiting($employee->client_id);
+
+        $pool = Employee::query()
+            ->where('client_id', $employee->client_id)
+            ->whereNotIn('status', self::EXITED_STATUSES)
+            ->where('id', '!=', $employee->id)
+            /* No designation, no candidacy.
+             *
+             * PositionHierarchy::eligible() is lenient by design — an unknown
+             * rank passes, so a custom job title never blocks a legitimate
+             * save. But a MISSING designation is indistinguishable from an
+             * unrecognised one, so an employee with the field left blank
+             * qualified as a manager for everyone, Interns included. That is
+             * how the PayrollTestSeeder's PT-* fixtures ended up offered as
+             * reporting managers.
+             *
+             * Seniority is the whole point of this screen, and it cannot be
+             * judged without a designation — so those rows are not offered
+             * here. This is deliberately NARROWER than the employee master,
+             * which still allows them: fix the designation there and the
+             * person appears here on the next open. */
+            ->whereNotNull('designation_id')
+            ->with(['department:id,name', 'designation:id,name'])
+            ->orderBy('display_name')
+            ->get()
+            ->map(fn ($e) => [
+                'id'          => $e->id,
+                'name'        => $e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')),
+                'emp_code'    => $e->emp_code,
+                'department'  => $e->department?->name,
+                'designation' => $e->designation?->name,
+                // Lower = more senior. The SPA uses this to grey out picks the
+                // server would reject anyway (PositionHierarchy).
+                'rank'        => \App\Support\PositionHierarchy::rankForDesignationName($e->designation?->name),
+                /* Still Active, but their own exit is already open. Sent so the
+                   SPA can show them greyed WITH a reason rather than silently
+                   omitting them — "why isn't X in the list?" is a support call.
+                   Rejected server-side too. */
+                'exiting'     => in_array((int) $e->id, $exiting, true),
+            ])
+            ->values();
+
+        /* Tenant login users — Branch User / Client Admin — as the fallback when
+         * the employee hierarchy runs out.
+         *
+         * PositionHierarchy puts them at TOP_RANK, above every designation, so
+         * they are eligible for anyone. That matters here because seniority can
+         * genuinely dead-end: a Team Leader may only report to an HOD, and if
+         * every HOD is themselves exiting there is no employee left to take
+         * them — the exit would be unblockable with no way out of the screen.
+         * The org chart already models this (employees.reporting_manager_user_id
+         * is how the employee master stores an admin manager), so this uses the
+         * same column rather than inventing anything.
+         */
+        /* Scoped to the BRANCHES THE REPORTS ARE IN, not just the client.
+           Unscoped, every branch user of the tenant was offered — so a branch-2
+           admin could be made the manager of a branch-3 employee, which is a
+           cross-branch assignment nothing else in the app allows. Client-level
+           users (branch_id NULL) stay eligible everywhere, same rule the
+           employee master's manager picker uses. */
+        $reportBranchIds = $reports->pluck('branch_id')->filter()->unique()->values()->all();
+        if ($employee->branch_id) $reportBranchIds[] = (int) $employee->branch_id;
+        $reportBranchIds = array_values(array_unique($reportBranchIds));
+
+        $loginUsers = \App\Models\User::query()
+            ->whereIn('user_type', ['client_admin', 'client_user', 'branch_user'])
+            ->where('status', 'active')
+            ->when($employee->client_id, fn ($q) => $q->where('client_id', $employee->client_id))
+            ->when($reportBranchIds !== [], fn ($q) => $q->where(
+                fn ($w) => $w->whereNull('branch_id')->orWhereIn('branch_id', $reportBranchIds)
+            ))
+            ->orderBy('name')
+            ->get(['id', 'name', 'user_type', 'designation'])
+            ->map(fn ($u) => [
+                'id'          => $u->id,
+                // Flags this as a USER id, not an employee id — the two id
+                // spaces overlap, so the client must send the kind back.
+                'kind'        => 'user',
+                'name'        => $u->name,
+                'emp_code'    => null,
+                'department'  => null,
+                'designation' => $u->designation ?: ucfirst(str_replace('_', ' ', $u->user_type)),
+                'rank'        => \App\Support\PositionHierarchy::TOP_RANK,
+                'exiting'     => false,
+            ])
+            ->values();
+
+        return response()->json([
+            'employee_id' => $employee->id,
+            'login_users' => $loginUsers,
+            'reports'     => $reports->map(fn ($e) => [
+                'id'          => $e->id,
+                'name'        => $e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')),
+                'emp_code'    => $e->emp_code,
+                'department'  => $e->department?->name,
+                'designation' => $e->designation?->name,
+                'rank'        => \App\Support\PositionHierarchy::rankForDesignationName($e->designation?->name),
+            ])->values(),
+            'managers'    => $pool,
+        ]);
+    }
+
+    /**
+     * Move direct reports onto a new reporting manager.
+     *
+     * Accepts one assignment per employee, so the SPA can do a bulk "everyone to
+     * this manager" or individual picks with the same call. Every assignment is
+     * re-validated here: the SPA greys out ineligible options, but the rules
+     * that matter (tenant scope, seniority, self-reference, not the person being
+     * exited) are enforced on this side too.
+     *
+     * All-or-nothing — a partial reassignment would leave the org chart in a
+     * state neither the operator nor the closure gate can reason about.
+     */
+    public function reassignReports(Request $request, $employee)
+    {
+        $employee = Employee::withTrashed()->findOrFail($employee);
+        $this->guardSameTenant($request, $employee, 'can_edit');
+
+        /* A manager is EITHER an employee or a tenant login user (Branch User /
+           admin) — the same either/or the employee master models with its two
+           columns. Exactly one must be sent. */
+        $data = $request->validate([
+            'assignments'                             => 'required|array|min:1',
+            'assignments.*.employee_id'               => 'required|integer|exists:employees,id',
+            'assignments.*.reporting_manager_id'      => 'nullable|integer|exists:employees,id',
+            'assignments.*.reporting_manager_user_id' => 'nullable|integer|exists:users,id',
+        ]);
+
+        // Only people who ACTUALLY report to the exiting employee may be moved
+        // through this endpoint — it is not a general-purpose manager editor.
+        $reportIds = $this->activeDirectReports($employee)->pluck('id')->all();
+
+        DB::transaction(function () use ($data, $employee, $reportIds) {
+            foreach ($data['assignments'] as $a) {
+                $reportId    = (int) $a['employee_id'];
+                $managerId   = (int) ($a['reporting_manager_id'] ?? 0);
+                $managerUser = (int) ($a['reporting_manager_user_id'] ?? 0);
+
+                if (!in_array($reportId, $reportIds, true)) {
+                    abort(422, 'One of the selected employees does not report to the employee being exited.');
+                }
+                if (($managerId > 0) === ($managerUser > 0)) {
+                    abort(422, 'Choose exactly one new reporting manager — either an employee or a login user.');
+                }
+
+                /* LOGIN-USER MANAGER (Branch User / admin). PositionHierarchy
+                   puts them at TOP_RANK, above every designation, so there is no
+                   seniority test to run — they outrank everyone by definition.
+                   This is the escape hatch for a hierarchy dead-end: a Team
+                   Leader whose only possible managers (the HODs) are all exiting
+                   would otherwise have nowhere to go and the exit could never be
+                   completed. Cycles are impossible too — a login user is not an
+                   employee, so the chain simply ends there. */
+                if ($managerUser > 0) {
+                    $u = \App\Models\User::find($managerUser);
+                    if (!$u
+                        || !in_array($u->user_type, ['client_admin', 'client_user', 'branch_user'], true)
+                        || (string) $u->status !== 'active'
+                        || ($employee->client_id && (int) $u->client_id !== (int) $employee->client_id)) {
+                        abort(422, 'The selected login user is not an active manager for this client.');
+                    }
+                    $report = Employee::findOrFail($reportId);
+                    /* Branch-bound login users only manage their own branch —
+                       the server-side twin of the pool's branch filter. A NULL
+                       branch means a client-level user (Director / CEO), who is
+                       above branches and eligible everywhere. */
+                    if ($u->branch_id !== null && $report->branch_id !== null
+                        && (int) $u->branch_id !== (int) $report->branch_id) {
+                        abort(422, "{$u->name} belongs to a different branch and cannot manage "
+                            . ($report->display_name ?: $report->emp_code) . '.');
+                    }
+                    $report->reporting_manager_user_id = $managerUser;
+                    // The two columns are alternatives — clear the employee side
+                    // so the employee doesn't report to two different people
+                    // depending on which reader looks.
+                    $report->reporting_manager_id = null;
+                    $report->save();
+                    continue;
+                }
+
+                if ($managerId === $employee->id) {
+                    abort(422, 'The employee being exited cannot be chosen as the new reporting manager.');
+                }
+                if ($managerId === $reportId) {
+                    abort(422, 'An employee cannot be their own reporting manager.');
+                }
+
+                $report  = Employee::findOrFail($reportId);
+                $manager = Employee::findOrFail($managerId);
+
+                // Same tenant. Never trust an id from the body to belong to us.
+                if ((int) $manager->client_id !== (int) $employee->client_id) {
+                    abort(422, 'The selected reporting manager belongs to another client.');
+                }
+                if (in_array((string) $manager->status, self::EXITED_STATUSES, true) || $manager->trashed()) {
+                    abort(422, 'The selected reporting manager is not an active employee.');
+                }
+
+                /* Server-side twin of the pool's whereNotNull('designation_id').
+                   Without a designation there is no rank, and eligible() waves
+                   an unknown rank through — so this is the check that actually
+                   stops a designation-less employee being made someone's
+                   manager through a direct call. */
+                if ($manager->designation_id === null) {
+                    $who = $manager->display_name ?: $manager->emp_code;
+                    abort(422, "{$who} has no designation set, so their position in the hierarchy cannot be verified. Set their designation on the employee record first.");
+                }
+
+                // Seniority — the same rule the employee master enforces.
+                $reportRank  = \App\Support\PositionHierarchy::rankForDesignationName($report->designation?->name);
+                $managerRank = \App\Support\PositionHierarchy::rankForDesignationName($manager->designation?->name);
+                if (!\App\Support\PositionHierarchy::eligible($reportRank, $managerRank)) {
+                    $who = $manager->display_name ?: $manager->emp_code;
+                    abort(422, "{$who} cannot manage " . ($report->display_name ?: $report->emp_code)
+                        . ' — a reporting manager must hold a higher position in the hierarchy.');
+                }
+
+                /* Their own exit is already open. Still Active (the status only
+                   flips at completion), so the status check above lets them
+                   through — but moving reports onto someone who is leaving just
+                   relocates this same blocker onto their case. */
+                if (in_array($managerId, $this->employeeIdsExiting($employee->client_id), true)) {
+                    $who = $manager->display_name ?: $manager->emp_code;
+                    abort(422, "{$who} has an exit in progress and cannot take on reporting responsibilities.");
+                }
+
+                /* Cycle guard. eligible() passes any pairing where either
+                   designation is outside the seeded rank map, so two unranked
+                   employees can be pointed at each other — and A → B → A hangs
+                   every reader that walks the chart. Nothing else in the app
+                   checks this, including the employee master. */
+                if ($this->wouldCycle($reportId, $managerId)) {
+                    $who = $manager->display_name ?: $manager->emp_code;
+                    abort(422, "{$who} already reports to " . ($report->display_name ?: $report->emp_code)
+                        . ' (directly or through their chain) — this would create a reporting loop.');
+                }
+
+                $report->reporting_manager_id = $managerId;
+                /* Clear the login-user manager in the same breath. The two
+                   columns are alternatives, and leaving a stale user-side
+                   manager behind would have the employee reporting to two
+                   different people depending on which reader looked. */
+                $report->reporting_manager_user_id = null;
+                $report->save();
+            }
+        });
+
+        $remaining = $this->activeDirectReports($employee);
+
+        return response()->json([
+            'message'   => count($data['assignments']) === 1
+                ? 'Reporting manager updated.'
+                : count($data['assignments']) . ' employees reassigned.',
+            'remaining' => $remaining->count(),
         ]);
     }
 
@@ -1112,13 +1518,60 @@ class ExitController extends Controller
         abort(422, "The exit type cannot be changed once the exit has started (this case is a \"{$locked}\"). Cancel this exit and start a new one if the type is wrong.");
     }
 
-    private function resolveSettlementMode(string $exitType): string
+    private function resolveSettlementMode(string $exitType, ?string $noticeChoice = null): string
     {
-        return match ($exitType) {
-            'Resignation without notice period', 'Absconding' => 'recover',
-            'Termination' => 'pay_in_lieu',
-            default       => 'served',
-        };
+        if ($exitType === 'Resignation without notice period' || $exitType === 'Absconding') {
+            return 'recover';
+        }
+        if ($exitType === 'Termination') {
+            /* The ONE type whose settlement is not decided by the type alone.
+               A company can terminate with pay in lieu of notice or without it,
+               and only HR knows which, so the answer is asked in the Initiate
+               Exit picker and stored on the case.
+
+               'no_pay'  → nothing is paid AND nothing is recovered. That is the
+                           'served' mode: it settles the notice at zero without
+                           opening a recovery stage against someone who was
+                           dismissed.
+               'pay'     → pay in lieu, as before.
+               NULL      → a case opened before the choice existed. Keeps the old
+                           behaviour so no recorded termination changes meaning. */
+            return $noticeChoice === 'no_pay' ? 'served' : 'pay_in_lieu';
+        }
+        return 'served';
+    }
+
+    /**
+     * Apply HR's Pay / No-Pay answer to the row.
+     *
+     * Two jobs, both about keeping the stored case self-consistent:
+     *
+     * 1. Only a Termination carries a choice. Anything else stores NULL —
+     *    otherwise a case switched from Termination to Resignation keeps a
+     *    stale answer that resolveSettlementMode() ignores but every reader
+     *    still sees, describing a decision that no longer applies.
+     *
+     * 2. 'no_pay' zeroes the notice figures. Switching from Pay to No-Pay has
+     *    to reset what Pay calculated (FDD §12.1 / TC-20) — left alone, the
+     *    stored amount would keep flowing into the F&F total that the SPA has
+     *    already stopped showing, and Complete Exit would gate on money nobody
+     *    intends to pay. Same fields applyNoticeWaiver() clears, for the same
+     *    reason: nothing is owed, so nothing may be left priced.
+     */
+    private function applyNoticeChoice(EmployeeExit $row): void
+    {
+        if (strcasecmp((string) ($row->exit_type ?? ''), 'Termination') !== 0) {
+            $row->notice_payment_choice = null;
+            return;
+        }
+        if ($row->notice_payment_choice === 'no_pay') {
+            $row->notice_days_required     = 0;
+            $row->notice_days_served       = 0;
+            $row->notice_days_unserved     = 0;
+            $row->notice_per_day_rate      = 0;
+            $row->notice_settlement_amount = 0;
+            $row->notice_settlement_status = 'NA';
+        }
     }
 
     private function validatePayload(Request $request): array
@@ -1170,6 +1623,13 @@ class ExitController extends Controller
             // Notice-period settlement. The mode is DERIVED from exit_type (see
             // resolveSettlementMode) — a client-sent value is ignored, so the
             // settlement and the exit type can never disagree.
+            //
+            // Termination is the one exception: the mode ALSO depends on this
+            // answer, which the Initiate Exit picker asks for and only HR can
+            // give. Still not free-form — it is one of two values, it is
+            // ignored for every other exit type (applyNoticeChoice nulls it),
+            // and it is frozen once the F&F has been paid.
+            'notice_payment_choice'    => 'nullable|in:pay,no_pay',
             'notice_days_required'     => 'nullable|integer|min:0|max:365',
             'notice_days_served'       => 'nullable|integer|min:0|max:365',
             'notice_days_unserved'     => 'nullable|integer|min:0|max:365',
@@ -1181,12 +1641,26 @@ class ExitController extends Controller
 
             // Full & Final settlement (Termination) — lines + finance approval.
             'fnf'                   => 'nullable|array',
+            /* The blob is otherwise stored verbatim (the React wizard owns its
+               shape), but the payment date is money-movement data and gets a
+               rule of its own: a settlement cannot be recorded as paid on a day
+               that hasn't happened yet. The SPA already caps the picker at today
+               and re-checks on submit — this is the server-side twin, so a
+               crafted call or a tab left open past midnight can't store one.
+               Path matches the payload the wizard builds: fnf.meta.payDate. */
+            'fnf.meta.payDate'      => 'nullable|date|before_or_equal:' . \Carbon\Carbon::now(self::DISPLAY_TZ)->toDateString(),
 
             // Process meta — per-stage status map + current wizard step. The
             // stage list is dynamic (4 base stages, plus a settlement stage for
             // two of the three exit types), so the ceiling is no longer 4.
             'stage_status'          => 'nullable|array',
             'current_stage'         => 'nullable|integer|min:1|max:6',
+        ], [
+            /* Laravel would otherwise name the dotted path back at the user
+               ("The fnf.meta.pay date field must be..."), which means nothing to
+               HR. Wording matches the SPA's inline message. */
+            'fnf.meta.payDate.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
+            'fnf.meta.payDate.date'            => 'Enter a valid payment date.',
         ]);
     }
 
@@ -1274,14 +1748,34 @@ class ExitController extends Controller
     }
 
     /**
-     * Project a (possibly null) exit row into a stable JSON shape. Falls
-     * back to the employee's current `reporting_manager_id` so the form
-     * pre-fills even on first open.
+     * Project a (possibly null) exit row into a stable JSON shape.
+     *
+     * REPORTING MANAGER — the employee master is the source of truth while the
+     * case is OPEN. The stored `employee_exits.reporting_manager_id` used to
+     * win, which meant the manager was frozen at whatever it was the first time
+     * Stage 1 was saved: reassign the employee to a new manager afterwards and
+     * the exit went on naming the old one, through clearance and sign-off. HR
+     * had no way to correct it from the exit screen either, since the field is
+     * read-only there and only the employee record can change it.
+     *
+     * A CLOSED case keeps its stored value. By then the manager is history —
+     * who signed this exit off — not a live pointer, and a later reassignment
+     * of some other employee must not rewrite a finished record.
      */
     private function format(?EmployeeExit $row, Employee $employee): array
     {
-        $managerId = $row?->reporting_manager_id ?? $employee->reporting_manager_id;
-        $manager   = $row?->manager;
+        $isClosed  = (string) ($row?->exit_case_status ?? 'Open') === 'Closed';
+        $managerId = $isClosed
+            ? ($row?->reporting_manager_id ?? $employee->reporting_manager_id)
+            : ($employee->reporting_manager_id ?? $row?->reporting_manager_id);
+
+        /* Only reuse the eager-loaded relation when it still describes the id
+           we resolved above. On an open case whose manager has since changed,
+           $row->manager holds the PREVIOUS manager — rendering it would pair
+           the new manager's id with the old manager's name. */
+        $manager = ($row?->manager && (int) $row->manager->id === (int) $managerId)
+            ? $row->manager
+            : null;
         if (!$manager && $managerId) {
             // Include soft-deleted managers — the manager record might
             // have been disabled after the employee row was set up.
@@ -1340,8 +1834,16 @@ class ExitController extends Controller
 
             // Notice-period settlement. `mode` is always re-derived from the
             // stored exit type so a row written before this feature (or under
-            // an older mapping) still reports the right settlement on read.
-            'notice_settlement_mode'   => $this->resolveSettlementMode((string) ($row?->exit_type ?? '')),
+            // an older mapping) still reports the right settlement on read —
+            // and, for a Termination, from HR's Pay / No-Pay answer alongside it.
+            'notice_settlement_mode'   => $this->resolveSettlementMode(
+                (string) ($row?->exit_type ?? ''),
+                $row?->notice_payment_choice,
+            ),
+            /* NULL on a legacy termination means the question was never asked.
+               The SPA reads that as "pay" (matching resolveSettlementMode) so an
+               old case renders exactly as it did before this field existed. */
+            'notice_payment_choice'    => $row?->notice_payment_choice,
             'notice_days_required'     => $row?->notice_days_required,
             'notice_days_served'       => $row?->notice_days_served,
             'notice_days_unserved'     => $row?->notice_days_unserved,
