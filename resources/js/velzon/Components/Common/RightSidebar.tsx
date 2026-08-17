@@ -101,11 +101,24 @@ const RightSidebar = (props: any) => {
         sidebarVisibilitytype
     } = useSelector(selectLayoutProperties);
 
-    // open offcanvas — start CLOSED (user clicks gear icon to open)
+    // open offcanvas — start CLOSED (opened from the profile menu)
     const [open, setOpen] = useState(false);
     const toggleLeftCanvas = () => {
         setOpen(!open);
     };
+
+    /* The customizer used to be opened by a floating gear pinned to the
+       bottom-right corner. That corner is where every list page puts its
+       pagination, so the gear sat on top of the next-page arrow and made it
+       unclickable — the same problem the back-to-top button had below. The
+       trigger now lives in the header profile menu instead, and reaches this
+       component through a window event so the layout doesn't have to thread
+       state down to it. */
+    useEffect(() => {
+        const openCustomizer = () => setOpen(true);
+        window.addEventListener('idims:open-theme-customizer', openCustomizer);
+        return () => window.removeEventListener('idims:open-theme-customizer', openCustomizer);
+    }, []);
 
     // Back-to-top scroll handler — attach as listener, don't overwrite window.onscroll
     useEffect(() => {
@@ -174,11 +187,9 @@ const RightSidebar = (props: any) => {
             </div>}
 
             <div>
-                <div className="customizer-setting d-none d-md-block">
-                    <div onClick={toggleLeftCanvas} className="btn-info rounded-pill shadow-lg btn btn-icon btn-lg p-2 rounded-pill">
-                        <i className='mdi mdi-spin mdi-cog-outline fs-22'></i>
-                    </div>
-                </div>
+                {/* No floating trigger here — see the note on the open state
+                    above. The Theme Customizer is opened from the header
+                    profile menu, under "Documentation Guide". */}
                 <Offcanvas isOpen={open} toggle={toggleLeftCanvas} direction='end'>
                     <OffcanvasHeader className="d-flex align-items-center bg-primary bg-gradient p-3 offcanvas-header-dark" toggle={toggleLeftCanvas}>
                         <span className="m-0 me-2 text-white">Theme Customizer</span>
