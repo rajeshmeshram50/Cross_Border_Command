@@ -50,6 +50,42 @@ export async function downloadFile(rawUrl: string | null | undefined, filename =
   }
 }
 
+/** Magic bytes every reader uses to recognise the format. */
+const MAGIC: Record<string, { bytes: string; label: string }> = {
+  pdf:  { bytes: '%PDF',           label: 'PDF' },
+  docx: { bytes: 'PK\x03\x04',     label: 'Word document' },   // DOCX is a zip
+};
+
+/**
+ * Save a blob from an API endpoint that is supposed to return a binary file.
+ *
+ * With `responseType: 'blob'` axios hands back whatever the server sent — an
+ * HTML page or a JSON error body included — and if that came with HTTP 200
+ * nothing throws. The browser then writes that HTML under a `.pdf` name and
+ * the reader says "Failed to load PDF document", which points suspicion at
+ * the generator when the real cause is upstream: a route that never matched
+ * (stale route cache), a session redirect, a proxy error page.
+ *
+ * Checking the first bytes turns that silent corruption into a real error.
+ */
+export async function saveApiBlob(
+  blob: Blob,
+  filename: string,
+  expect: keyof typeof MAGIC,
+): Promise<void> {
+  const sig = MAGIC[expect];
+  const head = await blob.slice(0, 8).text();
+  if (!head.startsWith(sig.bytes)) {
+    throw new Error(
+      `The server did not return a ${sig.label}. ` +
+      (head.trimStart().startsWith('<')
+        ? 'It returned a web page — the download endpoint was not reached.'
+        : 'The response was not a file.'),
+    );
+  }
+  saveBlob(blob, filename);
+}
+
 /** Trigger a browser save for an in-memory Blob via a same-origin blob: URL. */
 function saveBlob(blob: Blob, name: string): void {
   const objUrl = URL.createObjectURL(blob);

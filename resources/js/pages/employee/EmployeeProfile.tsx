@@ -190,6 +190,59 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // field rendered "—" for the first 200-500ms which looked broken.
   const [empDetailLoading, setEmpDetailLoading] = useState(true);
 
+  /* Login-password state for the Set/Reset Password dialog, from
+     EmployeeController::passwordStatusFor(). This cannot be worked out on the
+     client: users.password is seeded with a random value the moment an account
+     is created, so it is never empty and "is a password set?" has no answer
+     there. The server reports the change counter, the forced-reset flag and
+     whether the person has ever signed in. */
+  const pwStatus: {
+    state?: 'no_login' | 'never_changed' | 'changed' | 'reset_required';
+    change_count?: number;
+    changed_at?: string | null;
+    never_logged_in?: boolean;
+  } | null = empDetail?.password_status ?? null;
+
+  /* Nobody has replaced the onboarding password yet, so this dialog is a
+     first-time SET. Calling it "Reset" here is what left HR unable to tell the
+     two situations apart. */
+  const pwIsFirstTime = pwStatus?.state === 'never_changed';
+
+  /* One sentence describing the current state, or null when there is no login
+     account to describe (that case is already refused by the API with its own
+     message, so a banner would only repeat it). */
+  const pwStatusLine = (() => {
+    if (!pwStatus?.state || pwStatus.state === 'no_login') return null;
+
+    if (pwStatus.state === 'reset_required') {
+      return {
+        tone: 'danger',
+        icon: 'ri-error-warning-line',
+        text: 'Reset required — the previous password has already stopped working.',
+      };
+    }
+    if (pwStatus.state === 'never_changed') {
+      return {
+        tone: 'warning',
+        icon: 'ri-information-line',
+        text: 'No password has been set yet — still the one generated during onboarding.',
+      };
+    }
+
+    const when = pwStatus.changed_at
+      ? new Date(pwStatus.changed_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : null;
+    const count = Number(pwStatus.change_count) || 0;
+    const times = count === 1 ? 'once' : `${count} times`;
+    return {
+      tone: 'success',
+      icon: 'ri-shield-check-line',
+      text: when
+        ? `Password is set — last changed ${when}, ${times} in total.`
+        : `Password is set — changed ${times}.`,
+    };
+  })();
+
   // Ancillary roles for the header + Job tab. Prefer the freshly-fetched
   // empDetail.ancillary_roles_resolved (the full multi-role list from the
   // ancillary_role_ids JSON column) — the navigation-state `employee` row
@@ -239,6 +292,25 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     })();
     return () => { cancelled = true; };
   }, [employeeId]);
+
+  /* Re-read just the password state after a change, so reopening the dialog in
+     the same session doesn't still say "no password has been set yet".
+     Deliberately not computed locally: must_reset_password is cleared by
+     AuthController::changePassword and ForgotPasswordController::resetPassword
+     but NOT by EmployeeController::setPassword, so after an HR reset the flag
+     may legitimately still be standing and only the server knows. Patching one
+     key instead of refetching into empDetail keeps the page off its shimmer. */
+  const refreshPasswordStatus = async () => {
+    const ident = String(employeeId || '').trim();
+    if (!ident) return;
+    try {
+      const r = await api.get(`/employees/${encodeURIComponent(ident)}`);
+      const next = (r.data?.employee || r.data || null)?.password_status ?? null;
+      setEmpDetail((d: any) => (d ? { ...d, password_status: next } : d));
+    } catch {
+      // Non-fatal — the banner keeps its previous value until the next load.
+    }
+  };
 
   // Real salary structure (Payroll tab) — the employee's active structure, so
   // the compensation card / Revise Salary reflect actual payroll data, not the
@@ -568,6 +640,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
       setPwOpen(false);
       resetPwForm();
+      // Not awaited — the dialog is already closed and the toast has fired;
+      // this only needs to land before the banner is next looked at.
+      void refreshPasswordStatus();
     } catch (err: any) {
       const fieldErrors = err?.response?.data?.errors;
       if (fieldErrors && typeof fieldErrors === 'object') {
@@ -2176,8 +2251,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const signedCompletedCount  = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed').length;
   const employeeDocCount       = uploadedDocs.length;
 
-  const exitDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() === 'exit');
-  const organizationalDocs = signedDocs.filter(d => String(d.trigger_keyword || '').toLowerCase() !== 'exit');
+  /* Both vault tables show SIGNED copies only.
+   *
+   * `/hr-document-signatures` returns every run for the employee whatever its
+   * status, and these two lists only split them by trigger point — so a run
+   * still waiting on a signer appeared under "Final, fully-signed copies",
+   * complete with a Download PDF button. The employee read that as done. It
+   * also put the header KPI (which counts Completed) at 0 while the table
+   * below it showed rows. Filter first, then split. */
+  const completedSignedDocs = signedDocs.filter(d => String(d.status).toLowerCase() === 'completed');
+  const isExitDoc = (d: SignedDoc) => String(d.trigger_keyword || '').toLowerCase() === 'exit';
+
+  const exitDocs = completedSignedDocs.filter(isExitDoc);
+  const organizationalDocs = completedSignedDocs.filter(d => !isExitDoc(d));
 
   const organizationalDocCount = organizationalDocs.length;
   const exitDocCount = exitDocs.length;
@@ -3959,11 +4045,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
               <i className="ri-lock-password-line ep-fs-18" />
             </span>
             <div>
-              <h6 className="mb-0 fw-bold ep-fs-14">{isOwnProfile ? 'Change Password' : 'Reset Employee Password'}</h6>
+              {/* "Reset" implies a password already exists. When nobody has
+                  replaced the onboarding one, this is a first-time SET — and
+                  saying so is half of what HR was missing here. */}
+              <h6 className="mb-0 fw-bold ep-fs-14">
+                {isOwnProfile
+                  ? 'Change Password'
+                  : (pwIsFirstTime ? 'Set Employee Password' : 'Reset Employee Password')}
+              </h6>
               <small className="text-muted ep-fs-11">
                 {isOwnProfile
                   ? 'Pick a strong, unique password'
-                  : `Set a new login password for ${employee?.name || 'this employee'}`}
+                  : `${pwIsFirstTime ? 'Set the first' : 'Set a new'} login password for ${employee?.name || 'this employee'}`}
               </small>
             </div>
           </div>
@@ -3978,6 +4071,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           </button>
         </div>
         <div className="px-3 py-3">
+          {/* Where this login currently stands. Without it the dialog showed an
+              identical empty form whether the employee had been signing in for
+              months or had never had a password set at all. */}
+          {pwStatusLine && (
+            <div className={`d-flex align-items-start gap-2 mb-3 ep-pw-state ep-pw-state-${pwStatusLine.tone}`}>
+              <i className={`${pwStatusLine.icon} ep-fs-14 ep-pw-state-icon`} />
+              <div className="ep-fs-11">
+                <div>{pwStatusLine.text}</div>
+                {/* A password can be set and still unused — worth separating,
+                    because it changes whether HR should re-send credentials. */}
+                {pwStatus?.never_logged_in && (
+                  <div className="mt-1 opacity-75">This employee has never logged in.</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Current Password — only for self-service. An admin resetting
               another employee's password doesn't know (and shouldn't need)
               their current one. */}

@@ -1500,7 +1500,7 @@ export default function HrEmployees() {
                     inputMode="decimal"
                     style={{ width: '100%', border: 'none', borderBottom: `1px solid ${underline}`, background: 'transparent', textAlign: 'right', fontSize: 13, fontWeight: 700, padding: '3px 2px 3px 15px', outline: 'none', color: computedAmount ? 'var(--vz-secondary-color)' : 'var(--vz-body-color)', cursor: computedAmount ? 'not-allowed' : undefined }}
                     value={c.amount}
-                    readOnly={computedAmount}
+                    readOnly={computedAmount} 
                     title={computedAmount ? 'Calculated from Basic Salary and PF Type — not editable' : undefined}
                     onChange={e => { if (!computedAmount) updateBreakRow(which, i, 'amount', e.target.value); }}
                     onFocus={e => { if (!rowErr) e.currentTarget.style.borderBottomColor = `${accent}66`; }}
@@ -2690,7 +2690,7 @@ export default function HrEmployees() {
     {
       header: 'Primary Role',
       accessorKey: 'primaryRole',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: '8%', align: 'center' },
       /* Role names run long ("Software Development", "Training Coordinator")
          and the column is narrow — ChipCell ellipsises inside the pill and
          reveals the full name on hover, same contract as Designation. */
@@ -2714,13 +2714,13 @@ export default function HrEmployees() {
          to row — centring made every row start at a different x and the column
          read as jittery. A common left edge is what makes a stack of chips
          scannable. */
-      meta: { width: '9%' },
+      meta: { width: '8%' },
       cell: info => <AncillaryRolesChip names={info.row.original.ancillaryRoles} />,
     },
     {
       header: 'Manager',
       accessorKey: 'manager',
-      meta: { width: '8%' },
+      meta: { width: '7%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -2804,7 +2804,15 @@ export default function HrEmployees() {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '17%', wrap: true },
+      /* 20%, not 17%. This cell holds SIX 30px action buttons plus the
+         enable/disable switch — about 250px of controls — and 17% of the
+         table's 1500px minimum is 255px before the cell's own 18px padding.
+         The content did not fit, and because the cell opts out of clipping
+         (`wrap`) it spilled PAST the table's right edge instead: on a laptop
+         the switch sat outside the purple header band, half cut off by the
+         scroll container. The 3% comes off three columns that ellipsise
+         cleanly. */
+      meta: { align: 'center', width: '20%', wrap: true },
       cell: info => {
         const e = info.row.original;
         const rowDisabled = !e.enabled;
@@ -2821,8 +2829,12 @@ export default function HrEmployees() {
         // are PERMANENTLY disabled and cannot be re-enabled here; a plain
         // soft-disable (Inactive) stays reversible.
         const exited = ['resigned', 'terminated'].includes(String((e as any)._raw?.status || '').toLowerCase());
+        /* flex-wrap so this can never spill outside the column again. If a
+           seventh control is ever added, or the window is narrower than the
+           table's minimum, the buttons drop to a second line inside the cell
+           instead of sliding past the table's right edge. */
         return (
-          <div className="d-flex gap-1 justify-content-center align-items-center" onClick={ev => ev.stopPropagation()}>
+          <div className="d-flex gap-1 justify-content-center align-items-center flex-wrap" onClick={ev => ev.stopPropagation()}>
             {/* Two independent rules sit on this button, and they behave
                 differently on purpose:
                   disabled → a fact about the ROW (deactivated, or your own
@@ -2876,14 +2888,20 @@ export default function HrEmployees() {
               locked={!perm.canEdit}
             />
             <ActionBtn title="Documents" icon="ri-file-text-line" color="success" onClick={() => openVault(e)} disabled={rowDisabled} />
-            {tab === 'disabled' && (
+            {/* Permanent-delete button — hidden for now. A disabled employee is
+                kept as a record (attendance, payroll history and documents all
+                hang off it), so the toggle below is the intended way to take
+                someone out of circulation. Re-enable this block if a hard
+                delete is ever wanted again; handleForceDelete + the
+                DeleteConfirmModal are still wired up below. */}
+            {/* {tab === 'disabled' && (
               <ActionBtn
                 title={perm.lockedTitle('delete') ?? 'Delete permanently'}
                 icon="ri-delete-bin-line" color="danger"
                 onClick={() => perm.guard('delete', () => setConfirmDelete(e))}
                 locked={!perm.canDelete}
               />
-            )}
+            )} */}
             {/* Enabling / disabling an employee IS an edit of their record —
                 and disabling routes through the delete endpoint — so the
                 switch needs both flags before it will move. */}
@@ -4012,7 +4030,14 @@ export default function HrEmployees() {
                       </Col>
                       <Col md={4}>
                         <label className="emp-label">Department<span className="req">*</span></label>
-                        <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); setEReportingMgr(prev => { const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === prev); const keep = !mgr || mgr.kind === 'branch_user' || (mgr.department_id != null && String(mgr.department_id) === String(v)); return keep ? prev : ''; }); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
+                        {/* The other half of the same pair: this used to CLEAR a
+                            chosen manager whenever the new department did not
+                            match theirs. Department and manager are independent,
+                            so it now only sets the department. An empty manager
+                            is still auto-pointed at the department's HOD by
+                            `deptHodValue`, which fills a blank but never
+                            overwrites a deliberate pick. */}
+                        <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
                         {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
                       </Col>
                       <Col md={4}>
@@ -4102,7 +4127,13 @@ export default function HrEmployees() {
                         <label className="emp-label">Reporting Manager<span className="req">*</span></label>
                         <MasterSelect
                           value={eReportingMgr}
-                          onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); const mgr = managerCandidates.find(m => `${m.kind}:${m.id}` === v); if (mgr && mgr.kind === 'employee' && mgr.department_id != null) { setEDept(String(mgr.department_id)); clearEErr('department_id'); } }}
+                          // Deliberately does NOT touch Department. Picking a
+                          // manager used to overwrite it with the manager's own
+                          // department, silently undoing the choice made two
+                          // fields earlier. Cross-department reporting is normal
+                          // (a QC hire reporting to a Sales lead), so the manager
+                          // list is unfiltered and the two fields stay independent.
+                          onChange={(v) => { setEReportingMgr(v); clearEErr('reporting_manager_id'); }}
                           placeholder="Select manager"
                           options={reportingManagerOptions}
                           invalid={!!eErrors.reporting_manager_id}

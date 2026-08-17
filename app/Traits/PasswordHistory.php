@@ -58,15 +58,42 @@ trait PasswordHistory
      *
      * Call this BEFORE updating the user's password — we want to capture
      * the old hash, not the new one.
+     *
+     * It also stamps users.password_change_count / password_changed_at. That
+     * lives HERE rather than in the callers on purpose: all three paths that
+     * change a password (EmployeeController::setPassword,
+     * AuthController::changePassword, ForgotPasswordController::resetPassword)
+     * already call this method, so one increment keeps every path counted. Put
+     * it in the callers and the count silently drifts the day a fourth path is
+     * added and someone forgets.
      */
     protected function recordPasswordHistory(User $user): void
     {
+        $changedAt = now();
+
         // Save current hash as the most recent historical entry
         DB::table('password_histories')->insert([
             'user_id'       => $user->id,
             'password_hash' => $user->password,
-            'created_at'    => now(),
+            'created_at'    => $changedAt,
         ]);
+
+        // The counter is what survives the pruning below — history itself is
+        // capped at HISTORY_LIMIT rows and cannot answer "how many times".
+        // Written with the query builder (not $user->increment) so the change
+        // does not also bump users.updated_at, which every other edit moves.
+        DB::table('users')
+            ->where('id', $user->id)
+            ->update([
+                'password_change_count' => DB::raw('COALESCE(password_change_count, 0) + 1'),
+                'password_changed_at'   => $changedAt,
+            ]);
+
+        // The in-memory $user is deliberately left alone. Every caller follows
+        // this with $user->update(['password' => ...]), and save() persists all
+        // DIRTY attributes — so stamping them here would only queue an
+        // identical second write. No caller serialises $user afterwards either;
+        // all three return a plain message.
 
         // Prune anything older than the most recent HISTORY_LIMIT entries
         $idsToKeep = DB::table('password_histories')

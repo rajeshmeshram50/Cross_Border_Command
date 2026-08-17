@@ -796,43 +796,16 @@ class HrDocumentSignatureController extends Controller
      * Falls back to null user_id with a placeholder name so the admin can
      * still send the doc and re-assign manually later.
      */
+    /**
+     * Delegates to App\Support\SignerResolver — the generate/preview path
+     * needs the same answer, and two copies of these rules is how two
+     * screens end up naming different people for one document.
+     *
+     * @return array{0: int|null, 1: string}
+     */
     private function resolveSignerUser(string $roleName, Employee $emp): array
     {
-        $r = strtolower(trim($roleName));
-        if (str_contains($r, 'reporting')) {
-            // Two paths — employees.reporting_manager_id points to an
-            // Employee row (the common case), but employees.reporting_
-            // manager_user_id points to a User row when the manager is a
-            // Branch User / Client admin who doesn't have an Employee
-            // record. Try the Employee path first (most specific), then
-            // fall back to the direct User lookup. Without this fallback,
-            // a Branch-User reporting manager surfaced as "(unassigned)"
-            // on every signature workflow.
-            if ($emp->reporting_manager_id) {
-                $mgr = Employee::with('user')->find($emp->reporting_manager_id);
-                if ($mgr) {
-                    return [$mgr->user_id ?? null, $mgr->display_name ?? 'Reporting Manager'];
-                }
-            }
-            if ($emp->reporting_manager_user_id) {
-                $u = User::find($emp->reporting_manager_user_id);
-                if ($u) {
-                    return [$u->id, $u->name ?: ('Reporting Manager (' . $u->email . ')')];
-                }
-            }
-            return [null, 'Reporting Manager (unassigned)'];
-        }
-        if (str_contains($r, 'employee')) {
-            return [$emp->user_id ?? null, $emp->display_name ?? 'Employee'];
-        }
-        if (str_contains($r, 'ceo') || str_contains($r, 'client')) {
-            // Pick the first client_admin in this client as the CEO stand-in.
-            $admin = $emp->client_id
-                ? User::where('client_id', $emp->client_id)->where('user_type', 'client_admin')->first()
-                : null;
-            return [$admin?->id ?? null, $admin?->name ?? 'Client (CEO) (unassigned)'];
-        }
-        return [null, $roleName ?: 'Unassigned'];
+        return \App\Support\SignerResolver::resolve($roleName, $emp);
     }
 
     private function event($user, string $action, string $message): array

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
@@ -61,9 +62,34 @@ class HrTemplateDocxRenderer
         $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
         $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
+        $html = self::localiseImageSources($html);
         $wrapped = '<html><body>' . $html . '</body></html>';
-        try { Html::addHtml($section, $wrapped, false, false); }
-        catch (\Throwable $e) { $section->addText(strip_tags($html)); }
+
+        /* Parse into a THROWAWAY document first, and only re-run it on the real
+         * section once it survives.
+         *
+         * The old shape was `try { addHtml($section) } catch { addText(...) }`,
+         * and addHtml writes as it walks: a failure part-way left the paragraphs
+         * it had already added AND then appended a flattened dump of the entire
+         * body, so the reader got the text twice — the second time as one
+         * run-on line with the raw {{tokens}} in it. Nothing can un-write those
+         * paragraphs, so the check has to happen somewhere disposable. */
+        $parsedCleanly = true;
+        try {
+            $probe = new PhpWord();
+            Html::addHtml($probe->addSection(), $wrapped, false, false);
+        } catch (\Throwable $e) {
+            $parsedCleanly = false;
+            Log::warning('DOCX body HTML did not parse; falling back to plain text', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($parsedCleanly) {
+            Html::addHtml($section, $wrapped, false, false);
+        } else {
+            $section->addText(strip_tags($html));
+        }
 
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
@@ -108,6 +134,38 @@ class HrTemplateDocxRenderer
         } catch (\Throwable $e) {
             return null;
         }
+    }
+
+    /**
+     * Rewrite every <img src> in the body to an absolute LOCAL file path.
+     *
+     * The resolved HTML carries `/storage/...` URLs — right for the browser
+     * preview and for DomPDF (which inlines them), but PhpWord reads the src as
+     * a filesystem path and a leading-slash URL resolves to nothing. It then
+     * threw mid-parse, and the catch below wrote the entire body a second time
+     * as flattened text. An image we cannot resolve is DROPPED rather than left
+     * to break the document.
+     */
+    private static function localiseImageSources(string $html): string
+    {
+        return preg_replace_callback(
+            '#<img\b([^>]*?)\bsrc=([\'"])(.*?)\2([^>]*?)/?>#i',
+            function (array $m) {
+                [$full, $pre, $q, $src, $post] = $m;
+                if ($src === '' || str_starts_with($src, 'data:')) return $full;
+
+                // /storage/x → disk-relative x; a bare relative path is already one.
+                $path = parse_url($src, PHP_URL_PATH) ?: $src;
+                $path = ltrim(str_replace('\\', '/', $path), '/');
+                if (preg_match('#(?:^|/)storage/(.+)$#', $path, $sm)) $path = $sm[1];
+                elseif (str_starts_with($src, 'http')) return '';   // remote — not ours to embed
+
+                $abs = self::resolveDocxLogo($path);
+                if (!$abs) return '';   // unreadable / unsupported format
+                return '<img' . $pre . 'src=' . $q . $abs . $q . $post . '/>';
+            },
+            $html,
+        ) ?? $html;
     }
 
     private static function resolveDocxLogo(?string $logoPath): ?string

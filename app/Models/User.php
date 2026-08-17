@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class User extends Authenticatable
 {
@@ -64,7 +65,45 @@ class User extends Authenticatable
             'login_count' => 'integer',
             'email_active' => 'boolean',
             'must_reset_password' => 'boolean',
+            // Deliberately NOT in $fillable: these are stamped only by
+            // PasswordHistory::recordPasswordHistory(), never mass-assigned
+            // from a request — a client that could set them could fake the
+            // audit trail the password screen reads.
+            'password_change_count' => 'integer',
+            'password_changed_at' => 'datetime',
         ];
+    }
+
+    /**
+     * A password change kills every OTHER session for that user.
+     *
+     * Sanctum tokens are independent of the password: rotating the hash leaves
+     * existing tokens valid, so an employee whose password was reset stayed
+     * signed in indefinitely — a refresh did not help, because the old token
+     * still authenticated. That is the whole point of a reset when it is done
+     * because credentials leaked or someone left.
+     *
+     * This lives on the model rather than at each call site because there are
+     * four places that write a password (self-change, HR reset, the Branch form
+     * and the Client form) and every one of them had forgotten to revoke. A
+     * hook cannot be forgotten by the next one.
+     *
+     * The token making the request survives, so changing your own password does
+     * not sign you out of the tab you are typing in — but it does drop your
+     * other devices. When an ADMIN resets someone else's password the acting
+     * token belongs to the admin, so none of the target's tokens match and all
+     * of them go.
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (self $user) {
+            if (!$user->wasChanged('password')) return;
+
+            $current = $user->currentAccessToken();
+            $keepId  = $current instanceof PersonalAccessToken ? $current->getKey() : null;
+
+            $user->tokens()->when($keepId, fn ($q) => $q->whereKeyNot($keepId))->delete();
+        });
     }
 
     // ── Relationships ──

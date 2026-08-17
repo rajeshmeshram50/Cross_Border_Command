@@ -911,6 +911,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get ('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'index']);
     Route::post('/hr-generated-documents/preview',       [HrGeneratedDocumentController::class, 'preview']);
     Route::get ('/hr-generated-documents/{id}/download', [HrGeneratedDocumentController::class, 'downloadDocx']);
+    // PDF alongside DOCX — the DOCX is the editable copy, the PDF is the one
+    // that looks identical in every reader (see downloadPdf's note on VML).
+    Route::get ('/hr-generated-documents/{id}/download-pdf', [HrGeneratedDocumentController::class, 'downloadPdf']);
     Route::post('/hr-generated-documents',               [HrGeneratedDocumentController::class, 'store']);
     Route::get ('/hr-generated-documents/{id}',          [HrGeneratedDocumentController::class, 'show']);
 

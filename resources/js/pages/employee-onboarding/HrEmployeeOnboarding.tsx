@@ -3319,6 +3319,18 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     setS4(p => (p.pf_deduction === t ? p : { ...p, pf_deduction: t }));
   }, [s1.pf_type]);
 
+  /* Stage 4 "ESI Applicable" mirrors the Stage 1 salary breakup's ESI tick.
+     It was an editable Yes/No here, which made it a SECOND place to decide the
+     same thing — and the losing one: the breakup is what writes the salary
+     structure, and saving that structure stamps employees.esi_applicable from
+     the tick (SalaryStructureController). Anything typed here was overwritten
+     the next time the structure was saved, so the field accepted an answer it
+     could not keep. Read-only now, and kept in step. */
+  useEffect(() => {
+    const v = obEsi ? 'Yes' : 'No';
+    setS4(p => (p.esi_applicable === v ? p : { ...p, esi_applicable: v }));
+  }, [obEsi]);
+
   /** PUT s4 fields back to the employee row. `markComplete` stamps
    *  `stage4_completed_at` so the sidebar marks Stage 4 done and Next
    *  Stage gets unblocked. We never clear the timestamp from here — once
@@ -4376,7 +4388,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     />
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
-                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => { const mgr = managerOpts.find(m => m.value === p.reporting_manager); const keepMgr = !mgr || mgr.value.startsWith('branch_user:') || (mgr.deptId && mgr.deptId === String(v)); return { ...p, department_id: v, reporting_manager: keepMgr ? p.reporting_manager : '' }; }); setS1Errors(p => ({ ...p, department_id: '', reporting_manager: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
+                  <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => ({ ...p, department_id: v })); setS1Errors(p => ({ ...p, department_id: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
                   <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
                   {/* Primary & Ancillary share the same list, but a role can't be
                       both — exclude the other side's pick from each dropdown. */}
@@ -4416,7 +4428,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       title="The legal entity's city and country"
                     />
                   </Col>
-                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} loading={mastersLoading} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { const mgr = managerOpts.find(m => m.value === v); setS1(p => ({ ...p, reporting_manager: v, department_id: (mgr && mgr.deptId) ? mgr.deptId : p.department_id })); setS1Errors(p => ({ ...p, reporting_manager: '', department_id: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
+                  <Col md={4} data-field="reporting_manager"><label className="onb-init-label">Reporting Manager<span className="req">*</span></label><MasterSelect options={reportingMgrOpts} loading={mastersLoading} placeholder="Select manager" value={s1.reporting_manager} invalid={!!s1Errors.reporting_manager} onChange={(v) => { setS1(p => ({ ...p, reporting_manager: v })); setS1Errors(p => ({ ...p, reporting_manager: '' })); }} />{s1Errors.reporting_manager && <div className="onb-error-msg">{s1Errors.reporting_manager}</div>}</Col>
                 </Row>
 
                 <p className="onb-init-subgroup">Employment Terms</p>
@@ -6105,6 +6117,15 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
       toast.error('Cannot upload', 'Save the employee first — no record id yet.');
       return;
     }
+    /* Hard guard, not just the disabled buttons. The picker is a detached
+       <input> created here, so a click that lands before React re-renders — or
+       any future caller — could still start a second upload while one is in
+       flight. Two concurrent uploads share one `uploadingKey`, and whichever
+       finished first cleared it. */
+    if (uploadingKey) {
+      toast.info('One at a time', 'Wait for the current upload to finish before starting another.');
+      return;
+    }
     // Per-doc cap, clamped to the backend ceiling — never let a doc
     // demand more than the server can actually accept.
     const cap = Math.min(maxMb ?? DOC_MAX_MB, DOC_MAX_MB);
@@ -6296,6 +6317,14 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                   ? 'image/jpeg,image/png,application/pdf'
                   : DOC_ACCEPT_ATTR;
               const isBusy = uploadingKey === d.id;
+              /* One upload at a time, across the WHOLE stage. `isBusy` only
+                 disabled the row being uploaded, so a second file could be
+                 started while the first was still in flight — and the first
+                 request to finish cleared the shared uploadingKey, so the UI
+                 stopped showing "Uploading…" while an upload was still running
+                 and its success toast landed on a stage that was not settled.
+                 That is the "toast appears before the upload completes" report. */
+              const isLocked = !!uploadingKey && !isBusy;
               return (
                 <div key={d.id} className="onb-doc-row">
                   <span className="onb-doc-row-icon"><i className="ri-file-text-line" /></span>
@@ -6330,24 +6359,32 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
                       </a>
                     </Tooltip>
                   )}
-                  <Tooltip label={isBusy ? 'Uploading…' : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)}>
+                  <Tooltip label={
+                    isBusy   ? 'Uploading…'
+                    : isLocked ? 'Another document is uploading — wait for it to finish'
+                    : (srv ? `Replace ${d.name}` : `Upload ${d.name}`)
+                  }>
                     <button
                       type="button"
                       className="onb-doc-upload-btn"
                       onClick={() => triggerUpload(d.id, d.name, accept, d.maxMb)}
-                      disabled={isBusy}
-                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : undefined}
+                      disabled={isBusy || isLocked}
+                      style={isBusy ? { opacity: 0.6, cursor: 'progress' } : (isLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined)}
                     >
                       <i className={`${isBusy ? 'ri-loader-4-line onb-spin' : 'ri-upload-cloud-2-line'}`} />
                       {isBusy ? 'Uploading…' : (srv ? 'Replace' : 'Upload')}
                     </button>
                   </Tooltip>
                   {srv && (
-                    <Tooltip label="Remove this document">
+                    <Tooltip label={isLocked ? 'Another document is uploading — wait for it to finish' : 'Remove this document'}>
                       <button
                         type="button"
                         className="onb-doc-upload-btn onb-doc-ghost-btn onb-doc-ghost-del"
                         onClick={() => triggerDelete(srv.id, d.name)}
+                        // Deleting mid-upload would race the reload the upload
+                        // runs when it lands.
+                        disabled={isLocked || isBusy}
+                        style={(isLocked || isBusy) ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                       >
                         <i className="ri-delete-bin-line" />
                       </button>
@@ -7359,7 +7396,19 @@ function Stage4Payroll({
             )}
             <Col md={4}>
               <label className="onb-init-label">ESI Applicable</label>
-              <MasterSelect options={ONB_YES_NO} value={s4.esi_applicable || 'No'} onChange={(v) => setS4(p => ({ ...p, esi_applicable: v }))} />
+              {/* Read-only mirror of the Stage 1 breakup's ESI tick — same
+                  treatment as Agreed CTC and PF Type below/above. Editing it
+                  here changed nothing that lasted: saving the salary structure
+                  re-stamps this from the tick. */}
+              <input
+                className="onb-init-input"
+                value={s4.esi_applicable || 'No'}
+                readOnly
+                style={{ background: 'var(--vz-light, #f3f3f9)', cursor: 'not-allowed' }}
+              />
+              <small style={{ display: 'block', marginTop: 3, fontSize: 10.5, color: '#9ca3af' }}>
+                From the Stage 1 salary breakup — read-only here.
+              </small>
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Gratuity Nominee Name</label>

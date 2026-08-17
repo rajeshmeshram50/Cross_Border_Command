@@ -160,6 +160,9 @@ class EmployeeController extends Controller
         [$shiftStart, $shiftEnd] = $row->resolveShiftWindow();
         $row->setAttribute('shift_start', $shiftStart);
         $row->setAttribute('shift_end', $shiftEnd);
+        // Lets the Set/Reset Password modal say what state this login is in
+        // rather than presenting an identical empty form either way.
+        $row->setAttribute('password_status', $this->passwordStatusFor($row));
         return response()->json($row);
     }
 
@@ -1620,7 +1623,63 @@ class EmployeeController extends Controller
         return $q->findOrFail($id);
     }
 
-   
+    /**
+     * What state this employee's login password is in, for the Set/Reset
+     * Password modal.
+     *
+     * The modal used to render the same empty form regardless, so HR could not
+     * tell a never-touched onboarding password from one the employee has been
+     * using for months — and "Reset" in the title implied a password existed
+     * even when nobody had ever set one.
+     *
+     * `users.password` cannot answer this: account creation seeds it with a
+     * random 40-char value, so it is NEVER empty. The real signals are the
+     * change counter, the forced-reset flag, and whether the person has ever
+     * logged in.
+     *
+     * Read with an explicit column list rather than the `user` relation, which
+     * restricts columns and would silently return nulls here.
+     */
+    private function passwordStatusFor(Employee $employee): array
+    {
+        if (!$employee->user_id) {
+            return ['state' => 'no_login', 'change_count' => 0, 'changed_at' => null, 'never_logged_in' => true];
+        }
+
+        $u = DB::table('users')
+            ->where('id', $employee->user_id)
+            ->first(['password_change_count', 'password_changed_at', 'must_reset_password', 'last_login_at']);
+
+        if (!$u) {
+            return ['state' => 'no_login', 'change_count' => 0, 'changed_at' => null, 'never_logged_in' => true];
+        }
+
+        $count = (int) ($u->password_change_count ?? 0);
+
+        // Order matters: a forced reset outranks the rest — it is the one state
+        // that tells HR the current password has already stopped working.
+        $state = match (true) {
+            (bool) ($u->must_reset_password ?? false) => 'reset_required',
+            $count === 0                              => 'never_changed',
+            default                                   => 'changed',
+        };
+
+        return [
+            'state'        => $state,
+            'change_count' => $count,
+            // ISO 8601 with the offset, not the raw '2026-08-17 05:22:22' the
+            // query builder hands back. That string has no zone marker, so
+            // new Date() reads it as LOCAL time and an early-morning UTC stamp
+            // renders a day early in IST — and Safari rejects the format
+            // outright. Timestamps are stored UTC here (see DATABASE_DESIGN);
+            // the offset lets the browser localise it correctly.
+            'changed_at'   => $u->password_changed_at
+                ? Carbon::parse($u->password_changed_at)->toIso8601String()
+                : null,
+            'never_logged_in' => $u->last_login_at === null,
+        ];
+    }
+
     public function setPassword(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');

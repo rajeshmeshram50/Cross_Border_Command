@@ -13,17 +13,73 @@
           display: flex; flex-direction: column;
           background: var(--vz-body-bg, #f3f4f9);
         }
+        /* One 8px frame for EVERY tab in the profile overlay.
+           Spacing used to come from three different places — `px-4 pt-3` in the
+           markup (24px sides, 16px top) and `padding-bottom: 32px` here — so no
+           two edges matched and the figure changed as you moved between tabs.
+           `!important` because the shorthand has to beat those two utilities,
+           which carry the same specificity as this rule. */
         .ep-content-pane {
           flex: 1 1 auto;
           min-height: 0;
           overflow-y: auto;
-          padding-bottom: 32px;
+          padding: 8px !important;
         }
         /* Tab fill helper — a tab root carrying .ep-tab-fill stretches to the
            full height of the content pane and grows its LAST block so the cards
            fill the page instead of leaving a large empty area below. For tabs
            with sub-tab panes, wrap each pane in .ep-tab-pane so the active
            pane (and its last block) fills the remaining height. */
+        /* …and the same 8px between the stacked cards, so the gap the eye reads
+           between two cards matches the gap to the edge of the pane. The cards
+           space themselves with Bootstrap's `mb-3` (16px); overriding it here
+           keeps this a styling change rather than a markup one. Tabs return
+           either a bare fragment (cards land directly in the pane) or one of
+           the three fill wrappers, hence both depths.
+           The last card drops its margin — otherwise the bottom edge reads
+           8 + 8 while every other edge reads 8. */
+        .ep-content-pane > .mb-3, .ep-content-pane > .mb-4,
+        .ep-content-pane > .ep-tab-fill > .mb-3, .ep-content-pane > .ep-tab-fill > .mb-4,
+        .ep-content-pane > .vt-tab-fill > .mb-3, .ep-content-pane > .vt-tab-fill > .mb-4,
+        .ep-content-pane > .att-tab-fill > .mb-3, .ep-content-pane > .att-tab-fill > .mb-4 { margin-bottom: 8px !important; }
+        .ep-content-pane > .mb-3:last-child, .ep-content-pane > .mb-4:last-child,
+        .ep-content-pane > .ep-tab-fill > .mb-3:last-child, .ep-content-pane > .ep-tab-fill > .mb-4:last-child,
+        .ep-content-pane > .vt-tab-fill > .mb-3:last-child, .ep-content-pane > .vt-tab-fill > .mb-4:last-child,
+        .ep-content-pane > .att-tab-fill > .mb-3:last-child, .ep-content-pane > .att-tab-fill > .mb-4:last-child { margin-bottom: 0 !important; }
+
+        /* Cards laid out SIDE BY SIDE get their gap from the grid gutter, not
+           from a margin — `g-3` is 16px both ways, so two cards in one row sat
+           twice as far apart as the same two cards stacked. Retune the gutter
+           on the CARD-LEVEL rows only: those are direct children of the pane or
+           of a fill wrapper. Rows nested deeper lay out the label/value fields
+           INSIDE a card and keep their own, roomier spacing — tightening those
+           would crowd the text, which is not what the gap between cards is
+           about. Plain selectors (0,2,0) already outrank `.g-3` (0,1,0), so no
+           !important is needed.
+
+           Set the --vz-* pair, not just --bs-*: this is the Velzon grid, and its
+           column padding reads `calc(var(--vz-gutter-x) * .5)`. Setting only the
+           Bootstrap names changed a variable nothing consumes, which is why the
+           gap between side-by-side cards did not move the first time. --bs-* is
+           kept for any plain-Bootstrap component that does read it.
+
+           Matched by CONTENT rather than by depth. Listing wrapper paths meant
+           Payroll was missed — its rows sit one level further down, inside an
+           `.ep-tab-pane` sub-tab wrapper — and the next tab with its own nesting
+           would have been missed too. `:has(> col > card)` says what actually
+           makes a row a card row, at whatever depth, and still leaves the
+           label/value rows inside a card alone: those hold text, not cards. */
+        .ep-content-pane .row:has(> [class*="col"] > .ep-section-card),
+        .ep-content-pane .row:has(> [class*="col"] > .ep-section-card-flat),
+        .ep-content-pane .row:has(> [class*="col"] > .ep-kpi-tile),
+        .ep-content-pane > .row,
+        .ep-content-pane > .ep-tab-fill > .row,
+        .ep-content-pane > .vt-tab-fill > .row,
+        .ep-content-pane > .att-tab-fill > .row {
+          --vz-gutter-x: 8px; --vz-gutter-y: 8px;
+          --bs-gutter-x: 8px; --bs-gutter-y: 8px;
+        }
+
         .ep-tab-fill { min-height: 100%; display: flex; flex-direction: column; }
         .ep-tab-fill > :last-child { flex-grow: 1; }
         .ep-tab-fill .ep-tab-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
@@ -31,6 +87,14 @@
         /* The Leave tab renders a self-contained panel whose own root must also
            become a column and grow its last section (Leave History) so it
            fills the height like the other tabs. */
+        /* Leave lays its balance cards out with a flex `gap-3` (16px) instead of
+           a grid row, so the gutter rule above cannot reach them. Same selector
+           shape catches the loading skeleton, which uses the identical
+           container — otherwise the cards would visibly shift once the real
+           data replaced the shimmer. `!important` because Bootstrap's spacing
+           utilities are themselves generated with it. */
+        .leave-summary-panel .d-flex.gap-3.flex-wrap { gap: 8px !important; }
+
         .ep-tab-fill > .leave-summary-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
         .ep-tab-fill > .leave-summary-panel > :last-child { flex-grow: 1; }
         /* Keep the regularization modal above the fullscreen overlay
@@ -2271,6 +2335,7 @@
 .dlv-info-icon { color: #0ea5e9; }
 
 /* VaultTab (was VaultTab.css) */
+
 .vt-hero-card { border-radius: 14px; overflow: hidden; }
 .vt-hero-strip {
   background: linear-gradient(135deg,#0f0c29 0%,#1e1b4b 30%,#312e81 65%,#4338ca 100%);
@@ -3397,6 +3462,24 @@
   box-shadow: 0 6px 16px rgba(244,63,94,0.35);
 }
 .ep-pw-close { width: 30px; height: 30px; }
+/* Password-state banner. The text stays on the normal body colour and only the
+   icon, tint and border carry the tone — a fully coloured sentence sits at the
+   edge of readable contrast on the amber variant, and worse again in dark mode
+   where the tint darkens but a fixed text colour would not. */
+.ep-pw-state {
+  padding: 8px 10px;
+  border-radius: 10px;
+  line-height: 1.45;
+  border: 1px solid transparent;
+  color: var(--vz-body-color);
+}
+.ep-pw-state-icon { flex: 0 0 auto; margin-top: 1px; }
+.ep-pw-state-success { background: rgba(10,179,156,0.10); border-color: rgba(10,179,156,0.25); }
+.ep-pw-state-success .ep-pw-state-icon { color: #0ab39c; }
+.ep-pw-state-warning { background: rgba(247,184,75,0.12); border-color: rgba(247,184,75,0.30); }
+.ep-pw-state-warning .ep-pw-state-icon { color: #f7b84b; }
+.ep-pw-state-danger  { background: rgba(240,101,72,0.10); border-color: rgba(240,101,72,0.28); }
+.ep-pw-state-danger .ep-pw-state-icon { color: #f06548; }
 .ep-pw-input { padding-right: 38px; border-radius: 10px; }
 .ep-pw-eye { right: 10px; top: 50%; transform: translateY(-50%); color: var(--vz-secondary-color); }
 .ep-pw-strength-track { flex: 1; height: 6px; background: var(--vz-secondary-bg); border-radius: 999px; overflow: hidden; }
@@ -3501,9 +3584,9 @@
     font-size: 11px;
   }
 
-  /* ── Content padding ── px-4 (1.5rem) is too wide on a phone. The
-     two-class selector outranks the .px-4 utility without !important. */
-  .ep-fullscreen-overlay .ep-content-pane { padding-left: 12px; padding-right: 12px; }
+  /* Content padding used to be narrowed to 12px here because `px-4` (24px) was
+     too wide on a phone. The pane is now 8px on every side at every width, so
+     this override would only make the phone WIDER than the desktop. */
 
   /* ── Tables ── Bootstrap data tables already ship inside .table-responsive
      (horizontal scroll). The Attendance timelog wrapper only scrolled
@@ -3521,5 +3604,5 @@
    Email / Manager / Mobile cells stack cleanly instead of truncating. */
 @media (max-width: 480px) {
   .ep-hero { padding: 14px 12px 10px; }
-  .ep-fullscreen-overlay .ep-content-pane { padding-left: 10px; padding-right: 10px; }
+  /* (pane sides deliberately left alone — 8px everywhere, see .ep-content-pane) */
 }
