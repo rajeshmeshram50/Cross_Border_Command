@@ -155,6 +155,7 @@ export default function ExpenseSettlementModal({
   canApproveSettle = false,
   onRaiseReimbursement,
   onGoToInbox,
+  zIndexBase,
 }: {
   claimId: number | null;
   onClose: () => void;
@@ -188,6 +189,11 @@ export default function ExpenseSettlementModal({
    *  approvals are Inbox-only); the Inbox itself does NOT pass it, so manager
    *  approval works there. */
   onGoToInbox?: () => void;
+  /** When this modal is opened from ON TOP of another popup (e.g. the Batch
+   *  Payment wizard sits at z-index 9100), pass a base z-index above that so the
+   *  backdrop + card layer over it instead of hiding behind. The nested
+   *  sub-backdrop still floats above this via its own +600 offset. */
+  zIndexBase?: number;
 }) {
   const toast = useToast();
   const open = claimId != null;
@@ -1057,7 +1063,7 @@ export default function ExpenseSettlementModal({
   if (!open) return null;
 
   return createPortal(
-    <div className="esm-backdrop" onMouseDown={onClose}>
+    <div className="esm-backdrop" onMouseDown={onClose} style={zIndexBase != null ? { zIndex: zIndexBase } : undefined}>
       <style>{CSS}</style>
       <div className={`esm-modal ${inReview ? 'esm-modal--fit' : ''} ${managerReview ? 'esm-modal--fit-mgr' : ''}`} onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
         {/* ── Teal hero header (with embedded claim summary panel) ── */}

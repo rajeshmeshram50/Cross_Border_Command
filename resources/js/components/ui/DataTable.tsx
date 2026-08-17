@@ -63,6 +63,9 @@ export interface DataTableProps<T> {
   filterChips?: DataTableChip[];
   onClearFilters?: () => void;
   toolbarActions?: ReactNode;
+  /** Rendered at the START of the toolbar, BEFORE the tabs (e.g. a date-range
+   *  filter that should sit to the left of the status tabs). */
+  leadingToolbar?: ReactNode;
   initialSort?: SortingState;
   disableSorting?: boolean;
   leading?: DataTableColumn<T>[];
@@ -143,6 +146,7 @@ export default function DataTable<T extends object>({
   filterChips,
   onClearFilters,
   toolbarActions,
+  leadingToolbar,
   initialSort,
   disableSorting = false,
   leading,
@@ -345,7 +349,7 @@ export default function DataTable<T extends object>({
     </div>
   ) : null;
   const searchInToolbar = searchable && !searchHost;
-  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions);
+  const showToolbar = !!(tabs?.length || searchInToolbar || onFilterClick || toolbarActions || leadingToolbar);
   const start = pageIndex * pageSize;
   const shownFrom = filteredCount === 0 ? 0 : start + 1;
   const shownTo = paginate ? Math.min(start + pageSize, filteredCount) : filteredCount;
@@ -358,6 +362,7 @@ export default function DataTable<T extends object>({
     >
       {showToolbar && (
         <div className="dt-toolbar">
+          {leadingToolbar && <div className="dt-lead">{leadingToolbar}</div>}
           {!!tabs?.length && (
             <div className="dt-tabs" role="tablist">
               {tabs.map(t => {
@@ -513,6 +518,20 @@ export default function DataTable<T extends object>({
                   </tr>
                 ))
               )}
+              {/* Blank rows padding a short page out to the fitted height.
+                  `fitToViewport` stretches the card to the bottom of the window
+                  and `autoFitRows` sizes the page to match — but a tab with two
+                  results still drew two rows and left the rest of that height as
+                  one white slab, which reads as a broken layout rather than as
+                  an empty table. These keep the ruled lines and zebra running to
+                  the pager. Rendered only when the page is genuinely short, and
+                  never in place of the empty state. */}
+              {!loading && rows.length > 0 && autoFitRows && pageSize > rows.length &&
+                Array.from({ length: pageSize - rows.length }, (_, i) => (
+                  <tr key={`dt-fill-${i}`} className="dt-fill-row" aria-hidden>
+                    <td colSpan={colCount}>&nbsp;</td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

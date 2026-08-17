@@ -1413,23 +1413,32 @@ export default function HrPayroll() {
                 ? <><Spinner size="sm" className="me-2" /> Exporting…</>
                 : <><i className="ri-download-2-line me-2" style={{ fontSize: 14 }} /> Export</>}
             </DropdownToggle>
-            <DropdownMenu end container="body" strategy="fixed" style={{ fontSize: 13 }}>
+            {/* Wears the SAME panel as every other dropdown on this page: the
+                month picker and the tab filters are MasterSelects, which render
+                `.master-select-menu` / `.master-select-item` (10px radius, 6px
+                padding, soft shadow, rounded hover rows). This one was left on
+                reactstrap's default menu — square corners, flat shadow, flush
+                rows — so it read as a control from a different app. Reusing the
+                classes rather than re-declaring the tokens keeps the two in
+                step; the stylesheet ships via masterFormKit, already imported
+                here. */}
+            <DropdownMenu end container="body" strategy="fixed" className="master-select-menu" style={{ fontSize: 13, minWidth: 230 }}>
               <DropdownItem header>This cycle ({cycle.label})</DropdownItem>
-              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportExcelCurrent}>
+              <DropdownItem className="master-select-item" toggle={false} disabled={!!downloading} onClick={exportExcelCurrent}>
                 {downloading === 'excel' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-excel-2-line me-2 text-success" />} Excel (full data)
               </DropdownItem>
-              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportCsv}>
+              <DropdownItem className="master-select-item" toggle={false} disabled={!!downloading} onClick={exportCsv}>
                 {downloading === 'csv' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-text-line me-2" />} CSV
               </DropdownItem>
-              <DropdownItem toggle={false} disabled={!!downloading} onClick={downloadAllPayslips}>
+              <DropdownItem className="master-select-item" toggle={false} disabled={!!downloading} onClick={downloadAllPayslips}>
                 {downloading === 'zip' ? <Spinner size="sm" className="me-2" /> : <i className="ri-file-zip-line me-2" />} All payslips (ZIP of PDFs)
               </DropdownItem>
-              <DropdownItem toggle={false} disabled={!!downloading} onClick={emailAllPayslips}>
+              <DropdownItem className="master-select-item" toggle={false} disabled={!!downloading} onClick={emailAllPayslips}>
                 {downloading === 'email' ? <Spinner size="sm" className="me-2" /> : <i className="ri-mail-send-line me-2" />} Email payslips to all
               </DropdownItem>
               <DropdownItem divider />
               <DropdownItem header>Overall</DropdownItem>
-              <DropdownItem toggle={false} disabled={!!downloading} onClick={exportHistoryExcel}>
+              <DropdownItem className="master-select-item" toggle={false} disabled={!!downloading} onClick={exportHistoryExcel}>
                 {downloading === 'history' ? <Spinner size="sm" className="me-2" /> : <i className="ri-history-line me-2 text-primary" />} Payroll history (Excel)
               </DropdownItem>
             </DropdownMenu>
@@ -1593,7 +1602,10 @@ export default function HrPayroll() {
         </CardBody>
       </Card>
 
-      <Row className="g-3 mb-3 align-items-stretch">
+      {/* g-1, not g-3 — the KPI tiles sit ~4px apart, matching the Recruitment
+          page's .rec-page-kpis row. The gap is set on the row itself rather
+          than in CSS, same as the Employees and Onboarding hubs. */}
+      <Row className="g-1 mb-3 align-items-stretch">
         {KPI_CARDS.map(k => {
           let displayValue: React.ReactNode;
           if (k.mode === 'currency') {
@@ -1717,6 +1729,10 @@ export default function HrPayroll() {
               className="pay-tbl-run"
               serial={{ header: 'Sr. No.' }}
               accent="violet"
+              /* Fills the viewport instead of collapsing to row count — each of
+                 these tables is the only one on its tab, so it owns the space
+                 left under whatever the tab renders above it. */
+              fitToViewport
               autoFitRows
               minWidth={1500}
               loading={loading}
@@ -1748,7 +1764,7 @@ export default function HrPayroll() {
                 Read-only · Source data from Attendance · {cycle.label} · {periodMeta?.working_days || 26} working days
               </div>
 
-              <Row className="g-3 mb-3 align-items-stretch">
+              <Row className="g-1 mb-3 align-items-stretch">
                 {[
                   { key: 'syncedEmployees',   label: 'Synced Employees',    n: counts.syncedEmployees,   tone: 'green'  as const },
                   { key: 'missingPunchCases', label: 'Missing Punch Cases', n: counts.missingPunchCases, tone: 'red'    as const },
@@ -1758,10 +1774,12 @@ export default function HrPayroll() {
                 ].map(t => (
                   <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
-                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
-                        {loading ? <Shimmer height={20} width={40} radius={6} /> : t.n}
+                      {/* Same type scale as the hero KPI cards above: 26px
+                          number, then a small uppercase tracked label. */}
+                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 26, lineHeight: 1 }}>
+                        {loading ? <Shimmer height={24} width={60} radius={6} /> : t.n}
                       </div>
-                      <div className="text-muted mt-1" style={{ fontSize: 12 }}>{t.label}</div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--vz-secondary-color)', letterSpacing: '0.06em', textTransform: 'uppercase', margin: '6px 0 0' }}>{t.label}</div>
                     </div>
                   </Col>
                 ))}
@@ -1772,6 +1790,7 @@ export default function HrPayroll() {
                 columns={biometricColumns}
                 accent="violet"
                 className="pay-tbl-att"
+                fitToViewport
                 autoFitRows
                 minWidth={1100}
                 loading={loading}
@@ -1791,7 +1810,7 @@ export default function HrPayroll() {
 
           {tab === 'report' && (
             <>
-              <Row className="g-3 mb-3 align-items-stretch">
+              <Row className="g-1 mb-3 align-items-stretch">
                 {[
                   { key: 'totalGross',  label: 'Total Gross',    n: counts.totalGross,  tone: 'green'  as const },
                   { key: 'totalNetPay', label: 'Total Net Pay',  n: counts.totalNetPay, tone: 'blue'   as const },
@@ -1801,12 +1820,14 @@ export default function HrPayroll() {
                 ].map(t => (
                   <Col key={t.key} xl={true} md={4} sm={6} xs={6}>
                     <div className={`pay-mini-tile pay-mini-tile--${t.tone}`}>
-                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 20, lineHeight: 1 }}>
-                        {loading ? <Shimmer height={18} width={70} radius={6} /> : `₹${fmtINR(t.n)}`}
+                      {/* 22px, not the 26px the count tiles use — a full
+                          ₹ figure is far wider and would wrap at 26. */}
+                      <div className={`fw-bold pay-mini-tile-num--${t.tone}`} style={{ fontSize: 22, lineHeight: 1 }}>
+                        {loading ? <Shimmer height={20} width={80} radius={6} /> : `₹${fmtINR(t.n)}`}
                       </div>
                       <div
-                        className="mt-1 text-uppercase fw-semibold"
-                        style={{ fontSize: 10.5, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)' }}
+                        className="text-uppercase"
+                        style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--vz-secondary-color)', margin: '6px 0 0' }}
                       >
                         {t.label}
                       </div>
@@ -1820,6 +1841,7 @@ export default function HrPayroll() {
                 columns={reportColumns}
                 accent="violet"
                 className="pay-tbl-report"
+                fitToViewport
                 autoFitRows
                 minWidth={1900}
                 loading={loading}
@@ -1851,6 +1873,7 @@ export default function HrPayroll() {
                 columns={rosterColumns}
                 className="pay-tbl-roster"
                 accent="violet"
+                fitToViewport
                 autoFitRows
                 /* Floor raised 1100 → 1200 so the Action column's 12% still
                    clears the Set Salary pill on a narrow window; below that the

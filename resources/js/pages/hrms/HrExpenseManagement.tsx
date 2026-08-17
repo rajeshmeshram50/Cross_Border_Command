@@ -687,16 +687,60 @@ export default function HrExpenseManagement() {
   }, [module, counts.all, counts.pending, counts.approved, counts.rejected,
       advanceCounts.all, advanceCounts.pending, advanceCounts.approved, advanceCounts.rejected]);
 
+  // Date-range filter — placed in the page header (next to the module toggle).
+  const dateFilterEl = (
+    <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
+      <MasterSelect
+        value={dateFilter}
+        onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
+        options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
+        placeholder="All Dates"
+      />
+    </div>
+  );
+
+  // Company Used / Self Used toggle — sits at the START of the Advance table
+  // toolbar (before the status tabs) via the DataTable `leadingToolbar` slot.
+  // Same rail + rounded-rect (8px) design as the status tabs — only the active
+  // colour differs (Company = violet, Self = blue).
+  const usedForToggle = (
+    <div className="d-inline-flex" style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: 4, gap: 4 }}>
+      {[
+        { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
+        { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
+      ].map(t => {
+        const on = advUsedFor === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
+            className="btn d-inline-flex align-items-center gap-2 fw-semibold"
+            style={{
+              fontSize: 13, height: 48, padding: '0 16px', borderRadius: 8, border: 'none',
+              background: on ? t.active : 'transparent',
+              color: on ? '#fff' : 'var(--vz-secondary-color)',
+              boxShadow: on ? `0 4px 10px ${t.active}55` : 'none',
+            }}
+          >
+            {t.label}
+            <span
+              className="d-inline-flex align-items-center justify-content-center rounded-pill"
+              style={{
+                minWidth: 22, height: 20, fontSize: 11, padding: '0 6px',
+                background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
+                color: on ? '#fff' : 'var(--vz-secondary-color)',
+              }}
+            >
+              {t.count}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
   const expenseToolbarActions = (
     <>
-      <div className="hrexp-hero-select" style={{ minWidth: 150 }}>
-        <MasterSelect
-          value={dateFilter}
-          onChange={(v) => setDateFilter((v as DateFilter) || 'all')}
-          options={(Object.keys(DATE_FILTER_LABELS) as DateFilter[]).map(k => ({ value: k, label: DATE_FILTER_LABELS[k] }))}
-          placeholder="All Dates"
-        />
-      </div>
       {module === 'expense' && canHrApprove && (
         <button
           type="button"
@@ -790,7 +834,7 @@ export default function HrExpenseManagement() {
       <MasterFormStyles />
       <div className="hrexp-page">
 
-        <div className="frm-cstrip mb-3">
+        <div className="frm-cstrip mb-2">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-bank-card-2-line" /></div>
@@ -807,6 +851,8 @@ export default function HrExpenseManagement() {
             </div>
           </div>
           <div className="d-flex align-items-center gap-2 flex-wrap">
+            {/* Date-range filter lives in the header (left of the module toggle). */}
+            {dateFilterEl}
             {/* Module toggle (Expense Claims / Advance Requests) in the header's
                 top-right corner — mirrors the Customer Profile CLM toggle. */}
             <div
@@ -883,7 +929,7 @@ export default function HrExpenseManagement() {
           </div>
         </div>
 
-        <Row className="g-3 mb-3 align-items-stretch">
+        <Row className="g-2 mb-2 align-items-stretch">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
@@ -944,7 +990,7 @@ export default function HrExpenseManagement() {
         </Row>
 
         <div
-          className="hrexp-surface mb-3"
+          className="hrexp-surface mb-2"
           style={{
             borderRadius: 14,
             border: '1px solid var(--vz-border-color)',
@@ -1111,6 +1157,7 @@ export default function HrExpenseManagement() {
           <DataTable<AdvanceRequestRow>
             data={filteredAdvances}
             columns={advanceColumns}
+            serial
             accent="violet"
             /* autoFitRows picks the rows-per-page from the space available.
                This page has a tall header (hero + 5 KPI cards + Spend Analytics
@@ -1128,59 +1175,19 @@ export default function HrExpenseManagement() {
             activeTab={filter}
             onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
             toolbarActions={expenseToolbarActions}
+            leadingToolbar={usedForToggle}
             emptyMessage={
               <>
                 <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
                 No advance requests to show.
               </>
             }
-          >
-          {/* Used-For tabs — Self used / Company used. Narrows by used_for before
-              the status tabs; Company drops the recovery columns (matches form).
-              Rendered as the table's own children (between its toolbar and the
-              rows) rather than as a free-floating row above the card, where it
-              read as a stray control with no visible tie to the list or to the
-              Spend Analytics panel above it. */}
-          <div className="d-flex gap-2 flex-wrap px-3 pb-2">
-            {[
-              { key: 'company' as const, label: 'Company Used', count: advUsedForCounts.company, active: '#8b5cf6' },
-              { key: 'self'    as const, label: 'Self Used',    count: advUsedForCounts.self,    active: '#0ea5e9' },
-            ].map(t => {
-              const on = advUsedFor === t.key;
-              return (
-                <button
-                  key={t.key}
-                  type="button"
-                  onClick={() => { if (advUsedFor !== t.key) flashSwitch(); setAdvUsedFor(t.key); setFilter('all'); }}
-                  className="btn d-inline-flex align-items-center gap-2 rounded-pill fw-semibold"
-                  style={{
-                    fontSize: 13, padding: '6px 14px',
-                    border: `1px solid ${on ? t.active : 'var(--vz-border-color)'}`,
-                    background: on ? t.active : 'var(--vz-card-bg)',
-                    color: on ? '#fff' : 'var(--vz-secondary-color)',
-                    boxShadow: on ? `0 4px 10px ${t.active}55` : 'none',
-                  }}
-                >
-                  {t.label}
-                  <span
-                    className="d-inline-flex align-items-center justify-content-center rounded-pill"
-                    style={{
-                      minWidth: 22, height: 20, fontSize: 11, padding: '0 6px',
-                      background: on ? 'rgba(255,255,255,0.28)' : 'var(--vz-secondary-bg)',
-                      color: on ? '#fff' : 'var(--vz-secondary-color)',
-                    }}
-                  >
-                    {t.count}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          </DataTable>
+          />
         ) : (
           <DataTable<ExpenseClaimRow>
             data={filtered}
             columns={claimColumns}
+            serial
             accent="violet"
             autoFitRows
             minAutoRows={8}
@@ -1191,8 +1198,7 @@ export default function HrExpenseManagement() {
             searchPlaceholder="Search employee, claim no, category, vendor…"
             tabs={statusTabs}
             activeTab={filter}
-            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
-            toolbarActions={expenseToolbarActions}
+            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}            toolbarActions={expenseToolbarActions}
             emptyMessage={
               <>
                 <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

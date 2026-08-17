@@ -441,7 +441,10 @@ export default function HrDocumentTemplates() {
 
           {/* KPI strip — surfaces the count totals first so users see scale
               before drilling into a category. */}
-          <div className="row g-2 mb-3">
+          {/* mb-4 (24px), not mb-3 — the table card sat almost against the KPI
+              tiles, and the two are separate blocks: the tiles summarise, the
+              card below is the list. 8px more is enough to read as a break. */}
+          <div className="row g-2 mb-4">
             {KPI.map(k => (
               <div key={k.label} className="col-md-3 col-sm-6">
                 <div className="dtm-kpi-tile" style={{ borderRadius: 12, border: '1px solid #e5e7eb', background: '#fff', overflow: 'hidden' }}>
@@ -619,8 +622,10 @@ function DtmDarkStyles() {
          -1.5rem, which ran the card edge to edge — a different layout, not a
          tighter one. Vertically it only trims 6px; the rest of the gap is the
          shell's, and every page lives with it. */
-      .dtm-page { margin: -6px 0 0; padding: 0; }
-      @media (max-width: 640px) { .dtm-page { margin: -2px 0 0; } }
+      /* No negative top margin. It pulled the header strip up into the nav bar
+         above it — this page sat tight against the menu while every other page
+         cleared it. The 6px it reclaimed was never worth the collision. */
+      .dtm-page { margin: 0; padding: 0; }
 
       .dtm-page .dt-below-rows { flex-shrink: 0; padding: 10px 12px 2px; }
 

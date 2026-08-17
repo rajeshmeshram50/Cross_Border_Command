@@ -138,7 +138,17 @@ class HrCustomFieldController extends Controller
      */
     public function knownTokens(Request $request)
     {
-        $this->authorize($request, 'can_view');
+        /* Gated on EITHER module. This endpoint is not the Custom Fields admin
+         * screen — it is the catalogue the Generate Document modal needs to draw
+         * its inputs, and generating documents is granted through
+         * `hr.doc_templates`. Requiring the Custom Fields grant meant a user who
+         * WAS allowed to generate a document could not read the list of
+         * variables that document asks for: the modal lost the list to a 403 and
+         * then reported that the template referenced no custom fields at all, so
+         * the variables went out unfilled in a real letter.
+         * The payload is names, types and descriptions the templates already
+         * expose, and applyScope() below still confines it to the tenant. */
+        $this->authorizeAny($request, 'can_view', [self::MODULE_SLUG, 'hr.doc_templates']);
 
         $q = HrCustomField::query();
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
@@ -426,6 +436,38 @@ class HrCustomFieldController extends Controller
             ->where($perm, true)
             ->exists();
         if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
+    }
+
+    /**
+     * Same rules as authorize(), but the permission may come from ANY of the
+     * given modules — for endpoints that serve more than one screen.
+     *
+     * @param  string[] $moduleSlugs
+     */
+    private function authorizeAny(Request $request, string $perm, array $moduleSlugs): void
+    {
+        $user = $request->user();
+        if (!$user) abort(401, 'Authentication required');
+        if ($user->isSuperAdmin()) return;
+
+        $moduleIds = Module::whereIn('slug', $moduleSlugs)->pluck('id');
+        if ($moduleIds->isEmpty()) {
+            // First-run: modules not seeded yet — same plan-default fallback
+            // authorize() uses.
+            if (in_array($user->user_type, ['client_admin', 'branch_user'], true)) return;
+            abort(403, 'Document variables are not available — the module is not enabled.');
+        }
+
+        $allowed = Permission::where('user_id', $user->id)
+            ->whereIn('module_id', $moduleIds)
+            ->where($perm, true)
+            ->exists();
+
+        // A sentence, not "Missing can_view on hr.custom_fields" — this reaches
+        // a toast in front of an employee who cannot act on a module slug.
+        if (!$allowed) {
+            abort(403, 'You do not have access to document variables. Ask your administrator for access to Document Templates or Custom Fields.');
+        }
     }
 
     private function resolveOwnership(Request $request): array

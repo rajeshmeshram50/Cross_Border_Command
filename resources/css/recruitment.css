@@ -11165,22 +11165,43 @@
   color: #4dd4be;
 }
 
-.pay-mini-tile { border-radius: 12px; padding: 14px 16px; border: 1px solid; }
-.pay-mini-tile--green  { background: #e6f7ed; border-color: #b6e4c8; }
-.pay-mini-tile--red    { background: #fde7e3; border-color: #f5c0b5; }
-.pay-mini-tile--amber  { background: #fdf3d6; border-color: #f0d990; }
-.pay-mini-tile--blue   { background: #dceefe; border-color: #b8d6f7; }
-.pay-mini-tile--purple { background: #ece6ff; border-color: #d6c9ff; }
+/* Tab KPI tiles (Biometric Input / Salary Report) share the HERO KPI card's
+   shape: white surface, 14px radius, hairline border, soft lift and a 3px
+   accent strip across the top. They used to be flat pastel-filled boxes, which
+   read as a different component one row below the hero cards. The tone
+   modifier now colours only the strip and the number — the surface itself
+   stays neutral, exactly like the cards above. Kept in CSS rather than
+   rewritten in JSX so both tab rows pick it up from their existing classes. */
+.pay-mini-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 14px;
+  padding: 16px 18px;
+  height: 100%;
+  background: var(--vz-card-bg, #ffffff);
+  border: 1px solid var(--vz-border-color);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+}
+.pay-mini-tile::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--pay-mini-strip, var(--vz-border-color));
+}
+.pay-mini-tile--green  { --pay-mini-strip: #10b36c; }
+.pay-mini-tile--red    { --pay-mini-strip: #f06548; }
+.pay-mini-tile--amber  { --pay-mini-strip: #f59e0b; }
+.pay-mini-tile--blue   { --pay-mini-strip: #3b82f6; }
+.pay-mini-tile--purple { --pay-mini-strip: #7c5cfc; }
 .pay-mini-tile-num--green  { color: #108548; }
 .pay-mini-tile-num--red    { color: #b1401d; }
 .pay-mini-tile-num--amber  { color: #a06f00; }
 .pay-mini-tile-num--blue   { color: #0c63b0; }
 .pay-mini-tile-num--purple { color: #5a3fd1; }
-[data-bs-theme="dark"] .pay-mini-tile--green  { background: rgba(16,133,72,0.18);  border-color: rgba(16,179,108,0.36); }
-[data-bs-theme="dark"] .pay-mini-tile--red    { background: rgba(177,64,29,0.18);  border-color: rgba(240,101,72,0.38); }
-[data-bs-theme="dark"] .pay-mini-tile--amber  { background: rgba(160,111,0,0.18);  border-color: rgba(245,158,11,0.38); }
-[data-bs-theme="dark"] .pay-mini-tile--blue   { background: rgba(12,99,176,0.18);  border-color: rgba(59,130,246,0.38); }
-[data-bs-theme="dark"] .pay-mini-tile--purple { background: rgba(90,63,209,0.18);  border-color: rgba(124,92,252,0.38); }
+/* Dark: the surface follows --vz-card-bg like the hero cards, so only the
+   shadow needs toning down. Strip colours carry through unchanged. */
+[data-bs-theme="dark"] .pay-mini-tile { box-shadow: 0 2px 10px rgba(0,0,0,0.28); }
 [data-bs-theme="dark"] .pay-mini-tile-num--green  { color: #6ee7b7; }
 [data-bs-theme="dark"] .pay-mini-tile-num--red    { color: #fda192; }
 [data-bs-theme="dark"] .pay-mini-tile-num--amber  { color: #fcd34d; }
@@ -12422,6 +12443,11 @@
              close button (see .emp-close-btn on the Add/Edit Employee modal). */
           .assign-close-x { transition: background .15s ease, transform .15s ease; }
           .assign-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
+          /* Broadcast Centre's header X — same treatment. It is the only way out
+             of that wizard now that the footer Cancel is gone, so it has to read
+             as a control rather than a faint patch on the gradient. */
+          .brd-close-x { transition: background .15s ease, transform .15s ease; }
+          .brd-close-x:hover { background: rgba(255,255,255,0.34) !important; transform: scale(1.08); }
           .assign-close-x:active { transform: scale(0.95); }
 
         .mschips-toggle {

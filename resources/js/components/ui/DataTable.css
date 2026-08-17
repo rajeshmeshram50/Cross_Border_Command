@@ -481,10 +481,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.dt-table tbody td.dt-wrap { white-space: normal; overflow: visible; text-overflow: clip; }
+/* `overflow: visible` is what lets the Profile-% meter's floating badge sit
+   outside its cell instead of being clipped. The side effect was that the badge
+   — absolutely positioned — also escaped UPWARDS past the sticky header and
+   painted over it, so scrolling the body left a row's avatar and meter hanging
+   in the band above the column titles.
+   `position: relative; z-index: 0` gives the cell its own stacking context, so
+   everything inside it is trapped below anything with a positive z-index in the
+   table — which is exactly what the sticky `thead th` (z-index: 3) is. The
+   overflow still works; it just can no longer outrank the header. */
+.dt-table tbody td.dt-wrap {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  position: relative;
+  z-index: 0;
+}
 .dt-table tbody tr { background: #fff; }
 .dt-table tbody tr:nth-child(even) { background: color-mix(in srgb, var(--dt-a-50) 55%, #fff); }
 .dt-table tbody tr:hover { background: var(--dt-a-50); }
+/* Filler rows carry the ruling and the zebra but nothing else: no hover (there
+   is nothing to click), and no pointer, so they read as empty table rather than
+   as rows that failed to load. Height matches a real row so the fitted count
+   still lands on the pager. */
+.dt-table tbody tr.dt-fill-row,
+.dt-table tbody tr.dt-fill-row:hover { cursor: default; }
+.dt-table tbody tr.dt-fill-row td { color: transparent; user-select: none; }
 .dt-table tbody tr:last-child td { border-bottom: none; }
 .dt-table tbody tr.dt-clickable { cursor: pointer; }
 

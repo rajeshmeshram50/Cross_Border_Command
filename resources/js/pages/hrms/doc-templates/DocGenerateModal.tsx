@@ -73,6 +73,14 @@ export default function DocGenerateModal({
   const [loading, setLoading]       = useState(false);
   const [template, setTemplate]     = useState<TemplateRow | null>(null);
   const [knownTokens, setKnownTokens] = useState<KnownTokens>({ employee: [], custom_fields: [] });
+  /* The custom-field catalogue is fetched separately and its failure used to be
+     swallowed into an empty list — after which this modal stated, as fact, that
+     the template references no custom fields. For a low-privilege login (an
+     employee opening their own onboarding Stage 5) that fetch can come back
+     403, so the one user least able to diagnose it was told a flat untruth and
+     went on to generate a document with the variables unfilled. A list we
+     failed to load is not an empty list, and the UI has to say which it is. */
+  const [tokensFailed, setTokensFailed] = useState(false);
   const [values, setValues]         = useState<Record<string, string>>({});
   const [previewHtml, setPreviewHtml] = useState<string>('');
   const [previewing, setPreviewing] = useState(false);
@@ -89,15 +97,20 @@ export default function DocGenerateModal({
     setTemplate(null);
     setValues({});
     setPreviewHtml('');
+    setTokensFailed(false);
     (async () => {
       try {
         const [tplRes, tokRes] = await Promise.all([
           api.get(`/hr-document-templates/${templateId}`),
-          api.get('/hr-custom-fields/known-tokens').catch(() => ({ data: { employee: [], custom_fields: [] } })),
+          // Still caught, so a missing catalogue never blocks the template
+          // itself from opening — but the failure is now RECORDED rather than
+          // flattened into "there are none".
+          api.get('/hr-custom-fields/known-tokens').catch(() => null),
         ]);
         if (cancelled) return;
         setTemplate(tplRes.data as TemplateRow);
-        setKnownTokens(tokRes.data as KnownTokens);
+        if (tokRes) setKnownTokens(tokRes.data as KnownTokens);
+        else setTokensFailed(true);
       } catch (err: any) {
         if (!cancelled) {
           toast.error('Could not load', err?.response?.data?.message || 'Template failed to load.');
@@ -115,14 +128,40 @@ export default function DocGenerateModal({
   // Scan content_html for {{Token}} and keep only tokens that map to a
   // registered custom field. Employee-derived tokens (FirstName, Email, …)
   // resolve server-side, so we don't collect them here.
-  const customFields = useMemo(() => {
-    if (!template?.content_html) return [] as CustomField[];
+  /** Every {{Token}} the template actually contains, lowercased. */
+  const templateTokens = useMemo(() => {
     const found = new Set<string>();
+    if (!template?.content_html) return found;
     const re = /\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
     let m: RegExpExecArray | null;
-    while ((m = re.exec(template.content_html)) !== null) found.add(m[1]);
-    return knownTokens.custom_fields.filter(c => found.has(c.name));
-  }, [template, knownTokens]);
+    while ((m = re.exec(template.content_html)) !== null) found.add(m[1].toLowerCase());
+    return found;
+  }, [template]);
+
+  /* Matched case-INSENSITIVELY, because that is how the server resolves them
+     (HrGeneratedDocumentController::renderTemplate). Matching exactly here meant
+     a template written as {{Aaa}} against a field registered as `aaa` showed no
+     input at all, and then rendered fine on the server — the modal and the
+     renderer disagreeing about the same document. */
+  const customFields = useMemo(
+    () => knownTokens.custom_fields.filter(c => templateTokens.has(c.name.toLowerCase())),
+    [templateTokens, knownTokens],
+  );
+
+  /* Tokens the template uses that neither the employee catalogue nor the custom
+     field list can explain. They render as literal braces in the output, so the
+     operator is better off seeing them named here than finding them in a signed
+     letter. */
+  const unresolvedTokens = useMemo(() => {
+    if (tokensFailed) return [] as string[];
+    const known = new Set<string>([
+      ...knownTokens.employee.map(t => String((t as any).name ?? t).toLowerCase()),
+      ...knownTokens.custom_fields.map(c => c.name.toLowerCase()),
+    ]);
+    // Signature/date slots are filled by the signing flow, not at generation.
+    const signerSlot = /^signer\d+(sign|name|date|designation)$/;
+    return [...templateTokens].filter(t => !known.has(t) && !signerSlot.test(t));
+  }, [templateTokens, knownTokens, tokensFailed]);
 
   const isActive = template?.status === 'Active';
   const displayName = template?.name || templateName || 'Document';
@@ -251,7 +290,17 @@ export default function DocGenerateModal({
               <div className="dgm-section-title">
                 <i className="ri-edit-2-line me-1" /> Fill Custom Variables
               </div>
-              {customFields.length === 0 ? (
+              {tokensFailed ? (
+                /* Say the catalogue is missing rather than that the template
+                   has no fields — the second is a claim we cannot make when
+                   the list never arrived. */
+                <div className="dgm-empty" style={{ borderColor: '#fcd34d', background: '#fffbeb', color: '#92400e' }}>
+                  <i className="ri-error-warning-line" style={{ fontSize: 20, display: 'block', marginBottom: 4 }} />
+                  Couldn't load your organisation's custom fields, so any custom variables in
+                  this template can't be filled here. Close and reopen to retry — if it keeps
+                  failing, ask your administrator to check your access to Custom Fields.
+                </div>
+              ) : customFields.length === 0 ? (
                 <div className="dgm-empty">
                   <i className="ri-magic-line" style={{ fontSize: 20, display: 'block', marginBottom: 4 }} />
                   This template doesn't reference any custom fields. Employee details are
@@ -299,6 +348,19 @@ export default function DocGenerateModal({
                     </div>
                   ))}
                 </fieldset>
+              )}
+
+              {/* Tokens nothing can fill. They reach the document as literal
+                  {{braces}}, so naming them here is the last point at which
+                  that is cheap to fix. */}
+              {unresolvedTokens.length > 0 && (
+                <div className="dgm-empty mt-2" style={{ borderColor: '#fcd34d', background: '#fffbeb', color: '#92400e', textAlign: 'left' }}>
+                  <i className="ri-error-warning-line me-1" />
+                  {unresolvedTokens.length === 1 ? 'This variable is' : 'These variables are'} in the
+                  template but not registered as a custom field, so {unresolvedTokens.length === 1 ? 'it' : 'they'} will
+                  print as-is:{' '}
+                  <strong>{unresolvedTokens.map(t => `{{${t}}}`).join(', ')}</strong>
+                </div>
               )}
 
               {/* Preview */}
