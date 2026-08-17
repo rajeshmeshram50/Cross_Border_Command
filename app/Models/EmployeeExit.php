@@ -19,8 +19,12 @@ class EmployeeExit extends Model
         'notice_date', 'last_working_day',
         'reporting_manager_id', 'comments',
         'business_impact', 'replacement_required',
-        // Notice-period settlement — derived from exit_type, settled in its own stage
-        'notice_settlement_mode', 'notice_days_required', 'notice_days_served',
+        // Notice-period settlement — derived from exit_type, settled in its own
+        // stage. Termination is the exception: `notice_payment_choice` carries
+        // HR's Pay / No-Pay answer, and the mode follows THAT rather than the
+        // type alone. See ExitController::resolveSettlementMode().
+        'notice_settlement_mode', 'notice_payment_choice',
+        'notice_days_required', 'notice_days_served',
         'notice_days_unserved', 'notice_settlement_basis', 'notice_per_day_rate',
         'notice_settlement_amount', 'notice_settlement_status', 'notice_payment',
         // Full & Final settlement (Termination)

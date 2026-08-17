@@ -707,6 +707,11 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put('/employees/{employee}/exit', [ExitController::class, 'upsert']);
     
     Route::post('/employees/{employee}/exit/complete', [ExitController::class, 'complete']);
+    /* Reporting-manager dependency — an employee who still manages people can't
+       be deactivated, so the closure stage lists their reports and reassigns
+       them before Complete Exit is allowed. */
+    Route::get ('/employees/{employee}/exit/direct-reports',    [ExitController::class, 'directReports']);
+    Route::post('/employees/{employee}/exit/reassign-reports',  [ExitController::class, 'reassignReports']);
     // Bring an exited employee back (standard resignations only).
     Route::post('/employees/{employee}/rehire', [ExitController::class, 'rehire']);
 
@@ -802,10 +807,24 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/advance-requests/{id}/return-payments/{index}/approve', [\App\Http\Controllers\Api\AdvanceRequestController::class, 'approveReturnPayment'])->whereNumber('index');
     Route::post  ('/advance-requests/{id}/return-payments/{index}/reject',  [\App\Http\Controllers\Api\AdvanceRequestController::class, 'rejectReturnPayment'])->whereNumber('index');
 
-    // On-demand test-data generators (admins only) — run via curl when needed.
-    Route::post  ('/dev/sandwich-leave',  [\App\Http\Controllers\Api\SandwichTestController::class, 'seed']);
-    Route::post  ('/dev/attendance-seed', [\App\Http\Controllers\Api\AttendanceTestController::class, 'seed']);
-    Route::post  ('/dev/backdate-joining',[\App\Http\Controllers\Api\EmployeeJoiningTestController::class, 'backdate']);
+    /* On-demand test-data generators (admins only) — run via curl when needed.
+     *
+     * NEVER REGISTERED OUTSIDE local / staging. Each controller already checks
+     * role, client and branch scope correctly, but none of that stops a real
+     * admin running them against live data — and these write FABRICATED rows
+     * that payroll then reads: seeded attendance and leave feed the salary
+     * calculation, and backdate-joining rewrites joining dates, which move
+     * probation, notice period and leave accrual for everyone it touches.
+     *
+     * Guarded HERE rather than inside the three controllers so a fourth /dev/
+     * endpoint added later inherits the protection instead of having to
+     * remember it. On production the routes simply do not exist — a request
+     * gets a plain 404, revealing nothing about what the path would have done. */
+    if (app()->environment(['local', 'staging'])) {
+        Route::post  ('/dev/sandwich-leave',  [\App\Http\Controllers\Api\SandwichTestController::class, 'seed']);
+        Route::post  ('/dev/attendance-seed', [\App\Http\Controllers\Api\AttendanceTestController::class, 'seed']);
+        Route::post  ('/dev/backdate-joining',[\App\Http\Controllers\Api\EmployeeJoiningTestController::class, 'backdate']);
+    }
 
 
     Route::get ('/payroll/cycles',              [\App\Http\Controllers\Api\PayrollController::class, 'cycles']);
