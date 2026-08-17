@@ -439,6 +439,11 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     trigger_point_name?: string | null;
   };
   const [signedDocs, setSignedDocs] = useState<SignedDoc[]>([]);
+  /** Templates the employee's current department + designation require, each
+   *  carrying whether a signature run already exists for it. */
+  const [applicableDocs, setApplicableDocs] = useState<any[]>([]);
+  /** Template id currently being sent, so only its own row shows a spinner. */
+  const [sendingTemplateId, setSendingTemplateId] = useState<number | null>(null);
   const [signedLoading, setSignedLoading] = useState(false);
   const [signedPreview, setSignedPreview] = useState<SignedDoc | null>(null);
   // Tracks which signed doc is currently being fetched so the Download PDF
@@ -1940,6 +1945,78 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, profileEmpIdNum, isOwnProfile]);
 
+  /* Documents this employee's CURRENT department + designation call for.
+   *
+   * The server recomputes the set on every read, so promoting an Intern to
+   * Employee changes what applies the moment the designation is saved — which
+   * is the whole point: the applicable list follows the record, it is not a
+   * snapshot taken at onboarding.
+   *
+   * HR-side only. An employee looking at their own vault would see
+   * requirements nobody has sent them and have no way to act on them, which
+   * reads as a broken screen rather than information. Same user-type triple
+   * the Hiring tab uses; the send itself is permission-checked server-side.
+   *
+   * Deliberately its own effect and placed here, below `authUser` /
+   * `isOwnProfile` — a dependency array is evaluated during render, so naming
+   * them from the signed-docs effect further up would throw before first
+   * paint. */
+  const canSendDocuments = !isOwnProfile
+    && ['branch_user', 'client_admin', 'super_admin'].includes(String(authUser?.user_type || ''));
+
+  /* Only once onboarding has actually finished.
+     Before that the wizard's Stage 5 owns document sending, and offering the
+     same thing here would be two places to send one document from. */
+  const onboardingComplete = Number(empDetail?.onboarding_stage_completed ?? 0) >= 6;
+
+  const refreshApplicableDocs = async () => {
+    if (tab !== 'vault' || !canSendDocuments || !onboardingComplete || !profileEmpIdNum) {
+      setApplicableDocs([]);
+      return;
+    }
+    try {
+      /* PROMOTION templates only.
+         Unfiltered, this returned the employee's onboarding templates too —
+         the very documents Stage 5 of the wizard already lists — so the same
+         document could be dispatched from two screens. The vault card exists
+         for what comes AFTER onboarding: a change of designation bringing new
+         paperwork with it. Exit documents have their own tab and are not this
+         card's business either. */
+      const { data } = await api.get('/hr-document-templates/match', {
+        params: { employee_id: profileEmpIdNum, trigger_keyword: 'promotion' },
+      });
+      setApplicableDocs(Array.isArray(data?.templates) ? data.templates : []);
+    } catch {
+      setApplicableDocs([]);
+    }
+  };
+  useEffect(() => {
+    refreshApplicableDocs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, profileEmpIdNum, isOwnProfile, authUser?.user_type, onboardingComplete, empDetail?.designation_id]);
+
+  /** Put one applicable template into the signing workflow for this employee. */
+  const sendApplicableDoc = async (templateId: number, name: string) => {
+    if (!profileEmpIdNum || sendingTemplateId) return;
+    setSendingTemplateId(templateId);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: templateId,
+        employee_id: profileEmpIdNum,
+      });
+      toast.success('Sent for signing', `${data?.code || name} entered the workflow.`);
+      /* Re-read so the row flips to Sent with its run code. The signed table
+         below is not refreshed here on purpose — it lists COMPLETED runs only,
+         and a run that has just been sent is Pending, so there would be
+         nothing new for it to show. */
+      await refreshApplicableDocs();
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      setSendingTemplateId(null);
+    }
+  };
+
   // Keep an already-open Expense Overview in sync with approve/reject
   // decisions made elsewhere (a manager / HR acting in another tab or
   // session). There's no realtime push, so without this the status pill
@@ -2540,6 +2617,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     profilePhotoInputRef, setFaceRegOpen, setPwOpen,
     // Vault tab
     vaultTab, setVaultTab, signedDocs, uploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading,
+    applicableDocs, canSendDocuments, sendApplicableDoc, sendingTemplateId,
     vaultCounts, prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     // Payroll tab
     payrollTab, setPayrollTab, salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,

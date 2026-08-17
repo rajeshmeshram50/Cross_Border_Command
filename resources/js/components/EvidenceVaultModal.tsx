@@ -63,6 +63,10 @@ type VaultTemplate = {
   name: string | null;
   doc_type: string | null;
   status: string | null;
+  /** Original upload name. Null for templates composed in the web editor —
+   *  those have no file behind them, so the row shows nothing rather than a
+   *  blank slot. */
+  docx_original_name?: string | null;
   trigger_point?: { module_name?: string | null } | null;
 };
 type VaultRun = {
@@ -95,6 +99,14 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const [exitTemplates, setExitTemplates]   = useState<VaultTemplate[]>([]);
   const [signingRuns, setSigningRuns]       = useState<VaultRun[]>([]);
   const [loading, setLoading]               = useState(false);
+  /* Promotion-triggered templates matching the employee's CURRENT department
+     and designation. Kept apart from `orgTemplates` (which is onboarding) so
+     the signed groups below stay exactly what they were: a record. These are
+     the opposite — work still to do. */
+  const [promoTemplates, setPromoTemplates] = useState<VaultTemplate[]>([]);
+  const [sendingTplId, setSendingTplId]     = useState<number | null>(null);
+  /** Bumped after a send so the vault re-reads without closing and reopening. */
+  const [reloadKey, setReloadKey]           = useState(0);
 
   useEffect(() => {
     if (!employee) {
@@ -110,17 +122,19 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'onboarding' } }),
       api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
       api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
+      api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'promotion' } }),
     ]).then(results => {
       if (cancelled) return;
-      const [docsR, orgR, exitR, runsR] = results;
+      const [docsR, orgR, exitR, runsR, promoR] = results;
       setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
       setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
       setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
       setSigningRuns(runsR.status === 'fulfilled' && Array.isArray(runsR.value.data) ? runsR.value.data : []);
+      setPromoTemplates(promoR.status === 'fulfilled' && Array.isArray(promoR.value.data?.templates) ? promoR.value.data.templates : []);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee?.id]);
+  }, [employee?.id, reloadKey]);
 
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, VaultRun>();
@@ -232,6 +246,31 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     tab === 'employee'       ? empGroups
     : tab === 'organizational' ? orgGroups
     : exitGroups;
+
+  /* Promotion documents this employee's current grade calls for and which have
+     NOT been dispatched. Deliberately outside `groups` and outside the KPI
+     totals below: those describe signed evidence, and folding an unsent
+     requirement into them would drop a fully-signed vault off 100% for work
+     that has not been asked of anyone yet. This block is an action, not a
+     record, so it sits above the record and counts separately. */
+  const promoToSend = promoTemplates.filter(t => !runByTemplateId.get(t.id));
+
+  const sendPromoDoc = async (tplId: number, name: string | null) => {
+    if (!employee || sendingTplId) return;
+    setSendingTplId(tplId);
+    try {
+      const { data } = await api.post('/hr-document-signatures', {
+        template_id: tplId,
+        employee_id: employee.id,
+      });
+      toast.success('Sent for signing', `${data?.code || name || 'Document'} entered the workflow.`);
+      setReloadKey(k => k + 1);
+    } catch (err: any) {
+      toast.error('Could not send', err?.response?.data?.message || err?.message || 'Please try again.');
+    } finally {
+      setSendingTplId(null);
+    }
+  };
 
   /* The KPIs count what the tabs actually SHOW. Unsigned templates used to be
      both listed and counted; now that they are neither, "% complete" can only
@@ -366,6 +405,61 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
         </div>
 
         <div className="ev-body">
+          {/* Promotion paperwork the new grade calls for. Shown before the
+              signed record because it is the only thing here anyone can act
+              on, and hidden entirely when there is nothing outstanding. */}
+          {!loading && tab === 'organizational' && promoToSend.length > 0 && (
+            <div className="ev-promo-block">
+              <div className="ev-promo-head">
+                <span className="ev-promo-icon"><i className="ri-user-star-line" /></span>
+                <div className="min-w-0">
+                  <div className="ev-promo-title">Promotion documents — not yet sent</div>
+                  <div className="ev-promo-sub">
+                    Matched to this employee&rsquo;s current department and designation. Sending is manual — changing a designation never sends anything on its own.
+                  </div>
+                </div>
+                <span className="ev-promo-count">{promoToSend.length}</span>
+              </div>
+              {/* Built from `ev-doc`, the same row the signed documents below
+                  use — icon tile, name, meta line, status pill, action on the
+                  right. These are the same kind of thing at a different point
+                  in their life, so they should not look like a different
+                  component; only the amber panel around them says they still
+                  need doing. */}
+              {promoToSend.map(t => (
+                <div key={t.id} className="ev-doc ev-doc--promo">
+                  <span className="ev-doc-icon ev-doc-icon--promo">
+                    <i className="ri-file-text-line" />
+                  </span>
+                  <div className="ev-doc-info">
+                    <div className="ev-doc-name">{t.name}</div>
+                    {/* Same shape as the signed rows' meta line. The file name
+                        joins it only for upload-built templates — an editor
+                        template has no file, and an empty slot would read as a
+                        missing attachment rather than a different kind of
+                        template. */}
+                    <div className="ev-doc-sub">
+                      {['Document', t.code, t.docx_original_name].filter(Boolean).join(' • ')}
+                    </div>
+                  </div>
+                  <span className="ev-doc-status ev-doc-status--not-sent">Not Sent</span>
+                  {/* Same filled button the Download action uses on the signed
+                      rows — this is the primary action of its row, so it should
+                      carry the same weight rather than read as a link. */}
+                  <button
+                    type="button"
+                    className="ev-doc-btn ev-doc-btn--download"
+                    disabled={sendingTplId != null}
+                    onClick={() => sendPromoDoc(t.id, t.name)}
+                  >
+                    <i className={`${sendingTplId === t.id ? 'ri-loader-4-line ev-promo-spin' : 'ri-quill-pen-line'} me-1`} />
+                    {sendingTplId === t.id ? 'Sending…' : 'Send for Signature'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {loading ? (
             <div style={{ padding: 28, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
               <i className="ri-loader-4-line" style={{ fontSize: 28, display: 'block', marginBottom: 6 }} />

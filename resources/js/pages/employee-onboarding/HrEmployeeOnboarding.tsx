@@ -2915,6 +2915,19 @@ const isValidBankName = (v: string) => {
   return !!s && bankNameHasLetters(s) && BANK_NAME_RE.test(s);
 };
 
+/* Work Details requirements, in ONE place.
+   validateStage1 turns these into messages and the sidebar counts them toward
+   the stage percentage. Listing them twice is exactly how the two drifted
+   apart before: a field could be required by the gate and invisible to the
+   progress figure, or marked * in the form and known to neither. */
+const STAGE1_WORK_REQUIRED: Array<[string, string]> = [
+  ['leave_plan',     'Leave plan is required'],
+  ['holiday_list',   'Holiday list is required'],
+  ['shift',          'Shift is required'],
+  ['weekly_off',     'Weekly off is required'],
+  ['expense_policy', 'Expense policy is required'],
+];
+
 /** Validate Stage 1 required fields before allowing navigation. */
 const validateStage1 = (): boolean => {
   const errors: Record<string, string> = {};
@@ -3057,8 +3070,16 @@ const validateStage1 = (): boolean => {
            && !String(s1.reporting_manager).startsWith('branch_user:'))
     errors.reporting_manager = 'An HOD must report to a Branch User (Director / CEO).';
 
-  // Work Details — Expense Policy is required (marked * in the form).
-  if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
+  /* Work Details — every field the form marks with a *.
+     Only Expense Policy was ever checked here. Leave Plan, Holiday List, Shift
+     and Weekly Off carried the same asterisk but nothing read them, so all four
+     could be left blank and Next Stage still went through — and because they
+     were missing from the progress list too, the stage read 100% while empty.
+     They are not cosmetic: leave balance, holiday calendar, shift timing and
+     the weekly-off pattern are what attendance and payroll compute against. */
+  for (const [key, message] of STAGE1_WORK_REQUIRED) {
+    if (!String((s1 as any)[key] ?? '').trim()) errors[key] = message;
+  }
 
   /* The breakup is saved to salary_structures on this same submit, so an
      invalid one has to block here — otherwise the employee row persists and the
@@ -3649,6 +3670,26 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     ...(s1.enable_payroll !== false
       ? [s1.annual_salary, s1.salary_effective_from, s1.pf_eligible]
       : []),
+
+    /* Work Details — the same five validateStage1 checks, from the shared list.
+       All five were missing here, so an employee with no leave plan, holiday
+       list, shift or weekly off still showed the stage at 100%. */
+    ...STAGE1_WORK_REQUIRED.map(([key]) => (s1 as any)[key]),
+
+    /* Asset answers, and the picker only while the answer is Yes — mirroring
+       the condition validateStage1 applies. Counting the picker unconditionally
+       would hold an employee with no laptop below 100% forever with nothing on
+       screen left to fill; not counting the Yes/No at all let an unanswered
+       question read as complete. */
+    s1.laptop_assigned,
+    ...(String(s1.laptop_assigned ?? '') === 'Yes' ? [s1.laptop_master_asset_id] : []),
+    s1.mobile_assigned,
+    ...(String(s1.mobile_assigned ?? '') === 'Yes' ? [s1.mobile_master_asset_id] : []),
+
+    // Free-text probation / notice count only while "Custom" is chosen — the
+    // same condition that decides whether validateStage1 looks at them.
+    ...(probationIsCustom ? [s1.probation_policy] : []),
+    ...(noticeIsCustom    ? [s1.notice_period]    : []),
   ];
   const stage1Filled = stage1RequiredFields.filter(v => String(v ?? '').trim()).length;
   const stage1LivePct = Math.round((stage1Filled / stage1RequiredFields.length) * 100);
@@ -4462,7 +4503,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     {s1Errors.probation_policy && <div className="onb-error-msg">{s1Errors.probation_policy}</div>}
                   </Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
-                  <Col md={3}>
+                  <Col md={3} data-field="notice_period">
                     <label className="onb-init-label">Notice Period<span className="req">*</span></label>
                     {/* Custom option mirrored from the Employee form. Without it
                         an onboarding could only record one of the four presets,
@@ -4514,10 +4555,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  {/* Each of these carries the same error wiring Expense Policy
+                      already had — data-field so scrollToFirstError can reach
+                      it, `invalid` for the red border, and the message below.
+                      Without it a blocked Next Stage showed only a toast and
+                      left the operator hunting for which field it meant. */}
+                  <Col md={4} data-field="leave_plan"><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} invalid={!!s1Errors.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => { setS1(p => ({ ...p, leave_plan: v })); setS1Errors(p => ({ ...p, leave_plan: '' })); }} />{s1Errors.leave_plan && <div className="onb-error-msg">{s1Errors.leave_plan}</div>}</Col>
+                  <Col md={4} data-field="holiday_list"><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} invalid={!!s1Errors.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => { setS1(p => ({ ...p, holiday_list: v })); setS1Errors(p => ({ ...p, holiday_list: '' })); }} />{s1Errors.holiday_list && <div className="onb-error-msg">{s1Errors.holiday_list}</div>}</Col>
+                  <Col md={4} data-field="shift"><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} invalid={!!s1Errors.shift} placeholder={shiftPlaceholder} onChange={(v) => { setS1(p => ({ ...p, shift: v })); setS1Errors(p => ({ ...p, shift: '' })); }} />{s1Errors.shift && <div className="onb-error-msg">{s1Errors.shift}</div>}</Col>
+                  <Col md={4} data-field="weekly_off"><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} invalid={!!s1Errors.weekly_off} placeholder="Select weekly off" onChange={(v) => { setS1(p => ({ ...p, weekly_off: v })); setS1Errors(p => ({ ...p, weekly_off: '' })); }} />{s1Errors.weekly_off && <div className="onb-error-msg">{s1Errors.weekly_off}</div>}</Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime Applicable</label><MasterSelect options={ONB_YES_NO} value={overtimeApplicable} placeholder="Select" onChange={(v) => { setOvertimeApplicable(v); if (v !== 'Yes') setS1(p => ({ ...p, overtime: '' })); }} /></Col>
                   {overtimeApplicable === 'Yes' && (

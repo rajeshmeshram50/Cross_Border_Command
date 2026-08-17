@@ -21,6 +21,7 @@ export default function VaultTab() {
   const {
     employee, employeeId, vaultTab, setVaultTab,
     signedDocs, uploadedDocs, organizationalDocs, exitDocs, signedLoading, uploadedLoading, vaultCounts,
+    applicableDocs, canSendDocuments, sendApplicableDoc, sendingTemplateId,
     prettyDocKey, formatBytes, setSignedPreview, downloadSignedPdf, downloadingDocId,
     employeeDocCount, organizationalDocCount, exitDocCount,
   } = useEmployeeProfile();
@@ -352,6 +353,55 @@ export default function VaultTab() {
                     </>
                   }
                 />
+              </div>
+            </div>
+          )}
+
+          {/* Required by role — what this employee's CURRENT department and
+              designation call for, and whether each has actually been sent.
+              Above the signed table because it is the open question: the table
+              below is a record, this is a to-do.
+
+              Only rendered for an HR-side viewer with something outstanding —
+              an empty card here would read as a broken feature rather than as
+              "nothing to do", and the employee themselves can act on none of
+              it. Sending is one row at a time and always deliberate; changing
+              a designation never sends anything by itself. */}
+          {vaultTab === 'organizational' && canSendDocuments && applicableDocs.some((d: any) => !d.is_sent) && (
+            <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-amber">
+              <div className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 ep-hd-amber">
+                <div className="d-flex align-items-center gap-2">
+                  <span className="ep-section-icon ep-icon-amber"><i className="ri-user-star-line" /></span>
+                  <div>
+                    <h6 className="mb-0 fw-bold vt-head-title">Promotion documents — not yet sent</h6>
+                    <small className="text-muted vt-head-sub">
+                      Promotion-triggered templates matching this employee&rsquo;s current department and designation. Updates when the designation changes.
+                    </small>
+                  </div>
+                </div>
+                <div className="text-end">
+                  <h4 className="mb-0 fw-bold vt-count-amber">{applicableDocs.filter((d: any) => !d.is_sent).length}</h4>
+                  <small className="text-muted text-uppercase vt-count-label">Outstanding</small>
+                </div>
+              </div>
+              <div className="px-3 pb-3 pt-2 d-flex flex-column gap-2">
+                {applicableDocs.filter((d: any) => !d.is_sent).map((d: any) => (
+                  <div key={d.id} className="vt-applicable-row d-flex align-items-center justify-content-between gap-3">
+                    <div className="d-flex align-items-center gap-2 min-w-0">
+                      <code className="epv-code-badge">{d.code}</code>
+                      <span className="fw-semibold text-truncate">{d.name}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="ev-doc-btn"
+                      disabled={sendingTemplateId != null}
+                      onClick={() => sendApplicableDoc(d.id, d.name)}
+                    >
+                      <i className={`${sendingTemplateId === d.id ? 'ri-loader-4-line dgm-spin' : 'ri-quill-pen-line'} me-1`} />
+                      {sendingTemplateId === d.id ? 'Sending…' : 'Send for Signature'}
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}

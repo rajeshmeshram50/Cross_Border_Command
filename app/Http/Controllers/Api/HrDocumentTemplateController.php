@@ -6,6 +6,7 @@ use App\Http\Controllers\Concerns\HandlesDocxHtmlRoundtrip;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
+use App\Models\HrDocumentSignature;
 use App\Models\HrDocumentTemplate;
 use App\Models\Module;
 use App\Models\Permission;
@@ -451,6 +452,36 @@ class HrDocumentTemplateController extends Controller
 
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
+        $templates = $q->orderByDesc('id')->get();
+
+        /* Stamp each template with whether this employee has ALREADY been sent
+         * it, and the state of that run.
+         *
+         * The applicable set is recomputed from the employee's CURRENT
+         * department and designation, so it changes the moment either is
+         * edited — promote an Intern to Employee and a different set applies.
+         * Without this flag the caller cannot tell an untouched requirement
+         * from one that was signed months ago, which is the whole question HR
+         * needs answered before deciding what to send.
+         *
+         * Statuses are collected per template because the same template can be
+         * sent more than once (a re-issue after a rejection); the latest run is
+         * the one that describes where the requirement stands today.
+         */
+        $runs = HrDocumentSignature::where('employee_id', $emp->id)
+            ->whereIn('template_id', $templates->pluck('id'))
+            ->orderBy('id')
+            ->get(['id', 'template_id', 'status', 'code']);
+
+        $latestByTemplate = $runs->keyBy('template_id');   // ordered ASC, so last wins
+        $templates->each(function ($t) use ($latestByTemplate) {
+            $run = $latestByTemplate->get($t->id);
+            $t->setAttribute('signature_status', $run->status ?? null);
+            $t->setAttribute('signature_id', $run->id ?? null);
+            $t->setAttribute('signature_code', $run->code ?? null);
+            $t->setAttribute('is_sent', (bool) $run);
+        });
+
         return response()->json([
             'employee_category'  => $category,
             'role_type'          => $level,
@@ -458,7 +489,9 @@ class HrDocumentTemplateController extends Controller
             'designation_name'   => $emp->designation?->name,
             'trigger_point_name' => $exactName ?: null,
             'trigger_keyword'    => $keyword ?: null,
-            'templates'          => $q->orderByDesc('id')->get(),
+            'templates'          => $templates,
+            // Convenience for the caller that only wants "what is outstanding".
+            'pending_count'      => $templates->where('is_sent', false)->count(),
         ]);
     }
 
