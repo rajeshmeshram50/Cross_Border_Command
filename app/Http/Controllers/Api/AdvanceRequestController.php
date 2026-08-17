@@ -1325,7 +1325,51 @@ class AdvanceRequestController extends Controller
     public function recordReturn(Request $request, $id)
     {
         $user = $request->user();
-        $row  = AdvanceRequest::findOrFail($id);
+
+        // Return can be paid directly (in one or more instalments) or cut from
+        // payroll (single, closes the whole remaining at once).
+        //
+        // Validated BEFORE the transaction opens: input shape doesn't depend on
+        // anything in the row, and a 422 here should not have taken — and then
+        // released — a write lock on the advance.
+        $data = $request->validate([
+            'mode'   => ['required', 'in:direct,payroll'],
+            'amount' => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            'method' => ['nullable', 'string', 'max:40'],
+            'proof'  => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
+            'note'   => ['nullable', 'string', 'max:500'],
+        ]);
+        $rec = null;
+        if ($data['mode'] === 'payroll') {
+            $nextMonth = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
+            $rec = $request->validate([
+                'recovery_start' => ['required', 'date', 'after_or_equal:' . $nextMonth],
+                'recovery_type'  => ['required', 'in:emi,lumpsum,bimonthly'],
+                'monthly'        => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
+            ], [
+                'recovery_start.after_or_equal' => 'Recovery must start next month or later (this month’s payroll may be done).',
+            ]);
+        }
+
+        /* THE WHOLE read-check-write runs under a row lock.
+         *
+         * This appends to a JSON ledger: it reads every payment recorded so far,
+         * totals them, checks the balance is not yet covered, then writes the
+         * array back. Unlocked, two requests that overlap — a double-clicked
+         * Submit, or a client retry — both read the same ledger, both compute
+         * the same remaining, both pass the check, and both write their own
+         * copy. Either the second save overwrites the first (a payment vanishes
+         * from an employee's ledger) or both survive and more is recorded as
+         * returned than was ever owed, with recomputeReturnComplete() closing
+         * the return against the wrong total.
+         *
+         * lockForUpdate() makes the second request wait here and then re-read,
+         * so it sees the first payment and either shrinks its own amount or
+         * hits the "already fully recorded" guard. Same pattern nextAdvanceNo()
+         * already uses for the advance number.
+         */
+        return DB::transaction(function () use ($request, $id, $user, $data, $rec) {
+        $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
         $this->ensureTenantAccess($row, $user);
 
         $myEmployeeId = $this->currentEmployeeId($user);
@@ -1345,16 +1389,6 @@ class AdvanceRequestController extends Controller
         if ($row->settle_returned_at) {
             abort(409, 'The return has already been fully recorded.');
         }
-
-        // Return can be paid directly (in one or more instalments) or cut from
-        // payroll (single, closes the whole remaining at once).
-        $data = $request->validate([
-            'mode'   => ['required', 'in:direct,payroll'],
-            'amount' => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
-            'method' => ['nullable', 'string', 'max:40'],
-            'proof'  => ['nullable', 'file', 'max:2048', 'mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx'],
-            'note'   => ['nullable', 'string', 'max:500'],
-        ]);
 
         $ledger    = array_values($row->settle_return_payments ?? []);
         // Rejected payments free up the balance again so the employee can
@@ -1377,14 +1411,7 @@ class AdvanceRequestController extends Controller
             // Payroll deduction — capture the recovery SCHEDULE (start / type /
             // monthly / months). Recorded on our side now; the payroll engine
             // will consume these fields later. Clears the whole remaining.
-            $nextMonth = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
-            $rec = $request->validate([
-                'recovery_start' => ['required', 'date', 'after_or_equal:' . $nextMonth],
-                'recovery_type'  => ['required', 'in:emi,lumpsum,bimonthly'],
-                'monthly'        => ['nullable', 'numeric', 'min:0.01', 'max:9999999999999.99'],
-            ], [
-                'recovery_start.after_or_equal' => 'Recovery must start next month or later (this month’s payroll may be done).',
-            ]);
+            // ($rec was validated above, before the lock was taken.)
             $recType = $rec['recovery_type'];
             if ($recType === 'lumpsum') {
                 $monthly = $remaining;
@@ -1489,6 +1516,7 @@ class AdvanceRequestController extends Controller
             'message' => $msg,
             'data'    => $this->serialize($row),
         ]);
+        });
     }
 
     /**
@@ -1502,31 +1530,48 @@ class AdvanceRequestController extends Controller
     {
         $user = $request->user();
         $this->guardHrPermission($user, 'can_approve');
-        $row = AdvanceRequest::findOrFail($id);
-        $this->ensureTenantAccess($row, $user);
 
-        $ledger = array_values($row->settle_return_payments ?? []);
-        $i = (int) $index;
-        if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
-        if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
-            abort(422, 'Payroll deductions are confirmed automatically — nothing to approve.');
-        }
-        $ledger[$i]['status']      = 'approved';
-        $ledger[$i]['approved_at'] = now()->toIso8601String();
-        $ledger[$i]['approved_by'] = $user?->id;
-        unset($ledger[$i]['rejected_at'], $ledger[$i]['rejected_by'], $ledger[$i]['rejected_reason']);
-        $row->settle_return_payments = $ledger;
-        $this->recomputeReturnComplete($row);
-        $row->save();
+        /* Locked for the same reason recordReturn() is, with one addition: this
+         * writes the WHOLE ledger array back to change ONE entry. If HR approves
+         * index 0 while a branch admin rejects index 1 at the same moment, the
+         * second save carries a copy of the array read before the first
+         * decision — and silently erases it. No error anywhere; the ledger just
+         * shows one of the two actions.
+         */
+        return DB::transaction(function () use ($request, $id, $index, $user) {
+            $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
+            $this->ensureTenantAccess($row, $user);
 
-        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
-        return response()->json([
-            'status'  => true,
-            'message' => $row->settle_returned_at
-                ? 'Payment approved — return now complete.'
-                : 'Payment approved.',
-            'data'    => $this->serialize($row),
-        ]);
+            $ledger = array_values($row->settle_return_payments ?? []);
+            $i = (int) $index;
+            if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
+            if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
+                abort(422, 'Payroll deductions are confirmed automatically — nothing to approve.');
+            }
+            /* Idempotency. Re-approving an already-approved payment used to
+               succeed and re-stamp approved_at / approved_by with the current
+               time and user — quietly rewriting who confirmed the money and
+               when. That is audit history, not a value to refresh. */
+            if (($ledger[$i]['status'] ?? null) === 'approved') {
+                abort(409, 'This payment has already been approved.');
+            }
+            $ledger[$i]['status']      = 'approved';
+            $ledger[$i]['approved_at'] = now()->toIso8601String();
+            $ledger[$i]['approved_by'] = $user?->id;
+            unset($ledger[$i]['rejected_at'], $ledger[$i]['rejected_by'], $ledger[$i]['rejected_reason']);
+            $row->settle_return_payments = $ledger;
+            $this->recomputeReturnComplete($row);
+            $row->save();
+
+            $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+            return response()->json([
+                'status'  => true,
+                'message' => $row->settle_returned_at
+                    ? 'Payment approved — return now complete.'
+                    : 'Payment approved.',
+                'data'    => $this->serialize($row),
+            ]);
+        });
     }
 
     /**
@@ -1538,31 +1583,41 @@ class AdvanceRequestController extends Controller
     {
         $user = $request->user();
         $this->guardHrPermission($user, 'can_approve');
-        $row = AdvanceRequest::findOrFail($id);
-        $this->ensureTenantAccess($row, $user);
         $data = $request->validate(['reason' => ['nullable', 'string', 'max:500']]);
 
-        $ledger = array_values($row->settle_return_payments ?? []);
-        $i = (int) $index;
-        if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
-        if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
-            abort(422, 'Payroll deductions cannot be rejected here.');
-        }
-        $ledger[$i]['status']          = 'rejected';
-        $ledger[$i]['rejected_at']     = now()->toIso8601String();
-        $ledger[$i]['rejected_by']     = $user?->id;
-        $ledger[$i]['rejected_reason'] = $data['reason'] ?? null;
-        unset($ledger[$i]['approved_at'], $ledger[$i]['approved_by']);
-        $row->settle_return_payments = $ledger;
-        $this->recomputeReturnComplete($row);
-        $row->save();
+        // Same whole-array write, same lock — see approveReturnPayment().
+        return DB::transaction(function () use ($id, $index, $user, $data) {
+            $row = AdvanceRequest::whereKey($id)->lockForUpdate()->firstOrFail();
+            $this->ensureTenantAccess($row, $user);
 
-        $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
-        return response()->json([
-            'status'  => true,
-            'message' => 'Payment rejected — the employee can record it again.',
-            'data'    => $this->serialize($row),
-        ]);
+            $ledger = array_values($row->settle_return_payments ?? []);
+            $i = (int) $index;
+            if (!isset($ledger[$i])) abort(404, 'Return payment not found.');
+            if (($ledger[$i]['mode'] ?? 'direct') === 'payroll') {
+                abort(422, 'Payroll deductions cannot be rejected here.');
+            }
+            // Don't re-stamp an existing rejection (see approveReturnPayment).
+            // Rejecting an APPROVED payment is still allowed — that is a genuine
+            // correction, not a duplicate submit.
+            if (($ledger[$i]['status'] ?? null) === 'rejected') {
+                abort(409, 'This payment has already been rejected.');
+            }
+            $ledger[$i]['status']          = 'rejected';
+            $ledger[$i]['rejected_at']     = now()->toIso8601String();
+            $ledger[$i]['rejected_by']     = $user?->id;
+            $ledger[$i]['rejected_reason'] = $data['reason'] ?? null;
+            unset($ledger[$i]['approved_at'], $ledger[$i]['approved_by']);
+            $row->settle_return_payments = $ledger;
+            $this->recomputeReturnComplete($row);
+            $row->save();
+
+            $row->load(['employee.department', 'manager', 'creator', 'hrUser']);
+            return response()->json([
+                'status'  => true,
+                'message' => 'Payment rejected — the employee can record it again.',
+                'data'    => $this->serialize($row),
+            ]);
+        });
     }
 
     /**
