@@ -77,6 +77,7 @@ class ExitNoticePaymentController extends Controller
             'attachment'        => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:5120'],
         ], [
             'attachment.required' => 'Upload a screenshot or receipt of the payment.',
+            'payment_date.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
         ]);
 
         // A reference can only be claimed once per employee — the same transfer
@@ -142,9 +143,15 @@ class ExitNoticePaymentController extends Controller
             'payment_mode'      => ['required', 'string', 'max:40'],
             'bank_name'         => ['required', 'string', 'max:120'],
             'utr_cheque_number' => ['required', 'string', 'max:40'],
-            'payment_date'      => ['required', 'date'],
+            /* Same ceiling as store() above. A payment is a record of money that
+               has already moved, so it cannot be dated in the future — this path
+               (HR recording on the employee's behalf) was the one place the rule
+               was missing, and it accepted any date the caller sent. */
+            'payment_date'      => ['required', 'date', 'before_or_equal:' . Carbon::now(self::DISPLAY_TZ)->toDateString()],
             'remarks'           => ['nullable', 'string', 'max:500'],
             'verdict'           => ['required', 'in:Approved,Rejected'],
+        ], [
+            'payment_date.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
         ]);
 
         if ($data['verdict'] === 'Approved' && (float) $data['amount'] + 0.005 < $due['amount']) {

@@ -493,6 +493,20 @@ class Employee extends Model
     }
 
     /**
+     * The inverse of reportingManager() — everyone who reports to this employee.
+     *
+     * Covers the EMPLOYEE-side link only. An employee whose manager is a login
+     * user (reporting_manager_user_id) is not returned here; that pairing is
+     * resolved from the user side. Used by the exit flow, which must not
+     * deactivate a manager while people still report to them — see
+     * ExitController::directReports().
+     */
+    public function directReports(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(self::class, 'reporting_manager_id');
+    }
+
+    /**
      * The exit record for this employee (notice_date, last_working_day,
      * reason, etc.). At most one row per employee — `employee_exits`
      * carries a UNIQUE constraint on `employee_id`. Eager-loaded on the

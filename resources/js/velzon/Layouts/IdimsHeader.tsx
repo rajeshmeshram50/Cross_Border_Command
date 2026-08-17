@@ -815,6 +815,14 @@ export default function IdimsHeader() {
                       <span className="idims-profile-item-ico" style={{ background: 'linear-gradient(135deg,#38BDF8,#0284C7)' }}>{IC.book}</span>
                       <span className="idims-profile-item-label">Documentation Guide</span>{IC.chevR}
                     </button>
+                    {/* Opens the Velzon theme customizer. It used to have its own
+                        floating gear in the bottom-right corner, which covered the
+                        pagination arrows on every list page — RightSidebar listens
+                        for this event instead of owning a trigger of its own. */}
+                    <button type="button" className="idims-profile-item" onClick={() => { setProfileOpen(false); window.dispatchEvent(new Event('idims:open-theme-customizer')); }}>
+                      <span className="idims-profile-item-ico" style={{ background: 'linear-gradient(135deg,#F0ABFC,#C026D3)' }}>{IC.palette}</span>
+                      <span className="idims-profile-item-label">Theme Customizer</span>{IC.chevR}
+                    </button>
                     <div className="idims-profile-divider" />
                     <button type="button" className="idims-profile-item idims-profile-logout" onClick={() => { setProfileOpen(false); setLogoutOpen(true); }}>
                       <span className="idims-profile-item-ico" style={{ background: 'linear-gradient(135deg,#FB7185,#E11D48)' }}>{IC.logout}</span>
@@ -1057,6 +1065,7 @@ const IC = {
   user: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" /></svg>,
   gear: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>,
   dot: <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6" /></svg>,
+  palette: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3a9 9 0 1 0 0 18c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1-.24-.27-.39-.62-.39-1 0-.83.67-1.5 1.5-1.5H16a5 5 0 0 0 5-5c0-4.42-4.03-8-9-8z" /><circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" /><circle cx="11" cy="7.5" r="1.2" fill="currentColor" /><circle cx="15.5" cy="9" r="1.2" fill="currentColor" /></svg>,
 };
 
 /* ── Scoped CSS (ported from the IDIMS prototype, header only) ── */
