@@ -55,13 +55,29 @@ class HrDocumentSignatureController extends Controller
         $q = HrDocumentSignature::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
 
-        /* An employee_id that is PRESENT but not a positive integer must narrow
-         * to nothing, never widen to everything. `$request->integer()` turns a
-         * non-numeric value into 0, and the old `if ($empId = ...)` then read
-         * that as "no filter asked for" and returned every run in the tenant —
-         * so a caller passing an encrypted id (as the employee profile did) got
-         * the whole company's signed documents back. Filters fail closed. */
-        if ($request->has('employee_id')) {
+        /* A plain employee only ever sees runs where THEY are the subject.
+         *
+         * `applyScope` narrows this user tier to their CLIENT, which is the
+         * whole company — every colleague, every branch. What kept the Evidence
+         * Vault honest was the profile page remembering to send `employee_id`,
+         * so any caller that dropped it (or passed someone else's) read the
+         * whole tenant's signed documents. Pin the subject server-side instead,
+         * where the request cannot widen it.
+         *
+         * Deliberately here and not in `applyScope`: `inbox` shares that helper,
+         * and a manager who is themselves an `employee` must still reach the
+         * documents they are a SIGNER on — inbox scopes by signer, not subject.
+         *
+         * `?: 0` fails closed: a login with no employees row matches nothing
+         * rather than falling through to the client-wide scope. */
+        $viewer = $request->user();
+        if ($viewer && $viewer->user_type === 'employee') {
+            $q->where('employee_id', Employee::where('user_id', $viewer->id)->value('id') ?: 0);
+        } elseif ($request->has('employee_id')) {
+            /* An employee_id that is PRESENT but not a positive integer must
+             * narrow to nothing, never widen to everything. `$request->integer()`
+             * turns a non-numeric value into 0, and the old `if ($empId = ...)`
+             * read that as "no filter asked for". Filters fail closed. */
             $q->where('employee_id', $request->integer('employee_id'));
         }
         if ($status = $request->query('status'))          $q->where('status', $status);
@@ -139,7 +155,9 @@ class HrDocumentSignatureController extends Controller
     {
         $q = HrDocumentSignature::query()->with(self::WITH);
         $this->applyScope($q, $request->user());
-        return response()->json($q->findOrFail((int) $id));
+        $row = $q->findOrFail((int) $id);
+        $this->assertEmployeeMayRead($request->user(), $row);
+        return response()->json($row);
     }
 
     /* ───── SEND ───── */
@@ -779,7 +797,36 @@ class HrDocumentSignatureController extends Controller
     {
         $q = HrDocumentSignature::query();
         $this->applyScope($q, $request->user());
-        return $q->findOrFail($id);
+        $row = $q->findOrFail($id);
+        $this->assertEmployeeMayRead($request->user(), $row);
+        return $row;
+    }
+
+    /**
+     * A plain employee may read a run only as its SUBJECT or as one of its
+     * SIGNERS.
+     *
+     * `applyScope` leaves this tier the whole CLIENT's runs, so an id in the
+     * URL was by itself enough to open — or download the signed PDF of — a
+     * colleague's document, in any branch. Both halves of the rule are needed:
+     * subject-only would lock a reviewer out of the very document they are
+     * being asked to sign.
+     *
+     * Signer match is by `user_id` (the signers JSON stores the login), subject
+     * match by the employees row behind this login.
+     */
+    private function assertEmployeeMayRead(?User $user, HrDocumentSignature $row): void
+    {
+        if (!$user || $user->user_type !== 'employee') return;
+
+        $ownEmployeeId = Employee::where('user_id', $user->id)->value('id');
+        if ($ownEmployeeId && (int) $row->employee_id === (int) $ownEmployeeId) return;
+
+        foreach ((is_array($row->signers) ? $row->signers : []) as $s) {
+            if ((int) ($s['user_id'] ?? 0) === (int) $user->id) return;
+        }
+
+        abort(403, 'This document does not belong to you.');
     }
 
     /* ───── HELPERS ───── */
