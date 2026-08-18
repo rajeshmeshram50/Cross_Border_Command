@@ -1063,7 +1063,12 @@ const NOTICE_CHOICES: { value: Exclude<NoticeChoice, null>; label: string; desc:
   },
 ];
 
-/** The four editable Full & Final lines, all blank. */
+/** The Full & Final lines, all blank.
+ *
+ *  `leaveEncash` and `bonus` no longer have fields on the stage (CBC #96) and
+ *  no longer count towards the net. The KEYS stay so a case saved before the
+ *  removal still round-trips its stored blob untouched — dropping them would
+ *  quietly rewrite the record of what an already-settled F&F was made of. */
 const FNF_LINES_EMPTY = { basic: '', leaveEncash: '', bonus: '', loan: '' };
 
 /**
@@ -1428,8 +1433,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfPaid = fnfMarkedPaid;
   const fnfTotals = useMemo(() => {
-    const earn = fnfNum(fnfLines.basic) + fnfNum(fnfLines.leaveEncash)
-               + fnfNum(fnfLines.bonus)
+    /* leaveEncash / bonus are deliberately absent (CBC #96): the fields were
+       removed from the stage, and a line nobody can see must not move the net.
+       A legacy case saved with a figure in either keeps it in `fnf.lines` for
+       the record, but it no longer changes what is payable. */
+    const earn = fnfNum(fnfLines.basic)
                + duesClaims                                        // approved, unpaid reimbursements
                + (settlement === 'pay_in_lieu' ? settle.amount : 0);
     const ded  = fnfNum(fnfLines.loan)
@@ -3544,8 +3552,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       reading a single unexplained total. Same source as the
                       payslip: PayrollService::earnedSalaryForExitMonth(). */}
                   <FnfSalaryBreakdown payroll={fnfDues?.payroll} fmtMoney={fmtMoney} />
-                  <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} readOnly={fnfPaid} />
-                  <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} readOnly={fnfPaid} />
+                  {/* Leave Encashment and Bonus / Incentives were removed here
+                      (CBC #96) — neither is used on this settlement, and both
+                      sat on screen as required-looking money fields nobody
+                      fills. They are dropped from the total below as well, so
+                      the Net F&F Payable only ever adds up lines that are
+                      actually on screen. */}
 
                   {/* Pulled from the Expense module — approved claims never
                       disbursed. Read-only here: the claim is the source. */}
