@@ -25,6 +25,23 @@ interface CycleMonth {
   status: CycleStatus;
   month?: number;
   year?: number;
+  /** Month hasn't started — frozen, nothing to process. */
+  is_future?: boolean;
+  /** Label of the earlier cycle that must be completed first (null when clear). */
+  blocked_by?: string | null;
+  /** Server's verdict: may this cycle be finalized/run right now? */
+  processable?: boolean;
+  /** Latest run's status for the cycle (draft/generated/approved/paid). */
+  run_status?: string | null;
+  /** Run is approved/paid — frozen against regeneration (Rule 14). */
+  run_locked?: boolean;
+}
+
+interface SeqInfo {
+  blocked_by?: string | null;
+  processable?: boolean;
+  run_status?: string | null;
+  run_locked?: boolean;
 }
 
 interface PayrollRow {
@@ -95,10 +112,21 @@ const financialYearOf = (month?: number, year?: number): string => {
 // from the backend /payroll/cycles payload (keyed `${year}-${month}`); months
 // the backend hasn't surfaced yet default to 'Not Started'.
 //
-// "In Progress" is clamped to the current calendar month only: future months
-// can't have started, and a past month is either Completed (actually paid) or
-// Not Started — never "In Progress", even if a stray unpaid period lingers.
-const buildYearMonths = (year: number, statusByKey: Record<string, CycleStatus>, today: Date): CycleMonth[] => {
+// Only the FUTURE is clamped here: a month that hasn't started can't have a
+// status. Past months keep the server's verdict verbatim.
+//
+// They used to be flattened to "Completed | Not Started" on the theory that a
+// lingering unpaid period was noise. That was wrong twice over: a past cycle
+// whose run is generated/approved really is in progress, and since cycles must
+// now run in order it is also what blocks every later month. Painting it
+// "Not Started" sent HR to click Run, which then failed with "already
+// approved/paid and cannot be regenerated".
+const buildYearMonths = (
+  year: number,
+  statusByKey: Record<string, CycleStatus>,
+  today: Date,
+  seqByKey: Record<string, SeqInfo> = {},
+): CycleMonth[] => {
   const curYear = today.getFullYear();
   const curMonth = today.getMonth() + 1;
   return MONTHS_SHORT.map((mon, idx) => {
@@ -106,14 +134,12 @@ const buildYearMonths = (year: number, statusByKey: Record<string, CycleStatus>,
     const upper = mon.toUpperCase();
     const lastDay = new Date(year, m, 0).getDate();
     const raw = statusByKey[`${year}-${m}`] ?? 'Not Started';
-    let status: CycleStatus;
-    if (year > curYear || (year === curYear && m > curMonth)) {
-      status = 'Not Started';                                   // future
-    } else if (year === curYear && m === curMonth) {
-      status = raw;                                             // live cycle
-    } else {
-      status = raw === 'Completed' ? 'Completed' : 'Not Started'; // past
-    }
+    const isFuture = year > curYear || (year === curYear && m > curMonth);
+    const status: CycleStatus = isFuture ? 'Not Started' : raw;
+    // Sequencing comes from the server (it owns the rule). Months outside the
+    // trailing 13-month window carry no verdict: a future one is frozen here,
+    // and for anything else we stay permissive and let the 422 speak.
+    const seq = seqByKey[`${year}-${m}`];
     return {
       key: monthKey(year, idx),
       label: `${mon} ${year}`,
@@ -121,6 +147,11 @@ const buildYearMonths = (year: number, statusByKey: Record<string, CycleStatus>,
       month: m,
       year,
       status,
+      is_future: isFuture,
+      blocked_by: isFuture ? null : (seq?.blocked_by ?? null),
+      processable: isFuture ? false : (seq?.processable ?? true),
+      run_status: seq?.run_status ?? null,
+      run_locked: !isFuture && !!seq?.run_locked,
     };
   });
 };
@@ -214,10 +245,25 @@ export default function HrPayroll() {
     return map;
   }, [rawCycles]);
 
+  // Sequencing verdict per month, straight from the server (which owns the
+  // "cycles run in order" rule) — keyed the same way as statusByKey.
+  const seqByKey = useMemo(() => {
+    const map: Record<string, SeqInfo> = {};
+    for (const c of rawCycles) {
+      if (c.year && c.month) {
+        map[`${c.year}-${c.month}`] = {
+          blocked_by: c.blocked_by, processable: c.processable,
+          run_status: c.run_status, run_locked: c.run_locked,
+        };
+      }
+    }
+    return map;
+  }, [rawCycles]);
+
   // The 12 months of the selected year — drives the strip + the hero dropdown.
   const cycleMonths = useMemo(
-    () => buildYearMonths(selectedYear, statusByKey, today),
-    [selectedYear, statusByKey, today],
+    () => buildYearMonths(selectedYear, statusByKey, today, seqByKey),
+    [selectedYear, statusByKey, today, seqByKey],
   );
 
   // Years offered in the picker — whichever the backend returned, plus the
@@ -532,19 +578,44 @@ export default function HrPayroll() {
   // instead of a 422 after clicking.
   const isFutureCycle = useMemo(() => {
     if (!cycle) return false;
+    if (cycle.is_future !== undefined) return cycle.is_future;
     const curYear = today.getFullYear();
     const curMonth = today.getMonth() + 1;
-    return cycle.year > curYear || (cycle.year === curYear && cycle.month > curMonth);
+    return (cycle.year ?? 0) > curYear || (cycle.year === curYear && (cycle.month ?? 0) > curMonth);
   }, [cycle, today]);
+
+  /* Cycles run in order: a month can't be processed while an earlier one is
+     still open (PayrollController::guardPreviousCycleComplete). The server
+     refuses it either way — this just turns a 422-after-clicking into a
+     disabled button that says which cycle is in the way. */
+  const blockedByCycle = useMemo(
+    () => (cycle && !cycle.is_future ? (cycle.blocked_by ?? null) : null),
+    [cycle],
+  );
+  /* An approved/paid run is frozen against regeneration (Rule 14). Clicking Run
+     on one used to fire the request and come back with "already approved/paid
+     and cannot be regenerated" — disable it and say so up front instead. */
+  const runLockedCycle = !!cycle?.run_locked;
+  const cycleLocked = isFutureCycle || !!blockedByCycle || runLockedCycle;
+  const cycleLockReason = isFutureCycle
+    ? `${cycle?.label} hasn't started yet — a future cycle has no attendance to process.`
+    : blockedByCycle
+      ? `Complete the ${blockedByCycle} payroll first — cycles must be processed in order.`
+      : runLockedCycle
+        ? `${cycle?.label} is already ${cycle?.run_status} — reopen the cycle to re-run it.`
+        : undefined;
 
   // Switch the displayed year — keep the same month if possible, else snap to
   // the live (In Progress) cycle of that year, else its first month.
   const selectYear = (y: number) => {
-    const months = buildYearMonths(y, statusByKey, today);
-    const sameMonth = cycle ? months.find(m => m.month === cycle.month) : undefined;
-    const live = months.find(m => m.status === 'In Progress');
+    const months = buildYearMonths(y, statusByKey, today, seqByKey);
+    // Never land on a frozen (future) month — it can't be processed and the
+    // chip isn't even selectable, so snapping to it would strand the page.
+    const open = months.filter(m => !m.is_future);
+    const sameMonth = cycle ? open.find(m => m.month === cycle.month) : undefined;
+    const live = open.find(m => m.status === 'In Progress');
     setSelectedYear(y);
-    setCycleKey((sameMonth ?? live ?? months[0]).key);
+    setCycleKey((sameMonth ?? live ?? open[open.length - 1] ?? months[0]).key);
   };
 
   useEffect(() => {
@@ -1338,7 +1409,12 @@ export default function HrPayroll() {
     el.scrollBy({ left: dir === 'next' ? 240 : -240, behavior: 'smooth' });
   };
 
-  const monthOptions = cycleMonths.map(m => ({ value: m.key, label: m.label }));
+  /* Future cycles are frozen, so they're kept out of the picker too — offering
+     a month the Run button will refuse is just a dead end. The currently
+     selected key is always kept so the control never shows an empty value. */
+  const monthOptions = cycleMonths
+    .filter(m => !m.is_future || m.key === cycleKey)
+    .map(m => ({ value: m.key, label: m.blocked_by ? `${m.label} — after ${m.blocked_by}` : m.label }));
 
   return (
     <>
@@ -1378,15 +1454,15 @@ export default function HrPayroll() {
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
             onClick={runPayroll}
-            disabled={busy || isFutureCycle}
-            title={isFutureCycle ? `${cycle?.label} hasn't started yet` : undefined}
+            disabled={busy || cycleLocked}
+            title={cycleLockReason}
             style={{
               padding: '10px 18px',
               fontSize: 13,
               color: '#fff',
               background: 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
-              opacity: (busy || isFutureCycle) ? 0.6 : 1,
+              opacity: (busy || cycleLocked) ? 0.6 : 1,
             }}
           >
             {/* Animated spinner while processing (the static loader icon read as
@@ -1546,23 +1622,42 @@ export default function HrPayroll() {
               >
                 {cycleMonths.map(m => {
                   const on = m.key === cycleKey;
-                  const t  = CYCLE_TONES[m.status];
+                  // A future month is frozen outright — not selectable, greyed,
+                  // and labelled LOCKED. A month held up by an earlier open
+                  // cycle stays selectable (HR must be able to look at it) but
+                  // says what is blocking it; the Run button is disabled.
+                  const frozen = !!m.is_future;
+                  const t = frozen
+                    ? { bg: '#eef2f6', fg: '#878a99', dot: '#b6bcc8' }
+                    : CYCLE_TONES[m.status];
+                  const title = frozen
+                    ? `${m.label} hasn't started yet — future cycles are locked.`
+                    : m.blocked_by
+                      ? `Complete the ${m.blocked_by} payroll first — cycles run in order.`
+                      : undefined;
                   return (
                     <button
                       key={m.key}
                       type="button"
-                      onClick={() => setCycleKey(m.key)}
+                      onClick={() => { if (!frozen) setCycleKey(m.key); }}
+                      disabled={frozen}
+                      title={title}
+                      aria-disabled={frozen}
                       className={`text-start flex-shrink-0 pay-cycle-chip${on ? ' is-selected' : ''}`}
                       style={{
                         minWidth: 138,
                         padding: '10px 12px',
                         borderRadius: 12,
-                        cursor: 'pointer',
+                        cursor: frozen ? 'not-allowed' : 'pointer',
+                        opacity: frozen ? 0.55 : 1,
                         transition: 'all .15s ease',
                       }}
                     >
-                      <div className="fw-bold pay-cycle-chip-label" style={{ fontSize: 12.5 }}>
+                      <div className="fw-bold pay-cycle-chip-label d-flex align-items-center gap-1" style={{ fontSize: 12.5 }}>
                         {m.label}
+                        {(frozen || m.blocked_by) && (
+                          <i className="ri-lock-2-line" style={{ fontSize: 12, color: '#878a99' }} />
+                        )}
                       </div>
                       <div className="text-muted" style={{ fontSize: 10, letterSpacing: '0.04em' }}>{m.range}</div>
                       <span
@@ -1576,8 +1671,13 @@ export default function HrPayroll() {
                         }}
                       >
                         <span className="d" style={{ background: t.dot }} />
-                        {m.status}
+                        {frozen ? 'Locked' : m.status}
                       </span>
+                      {!frozen && m.blocked_by && (
+                        <div className="text-muted mt-1" style={{ fontSize: 9, letterSpacing: '0.02em' }}>
+                          after {m.blocked_by}
+                        </div>
+                      )}
                     </button>
                   );
                 })}

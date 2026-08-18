@@ -11,9 +11,10 @@ namespace App\Support;
  * module and none of its feeders produced half-broken screens (empty selects,
  * 403s on the lookup calls), which is what this map fixes.
  *
- * Rule: granting ANY flag on a module implies can_view on every module it
- * depends on (transitively). Dependencies never inherit action flags — read
- * access is all a feeder screen needs.
+ * Rule: granting ANY flag on a module implies can_view on the modules listed
+ * against it in the matrix — that row only, never the dependencies of those
+ * dependencies. Dependencies don't inherit action flags either; read access is
+ * all a feeder screen needs.
  *
  * Keyed by module slug (see database/seeders/ModuleSeeder.php). Mirrored on the
  * frontend in resources/js/utils/moduleDependencies.ts — keep the two in sync.
@@ -93,11 +94,19 @@ class ModuleDependencies
     }
 
     /**
-     * Transitive closure of the dependencies of the given slugs.
+     * The dependencies of the given slugs — ONE HOP ONLY, exactly the row of
+     * the matrix and nothing beyond it.
      *
-     * The seed slugs themselves are NOT included in the result — only the
-     * modules they pull in. Cycles (Employee ↔ Onboarding, Leave → Employee →
-     * Leave) are safe: the visited set stops the walk.
+     * Deliberately NOT transitive. Following the chain (Broadcast → Employee →
+     * Onboarding → Document Template → Custom Field …) is defensible on paper,
+     * but in practice almost every HR grant dragged in the whole HR tree plus a
+     * dozen masters, which is not what the matrix says and not what an admin
+     * ticking one box expects to hand out. What the sheet lists for a module is
+     * what that module gets.
+     *
+     * The seed slugs themselves are never returned — a module is not its own
+     * dependency, so callers only see what the grant added on top of what the
+     * operator explicitly ticked.
      *
      * @param  iterable<string>  $slugs
      * @return string[]
@@ -110,21 +119,11 @@ class ModuleDependencies
         }
 
         $required = [];
-        $stack = array_keys($seeds);
-
-        while ($stack !== []) {
-            $current = array_pop($stack);
-            foreach (self::directFor($current) as $dep) {
-                if (isset($required[$dep])) continue;
-                $required[$dep] = true;
-                $stack[] = $dep;
-            }
-        }
-
-        // A seed is not "required by" itself — drop seeds so callers only see
-        // what the grant added on top of what the operator explicitly ticked.
         foreach (array_keys($seeds) as $seed) {
-            unset($required[$seed]);
+            foreach (self::directFor($seed) as $dep) {
+                if (isset($seeds[$dep])) continue;
+                $required[$dep] = true;
+            }
         }
 
         return array_keys($required);

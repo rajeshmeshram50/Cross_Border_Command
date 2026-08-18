@@ -6,8 +6,9 @@
  * Leave to build a payslip, and so on. Granting the headline module without its
  * feeders produced half-broken screens (empty selects, 403s on lookup calls).
  *
- * Rule: granting ANY flag on a module implies can_view on every module it
- * depends on, transitively. Dependencies never inherit action flags.
+ * Rule: granting ANY flag on a module implies can_view on the modules listed
+ * against it in the matrix — that row only, never the dependencies of those
+ * dependencies. Dependencies never inherit action flags.
  *
  * Keyed by module slug. Mirrors app/Support/ModuleDependencies.php — keep the
  * two in sync; the backend re-applies this on save, so the UI is a preview of
@@ -69,35 +70,30 @@ export const MODULE_DEPENDENCIES: Record<string, string[]> = {
 export type SlugNameMap = Record<string, string>;
 
 /**
- * Transitive closure of the dependencies of `activeSlugs`.
+ * The dependencies of `activeSlugs` — ONE HOP ONLY, exactly the matrix row.
  *
- * Returns a map of required slug → the seed slugs that pulled it in (used for
- * the "Required by Payroll, Attendance" tooltip). Seeds themselves are excluded
- * so a module is never listed as its own dependency. Cycles are safe.
+ * Deliberately not transitive: following the chain dragged the whole HR tree
+ * plus a dozen masters into every grant, which is neither what the matrix says
+ * nor what an admin ticking one box expects to hand out.
+ *
+ * Returns a map of required slug → the ticked modules that pulled it in (used
+ * for the "Required by Payroll, Attendance" tooltip). Seeds are excluded, so a
+ * module is never listed as its own dependency.
  */
 export function resolveDependencies(activeSlugs: Iterable<string>): Record<string, string[]> {
   const seeds = new Set(activeSlugs);
   const required: Record<string, Set<string>> = {};
 
   seeds.forEach((seed) => {
-    const stack: string[] = [seed];
-    const visited = new Set<string>([seed]);
-    while (stack.length) {
-      const current = stack.pop()!;
-      for (const dep of MODULE_DEPENDENCIES[current] || []) {
-        if (!required[dep]) required[dep] = new Set();
-        required[dep].add(seed);
-        if (!visited.has(dep)) {
-          visited.add(dep);
-          stack.push(dep);
-        }
-      }
+    for (const dep of MODULE_DEPENDENCIES[seed] || []) {
+      if (seeds.has(dep)) continue;
+      if (!required[dep]) required[dep] = new Set();
+      required[dep].add(seed);
     }
   });
 
   const out: Record<string, string[]> = {};
   Object.entries(required).forEach(([slug, causes]) => {
-    if (seeds.has(slug)) return;
     out[slug] = [...causes];
   });
   return out;
