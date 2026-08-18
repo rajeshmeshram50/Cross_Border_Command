@@ -107,10 +107,13 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
   const [sendingTplId, setSendingTplId]     = useState<number | null>(null);
   /** Bumped after a send so the vault re-reads without closing and reopening. */
   const [reloadKey, setReloadKey]           = useState(0);
+  /** Onboarding finished (stage 6 of 6). Gates the promotion block. */
+  const [onboardingDone, setOnboardingDone] = useState(false);
 
   useEffect(() => {
     if (!employee) {
       setEmpDocs([]); setOrgTemplates([]); setExitTemplates([]); setSigningRuns([]);
+      setPromoTemplates([]); setOnboardingDone(false);
       setTab(initialTab);
       return;
     }
@@ -123,14 +126,23 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
       api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'exit' } }),
       api.get('/hr-document-signatures', { params: { employee_id: employee.id } }),
       api.get('/hr-document-templates/match', { params: { employee_id: employee.id, trigger_keyword: 'promotion' } }),
+      api.get(`/employees/${employee.id}`),
     ]).then(results => {
       if (cancelled) return;
-      const [docsR, orgR, exitR, runsR, promoR] = results;
+      const [docsR, orgR, exitR, runsR, promoR, empR] = results;
       setEmpDocs(docsR.status === 'fulfilled' && Array.isArray(docsR.value.data) ? docsR.value.data : []);
       setOrgTemplates(orgR.status === 'fulfilled' && Array.isArray(orgR.value.data?.templates) ? orgR.value.data.templates : []);
       setExitTemplates(exitR.status === 'fulfilled' && Array.isArray(exitR.value.data?.templates) ? exitR.value.data.templates : []);
       setSigningRuns(runsR.status === 'fulfilled' && Array.isArray(runsR.value.data) ? runsR.value.data : []);
       setPromoTemplates(promoR.status === 'fulfilled' && Array.isArray(promoR.value.data?.templates) ? promoR.value.data.templates : []);
+      /* Promotion paperwork belongs to life AFTER onboarding — while the
+         wizard is still running, its Stage 5 is where documents are sent from.
+         Read from the record rather than taken as a prop: this modal opens
+         from several places, and one that forgot to pass it would silently
+         bring the bug back. Anything unreadable counts as NOT complete, so the
+         block stays hidden rather than appearing when we cannot tell. */
+      const empRow = empR.status === 'fulfilled' ? (empR.value.data?.data ?? empR.value.data) : null;
+      setOnboardingDone(Number(empRow?.onboarding_stage_completed ?? 0) >= 6);
     }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,7 +265,7 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
      requirement into them would drop a fully-signed vault off 100% for work
      that has not been asked of anyone yet. This block is an action, not a
      record, so it sits above the record and counts separately. */
-  const promoToSend = promoTemplates.filter(t => !runByTemplateId.get(t.id));
+  const promoToSend = onboardingDone ? promoTemplates.filter(t => !runByTemplateId.get(t.id)) : [];
 
   const sendPromoDoc = async (tplId: number, name: string | null) => {
     if (!employee || sendingTplId) return;
