@@ -131,6 +131,77 @@ class PayrollController extends Controller
         return null;
     }
 
+    /**
+     * Payroll cycles run in order — a month cannot be processed while the month
+     * before it is still open. Skipping a cycle strands its attendance, leaves
+     * advance/loan recovery schedules with a hole, and makes the "already paid
+     * in a sibling period" dedup meaningless, so the sequence is enforced rather
+     * than left to HR discipline.
+     *
+     * "Complete" = the period is locked (all slips paid) or its latest run is
+     * paid — the same definition the cycle strip paints as Completed.
+     *
+     * Deliberately NOT enforced from the beginning of time: the rule starts at
+     * the scope's FIRST payroll period. A tenant onboarding in August is not
+     * asked to run July, and a scope with no history at all can always start.
+     *
+     * Returns a 422 to short-circuit the caller, or null when the way is clear.
+     */
+    private function guardPreviousCycleComplete(PayrollPeriod $period): ?\Illuminate\Http\JsonResponse
+    {
+        /* Null-safe scoping. A super-admin who has picked a branch but no client
+         * produces a period with client_id = NULL, and `where('client_id', null)`
+         * matches nothing in SQL — the scope came back empty, so the guard read
+         * it as "first cycle ever" and waved the run through. Both columns are
+         * matched with whereNull when they are null. */
+        $scope = PayrollPeriod::query()
+            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
+            ->when(!$period->client_id, fn ($q) => $q->whereNull('client_id'))
+            ->when($period->branch_id, fn ($q) => $q->where('branch_id', $period->branch_id))
+            ->when(!$period->branch_id, fn ($q) => $q->whereNull('branch_id'));
+
+        // Order months as a single comparable number (year*12 + month) so the
+        // December→January boundary needs no special case.
+        $ordinal = fn ($y, $m) => ((int) $y) * 12 + ((int) $m);
+        $thisOrd = $ordinal($period->year, $period->month);
+
+        $earliest = (clone $scope)->orderBy('year')->orderBy('month')->first();
+        if (!$earliest || $ordinal($earliest->year, $earliest->month) >= $thisOrd) {
+            return null; // first cycle this scope has ever had — nothing precedes it
+        }
+
+        $prevCursor = Carbon::create((int) $period->year, (int) $period->month, 1)->subMonth();
+        $prev = (clone $scope)
+            ->where('year', $prevCursor->year)
+            ->where('month', $prevCursor->month)
+            ->first();
+
+        $prevLabel = $prevCursor->format('M Y');
+
+        if (!$prev) {
+            return response()->json([
+                'message' => "Payroll for {$prevLabel} has not been run yet. Cycles must be processed in order — complete {$prevLabel} before {$period->label}.",
+                'blocked_by' => ['label' => $prevLabel, 'month' => (int) $prevCursor->month, 'year' => (int) $prevCursor->year, 'status' => 'Not Started'],
+            ], 422);
+        }
+
+        $prevRun = $prev->runs()->latest('id')->first();
+        $done = $prev->status === 'locked' || ($prevRun && $prevRun->status === 'paid');
+        if ($done) {
+            return null;
+        }
+
+        return response()->json([
+            'message' => "Payroll for {$prevLabel} is not complete. Cycles must be processed in order — finish {$prevLabel} before {$period->label}.",
+            'blocked_by' => [
+                'label' => $prev->label ?: $prevLabel,
+                'month' => (int) $prev->month,
+                'year'  => (int) $prev->year,
+                'status' => $prevRun?->status ?? $prev->status,
+            ],
+        ], 422);
+    }
+
     /* ───────────────────────── cycles ────────────────────────── */
 
     /** Trailing 13-month strip (existing periods + synthesised placeholders). */
@@ -154,12 +225,46 @@ class PayrollController extends Controller
                 ->groupBy('payroll_period_id')
                 ->map(fn ($g) => $g->sortByDesc('id')->first());
 
+        /* Sequencing metadata for the cycle strip (mirrors
+           guardPreviousCycleComplete — the server still refuses the action, this
+           just lets the UI freeze the chip instead of letting HR discover it via
+           a 422). A month is processable when it has started, the month before
+           it is complete, and its own run isn't already approved/paid. */
+        $ordinal   = fn ($y, $m) => ((int) $y) * 12 + ((int) $m);
+        $firstPeriod = $periods->sortBy(fn ($p) => $ordinal($p->year, $p->month))->first();
+        $firstOrd  = $firstPeriod ? $ordinal($firstPeriod->year, $firstPeriod->month) : null;
+        $isComplete = function (?PayrollPeriod $p) use ($latestRuns): bool {
+            if (!$p) return false;
+            $run = $latestRuns->get($p->id);
+            return $p->status === 'locked' || ($run && $run->status === 'paid');
+        };
+
         $out = [];
         $cursor = now()->startOfMonth()->subMonths(11);
         for ($i = 0; $i < 13; $i++) {
             $m = (int) $cursor->month;
             $y = (int) $cursor->year;
             $existing = $periods->get("$y-$m");
+
+            $isFuture = $cursor->copy()->startOfMonth()->isFuture();
+            $prevCur  = $cursor->copy()->subMonth();
+            $prev     = $periods->get($prevCur->year . '-' . $prevCur->month);
+            $needsPrev = $firstOrd !== null && $ordinal($y, $m) > $firstOrd;
+
+            /* A cycle that is itself already complete is never "waiting" on an
+               earlier one — it was settled before this rule existed and the
+               strip must not paint a finished month as blocked. */
+            $blockedBy = null;
+            if (!$isFuture && $needsPrev && !$isComplete($existing) && !$isComplete($prev)) {
+                $blockedBy = $prevCur->format('M Y');
+            }
+
+            // An approved/paid run cannot be regenerated (Rule 14). Surfaced so
+            // the Run button can be disabled with a reason instead of firing
+            // and coming back with "already approved/paid".
+            $existingRun = $existing ? $latestRuns->get($existing->id) : null;
+            $runLocked = $existingRun && in_array($existingRun->status, ['approved', 'paid'], true);
+
             $out[] = [
                 'key'    => strtolower($cursor->format('M')) . '-' . $y,
                 'label'  => $cursor->format('M Y'),
@@ -167,7 +272,14 @@ class PayrollController extends Controller
                 'month'  => $m,
                 'year'   => $y,
                 'financial_year' => PayrollPeriod::financialYearFor($m, $y),
-                'status' => $this->cycleDisplayStatus($existing, $cursor, $existing ? $latestRuns->get($existing->id) : null),
+                'status' => $this->cycleDisplayStatus($existing, $cursor, $existingRun),
+                // A future cycle is frozen outright — there is no attendance to
+                // draw from, so processing it would produce a fully-LOP'd run.
+                'is_future'   => $isFuture,
+                'blocked_by'  => $blockedBy,
+                'run_status'  => $existingRun?->status,
+                'run_locked'  => (bool) $runLocked,
+                'processable' => !$isFuture && $blockedBy === null && !$runLocked,
             ];
             $cursor->addMonth();
         }
@@ -188,7 +300,14 @@ class PayrollController extends Controller
             if ($period->attendance_finalized)       return 'In Progress';
         }
         if ($cursor->isFuture() && !$cursor->isSameMonth(now())) return 'Not Started';
-        return $period ? 'In Progress' : 'Not Started';
+
+        /* A period ROW existing is not work started. resolveOrCreatePeriod()
+           creates one the moment anybody merely opens the cycle (or exports, or
+           loads the strip), so treating "row exists" as In Progress painted
+           months nobody had touched as active — and, now that cycles run in
+           order, made it look like they were holding up later months. Only a
+           draft run (someone reopened the cycle to correct it) counts. */
+        return ($run && $run->status === 'draft') ? 'In Progress' : 'Not Started';
     }
 
     /**
@@ -325,6 +444,7 @@ class PayrollController extends Controller
         if ($scopeErr = $this->requireScope($ctx)) return $scopeErr;
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         if ($futureErr = $this->guardPeriodStarted($period)) return $futureErr;
+        if ($seqErr = $this->guardPreviousCycleComplete($period)) return $seqErr;
 
         if ($period->status === 'locked') {
             return response()->json(['message' => 'Period is locked.'], 422);
@@ -521,6 +641,7 @@ class PayrollController extends Controller
         if ($scopeErr = $this->requireScope($ctx)) return $scopeErr;
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         if ($futureErr = $this->guardPeriodStarted($period)) return $futureErr;
+        if ($seqErr = $this->guardPreviousCycleComplete($period)) return $seqErr;
 
         try {
             $run = $this->payroll->generate($period, $ctx);
