@@ -1063,7 +1063,12 @@ const NOTICE_CHOICES: { value: Exclude<NoticeChoice, null>; label: string; desc:
   },
 ];
 
-/** The four editable Full & Final lines, all blank. */
+/** The Full & Final lines, all blank.
+ *
+ *  `leaveEncash` and `bonus` no longer have fields on the stage (CBC #96) and
+ *  no longer count towards the net. The KEYS stay so a case saved before the
+ *  removal still round-trips its stored blob untouched — dropping them would
+ *  quietly rewrite the record of what an already-settled F&F was made of. */
 const FNF_LINES_EMPTY = { basic: '', leaveEncash: '', bonus: '', loan: '' };
 
 /**
@@ -1167,6 +1172,34 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const earlyResignation = isEarlyResignation(employee?.dateOfJoiningIso, noticeDate);
   const earlyTenure      = tenureDays(employee?.dateOfJoiningIso, noticeDate);
   const noticeWaived     = onProbation || earlyResignation;
+
+  /* ── No settlement, no documents ─────────────────────────────────────
+     An employee still ON PROBATION who leaves before completing
+     EARLY_EXIT_DAYS of service gets neither a Full & Final settlement nor a
+     document release. Both stages are therefore not work HR has to do — they
+     are answered by the employee's tenure — so each reads 100% with a note
+     saying why, instead of sitting In Progress and blocking Complete Exit on
+     a settlement that will never be paid.
+
+     Service is counted in CALENDAR days, week-offs included (tenureDays counts
+     the joining day itself: joined 1st, left 15th = 15 days). Measured to the
+     LAST WORKING DAY — the day service actually ends — falling back to the
+     notice start date before Stage 1 has an LWD on it.
+
+     The 15-day figure is EARLY_EXIT_DAYS via isEarlyResignation(), the same
+     predicate that already waives the notice period here and drops the
+     employee from payroll server-side (ProbationGuard::isEarlyExit,
+     PayrollService::earnedSalaryForExitMonth). Re-deriving it with a local
+     threshold would let the two disagree — an exit priced at ₹0 by payroll
+     while this screen still demanded an F&F payment for it. */
+  const serviceEndIso   = lwd || noticeDate;
+  const probationTenure = tenureDays(employee?.dateOfJoiningIso, serviceEndIso);
+  const noSettlementDue = onProbation
+    && isEarlyResignation(employee?.dateOfJoiningIso, serviceEndIso);
+  /* One sentence, used on both stages and in the completion list, so the three
+     can never drift into describing the rule differently. */
+  const noSettlementWhy = `On probation and left after ${probationTenure ?? 0} day(s) of service`
+    + ` — under the ${EARLY_EXIT_DAYS}-day minimum (calendar days, week-offs included).`;
   /* Force the choice to No-Pay once it turns out no notice period applies.
      The picker may have been answered "Pay" before the probation status was
      known (or the notice date edited into the early-exit window afterwards),
@@ -1400,8 +1433,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const fnfBlockHint = 'The Full & Final settlement must be paid before exit documents can be released.';
   const fnfPaid = fnfMarkedPaid;
   const fnfTotals = useMemo(() => {
-    const earn = fnfNum(fnfLines.basic) + fnfNum(fnfLines.leaveEncash)
-               + fnfNum(fnfLines.bonus)
+    /* leaveEncash / bonus are deliberately absent (CBC #96): the fields were
+       removed from the stage, and a line nobody can see must not move the net.
+       A legacy case saved with a figure in either keeps it in `fnf.lines` for
+       the record, but it no longer changes what is payable. */
+    const earn = fnfNum(fnfLines.basic)
                + duesClaims                                        // approved, unpaid reimbursements
                + (settlement === 'pay_in_lieu' ? settle.amount : 0);
     const ded  = fnfNum(fnfLines.loan)
@@ -2034,7 +2070,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     //     Skipped entirely when there is nothing to settle — an empty F&F has
     //     no approval and no payment to wait for, and listing them as
     //     outstanding would block Complete Exit permanently.
-    if (!fnfNothingToSettle) {
+    //     Also skipped when no settlement is DUE (probation + under the
+    //     minimum service): there is no F&F to approve or pay, and listing it
+    //     would block Complete Exit on a payment that will never be made.
+    if (!noSettlementDue && !fnfNothingToSettle) {
       if (fnfMeta.approval !== 'Approved') {
         items.push('Full & Final settlement not approved by the finance controller');
       } else if (!fnfPaid) {
@@ -2052,9 +2091,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       items.push(`${assetsPending.length} asset${assetsPending.length > 1 ? 's' : ''} not handed over`);
     }
 
-    // 4. Every matched exit document must be fully signed.
+    // 4. Every matched exit document must be fully signed — unless documents
+    //    are not released for this exit at all, in which case none were issued
+    //    and none can ever come back signed.
     const unsigned = exitTemplates.filter(t => runByTemplateId.get(t.id)?.status !== 'Completed');
-    if (exitTemplates.length > 0 && unsigned.length) {
+    if (!noSettlementDue && exitTemplates.length > 0 && unsigned.length) {
       items.push(`${unsigned.length} exit document${unsigned.length > 1 ? 's' : ''} not fully signed`);
     }
 
@@ -2075,7 +2116,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, blacklistApplies, blacklisted, blacklistReason]);
+  }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason]);
 
   /* Direct-report count, refreshed whenever the wizard opens and after each
      reassignment. Loaded up-front rather than on the closure stage so the
@@ -2167,6 +2208,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // could never move past 0% and the stage sat "In Progress" forever,
     // blocking the case on work that does not exist.
     if (n === 'fnf') {
+      // No settlement is owed at all (probation + under the minimum service).
+      // Same zero-denominator reasoning as fnfNothingToSettle below it.
+      if (noSettlementDue) return 100;
       if (fnfNothingToSettle) return 100;
       const done = (fnfMeta.approval === 'Approved' ? 1 : 0) + (fnfPaid ? 1 : 0);
       return Math.round((done / 2) * 100);
@@ -2181,6 +2225,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return total === 0 ? 0 : Math.round((done / total) * 100);
     }
     if (n === 'documents') {
+      // Documents are not released for this exit — nothing to generate, send
+      // or sign, so the stage holds no work.
+      if (noSettlementDue) return 100;
       const total = exitTemplates.length;
       /* No exit-document template matches this employee → there is nothing to
          generate and nothing to sign, so the stage holds no work. Reads 100,
@@ -2225,6 +2272,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   const effStatusOf = (n: StageKey): StageStatus => {
     if (!reachedStage(n)) return 'Pending';
+    /* Neither settlement nor documents apply to this exit, so both stages are
+       finished the moment HR reaches them. Placed ABOVE the per-stage measures
+       below, which would otherwise hold them In Progress waiting on a payment
+       that is not owed and signatures on documents that are not issued. */
+    if (noSettlementDue && (n === 'fnf' || n === 'documents')) return 'Completed';
     // Clearance & Handover — only complete when EVERY clearance is approved AND
     // EVERY assigned asset is handed over. A stale persisted "Completed" must
     // not show 100% while clearances/assets are still pending.
@@ -3357,6 +3409,22 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                    dues, with finance approval and the payment record. */}
             {currentKey === 'fnf' && (
               <>
+                {/* Probation + under the minimum service → no settlement is
+                    owed. Stated at the TOP of the stage, before the lines and
+                    the finance panel below it, so HR reads the rule before
+                    they start filling in a payment nobody should make. */}
+                {noSettlementDue && (
+                  <div className="ep-alert ep-alert--info">
+                    <i className="ri-information-line" />
+                    <div>
+                      <strong>No Full &amp; Final settlement is due for this exit.</strong>
+                      <div style={{ marginTop: 2 }}>
+                        {noSettlementWhy} No settlement is payable, so this stage is complete
+                        and it does not hold up the exit.
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {settlement === 'recover' && (
                   <>
                     <div className="ep-section-label">Notice Period — Recovery</div>
@@ -3484,8 +3552,12 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       reading a single unexplained total. Same source as the
                       payslip: PayrollService::earnedSalaryForExitMonth(). */}
                   <FnfSalaryBreakdown payroll={fnfDues?.payroll} fmtMoney={fmtMoney} />
-                  <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} readOnly={fnfPaid} />
-                  <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} readOnly={fnfPaid} />
+                  {/* Leave Encashment and Bonus / Incentives were removed here
+                      (CBC #96) — neither is used on this settlement, and both
+                      sat on screen as required-looking money fields nobody
+                      fills. They are dropped from the total below as well, so
+                      the Net F&F Payable only ever adds up lines that are
+                      actually on screen. */}
 
                   {/* Pulled from the Expense module — approved claims never
                       disbursed. Read-only here: the claim is the source. */}
@@ -3820,6 +3892,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
               ];
               return (
                 <>
+                  {/* Same rule as the F&F stage: a probationer under the
+                      minimum service is not issued exit documents, so nothing
+                      here is outstanding. The templates below stay reachable —
+                      the rule decides what is REQUIRED, and HR can still issue
+                      one deliberately if a case calls for it. */}
+                  {noSettlementDue && (
+                    <div className="ep-alert ep-alert--info">
+                      <i className="ri-information-line" />
+                      <div>
+                        <strong>Exit documents are not released for this exit.</strong>
+                        <div style={{ marginTop: 2 }}>
+                          {noSettlementWhy} No exit documents are issued, so this stage is
+                          complete and it does not hold up the exit.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="ep-doc-kpis rec-page-kpis mb-3">
                     {KPIS.map(k => (
                       <div key={k.label} className="rec-kpi-card">
