@@ -265,7 +265,19 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
      requirement into them would drop a fully-signed vault off 100% for work
      that has not been asked of anyone yet. This block is an action, not a
      record, so it sits above the record and counts separately. */
-  const promoToSend = onboardingDone ? promoTemplates.filter(t => !runByTemplateId.get(t.id)) : [];
+  /* Promotion paperwork that is not finished yet — whether or not it has been
+     sent. Sending used to make the row VANISH, which read as "it went
+     somewhere I can no longer see" rather than "it is now with the signers";
+     the row stays and its button goes quiet instead.
+     A completed run drops out because it has moved on: it appears below under
+     the signed documents, and keeping it here as well would list one document
+     twice. Rejected and cancelled runs stay, and stay re-sendable. */
+  const promoRows = !onboardingDone ? [] : promoTemplates
+    .map(t => ({ tpl: t, run: runByTemplateId.get(t.id) ?? null }))
+    .filter(r => r.run?.status !== 'Completed');
+
+  /** In flight with the signers — nothing to do but wait. */
+  const promoLocked = (run: VaultRun | null) => run?.status === 'Pending' || run?.status === 'In Progress';
 
   const sendPromoDoc = async (tplId: number, name: string | null) => {
     if (!employee || sendingTplId) return;
@@ -284,19 +296,28 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
     }
   };
 
-  /* The KPIs count what the tabs actually SHOW. Unsigned templates used to be
-     both listed and counted; now that they are neither, "% complete" can only
-     come from the employee's own uploads — every organizational / exit row here
-     is signed by definition, so a vault with nothing left to upload reads
-     100%, and one with documents still to collect reads below it. */
-  const allDocs: { status: DocStatus }[] = [...empDocsView, ...orgGroups.flatMap(g => g.docs), ...exitGroups.flatMap(g => g.docs)];
+  /* The KPIs and the tab badges count what the tabs actually SHOW.
+     The promotion rows were left out of both, so a tab displaying two
+     documents carried a badge reading 1, and a vault with a promotion document
+     nobody had sent still reported 100% complete. They are real outstanding
+     work — an unsent one is Pending, one with the signers is Sent — so they
+     count exactly like any other row on this screen. */
+  const promoDocs: { status: DocStatus }[] = promoRows.map(r => ({
+    status: promoLocked(r.run) ? 'Sent' : 'Pending',
+  }));
+  const allDocs: { status: DocStatus }[] = [
+    ...empDocsView,
+    ...orgGroups.flatMap(g => g.docs),
+    ...exitGroups.flatMap(g => g.docs),
+    ...promoDocs,
+  ];
   const total      = allDocs.length;
   const signed     = allDocs.filter(d => d.status === 'Signed' || d.status === 'Generated' || d.status === 'Completed').length;
   const pending    = allDocs.filter(d => d.status === 'Pending' || d.status === 'Sent').length;
   const completionPct = total > 0 ? Math.round(((total - pending) / total) * 100) : 0;
 
   const empCount  = empDocsView.length;
-  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0);
+  const orgCount  = orgGroups.reduce((a, g) => a + g.docs.length, 0) + promoRows.length;
   const exitCount = exitGroups.reduce((a, g) => a + g.docs.length, 0);
 
   type VaultDoc = { url: string | null; key: string; id: number; name: string; runId?: number | null };
@@ -420,17 +441,17 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
           {/* Promotion paperwork the new grade calls for. Shown before the
               signed record because it is the only thing here anyone can act
               on, and hidden entirely when there is nothing outstanding. */}
-          {!loading && tab === 'organizational' && promoToSend.length > 0 && (
+          {!loading && tab === 'organizational' && promoRows.length > 0 && (
             <div className="ev-promo-block">
               <div className="ev-promo-head">
                 <span className="ev-promo-icon"><i className="ri-user-star-line" /></span>
                 <div className="min-w-0">
-                  <div className="ev-promo-title">Promotion documents — not yet sent</div>
+                  <div className="ev-promo-title">Promotion documents</div>
                   <div className="ev-promo-sub">
                     Matched to this employee&rsquo;s current department and designation. Sending is manual — changing a designation never sends anything on its own.
                   </div>
                 </div>
-                <span className="ev-promo-count">{promoToSend.length}</span>
+                <span className="ev-promo-count">{promoRows.length}</span>
               </div>
               {/* Built from `ev-doc`, the same row the signed documents below
                   use — icon tile, name, meta line, status pill, action on the
@@ -438,37 +459,49 @@ export default function EvidenceVaultModal({ employee, onClose, extraChips = [],
                   in their life, so they should not look like a different
                   component; only the amber panel around them says they still
                   need doing. */}
-              {promoToSend.map(t => (
+              {promoRows.map(({ tpl: t, run }) => {
+                const locked = promoLocked(run);
+                const status = run?.status === 'Rejected'  ? { label: 'Rejected',      cls: 'pending'  }
+                             : run?.status === 'Cancelled' ? { label: 'Cancelled',     cls: 'not-sent' }
+                             : locked                      ? { label: 'Awaiting Sign', cls: 'sent'     }
+                             :                               { label: 'Not Sent',      cls: 'not-sent' };
+                return (
                 <div key={t.id} className="ev-doc ev-doc--promo">
                   <span className="ev-doc-icon ev-doc-icon--promo">
                     <i className="ri-file-text-line" />
                   </span>
                   <div className="ev-doc-info">
                     <div className="ev-doc-name">{t.name}</div>
-                    {/* Same shape as the signed rows' meta line. The file name
-                        joins it only for upload-built templates — an editor
-                        template has no file, and an empty slot would read as a
-                        missing attachment rather than a different kind of
-                        template. */}
+                    {/* Same shape as the signed rows' meta line. The run code
+                        joins it once sent, so the row can be matched against
+                        the signing workflow. The file name joins it only for
+                        upload-built templates — an editor template has no file,
+                        and an empty slot would read as a missing attachment
+                        rather than a different kind of template. */}
                     <div className="ev-doc-sub">
-                      {['Document', t.code, t.docx_original_name].filter(Boolean).join(' • ')}
+                      {['Document', t.code, run ? `Run #${run.id}` : null, t.docx_original_name].filter(Boolean).join(' • ')}
                     </div>
                   </div>
-                  <span className="ev-doc-status ev-doc-status--not-sent">Not Sent</span>
+                  <span className={`ev-doc-status ev-doc-status--${status.cls}`}>{status.label}</span>
                   {/* Same filled button the Download action uses on the signed
                       rows — this is the primary action of its row, so it should
-                      carry the same weight rather than read as a link. */}
+                      carry the same weight rather than read as a link.
+                      Once sent it stays in place and goes quiet: the row is
+                      still the record of that requirement, and removing it
+                      would look like the document had gone missing. */}
                   <button
                     type="button"
                     className="ev-doc-btn ev-doc-btn--download"
-                    disabled={sendingTplId != null}
+                    disabled={locked || sendingTplId != null}
+                    title={locked ? 'Already sent — waiting on the signers.' : undefined}
                     onClick={() => sendPromoDoc(t.id, t.name)}
                   >
-                    <i className={`${sendingTplId === t.id ? 'ri-loader-4-line ev-promo-spin' : 'ri-quill-pen-line'} me-1`} />
-                    {sendingTplId === t.id ? 'Sending…' : 'Send for Signature'}
+                    <i className={`${sendingTplId === t.id ? 'ri-loader-4-line ev-promo-spin' : locked ? 'ri-check-line' : 'ri-quill-pen-line'} me-1`} />
+                    {sendingTplId === t.id ? 'Sending…' : locked ? 'Sent' : 'Send for Signature'}
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
