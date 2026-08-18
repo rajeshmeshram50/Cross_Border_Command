@@ -6622,6 +6622,141 @@
 }
 .ep-fnf-net span:last-child { font-variant-numeric: tabular-nums; font-size: 16px; }
 
+/* Exit-month component breakdown — sits inside .ep-fnf directly under the
+   "Salary for the Exit Month" row. Mirrors the payslip's Earnings /
+   Deductions cards (.ep-pay-table-* in EmployeeProfile.css) so the same
+   figures read the same way in both places, but defined here because
+   HrExitManagement only imports this stylesheet. */
+/* Disclosure for the breakdown. Sits as its own row inside .ep-fnf, directly
+   under the exit-month line it explains, so the collapsed stage reads as a
+   plain list of settlement lines. */
+.ep-fnf-bd-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 7px 14px; border: 0; border-bottom: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg); color: #6d28d9;
+  font-size: 11.5px; font-weight: 700; text-align: left;
+}
+.ep-fnf-bd-toggle:hover { background: rgba(109,40,217,0.05); }
+.ep-fnf-bd-toggle i { font-size: 15px; line-height: 1; }
+.ep-fnf-bd-toggle em {
+  font-style: normal; font-weight: 500; font-size: 10.5px;
+  color: var(--vz-secondary-color); margin-left: auto; text-align: right;
+}
+[data-bs-theme="dark"] .ep-fnf-bd-toggle { color: #c4b5fd; }
+[data-bs-theme="dark"] .ep-fnf-bd-toggle:hover { background: rgba(139,92,246,0.10); }
+
+.ep-fnf-bd {
+  padding: 10px 14px 12px;
+  background: var(--vz-secondary-bg);
+  border-bottom: 1px solid var(--vz-border-color);
+}
+.ep-fnf-bd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase; color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-stats { display: flex; gap: 10px; flex-wrap: wrap; letter-spacing: 0; }
+.ep-fnf-bd-stats span {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--vz-body-color);
+  background: var(--vz-card-bg); border: 1px solid var(--vz-border-color);
+  border-radius: 999px; padding: 1px 9px;
+}
+.ep-fnf-bd-stats em {
+  font-style: normal; font-weight: 600; text-transform: none;
+  color: var(--vz-secondary-color);
+}
+/* align-items: start — the two cards hold different numbers of rows (the
+   monthly package on the left, the cycle's earnings AND deductions on the
+   right). Left to stretch, the shorter card grows to match its neighbour and
+   its rows drift away from the heading with dead space above them. */
+.ep-fnf-bd-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start;
+}
+@media (max-width: 767px) { .ep-fnf-bd-grid { grid-template-columns: 1fr; } }
+.ep-fnf-bd-card {
+  background: var(--vz-card-bg); border: 1px solid var(--vz-border-color);
+  border-radius: 10px; overflow: hidden;
+}
+.ep-fnf-bd-card-head {
+  display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+  border-bottom: 1px solid var(--vz-border-color);
+}
+.ep-fnf-bd-card-head.is-earn { color: #108548; }
+.ep-fnf-bd-card-head.is-ded  { color: #b91c1c; }
+/* Second heading inside a card (the deductions block sits under the cycle's
+   earnings in the right-hand card), so it needs a rule above it too. */
+.ep-fnf-bd-card-head.is-mid { border-top: 1px solid var(--vz-border-color); }
+.ep-fnf-bd-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ep-fnf-bd-table { width: 100%; margin: 0; font-size: 11.5px; }
+.ep-fnf-bd-table td { padding: 6px 12px; border-bottom: 1px solid var(--vz-border-color); }
+.ep-fnf-bd-table td:last-child {
+  text-align: right; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ep-fnf-bd-table tbody tr:last-child td { border-bottom: none; }
+.ep-fnf-bd-table td.is-empty {
+  text-align: left; font-weight: 400; color: var(--vz-secondary-color);
+}
+/* Derivation rows (monthly salary → one day's salary → days paid). Tinted and
+   set apart from the component rows above them: they explain the money, they
+   are not more of it, and adding them into the column total would double-count
+   the same salary. */
+.ep-fnf-bd-table tbody tr.is-sub td {
+  background: var(--vz-secondary-bg);
+  border-top: 1px dashed var(--vz-border-color);
+  border-bottom: none;
+  color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-table tbody tr.is-sub + tr.is-sub td { border-top-style: dotted; }
+.ep-fnf-bd-table tbody tr.is-sub td:last-child {
+  font-weight: 700; color: var(--vz-body-color);
+}
+/* Monthly Gross — the sum of the component rows directly above it, so it reads
+   as their subtotal rather than as one more derivation line. */
+.ep-fnf-bd-table tbody tr.is-sub.is-strong td {
+  border-top-style: solid; color: var(--vz-body-color); font-weight: 700;
+}
+.ep-fnf-bd-table tbody tr.is-sub em {
+  display: block; font-style: normal; font-size: 10px; font-weight: 400;
+  color: var(--vz-secondary-color); margin-top: 1px;
+}
+.ep-fnf-bd-table tbody td em,
+.ep-fnf-bd-table tfoot td em {
+  display: block; font-style: normal; font-size: 10px; font-weight: 400;
+  color: var(--vz-secondary-color); margin-top: 1px;
+}
+.ep-fnf-bd-table tfoot td {
+  border-top: 1px solid var(--vz-border-color); border-bottom: none; font-weight: 700;
+}
+.ep-fnf-bd-table tfoot tr.is-earn td { background: rgba(16,185,129,0.06); color: #108548; }
+.ep-fnf-bd-table tfoot tr.is-ded  td { background: rgba(239,68,68,0.06); color: #b91c1c; }
+.ep-fnf-bd-net {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-top: 8px; padding: 8px 12px;
+  border-radius: 9px; background: rgba(109,40,217,0.07);
+  border: 1px solid rgba(109,40,217,0.20);
+  font-size: 11.5px; font-weight: 600; color: var(--vz-body-color);
+}
+.ep-fnf-bd-net strong { font-size: 13.5px; font-variant-numeric: tabular-nums; color: #5b21b6; }
+.ep-fnf-bd-note {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 8px;
+  font-size: 10.5px; line-height: 1.45; color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-note i { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+[data-bs-theme="dark"] .ep-fnf-bd-card-head.is-earn { color: #34d399; }
+[data-bs-theme="dark"] .ep-fnf-bd-card-head.is-ded  { color: #f87171; }
+[data-bs-theme="dark"] .ep-fnf-bd-table tfoot tr.is-earn td { background: rgba(16,185,129,0.12); color: #34d399; }
+[data-bs-theme="dark"] .ep-fnf-bd-table tfoot tr.is-ded  td { background: rgba(239,68,68,0.12); color: #f87171; }
+[data-bs-theme="dark"] .ep-fnf-bd-net {
+  background: rgba(139,92,246,0.14); border-color: rgba(139,92,246,0.34);
+}
+[data-bs-theme="dark"] .ep-fnf-bd-net strong { color: #c4b5fd; }
+
 [data-bs-theme="dark"] .ep-fnf-row { background: rgba(16,185,129,0.08); }
 [data-bs-theme="dark"] .ep-fnf-row.is-ded { background: rgba(239,68,68,0.08); }
 [data-bs-theme="dark"] .ep-settle.is-due .ep-settle-band { background: rgba(245,158,11,0.10); }
