@@ -333,6 +333,11 @@ export function expenseClaimColumns({
       accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
       meta: { width: '11%', align: 'center' },
       cell: info => {
+        /* A rejected claim is never paid — "N/A" rather than a bare "—", which
+           reads as a value that failed to load (QA #122, same as advances). */
+        if (info.row.original.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         const ps = paymentStatusOf(info.row.original);
         if (!ps) return <span className="text-muted">—</span>;
         const t = PAY_TONE[ps];
@@ -354,6 +359,10 @@ export function expenseClaimColumns({
       accessorFn: (c: ExpenseClaimRow) => c.zoho_sync ?? 'na',
       meta: { width: '9%', align: 'center' },
       cell: info => {
+        // Nothing is booked in Zoho for a rejected claim (QA #122).
+        if (info.row.original.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         const z = info.row.original.zoho_sync ?? 'na';
         if (z === 'na') return <span className="text-muted">—</span>;
         const tone: Record<'pending' | 'partial' | 'completed', { bg: string; fg: string; icon: string; label: string }> = {

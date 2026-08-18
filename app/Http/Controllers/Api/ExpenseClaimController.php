@@ -137,11 +137,36 @@ class ExpenseClaimController extends Controller
             } else {
                 $myEmployeeId = $this->currentEmployeeId($user);
                 $teamIds = $this->downstreamEmployeeIds($myEmployeeId);
+                // Being a manager is what makes a "team" exist at all. Someone
+                // who has never had a report gets an EMPTY team view — without
+                // this gate the self-row below made Team an exact duplicate of
+                // My Expenses, which reads as "these are my team's" when
+                // they are the viewer's own. Past counts as managing: a report
+                // reassigned elsewhere leaves rows still routed here.
+                $managedOthers = $myEmployeeId && ExpenseClaim::where('manager_id', $myEmployeeId)
+                    ->where('employee_id', '!=', $myEmployeeId)
+                    ->exists();
+                if (!$teamIds && !$managedOthers) {
+                    return response()->json([]);
+                }
                 // Include the manager's OWN claims — the "My Team" surface shows
                 // the whole team and a manager is part of their team, so their
                 // own claims must appear alongside their reports' (QA #144).
                 if ($myEmployeeId) $teamIds[] = $myEmployeeId;
-                $q->whereIn('employee_id', array_values(array_unique($teamIds)) ?: [-1]);
+                $teamIds = array_values(array_unique($teamIds)) ?: [-1];
+                // Filtering on employee_id alone reads the hierarchy as it stands
+                // TODAY: the moment a report is moved under a different manager,
+                // every row they ever filed disappears from this manager's team
+                // view and it collapses to just their own rows. manager_id is
+                // stamped from the employee's reporting manager at filing time,
+                // so OR-ing it back in keeps the rows that were actually routed
+                // here — approval history stays with whoever owned the approval.
+                $q->where(function ($w) use ($teamIds, $myEmployeeId) {
+                    $w->whereIn('employee_id', $teamIds);
+                    if ($myEmployeeId) {
+                        $w->orWhere('manager_id', $myEmployeeId);
+                    }
+                });
             }
         } else {
             // scope=all — for HR/admin views. No additional filter beyond

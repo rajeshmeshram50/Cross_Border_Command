@@ -381,7 +381,6 @@ folder("Sales - Quotations", [
     ep("PUT", "/sales/quotations/:id", "Update", J({"notes": "Updated", "items": [{"product_id": 1, "quantity": 120, "rate": 1180}]})),
     ep("DELETE", "/sales/quotations/:id", "Delete"),
     ep("POST", "/sales/quotations/:id/duplicate", "Duplicate"),
-    ep("POST", "/sales/quotations/:id/convert-to-pi", "Convert To PI (NOTE: stub - use PI/from-quotation)"),
     ep("POST", "/sales/quotations/:id/preview-pdf", "Preview PDF", J({})),
     ep("POST", "/sales/quotations/:id/email", "Email", J({"to": "buyer@overseas.test", "subject": "Your Quotation", "message": "..."})),
     ep("POST", "/sales/quotations/:id/remind", "Remind", J({})),
@@ -474,9 +473,67 @@ folder("HRMS - Employees", [
     ep("PATCH", "/documents/:document/verify", "Documents: Verify"),
     ep("PATCH", "/documents/:document/reject", "Documents: Reject", J({"reason": "Blurry"})),
     ep("DELETE", "/documents/:document", "Documents: Delete"),
-    ep("GET", "/employees/:employee/exit", "Exit: Show"),
-    ep("PUT", "/employees/:employee/exit", "Exit: Upsert", J({"resignation_date": "2026-07-01", "last_working_day": "2026-07-31", "reason": "Personal"})),
-    ep("POST", "/employees/:employee/exit/complete", "Exit: Complete", J({})),
+    # ── Exit process ────────────────────────────────────────────────────
+    # The previous bodies here (resignation_date / reason) were never real
+    # fields — ExitController::validatePayload() has no such keys, so the
+    # saved request 422'd or silently stored nothing.
+    ep("GET", "/employees/:employee/exit", "Exit: Show",
+       desc="Returns the whole case. `reporting_manager` mirrors the EMPLOYEE MASTER while the case is Open (it only freezes once Closed), and `notice_payment_choice` is null on cases opened before that field existed — which reads as pay-in-lieu."),
+    ep("PUT", "/employees/:employee/exit", "Exit: Upsert (Save Draft)",
+       J({
+           "exit_type": "Termination",
+           "notice_payment_choice": "pay",
+           "reason_for_exit": "Performance",
+           "notice_date": "2026-08-17",
+           "last_working_day": "2026-08-25",
+           "comments": "",
+           "business_impact": "Medium",
+           "replacement_required": "Yes — Within 30 days",
+           "current_stage": 1,
+       }),
+       desc="`notice_payment_choice` is Termination-only: 'pay' | 'no_pay'. Any other exit type stores null. 'no_pay' also zeroes the notice figures server-side. Frozen once the F&F is paid — sending a different value then is ignored, not rejected."),
+    ep("PUT", "/employees/:employee/exit", "Exit: Upsert — No Pay for Notice Period",
+       J({"exit_type": "Termination", "notice_payment_choice": "no_pay",
+          "reason_for_exit": "Misconduct", "last_working_day": "2026-08-25"}),
+       desc="Notice dates are NOT required on this path. Full & Final shows the notice line as Not Applicable and excludes it from the net."),
+    ep("PUT", "/employees/:employee/exit", "Exit: Upsert — F&F payment date (422 expected)",
+       J({"exit_type": "Termination",
+          "fnf": {"meta": {"approval": "Approved", "payMode": "Bank Transfer (NEFT)", "payDate": "2030-12-31"}}}),
+       desc="NEGATIVE CASE. A future payDate returns 422 'Payment Date cannot be a future date. Please select today or a previous date.' Applies to both this endpoint and /exit/complete."),
+    ep("POST", "/employees/:employee/exit/complete", "Exit: Complete", J({}),
+       desc="Blocked with 422 while any of these is outstanding: the notice settlement is unpaid, a company advance is unreconciled, or ANYONE still reports to this employee."),
+    ep("GET", "/employees/:employee/exit/fnf-summary", "Exit: F&F Summary",
+       desc="System-calculated lines only — earned salary for the exit month, outstanding advances, approved reimbursements. Leave encashment and bonus are NOT here; HR types those."),
+    ep("POST", "/employees/:employee/exit/fnf-attachment", "Exit: Upload F&F Document (multipart)", "form"),
+
+    # ── Reporting-manager dependency (FDD 8.2) ──────────────────────────
+    ep("GET", "/employees/:employee/exit/direct-reports", "Exit: Direct Reports + Manager Pool",
+       desc="`reports` = who still reports to this employee (blocks Complete Exit). `managers` = eligible employees, each with `rank` (lower = senior) and `exiting` (their own exit is open — offered but not selectable). `login_users` = Branch Users / admins, the fallback when no employee outranks a report; scoped to the reports' branches. Employees with no designation are excluded — no designation means no verifiable rank."),
+    ep("POST", "/employees/:employee/exit/reassign-reports", "Exit: Reassign Reports",
+       J({"assignments": [
+           {"employee_id": 19, "reporting_manager_id": 9},
+           {"employee_id": 12, "reporting_manager_id": 9},
+       ]}),
+       desc="All-or-nothing. Each assignment sends EITHER reporting_manager_id (an employee) OR reporting_manager_user_id (a Branch User) — never both. Rejected with 422: the employee being exited, self, another client, an inactive employee, one with no designation, one whose own exit is open, a junior (PositionHierarchy), a wrong-branch login user, and any assignment that would create a reporting loop."),
+    ep("POST", "/employees/:employee/exit/reassign-reports", "Exit: Reassign to a Branch User",
+       J({"assignments": [{"employee_id": 15, "reporting_manager_user_id": 4}]}),
+       desc="The escape hatch for a hierarchy dead-end — e.g. a Team Leader whose only possible managers (the HODs) are all exiting. Branch Users sit at TOP_RANK so no seniority test applies. Sets reporting_manager_user_id and clears reporting_manager_id."),
+    ep("POST", "/employees/:employee/exit/reassign-reports", "Exit: Reassign — junior manager (422 expected)",
+       J({"assignments": [{"employee_id": 15, "reporting_manager_id": 19}]}),
+       desc="NEGATIVE CASE. Assigning a Team Leader under an Intern returns 422 naming both people."),
+    ep("POST", "/employees/:employee/rehire", "Exit: Rehire", J({"restart_onboarding": True, "note": ""})),
+
+    # ── Notice-period recovery (resignation without notice) ─────────────
+    ep("GET", "/employees/:employee/notice-payment", "Notice Payment: Summary"),
+    ep("POST", "/employees/:employee/notice-payment", "Notice Payment: Employee Submits (multipart)", "form",
+       desc="Fields: amount, payment_mode, bank_name, utr_cheque_number, payment_date (today or earlier), employee_note, attachment (required)."),
+    ep("POST", "/employees/:employee/notice-payment/record", "Notice Payment: HR Records + Rules",
+       J({"amount": 5000, "payment_mode": "NEFT", "bank_name": "HDFC",
+          "utr_cheque_number": "UTR123456", "payment_date": "2026-08-17",
+          "remarks": "Received", "verdict": "Approved"}),
+       desc="payment_date must be today or earlier — this path had NO such rule until now and accepted any date. A future date returns 422."),
+    ep("POST", "/notice-payments/:id/approve", "Notice Payment: Approve", J({"remarks": "Verified"})),
+    ep("POST", "/notice-payments/:id/reject", "Notice Payment: Reject", J({"reason": "Not received"})),
     ep("GET", "/employees/:employee/previous-employments", "Previous Employments: List"),
     ep("POST", "/employees/:employee/previous-employments", "Previous Employments: Store", J({"company": "Prev Co", "designation": "Analyst", "from_date": "2020-01-01", "to_date": "2023-12-31"})),
     ep("PATCH", "/previous-employments/:prev", "Previous Employments: Update", J({"designation": "Sr Analyst"})),
@@ -531,6 +588,14 @@ folder("HRMS - Expenses & Advances", [
     ep("POST", "/advance-requests/:id/hr-approve", "Advance Requests: HR Approve", J({"remarks": "OK"})),
     ep("POST", "/advance-requests/:id/hr-reject", "Advance Requests: HR Reject", J({"remarks": "No"})),
     ep("GET", "/advance-requests/:id/attachments/:index", "Advance Requests: Download Attachment"),
+    # ── Return ledger. Every write below now runs under a row lock. ──────
+    ep("POST", "/advance-requests/:id/record-return", "Advance: Record Return (multipart)", "form",
+       desc="Fields: mode (direct|payroll), amount, method, proof (file), note. Payroll mode also needs recovery_start (next month or later), recovery_type (emi|lumpsum|bimonthly) and monthly. The read-check-write runs under lockForUpdate — a double-clicked Submit no longer records the payment twice."),
+    ep("POST", "/advance-requests/:id/return-payments/:index/approve", "Advance: Approve Return Payment", J({}),
+       desc="409 if the payment is ALREADY approved — re-approving used to silently re-stamp approved_at/approved_by, rewriting who confirmed the money and when."),
+    ep("POST", "/advance-requests/:id/return-payments/:index/reject", "Advance: Reject Return Payment",
+       J({"reason": "Not received"}),
+       desc="409 if already rejected. Rejecting an APPROVED payment is still allowed — that is a correction, not a duplicate submit."),
 ])
 folder("HRMS - Payroll", [
     ep("GET", "/payroll", "Index"),
@@ -726,12 +791,27 @@ folder("Settings", [
 
 # --------------------------- MISC ------------------------------------------
 folder("Misc", [
-    ep("GET", "/dummy-items", "Dummy Items: List"),
-    ep("POST", "/dummy-items", "Dummy Items: Create", J({"name": "Test"})),
-    ep("GET", "/dummy-items/:id", "Dummy Items: Show"),
-    ep("PUT", "/dummy-items/:id", "Dummy Items: Update", J({"name": "Test"})),
-    ep("DELETE", "/dummy-items/:id", "Dummy Items: Delete"),
     ep("GET", "/tools/attendance-backfill", "TEMP: Attendance Backfill", query=[("key", "<guard-key>")]),
+])
+
+# ===========================================================================
+# LOCAL / STAGING ONLY. These routes are wrapped in an environment check in
+# routes/api.php and simply do not exist on production — a request there gets
+# a plain 404. They write FABRICATED rows that payroll reads, so they must
+# never run against live data.
+# ===========================================================================
+folder("Dev Tools (local / staging only)", [
+    ep("POST", "/dev/sandwich-leave", "Dev: Seed Sandwich Leave",
+       J({"client_id": 1, "branch_id": 1}),
+       desc="404 on production."),
+    ep("POST", "/dev/attendance-seed", "Dev: Seed Attendance",
+       J({"client_id": 1, "branch_id": 1}),
+       desc="404 on production."),
+    ep("POST", "/dev/backdate-joining", "Dev: Backdate Joining Date",
+       J({"client_id": 1, "branch_id": 1,
+          "employee_codes": ["EMP-019", "EMP-012"],
+          "date_of_joining": "2025-04-01"}),
+       desc="ALWAYS send employee_codes. Omit it and EVERY employee in the branch is backdated — and joining date drives probation, notice period, leave accrual and payroll pro-ration. date_of_joining must be today or earlier; defaults to 2026-07-20. 404 on production."),
 ])
 
 # ===========================================================================
@@ -851,3 +931,231 @@ with open(out_path, "w", encoding="utf-8") as fh:
     json.dump(collection, fh, indent=2)
 print(f"Wrote {out_path}")
 print(f"{count} requests in {len(folders)} folders")
+
+# ===========================================================================
+# Endpoints that existed in routes/api.php but had never been added to the
+# collection (audited 2026-08-17: 177 of 733 were uncovered). Bodies are the
+# keys from each controller's validate() block; endpoints with no validate()
+# carry an empty body and are flagged in their description.
+# ===========================================================================
+folder('HRMS - Expenses & Advances', [
+    ep('GET', '/advance-requests/emi-info', 'GET advance-requests/emi-info — Emi Info', None, desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@emiInfo'),
+    ep('GET', '/advance-requests/payments/:paymentId/proof', 'GET advance-requests/payments/proof — Payment Proof', None, desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@paymentProof'),
+    ep('POST', '/advance-requests/payments/:paymentId/sync-zoho', 'POST advance-requests/payments/sync-zoho — Sync Payment To Zoho', J({'message': '', 'product_type': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@syncPaymentToZoho'),
+    ep('POST', '/advance-requests/:id/employee-settle', 'POST advance-requests/employee-settle — Employee Settle', J({'items': [], 'proofs': [], 'note': '', 'finalize': True, 'declared_type': 'equal', 'target_amount': 1, 'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@employeeSettle'),
+    ep('POST', '/advance-requests/:id/raise-reimbursement', 'POST advance-requests/raise-reimbursement — Raise Reimbursement', J({'currency': '', 'title': '', 'purpose': '', 'status': '', 'hr_status': '', 'message': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@raiseReimbursement'),
+    ep('GET', '/advance-requests/:id/return-proof/:index', 'GET advance-requests/return-proof — Return Proof', None, desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@returnProof'),
+    ep('POST', '/advance-requests/:id/set-deductions', 'POST advance-requests/set-deductions — Set Deductions', J({'deductions': [], 'additions': [], 'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@setDeductions'),
+    ep('POST', '/advance-requests/:id/settle', 'POST advance-requests/settle — Settle', 'form', desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@settle'),
+    ep('POST', '/advance-requests/:id/settle-approve', 'POST advance-requests/settle-approve — Settle Approve', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@settleApprove'),
+    ep('GET', '/advance-requests/:id/settle-proof/:index', 'GET advance-requests/settle-proof — Settle Proof', None, desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@settleProof'),
+    ep('POST', '/advance-requests/:id/settle-reject', 'POST advance-requests/settle-reject — Settle Reject', J({'comment': '', 'message': ''}), desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@settleReject'),
+    ep('GET', '/advance-requests/:id/settlement', 'GET advance-requests/settlement — Settlement', None, desc='App\\Http\\Controllers\\Api\\AdvanceRequestController@settlement'),
+    ep('POST', '/expense-claims/batch-pay', 'POST expense-claims/batch-pay — Batch Pay', 'form', desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@batchPay'),
+    ep('GET', '/expense-claims/batch-payable', 'GET expense-claims/batch-payable — Batch Payable', None, desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@batchPayable'),
+    ep('GET', '/expense-claims/batch-payments', 'GET expense-claims/batch-payments — Batch Payments', None, desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@batchPayments'),
+    ep('GET', '/expense-claims/batch-payments/:batchId/proof', 'GET expense-claims/batch-payments/proof — Batch Payment Proof', None, desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@batchPaymentProof'),
+    ep('POST', '/expense-claims/batch-payments/:batchId/sync-zoho', 'POST expense-claims/batch-payments/sync-zoho — Sync Batch Payment To Zoho', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@syncBatchPaymentToZoho'),
+    ep('GET', '/expense-claims/payments/:paymentId/proof', 'GET expense-claims/payments/proof — Download Payment Proof', None, desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@downloadPaymentProof'),
+    ep('POST', '/expense-claims/payments/:paymentId/sync-zoho', 'POST expense-claims/payments/sync-zoho — Sync Payment To Zoho', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@syncPaymentToZoho'),
+    ep('POST', '/expense-claims/:id/email-reimbursement', 'POST expense-claims/email-reimbursement — Email Reimbursement', 'form', desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@emailReimbursement'),
+    ep('POST', '/expense-claims/:id/set-deductions', 'POST expense-claims/set-deductions — Set Deductions', J({'deductions': [], 'additions': [], 'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@setDeductions'),
+    ep('POST', '/expense-claims/:id/settle', 'POST expense-claims/settle — Settle', 'form', desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@settle'),
+    ep('GET', '/expense-claims/:id/settlement', 'GET expense-claims/settlement — Settlement', None, desc='App\\Http\\Controllers\\Api\\ExpenseClaimController@settlement'),
+])
+folder('Notifications', [
+    ep('GET', '/announcements', 'GET announcements — Index', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@index'),
+    ep('POST', '/announcements', 'POST announcements — Store', J({}), desc='App\\Http\\Controllers\\Api\\AnnouncementController@store  |  No validate() block found — body fields need filling in by hand.'),
+    ep('GET', '/announcements/next-code', 'GET announcements/next-code — Next Code', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@nextCode'),
+    ep('GET', '/announcements/stats', 'GET announcements/stats — Stats', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@stats'),
+    ep('GET', '/announcements/:announcement', 'GET announcements — Show', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@show'),
+    ep('PUT', '/announcements/:announcement', 'PUT announcements — Update', J({}), desc='App\\Http\\Controllers\\Api\\AnnouncementController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PATCH', '/announcements/:announcement', 'PATCH announcements — Update', J({}), desc='App\\Http\\Controllers\\Api\\AnnouncementController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('DELETE', '/announcements/:announcement', 'DELETE announcements — Destroy', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@destroy'),
+    ep('GET', '/announcements/:id/attachment', 'GET announcements/attachment — Attachment', None, desc='App\\Http\\Controllers\\Api\\AnnouncementController@attachment'),
+])
+folder('HRMS - Attendance & Face', [
+    ep('POST', '/attendance/import', 'POST attendance/import — Import', 'form', desc='App\\Http\\Controllers\\Api\\AttendanceController@import'),
+    ep('GET', '/regularizations', 'GET regularizations — Index', None, desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@index'),
+    ep('POST', '/regularizations', 'POST regularizations — Store', J({'employee_id': 1, 'regularization_date': '2026-08-17', 'mode': '', 'type': '', 'work_locations': [], 'punches': [], 'reason': ''}), desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@store'),
+    ep('GET', '/regularizations/approvals', 'GET regularizations/approvals — Approvals', None, desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@approvals'),
+    ep('GET', '/regularizations/:id', 'GET regularizations — Show', None, desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@show'),
+    ep('POST', '/regularizations/:id/approve', 'POST regularizations/approve — Approve', J({}), desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@approve  |  No validate() block found — body fields need filling in by hand.'),
+    ep('GET', '/regularizations/:id/approvers', 'GET regularizations/approvers — Approvers', None, desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@approvers'),
+    ep('POST', '/regularizations/:id/cancel', 'POST regularizations/cancel — Cancel', J({}), desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@cancel  |  No validate() block found — body fields need filling in by hand.'),
+    ep('POST', '/regularizations/:id/reject', 'POST regularizations/reject — Reject', J({}), desc='App\\Http\\Controllers\\Api\\AttendanceRegularizationController@reject  |  No validate() block found — body fields need filling in by hand.'),
+])
+folder('DB Backup', [
+    ep('POST', '/backup/email/send', 'POST backup/email/send — Send', J({'to': '', 'message': 'user@example.com'}), desc='App\\Http\\Controllers\\Api\\BackupController@send'),
+    ep('GET', '/backup/email/status', 'GET backup/email/status — Status', None, desc='App\\Http\\Controllers\\Api\\BackupController@status'),
+])
+folder('Misc', [
+    ep('GET', '/branch-legal-entities', 'GET branch-legal-entities — Legal Entity Options', None, desc='App\\Http\\Controllers\\Api\\BranchController@legalEntityOptions'),
+    ep('GET', '/branch-shifts', 'GET branch-shifts — Shift Options', None, desc='App\\Http\\Controllers\\Api\\BranchController@shiftOptions'),
+    ep('PATCH', '/branches/:branch', 'PATCH branches — Update', 'form', desc='App\\Http\\Controllers\\Api\\BranchController@update'),
+    ep('PATCH', '/clients/:client', 'PATCH clients — Update', 'form', desc='App\\Http\\Controllers\\Api\\ClientController@update'),
+    ep('GET', '/dev-tools/zoho/:type', 'GET dev-tools/zoho — Zoho', None, desc='App\\Http\\Controllers\\Api\\DevToolsController@zoho'),
+    ep('PATCH', '/hiring-requests/:hiring_request', 'PATCH hiring-requests — Update', J({}), desc='App\\Http\\Controllers\\Api\\HiringRequestController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PATCH', '/holiday-groups/:holiday_group', 'PATCH holiday-groups — Update', J({}), desc='App\\Http\\Controllers\\Api\\HolidayGroupController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PATCH', '/holidays/:holiday', 'PATCH holidays — Update', J({}), desc='App\\Http\\Controllers\\Api\\HolidayController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('POST', '/tools/attendance-backfill', 'POST tools/attendance-backfill — Run', J({'message': '', 'window': ''}), desc='App\\Http\\Controllers\\Api\\AttendanceBackfillController@run'),
+])
+folder('HRMS - Recruitment', [
+    ep('PATCH', '/candidates/:candidate', 'PATCH candidates — Update', J({}), desc='App\\Http\\Controllers\\Api\\CandidateController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PATCH', '/recruitments/:recruitment', 'PATCH recruitments — Update', J({}), desc='App\\Http\\Controllers\\Api\\RecruitmentController@update  |  No validate() block found — body fields need filling in by hand.'),
+])
+folder('CLM', [
+    ep('POST', '/clm/ctc-contracts/preview-live', 'POST clm/ctc-contracts/preview-live — Preview Live', J({'id': 1, 'content': '', 'page_config': [], 'header_config': [], 'footer_config': [], 'title': '', 'modelName': '', 'signers': ''}), desc='App\\Http\\Controllers\\Api\\CtcContractController@previewLive'),
+    ep('GET', '/clm/ctc-organisations', 'GET clm/ctc-organisations — Ctc Organisation Options', None, desc='App\\Http\\Controllers\\Api\\BranchController@ctcOrganisationOptions'),
+    ep('POST', '/clm/leads/:leadId/doc-needs', 'POST clm/leads/doc-needs — Set Lead Doc Need', J({'items': []}), desc='App\\Http\\Controllers\\Api\\ClmAgreementController@setLeadDocNeed'),
+    ep('GET', '/clm/signature-requests/:id/declined-file', 'GET clm/signature-requests/declined-file — Declined File', None, desc='App\\Http\\Controllers\\Api\\ClmSignatureController@declinedFile'),
+])
+folder('Consignees', [
+    ep('PATCH', '/consignees/:consignee', 'PATCH consignees — Update', J({}), desc='App\\Http\\Controllers\\Api\\ConsigneeController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PUT', '/consignees/:consignee/documents/:document', 'PUT consignees/documents — Update', J({}), desc='App\\Http\\Controllers\\Api\\ConsigneeDocumentController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('POST', '/consignees/:consignee/map-customer', 'POST consignees/map-customer — Map Customer', J({'customer_id': 1, 'errors': ''}), desc='App\\Http\\Controllers\\Api\\ConsigneeController@mapCustomer'),
+    ep('PUT', '/consignees/:consignee/owners/:owner', 'PUT consignees/owners — Update', J({}), desc='App\\Http\\Controllers\\Api\\ConsigneeOwnerController@update  |  No validate() block found — body fields need filling in by hand.'),
+])
+folder('Customers', [
+    ep('GET', '/customers/gst-available', 'GET customers/gst-available — Gst Available', None, desc='App\\Http\\Controllers\\Api\\CustomerController@gstAvailable'),
+    ep('PATCH', '/customers/:customer', 'PATCH customers — Update', J({'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\CustomerController@update'),
+    ep('PUT', '/customers/:customer/documents/:document', 'PUT customers/documents — Update', J({}), desc='App\\Http\\Controllers\\Api\\CustomerDocumentController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('GET', '/customers/:customer/gst-scrutiny', 'GET customers/gst-scrutiny — Index Gst Scrutiny', None, desc='App\\Http\\Controllers\\Api\\CustomerController@indexGstScrutiny'),
+    ep('POST', '/customers/:customer/gst-scrutiny', 'POST customers/gst-scrutiny — Store Gst Scrutiny', J({}), desc='App\\Http\\Controllers\\Api\\CustomerController@storeGstScrutiny  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PUT', '/customers/:customer/gst-scrutiny/:gst', 'PUT customers/gst-scrutiny — Update Gst Scrutiny', J({}), desc='App\\Http\\Controllers\\Api\\CustomerController@updateGstScrutiny  |  No validate() block found — body fields need filling in by hand.'),
+    ep('DELETE', '/customers/:customer/gst-scrutiny/:gst', 'DELETE customers/gst-scrutiny — Destroy Gst Scrutiny', None, desc='App\\Http\\Controllers\\Api\\CustomerController@destroyGstScrutiny'),
+    ep('PUT', '/customers/:customer/owners/:owner', 'PUT customers/owners — Update', J({}), desc='App\\Http\\Controllers\\Api\\CustomerOwnerController@update  |  No validate() block found — body fields need filling in by hand.'),
+])
+folder('Device Terminals (eSSL)', [
+    ep('GET', '/device-terminals', 'GET device-terminals — Index', None, desc='App\\Http\\Controllers\\Api\\DeviceTerminalController@index'),
+    ep('POST', '/device-terminals', 'POST device-terminals — Store', J({}), desc='App\\Http\\Controllers\\Api\\DeviceTerminalController@store  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PUT', '/device-terminals/:device_terminal', 'PUT device-terminals — Update', J({}), desc='App\\Http\\Controllers\\Api\\DeviceTerminalController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('PATCH', '/device-terminals/:device_terminal', 'PATCH device-terminals — Update', J({}), desc='App\\Http\\Controllers\\Api\\DeviceTerminalController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('DELETE', '/device-terminals/:device_terminal', 'DELETE device-terminals — Destroy', None, desc='App\\Http\\Controllers\\Api\\DeviceTerminalController@destroy'),
+])
+folder('Docs Guide', [
+    ep('GET', '/docs-guide', 'GET docs-guide — Index', None, desc='App\\Http\\Controllers\\Api\\DocsGuideController@index'),
+    ep('GET', '/docs-guide/content', 'GET docs-guide/content — Show', None, desc='App\\Http\\Controllers\\Api\\DocsGuideController@show'),
+    ep('PUT', '/docs-guide/content', 'PUT docs-guide/content — Update', J({'path': '', 'type': '', 'content': '', 'message': ''}), desc='App\\Http\\Controllers\\Api\\DocsGuideController@update'),
+])
+folder('HRMS - Employees', [
+    ep('GET', '/employees/department-tree/:departmentId', 'GET employees/department-tree — Department Org Tree', None, desc='App\\Http\\Controllers\\Api\\EmployeeController@departmentOrgTree'),
+    ep('PATCH', '/employees/:employee', 'PATCH employees — Update', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\EmployeeController@update'),
+    ep('PUT', '/employees/:id/bank-details', 'PUT employees/bank-details — Update Bank Details', J({'message': '', 'salary_payment_mode': 'bank', 'bank_name': '', 'bank_account_number': '', 'ifsc_code': '', 'account_holder_name': '', 'bank_branch': '', 'bank_account_type': ''}), desc='App\\Http\\Controllers\\Api\\EmployeeController@updateBankDetails'),
+])
+folder('HRMS - Documents & Templates', [
+    ep('PATCH', '/hr-custom-fields/:id', 'PATCH hr-custom-fields — Update', J({'templates': ''}), desc='App\\Http\\Controllers\\Api\\HrCustomFieldController@update'),
+    ep('GET', '/hr-document-templates/last-branding', 'GET hr-document-templates/last-branding — Last Branding', None, desc='App\\Http\\Controllers\\Api\\HrDocumentTemplateController@lastBranding'),
+    ep('PATCH', '/hr-document-templates/:id', 'PATCH hr-document-templates — Update', J({}), desc='App\\Http\\Controllers\\Api\\HrDocumentTemplateController@update  |  No validate() block found — body fields need filling in by hand.'),
+    ep('GET', '/hr-generated-documents/:id/download-pdf', 'GET hr-generated-documents/download-pdf — Download Pdf', None, desc='App\\Http\\Controllers\\Api\\HrGeneratedDocumentController@downloadPdf'),
+])
+folder('HRMS - Leave', [
+    ep('POST', '/leave-requests/:id/hr-view', 'POST leave-requests/hr-view — Hr View', J({}), desc='App\\Http\\Controllers\\Api\\LeaveRequestController@hrView  |  No validate() block found — body fields need filling in by hand.'),
+    ep('POST', '/leave-requests/:id/sandwich-waiver', 'POST leave-requests/sandwich-waiver — Sandwich Waiver', J({'waived': True, 'reason': ''}), desc='App\\Http\\Controllers\\Api\\LeaveRequestController@sandwichWaiver'),
+])
+folder('Organization Types', [
+    ep('PATCH', '/organization-types/:organizationType', 'PATCH organization-types — Update', J({'name': '', 'icon': '', 'description': '', 'status': 'active', 'sort_order': 1}), desc='App\\Http\\Controllers\\Api\\OrganizationTypeController@update'),
+])
+folder('P2P (Procure to Pay)', [
+    ep('GET', '/p2p/clarity/download', 'GET p2p/clarity/download — Download Clarity', None, desc='App\\Http\\Controllers\\Api\\P2p\\SourcingController@downloadClarity'),
+    ep('GET', '/p2p/debit-note-types', 'GET p2p/debit-note-types — Index', None, desc='App\\Http\\Controllers\\Api\\DebitNoteTypeController@index'),
+    ep('POST', '/p2p/debit-note-types', 'POST p2p/debit-note-types — Store', J({'message': '', 'name': '', 'status': 'active', 'data': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteTypeController@store'),
+    ep('PUT', '/p2p/debit-note-types/:id', 'PUT p2p/debit-note-types — Update', J({'name': '', 'status': 'active', 'message': '', 'data': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteTypeController@update'),
+    ep('DELETE', '/p2p/debit-note-types/:id', 'DELETE p2p/debit-note-types — Destroy', None, desc='App\\Http\\Controllers\\Api\\DebitNoteTypeController@destroy'),
+    ep('GET', '/p2p/debit-notes', 'GET p2p/debit-notes — Index', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@index'),
+    ep('POST', '/p2p/debit-notes', 'POST p2p/debit-notes — Store', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteController@store'),
+    ep('GET', '/p2p/debit-notes/preview-code', 'GET p2p/debit-notes/preview-code — Preview Code', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@previewCode'),
+    ep('GET', '/p2p/debit-notes/supplier-purchase-invoices', 'GET p2p/debit-notes/supplier-purchase-invoices — Supplier Purchase Invoices', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@supplierPurchaseInvoices'),
+    ep('GET', '/p2p/debit-notes/supplier-purchase-invoices/:id', 'GET p2p/debit-notes/supplier-purchase-invoices — Supplier Purchase Invoice', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@supplierPurchaseInvoice'),
+    ep('GET', '/p2p/debit-notes/:dn/payment-summary', 'GET p2p/debit-notes/payment-summary — Summary', None, desc='App\\Http\\Controllers\\Api\\DebitNotePaymentController@summary'),
+    ep('POST', '/p2p/debit-notes/:dn/payments', 'POST p2p/debit-notes/payments — Store', 'form', desc='App\\Http\\Controllers\\Api\\DebitNotePaymentController@store'),
+    ep('DELETE', '/p2p/debit-notes/:dn/payments/:payment', 'DELETE p2p/debit-notes/payments — Destroy', None, desc='App\\Http\\Controllers\\Api\\DebitNotePaymentController@destroy'),
+    ep('GET', '/p2p/debit-notes/:id', 'GET p2p/debit-notes — Show', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@show'),
+    ep('PUT', '/p2p/debit-notes/:id', 'PUT p2p/debit-notes — Update', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteController@update'),
+    ep('DELETE', '/p2p/debit-notes/:id', 'DELETE p2p/debit-notes — Destroy', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@destroy'),
+    ep('GET', '/p2p/debit-notes/:id/attachment-status', 'GET p2p/debit-notes/attachment-status — Attachment Status', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@attachmentStatus'),
+    ep('POST', '/p2p/debit-notes/:id/email', 'POST p2p/debit-notes/email — Email Debit Note', J({'message': 'user@example.com', 'docKind': '', 'docLabel': '', 'currency': ''}), desc='App\\Http\\Controllers\\Api\\SalesPdfController@emailDebitNote'),
+    ep('GET', '/p2p/debit-notes/:id/pdf', 'GET p2p/debit-notes/pdf — View Debit Note Pdf', None, desc='App\\Http\\Controllers\\Api\\SalesPdfController@viewDebitNotePdf'),
+    ep('POST', '/p2p/debit-notes/:id/reattach', 'POST p2p/debit-notes/reattach — Reattach', J({'message': '', 'note': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteController@reattach'),
+    ep('POST', '/p2p/debit-notes/:id/sync', 'POST p2p/debit-notes/sync — Sync', J({'message': '', 'errors': '', 'zoho_status': '', 'zoho_attachment_status': ''}), desc='App\\Http\\Controllers\\Api\\DebitNoteController@sync'),
+    ep('GET', '/p2p/debit-notes/:id/view', 'GET p2p/debit-notes/view — Public View Debit Note', None, desc='App\\Http\\Controllers\\Api\\SalesPdfController@publicViewDebitNote'),
+    ep('GET', '/p2p/debit-notes/:id/zoho-pdf', 'GET p2p/debit-notes/zoho-pdf — Zoho Pdf', None, desc='App\\Http\\Controllers\\Api\\DebitNoteController@zohoPdf'),
+    ep('GET', '/p2p/purchase-orders', 'GET p2p/purchase-orders — Index', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@index'),
+    ep('POST', '/p2p/purchase-orders', 'POST p2p/purchase-orders — Store', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@store'),
+    ep('GET', '/p2p/purchase-orders/preview-code', 'GET p2p/purchase-orders/preview-code — Preview Code', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@previewCode'),
+    ep('POST', '/p2p/purchase-orders/preview-pdf', 'POST p2p/purchase-orders/preview-pdf — Preview Pdf', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@previewPdf'),
+    ep('GET', '/p2p/purchase-orders/shipments', 'GET p2p/purchase-orders/shipments — Shipments', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@shipments'),
+    ep('GET', '/p2p/purchase-orders/shipments/:id/pi-products', 'GET p2p/purchase-orders/shipments/pi-products — Shipment Pi Products', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@shipmentPiProducts'),
+    ep('GET', '/p2p/purchase-orders/suppliers', 'GET p2p/purchase-orders/suppliers — Suppliers', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@suppliers'),
+    ep('GET', '/p2p/purchase-orders/suppliers/:id', 'GET p2p/purchase-orders/suppliers — Supplier', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@supplier'),
+    ep('GET', '/p2p/purchase-orders/suppliers/:id/trade-documents', 'GET p2p/purchase-orders/suppliers/trade-documents — Supplier Trade Docs', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@supplierTradeDocs'),
+    ep('GET', '/p2p/purchase-orders/:id', 'GET p2p/purchase-orders — Show', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@show'),
+    ep('PUT', '/p2p/purchase-orders/:id', 'PUT p2p/purchase-orders — Update', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@update'),
+    ep('DELETE', '/p2p/purchase-orders/:id', 'DELETE p2p/purchase-orders — Destroy', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@destroy'),
+    ep('GET', '/p2p/purchase-orders/:id/attachment-status', 'GET p2p/purchase-orders/attachment-status — Attachment Status', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@attachmentStatus'),
+    ep('POST', '/p2p/purchase-orders/:id/email', 'POST p2p/purchase-orders/email — Email Purchase Order', J({'message': 'user@example.com', 'docKind': '', 'docLabel': ''}), desc='App\\Http\\Controllers\\Api\\SalesPdfController@emailPurchaseOrder'),
+    ep('GET', '/p2p/purchase-orders/:id/pdf', 'GET p2p/purchase-orders/pdf — View Purchase Order Pdf', None, desc='App\\Http\\Controllers\\Api\\SalesPdfController@viewPurchaseOrderPdf'),
+    ep('POST', '/p2p/purchase-orders/:id/reattach', 'POST p2p/purchase-orders/reattach — Reattach', J({'message': '', 'note': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@reattach'),
+    ep('POST', '/p2p/purchase-orders/:id/send-for-signature', 'POST p2p/purchase-orders/send-for-signature — Send For Signature', J({'message': '', 'signers': [], 'expiry_days': 1, 'is_sequential': True, 'notes': '', 'document_settings': [], 'role': '', 'requests': '', 'actions': 'user@example.com', 'status': '', 'data': '2026-08-17'}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@sendForSignature'),
+    ep('POST', '/p2p/purchase-orders/:id/sync', 'POST p2p/purchase-orders/sync — Sync', J({'message': '', 'errors': '', 'zoho_status': '', 'zoho_attachment_status': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@sync'),
+    ep('POST', '/p2p/purchase-orders/:id/sync-payment', 'POST p2p/purchase-orders/sync-payment — Sync Payment', J({'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@syncPayment'),
+    ep('GET', '/p2p/purchase-orders/:id/view', 'GET p2p/purchase-orders/view — Public View Purchase Order', None, desc='App\\Http\\Controllers\\Api\\SalesPdfController@publicViewPurchaseOrder'),
+    ep('GET', '/p2p/purchase-orders/:id/zoho-pdf', 'GET p2p/purchase-orders/zoho-pdf — Zoho Pdf', None, desc='App\\Http\\Controllers\\Api\\PurchaseOrderController@zohoPdf'),
+    ep('GET', '/p2p/purchase-orders/:po/payment-summary', 'GET p2p/purchase-orders/payment-summary — Summary', None, desc='App\\Http\\Controllers\\Api\\PoPaymentController@summary'),
+    ep('POST', '/p2p/purchase-orders/:po/payment-summary/tds', 'POST p2p/purchase-orders/payment-summary/tds — Save Tds', J({'tds_percentage': 1, 'message': ''}), desc='App\\Http\\Controllers\\Api\\PoPaymentController@saveTds'),
+    ep('POST', '/p2p/purchase-orders/:po/payments', 'POST p2p/purchase-orders/payments — Store', 'form', desc='App\\Http\\Controllers\\Api\\PoPaymentController@store'),
+    ep('DELETE', '/p2p/purchase-orders/:po/payments/:payment', 'DELETE p2p/purchase-orders/payments — Destroy', None, desc='App\\Http\\Controllers\\Api\\PoPaymentController@destroy'),
+    ep('PUT', '/p2p/sourcing-targets/:target/products/:product/clarity', 'PUT p2p/sourcing-targets/products/clarity — Update Product Clarity', J({'clarity_type': 'text', 'clarity_value': ''}), desc='App\\Http\\Controllers\\Api\\P2p\\SourcingController@updateProductClarity'),
+    ep('PUT', '/p2p/sourcing-targets/:target/products/:product/suppliers/:supplier', 'PUT p2p/sourcing-targets/products/suppliers — Update Supplier', J({'message': '', 'new_supplier': []}), desc='App\\Http\\Controllers\\Api\\P2p\\SourcingController@updateSupplier'),
+    ep('GET', '/p2p/supplier-purchase-invoices', 'GET p2p/supplier-purchase-invoices — Index', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@index'),
+    ep('POST', '/p2p/supplier-purchase-invoices', 'POST p2p/supplier-purchase-invoices — Store', J({'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@store'),
+    ep('GET', '/p2p/supplier-purchase-invoices/download', 'GET p2p/supplier-purchase-invoices/download — Download', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@download'),
+    ep('GET', '/p2p/supplier-purchase-invoices/preview-code', 'GET p2p/supplier-purchase-invoices/preview-code — Preview Code', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@previewCode'),
+    ep('GET', '/p2p/supplier-purchase-invoices/purchase-orders', 'GET p2p/supplier-purchase-invoices/purchase-orders — Purchase Orders', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@purchaseOrders'),
+    ep('GET', '/p2p/supplier-purchase-invoices/purchase-orders/:id', 'GET p2p/supplier-purchase-invoices/purchase-orders — Purchase Order', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@purchaseOrder'),
+    ep('GET', '/p2p/supplier-purchase-invoices/suppliers', 'GET p2p/supplier-purchase-invoices/suppliers — Suppliers', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@suppliers'),
+    ep('GET', '/p2p/supplier-purchase-invoices/suppliers/:id', 'GET p2p/supplier-purchase-invoices/suppliers — Supplier', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@supplier'),
+    ep('POST', '/p2p/supplier-purchase-invoices/upload', 'POST p2p/supplier-purchase-invoices/upload — Upload', 'form', desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@upload'),
+    ep('GET', '/p2p/supplier-purchase-invoices/:id', 'GET p2p/supplier-purchase-invoices — Show', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@show'),
+    ep('PUT', '/p2p/supplier-purchase-invoices/:id', 'PUT p2p/supplier-purchase-invoices — Update', J({'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@update'),
+    ep('DELETE', '/p2p/supplier-purchase-invoices/:id', 'DELETE p2p/supplier-purchase-invoices — Destroy', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@destroy'),
+    ep('POST', '/p2p/supplier-purchase-invoices/:id/sync', 'POST p2p/supplier-purchase-invoices/sync — Sync', J({'message': '', 'zoho_status': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@sync'),
+    ep('POST', '/p2p/supplier-purchase-invoices/:id/sync-attachment', 'POST p2p/supplier-purchase-invoices/sync-attachment — Sync Attachment', J({'message': ''}), desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@syncAttachment'),
+    ep('POST', '/p2p/supplier-purchase-invoices/:id/sync-payment', 'POST p2p/supplier-purchase-invoices/sync-payment — Sync Payment', J({'message': '', 'errors': ''}), desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@syncPayment'),
+    ep('GET', '/p2p/supplier-purchase-invoices/:id/zoho-pdf', 'GET p2p/supplier-purchase-invoices/zoho-pdf — Zoho Pdf', None, desc='App\\Http\\Controllers\\Api\\SupplierPurchaseInvoiceController@zohoPdf'),
+    ep('GET', '/p2p/supplier-purchase-invoices/:spi/payment-summary', 'GET p2p/supplier-purchase-invoices/payment-summary — Summary', None, desc='App\\Http\\Controllers\\Api\\SpiPaymentController@summary'),
+    ep('POST', '/p2p/supplier-purchase-invoices/:spi/payment-summary/tds', 'POST p2p/supplier-purchase-invoices/payment-summary/tds — Save Tds', J({'tds_percentage': 1, 'message': ''}), desc='App\\Http\\Controllers\\Api\\SpiPaymentController@saveTds'),
+    ep('POST', '/p2p/supplier-purchase-invoices/:spi/payments', 'POST p2p/supplier-purchase-invoices/payments — Store', 'form', desc='App\\Http\\Controllers\\Api\\SpiPaymentController@store'),
+    ep('DELETE', '/p2p/supplier-purchase-invoices/:spi/payments/:payment', 'DELETE p2p/supplier-purchase-invoices/payments — Destroy', None, desc='App\\Http\\Controllers\\Api\\SpiPaymentController@destroy'),
+])
+folder('Billing - Payments', [
+    ep('PATCH', '/payments/:payment', 'PATCH payments — Update', J({}), desc='App\\Http\\Controllers\\Api\\PaymentController@update  |  No validate() block found — body fields need filling in by hand.'),
+])
+folder('HRMS - Payroll', [
+    ep('GET', '/payroll-adjustments/overtime-preview', 'GET payroll-adjustments/overtime-preview — Overtime Preview', None, desc='App\\Http\\Controllers\\Api\\PayrollAdjustmentController@overtimePreview'),
+    ep('POST', '/payroll/fnf/:employeeId', 'POST payroll/fnf — Fnf Save', J({'leave_encashment_days': 1, 'notice_recovery_amount': 1, 'other_dues': 1, 'other_deductions': 1, 'notes': '', 'status': '', 'message': ''}), desc='App\\Http\\Controllers\\Api\\PayrollController@fnfSave'),
+    ep('POST', '/payroll/fnf/:employeeId/status', 'POST payroll/fnf/status — Fnf Status', J({'action': 'approve', 'message': '', 'status': ''}), desc='App\\Http\\Controllers\\Api\\PayrollController@fnfStatus'),
+    ep('GET', '/payroll/sandwich-review', 'GET payroll/sandwich-review — Sandwich Review', None, desc='App\\Http\\Controllers\\Api\\PayrollController@sandwichReview'),
+])
+folder('Permissions', [
+    ep('GET', '/permissions/department/:departmentId', 'GET permissions/department — Get Department Permissions', None, desc='App\\Http\\Controllers\\Api\\PermissionController@getDepartmentPermissions'),
+    ep('POST', '/permissions/department/:departmentId', 'POST permissions/department — Save Department Permissions', J({'message': '', 'permissions': []}), desc='App\\Http\\Controllers\\Api\\PermissionController@saveDepartmentPermissions'),
+])
+folder('Plans', [
+    ep('PATCH', '/plans/:plan', 'PATCH plans — Update', J({'name': '', 'price': 1, 'period': 'month', 'max_branches': 1, 'max_users': 1, 'storage_limit': '', 'support_level': '', 'is_featured': True, 'badge': '', 'color': '', 'description': '', 'best_for': '', 'status': 'active', 'trial_days': 1, 'yearly_discount': 1, 'is_custom': True, 'modules': [], 'message': '2026-08-17'}), desc='App\\Http\\Controllers\\Api\\PlanController@update'),
+])
+folder('Products', [
+    ep('PATCH', '/products/:id/vendor-maps/:mapId', 'PATCH products/vendor-maps — Update Vendor Map Price', J({'purchase_price': 1}), desc='App\\Http\\Controllers\\Api\\ProductController@updateVendorMapPrice'),
+    ep('DELETE', '/products/:id/vendor-maps/:mapId', 'DELETE products/vendor-maps — Destroy Vendor Map', None, desc='App\\Http\\Controllers\\Api\\ProductController@destroyVendorMap'),
+])
+folder('Sales - Leads', [
+    ep('GET', '/sales/gst-home-state', 'GET sales/gst-home-state — Gst Home State', None, desc='App\\Http\\Controllers\\Api\\QuotationController@gstHomeState'),
+    ep('PUT', '/sales/leads/:id/task-manager', 'PUT sales/leads/task-manager — Store Task Manager', 'form', desc='App\\Http\\Controllers\\Api\\SalesLeadController@storeTaskManager'),
+    ep('PUT', '/sales/leads/:id/whatsapp', 'PUT sales/leads/whatsapp — Update Whats App', 'form', desc='App\\Http\\Controllers\\Api\\SalesLeadController@updateWhatsApp'),
+    ep('GET', '/sales/proforma-invoices/party-docs-check', 'GET sales/proforma-invoices/party-docs-check — Party Docs Check', None, desc='App\\Http\\Controllers\\Api\\ProformaInvoiceController@partyDocsCheck'),
+    ep('POST', '/sales/proforma-invoices/:id/sync', 'POST sales/proforma-invoices/sync — Sync', J({'message': '', 'zoho_status': ''}), desc='App\\Http\\Controllers\\Api\\ProformaInvoiceController@sync'),
+    ep('GET', '/sales/proforma-invoices/:id/zoho-pdf', 'GET sales/proforma-invoices/zoho-pdf — Zoho Pdf', None, desc='App\\Http\\Controllers\\Api\\ProformaInvoiceController@zohoPdf'),
+    ep('POST', '/sales/quotations/:id/sync', 'POST sales/quotations/sync — Sync', J({'message': '', 'zoho_status': ''}), desc='App\\Http\\Controllers\\Api\\QuotationController@sync'),
+    ep('GET', '/sales/quotations/:id/zoho-pdf', 'GET sales/quotations/zoho-pdf — Zoho Pdf', None, desc='App\\Http\\Controllers\\Api\\QuotationController@zohoPdf'),
+    ep('POST', '/sales/reminders/:id', 'POST sales/reminders — Update Reminder', J({}), desc='App\\Http\\Controllers\\Api\\SalesTodoController@updateReminder  |  No validate() block found — body fields need filling in by hand.'),
+])
