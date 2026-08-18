@@ -160,8 +160,44 @@ export default function MyTeam() {
     setConsent(false);   // consent is per-document, never carried over
   };
 
+  /* Human label per module — used by the approve confirmation below. */
+  const MODULE_NOUN: Record<string, string> = {
+    expense:            'Expense Claim',
+    advance:            'Advance Request',
+    leave:              'Leave Request',
+    document_signature: 'Document',
+  };
+
   const submitAction = async () => {
-    if (!actionItem) return;
+    if (!actionItem || actionSubmitting) return;
+
+    /* QA #59 — Reject routes through a confirm dialog AND demands a reason, but
+       Approve fired straight at the API: one stray click on Review & Decide
+       committed an approval with nothing to read and no way back. An approval
+       moves money and advances the workflow, so it gets the same guard rail.
+       The action modal closes first (two stacked popups read as a bug) and is
+       restored on Cancel so the user keeps whatever remark they typed. */
+    const target = actionItem;
+    const noun = MODULE_NOUN[target.module] ?? 'Request';
+    const code = target.code || `this ${noun.toLowerCase()}`;
+    setActionItem(null);
+    const ok = await confirmDialog({
+      title: `${target.action} ${noun}?`,
+      message: (
+        <>
+          {target.action} <strong>{code}</strong>? Your decision is stamped into the
+          audit log with your name and moves the request to the next stage.
+          {target.module === 'expense' || target.module === 'advance'
+            ? ' HR / Finance then set deductions and record the payment.'
+            : ''}
+        </>
+      ),
+      confirmLabel: `Yes, ${target.action}`,
+      cancelLabel:  'Cancel',
+      tone:         'success',
+      icon:         'checkbox-circle-line',
+    });
+    if (!ok) { setActionItem(target); return; }
 
     // Expense approvals route through the expense-claims controller. Stage
     // (manager vs HR) was resolved server-side in MyTeamController and lives

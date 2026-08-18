@@ -1167,6 +1167,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const earlyResignation = isEarlyResignation(employee?.dateOfJoiningIso, noticeDate);
   const earlyTenure      = tenureDays(employee?.dateOfJoiningIso, noticeDate);
   const noticeWaived     = onProbation || earlyResignation;
+  /* Force the choice to No-Pay once it turns out no notice period applies.
+     The picker may have been answered "Pay" before the probation status was
+     known (or the notice date edited into the early-exit window afterwards),
+     leaving Stage 1 showing "Pay for Notice Period" against fields that read
+     "no notice period is served". applyNoticeWaiver() already zeroes the money
+     server-side — this stops the screen claiming otherwise. */
+  useEffect(() => {
+    if (noticeWaived && noticeChoice === 'pay') setNoticeChoice('no_pay');
+  }, [noticeWaived, noticeChoice]);
   // Notice Period End Date — auto-derived from the notice start date + the
   // employee's notice period (set at hire). Read-only; the Last Working Day
   // stays a separate, manually-set field.
@@ -2900,7 +2909,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                               reaches anyone who wants it, via the tooltip. */}
                           {NOTICE_CHOICES.map(c => {
                             const on = noticeChoice === c.value;
-                            const dimmed = fnfPaid && !on;
+                            /* "Pay for Notice Period" is meaningless when the
+                               employee serves no notice at all — on probation,
+                               or resigning inside the early-exit window. The
+                               notice fields beside this already say so, but the
+                               choice stayed clickable, promising a payment that
+                               applyNoticeWaiver() then zeroes on the server. */
+                            const noticeNA = noticeWaived && c.value === 'pay';
+                            const dimmed = (fnfPaid && !on) || noticeNA;
                             return (
                               <button
                                 key={c.value}
@@ -2909,7 +2925,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                    swallows the click, so the user gets silence
                                    when they try a locked option. Intercepting it
                                    here lets the toast explain why instead. */
-                                aria-disabled={fnfPaid}
+                                aria-disabled={fnfPaid || noticeNA}
                                 aria-pressed={on}
                                 onClick={() => {
                                   if (fnfPaid) {
@@ -2919,12 +2935,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                     );
                                     return;
                                   }
+                                  if (noticeNA) {
+                                    toast.warning(
+                                      'No notice period applies',
+                                      onProbation
+                                        ? `${employee?.name || 'This employee'} is on probation until ${probationEndLabel(employee?.probationEndIso)}, so no notice period is served and there is nothing to pay in lieu of.`
+                                        : 'This exit falls inside the early-exit window, so no notice period is served and there is nothing to pay in lieu of.',
+                                    );
+                                    return;
+                                  }
                                   setNoticeChoice(c.value);
                                   clearS1Err('noticeChoice');
                                 }}
                                 title={fnfPaid
                                   ? 'Locked — the Full & Final settlement has been paid.'
-                                  : c.desc}
+                                  : noticeNA
+                                    ? 'No notice period is served, so nothing can be paid in lieu of it.'
+                                    : c.desc}
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: 8,
                                   padding: '9px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 700,
@@ -2957,10 +2984,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             <i className="ri-error-warning-line" />Select how the notice period is handled for this termination.
                           </div>
                         ) : (
-                          <div className="ep-hint" style={{ fontSize: 11, color: noticeNotApplicable ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
-                            {noticeNotApplicable
-                              ? 'No notice amount in Full & Final.'
-                              : 'Notice amount is added to Full & Final.'}
+                          <div className="ep-hint" style={{ fontSize: 11, color: (noticeNotApplicable || noticeWaived) ? '#b45309' : 'var(--vz-secondary-color)', marginTop: 4 }}>
+                            {noticeWaived
+                              ? (onProbation
+                                  ? `On probation until ${probationEndLabel(employee?.probationEndIso)} — no notice period is served, so nothing can be paid in lieu.`
+                                  : 'Inside the early-exit window — no notice period is served, so nothing can be paid in lieu.')
+                              : noticeNotApplicable
+                                ? 'No notice amount in Full & Final.'
+                                : 'Notice amount is added to Full & Final.'}
                           </div>
                         )}
                       </EpField>
@@ -4526,6 +4557,11 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
   }, [open, current]);
 
   const needsNoticeChoice = selected === 'Termination';
+  /* An employee still on probation serves no notice period, so "Pay for Notice
+     Period" has nothing to price. Blocked here as well as on Stage 1 — asking
+     the question, accepting "Pay", and only then showing "no notice period is
+     served" on the next screen is how the two ended up contradicting. */
+  const pickerNoticeWaived = isOnProbation(employee?.probationEndIso);
 
   return (
     /* Narrower on the notice step — two cards, not three, so the lg width left
@@ -4589,11 +4625,14 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                (grid-auto-flow: column / 1fr), so two cards split the row
                evenly, and it collapses back to stacked rows under 720px. */
             <div className="etp-grid etp-grid--tiles">
-              {NOTICE_CHOICES.map(c => (
+              {NOTICE_CHOICES.map(c => {
+                const na = pickerNoticeWaived && c.value === 'pay';
+                return (
                 <button
                   key={c.value}
                   type="button"
                   disabled={busy}
+                  aria-disabled={na}
                   aria-pressed={choice === c.value}
                   className={`etp-card${choice === c.value ? ' is-on' : ''}`}
                   /* The shared --tiles rule sets min-height 172px and top-aligns,
@@ -4602,16 +4641,23 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                      these centre their content and stand shorter. Inline rather
                      than in recruitment.css — that file is shared with the
                      recruitment pages and this is the only caller that wants it. */
-                  style={{ ['--etp-accent' as any]: c.accent, minHeight: 138, justifyContent: 'center' }}
-                  onClick={() => setChoice(c.value)}
+                  style={{
+                    ['--etp-accent' as any]: c.accent, minHeight: 138, justifyContent: 'center',
+                    ...(na ? { opacity: 0.45, filter: 'grayscale(1)', cursor: 'not-allowed' } : {}),
+                  }}
+                  title={na ? 'No notice period is served on probation, so nothing can be paid in lieu of it.' : c.desc}
+                  onClick={() => { if (!na) setChoice(c.value); }}
                 >
-                  <span className="etp-ico"><i className={c.icon} /></span>
+                  <span className="etp-ico"><i className={na ? 'ri-forbid-2-line' : c.icon} /></span>
                   <span className="etp-body" style={{ flex: 'none' }}>
                     <span className="etp-title">{c.label}</span>
-                    <span className="etp-desc">{c.desc}</span>
+                    <span className="etp-desc">
+                      {na ? 'Not available — employee is on probation, so no notice period is served.' : c.desc}
+                    </span>
                   </span>
                 </button>
-              ))}
+                );
+              })}
             </div>
           )}
           <div className="etp-foot">
@@ -4620,10 +4666,19 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
             <div className="etp-note">
               <i className="ri-alert-line" />
               {step === 'type' ? (
-                <span>
-                  The type sets how the notice period is settled and which stages the exit runs through.
-                  <strong> It cannot be changed once the exit has started</strong> — pick carefully.
-                </span>
+                /* Say WHY the notice question won't be asked. Skipping it
+                   silently would look like the popup was simply missed. */
+                needsNoticeChoice && pickerNoticeWaived ? (
+                  <span>
+                    {employee?.name || 'This employee'} is on probation, so <strong>no notice period is served</strong> —
+                    the exit opens with no notice payment and the question is not asked.
+                  </span>
+                ) : (
+                  <span>
+                    The type sets how the notice period is settled and which stages the exit runs through.
+                    <strong> It cannot be changed once the exit has started</strong> — pick carefully.
+                  </span>
+                )
               ) : (
                 <span>Can be changed on Stage 1 — <strong>locked once the F&amp;F is paid</strong>.</span>
               )}
@@ -4651,8 +4706,16 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
                 onClick={() => {
                   if (!selected) return;
                   /* A termination detours through the notice question before
-                     anything is written; every other type opens the case now. */
-                  if (step === 'type' && needsNoticeChoice) { setStep('notice'); return; }
+                     anything is written; every other type opens the case now.
+                     EXCEPT on probation: no notice period is served, so "Pay"
+                     is not a valid answer and the question has only one. Asking
+                     it anyway is a click that can only be answered one way, so
+                     the case opens straight away as No-Pay. */
+                  if (step === 'type' && needsNoticeChoice) {
+                    if (pickerNoticeWaived) { onPick(selected, 'no_pay'); return; }
+                    setStep('notice');
+                    return;
+                  }
                   if (step === 'notice' && !choice) return;
                   onPick(selected, needsNoticeChoice ? choice : null);
                 }}

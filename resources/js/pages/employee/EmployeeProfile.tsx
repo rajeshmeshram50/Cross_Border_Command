@@ -123,6 +123,28 @@ const nextMonthFirst = (iso?: string | null): string => {
 type PayrollTab = 'summary' | 'details';
 type VaultTab = 'employee' | 'organizational' | 'exit';
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
+
+/**
+ * Per-instalment amount for an advance recovery — ROUNDED DOWN, never nearest.
+ *
+ * Math.round over-collects whenever the division doesn't come out even:
+ * ₹5,00,000 over 120 months is ₹4,166.67, rounded to ₹4,167, and 120 × ₹4,167
+ * is ₹5,00,040 — ₹40 more than the employee ever borrowed. (QA #132 reported
+ * the same ₹40 overshoot on a ₹92,90,000 advance.) Flooring guarantees the
+ * instalments can only ever total LESS than the advance; the shortfall is
+ * cleared by the final instalment, which advFinalCycle() prices.
+ */
+function advPerCycle(amount: number, cycles: number): number {
+  if (!(amount > 0) || !(cycles > 0)) return 0;
+  return Math.max(1, Math.floor(amount / cycles));
+}
+
+/** The last instalment absorbs the remainder, so the schedule totals exactly. */
+function advFinalCycle(amount: number, cycles: number): number {
+  const per = advPerCycle(amount, cycles);
+  if (!per || cycles < 1) return 0;
+  return +(amount - per * (cycles - 1)).toFixed(2);
+}
 export default function EmployeeProfile({ employeeId, employee, onBack }: Props) {
   const initials = employee?.initials
     || (employee?.name ? employee.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase() : 'EM');
@@ -1402,6 +1424,18 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch { toast.error('Could not download', 'Your browser blocked it.'); }
   };
+  // Open a row's proof in a new tab (QA #149). The chip used to expose only two
+  // near-identical 20px circles — Download and Replace — so aiming at Download
+  // and landing on Replace re-opened the file picker. Clicking the file name
+  // itself is now the primary, unmissable action and just shows the file.
+  const openAdvItemFile = (f: File) => {
+    try {
+      const url = URL.createObjectURL(f);
+      // Popup blockers return null; saving the file is the sane fallback.
+      if (!window.open(url, '_blank', 'noopener')) { downloadAdvItemFile(f); }
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { toast.error('Could not open', 'Your browser blocked it.'); }
+  };
   const advItemComplete = (it: AdvItem) =>
     (Number(String(it.amount).replace(/[^\d.]/g, '')) || 0) > 0 && !!it.purpose.trim() && !!it.payment && !!it.file;
   const advAmountFirstToast = () =>
@@ -1425,11 +1459,27 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     const a = Number(String(advAmount).replace(/[^\d.]/g, ''));
     const m = Number(advMonths);
     if (a > 0 && m > 0) {
-      setAdvMonthlyEmi(String(Math.round(a / m)));
+      setAdvMonthlyEmi(String(advPerCycle(a, m)));
     } else {
       setAdvMonthlyEmi('');
     }
   }, [advAmount, advMonths, advEmiTouched]);
+  /* The AMOUNT is the numerator of the entire schedule, so when it changes the
+     per-cycle figure MUST be re-derived — even when HR set that figure by hand.
+     advEmiTouched (set by editing EITHER schedule field, including the months)
+     was blocking the effect above: entering ₹5,00,000 over 120 months then
+     changing the amount to ₹7,00,000 left the instalment at ₹4,166 and dumped
+     the whole ₹2,04,246 shortfall onto the final one — a "schedule" of 119
+     equal payments and one 49× larger. Months stay as entered; only the
+     per-cycle amount moves, because that is what the amount divides into. */
+  const lastAmountRef = useRef<string>('');
+  useEffect(() => {
+    if (advAmount === lastAmountRef.current) return;
+    lastAmountRef.current = advAmount;
+    const a = Number(String(advAmount).replace(/[^\d.]/g, ''));
+    const m = Number(advMonths);
+    if (a > 0 && m > 0) setAdvMonthlyEmi(String(advPerCycle(a, m)));
+  }, [advAmount, advMonths]);
   // Reset the manual-override flag every time the modal re-opens so the
   // auto-fill kicks back in for a fresh request.
   useEffect(() => {
@@ -1465,6 +1515,30 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // (a 1-month recovery) but not more. The effective per-cycle ceiling is the
   // smaller of the EMI headroom and the total amount.
   const advPerCycleNum = Number(String(advMonthlyEmi).replace(/[^\d.]/g, '')) || 0;
+  /** The schedule fields are derived from the amount, so they stay locked until
+   *  there is one to divide. */
+  const advNeedsAmount = advAmountNum <= 0;
+  /* A truly `disabled` input swallows the click — the browser fires no event at
+     all, not even on the parent — so a locked field can only sit there looking
+     inert. These use readOnly + aria-disabled instead, which keeps the same
+     look but lets the click through to say why. */
+  const warnNeedsAmount = () => toast.warning(
+    'Enter the advance amount first',
+    'The monthly instalment and the number of months are both calculated from the advance amount.',
+  );
+  /** Locked-field styling — matches `disabled` without blocking the click. */
+  const advLockedStyle = advNeedsAmount
+    ? { background: 'var(--vz-light, #f3f4f6)', cursor: 'not-allowed', color: 'var(--vz-secondary-color, #6b7280)' }
+    : undefined;
+  /* What the LAST instalment actually is. Every earlier one is the floored
+     per-cycle figure, so the remainder lands here and the schedule totals the
+     advance to the rupee instead of overshooting it. */
+  const advCyclesNum = Number(advMonths) || 0;
+  const advLastCycle = advCyclesNum > 0 && advPerCycleNum > 0
+    ? +(advAmountNum - advPerCycleNum * (advCyclesNum - 1)).toFixed(2)
+    : 0;
+  const advUnevenSplit = advCyclesNum > 1 && advPerCycleNum > 0
+    && Math.abs(advLastCycle - advPerCycleNum) > 0.005;
   const advEmiOverAmount = advAmountNum > 0 && advPerCycleNum > advAmountNum;
   const advEmiOverHeadroom = advEmiCap > 0 && advPerCycleNum > advEmiCap;
   // Each instalment must be at least ₹500 (or the whole amount when it's below ₹500).
@@ -1476,7 +1550,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   const setAdvMonthsSync = (v: string) => {
     setAdvMonths(v); clearAdvErr('months');
     const m = Number(v);
-    const perCycle = m > 0 && advAmountNum > 0 ? Math.round(advAmountNum / m) : 0;
+    const perCycle = m > 0 && advAmountNum > 0 ? advPerCycle(advAmountNum, m) : 0;
     setAdvMonthlyEmi(perCycle ? String(perCycle) : '');
     setAdvEmiTouched(true);
     if (advEmiCap > 0 && perCycle > advEmiCap) {
@@ -3465,7 +3539,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           ) : (
             /* ── Advance Request mode ── */
             <Row className="g-4">
-              <Col lg={advIsCompanyUsed ? 5 : 6}>
+              {/* Column laid out as a flex COLUMN so the last block can absorb
+                  the leftover height. The right side grows as the recovery
+                  schedule appears (mode → three fields → instalment table),
+                  and without this the left column just stopped after Reason /
+                  Purpose and left a tall band of white space beside it. */}
+              <Col lg={advIsCompanyUsed ? 5 : 6} className="d-flex flex-column">
                 <div className="ep-claim-banner">
                   <span className="ep-claim-banner-icon">
                     <i className="ri-money-dollar-circle-line" />
@@ -3563,13 +3642,16 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <input
                         className={`ep-claim-input ep-pl-28${advErrors.amount ? ' is-invalid' : ''}`}
                         placeholder="0"
-                        inputMode="decimal"
+                        /* WHOLE RUPEES ONLY. Decimals here were accepted and
+                           carried straight into the schedule — "100000.145"
+                           produced a final instalment of ₹873.15 and a total of
+                           ₹1,00,000.145, which is not an amount that can be
+                           paid or recovered. An advance is sanctioned in
+                           rupees, so the paise never had a purpose. */
+                        inputMode="numeric"
                         value={advAmount}
                         onChange={e => {
-                          let v = e.target.value.replace(/[^\d.]/g, '');
-                          const i = v.indexOf('.');
-                          if (i !== -1) v = v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
-                          setAdvAmount(v);
+                          setAdvAmount(e.target.value.replace(/\D/g, ''));
                           clearAdvErr('amount');
                         }}
                       />
@@ -3593,6 +3675,39 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   </Col>
                   )}
                 </Row>
+                {!advIsCompanyUsed && (
+                  /* flex:1 — this is the block that soaks up whatever height the
+                     right column has gained, so the two sides finish level and
+                     the extra space becomes usable typing room rather than a
+                     gap. minHeight keeps it at the old 3-row size when the right
+                     side is short (no recovery mode picked yet). */
+                  <div className="mb-0 d-flex flex-column" style={{ flex: '1 1 auto', minHeight: 110 }}>
+                    <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
+                    <textarea
+                      className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
+                      rows={3}
+                      maxLength={500}
+                      placeholder="Describe why this advance is needed..."
+                      value={advReason}
+                      onChange={e => { setAdvReason(e.target.value.slice(0, 500)); clearAdvErr('reason'); }}
+                      style={{ flex: '1 1 auto', resize: 'vertical' }}
+                    />
+                    <div style={{ textAlign: 'right', fontSize: 11, color: advReason.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{advReason.length}/500</div>
+                    {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
+                  </div>
+                )}
+              </Col>
+
+              {/* Right column — Supporting Documents (multi-file) + Approval Flow.
+                  Replaces the old Payroll Recovery Preview / Advance Intelligence
+                  placeholders, which weren't wired to anything actionable. */}
+              <Col lg={advIsCompanyUsed ? 7 : 6}>
+                {/* Recovery Mode + schedule live on the RIGHT.
+                    On the left they shared a ~560px column with everything
+                    else, so the three schedule fields and the instalment
+                    table were squeezed while the right column sat half empty
+                    below the Approval Flow. Reason / Purpose stays on the
+                    left — it is narrative, not part of the money schedule. */}
                 {/* Recovery Mode only applies to a self advance — a company
                     advance isn't recovered from salary, so it's hidden entirely. */}
                 {advUsedFor !== 'company' && (
@@ -3617,13 +3732,26 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     hides them (recovered in one deduction on the start date). */}
                 {(advRecoveryMode === 'emi' || advRecoveryMode === 'bimonthly') && (
                   <Row className="g-3 mb-3">
-                    <Col md={4}>
-                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span>{advPerCycleCap > 0 ? <span className="ep-claim-muted"> (min ₹{Math.min(ADV_MIN_EMI, advAmountNum).toLocaleString('en-IN')} · max ₹{advPerCycleCap.toLocaleString('en-IN')} · {advEmiCap > 0 && advEmiCap < advAmountNum ? 'EMI headroom' : 'advance amount'})</span> : null}</div>
+                    <Col md={5}>
+                      {/* Label kept SHORT. The min/max/basis hint used to live
+                          here and wrapped to three lines, which pushed this
+                          column's input below the other two and broke the row.
+                          It now sits under the field, where it can wrap freely. */}
+                      <div className="ep-claim-label">{advRecoveryMode === 'bimonthly' ? 'Amount / Cycle' : 'Monthly Amount'} <span className="ep-claim-req">*</span></div>
                       <div className="position-relative">
                         <span className="ep-claim-amount-prefix">₹</span>
                         <input
                           className={`ep-claim-input ep-pl-28${advEmiInvalid ? ' is-invalid' : ''}`}
-                          placeholder="0.00"
+                          placeholder={advNeedsAmount ? 'Enter the amount first' : '0'}
+                          /* Both schedule fields derive from the advance amount —
+                             per-cycle is amount ÷ cycles and vice versa. With no
+                             amount they were editable but did nothing: typing a
+                             figure recalculated against 0 and cleared itself. */
+                          readOnly={advNeedsAmount}
+                          aria-disabled={advNeedsAmount}
+                          style={advLockedStyle}
+                          onMouseDown={advNeedsAmount ? (e) => { e.preventDefault(); warnNeedsAmount(); } : undefined}
+                          inputMode="numeric"
                           value={advMonthlyEmi}
                           onChange={(e) => setAdvMonthlySync(e.target.value)}
                         />
@@ -3631,14 +3759,31 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       {advEmiInvalid && (
                         <div className="ep-claim-err"><i className="ri-error-warning-line" />{advEmiOverAmount ? `Can’t exceed the advance ₹${advAmountNum.toLocaleString('en-IN')} (equal is fine)` : advEmiUnderMin ? (advAmountNum >= ADV_MIN_EMI ? `Minimum ₹${ADV_MIN_EMI.toLocaleString('en-IN')} per instalment` : `Recover ₹${advAmountNum.toLocaleString('en-IN')} in a single instalment`) : `Max ₹${advEmiCap.toLocaleString('en-IN')} (EMI headroom)`}</div>
                       )}
+                      {/* Min / max moved off the label so the three columns line
+                          up. Wraps here without disturbing the row. */}
+                      {advPerCycleCap > 0 && (
+                        <div className="ep-claim-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                          min ₹{Math.min(ADV_MIN_EMI, advAmountNum).toLocaleString('en-IN')} · max ₹{advPerCycleCap.toLocaleString('en-IN')}
+                          {' '}({advEmiCap > 0 && advEmiCap < advAmountNum ? 'EMI headroom' : 'advance amount'})
+                        </div>
+                      )}
                     </Col>
-                    <Col md={4}>
+                    {/* Narrower than the other two — it holds at most three
+                        digits (the cap is 120 instalments), so a third of the
+                        row was width it could never use. */}
+                    <Col md={3}>
                       <div className="ep-claim-label">No. of {advRecoveryMode === 'bimonthly' ? 'Cycles' : 'Months'} <span className="ep-claim-req">*</span></div>
                       <input
                         className={`ep-claim-input${advErrors.months ? ' is-invalid' : ''}`}
-                        placeholder="e.g. 6"
+                        placeholder={advNeedsAmount ? '—' : 'e.g. 6'}
+                        readOnly={advNeedsAmount}
+                        aria-disabled={advNeedsAmount}
+                        style={advLockedStyle}
+                        onMouseDown={advNeedsAmount ? (e) => { e.preventDefault(); warnNeedsAmount(); } : undefined}
+                        inputMode="numeric"
+                        maxLength={3}
                         value={advMonths}
-                        onChange={e => setAdvMonthsSync(e.target.value)}
+                        onChange={e => setAdvMonthsSync(e.target.value.replace(/\D/g, ''))}
                       />
                       {advErrors.months && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.months}</div>}
                     </Col>
@@ -3646,6 +3791,75 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       <div className="ep-claim-label">End Date <span className="ep-claim-muted">(auto)</span></div>
                       <input className="ep-claim-input" value={advTenureExceeds ? '—' : advEndLabel} placeholder="—" readOnly />
                     </Col>
+                    {advNeedsAmount && (
+                      <Col md={12}>
+                        <div className="ep-claim-muted" style={{ fontSize: 11.5 }}>
+                          <i className="ri-information-line" /> Enter the advance amount to set the recovery schedule.
+                        </div>
+                      </Col>
+                    )}
+
+                    {/* Recovery schedule, as a table rather than a sentence.
+                       Written out as one line ("119 x ₹833 + ₹873 final") it was
+                       read as though EVERY instalment were the final one. Count /
+                       each / subtotal in columns cannot be misread, and the total
+                       row proves the schedule settles the advance exactly. */}
+                    {!advEmiInvalid && !advTenureExceeds && advCyclesNum > 0 && advPerCycleNum > 0 && (
+                      <Col md={12}>
+                        <div className="ep-claim-label" style={{ marginBottom: 6 }}>
+                          Recovery Schedule
+                        </div>
+                        <div style={{
+                          border: '1px solid var(--vz-border-color)', borderRadius: 10,
+                          overflow: 'hidden', background: 'var(--vz-card-bg, #fff)',
+                        }}>
+                          <table className="table table-sm mb-0 align-middle" style={{ fontSize: 12.5 }}>
+                            <thead>
+                              <tr style={{ background: 'var(--vz-secondary-bg)' }}>
+                                <th style={{ width: '40%', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, border: 0, padding: '8px 12px' }}>
+                                  {advRecoveryMode === 'bimonthly' ? 'Cycles' : 'Instalments'}
+                                </th>
+                                <th className="text-end" style={{ width: '30%', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, border: 0, padding: '8px 12px' }}>
+                                  Amount each
+                                </th>
+                                <th className="text-end" style={{ width: '30%', fontSize: 11, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--vz-secondary-color)', fontWeight: 700, border: 0, padding: '8px 12px' }}>
+                                  Subtotal
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {advUnevenSplit ? (
+                                <>
+                                  <tr>
+                                    <td style={{ padding: '8px 12px' }}>{advCyclesNum - 1} <span className="ep-claim-muted">x</span></td>
+                                    <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{advPerCycleNum.toLocaleString('en-IN')}</td>
+                                    <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{(advPerCycleNum * (advCyclesNum - 1)).toLocaleString('en-IN')}</td>
+                                  </tr>
+                                  <tr>
+                                    <td style={{ padding: '8px 12px' }}>1 <span className="ep-claim-muted">(final)</span></td>
+                                    <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{advLastCycle.toLocaleString('en-IN')}</td>
+                                    <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{advLastCycle.toLocaleString('en-IN')}</td>
+                                  </tr>
+                                </>
+                              ) : (
+                                <tr>
+                                  <td style={{ padding: '8px 12px' }}>{advCyclesNum} <span className="ep-claim-muted">x</span></td>
+                                  <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{advPerCycleNum.toLocaleString('en-IN')}</td>
+                                  <td className="text-end" style={{ padding: '8px 12px', fontVariantNumeric: 'tabular-nums' }}>₹{(advPerCycleNum * advCyclesNum).toLocaleString('en-IN')}</td>
+                                </tr>
+                              )}
+                              <tr style={{ background: 'rgba(124,92,252,0.07)' }}>
+                                <td style={{ padding: '9px 12px', fontWeight: 800, borderTop: '2px solid var(--vz-border-color)' }}>Total recovered</td>
+                                <td style={{ borderTop: '2px solid var(--vz-border-color)' }} />
+                                <td className="text-end" style={{ padding: '9px 12px', fontWeight: 800, borderTop: '2px solid var(--vz-border-color)', fontVariantNumeric: 'tabular-nums' }}>
+                                  ₹{advAmountNum.toLocaleString('en-IN')}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </Col>
+                    )}
                     {advTenureExceeds && (
                       <Col md={12}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, background: '#fff1f2', border: '1px solid #fecdd3', color: '#9f1239', borderRadius: 10, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.5 }}>
@@ -3668,27 +3882,6 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                     </span>
                   </div>
                 )}
-                {!advIsCompanyUsed && (
-                  <div className="mb-0">
-                    <div className="ep-claim-label">Reason / Purpose <span className="ep-claim-req">*</span></div>
-                    <textarea
-                      className={`ep-claim-input${advErrors.reason ? ' is-invalid' : ''}`}
-                      rows={3}
-                      maxLength={500}
-                      placeholder="Describe why this advance is needed..."
-                      value={advReason}
-                      onChange={e => { setAdvReason(e.target.value.slice(0, 500)); clearAdvErr('reason'); }}
-                    />
-                    <div style={{ textAlign: 'right', fontSize: 11, color: advReason.length >= 500 ? '#ef4444' : 'var(--vz-secondary-color, #6b7280)', marginTop: 2 }}>{advReason.length}/500</div>
-                    {advErrors.reason && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.reason}</div>}
-                  </div>
-                )}
-              </Col>
-
-              {/* Right column — Supporting Documents (multi-file) + Approval Flow.
-                  Replaces the old Payroll Recovery Preview / Advance Intelligence
-                  placeholders, which weren't wired to anything actionable. */}
-              <Col lg={advIsCompanyUsed ? 7 : 6}>
                 {/* Company advances distribute the amount across rows (each with
                     its own proof) instead of a single Supporting Documents box.
                     Shown here on the right, above the Approval Flow. */}
@@ -3805,14 +3998,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                                     className="d-flex align-items-center gap-1"
                                     style={{ overflow: 'hidden', border: '1px solid #86efac', background: '#f0fdf4', borderRadius: 8, padding: '3px 6px' }}
                                   >
-                                    <i className="ri-checkbox-circle-fill flex-shrink-0" style={{ color: '#16a34a' }} />
-                                    <span title={it.file.name} style={{ fontSize: 11, color: '#166534', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 }}>
-                                      {it.file.name}
-                                    </span>
-                                    <button type="button" className="ep-claim-file-x flex-shrink-0" title="Download" onClick={() => downloadAdvItemFile(it.file!)}>
+                                    <button
+                                      type="button"
+                                      className="adv-file-open"
+                                      title={`${it.file.name} — click to open`}
+                                      onClick={() => openAdvItemFile(it.file!)}
+                                    >
+                                      <i className="ri-checkbox-circle-fill flex-shrink-0" style={{ color: '#16a34a' }} />
+                                      <span>{it.file.name}</span>
+                                    </button>
+                                    <button type="button" className="ep-claim-file-x ep-file-act-dl flex-shrink-0" title="Download" onClick={() => downloadAdvItemFile(it.file!)}>
                                       <i className="ri-download-2-line" />
                                     </button>
-                                    <label className="ep-claim-file-x flex-shrink-0" title="Replace" style={{ cursor: 'pointer', marginBottom: 0 }}>
+                                    <label className="ep-claim-file-x ep-file-act-swap flex-shrink-0" title="Replace file" style={{ cursor: 'pointer', marginBottom: 0 }}>
                                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="d-none" onChange={pickAdvItemFile(i)} />
                                       <i className="ri-refresh-line" />
                                     </label>
@@ -3880,6 +4078,14 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                 <div className="ep-claim-section-head">
                   <span className="ep-claim-dot is-faded" /> Supporting Documents
                   <span className="text-danger ms-1">*</span>
+                  {/* Count belongs in the heading once the list scrolls — with
+                      only 3 rows on screen there is otherwise no sign that a
+                      4th, 5th or 6th file was attached. */}
+                  {advFiles.length > 0 && (
+                    <span className="ep-claim-muted ms-1" style={{ fontWeight: 500 }}>
+                      ({advFiles.length} attached{advFiles.length > 3 ? ' — scroll for the rest' : ''})
+                    </span>
+                  )}
                 </div>
                 <label className={`ep-claim-upload mb-2 d-block ep-claim-upload-indigo${advErrors.files ? ' is-invalid' : ''}`}>
                   <input
@@ -3905,7 +4111,17 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                   <div className="ep-claim-err mb-2"><i className="ri-error-warning-line" />{advErrors.files}</div>
                 )}
                 {advFiles.length > 0 && (
-                  <div className="ep-claim-file-list mb-4">
+                  /* Three rows visible, the rest scroll. Six attachments pushed
+                     the Approval Flow and the submit note off the bottom of the
+                     modal, so the panel grew with every file added. Capped at
+                     ~3 rows (each ≈54px) — the count above says how many there
+                     are, so nothing is hidden, just not all at once. */
+                  <div
+                    className="ep-claim-file-list mb-4"
+                    style={advFiles.length > 3
+                      ? { maxHeight: 168, overflowY: 'auto', paddingRight: 4 }
+                      : undefined}
+                  >
                     {advFiles.map((f, i) => (
                       <div key={i} className="ep-claim-file-row">
                         <i className="ri-attachment-2 ep-claim-file-icon" />
