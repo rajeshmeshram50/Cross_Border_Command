@@ -1459,11 +1459,17 @@ export default function HrEmployees() {
      went on coming off the net, for an employee who had just been taken off
      payroll and had no field on screen to turn it back off with. */
   const pfActive = eEnablePayroll && ePfEligible;
+  /* PF = 12% of the monthly GROSS (business rule, Aug 2026) — not 12% of basic
+     with the ₹15,000 statutory ceiling, which is what this used to derive.
+     Mirrors PayrollService::computeForEmployee(), where PF is charged on the
+     cycle's total earnings; the figure shown here has to be the one payroll
+     will actually deduct, or this screen goes back to promising ₹1,800 while
+     the payslip takes something else. `pf_type` no longer changes the result —
+     both of its branches were basic-based. */
   const breakupPf = useMemo(() => {
     if (!pfActive) return 0;
-    const base = ePfType === 'Standard' ? breakupBasic : Math.min(breakupBasic, 15000);
-    return Math.round(base * 0.12);
-  }, [pfActive, ePfType, breakupBasic]);
+    return Math.round(breakupGross * 0.12);
+  }, [pfActive, breakupGross]);
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
   // auto-computed — they're added as editable rows in Fixed Deductions
   // (so they're part of breakupDed when present), filled by HR / accounts.
@@ -4912,7 +4918,8 @@ export default function HrEmployees() {
                           <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
                           <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
                           <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
-                          <li><strong>PF Deduction</strong> — 12% of basic; capped at <strong>₹15,000</strong> for <strong>Statutory</strong>, or on the <strong>full basic</strong> for <strong>Standard</strong> (set by the <em>PF Type</em> above). Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                          <li><strong>PF Deduction</strong> — <strong>12% of the monthly gross</strong>. Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                          <li><strong>ESI / Professional Tax</strong> — whatever you enter here is deducted <strong>in full</strong> each cycle; they are not scaled down for a part-month or for loss of pay.</li>
                         </ul>
                         <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
                           <label className="d-flex align-items-center gap-1 mb-0" style={{ fontSize: 12.5, cursor: 'pointer' }}>
@@ -4976,9 +4983,8 @@ export default function HrEmployees() {
                             {pfActive && (
                               <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                 <span className="text-muted">
-                                  Provident Fund (PF) — {ePfType === 'Standard'
-                                    ? '12% of full basic'
-                                    : `12% of ₹${Math.min(breakupBasic, 15000).toLocaleString('en-IN')} (capped at ₹15,000)`}
+                                  Provident Fund (PF) — 12% of the monthly gross
+                                  (₹{breakupGross.toLocaleString('en-IN')})
                                 </span>
                                 <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
                               </div>

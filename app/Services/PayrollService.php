@@ -1720,17 +1720,42 @@ class PayrollService
             $extraEarnings[] = $line;
         }
 
-        // Statutory deductions on EARNED figures (Rule 8/9) — no earned pay
-        // means no statutory deduction.
+        /* Overtime + bonus/incentive (Rule 10). Overtime was priced above: a
+           recorded adjustment when one exists, otherwise the hours attendance
+           shows past the shift end. Bonus counts only APPROVED adjustments.
+
+           Resolved HERE, above the deductions, because PF is now charged on
+           this cycle's TOTAL EARNINGS and those two heads are part of it. */
+        $overtimeAmount = $ot['amount'];
+        $overtimeHours  = $ot['hours'];
+        $bonusAmount    = $this->approvedBonusAmount($employee->id, $period);
+
+        /* Total earnings for the cycle — the "Total Earnings" line on the
+           payslip and on the F&F breakdown: the pro-rated structure gross plus
+           approved overtime and bonus, BEFORE loss of pay (which is a
+           deduction, not a reduction of earnings). */
+        $cycleEarnings = round($proratedGross + $overtimeAmount + $bonusAmount, 2);
+
         $pf  = 0;
-        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
-            // PF type (employee Stage 4): 'standard' = 12% of the FULL basic;
-            // anything else ('statutory' / null) caps the basic at the ₹15k
-            // EPF wage ceiling (max ₹1,800/month).
-            $pfBase = strtolower((string) $employee->pf_type) === 'standard'
-                ? $earnedBasic
-                : min($earnedBasic, self::PF_WAGE_CEILING);
-            $pf = round($pfBase * self::PF_RATE, 2);
+        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $cycleEarnings > 0) {
+            /* PF = 12% of the cycle's TOTAL EARNINGS.
+               ---------------------------------------
+               Set by the business (Aug 2026), replacing "12% of the earned
+               BASIC, capped at the ₹15,000 EPF wage ceiling". Two consequences
+               to be aware of when reading a slip:
+                 · the base is GROSS, so allowances are now pensionable here;
+                 · there is NO wage ceiling, so PF is no longer capped at
+                   ₹1,800/month, and `employees.pf_type` (statutory | standard)
+                   no longer changes the figure — both branches computed off
+                   basic and neither survives this rule.
+               This is a deliberate departure from the statutory EPF basis; if
+               it is ever reverted, the old rule was:
+                   $base = pf_type === 'standard' ? $earnedBasic
+                                                  : min($earnedBasic, self::PF_WAGE_CEILING);
+               Charged on earnings BEFORE loss of pay, matching the "Total
+               Earnings (this cycle)" figure it is quoted against — a slip
+               where the two disagreed is exactly what prompted the change. */
+            $pf = round($cycleEarnings * self::PF_RATE, 2);
             // PF was charged on an assumption, not a recorded employment type.
             // Info rather than warning: it is the correct default and holding
             // every half-filled record for review would drown the run.
@@ -1750,7 +1775,14 @@ class PayrollService
         $esiManual = $this->structureDeduction($structDeductions, 'esi');
         $esi = 0;
         if ($esiManual > 0) {
-            $esi = round($esiManual * $earnedFactor, 2);
+            /* Deducted AS ENTERED — no earned-share scaling. A fixed deduction
+               on the employee's salary structure is a flat monthly figure HR
+               typed (ESI ₹100, PT ₹200); it used to be pro-rated down by the
+               earned share, so a month carrying loss of pay showed ₹56.25
+               against the ₹100 the employee's own Compensation screen states.
+               The Compensation screen says "payroll uses what's saved here",
+               and now it does. (Set by the business, Aug 2026.) */
+            $esi = $esiManual;
         } elseif ($esiApplicable && $earnedGross > 0 && $earnedGross <= self::ESI_GROSS_LIMIT) {
             $esi = round($earnedGross * self::ESI_RATE, 2);
         }
@@ -1760,7 +1792,8 @@ class PayrollService
         $ptManual = $this->structureDeduction($structDeductions, 'pt');
         $pt = 0;
         if ($ptManual > 0) {
-            $pt = round($ptManual * $earnedFactor, 2);
+            // Flat monthly figure, deducted as entered — same rule as ESI above.
+            $pt = $ptManual;
         } elseif ($ptApplicable && $earnedGross > 0) {
             $pt = $this->professionalTax($employee, $earnedGross, $period->month);
             // A fallback or an uncovered gross is a configuration gap HR needs
@@ -1827,14 +1860,8 @@ class PayrollService
             );
         }
 
-        // Overtime + bonus/incentive (Rule 10). Overtime was priced above:
-        // a recorded adjustment when one exists, otherwise the hours the
-        // attendance shows past the shift end. Bonus still counts only
-        // APPROVED adjustments.
-        $overtimeAmount = $ot['amount'];
-        $overtimeHours  = $ot['hours'];
-        $bonusAmount    = $this->approvedBonusAmount($employee->id, $period);
-
+        // ($overtimeAmount / $overtimeHours / $bonusAmount are resolved above,
+        //  before the deductions — PF is charged on the total they form.)
         $totalDeductions = round($pf + $esi + $pt + $tds + $lopAmount + $advanceRec + $loanRec + $other, 2);
         // Net = earned pay + approved OT/bonus − non-LOP deductions (LOP is
         // already embodied in earnedGross < proratedGross).
@@ -1991,7 +2018,7 @@ class PayrollService
             // Total earnings = structure gross (pre-LOP) + approved OT/bonus,
             // so the payslip's "Total Earnings" matches the line items and
             // Net = Total Earnings − Total Deductions (LOP sits in deductions).
-            'gross_earnings' => round($proratedGross + $overtimeAmount + $bonusAmount, 2),
+            'gross_earnings' => $cycleEarnings,
             'structure_gross' => $proratedGross,
             /* The FULL monthly package, before the mid-cycle join/exit
                pro-ration is applied. The component lines in `earnings` are

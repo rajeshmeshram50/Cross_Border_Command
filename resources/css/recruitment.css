@@ -5678,6 +5678,27 @@
   border: 1px solid #fecaca;
 }
 .ep-alert--warning i { color: #dc2626; }
+/* Informational, not a problem: states a RULE that has already answered the
+   stage (e.g. a probationer under the minimum service gets no Full & Final and
+   no document release). align-items: flex-start because these carry a heading
+   plus an explanation, so the icon belongs at the first line, not centred
+   against a two-line block. */
+.ep-alert--info {
+  align-items: flex-start;
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+.ep-alert--info strong { font-weight: 700; }
+.ep-alert--info i { color: #4f46e5; margin-top: 1px; }
+[data-bs-theme="dark"] .ep-alert--info {
+  background: rgba(99,102,241,0.12);
+  border-color: rgba(99,102,241,0.38);
+  color: #c7d2fe;
+}
+[data-bs-theme="dark"] .ep-alert--info i { color: #a5b4fc; }
 
 /* Preview modal "Unfilled placeholders" notice — amber, theme-aware (the
    inline light-cream version glared inside the dark preview modal). */
