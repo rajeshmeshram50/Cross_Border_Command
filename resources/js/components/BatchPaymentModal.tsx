@@ -175,7 +175,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             </div>
           )}
           {/* Header */}
-          <div style={header}>
+          <div className="bpw-head" style={header}>
             <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
               <span style={heroIco}><i className="ri-stack-line" /></span>
               <div>
@@ -188,7 +188,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           </div>
 
           {/* HISTORY is the base popup's only content. */}
-          <div style={body}>
+          <div className="bpw-body" style={body}>
             <div style={rowBetween}>
               <div style={{ fontWeight: 700, color: '#0f172a', fontSize: 15 }}>Previous batch payments</div>
               <button style={primaryBtn} onClick={() => { resetForm(); setView('select'); }}><span style={{ fontSize: 16 }}>＋</span> Make New Payment</button>
@@ -220,7 +220,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
             </div>
             {history.length > PAGE && <WorklistPager total={history.length} page={histPage} pageSize={PAGE} onPage={setHistPage} />}
           </div>
-          <div style={footer}>
+          <div className="bpw-foot" style={footer}>
             <div style={{ fontSize: 12.5, color: '#64748b' }}>Pay several small approved claims of one employee at once.</div>
             <button style={ghostBtn} onClick={onClose}>Close</button>
           </div>
@@ -240,7 +240,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
                 <div style={{ fontSize: 12, fontWeight: 600, color: '#6b7280' }}>Please don’t close this window.</div>
               </div>
             )}
-            <div style={header}>
+            <div className="bpw-head" style={header}>
               <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <span style={heroIco}><i className="ri-stack-line" /></span>
                 <div>
@@ -251,7 +251,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               </div>
               <button onClick={() => { resetForm(); setView('history'); }} style={xBtn} aria-label="Close">✕</button>
             </div>
-            <div style={rail}>
+            <div className="bpw-rail" style={rail}>
               <div className="bpw-stepper">
                 {[
                   { n: 1, key: 'select', title: 'Select claims', sub: 'Employee & expenses', icon: 'ri-list-check-2' },
@@ -279,7 +279,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
               </div>
             </div>
 
-          <div style={body}>
+          <div className="bpw-body" style={body}>
             {/* ───── STEP 1 — select employee + claims ───── */}
             {view === 'select' && (
               <>
@@ -416,7 +416,7 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
           </div>
 
           {/* Footer */}
-          <div style={footer}>
+          <div className="bpw-foot" style={footer}>
             <div style={{ fontSize: 12.5, color: '#64748b' }}>
               {view === 'pay' ? `Paying ${selected.size} claim(s) · ${inr(total)} · one itemised Zoho expense (sync separately).`
                 : view === 'select' ? 'Only approved, unpaid claims can be batch-paid.'
@@ -477,7 +477,13 @@ function ExpenseIds({ nos }: { nos: string[] }) {
 /* — inline styles (self-contained; teal surface matches the Record Payment modal) — */
 const backdrop: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(15,23,42,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 };
 const card: React.CSSProperties = {
-  width: '100%', maxWidth: 1340, maxHeight: '92vh', display: 'flex', flexDirection: 'column',
+  /* maxHeight 100%, not 92vh. The backdrop is a flex container with padding:20,
+     so it already reserves a 20px margin top and bottom — 92vh then capped the
+     card ~4vh SHORT of the room it actually had, and that missing strip was
+     enough to push the body into scrolling on a laptop or at browser zoom even
+     when the content would otherwise have fit (QA #126). 100% fills the
+     backdrop's content box exactly: 100vh − 40px. */
+  width: '100%', maxWidth: 1340, maxHeight: '100%', display: 'flex', flexDirection: 'column',
   background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 30px 80px rgba(2,44,52,.4)',
   // The SearchableSelect dropdown reads these Velzon theme variables for its
   // surfaces. This modal is portaled to <body> (outside the theme scope), so we
@@ -536,6 +542,23 @@ const BPW_CSS = `
 @keyframes bpwSpin{to{transform:rotate(360deg);}}
 .bpw-spin{animation:bpwSpin .8s linear infinite;transform-origin:center;}
 .bpw-stepper{display:flex;align-items:center;gap:0;max-width:640px;}
+/* SHORT VIEWPORTS — trim the chrome before the body starts scrolling.
+   The header, step rail and footer are fixed-height and carry generous
+   padding; on a laptop or at browser zoom they ate enough of the card that
+   content which would otherwise have fit was pushed into a scrollbar (QA #126).
+   !important because these three carry inline styles. */
+@media (max-height: 800px){
+  .bpw-head{padding:14px 22px !important;}
+  .bpw-rail{padding:8px 22px !important;}
+  .bpw-body{padding:14px !important;}
+  .bpw-foot{padding:10px 22px !important;}
+}
+@media (max-height: 680px){
+  .bpw-head{padding:10px 18px !important;}
+  .bpw-rail{padding:6px 18px !important;}
+  .bpw-body{padding:10px !important;}
+  .bpw-foot{padding:8px 18px !important;}
+}
 .bpw-connector{flex:0 0 28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .bpw-line{height:3px;width:100%;border-radius:2px;background:#e2e8f0;}
 .bpw-line[data-done="1"]{background:linear-gradient(90deg,#22c55e,#16a34a);}
