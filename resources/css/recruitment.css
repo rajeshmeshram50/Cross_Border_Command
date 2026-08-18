@@ -6597,6 +6597,10 @@
 }
 .ep-settle-note.is-ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
 .ep-settle-note.is-no { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+/* "Waiting on something" — neither a success nor a failure. Used by the F&F
+   stage to explain a Mark F&F Paid button that is disabled until the last
+   working day (CBC #92). */
+.ep-settle-note.is-due { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 
 /* ══ Full & Final breakdown ════════════════════════════════════════════ */
 .ep-fnf { border: 1px solid var(--vz-border-color); border-radius: 12px; overflow: hidden; }
@@ -6764,6 +6768,7 @@
 [data-bs-theme="dark"] .ep-settle.is-no  .ep-settle-band { background: rgba(239,68,68,0.10); }
 [data-bs-theme="dark"] .ep-settle-note.is-ok { background: rgba(16,185,129,0.12); color: #6ee7b7; }
 [data-bs-theme="dark"] .ep-settle-note.is-no { background: rgba(239,68,68,0.12); color: #fca5a5; }
+[data-bs-theme="dark"] .ep-settle-note.is-due { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.38); color: #fcd34d; }
 [data-bs-theme="dark"] .ep-type-change { background: rgba(124,58,237,0.18); border-color: rgba(124,58,237,0.35); color: #c4b5fd; }
 
 @media (max-width: 767px) {

@@ -1509,6 +1509,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (iso > todayIso) return 'A payment cannot be dated in the future.';
     return '';
   };
+
+  /* CBC #92 — the Full & Final cannot be settled before the employee's LAST
+     WORKING DAY. The settlement prices the exit month up to and including that
+     day (PayrollService::earnedSalaryForExitMonth) and nets off leave, dues and
+     recoveries; paying it while the employee is still working means paying
+     against days not yet worked, on figures that will still move. The day
+     itself counts — an F&F paid ON the last working day is normal practice —
+     so the test is strictly "today is earlier than the LWD".
+
+     No LWD recorded yet ⇒ not blocked here: Stage 1 already makes the date
+     mandatory, and inventing a second gate for a missing value would report
+     the wrong problem. */
+  const fnfBeforeLwd = !!lwd && todayIso < lwd;
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
      what a standard resignation looks like). The notice period end is the last
@@ -1802,7 +1815,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
   const [draftSaving, setDraftSaving] = useState(false);
   const [completing, setCompleting]   = useState(false);
-  const [empStatus, setEmpStatus] = useState('Active');
   const [profileLock, setProfileLock] = useState('Unlocked');
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
   const [hrSignOff, setHrSignOff] = useState('Pending');
@@ -1908,7 +1920,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         if (Array.isArray(data.validation) && data.validation.length) {
           setValidation(data.validation.map((v: any) => !!v));
         }
-        setEmpStatus(String(data.final_employee_status ?? data.employee_status ?? 'Active'));
         setProfileLock(String(data.profile_lock ?? 'Unlocked'));
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
@@ -2176,9 +2187,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return Math.round((done / total) * 100);
     }
     if (n === 'closure') {
-      // Final actions now expose only Employee Status + HR Final Sign-off.
-      // Only HR Final Sign-off (Approved) is a real completion gate — Employee
-      // Status is informational and must NOT hold the progress below 100%.
+      // Final actions expose only HR Final Sign-off, which is the single
+      // completion gate. (Employee Status used to sit beside it; it decided
+      // nothing and was removed — see the Final Actions row.)
       const validationDone = validation.filter(Boolean).length;
       const finalsDone = (hrSignOff === 'Approved' ? 1 : 0);
       const total = validation.length + 1;
@@ -2304,7 +2315,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     handover_notes:        handoverNotes.trim() || null,
     documents_released:    docsReleased,
     validation,
-    final_employee_status: empStatus || null,
     profile_lock:          profileLock || null,
     hr_sign_off:           hrSignOff || null,
     // Null when the question doesn't apply, so "not asked" stays distinct from
@@ -2709,6 +2719,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
        from re-submitting the same save. */
     if (fnfPaid) {
       toast.info('Already settled', 'This Full & Final settlement has already been recorded as paid.');
+      return;
+    }
+    /* CBC #92 — not before the last working day. Re-checked here and not only
+       on the disabled button: the date lives on Stage 1 and can be pushed out
+       after this stage was opened, so the view can be stale by the time it is
+       clicked. */
+    if (fnfBeforeLwd) {
+      toast.warning('Too early to settle',
+        `The Full & Final can be paid from the last working day (${fmtDateShort(lwd)}) onwards.`);
       return;
     }
     if (!fnfDoc) {
@@ -3606,13 +3625,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   ) : (
                     <div className="ep-settle-actions">
                       <button type="button" className="ep-btn ep-btn--complete"
-                        disabled={settleSaving}
+                        disabled={settleSaving || fnfBeforeLwd}
+                        title={fnfBeforeLwd
+                          ? `Available from the last working day (${fmtDateShort(lwd)}).`
+                          : undefined}
                         onClick={markFnfPaid}>
                         <i className="ri-wallet-3-line" />
                         {settlement === 'pay_in_lieu' && settle.amount > 0
                           ? 'Mark F&F Paid & Notice Settled'
                           : 'Mark F&F Paid'}
                       </button>
+                    </div>
+                  )}
+                  {/* CBC #92 — say WHY the button is dead. A greyed-out action
+                      with no reason reads as a broken screen, and the date it
+                      is waiting on lives two stages back. */}
+                  {!fnfPaid && fnfBeforeLwd && (
+                    <div className="ep-settle-note is-due">
+                      <i className="ri-time-line" />
+                      <span>
+                        The Full &amp; Final can be settled from the last working day
+                        (<strong>{fmtDateShort(lwd)}</strong>) onwards — it prices the exit month up
+                        to that day, so the figures are not final until then.
+                      </span>
                     </div>
                   )}
                   {settlement === 'pay_in_lieu' && settle.amount <= 0 && (
@@ -4063,7 +4098,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
                 <div className="ep-section-label">Final Actions</div>
                 <Row className="g-2 mb-2">
-                  <Col md={6}><EpField label="Employee Status"><EpSelect value={empStatus} onChange={setEmpStatus} options={['Active','Inactive','Exited']} /></EpField></Col>
+                  {/* Employee Status was removed here (CBC #90). It offered
+                      Active / Inactive / Exited as if HR chose the terminal
+                      state, but nothing on completion read it: the employee's
+                      real status comes from the EXIT TYPE via
+                      ExitController::resolveFinalStatus() — Terminated for a
+                      termination or absconding, Resigned otherwise — and
+                      "Exited" is not even a value employees.status accepts.
+                      A control that looks decisive and decides nothing is
+                      worse than no control. */}
                   <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
 
                   {/* Asked on every exit type — a clean resignation can still
