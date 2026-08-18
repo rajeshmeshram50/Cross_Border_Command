@@ -414,23 +414,53 @@ class AdvanceRequestController extends Controller
    
     public function downloadAttachment(Request $request, $id, $index)
     {
-        $this->authenticateFromQueryToken($request);
+        return $this->streamJsonAttachment(
+            $request, $id,
+            'attachments', $index,
+            'path', 'name',
+            'Attachment not found.',
+            'Attachment file is missing on the server.',
+        );
+    }
 
+    /**
+    /** Shared tail of the five proof endpoints: resolve the disk, 404 if the file
+     *  has gone, otherwise respond. The "gone" wording stays a parameter so the
+     *  message still names WHICH document is missing. */
+    private function streamStoredFile(string $path, ?string $name, string $goneMessage)
+    {
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        if (!$disk->exists($path)) {
+            abort(404, $goneMessage);
+        }
+        return $disk->response($path, $name ?: basename($path));
+    }
+
+    /** downloadAttachment, settleProof, returnProof and recoveryPaymentProof were
+     *  four copies of: authenticate from the query token, load the advance, check
+     *  tenant access, read one entry from a JSON array. Only the column, the two
+     *  keys and the messages differed — so a fix to the token or tenant check had
+     *  to be made four times. */
+    private function streamJsonAttachment(
+        Request $request,
+        $id,
+        string $column,
+        $index,
+        string $pathKey,
+        string $nameKey,
+        string $missingMessage,
+        string $goneMessage,
+    ) {
+        $this->authenticateFromQueryToken($request);
         $row = AdvanceRequest::findOrFail($id);
         $this->ensureTenantAccess($row, $request->user());
 
-        $idx = (int) $index;
-        $atts = $row->attachments ?? [];
-        if (!isset($atts[$idx]) || empty($atts[$idx]['path'])) {
-            abort(404, 'Attachment not found.');
+        $entry = ($row->{$column} ?? [])[(int) $index] ?? null;
+        if (!$entry || empty($entry[$pathKey])) {
+            abort(404, $missingMessage);
         }
-        $path = $atts[$idx]['path'];
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        if (!$disk->exists($path)) {
-            abort(404, 'Attachment file is missing on the server.');
-        }
-        $filename = $atts[$idx]['name'] ?? basename($path);
-        return $disk->response($path, $filename);
+
+        return $this->streamStoredFile($entry[$pathKey], $entry[$nameKey] ?? null, $goneMessage);
     }
 
     private function authenticateFromQueryToken(Request $request): void
@@ -789,21 +819,16 @@ class AdvanceRequestController extends Controller
         $q->where('branch_id', $branchFilter);
     }
 
+    /** Sequential ADV code. Shared allocator — see \App\Support\DocumentNumber. */
     private function nextAdvanceNo(?int $clientId, ?int $branchId): string
     {
-        $q = AdvanceRequest::query()->lockForUpdate();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-
-        $codes = $q->pluck('advance_no');
-        $max = 0;
-        foreach ($codes as $c) {
-            if (preg_match('/^ADV-(\d+)$/i', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $max) $max = $n;
-            }
-        }
-        return 'ADV-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return \App\Support\DocumentNumber::next(
+            \App\Models\AdvanceRequest::class,
+            'advance_no',
+            'ADV',
+            $clientId,
+            $branchId,
+        );
     }
     
 
@@ -1213,18 +1238,13 @@ class AdvanceRequestController extends Controller
      */
     public function settleProof(Request $request, $id, $index)
     {
-        $this->authenticateFromQueryToken($request);
-        $row = AdvanceRequest::findOrFail($id);
-        $this->ensureTenantAccess($row, $request->user());
-        $item = ($row->settle_items ?? [])[(int) $index] ?? null;
-        if (!$item || empty($item['proof_path'])) {
-            abort(404, 'No settlement proof was attached for this row.');
-        }
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        if (!$disk->exists($item['proof_path'])) {
-            abort(404, 'Settlement proof file is missing on the server.');
-        }
-        return $disk->response($item['proof_path'], $item['proof_name'] ?: basename($item['proof_path']));
+        return $this->streamJsonAttachment(
+            $request, $id,
+            'settle_items', $index,
+            'proof_path', 'proof_name',
+            'No settlement proof was attached for this row.',
+            'Settlement proof file is missing on the server.',
+        );
     }
 
     /**
@@ -1326,19 +1346,16 @@ class AdvanceRequestController extends Controller
     /**
      * Next EXP-#### sequence for a tenant (mirrors ExpenseClaimController).
      */
+    /** Sequential EXP code. Shared allocator — see \App\Support\DocumentNumber. */
     private function nextExpenseClaimNo(?int $clientId, ?int $branchId): string
     {
-        $q = \App\Models\ExpenseClaim::query()->lockForUpdate();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-        $max = 0;
-        foreach ($q->pluck('claim_no') as $c) {
-            if (preg_match('/^EXP-(\d+)$/i', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $max) $max = $n;
-            }
-        }
-        return 'EXP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return \App\Support\DocumentNumber::next(
+            \App\Models\ExpenseClaim::class,
+            'claim_no',
+            'EXP',
+            $clientId,
+            $branchId,
+        );
     }
 
     /**
@@ -1650,18 +1667,13 @@ class AdvanceRequestController extends Controller
      */
     public function returnProof(Request $request, $id, $index)
     {
-        $this->authenticateFromQueryToken($request);
-        $row = AdvanceRequest::findOrFail($id);
-        $this->ensureTenantAccess($row, $request->user());
-        $entry = ($row->settle_return_payments ?? [])[(int) $index] ?? null;
-        if (!$entry || empty($entry['proof_path'])) {
-            abort(404, 'No return proof was attached for this payment.');
-        }
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        if (!$disk->exists($entry['proof_path'])) {
-            abort(404, 'Return proof file is missing on the server.');
-        }
-        return $disk->response($entry['proof_path'], $entry['proof_name'] ?: basename($entry['proof_path']));
+        return $this->streamJsonAttachment(
+            $request, $id,
+            'settle_return_payments', $index,
+            'proof_path', 'proof_name',
+            'No return proof was attached for this payment.',
+            'Return proof file is missing on the server.',
+        );
     }
 
     /* ============================================================ */
@@ -2218,17 +2230,17 @@ class AdvanceRequestController extends Controller
     {
         $this->authenticateFromQueryToken($request);
         $payment = \App\Models\AdvanceRequestPayment::findOrFail($paymentId);
-        $row = AdvanceRequest::findOrFail($payment->advance_request_id);
+        $row     = AdvanceRequest::findOrFail($payment->advance_request_id);
         $this->ensureTenantAccess($row, $request->user());
 
         if (empty($payment->proof_path)) {
             abort(404, 'No proof of payment was attached to this settlement.');
         }
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        if (!$disk->exists($payment->proof_path)) {
-            abort(404, 'Proof file is missing on the server.');
-        }
-        return $disk->response($payment->proof_path, $payment->proof_name ?: basename($payment->proof_path));
+        return $this->streamStoredFile(
+            $payment->proof_path,
+            $payment->proof_name,
+            'Proof file is missing on the server.',
+        );
     }
 
     /**
@@ -2325,19 +2337,13 @@ class AdvanceRequestController extends Controller
      */
     public function recoveryPaymentProof(Request $request, $id, $index)
     {
-        $this->authenticateFromQueryToken($request);
-        $row = AdvanceRequest::findOrFail($id);
-        $this->ensureTenantAccess($row, $request->user());
-
-        $entry = ($row->recovery_direct_payments ?? [])[$index] ?? null;
-        if (!$entry || empty($entry['proof_path'])) {
-            abort(404, 'No proof was attached to this recovery payment.');
-        }
-        $disk = \Illuminate\Support\Facades\Storage::disk('public');
-        if (!$disk->exists($entry['proof_path'])) {
-            abort(404, 'Proof file is missing on the server.');
-        }
-        return $disk->response($entry['proof_path'], $entry['proof_name'] ?: basename($entry['proof_path']));
+        return $this->streamJsonAttachment(
+            $request, $id,
+            'recovery_direct_payments', $index,
+            'proof_path', 'proof_name',
+            'No proof was attached to this recovery payment.',
+            'Proof file is missing on the server.',
+        );
     }
 
     /** Build the Zoho Books web-app deep link for an expense (region derived from

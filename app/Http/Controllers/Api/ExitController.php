@@ -333,77 +333,106 @@ class ExitController extends Controller
         $this->guardNotSelf($request, $employee);
         $data = $this->validatePayload($request);
 
-        /* The notice-period settlement has to be closed before the case can be.
-           Money owed in either direction (recovered from the employee, or paid
-           to them in lieu) is a hard gate — the SPA greys the button, and this
-           is the server-side twin so a crafted request can't slip past it. */
-        $mode   = $this->resolveSettlementMode(
-            (string) ($data['exit_type'] ?? ''),
-            /* Falls back to the SAVED choice when the payload omits it, so the
-               gate reads the same answer the row will store — a Complete Exit
-               posted without the field must not silently re-price the notice. */
-            $data['notice_payment_choice']
-                ?? EmployeeExit::where('employee_id', $employee->id)->value('notice_payment_choice'),
-        );
-        $amount = (float) ($data['notice_settlement_amount'] ?? 0);
-        $status = (string) ($data['notice_settlement_status'] ?? 'NA');
-        /* No notice period applies (probation, or resigned within 15 days of
-           joining) → nothing can be owed, so a stale amount left on the payload
-           must not gate the completion. applyNoticeWaiver() zeroes what is
-           actually stored; this keeps the gate consistent with it. Falls back
-           to the saved notice date when the payload omits it, so the gate reads
-           the same date the waiver will. */
-        $noticeDate = $data['notice_date']
-            ?? EmployeeExit::where('employee_id', $employee->id)->value('notice_date');
-        if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $noticeDate)) {
-            $amount = 0.0;
-        }
-        if ($mode !== 'served' && $amount > 0 && $status !== 'Settled') {
-            abort(422, $mode === 'recover'
-                ? 'The notice-period recovery from this employee is not settled yet — record the payment and approve it before completing the exit.'
-                : 'The notice-period payment to this employee is not settled yet — disburse the full amount before completing the exit.');
-        }
+        /* Rule 1 — read, check, then write, all under one lock.
 
-        /* Company advances must be fully reconciled before the case can close:
-           an unsettled advance, an unreturned (used-less) balance whose payments
-           aren't all approved, or an un-raised (used-more) reimbursement each
-           block completion. Self advances are recovered from the F&F itself, so
-           they never block. Mirrors the frontend gate. */
-        $gateLwd = !empty($data['last_working_day'])
-            ? \Carbon\Carbon::parse($data['last_working_day'])->startOfDay()
-            : (($stored = EmployeeExit::where('employee_id', $employee->id)->value('last_working_day'))
-                ? \Carbon\Carbon::parse($stored)->startOfDay()
-                : \Carbon\Carbon::now(self::DISPLAY_TZ)->startOfDay());
-        $advCheck = $this->fnfAdvances($employee, $gateLwd);
-        if (!($advCheck['all_complete'] ?? true)) {
-            $refs = collect($advCheck['items'] ?? [])
-                ->filter(fn($i) => empty($i['complete']))
-                ->map(fn($i) => $i['reference'])
-                ->filter()->values()->all();
-            abort(422, 'Company advance(s) not fully settled: ' . implode(', ', $refs)
-                . '. Settle, return the balance (with each payment approved), or raise the reimbursement before completing the exit.');
-        }
+           Every gate below (notice settlement, company advances, orphaned direct
+           reports) used to run out here while the write sat in its own
+           transaction further down. Two Complete Exit requests — a double-click,
+           or a client retry — both cleared the gates, both entered the write, and
+           the case closed twice: completed_at re-stamped, the farewell email sent
+           twice, and a company advance or a still-reporting subordinate able to
+           slip in between one request's check and the other's write.
 
-        /* An employee who still manages people cannot be deactivated. Completing
-           the exit flips their status and disables their login, and every reader
-           that walks the org chart — My Team, leave and expense approval chains,
-           the permission subordinate check — would then dead-end at a switched-
-           off row. HR reassigns the reports first (reassignReports above); this
-           is the gate that makes that mandatory rather than advisory.
+           The lock is taken on the EMPLOYEE row rather than the exit row: on a
+           first completion the exit row may not exist yet, and a row that isn't
+           there can't be locked. The employee always exists and every exit path
+           for that person goes through it, so it is the reliable anchor. */
+        $row = DB::transaction(function () use ($request, $data, $employee) {
+            Employee::withTrashed()->whereKey($employee->id)->lockForUpdate()->firstOrFail();
 
-           Checked LAST of the three gates and outside the transaction, same as
-           the others, so the message names the real blocker. */
-        $orphans = $this->activeDirectReports($employee);
-        if ($orphans->isNotEmpty()) {
-            $names = $orphans->take(5)
-                ->map(fn($e) => $e->display_name ?: $e->emp_code)
-                ->filter()->implode(', ');
-            $more = $orphans->count() > 5 ? ' and ' . ($orphans->count() - 5) . ' more' : '';
-            abort(422, $orphans->count() . ' employee(s) still report to this person (' . $names . $more
-                . '). Assign them a new reporting manager before completing the termination.');
-        }
+            /* Read the saved case ONCE, under the lock. The gates below each used
+               to fire their own EmployeeExit::where(...)->value(...), so three
+               reads could see three different states. */
+            $saved = EmployeeExit::where('employee_id', $employee->id)->first();
 
-        $row = DB::transaction(function () use ($request, $data, $employee, $mode) {
+            /* Re-closing a closed case is never a legitimate retry — it is the
+               second of two racing requests, or a stale tab. 409 tells the caller
+               the work is already done instead of silently redoing it. */
+            if ($saved && $saved->exit_case_status === 'Closed') {
+                abort(409, 'This exit has already been completed.');
+            }
+
+            /* The notice-period settlement has to be closed before the case can be.
+               Money owed in either direction (recovered from the employee, or paid
+               to them in lieu) is a hard gate — the SPA greys the button, and this
+               is the server-side twin so a crafted request can't slip past it. */
+            $mode   = $this->resolveSettlementMode(
+                (string) ($data['exit_type'] ?? ''),
+                /* Falls back to the SAVED choice when the payload omits it, so the
+                   gate reads the same answer the row will store — a Complete Exit
+                   posted without the field must not silently re-price the notice. */
+                $data['notice_payment_choice']
+                    ?? $saved?->notice_payment_choice,
+            );
+            $amount = (float) ($data['notice_settlement_amount'] ?? 0);
+            $status = (string) ($data['notice_settlement_status'] ?? 'NA');
+            /* No notice period applies (probation, or resigned within 15 days of
+               joining) → nothing can be owed, so a stale amount left on the payload
+               must not gate the completion. applyNoticeWaiver() zeroes what is
+               actually stored; this keeps the gate consistent with it. Falls back
+               to the saved notice date when the payload omits it, so the gate reads
+               the same date the waiver will. */
+            $noticeDate = $data['notice_date']
+                ?? $saved?->notice_date;
+            if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $noticeDate)) {
+                $amount = 0.0;
+            }
+            if ($mode !== 'served' && $amount > 0 && $status !== 'Settled') {
+                abort(422, $mode === 'recover'
+                    ? 'The notice-period recovery from this employee is not settled yet — record the payment and approve it before completing the exit.'
+                    : 'The notice-period payment to this employee is not settled yet — disburse the full amount before completing the exit.');
+            }
+
+            /* Company advances must be fully reconciled before the case can close:
+               an unsettled advance, an unreturned (used-less) balance whose payments
+               aren't all approved, or an un-raised (used-more) reimbursement each
+               block completion. Self advances are recovered from the F&F itself, so
+               they never block. Mirrors the frontend gate. */
+            $gateLwd = !empty($data['last_working_day'])
+                ? \Carbon\Carbon::parse($data['last_working_day'])->startOfDay()
+                : (($stored = $saved?->last_working_day)
+                    ? \Carbon\Carbon::parse($stored)->startOfDay()
+                    : \Carbon\Carbon::now(self::DISPLAY_TZ)->startOfDay());
+            $advCheck = $this->fnfAdvances($employee, $gateLwd);
+            if (!($advCheck['all_complete'] ?? true)) {
+                $refs = collect($advCheck['items'] ?? [])
+                    ->filter(fn($i) => empty($i['complete']))
+                    ->map(fn($i) => $i['reference'])
+                    ->filter()->values()->all();
+                abort(422, 'Company advance(s) not fully settled: ' . implode(', ', $refs)
+                    . '. Settle, return the balance (with each payment approved), or raise the reimbursement before completing the exit.');
+            }
+
+            /* An employee who still manages people cannot be deactivated. Completing
+               the exit flips their status and disables their login, and every reader
+               that walks the org chart — My Team, leave and expense approval chains,
+               the permission subordinate check — would then dead-end at a switched-
+               off row. HR reassigns the reports first (reassignReports above); this
+               is the gate that makes that mandatory rather than advisory.
+
+               Checked LAST of the three gates and outside the transaction, same as
+               the others, so the message names the real blocker. */
+            $orphans = $this->activeDirectReports($employee);
+            if ($orphans->isNotEmpty()) {
+                $names = $orphans->take(5)
+                    ->map(fn($e) => $e->display_name ?: $e->emp_code)
+                    ->filter()->implode(', ');
+                $more = $orphans->count() > 5 ? ' and ' . ($orphans->count() - 5) . ' more' : '';
+                abort(422, $orphans->count() . ' employee(s) still report to this person (' . $names . $more
+                    . '). Assign them a new reporting manager before completing the termination.');
+            }
+
+
             $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
             // Same clean slate as upsert(): a rehired employee's old case must
             // never be the thing this completion writes on top of. The SPA

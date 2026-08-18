@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\GuardsDevTooling;
 use App\Http\Controllers\Controller;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -18,15 +19,15 @@ use Illuminate\Support\Facades\DB;
  */
 class EmployeeJoiningTestController extends Controller
 {
+    use GuardsDevTooling;
+
     /** Default backdate — a past date relative to "now". */
     private const DEFAULT_DOJ = '2026-07-20';
 
     public function backdate(Request $request)
     {
         $user = $request->user();
-        if (!$user || $user->user_type === 'employee') {
-            abort(403, 'Only an admin / branch user can backdate joining dates.');
-        }
+        $this->guardDevToolAccess($user, 'backdate joining dates');
 
         $data = $request->validate([
             'client_id'        => ['required', 'integer'],
@@ -46,15 +47,7 @@ class EmployeeJoiningTestController extends Controller
         $branchId = (int) $data['branch_id'];
         $doj      = Carbon::parse($data['date_of_joining'] ?? self::DEFAULT_DOJ)->toDateString();
 
-        // Tenant guard — non-super-admins are locked to their own scope.
-        if ($user->user_type !== 'super_admin') {
-            if ($user->client_id && $clientId !== (int) $user->client_id) {
-                abort(403, 'Out of your client scope.');
-            }
-            if ($user->user_type === 'branch_user' && $user->branch_id && $branchId !== (int) $user->branch_id) {
-                abort(403, 'Out of your branch scope.');
-            }
-        }
+        $this->guardDevToolScope($user, $clientId, $branchId);
 
         $q = DB::table('employees')
             ->where('client_id', $clientId)

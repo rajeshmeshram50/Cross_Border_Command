@@ -1437,21 +1437,16 @@ class ExpenseClaimController extends Controller
      * duplicate claim_no values. Caller in store() wraps the allocate+create
      * pair in DB::transaction() for exactly this reason.
      */
+    /** Sequential EXP code. Shared allocator — see \App\Support\DocumentNumber. */
     private function nextClaimNo(?int $clientId, ?int $branchId): string
     {
-        $q = ExpenseClaim::query()->lockForUpdate();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-
-        $codes = $q->pluck('claim_no');
-        $max = 0;
-        foreach ($codes as $c) {
-            if (preg_match('/^EXP-(\d+)$/i', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $max) $max = $n;
-            }
-        }
-        return 'EXP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return \App\Support\DocumentNumber::next(
+            \App\Models\ExpenseClaim::class,
+            'claim_no',
+            'EXP',
+            $clientId,
+            $branchId,
+        );
     }
 
     /**
