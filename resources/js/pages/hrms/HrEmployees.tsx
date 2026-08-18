@@ -461,6 +461,11 @@ export default function HrEmployees() {
 
   const reloadEmployees = useCallback(async () => {
     const token = ++employeesReqRef.current;
+    /* Every fetch, not just the first. Paging and searching were instant while
+       they happened in the browser, so the table never needed to say it was
+       working; now they are requests, and without this the old rows sit there
+       looking like the click did nothing until new ones replace them. */
+    setLoadingEmployees(true);
     try {
       const r = await api.get('/employees', {
         params: {
@@ -746,6 +751,10 @@ export default function HrEmployees() {
   };
 
   const [empOpen, setEmpOpen] = useState(false);
+  /* True between the dialog appearing and its record arriving. Edit opens on
+     the click now, so there is a window where the wizard is on screen with
+     nothing in it — this drives the skeleton that fills it. */
+  const [empLoading, setEmpLoading] = useState(false);
   /* The safety net for the idle preload above: if either dialog is opened
      before the browser ever went idle, the lists are pulled in right then. So
      the dropdowns are never empty because of the deferral — at worst they fill
@@ -1277,6 +1286,7 @@ export default function HrEmployees() {
   const [returnToOnClose, setReturnToOnClose] = useState<string | null>(null);
   const closeEmp = () => {
     setEmpOpen(false);
+    setEmpLoading(false);
     resetEmpForm();
     if (returnToOnClose) {
       const target = returnToOnClose;
@@ -1918,19 +1928,30 @@ export default function HrEmployees() {
   const openEditEmployee = async (row: EmployeeRow) => {
     const dbId = (row as any)._dbId as number | undefined;
     let raw = (row as any)._raw as ApiEmployee | undefined;
-    if (dbId) {
-      try {
-        const r = await api.get(`/employees/${dbId}`);
-        raw = (r.data?.employee ?? r.data ?? raw) as ApiEmployee | undefined;
-      } catch {
-        toast.warning('Opened with partial details', 'Could not load the full record — check the fields before saving.');
-      }
-    }
+
+    /* Open on the click, fill when the record lands.
+       The fetch used to sit in front of setEmpOpen, so Edit did nothing at all
+       until the response came back — imperceptible against a local API and a
+       dead button against a real one, where people click it again. The dialog
+       now appears immediately with a skeleton in place of the fields. */
     resetEmpForm();
     setEmpMode('edit');
     setEmpEditingName(row.name);
     setEditingDbId(dbId ?? null);
     editingDbIdRef.current = dbId ?? null;
+    setEmpOpen(true);
+
+    if (dbId) {
+      setEmpLoading(true);
+      try {
+        const r = await api.get(`/employees/${dbId}`);
+        raw = (r.data?.employee ?? r.data ?? raw) as ApiEmployee | undefined;
+      } catch {
+        toast.warning('Opened with partial details', 'Could not load the full record — check the fields before saving.');
+      } finally {
+        setEmpLoading(false);
+      }
+    }
 
     if (raw) {
       setEFirstName(raw.first_name || '');
@@ -2084,8 +2105,7 @@ export default function HrEmployees() {
     const maxStep: 1 | 2 | 3 | 4 =
       lastStep === 4 ? 4 : lastStep === 0 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpMaxStep(maxStep);
-
-    setEmpOpen(true);
+    // The dialog is already open — see the top of this function.
   };
 
   const validateStep1 = useCallback((): Record<string, string> => {
@@ -3835,8 +3855,8 @@ export default function HrEmployees() {
                     <button
                       type="button"
                       className={`emp-stepper-btn${locked ? ' is-locked' : ''}`}
-                      onClick={() => { if (!locked && !saving) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
-                      disabled={locked || saving}
+                      onClick={() => { if (!locked && !saving && !empLoading) setEmpStep(s.n as 1 | 2 | 3 | 4); }}
+                      disabled={locked || saving || empLoading}
                       aria-label={`Go to step ${s.n}: ${s.label}`}
                       aria-current={active ? 'step' : undefined}
                       title={locked ? 'Complete the current step first' : saving ? 'Saving…' : undefined}
@@ -3868,7 +3888,11 @@ export default function HrEmployees() {
               ...(saving ? { pointerEvents: 'none' as const, opacity: 0.65 } : {}),
             }}
           >
-            <fieldset disabled={saving} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
+            <fieldset disabled={saving || empLoading} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
+              {/* Edit opens on the click and fetches the record after, so the
+                  body stands in for itself until that lands. */}
+              {empLoading && <EmpFormSkeleton />}
+              {!empLoading && (<>
               {empStep === 1 && (
                 <>
                   <div className="emp-section">
@@ -5020,6 +5044,7 @@ export default function HrEmployees() {
                   </div>
                 </>
               )}
+              </>)}
             </fieldset>
           </div>
 
@@ -5038,8 +5063,9 @@ export default function HrEmployees() {
                   type="button"
                   onClick={() => setEmpStep((s) => (s > 1 ? ((s - 1) as 1 | 2 | 3 | 4) : s))}
                   // Previous must freeze too — stepping away mid-save would swap
-                  // the form under the in-flight PUT.
-                  disabled={saving}
+                  // the form under the in-flight PUT, and mid-load there is
+                  // nothing to step back to yet.
+                  disabled={saving || empLoading}
                   className="rec-btn-ghost"
                 >
                   <i className="ri-arrow-left-s-line" /> Previous
@@ -5049,7 +5075,7 @@ export default function HrEmployees() {
                 <button
                   type="button"
                   onClick={handleNextStep}
-                  disabled={saving}
+                  disabled={saving || empLoading}
                   className="rec-btn-primary"
                   style={{
                     minWidth: 140,
@@ -5077,7 +5103,7 @@ export default function HrEmployees() {
                 <>
                   <button
                     type="button"
-                    disabled={saving}
+                    disabled={saving || empLoading}
                     onClick={handleSaveEmployee}
                     className="rec-btn-primary"
                     style={{ minWidth: 170, justifyContent: 'center', cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.9 : 1 }}
@@ -5313,6 +5339,35 @@ export default function HrEmployees() {
    treatment as the shared AncillaryRolesChip". Every positioning fix went
    into the shared one and this page kept rendering the local copy, so the
    popover here never changed. Deleted; the shared component is imported. */
+
+/**
+ * Stand-in for the wizard body while the employee's record is in flight.
+ *
+ * Shaped like the step it replaces — two titled sections of three-across
+ * fields — so the dialog does not visibly reflow when the real fields arrive.
+ * A spinner in the middle of an empty dialog would say "wait" without saying
+ * what is coming.
+ */
+function EmpFormSkeleton() {
+  const Field = () => (
+    <Col md={4}>
+      <Shimmer height={10} width="42%" />
+      <div style={{ marginTop: 7 }}><Shimmer height={34} /></div>
+    </Col>
+  );
+  return (
+    <div aria-hidden>
+      {[0, 1].map(section => (
+        <div className="emp-section" key={section}>
+          <div style={{ marginBottom: 14 }}><Shimmer height={12} width={168} /></div>
+          <Row className="g-3">
+            {Array.from({ length: 6 }, (_, i) => <Field key={i} />)}
+          </Row>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /**
  * Greying for a control the user lacks the permission for. Returns undefined

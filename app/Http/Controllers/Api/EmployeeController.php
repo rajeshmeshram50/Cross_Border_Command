@@ -1558,7 +1558,22 @@ class EmployeeController extends Controller
                 ]);
             }
         }
-        return response()->json(['message' => 'Updated', 'employee' => $row]);
+        /* The saved columns, without the relations or the accessors.
+         *
+         * Every screen that PUTs here throws the body away — ten call sites,
+         * each `await api.put(...)` with nothing on the left — while building
+         * it re-ran ancillary_roles_resolved, other_assets_resolved and
+         * photo_url (a query apiece), an AES encryption for encrypted_id, and
+         * then all of it again for the reporting manager, who is another
+         * Employee carrying the same accessors.
+         *
+         * The columns themselves are already in memory and cost nothing, so
+         * they stay: a caller that wants to read back what it saved still can.
+         */
+        return response()->json([
+            'message'  => 'Updated',
+            'employee' => (clone $row)->setRelations([])->setAppends([]),
+        ]);
     }
 
     public function destroy(Request $request, $id)

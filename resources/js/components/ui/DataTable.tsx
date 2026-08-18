@@ -362,6 +362,15 @@ export default function DataTable<T extends object>({
 
   useEffect(() => {
     if (!autoFitRows) return;
+    /* Not while rows are in flight. The skeleton is not the content it stands
+       in for, so measuring it yields a different row count — and with
+       serverPagination that count is reported back as a new page size, which
+       triggers another fetch, which shows the skeleton again. The table
+       oscillated between skeleton and rows and never settled. Measuring only
+       once the real rows are in place breaks that; the effect still re-runs
+       when `loading` drops, so the fit is taken as soon as there is something
+       honest to measure. */
+    if (loading) return;
     fitRows();
     const t = window.setTimeout(fitRows, 120);
     window.addEventListener('resize', fitRows);
