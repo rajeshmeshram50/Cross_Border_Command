@@ -6187,6 +6187,52 @@
   box-shadow: 0 8px 18px rgba(34,197,94,0.42), inset 0 1px 0 rgba(255,255,255,0.28);
 }
 
+/* ── Disabled, for EVERY variant ───────────────────────────────────────
+   Only --ghost used to carry a disabled state, so a disabled Complete /
+   Approve / Next button still rendered as a full-colour, lift-on-hover
+   call to action — the `disabled` attribute was doing its job silently
+   while the button went on inviting the click it would refuse (CBC #92:
+   "Mark F&F Paid" greyed by the last-working-day rule, but still green).
+
+   Placed after the variants so it wins on source order, and the :hover
+   overrides are listed explicitly because a variant's own :hover rule is
+   equally specific and would otherwise still animate. */
+.ep-btn:disabled,
+.ep-btn[disabled] {
+  background: #f1f5f9;
+  background-image: none;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+  cursor: not-allowed;
+  opacity: 1;   /* the muted palette IS the signal; stacking opacity greys the text past reading */
+}
+.ep-btn:disabled i,
+.ep-btn[disabled] i { color: #9ca3af; }
+.ep-btn:disabled:hover,
+.ep-btn[disabled]:hover {
+  background: #f1f5f9;
+  background-image: none;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+  box-shadow: none;
+  transform: none;
+  filter: none;
+}
+[data-bs-theme="dark"] .ep-btn:disabled,
+[data-bs-theme="dark"] .ep-btn[disabled],
+[data-bs-theme="dark"] .ep-btn:disabled:hover,
+[data-bs-theme="dark"] .ep-btn[disabled]:hover {
+  background: rgba(255,255,255,0.06);
+  background-image: none;
+  color: rgba(255,255,255,0.38);
+  border-color: rgba(255,255,255,0.10);
+}
+[data-bs-theme="dark"] .ep-btn:disabled i,
+[data-bs-theme="dark"] .ep-btn[disabled] i { color: rgba(255,255,255,0.38); }
+
 /* ══ Initiate Exit — exit-type picker ══════════════════════════════════ */
 .etp-grid { display: flex; flex-direction: column; gap: 10px; }
 .etp-card {
