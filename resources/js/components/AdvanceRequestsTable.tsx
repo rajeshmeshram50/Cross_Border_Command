@@ -250,7 +250,25 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
       meta: { width: '9%', align: 'center' },
-      cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
+      /* Once HR sanctions a different net, THAT is the figure being disbursed
+         and recovered, so it leads. The requested amount stays visible beneath
+         it — dropping it would hide that the request was adjusted at all. */
+      cell: info => {
+        const r   = info.row.original;
+        const req = Number(r.amount || 0);
+        const net = r.sanctioned_amount != null ? Number(r.sanctioned_amount) : null;
+        const inr = (v: number) => '₹' + v.toLocaleString('en-IN');
+        const adjusted = net != null && Math.abs(net - req) > 0.005;
+        if (!adjusted) return <span className="fw-bold">{inr(req)}</span>;
+        return (
+          <Tooltip label={`Requested ${inr(req)} · sanctioned ${inr(net!)} (${net! > req ? '+' : '−'}${inr(Math.abs(net! - req))})`}>
+            <span className="d-inline-flex flex-column align-items-center" style={{ lineHeight: 1.15 }}>
+              <span className="fw-bold">{inr(net!)}</span>
+              <span style={{ fontSize: 9.5, opacity: .65, whiteSpace: 'nowrap' }}>req {inr(req)}</span>
+            </span>
+          </Tooltip>
+        );
+      },
     },
     {
       header: () => <div className="text-center">Requested</div>,
@@ -311,7 +329,13 @@ export function advanceRequestColumns({
         if (r.recovery_mode !== 'emi') return <span className="text-muted">—</span>;
         const per   = Number(r.monthly_emi || 0);
         const n     = Number(r.recovery_months || 0);
-        const total = Number(r.amount || 0);
+        /* Total the schedule against the SANCTIONED net, not the requested
+           amount. The server recomputes monthly_emi off the sanctioned figure
+           after HR applies additions / deductions, so pairing that instalment
+           with the pre-adjustment total made the remainder come out wrong — and
+           on an addition it went NEGATIVE (₹1,00,000 − ₹841.67 × 119 = −₹158.73
+           on a ₹1,01,000 sanction). Both figures now come from the same base. */
+        const total = Number(r.sanctioned_amount ?? r.amount ?? 0);
         /* The schedule floors the per-cycle figure, so the LAST instalment
            carries the remainder. The cell can only fit one number, so it shows
            the repeating one — the tooltip carries the whole schedule, which is
