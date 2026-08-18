@@ -113,6 +113,17 @@ class PayrollService
     {
         DB::transaction(function () use ($period) {
             $run = $period->runs()->latest('id')->first();
+
+            /* A paid run is final. The controller already refuses to reopen one,
+             * but this method used to leave the run alone and STILL unlock the
+             * period — clearing attendance_finalized and flipping it back to
+             * open, so a settled month looked reopenable to everything that
+             * reads the period rather than the run. Refuse outright instead, so
+             * the guard holds no matter who calls the service. */
+            if ($run && $run->status === 'paid') {
+                throw new RuntimeException('Paid payroll cannot be reopened — post an adjustment in the next cycle.');
+            }
+
             if ($run && $run->status !== 'paid') {
                 Payslip::where('payroll_run_id', $run->id)->forceDelete();
                 // Void any pending disbursement so a stale approved-payment
@@ -158,7 +169,7 @@ class PayrollService
         }
 
         $payslips = Payslip::where('employee_id', $employeeId)
-            ->whereHas('run', fn ($q) => $q->whereIn('status', ['draft', 'generated']))
+            ->whereHas('run', fn($q) => $q->whereIn('status', ['draft', 'generated']))
             ->with(['run.period'])
             ->get();
 
@@ -221,7 +232,8 @@ class PayrollService
                 return ['paid' => 0, 'held' => 0];
             }
             $unpaid = Payslip::where('payroll_run_id', $run->id)->where('status', '!=', 'Paid')->get();
-            $paid = 0; $held = 0;
+            $paid = 0;
+            $held = 0;
             foreach ($unpaid as $slip) {
                 // Nothing to disburse for a ₹0 net (fully absent / LOP) — skip it
                 // so the paid count matches the payment advice exactly.
@@ -242,11 +254,13 @@ class PayrollService
                 $slip->bank_verified = $bankOk;
 
                 $hasOtherBlock = collect((array) $slip->exceptions)
-                    ->contains(fn ($e) => ($e['type'] ?? null) === 'blocking'
+                    ->contains(fn($e) => ($e['type'] ?? null) === 'blocking'
                         && stripos((string) ($e['reason'] ?? ''), 'bank') === false);
 
                 if ($bankOk && !$hasOtherBlock) {
-                    $slip->status = 'Paid'; $slip->hold_reason = null; $paid++;
+                    $slip->status = 'Paid';
+                    $slip->hold_reason = null;
+                    $paid++;
                 } else {
                     $slip->status = 'On Hold';
                     $slip->hold_reason = $hasOtherBlock ? ($slip->hold_reason ?: 'Blocking issue unresolved') : 'Bank details missing/invalid';
@@ -486,7 +500,22 @@ class PayrollService
                     'overtime_hours'    => 0.0,
                     'overtime_amount'   => 0.0,
                     'gross_earnings'    => 0.0,
+                    'structure_gross'   => 0.0,
+                    'monthly_gross_full' => 0.0,
+                    'monthly_basic_full' => 0.0,
+                    'proration'          => 1.0,
+                    'active_days'        => 0.0,
+                    'cycle_days'         => 0.0,
+                    'structure_components' => [],
+                    'extra_earnings'       => [],
+                    'earned_gross'         => 0.0,
+                    'earned_basic'         => 0.0,
+                    'earned_factor'        => 0.0,
                     'lop_amount'        => 0.0,
+                    'per_day_rate'      => 0.0,
+                    'lop_basis'         => 'basic',
+                    'lop_divisor'       => 'calendar',
+                    'lop_divisor_days'  => 0.0,
                     'total_deductions'  => 0.0,
                     'net_pay'           => 0.0,
                     'earnings'          => [],
@@ -540,7 +569,32 @@ class PayrollService
                 'overtime_hours'    => (float) ($slip['overtime_hours'] ?? 0),
                 'overtime_amount'   => (float) ($slip['overtime_amount'] ?? 0),
                 'gross_earnings'    => (float) ($slip['gross_earnings'] ?? 0),
+                // Basic + allowances only — the "monthly salary" the per-day
+                // rate and the component list are read against.
+                'structure_gross'   => (float) ($slip['structure_gross'] ?? 0),
+                // Full monthly package + the pro-ration applied to it, so the
+                // F&F can show the package and the earned share as two
+                // separate, reconcilable figures.
+                'monthly_gross_full' => (float) ($slip['monthly_gross_full'] ?? 0),
+                'monthly_basic_full' => (float) ($slip['monthly_basic_full'] ?? 0),
+                'proration'          => (float) ($slip['proration'] ?? 1),
+                'active_days'        => (float) ($slip['active_days'] ?? 0),
+                'cycle_days'         => (float) ($slip['cycle_days'] ?? 0),
+                // The package as the employee master shows it, kept separate
+                // from the pro-rated `earnings` lines above.
+                'structure_components' => $slip['structure_components'] ?? [],
+                'extra_earnings'       => $slip['extra_earnings'] ?? [],
+                'earned_gross'         => (float) ($slip['earned_gross'] ?? 0),
+                'earned_basic'         => (float) ($slip['earned_basic'] ?? 0),
+                'earned_factor'        => (float) ($slip['earned_factor'] ?? 0),
                 'lop_amount'        => (float) ($slip['lop_amount'] ?? 0),
+                // Per-day salary + the branch rule that priced it, so the F&F
+                // can show HOW the LOP deduction was arrived at rather than
+                // asking Finance to reverse-engineer it from the total.
+                'per_day_rate'      => (float) ($slip['lop_per_day'] ?? 0),
+                'lop_basis'         => (string) ($slip['lop_basis'] ?? 'basic'),
+                'lop_divisor'       => (string) ($slip['lop_divisor'] ?? 'calendar'),
+                'lop_divisor_days'  => (float) ($slip['lop_divisor_days'] ?? 0),
                 'total_deductions'  => (float) ($slip['total_deductions'] ?? 0),
                 'net_pay'           => (float) ($slip['net_pay'] ?? 0),
                 'earnings'          => $slip['earnings'] ?? [],
@@ -600,7 +654,7 @@ class PayrollService
             ->where(function ($w) use ($period) {
                 // Not yet joined after the period? Excluded.
                 $w->whereNull('date_of_joining')
-                  ->orWhere('date_of_joining', '<=', $period->period_end);
+                    ->orWhere('date_of_joining', '<=', $period->period_end);
             });
 
         if ($period->client_id) {
@@ -752,7 +806,7 @@ class PayrollService
             if ($earlyExit) {
                 $found  = array_filter(
                     [ProbationGuard::tenureDays($e, $resign), $lwdTenure],
-                    fn ($t) => $t !== null,
+                    fn($t) => $t !== null,
                 );
                 $tenure = $found ? min($found) : null;
             }
@@ -817,29 +871,29 @@ class PayrollService
                 // it wins when both apply.
                 'reason'           => ($earlyExit
                     ? 'Resigned within ' . ProbationGuard::EARLY_EXIT_DAYS
-                        . ' days of joining' . ($tenure !== null ? " ({$tenure} day(s))" : '')
-                        . ' — notice period not applicable and payroll not processed.'
+                    . ' days of joining' . ($tenure !== null ? " ({$tenure} day(s))" : '')
+                    . ' — notice period not applicable and payroll not processed.'
                     : ($exitedInCycle
                         ? 'Left on ' . Carbon::parse($lwd)->format('j M Y')
-                            . ' — excluded from this cycle; salary and dues are settled in the Full & Final settlement'
-                            . ($fnfAmount !== null
-                                ? ' (earned this cycle: ₹' . number_format($fnfAmount, 2) . ').'
-                                : '.')
+                        . ' — excluded from this cycle; salary and dues are settled in the Full & Final settlement'
+                        . ($fnfAmount !== null
+                            ? ' (earned this cycle: ₹' . number_format($fnfAmount, 2) . ').'
+                            : '.')
                         : ($halfOnboarded
                             ? 'Onboarding incomplete (stage ' . (int) $e->onboarding_stage_completed
-                                . ' of 6) — excluded from payroll until onboarding is completed.'
+                            . ' of 6) — excluded from payroll until onboarding is completed.'
                             : ($payrollOff
                                 ? 'Payroll is switched off on this employee record — no payslip is generated for them.'
                                 : ($disabledNoExit
-                                ? 'Employee record was removed/disabled — paid last cycle, not this one.'
+                                    ? 'Employee record was removed/disabled — paid last cycle, not this one.'
                                     . ' No exit record with a last working day exists, so any dues must be'
                                     . ' settled manually or through Exit Management.'
-                                : 'Employee status is ' . $e->status . ' — paid last cycle, not this one.'
+                                    : 'Employee status is ' . $e->status . ' — paid last cycle, not this one.'
                                     . ' No exit record with a last working day exists, so any dues must be'
                                     . ' settled manually or through Exit Management.')))))
                     . ($probationLeaver
                         ? ' Left before completing probation (probation ran to '
-                            . $probationEnd->format('j M Y') . ') — notice period was not applicable.'
+                        . $probationEnd->format('j M Y') . ') — notice period was not applicable.'
                         : ''),
             ];
         }
@@ -864,7 +918,7 @@ class PayrollService
             ->join('employees', 'employees.id', '=', 'employee_exits.employee_id')
             ->whereIn('employee_exits.employee_id', $employeeIds)
             ->whereNotNull('employee_exits.notice_date')
-            ->where(fn ($q) => $q->whereNull('employees.date_of_joining')
+            ->where(fn($q) => $q->whereNull('employees.date_of_joining')
                 ->orWhereColumn('employee_exits.notice_date', '>=', 'employees.date_of_joining'))
             ->pluck('employee_exits.notice_date', 'employee_exits.employee_id')
             ->all();
@@ -891,10 +945,10 @@ class PayrollService
             ->whereIn('payslips.employee_id', $employeeIds)
             ->where('payroll_periods.month', $prev->month)
             ->where('payroll_periods.year', $prev->year)
-            ->when($period->client_id, fn ($q) => $q->where('payroll_periods.client_id', $period->client_id))
-            ->when($period->branch_id, fn ($q) => $q->where('payroll_periods.branch_id', $period->branch_id))
+            ->when($period->client_id, fn($q) => $q->where('payroll_periods.client_id', $period->client_id))
+            ->when($period->branch_id, fn($q) => $q->where('payroll_periods.branch_id', $period->branch_id))
             ->pluck('payslips.employee_id')
-            ->map(fn ($id) => (int) $id)
+            ->map(fn($id) => (int) $id)
             ->unique()
             ->values()
             ->all();
@@ -919,7 +973,7 @@ class PayrollService
             ->join('employees', 'employees.id', '=', 'employee_exits.employee_id')
             ->whereIn('employee_exits.employee_id', $employeeIds)
             ->whereNotNull('employee_exits.last_working_day')
-            ->where(fn ($q) => $q->whereNull('employees.date_of_joining')
+            ->where(fn($q) => $q->whereNull('employees.date_of_joining')
                 ->orWhereColumn('employee_exits.last_working_day', '>=', 'employees.date_of_joining'))
             ->pluck('employee_exits.last_working_day', 'employee_exits.employee_id')
             ->all();
@@ -981,7 +1035,7 @@ class PayrollService
                 $covered = Payslip::whereIn('payroll_period_id', $siblingPeriodIds)
                     ->pluck('employee_id')->unique()->all();
                 if (!empty($covered)) {
-                    $employees = $employees->reject(fn ($e) => in_array($e->id, $covered, true))->values();
+                    $employees = $employees->reject(fn($e) => in_array($e->id, $covered, true))->values();
                 }
             }
 
@@ -1059,13 +1113,19 @@ class PayrollService
             $periodStart = Carbon::parse($period->period_start)->startOfDay();
             $periodEnd   = Carbon::parse($period->period_end)->startOfDay();
             if (ProbationGuard::isOnProbation($employee, $periodEnd)) {
-                $exceptions = $this->withException($exceptions, 'info',
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
                     'On probation until ' . $probationEnd->format('j M Y')
-                    . ' — paid in full for this cycle; probation does not withhold salary.');
+                        . ' — paid in full for this cycle; probation does not withhold salary.'
+                );
             } elseif ($probationEnd->gte($periodStart)) {
-                $exceptions = $this->withException($exceptions, 'info',
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
                     'Probation completed on ' . $probationEnd->format('j M Y')
-                    . ' (inside this cycle) — paid in full for the whole cycle.');
+                        . ' (inside this cycle) — paid in full for the whole cycle.'
+                );
             }
         }
 
@@ -1138,8 +1198,11 @@ class PayrollService
         $activeDays = max(0, $winStart->diffInDays($winEnd) + 1);
         $proration  = $calDays > 0 ? min(1, $activeDays / $calDays) : 1;
         if ($proration < 1) {
-            $exceptions = $this->withException($exceptions, 'warning',
-                'Mid-cycle join/exit — salary pro-rated to ' . round($proration * 100) . '% of the month.');
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'Mid-cycle join/exit — salary pro-rated to ' . round($proration * 100) . '% of the month.'
+            );
         }
 
         // ── Rule 5 — active salary structure is mandatory ──────────────────
@@ -1156,7 +1219,13 @@ class PayrollService
          * the latest version, since those are properties of the employee's
          * current terms rather than amounts to average. */
         [$gross, $basic, $earnComponents, $exceptions] = $this->blendCompensation(
-            $employee, $winStart, $winEnd, $gross, $basic, $earnComponents, $exceptions,
+            $employee,
+            $winStart,
+            $winEnd,
+            $gross,
+            $basic,
+            $earnComponents,
+            $exceptions,
         );
 
         if ($gross <= 0) {
@@ -1238,7 +1307,11 @@ class PayrollService
             : \App\Models\Branch::normalizeShortHoursPolicy(null);
 
         $att = $this->attendanceAggregates(
-            $employee->id, $winStart, $winEnd, $employee->resolveShiftWindow()[0], $shortPolicy
+            $employee->id,
+            $winStart,
+            $winEnd,
+            $employee->resolveShiftWindow()[0],
+            $shortPolicy
         );
         $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
         // Holidays from the employee's assigned holiday group that fall on a
@@ -1255,8 +1328,11 @@ class PayrollService
         // the employee surfaces as a "Mismatch"/Review case (att_source=Review)
         // in the Biometric Input table for HR to reconcile before approving. (#34)
         if ($missingPunch > 0) {
-            $exceptions = $this->withException($exceptions, 'warning',
-                "{$missingPunch} day(s) with a missing punch — verify attendance before approving.");
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                "{$missingPunch} day(s) with a missing punch — verify attendance before approving."
+            );
         }
 
         /* PAY-17 — days the short-hours policy demoted. Named individually with
@@ -1266,15 +1342,18 @@ class PayrollService
         $shortDays = $att['short_days'] ?? [];
         if ($shortDays) {
             $detail = implode(', ', array_map(
-                fn ($d) => Carbon::parse($d['date'])->format('d M')
+                fn($d) => Carbon::parse($d['date'])->format('d M')
                     . ' (' . ($d['hours'] !== null ? $this->trimNum((float) $d['hours']) . 'h' : 'unmeasured')
                     . ' → ' . $this->trimNum((float) $d['credit']) . ' day)',
                 array_slice($shortDays, 0, 8),
             ));
             $more = count($shortDays) > 8 ? ' +' . (count($shortDays) - 8) . ' more' : '';
-            $exceptions = $this->withException($exceptions, 'warning',
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
                 count($shortDays) . " day(s) short of this branch's "
-                . $this->trimNum((float) $shortPolicy['half_day_below']) . "h minimum: {$detail}{$more}.");
+                    . $this->trimNum((float) $shortPolicy['half_day_below']) . "h minimum: {$detail}{$more}."
+            );
         }
 
         /* Paid days, reconciled DATE BY DATE (PAY-13 / PAY-14).
@@ -1348,9 +1427,12 @@ class PayrollService
         $paidDays    = round(min($effectiveWorkingDays, $paidDays), 2);
         $overlapDays = round($overlapDays, 2);
         if ($overlapDays > 0) {
-            $exceptions = $this->withException($exceptions, 'warning',
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
                 "{$overlapDays} day(s) where attendance and an approved leave request cover the same date. "
-                . "The leave request has been taken as the truth for pay — verify the punches before approving.");
+                    . "The leave request has been taken as the truth for pay — verify the punches before approving."
+            );
         }
 
         /* Weekly offs in the active window.
@@ -1369,8 +1451,11 @@ class PayrollService
             }
         }
         if ($holidayDays > 0) {
-            $exceptions = $this->withException($exceptions, 'info',
-                "{$holidayDays} holiday day(s) in this period credited as paid.");
+            $exceptions = $this->withException(
+                $exceptions,
+                'info',
+                "{$holidayDays} holiday day(s) in this period credited as paid."
+            );
         }
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
@@ -1380,8 +1465,11 @@ class PayrollService
         $sandwichLop = (float) ($leave['sandwich_lop'] ?? 0);
         if ($sandwichLop > 0) {
             $lopDays = round($lopDays + $sandwichLop, 2);
-            $exceptions = $this->withException($exceptions, 'info',
-                "{$sandwichLop} off-day(s) sandwiched inside unpaid leave charged as loss of pay.");
+            $exceptions = $this->withException(
+                $exceptions,
+                'info',
+                "{$sandwichLop} off-day(s) sandwiched inside unpaid leave charged as loss of pay."
+            );
         }
 
         /* Rule 2 (BR-01) — LOP for late marks, per the EMPLOYEE'S BRANCH policy
@@ -1408,10 +1496,13 @@ class PayrollService
             // report of its own on the review screen.
             $lateBlock = $latePolicy['count'] === 1 ? 'late mark' : 'late marks';
             $lateDays  = $this->trimNum($lateLopDays);
-            $exceptions = $this->withException($exceptions, 'warning',
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
                 "{$lateMarks} late marks → {$lateDays} day" . ($lateLopDays == 1 ? '' : 's') . " LOP "
-                . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
-                . "verify hours covered before approving).");
+                    . "(branch rule: every {$latePolicy['count']} {$lateBlock} = {$lateUnit}; "
+                    . "verify hours covered before approving)."
+            );
         } elseif ($lateMarks > 0) {
             /* Late but nothing deducted — say why, as INFO so it never holds the
              * run. Without this the row reads clean: a branch with deduction
@@ -1434,8 +1525,11 @@ class PayrollService
         // execution summary + row exceptions instead of reading as "no cut".
         if ($unpaidLeaveDays > $lopDays + 0.001) {
             $notCharged = round($unpaidLeaveDays - $lopDays, 2);
-            $exceptions = $this->withException($exceptions, 'warning',
-                "{$notCharged} unpaid-leave day(s) not charged as LOP — the employee is also marked present/paid-leave on those dates. Verify attendance before approving.");
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                "{$notCharged} unpaid-leave day(s) not charged as LOP — the employee is also marked present/paid-leave on those dates. Verify attendance before approving."
+            );
         }
 
         // ── Money ──────────────────────────────────────────────────────────
@@ -1467,7 +1561,11 @@ class PayrollService
             ? $lopBranch->lopPolicy()
             : \App\Models\Branch::normalizeLopPolicy(null);
         $lopPerDay = \App\Models\Branch::lopPerDayFor(
-            $lopPolicy, $basic, $gross, $totalMonthDays, (float) $effectiveWorkingDays,
+            $lopPolicy,
+            $basic,
+            $gross,
+            $totalMonthDays,
+            (float) $effectiveWorkingDays,
         );
         $lopAmount = round($lopPerDay * $lopDays, 2);
         $lopAmount = min($lopAmount, $proratedBasic);
@@ -1538,15 +1636,18 @@ class PayrollService
                just the hours past the shift end, so the wording has to say
                which basis produced the number — "12 hr past the 18:30 shift
                end" for a Sunday worked 09:30–21:30 reads as a bug otherwise. */
-            $restDayCount = count(array_filter($otDetected['detail'] ?? [], fn ($d) => !empty($d['rest_day'])));
+            $restDayCount = count(array_filter($otDetected['detail'] ?? [], fn($d) => !empty($d['rest_day'])));
             $exceptions = $this->withException($exceptions, 'info', sprintf(
                 'Overtime: %s hr %s across %d day(s) × ₹%s/hr (%s%s) = ₹%s — paid from attendance.',
                 $this->trimNum($hours),
                 $restDayCount === $otDetected['days']
                     ? 'worked on weekly offs / holidays (every hour counts)'
                     : ($restDayCount > 0
-                        ? sprintf('past the %s shift end, plus %d rest day(s) counted in full',
-                            $otDetected['shift_end'], $restDayCount)
+                        ? sprintf(
+                            'past the %s shift end, plus %d rest day(s) counted in full',
+                            $otDetected['shift_end'],
+                            $restDayCount
+                        )
                         : 'past the ' . $otDetected['shift_end'] . ' shift end'),
                 $otDetected['days'],
                 number_format($rate['effective_rate'], 2),
@@ -1567,8 +1668,8 @@ class PayrollService
             if (!$rate['rate_found'] && $rate['rate_name'] !== null) {
                 $exceptions = $this->withException($exceptions, 'warning', sprintf(
                     'Overtime rate "%s" is not an active rate in the Overtime Rate master — '
-                    . 'overtime paid at 1× hourly instead. Fix the rate or the employee\'s '
-                    . 'overtime setting before approving.',
+                        . 'overtime paid at 1× hourly instead. Fix the rate or the employee\'s '
+                        . 'overtime setting before approving.',
                     $rate['rate_name'],
                 ));
             }
@@ -1590,8 +1691,11 @@ class PayrollService
          * flag it as blocking so the structure is fixed before the run is paid,
          * rather than after someone notices a missing allowance. */
         if (($ot['hours'] > 0 || $otDetected['hours'] > 0) && $basic <= 0 && $gross > 0) {
-            $exceptions = $this->withException($exceptions, 'blocking',
-                'Overtime hours recorded but this employee has no Basic component — overtime is priced off basic, so it computes to ₹0. Fix the salary structure before paying.');
+            $exceptions = $this->withException(
+                $exceptions,
+                'blocking',
+                'Overtime hours recorded but this employee has no Basic component — overtime is priced off basic, so it computes to ₹0. Fix the salary structure before paying.'
+            );
         }
 
         if ($otDetected['capped_days'] > 0) {
@@ -1601,12 +1705,19 @@ class PayrollService
             ));
         }
 
-        // Approved overtime / bonus / incentive show as separate earning lines.
+        /* Approved overtime / bonus / incentive show as separate earning lines.
+           Also kept in $extraEarnings on their own: they are NOT part of the
+           monthly salary structure, so a consumer showing the package (the F&F
+           breakdown) has to be able to tell the two apart — pro-rating or
+           per-day maths applied to an OT line would be nonsense. */
+        $extraEarnings = [];
         foreach ($ot['lines'] as $line) {
             $earnings[] = $line;
+            $extraEarnings[] = $line;
         }
         foreach ($this->adjustmentLines($employee->id, $period, ['bonus', 'incentive']) as $line) {
             $earnings[] = $line;
+            $extraEarnings[] = $line;
         }
 
         // Statutory deductions on EARNED figures (Rule 8/9) — no earned pay
@@ -1624,9 +1735,12 @@ class PayrollService
             // Info rather than warning: it is the correct default and holding
             // every half-filled record for review would drown the run.
             if ($this->employmentTypeUnknown($employee)) {
-                $exceptions = $this->withException($exceptions, 'info',
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
                     'No employment type on file — PF charged on the assumption this employee is full-time. '
-                    . 'Set Employment Type on the employee record to confirm.');
+                        . 'Set Employment Type on the employee record to confirm.'
+                );
             }
         }
         // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
@@ -1705,9 +1819,12 @@ class PayrollService
         $advanceRec = round($totalRec - $loanRec, 2);
         $carried = round(array_sum(array_column($this->lastRecoveryBreakdown, 'carried')), 2);
         if ($carried > 0.01) {
-            $exceptions = $this->withException($exceptions, 'warning',
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
                 'Advance recovery exceeded the 70% FOI headroom this cycle — ₹'
-                . number_format($carried, 2) . ' carried to the next cycle.');
+                    . number_format($carried, 2) . ' carried to the next cycle.'
+            );
         }
 
         // Overtime + bonus/incentive (Rule 10). Overtime was priced above:
@@ -1725,8 +1842,11 @@ class PayrollService
         if ($netPay < 0) {
             // Fixed deductions exceeded earned pay — floor to zero and flag so
             // HR can carry the shortfall to the next cycle.
-            $exceptions = $this->withException($exceptions, 'warning',
-                'Deductions exceeded earned pay — net floored to ₹0; carry the balance to the next cycle.');
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'Deductions exceeded earned pay — net floored to ₹0; carry the balance to the next cycle.'
+            );
             $netPay = 0;
         }
         // A zero net on a paid structure means the employee was effectively
@@ -1764,17 +1884,23 @@ class PayrollService
             // so don't send HR hunting for a broken device sync in that case.
             $explained = $unpaidLeaveDays > 0
                 && $unpaidLeaveDays + 0.005 >= $effectiveWorkingDays;
-            $exceptions = $this->withException($exceptions, 'warning',
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
                 'No attendance recorded at all this cycle — ' . $this->trimNum($lopDays)
-                . ' day(s) charged as loss of pay.'
-                . ($explained
-                    ? ' Covered by approved unpaid leave; confirm that is correct before approving.'
-                    : ' Verify the attendance data before approving;'
-                      . ' a missing device sync looks exactly like this.'));
+                    . ' day(s) charged as loss of pay.'
+                    . ($explained
+                        ? ' Covered by approved unpaid leave; confirm that is correct before approving.'
+                        : ' Verify the attendance data before approving;'
+                        . ' a missing device sync looks exactly like this.')
+            );
         }
         if ($netPay <= 0 && $proratedGross > 0) {
-            $exceptions = $this->withException($exceptions, 'warning',
-                'Zero net pay — employee was fully absent / on loss-of-pay this cycle. Verify before processing.');
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'Zero net pay — employee was fully absent / on loss-of-pay this cycle. Verify before processing.'
+            );
         }
 
         // Deductions JSON for the payslip (only non-zero heads).
@@ -1790,7 +1916,7 @@ class PayrollService
         if ($advanceRec > 0 || $loanRec > 0) {
             $advLines = array_values(array_filter(
                 $this->lastRecoveryBreakdown,
-                fn ($b) => ($b['recovered'] ?? 0) > 0
+                fn($b) => ($b['recovered'] ?? 0) > 0
             ));
             if (!empty($advLines)) {
                 foreach ($advLines as $b) {
@@ -1823,13 +1949,16 @@ class PayrollService
 
         // ── Rule 12 — bank details gate (warn now, block at pay/export) ─────
         if (!$base['bank_verified']) {
-            $exceptions = $this->withException($exceptions, 'blocking',
-                'Bank details missing/invalid — payment blocked until corrected.');
+            $exceptions = $this->withException(
+                $exceptions,
+                'blocking',
+                'Bank details missing/invalid — payment blocked until corrected.'
+            );
         }
 
         // ── Status + attendance source ─────────────────────────────────────
-        $hasBlocking = collect($exceptions)->contains(fn ($e) => $e['type'] === 'blocking');
-        $hasWarning  = collect($exceptions)->contains(fn ($e) => $e['type'] === 'warning');
+        $hasBlocking = collect($exceptions)->contains(fn($e) => $e['type'] === 'blocking');
+        $hasWarning  = collect($exceptions)->contains(fn($e) => $e['type'] === 'warning');
         $status = $hasBlocking ? 'On Hold' : ($hasWarning ? 'Pending Review' : 'Ready');
 
         $attSource = $att['rows'] > 0
@@ -1863,6 +1992,46 @@ class PayrollService
             // so the payslip's "Total Earnings" matches the line items and
             // Net = Total Earnings − Total Deductions (LOP sits in deductions).
             'gross_earnings' => round($proratedGross + $overtimeAmount + $bonusAmount, 2),
+            'structure_gross' => $proratedGross,
+            /* The FULL monthly package, before the mid-cycle join/exit
+               pro-ration is applied. The component lines in `earnings` are
+               already pro-rated, so their sum is what was earned for the
+               window — not what the employee is paid for a whole month, and
+               not the figure lop_per_day is priced off (that uses the full
+               monthly basic). Both have to be visible or the two disagree on
+               screen with nothing to reconcile them. */
+            'monthly_gross_full' => round($gross, 2),
+            'monthly_basic_full' => round($basic, 2),
+            'proration'          => round($proration, 4),
+            'active_days'        => (float) $activeDays,
+            'cycle_days'         => (float) $calDays,
+            /* The monthly component list EXACTLY as the employee master and
+               the onboarding Compensation step show it (Basic / HRA / Special
+               / any custom head), before pro-ration. `earnings` above carries
+               the pro-rated copies plus OT and bonus lines, so it cannot stand
+               in for the package — the F&F breakdown was showing pro-rated
+               figures under the same labels the master shows full ones, and
+               the two read as a contradiction. */
+            'structure_components' => array_values(array_map(fn ($c) => [
+                'code'   => $c['code'] ?? 'comp',
+                'label'  => $c['label'] ?? 'Component',
+                'amount' => round((float) ($c['amount'] ?? 0), 2),
+            ], $earnComponents)),
+            'extra_earnings' => $extraEarnings,
+            /* What the statutory heads are actually charged on. PF is 12% of
+               the EARNED basic and PT / ESI are scaled by the earned share, so
+               they land well below the monthly figures on the employee master
+               whenever a cycle carries loss of pay — which reads as a bug
+               without these numbers to explain it. */
+            'earned_gross'  => $earnedGross,
+            'earned_basic'  => $earnedBasic,
+            'earned_factor' => round($earnedFactor, 4),
+            'lop_per_day'      => $lopPerDay,
+            'lop_basis'        => $lopPolicy['basis'],
+            'lop_divisor'      => $lopPolicy['divisor'],
+            'lop_divisor_days' => $lopPolicy['divisor'] === 'working'
+                ? (float) max(1, $effectiveWorkingDays)
+                : (float) max(1, $totalMonthDays),
             'basic'          => $proratedBasic,
             'overtime_amount' => $overtimeAmount,
             'bonus_amount'   => $bonusAmount,
@@ -1948,7 +2117,7 @@ class PayrollService
         // Versions whose effective date falls INSIDE the window are the only
         // ones that can split it; anything earlier is simply "in force at the
         // start". No split → nothing to blend.
-        $cuts = $versions->filter(fn ($s) => Carbon::parse($s->effective_from)->gt($winStart));
+        $cuts = $versions->filter(fn($s) => Carbon::parse($s->effective_from)->gt($winStart));
         if ($versions->count() < 2 || $cuts->isEmpty()) {
             return [$gross, $basic, $earnings, $exceptions];
         }
@@ -1964,12 +2133,15 @@ class PayrollService
 
         // Segment boundaries: the window start, then each cut date.
         $bounds = collect([$winStart->copy()])
-            ->concat($cuts->map(fn ($s) => Carbon::parse($s->effective_from)->startOfDay()))
-            ->unique(fn (Carbon $d) => $d->toDateString())
-            ->sort(fn (Carbon $a, Carbon $b) => $a <=> $b)
+            ->concat($cuts->map(fn($s) => Carbon::parse($s->effective_from)->startOfDay()))
+            ->unique(fn(Carbon $d) => $d->toDateString())
+            ->sort(fn(Carbon $a, Carbon $b) => $a <=> $b)
             ->values();
 
-        $wGross = 0.0; $wBasic = 0.0; $wComponents = []; $segments = [];
+        $wGross = 0.0;
+        $wBasic = 0.0;
+        $wComponents = [];
+        $segments = [];
         foreach ($bounds as $i => $from) {
             $to   = isset($bounds[$i + 1]) ? $bounds[$i + 1]->copy()->subDay() : $winEnd->copy();
             $days = max(0, $from->diffInDays($to) + 1);
@@ -1995,12 +2167,17 @@ class PayrollService
                 . number_format($sGross, 2) . '/month (' . $days . ' day(s))';
         }
 
-        foreach ($wComponents as &$c) { $c['amount'] = round($c['amount'], 2); }
+        foreach ($wComponents as &$c) {
+            $c['amount'] = round($c['amount'], 2);
+        }
         unset($c);
 
-        $exceptions = $this->withException($exceptions, 'info',
+        $exceptions = $this->withException(
+            $exceptions,
+            'info',
             'Salary revised mid-cycle — pay blended across ' . count($segments) . ' rate(s): '
-            . implode('; ', $segments) . '.');
+                . implode('; ', $segments) . '.'
+        );
 
         return [round($wGross, 2), round($wBasic, 2), array_values($wComponents), $exceptions];
     }
@@ -2024,8 +2201,11 @@ class PayrollService
         if ($annual <= 0) {
             return [0, 0, [], [], false, false, true];
         }
-        $exceptions = $this->withException($exceptions, 'warning',
-            'No salary structure on file — auto-derived from annual salary (Basic/HRA/Special).');
+        $exceptions = $this->withException(
+            $exceptions,
+            'warning',
+            'No salary structure on file — auto-derived from annual salary (Basic/HRA/Special).'
+        );
         $gross   = round($annual / 12, 2);
         $basic   = round($gross * 0.5, 2);
         $hra     = round($gross * 0.3, 2);
@@ -2203,8 +2383,14 @@ class PayrollService
         array $shortHours = [],
     ): array {
         if (!Schema::hasTable('attendances')) {
-            return ['present' => 0, 'late' => 0, 'missing' => 0, 'rows' => 0,
-                    'worked_dates' => [], 'short_days' => []];
+            return [
+                'present' => 0,
+                'late' => 0,
+                'missing' => 0,
+                'rows' => 0,
+                'worked_dates' => [],
+                'short_days' => []
+            ];
         }
         $rows = DB::table('attendances')
             ->where('employee_id', $employeeId)
@@ -2264,9 +2450,14 @@ class PayrollService
                 case 'On Duty':
                 case 'Work From Home':
                 case 'Corrected':
-                    $present += 1; $worked = true; break;
+                    $present += 1;
+                    $worked = true;
+                    break;
                 case 'Late':
-                    $present += 1; $late++; $worked = true; break;
+                    $present += 1;
+                    $late++;
+                    $worked = true;
+                    break;
                 case 'Half Day':
                     /* A half day counts a late mark too when the employee
                      * arrived after the grace window. It used to be invisible:
@@ -2283,8 +2474,11 @@ class PayrollService
                     break;
                 case 'Missing In':
                 case 'Missing Out':
-                    $present += 1; $missing++; $worked = true; break;
-                // Absent / Leave / Weekly Off / Holiday → not counted present.
+                    $present += 1;
+                    $missing++;
+                    $worked = true;
+                    break;
+                    // Absent / Leave / Weekly Off / Holiday → not counted present.
             }
 
             // "Missing punch" is never persisted as a status anywhere in the
@@ -2324,8 +2518,11 @@ class PayrollService
             }
         }
         return [
-            'present' => round($present, 2), 'late' => $late, 'missing' => $missing,
-            'rows' => $rows->count(), 'worked_dates' => $workedDates,
+            'present' => round($present, 2),
+            'late' => $late,
+            'missing' => $missing,
+            'rows' => $rows->count(),
+            'worked_dates' => $workedDates,
             'short_days' => $shortDays,
         ];
     }
@@ -2450,13 +2647,13 @@ class PayrollService
         $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
         $holidaySet     = $this->holidayDateSet($employee, $padFrom, $padTo);
 
-        $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+        $isOff = fn(Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
             || isset($holidaySet[$d->toDateString()]);
 
         // This leave is itself Approved, so it is already inside the set — no
         // need to add its own range back the way the request path has to.
         $approved = \App\Support\SandwichPolicy::approvedLeaveDates((int) $employee->id, $padFrom, $padTo);
-        $isLeave  = fn (Carbon $d): bool => isset($approved[$d->copy()->startOfDay()->toDateString()]);
+        $isLeave  = fn(Carbon $d): bool => isset($approved[$d->copy()->startOfDay()->toDateString()]);
 
         $working = 0.0;
         for ($d = $from->copy(); $d->lte($to); $d->addDay()) {
@@ -2514,7 +2711,7 @@ class PayrollService
         $padEnd   = $end->copy()->addDays($pad);
         $holidaySet = $employee ? $this->holidayDateSet($employee, $padStart, $padEnd) : [];
 
-        $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
+        $isOff = fn(Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
             || isset($holidaySet[$d->toDateString()]);
 
         $sandwichOn = \App\Support\SandwichPolicy::appliesTo($employee);
@@ -2523,7 +2720,7 @@ class PayrollService
         $approvedDates = $sandwichOn
             ? \App\Support\SandwichPolicy::approvedLeaveDates($employeeId, $padStart, $padEnd)
             : [];
-        $isLeave = fn (Carbon $d): bool => isset($approvedDates[$d->copy()->startOfDay()->toDateString()]);
+        $isLeave = fn(Carbon $d): bool => isset($approvedDates[$d->copy()->startOfDay()->toDateString()]);
 
         $windowStart = $start->toDateString();
         $windowEnd   = $end->toDateString();
@@ -2664,7 +2861,7 @@ class PayrollService
             $this->lastPtNote = $state === null
                 ? 'No work state on file for this employee — Professional Tax charged on the Maharashtra slab.'
                 : "No Professional Tax slab configured for {$state} — charged on the Maharashtra slab. "
-                  . 'Add the state in Master › PT Slabs to tax it correctly.';
+                . 'Add the state in Master › PT Slabs to tax it correctly.';
             return $this->maharashtraPt($employee, $gross, $month);
         }
 
@@ -2857,8 +3054,8 @@ class PayrollService
 
         $rows = DB::table('master_pt_slabs')
             ->whereRaw('LOWER(state) = ?', [mb_strtolower($state)])
-            ->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
-            ->where(fn ($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
+            ->where(fn($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
+            ->where(fn($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
             ->whereRaw('LOWER(status) = ?', ['active'])
             ->orderBy('min_gross')
             ->get(['client_id', 'gender', 'min_gross', 'max_gross', 'amount', 'feb_amount'])
@@ -2867,7 +3064,7 @@ class PayrollService
         // If the tenant has defined its own table for this state, that table
         // replaces the statutory one wholesale — mixing a tenant band into the
         // seeded ladder would leave overlapping or gapped bands.
-        $own = array_values(array_filter($rows, fn ($r) => $r->client_id !== null));
+        $own = array_values(array_filter($rows, fn($r) => $r->client_id !== null));
 
         return $own !== [] ? $own : $rows;
     }
@@ -2938,13 +3135,25 @@ class PayrollService
         //            (settle_return_*), scheduled at settlement time.
         $streams = [];
 
-        foreach (DB::table('advance_requests')
-            ->where('employee_id', $employeeId)
-            ->where('hr_status', 'approved')
-            ->whereNotNull('recovery_start')
-            ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
-            ->get(['id', 'amount', 'sanctioned_amount', 'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
-                   'advance_no', 'advance_type', 'advance_type_other']) as $r) {
+        foreach (
+            DB::table('advance_requests')
+                ->where('employee_id', $employeeId)
+                ->where('hr_status', 'approved')
+                ->whereNotNull('recovery_start')
+                ->whereDate('recovery_start', '<=', $period->period_end->toDateString())
+                ->get([
+                    'id',
+                    'amount',
+                    'sanctioned_amount',
+                    'recovery_start',
+                    'recovery_mode',
+                    'recovery_months',
+                    'monthly_emi',
+                    'advance_no',
+                    'advance_type',
+                    'advance_type_other'
+                ]) as $r
+        ) {
             $type = $this->advanceTypeLabel($r->advance_type, $r->advance_type_other);
             $streams[] = [
                 'advance_request_id' => (int) $r->id,
@@ -2962,19 +3171,30 @@ class PayrollService
                 // machinery but reported on its own payslip line.
                 'kind'       => $this->recoveryKind($r->advance_type),
                 'label'      => ($this->recoveryKind($r->advance_type) === 'loan' ? 'Loan Recovery – ' : 'Advance Recovery – ')
-                                . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
+                    . $type . ($r->advance_no ? ' (' . $r->advance_no . ')' : ''),
             ];
         }
 
         // Company-return-via-payroll streams (only once scheduled at settlement).
-        foreach (DB::table('advance_requests')
-            ->where('employee_id', $employeeId)
-            ->whereNotNull('settle_return_scheduled_at')
-            ->whereNotNull('settle_return_recovery_start')
-            ->whereDate('settle_return_recovery_start', '<=', $period->period_end->toDateString())
-            ->get(['id', 'settle_balance', 'settle_return_payments', 'settle_return_recovery_start',
-                   'settle_return_recovery_mode', 'settle_return_recovery_months', 'settle_return_monthly',
-                   'advance_no', 'advance_type', 'advance_type_other']) as $r) {
+        foreach (
+            DB::table('advance_requests')
+                ->where('employee_id', $employeeId)
+                ->whereNotNull('settle_return_scheduled_at')
+                ->whereNotNull('settle_return_recovery_start')
+                ->whereDate('settle_return_recovery_start', '<=', $period->period_end->toDateString())
+                ->get([
+                    'id',
+                    'settle_balance',
+                    'settle_return_payments',
+                    'settle_return_recovery_start',
+                    'settle_return_recovery_mode',
+                    'settle_return_recovery_months',
+                    'settle_return_monthly',
+                    'advance_no',
+                    'advance_type',
+                    'advance_type_other'
+                ]) as $r
+        ) {
             // Amount to recover via payroll = balance owed minus any DIRECT
             // return payments already recorded (cash/bank before scheduling).
             $paid = 0.0;
@@ -3013,9 +3233,9 @@ class PayrollService
 
         $priorScope = function ($q) use ($period) {
             $q->where('year', '<', (int) $period->year)
-              ->orWhere(function ($q2) use ($period) {
-                  $q2->where('year', (int) $period->year)->where('month', '<', (int) $period->month);
-              });
+                ->orWhere(function ($q2) use ($period) {
+                    $q2->where('year', (int) $period->year)->where('month', '<', (int) $period->month);
+                });
         };
 
         foreach ($streams as $s) {
@@ -3032,7 +3252,8 @@ class PayrollService
 
             // Arrears carried from prior lean months + total already recovered on
             // THIS stream (both zero when there's no ledger yet).
-            $arrears = 0.0; $recoveredBefore = 0.0;
+            $arrears = 0.0;
+            $recoveredBefore = 0.0;
             if ($hasLedger) {
                 $prior = DB::table('advance_recovery_ledger')
                     ->where('advance_request_id', $s['advance_request_id'])->where('stream', $s['stream'])
@@ -3154,7 +3375,7 @@ class PayrollService
         }
     }
 
-    
+
     private function shiftHours(Employee $employee): float
     {
         [$start, $end] = $employee->resolveShiftWindow();
@@ -3168,7 +3389,7 @@ class PayrollService
         return $minutes > 0 ? round($minutes / 60, 2) : self::DEFAULT_SHIFT_HOURS;
     }
 
-   
+
     private function overtimeMultiplier(Employee $employee): array
     {
         $name = trim((string) ($employee->overtime ?? ''));
@@ -3186,8 +3407,8 @@ class PayrollService
             ->whereRaw('LOWER(rate_name) = ?', [mb_strtolower($name)])
             // Tenant scope mirrors MasterVisibility::applyReadScope — the
             // client's own rows plus super-admin globals (NULL client/branch).
-            ->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
-            ->where(fn ($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
+            ->where(fn($q) => $q->whereNull('client_id')->orWhere('client_id', $employee->client_id))
+            ->where(fn($q) => $q->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id))
             ->whereRaw('LOWER(status) = ?', ['active'])
             // Tenant-specific row first (client_id IS NULL sorts false→true).
             ->orderByRaw('client_id IS NULL')
@@ -3277,8 +3498,14 @@ class PayrollService
         // end belongs to the NEXT calendar day (e.g. 22:00 → 06:00).
         $overnight  = $this->minutesBetween($shiftStart, $shiftEnd) <= 0;
 
-        $blank = ['hours' => 0.0, 'days' => 0, 'capped_days' => 0, 'shift_end' => $shiftEnd,
-                  'applicable' => $employee->overtimeApplicable(), 'detail' => []];
+        $blank = [
+            'hours' => 0.0,
+            'days' => 0,
+            'capped_days' => 0,
+            'shift_end' => $shiftEnd,
+            'applicable' => $employee->overtimeApplicable(),
+            'detail' => []
+        ];
         // Overtime is a per-employee setting (employee form → Leave &
         // Attendance → "Overtime Applicable"). Staying past the shift end
         // earns nothing for an employee it isn't applicable to, so detection
@@ -3443,8 +3670,8 @@ class PayrollService
         $workingDays = PayrollPeriod::query()
             ->where('month', $month)
             ->where('year', $year)
-            ->when($employee->client_id, fn ($q) => $q->where('client_id', $employee->client_id))
-            ->when($employee->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id)))
+            ->when($employee->client_id, fn($q) => $q->where('client_id', $employee->client_id))
+            ->when($employee->branch_id, fn($q) => $q->where(fn($w) => $w->whereNull('branch_id')->orWhere('branch_id', $employee->branch_id)))
             // A branch-scoped period beats a client-wide one for this employee.
             ->orderByRaw('branch_id IS NULL')
             ->value('working_days');
@@ -3565,8 +3792,8 @@ class PayrollService
         return DB::table('payroll_adjustments')
             ->where('employee_id', $employeeId)
             // P23: same tenant scoping as approvedAdjustments().
-            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
-            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
+            ->when($period->client_id, fn($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn($q) => $q->where(fn($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
             ->where('month', (int) $period->month)
             ->where('year', (int) $period->year)
             ->where('status', 'approved')
@@ -3604,8 +3831,8 @@ class PayrollService
             // P23: scope to the period's tenant so an adjustment can't bleed into
             // another client's run (or another branch's), matching by client and
             // — when the run is branch-scoped — that branch or a client-wide row.
-            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
-            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
+            ->when($period->client_id, fn($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn($q) => $q->where(fn($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
             ->where('month', (int) $period->month)
             ->where('year', (int) $period->year)
             ->where('status', 'approved')
@@ -3623,15 +3850,15 @@ class PayrollService
         return DB::table('payroll_adjustments')
             ->where('employee_id', $employeeId)
             // P23: same tenant scoping as approvedAdjustments().
-            ->when($period->client_id, fn ($q) => $q->where('client_id', $period->client_id))
-            ->when($period->branch_id, fn ($q) => $q->where(fn ($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
+            ->when($period->client_id, fn($q) => $q->where('client_id', $period->client_id))
+            ->when($period->branch_id, fn($q) => $q->where(fn($w) => $w->whereNull('branch_id')->orWhere('branch_id', $period->branch_id)))
             ->where('month', (int) $period->month)
             ->where('year', (int) $period->year)
             ->where('status', 'approved')
             ->whereIn('type', $types)
             ->whereNull('deleted_at')
             ->get(['type', 'label', 'amount'])
-            ->map(fn ($r) => [
+            ->map(fn($r) => [
                 'code'   => $r->type,
                 'label'  => $r->label ?: ucfirst($r->type),
                 'amount' => round((float) $r->amount, 2),

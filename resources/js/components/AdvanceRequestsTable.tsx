@@ -2,6 +2,7 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 import { useScrollLock } from '../hooks/useScrollLock';
 import { createPortal } from 'react-dom';
 import DataTable, { TruncCell, type DataTableColumn } from './ui/DataTable';
+import Tooltip from './ui/Tooltip';
 import ProofOfPaymentCell from './ProofOfPaymentCell';
 import '../../css/recruitment.css';
 
@@ -184,11 +185,14 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Adv ID</div>,
       id: 'advance_no',
       accessorFn: (r: AdvanceRequestRow) => r.advance_no || `#${r.id}`,
-      meta: { width: '8%', align: 'center' },
+      /* Fixed px, not 8%. As a percentage this column shrank with the table
+         and the badge clipped to "ADV-00…" — an id is only useful whole. 112px
+         holds ADV-0031 plus the badge padding and the sort caret. */
+      meta: { width: 112, align: 'center' },
       cell: info => (
         <span
           className="font-monospace fw-semibold adv-id-badge"
-          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em' }}
+          style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#dceefe', color: '#0c63b0', letterSpacing: '0.02em', whiteSpace: 'nowrap' }}
         >
           {info.row.original.advance_no || `#${info.row.original.id}`}
         </span>
@@ -204,7 +208,7 @@ export function advanceRequestColumns({
         const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
         return (
           <div className="d-flex flex-column" style={{ lineHeight: 1.15, minWidth: 0 }}>
-            <span className="fw-semibold text-truncate">{empName}</span>
+            <Tooltip label={empName}><span className="fw-semibold text-truncate">{empName}</span></Tooltip>
             {r.employee_code && <small className="text-muted" style={{ fontSize: 10 }}>{r.employee_code}</small>}
           </div>
         );
@@ -216,15 +220,20 @@ export function advanceRequestColumns({
       // "Other" carries the free-text detail, so sort/search see the full label.
       accessorFn: (r: AdvanceRequestRow) => (r.advance_type === 'Other' && r.advance_type_other ? `Other · ${r.advance_type_other}` : r.advance_type),
       meta: { width: '11%', align: 'center' },
-      cell: info => (
-        <span
-          className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
-          style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', maxWidth: '100%' }}
-        >
-          <i className="ri-bank-card-line" />
-          <span className="text-truncate">{String(info.getValue() ?? '')}</span>
-        </span>
-      ),
+      cell: info => {
+        const label = String(info.getValue() ?? '');
+        return (
+          <Tooltip label={label}>
+            <span
+              className="d-inline-flex align-items-center gap-1 fw-semibold adv-type-badge"
+              style={{ fontSize: 11, padding: '3px 9px', borderRadius: 999, background: '#ece6ff', color: '#5a3fd1', maxWidth: '100%' }}
+            >
+              <i className="ri-bank-card-line" />
+              <span className="text-truncate">{label}</span>
+            </span>
+          </Tooltip>
+        );
+      },
     },
     // Reason is a SELF-advance concern (why the employee needs the money). A
     // company advance's purpose lives in its distribution rows, so the column is
@@ -241,14 +250,32 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
       meta: { width: '9%', align: 'center' },
-      cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
+      /* Once HR sanctions a different net, THAT is the figure being disbursed
+         and recovered, so it leads. The requested amount stays visible beneath
+         it — dropping it would hide that the request was adjusted at all. */
+      cell: info => {
+        const r   = info.row.original;
+        const req = Number(r.amount || 0);
+        const net = r.sanctioned_amount != null ? Number(r.sanctioned_amount) : null;
+        const inr = (v: number) => '₹' + v.toLocaleString('en-IN');
+        const adjusted = net != null && Math.abs(net - req) > 0.005;
+        if (!adjusted) return <span className="fw-bold">{inr(req)}</span>;
+        return (
+          <Tooltip label={`Requested ${inr(req)} · sanctioned ${inr(net!)} (${net! > req ? '+' : '−'}${inr(Math.abs(net! - req))})`}>
+            <span className="d-inline-flex flex-column align-items-center" style={{ lineHeight: 1.15 }}>
+              <span className="fw-bold">{inr(net!)}</span>
+              <span style={{ fontSize: 9.5, opacity: .65, whiteSpace: 'nowrap' }}>req {inr(req)}</span>
+            </span>
+          </Tooltip>
+        );
+      },
     },
     {
       header: () => <div className="text-center">Requested</div>,
       id: 'requested_date',
       accessorFn: (r: AdvanceRequestRow) => (r.requested_date ? new Date(r.requested_date).getTime() : 0),
       meta: { width: '9%', align: 'center' },
-      cell: info => <span className="text-muted">{fmtDate(info.row.original.requested_date)}</span>,
+      cell: info => <Tooltip label={fmtDate(info.row.original.requested_date)}><span className="text-muted">{fmtDate(info.row.original.requested_date)}</span></Tooltip>,
     },
     // Recovery Start / Recovery / Monthly EMI apply to a SELF advance only — a
     // company advance isn't recovered from salary, so these columns are dropped
@@ -263,7 +290,7 @@ export function advanceRequestColumns({
       // bare "—" so it looks intentional (QA #134).
       cell: info => info.row.original.status === 'rejected'
         ? <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>
-        : <span className="text-muted">{fmtDate(info.row.original.recovery_start)}</span>,
+        : <Tooltip label={fmtDate(info.row.original.recovery_start)}><span className="text-muted">{fmtDate(info.row.original.recovery_start)}</span></Tooltip>,
     },
     {
       header: 'Recovery',
@@ -274,13 +301,16 @@ export function advanceRequestColumns({
         if (info.row.original.status === 'rejected') {
           return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
         }
+        const label = String(info.getValue() ?? '');
         return (
-          <span
-            className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
-            style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#d3f0ee', color: '#0a716a' }}
-          >
-            {String(info.getValue() ?? '')}
-          </span>
+          <Tooltip label={label}>
+            <span
+              className="d-inline-flex align-items-center fw-semibold adv-recovery-badge"
+              style={{ fontSize: 11, padding: '2px 9px', borderRadius: 999, background: '#d3f0ee', color: '#0a716a' }}
+            >
+              {label}
+            </span>
+          </Tooltip>
         );
       },
     },
@@ -296,12 +326,59 @@ export function advanceRequestColumns({
         if (r.status === 'rejected') {
           return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
         }
-        return (
+        if (r.recovery_mode !== 'emi') return <span className="text-muted">—</span>;
+        const per   = Number(r.monthly_emi || 0);
+        const n     = Number(r.recovery_months || 0);
+        /* Total the schedule against the SANCTIONED net, not the requested
+           amount. The server recomputes monthly_emi off the sanctioned figure
+           after HR applies additions / deductions, so pairing that instalment
+           with the pre-adjustment total made the remainder come out wrong — and
+           on an addition it went NEGATIVE (₹1,00,000 − ₹841.67 × 119 = −₹158.73
+           on a ₹1,01,000 sanction). Both figures now come from the same base. */
+        const total = Number(r.sanctioned_amount ?? r.amount ?? 0);
+        /* The schedule floors the per-cycle figure, so the LAST instalment
+           carries the remainder. The cell can only fit one number, so it shows
+           the repeating one — the tooltip carries the whole schedule, which is
+           where the odd final instalment becomes visible. */
+        const last   = n > 1 ? +(total - per * (n - 1)).toFixed(2) : per;
+        const uneven = n > 1 && Math.abs(last - per) > 0.005;
+        const money  = (v: number) => '₹' + v.toLocaleString('en-IN');
+        const cell = (
           <span className="text-muted">
-            {r.recovery_mode === 'emi'
-              ? `₹${Number(r.monthly_emi || 0).toLocaleString('en-IN')}${r.recovery_months ? ` × ${r.recovery_months} mo` : ''}`
-              : '—'}
+            {money(per)}{n ? ` × ${n} mo` : ''}
           </span>
+        );
+        return (
+          <Tooltip
+            themed={false}
+            position="left"
+            label={
+              /* Laid out as rows with the amount right-aligned, so the
+                 repeating instalment and the odd final one line up and the
+                 total reads as a sum rather than a third instalment. */
+              <div style={{ minWidth: 168, fontVariantNumeric: 'tabular-nums' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14 }}>
+                  <span>{uneven ? `${n - 1} instalments` : `${n} instalments`}</span>
+                  <strong>{money(per)}</strong>
+                </div>
+                {uneven && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, marginTop: 2 }}>
+                    <span>1 final</span>
+                    <strong>{money(last)}</strong>
+                  </div>
+                )}
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between', gap: 14, marginTop: 5, paddingTop: 5,
+                  borderTop: '1px solid rgba(255,255,255,0.25)', fontWeight: 700,
+                }}>
+                  <span>Total</span>
+                  <span>{money(total)}</span>
+                </div>
+              </div>
+            }
+          >
+            {cell}
+          </Tooltip>
         );
       },
     },
@@ -476,6 +553,14 @@ export function advanceRequestColumns({
       enableSorting: false,
       meta: { width: '9%', align: 'center', wrap: true },
       cell: (info: any) => {
+        /* A rejected advance is never booked in Zoho — nothing was paid out.
+           "N/A" matches the Advance Paid / Confirmation / Recovery Status
+           columns, which already read that way for a rejected row; this was
+           the last one still showing a bare "—" next to the Rejected badge and
+           looking like a value that hadn't loaded (QA #122). */
+        if (info.row.original.status === 'rejected') {
+          return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
+        }
         const z = (info.row.original.zoho_sync ?? 'na') as 'na' | 'pending' | 'partial' | 'completed';
         if (z === 'na') return <span className="text-muted">—</span>;
         const tone: Record<'pending' | 'partial' | 'completed', { bg: string; fg: string; icon: string; label: string }> = {

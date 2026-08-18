@@ -834,7 +834,7 @@ export default function HrExpenseManagement() {
       <MasterFormStyles />
       <div className="hrexp-page">
 
-        <div className="frm-cstrip mb-2">
+        <div className="frm-cstrip mb-2 hrexp-hero-card">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-bank-card-2-line" /></div>
@@ -929,7 +929,7 @@ export default function HrExpenseManagement() {
           </div>
         </div>
 
-        <Row className="g-2 mb-2 align-items-stretch">
+        <Row className="g-2 mb-2 align-items-stretch hrexp-kpi-row">
           <Col xl={true} md={4} sm={6} xs={6}>
             <KpiTile
               label={isAdvanceModule ? 'Total Advances' : 'Total Claims'}
@@ -990,7 +990,7 @@ export default function HrExpenseManagement() {
         </Row>
 
         <div
-          className="hrexp-surface mb-2"
+          className="hrexp-surface mb-2 hrexp-analytics-card"
           style={{
             borderRadius: 14,
             border: '1px solid var(--vz-border-color)',
@@ -1147,12 +1147,29 @@ export default function HrExpenseManagement() {
           )}
         </div>
 
-        {/* Shared list table (components/ui/DataTable) — status tabs, search
-            and the rows-per-page pager are the component's now, so the toolbar
-            still reads as controls for the table below (Bug #30) and the header
-            columns gained sorting. The All-Dates picker and Export button ride
-            in its toolbar. Advances and Claims are two different row shapes, so
-            each gets its own instance with its own column set. */}
+        {/* ROW 1 — scope + page actions.
+            Company/Self decides WHICH SET of advances the page is showing; the
+            four status tabs then filter within that set. They were sharing one
+            toolbar with the search and the buttons, which put six controls and
+            an input on a single line — the tabs wrapped and the search shrank
+            on any window under ~1500px. Splitting them by what they do (choose
+            the set, then filter it) also matches the P2P listing pages. */}
+        {/* ADVANCES ONLY. Claims have no Company/Self split, so this row would
+            be an empty band with two buttons floated right — the buttons go
+            back into the table toolbar there and the page stays one line. */}
+        {module === 'advance' && (
+          <div className="hrexp-scoperow hrexp-surface d-flex align-items-center gap-2 flex-wrap mb-2">
+            {usedForToggle}
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              {expenseToolbarActions}
+            </div>
+          </div>
+        )}
+
+        {/* ROW 2 — the table's own toolbar: status tabs on the left, search on
+            the right (DataTable renders both).
+            Advances and Claims are two different row shapes, so each gets its
+            own instance with its own column set. */}
         {module === 'advance' ? (
           <DataTable<AdvanceRequestRow>
             data={filteredAdvances}
@@ -1174,8 +1191,6 @@ export default function HrExpenseManagement() {
             tabs={statusTabs}
             activeTab={filter}
             onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
-            toolbarActions={expenseToolbarActions}
-            leadingToolbar={usedForToggle}
             emptyMessage={
               <>
                 <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />
@@ -1198,7 +1213,8 @@ export default function HrExpenseManagement() {
             searchPlaceholder="Search employee, claim no, category, vendor…"
             tabs={statusTabs}
             activeTab={filter}
-            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}            toolbarActions={expenseToolbarActions}
+            onTabChange={k => { if (filter !== k) flashSwitch(); setFilter(k as StatusFilter); }}
+            toolbarActions={expenseToolbarActions}
             emptyMessage={
               <>
                 <i className="ri-inbox-line d-block mb-2" style={{ fontSize: 32, opacity: 0.4 }} />

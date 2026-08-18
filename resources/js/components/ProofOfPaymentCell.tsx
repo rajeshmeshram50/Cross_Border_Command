@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Tooltip from './ui/Tooltip';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 /**
  * Proof-of-Payment table cell.
@@ -109,6 +110,14 @@ export default function ProofOfPaymentCell({
   const btnRef = useRef<HTMLButtonElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
+
+  /* QA #152 — the popover is fixed-positioned, so a wheel over the page slid
+     the table out from under it while the list stayed put. The scroll handler
+     below re-anchors it, but re-anchoring a menu the user never meant to move
+     is not the fix: freeze everything behind it instead and let only the list
+     scroll. useScrollLock walks the DOM for whatever is actually scrolling
+     (this app scrolls .main-content, not body) and exempts the popover. */
+  useScrollLock(open, '.pop-proof');
 
   const place = () => {
     const b = btnRef.current?.getBoundingClientRect();

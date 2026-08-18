@@ -7,6 +7,7 @@ use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
+use App\Support\ModuleDependencies;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -381,68 +382,91 @@ class PermissionController extends Controller
             ->pluck('parent_id')
             ->toArray();
 
-        // Delete old and insert new — using raw IDs, not model objects
-        DB::table('permissions')->where('user_id', $targetId)->delete();
+        // Pull in the modules the ticked ones can't work without (HRMS
+        // dependency matrix — see App\Support\ModuleDependencies).
+        [$payload, $autoGranted] = $this->withDependencyGrants($request->permissions, $authUser);
 
+        /* Replace the user's grants atomically. This is a delete-then-insert:
+         * without a transaction, a failure part-way through the loop (or a
+         * connection drop) leaves the user with a half-written set — or, if it
+         * dies on the first insert, with NO permissions at all, locked out of
+         * every screen they had. The rows are also collected and inserted in
+         * one statement rather than one query per module (a full grant is ~140
+         * round-trips otherwise). */
         $count = 0;
         $skippedParents = 0;
-        foreach ($request->permissions as $perm) {
-            // Skip any payload pointing at a parent/group module
-            if (in_array((int) $perm['module_id'], $parentIdsWithKids, true)) {
-                $skippedParents++;
-                continue;
-            }
-
-            $canView = filter_var($perm['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canAdd = filter_var($perm['can_add'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canEdit = filter_var($perm['can_edit'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canDelete = filter_var($perm['can_delete'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canExport = filter_var($perm['can_export'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canImport = filter_var($perm['can_import'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $canApprove = filter_var($perm['can_approve'] ?? false, FILTER_VALIDATE_BOOLEAN);
-
-            // Action permissions imply visibility. Granting add / edit / delete /
-            // export / import / approve on a module MUST also grant can_view:
-            // the sidebar menu, the page-access guards, and the controller
-            // index() checks all key off can_view, so an "edit-only" row would
-            // hide the module entirely and lock the user out of the very page
-            // they were given edit rights on. View is the baseline every other
-            // action sits on top of. (View granted alone stays view-only.)
-            if ($canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove) {
-                $canView = true;
-            }
-
-            $hasAny = $canView || $canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove;
-            if (!$hasAny) continue;
-
-            DB::table('permissions')->insert([
-                'user_id' => $targetId,
-                'client_id' => $targetClientId,
-                'branch_id' => $targetBranchId,
-                'role' => $targetRole,
-                'module_id' => $perm['module_id'],
-                'can_view' => $canView,
-                'can_add' => $canAdd,
-                'can_edit' => $canEdit,
-                'can_delete' => $canDelete,
-                'can_export' => $canExport,
-                'can_import' => $canImport,
-                'can_approve' => $canApprove,
-                'granted_by' => $grantedById,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            $count++;
-        }
-
-        // Cascade-clear: when a CLIENT ADMIN updates their OWN permissions, any
-        // branch user under their client must lose flags the admin no longer has.
-        // Without this, perms previously granted downstream stay live even after
-        // the admin's access is revoked — a real privilege-escalation gap.
         $cascadeAffected = 0;
-        if ($authUser->isSuperAdmin() && $targetUser->isClientAdmin() && $targetClientId) {
-            $cascadeAffected = $this->cascadeClearDownstream($targetId, $targetClientId);
-        }
+
+        DB::transaction(function () use (
+            $payload, $parentIdsWithKids, $targetId, $targetClientId, $targetBranchId,
+            $targetRole, $grantedById, $authUser, $targetUser, &$count, &$skippedParents, &$cascadeAffected
+        ) {
+            DB::table('permissions')->where('user_id', $targetId)->delete();
+
+            $toInsert = [];
+            foreach ($payload as $perm) {
+                // Skip any payload pointing at a parent/group module
+                if (in_array((int) $perm['module_id'], $parentIdsWithKids, true)) {
+                    $skippedParents++;
+                    continue;
+                }
+
+                $canView = filter_var($perm['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canAdd = filter_var($perm['can_add'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canEdit = filter_var($perm['can_edit'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canDelete = filter_var($perm['can_delete'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canExport = filter_var($perm['can_export'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canImport = filter_var($perm['can_import'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $canApprove = filter_var($perm['can_approve'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
+                // Action permissions imply visibility. Granting add / edit / delete /
+                // export / import / approve on a module MUST also grant can_view:
+                // the sidebar menu, the page-access guards, and the controller
+                // index() checks all key off can_view, so an "edit-only" row would
+                // hide the module entirely and lock the user out of the very page
+                // they were given edit rights on. View is the baseline every other
+                // action sits on top of. (View granted alone stays view-only.)
+                if ($canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove) {
+                    $canView = true;
+                }
+
+                $hasAny = $canView || $canAdd || $canEdit || $canDelete || $canExport || $canImport || $canApprove;
+                if (!$hasAny) continue;
+
+                $toInsert[] = [
+                    'user_id' => $targetId,
+                    'client_id' => $targetClientId,
+                    'branch_id' => $targetBranchId,
+                    'role' => $targetRole,
+                    'module_id' => $perm['module_id'],
+                    'can_view' => $canView,
+                    'can_add' => $canAdd,
+                    'can_edit' => $canEdit,
+                    'can_delete' => $canDelete,
+                    'can_export' => $canExport,
+                    'can_import' => $canImport,
+                    'can_approve' => $canApprove,
+                    'granted_by' => $grantedById,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                $count++;
+            }
+
+            foreach (array_chunk($toInsert, 200) as $chunk) {
+                DB::table('permissions')->insert($chunk);
+            }
+
+            // Cascade-clear: when a CLIENT ADMIN updates their OWN permissions,
+            // any branch user under their client must lose flags the admin no
+            // longer has. Without this, perms previously granted downstream stay
+            // live even after the admin's access is revoked — a real
+            // privilege-escalation gap. Inside the transaction: the downstream
+            // revoke and the grant that triggered it land together or not at all.
+            if ($authUser->isSuperAdmin() && $targetUser->isClientAdmin() && $targetClientId) {
+                $cascadeAffected = $this->cascadeClearDownstream($targetId, $targetClientId);
+            }
+        });
 
         // Verify
         $dbCount = DB::table('permissions')->where('user_id', $targetId)->count();
@@ -454,7 +478,69 @@ class PermissionController extends Controller
             'skipped_parent_modules' => $skippedParents,
             'target_user_id' => $targetId,
             'cascade_branch_users_updated' => $cascadeAffected,
+            'auto_granted_dependencies' => $autoGranted,
         ]);
+    }
+
+    /**
+     * Expand a permissions payload with the dependency modules the ticked ones
+     * need in order to work (HRMS dependency matrix).
+     *
+     * Only can_view is auto-granted, and only for modules the GRANTER can see
+     * themselves — the delegation rule ("never hand out more than you hold")
+     * still applies to implicit grants, so a dependency the granter lacks is
+     * silently skipped rather than escalating.
+     *
+     * Returns [expanded payload, list of auto-granted slugs].
+     *
+     * $granter = null skips the cap entirely (used by the department grid,
+     * which is already role-gated and holds no per-module grant of its own).
+     */
+    private function withDependencyGrants(array $payload, ?User $granter): array
+    {
+        $modules = DB::table('modules')->select('id', 'slug')->get();
+        $slugById = $modules->pluck('slug', 'id')->all();
+        $idBySlug = $modules->pluck('id', 'slug')->all();
+
+        // Rows the operator actually asked for — any flag counts as "in use".
+        $activeSlugs = [];
+        $byModuleId = [];
+        foreach ($payload as $perm) {
+            $moduleId = (int) ($perm['module_id'] ?? 0);
+            $byModuleId[$moduleId] = $perm;
+
+            foreach (self::FLAGS as $flag) {
+                if (filter_var($perm[$flag] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                    if (isset($slugById[$moduleId])) $activeSlugs[] = $slugById[$moduleId];
+                    break;
+                }
+            }
+        }
+
+        if ($activeSlugs === []) return [$payload, []];
+
+        $granterPerms = ($granter === null || $granter->isSuperAdmin())
+            ? null
+            : Permission::where('user_id', $granter->id)->get()->keyBy('module_id');
+
+        $autoGranted = [];
+        foreach (ModuleDependencies::resolve($activeSlugs) as $depSlug) {
+            $depId = $idBySlug[$depSlug] ?? null;
+            if (!$depId) continue; // slug not seeded in this deployment — ignore
+
+            // Already granted view by the operator? Nothing to do.
+            if (filter_var($byModuleId[$depId]['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
+
+            // Delegation cap: the granter must hold view on it themselves.
+            if ($granterPerms !== null && !($granterPerms->get($depId)?->can_view)) continue;
+
+            $row = $byModuleId[$depId] ?? ['module_id' => $depId];
+            $row['can_view'] = true;
+            $byModuleId[$depId] = $row;
+            $autoGranted[] = $depSlug;
+        }
+
+        return [array_values($byModuleId), $autoGranted];
     }
 
     /**
@@ -559,14 +645,24 @@ class PermissionController extends Controller
         $flags     = ['can_view', 'can_add', 'can_edit', 'can_delete', 'can_export', 'can_import', 'can_approve'];
         $saved     = 0;
 
-        DB::transaction(function () use ($data, $clientId, $deptId, $flags, $authUser, &$saved) {
-            foreach ($data['permissions'] as $p) {
+        // Same two invariants as the per-user path: an action implies view, and
+        // a module implies view on the modules it depends on. This grid feeds
+        // straight into every HOD of the department, so an unexpanded row here
+        // would hand out the same half-broken screens the matrix exists to
+        // prevent. No delegation cap — this endpoint is role-gated instead.
+        [$deptPayload, $autoGranted] = $this->withDependencyGrants($data['permissions'], null);
+
+        DB::transaction(function () use ($deptPayload, $clientId, $deptId, $flags, $authUser, &$saved) {
+            foreach ($deptPayload as $p) {
                 $values = [];
                 $anyOn = false;
                 foreach ($flags as $f) {
                     $values[$f] = (bool) ($p[$f] ?? false);
                     $anyOn = $anyOn || $values[$f];
                 }
+
+                // Action implies visibility (mirrors savePermissions()).
+                if ($anyOn && !$values['can_view']) $values['can_view'] = true;
 
                 $keys = ['client_id' => $clientId, 'department_id' => $deptId, 'module_id' => (int) $p['module_id']];
 
@@ -594,6 +690,7 @@ class PermissionController extends Controller
             'message'        => 'Department permissions saved successfully',
             'saved_count'    => $saved,
             'hod_modules_applied' => $hodApplied,
+            'auto_granted_dependencies' => $autoGranted,
         ]);
     }
 }

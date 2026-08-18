@@ -186,7 +186,7 @@ export default function ExpenseTab() {
             style={{ ['--ext-section-border-top' as any]: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #4338ca' }}
           >
             <div
-              className="d-flex align-items-center justify-content-between gap-3 px-3 py-2 flex-wrap ext-section-header"
+              className="d-flex align-items-center justify-content-between gap-3 py-2 flex-wrap ext-section-header"
               style={{
                 ['--ext-section-header-border' as any]: expenseModuleTab === 'expense'
                   ? '1px solid rgba(168,85,247,0.18)'
@@ -280,7 +280,7 @@ export default function ExpenseTab() {
                 )}
               </div>
             </div>
-            <div className="px-3 pb-3 pt-2">
+            <div className="pb-3 pt-2 ext-section-body">
               {/* Filter pills — active = solid filled with colored shadow for
                   strong visibility; inactive = subtle white with border. When
                   the Advance Requests module is active the same pills drive
@@ -288,14 +288,19 @@ export default function ExpenseTab() {
                   The Drafts pill is appended only when a saved-draft exists
                   in localStorage for the active module — clicking it swaps
                   the table area for a list of resumable drafts. */}
-              <div className="d-flex gap-2 flex-wrap align-items-center mb-3">
-                {/* Used-For tabs — Advance Requests only. Narrows the list by
-                    used_for (Self used / Company used) before the status
-                    pills. They share this row (with a divider) rather than
-                    sitting on a line of their own, which read as a stray,
-                    disconnected control. */}
-                {expenseModuleTab === 'advance' && (
-                  <>
+              {/* Toolbar. Advance Requests splits over two lines: the Used-For
+                  pills own row 1 with the primary action opposite them, and the
+                  status pills own row 2 with search + Export opposite. Cramming
+                  seven pills, a search box and two buttons onto one line wrapped
+                  badly and buried the filters. Expense Claims has no Used-For
+                  pills, so it keeps the original single row. */}
+              {expenseModuleTab === 'advance' ? (
+                <>
+                  <div className="d-flex gap-2 flex-wrap align-items-center ext-toolbar-row ext-toolbar-row--scope mb-2">
+                    {/* Used-For tabs — narrows by used_for (Company used /
+                        Self used) before the status pills below. Selecting one
+                        resets the status filter so the counts on row 2 always
+                        describe the subset actually on screen. */}
                     <div className="dt-tabrail flex-shrink-0" data-accent="blue">
                       <div className="dt-tabs" role="tablist">
                         {[
@@ -319,119 +324,226 @@ export default function ExpenseTab() {
                         })}
                       </div>
                     </div>
-                    <span className="ext-pill-divider" />
-                  </>
-                )}
-                {/* Status tabs — the shared .dt-tabrail / .dt-tabs / .dt-tab
-                    markup from components/ui/DataTable.css, i.e. the same rail
-                    the Employee Onboarding and Document Template lists use, so
-                    the strips are identical by construction. */}
-                <div className="dt-tabrail flex-shrink-0" data-accent="violet">
-                  <div className="dt-tabs" role="tablist">
-                    {(() => {
-                      const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
-                      const draftCount = expenseModuleTab === 'advance'
-                        ? advanceDrafts.length
-                        : expenseDrafts.length;
-                      // Drafts is a permanent tab (CBC #68) — it used to appear
-                      // only once a draft existed, so there was no way to tell
-                      // the feature was there. With none saved it opens on the
-                      // list's own "no drafts yet" empty state.
-                      return [
-                        { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all },
-                        { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved },
-                        { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected },
-                        { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending },
-                        { key: 'draft'    as ExpenseFilter, label: 'Drafts',   count: draftCount },
-                      ];
-                    })().map(f => {
-                      const on = expenseFilter === f.key;
-                      return (
+                    <div className="ms-auto d-flex align-items-center gap-2 flex-shrink-0">
+                        {/* Raise New Claim — inline styles can't carry :hover, so
+                            we drive the brightening + lift via mouse handlers.
+                            Hidden until the employee's own onboarding is complete
+                            (CBC #85); the server rejects the POST either way. */}
+                        {canRaiseHrRequest && (
                         <button
-                          key={f.key}
                           type="button"
-                          role="tab"
-                          aria-selected={on}
-                          onClick={() => setExpenseFilter(f.key)}
-                          className={`dt-tab ${on ? 'on' : 'off'}`}
+                          className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 ext-new-claim"
+                          onMouseEnter={e => {
+                            const t = e.currentTarget;
+                            t.style.transform = 'translateY(-1px)';
+                            t.style.boxShadow = '0 6px 16px rgba(99,102,241,0.42)';
+                            t.style.filter = 'brightness(1.06)';
+                          }}
+                          onMouseLeave={e => {
+                            const t = e.currentTarget;
+                            t.style.transform = 'translateY(0)';
+                            t.style.boxShadow = '0 4px 12px rgba(99,102,241,0.3)';
+                            t.style.filter = 'none';
+                          }}
+                          onClick={() => {
+                            // Open the unified modal in the right mode based on
+                            // which list is currently visible.
+                            setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                            setClaimOpen(true);
+                          }}
                         >
-                          {f.label}
-                          <span className="dt-tab-count">{f.count}</span>
+                          <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
                         </button>
-                      );
-                    })}
+                        )}
+                    </div>
+                  </div>
+                  <div className="d-flex gap-2 flex-wrap align-items-center ext-toolbar-row ext-toolbar-row--status mb-3">
+                    {/* Status tabs — the shared .dt-tabrail / .dt-tabs / .dt-tab
+                        markup from components/ui/DataTable.css, i.e. the same rail
+                        the Employee Onboarding and Document Template lists use, so
+                        the strips are identical by construction. */}
+                    <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+                      <div className="dt-tabs" role="tablist">
+                        {(() => {
+                          const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                          const draftCount = expenseModuleTab === 'advance'
+                            ? advanceDrafts.length
+                            : expenseDrafts.length;
+                          // Drafts is a permanent tab (CBC #68) — it used to appear
+                          // only once a draft existed, so there was no way to tell
+                          // the feature was there. With none saved it opens on the
+                          // list's own "no drafts yet" empty state.
+                          return [
+                            { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all },
+                            { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved },
+                            { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected },
+                            { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending },
+                            { key: 'draft'    as ExpenseFilter, label: 'Drafts',   count: draftCount },
+                          ];
+                        })().map(f => {
+                          const on = expenseFilter === f.key;
+                          return (
+                            <button
+                              key={f.key}
+                              type="button"
+                              role="tab"
+                              aria-selected={on}
+                              onClick={() => setExpenseFilter(f.key)}
+                              className={`dt-tab ${on ? 'on' : 'off'}`}
+                            >
+                              {f.label}
+                              <span className="dt-tab-count">{f.count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2 flex-nowrap ms-auto ext-toolbar-actions">
+                        <div className="search-box ep-exp-search ext-search">
+                          <input
+                            type="text"
+                            className="form-control form-control-sm ext-search-input"
+                            placeholder="Search…"
+                            value={expenseSearch}
+                            onChange={e => setExpenseSearch(e.target.value)}
+                          />
+                          <i className="ri-search-line search-icon ext-search-icon" />
+                        </div>
+                        {/* Export — opens a format picker (Excel / PDF / CSV) and
+                            exports the active module's filtered rows. Was previously
+                            a dead button with no handler. */}
+                        <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)} className="flex-shrink-0">
+                          <DropdownToggle
+                            tag="button"
+                            type="button"
+                            caret={false}
+                            className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 ext-export-toggle"
+                          >
+                            <i className="ri-download-2-line" /> Export
+                            <i className="ri-arrow-down-s-line" />
+                          </DropdownToggle>
+                          <DropdownMenu end>
+                            <DropdownItem header>Download as</DropdownItem>
+                            <DropdownItem onClick={() => runProfileExport('xlsx')}>
+                              <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                            </DropdownItem>
+                            <DropdownItem onClick={() => runProfileExport('csv')}>
+                              <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
+                            </DropdownItem>
+                          </DropdownMenu>
+                        </Dropdown>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="d-flex gap-2 flex-wrap align-items-center mb-3">
+                  {/* Status tabs — the shared .dt-tabrail / .dt-tabs / .dt-tab
+                      markup from components/ui/DataTable.css, i.e. the same rail
+                      the Employee Onboarding and Document Template lists use, so
+                      the strips are identical by construction. */}
+                  <div className="dt-tabrail flex-shrink-0" data-accent="violet">
+                    <div className="dt-tabs" role="tablist">
+                      {(() => {
+                        const c = expenseModuleTab === 'advance' ? advanceCounts : expenseCounts;
+                        const draftCount = expenseModuleTab === 'advance'
+                          ? advanceDrafts.length
+                          : expenseDrafts.length;
+                        // Drafts is a permanent tab (CBC #68) — it used to appear
+                        // only once a draft existed, so there was no way to tell
+                        // the feature was there. With none saved it opens on the
+                        // list's own "no drafts yet" empty state.
+                        return [
+                          { key: 'all'      as ExpenseFilter, label: 'All',      count: c.all },
+                          { key: 'approved' as ExpenseFilter, label: 'Approved', count: c.approved },
+                          { key: 'rejected' as ExpenseFilter, label: 'Rejected', count: c.rejected },
+                          { key: 'pending'  as ExpenseFilter, label: 'Pending',  count: c.pending },
+                          { key: 'draft'    as ExpenseFilter, label: 'Drafts',   count: draftCount },
+                        ];
+                      })().map(f => {
+                        const on = expenseFilter === f.key;
+                        return (
+                          <button
+                            key={f.key}
+                            type="button"
+                            role="tab"
+                            aria-selected={on}
+                            onClick={() => setExpenseFilter(f.key)}
+                            className={`dt-tab ${on ? 'on' : 'off'}`}
+                          >
+                            {f.label}
+                            <span className="dt-tab-count">{f.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="d-flex align-items-center gap-2 flex-nowrap ms-auto ext-toolbar-actions">
+                      <div className="search-box ep-exp-search ext-search">
+                        <input
+                          type="text"
+                          className="form-control form-control-sm ext-search-input"
+                          placeholder="Search…"
+                          value={expenseSearch}
+                          onChange={e => setExpenseSearch(e.target.value)}
+                        />
+                        <i className="ri-search-line search-icon ext-search-icon" />
+                      </div>
+                      {/* Export — opens a format picker (Excel / PDF / CSV) and
+                          exports the active module's filtered rows. Was previously
+                          a dead button with no handler. */}
+                      <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)} className="flex-shrink-0">
+                        <DropdownToggle
+                          tag="button"
+                          type="button"
+                          caret={false}
+                          className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 ext-export-toggle"
+                        >
+                          <i className="ri-download-2-line" /> Export
+                          <i className="ri-arrow-down-s-line" />
+                        </DropdownToggle>
+                        <DropdownMenu end>
+                          <DropdownItem header>Download as</DropdownItem>
+                          <DropdownItem onClick={() => runProfileExport('xlsx')}>
+                            <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                          </DropdownItem>
+                          <DropdownItem onClick={() => runProfileExport('csv')}>
+                            <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
+                      {/* Raise New Claim — inline styles can't carry :hover, so
+                          we drive the brightening + lift via mouse handlers.
+                          Hidden until the employee's own onboarding is complete
+                          (CBC #85); the server rejects the POST either way. */}
+                      {canRaiseHrRequest && (
+                      <button
+                        type="button"
+                        className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 ext-new-claim"
+                        onMouseEnter={e => {
+                          const t = e.currentTarget;
+                          t.style.transform = 'translateY(-1px)';
+                          t.style.boxShadow = '0 6px 16px rgba(99,102,241,0.42)';
+                          t.style.filter = 'brightness(1.06)';
+                        }}
+                        onMouseLeave={e => {
+                          const t = e.currentTarget;
+                          t.style.transform = 'translateY(0)';
+                          t.style.boxShadow = '0 4px 12px rgba(99,102,241,0.3)';
+                          t.style.filter = 'none';
+                        }}
+                        onClick={() => {
+                          // Open the unified modal in the right mode based on
+                          // which list is currently visible.
+                          setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
+                          setClaimOpen(true);
+                        }}
+                      >
+                        <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
+                      </button>
+                      )}
                   </div>
                 </div>
-                {/* Search / Export / Raise New Claim ride at the right end of
-                    this row — same shape as the document-templates list, where
-                    the tab rail, the search box and the primary action share a
-                    single toolbar line above the table. */}
-                <div className="d-flex align-items-center gap-2 flex-nowrap ms-auto ext-toolbar-actions">
-                  <div className="search-box ep-exp-search ext-search">
-                    <input
-                      type="text"
-                      className="form-control form-control-sm ext-search-input"
-                      placeholder="Search…"
-                      value={expenseSearch}
-                      onChange={e => setExpenseSearch(e.target.value)}
-                    />
-                    <i className="ri-search-line search-icon ext-search-icon" />
-                  </div>
-                  {/* Export — opens a format picker (Excel / PDF / CSV) and
-                      exports the active module's filtered rows. Was previously
-                      a dead button with no handler. */}
-                  <Dropdown isOpen={exportOpen} toggle={() => setExportOpen(o => !o)} className="flex-shrink-0">
-                    <DropdownToggle
-                      tag="button"
-                      type="button"
-                      caret={false}
-                      className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 ext-export-toggle"
-                    >
-                      <i className="ri-download-2-line" /> Export
-                      <i className="ri-arrow-down-s-line" />
-                    </DropdownToggle>
-                    <DropdownMenu end>
-                      <DropdownItem header>Download as</DropdownItem>
-                      <DropdownItem onClick={() => runProfileExport('xlsx')}>
-                        <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
-                      </DropdownItem>
-                      <DropdownItem onClick={() => runProfileExport('csv')}>
-                        <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
-                      </DropdownItem>
-                    </DropdownMenu>
-                  </Dropdown>
-                  {/* Raise New Claim — inline styles can't carry :hover, so
-                      we drive the brightening + lift via mouse handlers.
-                      Hidden until the employee's own onboarding is complete
-                      (CBC #85); the server rejects the POST either way. */}
-                  {canRaiseHrRequest && (
-                  <button
-                    type="button"
-                    className="btn btn-sm fw-semibold d-inline-flex align-items-center gap-1 flex-shrink-0 ext-new-claim"
-                    onMouseEnter={e => {
-                      const t = e.currentTarget;
-                      t.style.transform = 'translateY(-1px)';
-                      t.style.boxShadow = '0 6px 16px rgba(99,102,241,0.42)';
-                      t.style.filter = 'brightness(1.06)';
-                    }}
-                    onMouseLeave={e => {
-                      const t = e.currentTarget;
-                      t.style.transform = 'translateY(0)';
-                      t.style.boxShadow = '0 4px 12px rgba(99,102,241,0.3)';
-                      t.style.filter = 'none';
-                    }}
-                    onClick={() => {
-                      // Open the unified modal in the right mode based on
-                      // which list is currently visible.
-                      setClaimMode(expenseModuleTab === 'advance' ? 'advance' : 'expense');
-                      setClaimOpen(true);
-                    }}
-                  >
-                    <i className="ri-add-line" /> {expenseModuleTab === 'advance' ? 'New Advance Request' : 'Raise New Claim'}
-                  </button>
-                  )}
-                </div>
-              </div>
+              )}
               {expenseFilter === 'draft' ? (
                 <DraftListView
                   module={expenseModuleTab}

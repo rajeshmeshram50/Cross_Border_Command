@@ -554,6 +554,25 @@
         }
         .ep-claim-file-x:hover { background: #ef4444; color: #fff; }
 
+        /* QA #149 — Download and Replace were two identical grey circles 4px
+           apart that both flashed red on hover, so a mis-aimed "download" hit
+           Replace and re-opened the file picker. The file name is now the
+           primary target (click = open), and each circle gets its own colour:
+           blue = save, amber = swap. Red stays reserved for destructive. */
+        .adv-file-open {
+          display: flex; align-items: center; gap: 4px;
+          flex: 1; min-width: 0; max-width: 100%;
+          border: none; background: none; padding: 0; margin: 0;
+          font-size: 11px; font-weight: 600; color: #166534;
+          cursor: pointer; text-align: left;
+        }
+        .adv-file-open span {
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+        }
+        .adv-file-open:hover span { text-decoration: underline; }
+        .ep-file-act-dl:hover   { background: #0ea5e9; color: #fff; }
+        .ep-file-act-swap:hover { background: #f59e0b; color: #fff; }
+
         /* ── Approval Flow card — replaces the old "System Intelligence"
            placeholder. Renders the You → Reporting Manager → HR/Finance chain. */
         .ep-claim-flow {
@@ -3224,7 +3243,23 @@
   color: var(--ext-sw-color);
   border: none;
   box-shadow: var(--ext-sw-shadow);
+  /* Same Bootstrap trap the .vt-subtab-btn block above documents: `.btn:hover`
+     sets `color: var(--bs-btn-hover-color)`, a variable the base `.btn` never
+     defines. The declaration is invalid at computed-value time, so colour falls
+     back to the inherited body colour — hovering the active "Advance Requests"
+     tab turned its white label dark grey on the near-black indigo gradient and
+     it vanished. `.btn:hover` also outranks this selector, so redeclaring
+     `color` here loses. Point Bootstrap's own variables at our value instead. */
+  --bs-btn-color: var(--ext-sw-color);
+  --bs-btn-hover-color: var(--ext-sw-color);
+  --bs-btn-active-color: var(--ext-sw-color);
+  --bs-btn-hover-bg: transparent;
+  --bs-btn-active-bg: transparent;
+  --bs-btn-hover-border-color: transparent;
+  --bs-btn-active-border-color: transparent;
 }
+/* The inactive tab still needs a hover cue now that Bootstrap's own is neutered. */
+.ext-switcher-btn:hover { filter: brightness(1.04); }
 .ext-switcher-icon { font-size: 12px; }
 .ext-section-card { border-top: var(--ext-section-border-top); }
 .ext-section-header {
@@ -3235,15 +3270,43 @@
   background: var(--ext-section-icon-bg);
   color: var(--ext-section-icon-color);
 }
+.ext-section-body { padding-left: 8px; padding-right: 8px; }
+.ext-section-header { padding-left: 8px; padding-right: 8px; }
 .ext-section-title { font-size: 12px; }
 .ext-section-sub { font-size: 11px; }
 /* Toolbar controls — Search / Export / Raise New Claim sit on the filter-pill
    line, sized and shaped like the shared DataTable toolbar (the document
    templates list) so the two screens read as the same component. */
+/* Two-row toolbar (Advance Requests). Each row is its own hairline-bordered
+   shell so the Used-For + primary action line reads as separate from the
+   status + search line, instead of one long strip that wrapped ambiguously. */
+.ext-toolbar-row {
+  border: 0.5px solid var(--vz-border-color);
+  border-radius: 12px;
+  padding: 8px;
+}
+/* Both rows on one flat card background read as a single strip split by a
+   stray line. Each takes the tint of the pills it holds instead — blue for
+   the Used-For scope, violet for the status filters — so the split is
+   legible at a glance and the colour explains WHY they're separate. */
+.ext-toolbar-row--scope {
+  background: rgba(59,130,246,0.07);
+  border-color: rgba(59,130,246,0.22);
+}
+.ext-toolbar-row--status {
+  background: rgba(139,92,246,0.07);
+  border-color: rgba(139,92,246,0.22);
+}
+[data-bs-theme="dark"] .ext-toolbar-row--scope  { background: rgba(59,130,246,0.12);  border-color: rgba(59,130,246,0.30); }
+[data-bs-theme="dark"] .ext-toolbar-row--status { background: rgba(139,92,246,0.12); border-color: rgba(139,92,246,0.30); }
+/* The search box sits on a tinted row now, so it needs its own solid ground
+   to stay readable rather than borrowing the wash behind it. */
+.ext-toolbar-row--status .ext-search-input,
+.ext-toolbar-row--status .ext-export-toggle { background: var(--vz-card-bg); }
 .ext-toolbar-actions { row-gap: 8px; }
 .ext-search { min-width: 180px; max-width: 320px; flex: 0 1 260px; }
 .ext-search-input {
-  font-size: 13px; height: 34px; border-radius: 10px;
+  font-size: 13px; height: 38px; border-radius: 10px;
   border: 1.5px solid var(--vz-border-color);
   padding-left: 34px;
 }
@@ -3259,8 +3322,8 @@
   border-radius: 10px;
   font-size: 12.5px;
   font-weight: 700;
-  height: 34px;
-  padding: 0 12px;
+  height: 38px;
+  padding: 0 14px;
 }
 .ext-new-claim {
   background: linear-gradient(135deg,#6366f1,#8b5cf6);
@@ -3270,8 +3333,10 @@
   box-shadow: 0 4px 12px rgba(99,102,241,0.3);
   font-size: 12.5px;
   font-weight: 700;
-  height: 34px;
-  padding: 0 14px;
+  height: 38px;
+  padding: 0 26px;
+  min-width: 210px;
+  justify-content: center;
   white-space: nowrap;
   transition: transform .15s ease, box-shadow .2s ease, filter .15s ease;
 }

@@ -225,3 +225,86 @@
 .hrexp-page .dt-toolbar-actions { margin-left: 8px; }
 /* Batch Payment / Export buttons match the 48px search + tab height. */
 .hrexp-page .dt-toolbar-actions .hrexp-cta { height: 48px; padding: 0 18px; }
+
+/* ───────────────────────────────────────────────────────────────────────────
+   SHORT VIEWPORTS — give the table back its rows.
+
+   Everything above the grid is fixed-height chrome: the hero card, a row of
+   five KPI cards, the Spend Analytics panel, then the tab/search toolbar. On a
+   1080px screen that is fine, but at browser zoom (110%+) or on a laptop the
+   chrome consumed the fold and the table was left showing two rows with the
+   third clipped by the app footer — the grid, which is the point of the page,
+   got whatever was left over.
+
+   These rules trim the chrome's vertical padding as the viewport gets shorter.
+   Nothing is hidden and no font shrinks below readable size; the space comes
+   out of padding, which is where it was idle. Height-based media queries, not
+   width — the problem is vertical room, and a wide-but-short window has it
+   just as badly as a narrow one.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media (max-height: 900px) {
+  .hrexp-page .hrexp-kpi-card { padding: 11px 14px !important; }
+  .hrexp-page .hrexp-hero-card { padding-top: 12px !important; padding-bottom: 12px !important; }
+  /* The KPI row and the Analytics panel each carry their own bottom margin. */
+  .hrexp-page .hrexp-kpi-row { margin-bottom: 10px !important; }
+  .hrexp-page .hrexp-analytics-card { margin-bottom: 10px !important; }
+  .hrexp-page .dt-tab,
+  .hrexp-page .dt-search,
+  .hrexp-page .dt-toolbar-actions .hrexp-cta { height: 40px; }
+  /* Narrow the search too. At 520px it pushed the tabs and the action
+     buttons onto a second toolbar row on a short window, costing another
+     ~48px of table. It stays right-anchored and still fits a full query. */
+  .hrexp-page .dt-search { flex: 0 1 380px; max-width: 380px; }
+}
+
+/* Tighter still — a 110% zoom on a 1080p screen lands here (~785px). */
+@media (max-height: 800px) {
+  .hrexp-page .hrexp-kpi-card { padding: 8px 12px !important; }
+  .hrexp-page .hrexp-hero-card { padding-top: 8px !important; padding-bottom: 8px !important; }
+  .hrexp-page .hrexp-kpi-row { margin-bottom: 8px !important; }
+  .hrexp-page .hrexp-analytics-card { margin-bottom: 8px !important; }
+  .hrexp-page .dt-tab,
+  .hrexp-page .dt-search,
+  .hrexp-page .dt-toolbar-actions .hrexp-cta { height: 36px; }
+  .hrexp-page .dt-tabs { padding: 2px; }
+  .hrexp-page .dt-search { flex: 0 1 280px; max-width: 280px; }
+}
+
+/* ── Scope row (Company/Self + Export), above the table card ────────────────
+   The height rules for these buttons used to be scoped to
+   `.dt-toolbar-actions`, which is the DataTable's own toolbar — they stopped
+   applying the moment the buttons moved out of it, so Export fell back to the
+   default button height and sat shorter than the toggle beside it. */
+/* ONE card, not two floating controls. The toggle carried its own grey pill
+   background and border, so on the bare page it read as a stray box with the
+   Export button drifting somewhere to its right. The row is now the surface —
+   white, bordered, same radius and shadow as the KPI and Analytics cards — and
+   the toggle sits flat inside it. */
+.hrexp-page .hrexp-scoperow {
+  border-radius: 14px;
+  border: 1px solid var(--vz-border-color);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  padding: 8px 12px;
+}
+/* The toggle is a tab rail, so give it the SAME shell as the four status tabs
+   on the row below (.dt-tabs): secondary-bg, 1px border, 10px radius, 4px pad.
+   Flattening it made the two rows read as different kinds of control when they
+   are the same kind — one selects the set, the other filters it. */
+.hrexp-page .hrexp-scoperow > div:first-child {
+  background: var(--vz-secondary-bg) !important;
+  border: 1px solid var(--vz-border-color) !important;
+  border-radius: 10px !important;
+  padding: 4px !important;
+}
+/* Match .dt-tab's 40px so both rails line up across the two rows. */
+.hrexp-page .hrexp-scoperow > div:first-child .btn { height: 40px !important; }
+.hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 18px; }
+@media (max-height: 900px) {
+  .hrexp-page .hrexp-scoperow .hrexp-cta { height: 40px; padding: 0 14px; }
+  /* The toggle's buttons carry their height inline, so it is overridden here. */
+  .hrexp-page .hrexp-scoperow .btn { height: 40px !important; }
+}
+@media (max-height: 800px) {
+  .hrexp-page .hrexp-scoperow .hrexp-cta { height: 36px; padding: 0 12px; }
+  .hrexp-page .hrexp-scoperow .btn { height: 36px !important; }
+}
