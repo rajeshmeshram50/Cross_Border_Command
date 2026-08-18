@@ -149,7 +149,18 @@ $lopDays  = max(0, round($effectiveWorkingDays - $paidDays, 2));
 - Unpaid keywords matched (case-insensitive): `unpaid`, `lwp`, `loss of pay`, `loss_of_pay`.
 - Only **Approved** leave (`leave_requests.status = 'Approved'`) protects salary; `Pending`/`Rejected`/`Cancelled` do not.
 - `day_type` values: `full`, `first_half`, `second_half`. Half = 0.5 only on a **single-day** request.
-- **Per-day salary basis = monthly gross ÷ working days** (via earnedFactor = `paidDays / effectiveWorkingDays`); LOP amount = prorated gross − earned gross ([:651-655](../app/Services/PayrollService.php#L651)).
+- **Per-day LOP basis is a BRANCH POLICY** (Branch → LOP Policy), not a constant:
+  `per-day = (basic | gross) ÷ (calendar days | working days)`.
+  **Default — and what every unconfigured branch uses — is `basic ÷ calendar days`**
+  (`Branch::LOP_DEFAULTS`, applied via `Branch::lopPerDayFor()`).
+  So a ₹30,000 gross / ₹15,000 basic employee in a 31-day month loses
+  **₹483.87** per LOP day, *not* ₹1,000.
+- The deduction is capped at the pro-rated **basic**, so it can never exceed the
+  basic payable this cycle. Consequence worth knowing before testing: an
+  employee absent the WHOLE month still takes home the entire allowance half of
+  their salary. That is the configured policy, not a bug.
+- `earnedGross = proratedGross − lopAmount`; `earnedBasic = proratedBasic − lopAmount`
+  (LOP is charged entirely to basic, which is why PF drops with absence).
 - Payslip columns affected: `paid_leave_days`, `unpaid_leave_days`, `lop_days`, `lop_amount`, `paid_days`, `present_days`.
 
 **QA cases:**
@@ -733,6 +744,54 @@ SalaryStructure::create([... version, effective_from, status='active',
 
 ---
 
+## RULE 22 — Cycles run in order; future cycles are frozen ✅ *(added 2026-08-18)*
+
+**Rule:** A month cannot be processed while the month before it is still open,
+and a month that has not started yet cannot be processed at all.
+
+**Complete** = the period is `locked` **or** its latest run is `paid` — the same
+definition the cycle strip paints as *Completed*. Anything else (draft,
+generated, **approved-but-not-paid**, no run at all) counts as open.
+
+**Code:** `PayrollController::guardPreviousCycleComplete()`, applied to **all
+four** lifecycle actions — `finalize-attendance`, `run`, `approve`, `pay`.
+Future months are refused by `guardPeriodStarted()`.
+
+**Small points:**
+- The rule starts at the scope's **first payroll period**, not at the beginning
+  of time. A tenant or branch onboarding in August is never asked to run July,
+  and a scope with no history can always start.
+- A **skipped** month (no period row at all) blocks just as an unfinished one
+  does, and the message names it.
+- Scope-aware and null-safe: branch-scoped and client-wide periods are separate
+  ladders; switching scope does not get you around the rule.
+- Re-entering an **already-paid** run to clear previously-held slips is exempt —
+  that run settled when it was legitimately its turn.
+- `GET /payroll/cycles` returns `is_future`, `blocked_by`, `run_status`,
+  `run_locked` and `processable` per month; the strip greys future chips
+  ("LOCKED", not clickable) and marks blocked ones "after {month}".
+
+| TC | Input | Expected | Result |
+|---|---|---|---|
+| R1 | Jul open (run `approved`, not paid) → **Run** August | ❌ 422 *"Payroll for Jul 2026 is not complete. Cycles must be processed in order…"* | ☐ |
+| R2 | Same → **Finalize Attendance** for August | ❌ blocked with the same message | ☐ |
+| R3 | Pay Jul (→ Completed) → Run August | ✅ allowed | ☐ |
+| R4 | Generate Aug legitimately, then **reopen Jul**, then **Approve** Aug | ❌ blocked — approve is guarded too | ☐ |
+| R5 | R4 but the Aug run is already `approved`, then **Pay** it | ❌ blocked — *disbursement must never jump the queue* | ☐ |
+| R6 | Previous month has **no period row at all** | ❌ blocked, message names the missing month | ☐ |
+| R7 | A scope's very first cycle (no earlier periods) | ✅ allowed — no infinite regress | ☐ |
+| R8 | **December open → January** next year | ❌ blocked (year rollover handled) | ☐ |
+| R9 | Blocked in branch scope, retry with **no branch selected** | ❌ still blocked — no scope bypass | ☐ |
+| R10 | Any **future** month (e.g. Dec while it is Aug) | ❌ 422 *"cannot be processed before the period begins"*; chip is greyed + non-clickable | ☐ |
+| R11 | Cycle whose run is already approved/paid | **Run Payroll** button disabled — *"already approved — reopen the cycle to re-run it"* (it used to fire and fail) | ☐ |
+| R12 | A month nobody has touched (period row auto-created by merely opening the screen) | reads **Not Started**, not In Progress | ☐ |
+
+> ⚠️ **Existing tenants with gaps will hit this immediately.** Any month left
+> open in the past now blocks everything after it until it is completed in
+> order. Check `payroll_periods` for stale open months before go-live.
+
+---
+
 ## Extra components the engine also computes (not in the original 21)
 
 | Item | Status | Code | Logic |
@@ -787,21 +846,28 @@ SalaryStructure::create([... version, effective_from, status='active',
 | 19 | Salary structure versioning | ✅ | SalaryStructureController:145 |
 | 20 | Tenant/branch isolation | ✅ | PayrollController:800,817 |
 | 21 | Full & Final settlement | ✅ live + persisted | PayrollController::fnfSave() |
+| 22 | Cycles run in order; future cycles frozen | ✅ *(2026-08-18)* | PayrollController::guardPreviousCycleComplete() |
 
 ---
 
 ## TEST CASE CATALOG (QA-runnable, step-by-step)
 
 > Concrete, numbered cases QA can execute directly. **Tick the Result column.**
-> Numbers assume the baseline employees below; if your tenant uses different `working_days`/salary, scale proportionally (per-day = **monthly gross ÷ working days**).
+> Numbers assume the baseline employees below; if your tenant uses different
+> `working_days`/salary, scale proportionally. **A LOP day costs
+> `basic ÷ calendar days in the month`** on the default branch policy — see
+> Rule 3. (It is *not* gross ÷ working days; this sheet said so until
+> 2026-08-18 and every LOP figure below was wrong as a result.)
 
 ### Baseline test employees (set these up once on IGC GROUP, client 12)
 
-| Code | Gender | Monthly Gross | Basic (50%) | Working Days | PF eligible | ESI applicable | Bank | Notes |
+Assume a **30-day month** for the LOP column below (per-day = basic ÷ 30).
+
+| Code | Gender | Monthly Gross | Basic (50%) | Working Days | PF eligible | ESI applicable | Bank | **Cost of 1 LOP day** |
 |---|---|---|---|---|---|---|---|---|
-| **EMP-M** | Male | ₹30,000 | ₹15,000 | 30 | Yes | No (gross > 21k) | valid | per-day ₹1,000 |
-| **EMP-F** | Female | ₹26,000 | ₹13,000 | 30 | Yes | No | valid | per-day ₹866.67 |
-| **EMP-L** | Male | ₹18,000 | ₹9,000 | 30 | Yes | **Yes** (≤ 21k) | valid | for ESI/PT-low tests, per-day ₹600 |
+| **EMP-M** | Male | ₹30,000 | ₹15,000 | 30 | Yes | No (gross > 21k) | valid | **₹500** (15,000 ÷ 30) |
+| **EMP-F** | Female | ₹26,000 | ₹13,000 | 30 | Yes | No | valid | **₹433.33** (13,000 ÷ 30) |
+| **EMP-L** | Male | ₹18,000 | ₹9,000 | 30 | Yes | **Yes** (≤ 21k) | valid | **₹300** (9,000 ÷ 30) |
 
 Clean full-month expected (no leave/LOP/OT):
 - **EMP-M:** PF = 12%×15,000 = **₹1,800**; PT (male, >10k) = **₹200** (₹300 in Feb); ESI = 0; **Net = 30,000 − 1,800 − 200 = ₹28,000**.
@@ -829,13 +895,18 @@ Clean full-month expected (no leave/LOP/OT):
 
 > Late count = number of `Attendance.status = 'Late'` days in the month. LOP days = `floor(late ÷ 3)`. The LOP is **auto-added** and shown as a **warning** — there is **no automatic working-hours waiver** and the slip stays `Pending Review`, **not** `On Hold`.
 
-| TC | Input (EMP-M, per-day ₹1,000) | Expected LOP days | Expected LOP amount | Slip status | Warning text | Result |
+| TC | Input (EMP-M, **1 LOP day = ₹500**) | Expected LOP days | Expected LOP amount | Slip status | Warning text | Result |
 |---|---|---|---|---|---|---|
 | B1 | 0 late marks | 0 | ₹0 | Ready | — | ☐ |
 | B2 | 2 late marks | 0 | ₹0 | Ready | — | ☐ |
-| B3 | 3 late marks | 1 | ₹1,000 | Pending Review | *"3 late marks → 1 day LOP (verify hours covered before approving)."* | ☐ |
-| B4 | 4 late marks | 1 | ₹1,000 | Pending Review | *"4 late marks → 1 day LOP …"* | ☐ |
-| B5 | 6 late marks | 2 | ₹2,000 | Pending Review | *"6 late marks → 2 day LOP …"* | ☐ |
+| B3 | 3 late marks | 1 | **₹500** | Pending Review | *"3 late marks → 1 day LOP (verify hours covered before approving)."* | ☐ |
+| B4 | 4 late marks | 1 | **₹500** | Pending Review | *"4 late marks → 1 day LOP …"* | ☐ |
+| B5 | 6 late marks | 2 | **₹1,000** | Pending Review | *"6 late marks → 2 day LOP …"* | ☐ |
+
+> The late-mark rule itself is per-branch (`Branch::lateMarkLopFor()`): the
+> legacy default is 3 late = **half** a day, so a branch that was never
+> configured yields 0.5/0.5/1.0 LOP days for 3/4/6 marks and half the amounts
+> above. Read the branch's Attendance Policy before asserting the day count.
 
 **Working-hours scenarios (important — documents the actual behaviour):**
 
@@ -852,12 +923,13 @@ Clean full-month expected (no leave/LOP/OT):
 
 ### C. Leave & Half-Day (Rule 3)
 
-| TC | Input (EMP-M, per-day ₹1,000) | Expected Result | Result |
+| TC | Input (EMP-M, **1 LOP day = ₹500**) | Expected Result | Result |
 |---|---|---|---|
 | C1 | 2 days **Approved Paid** leave (`paid_unpaid=Paid`) | No deduction; `paid_leave_days=2`, `lop_amount=0` | ☐ |
-| C2 | 2 days **Unpaid** leave (`paid_unpaid=Unpaid`/LWP) | `unpaid_leave_days=2`, `lop_days=2`, `lop_amount=₹2,000` | ☐ |
-| C3 | 1 day **plain absent** (no leave) | `lop_days=1`, `lop_amount=₹1,000` | ☐ |
-| C4 | Half-day leave (`day_type=first_half`, single day) | 0.5 day impact → ₹500 if unpaid; if paid, 0.5 paid leave | ☐ |
+| C2 | 2 days **Unpaid** leave (`paid_unpaid=Unpaid`/LWP) | `unpaid_leave_days=2`, `lop_days=2`, `lop_amount=**₹1,000**` | ☐ |
+| C3 | 1 day **plain absent** (no leave) | `lop_days=1`, `lop_amount=**₹500**` | ☐ |
+| C4 | Half-day leave (`day_type=first_half`, single day) | 0.5 day impact → **₹250** if unpaid; if paid, 0.5 paid leave | ☐ |
+| C7 | Whole month absent (no attendance at all) | `lop_amount` capped at the pro-rated **basic** — the employee still receives the allowance half; slip carries the *"No attendance recorded at all this cycle"* warning | ☐ |
 | C5 | Leave still **Pending** at run time | Not treated as paid → counts as LOP/absent | ☐ |
 | C6 | Leave **Rejected/Cancelled** | No salary protection | ☐ |
 
@@ -1230,7 +1302,13 @@ Maharashtra figures — those are the regression check.
 
 ## QA prerequisites / test data
 
-- Tenant: **IGC GROUP (client 12)** — logins & branches in `docs/IGC_CLIENT.md` (multi-branch, has salary data).
+- Tenant: **whichever tenant actually holds the payroll data on your database.**
+  Verify before you start — on the current dev DB the payroll fixtures live on
+  **client 1 / branch 2** (13 employees, 36 salary structures, PT-slab test
+  employees `PT-M-HIGH`, `PT-F-LOW`, …), while **IGC GROUP (client 12) has zero
+  employees** and will produce an empty run. Check with
+  `select client_id, count(*) from employees group by client_id;`
+  before concluding a run is broken.
 - Per employee for a clean run: active **salary structure** (or `annual_salary`), valid **bank account_number + IFSC**, `status = Active`, `date_of_joining`, optional `holiday_group_id`, `pf_eligible`, correct `gender` (for PT).
 - Masters: at least one **paid** and one **unpaid** `master_leave_types` (`paid_unpaid`), an approvable **LeaveRequest**, and **PayrollAdjustment** rows (overtime/bonus) for approved-only tests.
 - An **advance_request** (`hr_status=approved`, with EMI/lumpsum) to test Rule 11.

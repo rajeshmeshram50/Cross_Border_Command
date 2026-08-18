@@ -113,6 +113,17 @@ class PayrollService
     {
         DB::transaction(function () use ($period) {
             $run = $period->runs()->latest('id')->first();
+
+            /* A paid run is final. The controller already refuses to reopen one,
+             * but this method used to leave the run alone and STILL unlock the
+             * period — clearing attendance_finalized and flipping it back to
+             * open, so a settled month looked reopenable to everything that
+             * reads the period rather than the run. Refuse outright instead, so
+             * the guard holds no matter who calls the service. */
+            if ($run && $run->status === 'paid') {
+                throw new RuntimeException('Paid payroll cannot be reopened — post an adjustment in the next cycle.');
+            }
+
             if ($run && $run->status !== 'paid') {
                 Payslip::where('payroll_run_id', $run->id)->forceDelete();
                 // Void any pending disbursement so a stale approved-payment

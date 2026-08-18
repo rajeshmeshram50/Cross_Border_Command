@@ -666,6 +666,10 @@ class PayrollController extends Controller
         if (!$run) return response()->json(['message' => 'Payroll run not found.'], 404);
         if ($run->isLocked()) return response()->json(['message' => 'Run is already approved/paid.'], 422);
         if ($run->total_employees === 0) return response()->json(['message' => 'Nothing to approve — generate payroll first.'], 422);
+        // Sequence applies to the WHOLE lifecycle, not just generation: a run
+        // created while the previous cycle was complete must not be approved
+        // after that cycle is reopened, or the later month settles first.
+        if ($run->period && ($seqErr = $this->guardPreviousCycleComplete($run->period))) return $seqErr;
 
         /* Rule 19 — unresolved slips must be dealt with BEFORE approval.
          *
@@ -758,6 +762,15 @@ class PayrollController extends Controller
         if ($run->status === 'paid'
             && \App\Models\Payslip::where('payroll_run_id', $run->id)->where('status', '!=', 'Paid')->doesntExist()) {
             return response()->json(['message' => 'This payroll run is already fully paid.'], 422);
+        }
+        /* The money step is the one that must never jump the queue: disbursing
+         * August while July is unpaid is exactly the out-of-order settlement the
+         * sequence rule exists to prevent, and unlike a generate it cannot be
+         * undone. Re-entry to clear previously-held slips on an already-paid run
+         * is exempt — that run settled when it was legitimately its turn. */
+        if ($run->status !== 'paid' && $run->period
+            && ($seqErr = $this->guardPreviousCycleComplete($run->period))) {
+            return $seqErr;
         }
 
         // Shared disbursement logic (also used by the Proceed-to-Pay flow).
