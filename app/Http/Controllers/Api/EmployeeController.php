@@ -30,6 +30,74 @@ use Illuminate\Validation\ValidationException;
 class EmployeeController extends Controller
 {
     use PasswordHistory;
+    /** Page size when a caller opts into pagination without naming one. */
+    private const DEFAULT_PER_PAGE = 25;
+
+    /**
+     * Ceiling on ?per_page. The HR list sizes its page to the viewport
+     * (DataTable's autoFitRows), so the value is whatever fits rather than one
+     * of the 10/25/50 the dropdown offers — 200 leaves room for a tall screen
+     * while still refusing "give me the whole table", which is the request
+     * paginating exists to prevent.
+     */
+    private const MAX_PER_PAGE = 200;
+
+    /**
+     * Relations the employee LIST renders. The full WITH below carries 24, of
+     * which the list shows four — the rest (client, branch and its shifts,
+     * legal entity, six country/state pairs, assets, exit, previous
+     * employments) are loaded, serialised and thrown away on every row.
+     */
+    private const LIST_WITH = [
+        'department:id,name',
+        'designation:id,name',
+        'primaryRole:id,name',
+        'ancillaryRole:id,name',
+        // Column-limited on purpose. Left unrestricted this loads a whole
+        // Employee per row and re-runs every accessor in $appends for it —
+        // a second DB query and a second AES encryption for a cell that shows
+        // one name.
+        'reportingManager:id,display_name,first_name,last_name',
+        'reportingManagerUser:id,name',
+        // Backs the photo_url accessor; without it that accessor falls back to
+        // a lookup of its own, per row.
+        'photoDocument:id,employee_id,document_key,file_path',
+    ];
+
+    /**
+     * Columns the list needs: the eleven it renders, the foreign keys behind
+     * them, and the fields the surviving accessors read.
+     *
+     * The point of naming them is what is NOT here — bank_account_number,
+     * ifsc_code, account_holder_name, pan_number, uan_number, salary, and the
+     * permanent address. None of it appears on the screen, and all of it was
+     * being sent to every user who can open the employee list.
+     */
+    private const LIST_COLUMNS = [
+        'id', 'client_id', 'branch_id', 'user_id', 'deleted_at',
+        'emp_code', 'first_name', 'middle_name', 'last_name', 'display_name', 'email',
+        'status', 'onboarding_stage_completed', 'wizard_step_completed',
+        'department_id', 'designation_id', 'primary_role_id',
+        'ancillary_role_id', 'ancillary_role_ids',
+        'reporting_manager_id', 'reporting_manager_user_id',
+        // Read by the profile_completion accessor (the "Profile %" meter).
+        'gender', 'date_of_birth', 'work_country_id', 'nationality_country_id',
+        'mobile', 'address_line1', 'city', 'state_id', 'country_id', 'pincode',
+        'date_of_joining',
+        // face_registered checks both; face_descriptor is $hidden, so it is read
+        // but never serialised.
+        'face_registered_at', 'face_descriptor',
+        // Prefill for the Assign Assets dialog, which opens straight off a row.
+        'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids',
+    ];
+
+    /**
+     * Appended accessors the list does NOT use. other_assets_resolved runs a
+     * query per row to build a list that only the profile's Job tab and Exit
+     * Management ever render — both of which fetch their own record.
+     */
+    private const LIST_DROP_APPENDS = ['other_assets_resolved', 'ancillary_roles_resolved'];
+
     private const WITH = [
         'client:id,org_name',
         // `shifts` is needed by Employee::resolveShiftWindow() — without it the
@@ -110,7 +178,15 @@ class EmployeeController extends Controller
         // Employees" tab can render them. The toggle on each row uses
         // DELETE /employees/{id} which soft-deletes — without this the
         // disabled employees would silently disappear from the list.
-        $q = Employee::query()->withTrashed()->with(self::WITH);
+        /* ?view=list trims the payload to what the HR Employees table renders.
+           Opt-in for the same reason pagination is: ten other screens read this
+           endpoint and several of them need fields the list has no use for. */
+        $listView = $request->query('view') === 'list';
+
+        $q = Employee::query()->withTrashed()->with($listView ? self::LIST_WITH : self::WITH);
+        if ($listView) {
+            $q->select(self::LIST_COLUMNS);
+        }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {
@@ -118,7 +194,15 @@ class EmployeeController extends Controller
                 $w->where('display_name', 'ilike', "%{$search}%")
                     ->orWhere('emp_code', 'ilike', "%{$search}%")
                     ->orWhere('email', 'ilike', "%{$search}%")
-                    ->orWhere('mobile', 'ilike', "%{$search}%");
+                    ->orWhere('mobile', 'ilike', "%{$search}%")
+                    // Department / designation / role names are searchable too.
+                    // The HR list used to filter the whole array in the browser
+                    // and matched on those three; once the list is paginated the
+                    // browser only holds one page, so anything the server can't
+                    // find is simply unfindable.
+                    ->orWhereHas('department', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
+                    ->orWhereHas('designation', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
+                    ->orWhereHas('primaryRole', fn ($r) => $r->where('name', 'ilike', "%{$search}%"));
             });
         }
         if ($status = $request->query('status')) {
@@ -126,6 +210,27 @@ class EmployeeController extends Controller
         }
         if ($dept = $request->query('department_id')) {
             $q->where('department_id', $dept);
+        }
+
+        /* Active / Disabled split, mirroring what the SPA derives per row: a
+         * row is "enabled" when it is not soft-deleted AND its status is none
+         * of the three that mean the person is gone. Kept as its own parameter
+         * rather than reusing ?status= because the tab is a THREE-value idea
+         * (Active / Disabled / All) that no single status column value matches.
+         *
+         * Only applied when the caller sends the parameter, so every existing
+         * consumer keeps getting both kinds of row. */
+        if ($request->has('enabled')) {
+            $off = ['inactive', 'terminated', 'resigned'];
+            // COALESCE, not a bare LOWER(status): the column is nullable and
+            // `NULL NOT IN (…)` evaluates to NULL, so a row with no status set
+            // would fall out of BOTH tabs and disappear from the screen
+            // entirely. The SPA reads a missing status as Active, so this does
+            // the same.
+            $st = DB::raw("COALESCE(LOWER(status), 'active')");
+            $q->where(fn ($w) => $request->boolean('enabled')
+                ? $w->whereNull('deleted_at')->whereNotIn($st, $off)
+                : $w->whereNotNull('deleted_at')->orWhereIn($st, $off));
         }
 
         // Assignment pickers (e.g. Recruitment's Hiring Manager / Assigned HR
@@ -139,21 +244,174 @@ class EmployeeController extends Controller
               ->where('onboarding_stage_completed', '>=', 6);
         }
 
-        return response()->json($q->orderByDesc('id')->get());
+        $q->orderByDesc('id');
+
+        /* Accessors are opt-OUT rather than opt-in: $appends is the model's
+           default and every other caller still wants all of it. Applied to the
+           rows after they are fetched because setAppends() is per-instance —
+           there is no query-level switch for it. */
+        $trimAppends = function ($rows) use ($listView) {
+            if (!$listView) return $rows;
+
+            /* ->items(), not the paginator itself: collect() on a paginator
+               wraps its ARRAY form — current_page, data, links — so mapping over
+               it walks the envelope's keys instead of the employees. */
+            $items = $rows instanceof \Illuminate\Pagination\AbstractPaginator
+                ? $rows->items()
+                : $rows;
+
+            $keep = array_values(array_diff((new Employee)->getAppends(), self::LIST_DROP_APPENDS));
+            foreach ($items as $row) {
+                $row->setAppends($keep);
+
+                /* The reporting manager is another Employee and arrives with
+                   the same accessors attached. Serialising it therefore ran
+                   photo_url (an employee_documents lookup) and
+                   ancillary_roles_resolved (a master_roles lookup) once per
+                   manager — 50 queries on a 25-row page — to fill a cell that
+                   prints a name. Nothing on this screen reads anything else
+                   off the manager, so it keeps no accessors at all. */
+                if ($row->relationLoaded('reportingManager')) {
+                    $row->getRelation('reportingManager')?->setAppends([]);
+                }
+            }
+
+            /* ancillary_roles_resolved is dropped above and rebuilt here from a
+               single query instead. As an accessor it issued one SELECT per row
+               — 25 of them for a page — to turn a JSON array of ids into names
+               for the "Ancillary Role" chips. Written straight onto the model,
+               so it serialises exactly as the accessor's output did.
+
+               The id order is the user's pick order and is preserved: the chip
+               row reads left to right and re-sorting it would silently reorder
+               what someone chose. */
+            $idsFor = function ($row): array {
+                $ids = (array) ($row->ancillary_role_ids ?: []);
+                if (!$ids && $row->ancillary_role_id) $ids = [$row->ancillary_role_id];
+                return $ids;
+            };
+
+            $wanted = collect($items)->flatMap($idsFor)->unique()->values();
+            $byId = $wanted->isEmpty()
+                ? collect()
+                : \App\Models\Masters\Roles::query()->whereIn('id', $wanted)->get(['id', 'name'])->keyBy('id');
+
+            foreach ($items as $row) {
+                $row->setAttribute(
+                    'ancillary_roles_resolved',
+                    collect($idsFor($row))->map(fn ($id) => $byId->get($id))->filter()->values(),
+                );
+            }
+
+            return $rows;
+        };
+
+        /* Pagination is OPT-IN.
+         *
+         * Ten other screens read this endpoint (batch payments, onboarding,
+         * exit management, broadcast, recruitment, document templates, the
+         * employee picker …) and every one of them treats the body as a plain
+         * array. Returning the {data, total, …} envelope unconditionally would
+         * blank all of them at once, so only a caller that actually asks for a
+         * page gets it.
+         *
+         * per_page is clamped rather than trusted: the HR list sizes its page
+         * to the viewport (DataTable's autoFitRows), so the value is whatever
+         * happens to fit — not one of the 10/25/50 the dropdown offers — and an
+         * unclamped one would let a caller request the entire table back, which
+         * is the thing paginating is here to prevent.
+         */
+        if ($request->has('per_page') || $request->has('page')) {
+            // A junk or non-positive per_page falls back to the DEFAULT, not to
+            // the floor: max(1, (int) 'abc') is 1, which would answer a
+            // mistyped parameter with 111 single-row pages rather than the
+            // sensible page the caller obviously meant.
+            $requested = $request->query('per_page');
+            $perPage = is_numeric($requested) && (int) $requested > 0
+                ? min(self::MAX_PER_PAGE, (int) $requested)
+                : self::DEFAULT_PER_PAGE;
+
+            return response()->json($trimAppends($q->paginate($perPage)));
+        }
+
+        return response()->json($trimAppends($q->get()));
+    }
+
+    /**
+     * Headline counts for the HR Employees KPI row and the two tab badges.
+     *
+     * These used to be derived in the browser by filtering the full employee
+     * array. That worked only because index() returned every row; once the list
+     * is paginated the browser holds one page, and counting it would report
+     * "Total Employees 25" on a tenant of 500.
+     *
+     * Deliberately NOT filtered by ?search / ?department_id: the cards describe
+     * the whole roster, not the current view — which is what the client-side
+     * version did, since it counted the unfiltered array.
+     *
+     * The definitions below mirror apiToRow() in HrEmployees.tsx exactly. If
+     * either side changes, the cards stop agreeing with the rows beneath them.
+     */
+    public function stats(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $q = Employee::query()->withTrashed();
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+
+        /* "Enabled" is not a column: a row counts as active when it is not
+           soft-deleted AND its status is none of the three that mean the person
+           has left. COALESCE because status is nullable and the SPA reads a
+           missing one as Active. */
+        $enabled = "(deleted_at IS NULL AND COALESCE(LOWER(status), 'active') NOT IN ('inactive', 'terminated', 'resigned'))";
+        $stage   = 'COALESCE(onboarding_stage_completed, 0)';
+        $step    = 'COALESCE(wizard_step_completed, 0)';
+
+        // One pass over the table. Five separate COUNT queries would each
+        // re-scan it, and this endpoint is on the critical path of every page
+        // load for the list.
+        $row = $q->selectRaw("
+            COUNT(*)                                                              AS total,
+            SUM(CASE WHEN {$enabled} THEN 1 ELSE 0 END)                           AS active,
+            SUM(CASE WHEN {$enabled} THEN 0 ELSE 1 END)                           AS disabled,
+            SUM(CASE WHEN {$stage} >= 6 THEN 1 ELSE 0 END)                        AS onboarding_completed,
+            SUM(CASE WHEN {$stage} < 6 AND ({$stage} > 0 OR {$step} > 0)
+                     THEN 1 ELSE 0 END)                                           AS new_joiners
+        ")->first();
+
+        // SUM() comes back as a string on Postgres, and null when the tenant has
+        // no employees at all — the SPA feeds these straight into a counter
+        // animation that expects numbers.
+        return response()->json([
+            'total'                => (int) ($row->total ?? 0),
+            'active'               => (int) ($row->active ?? 0),
+            'disabled'             => (int) ($row->disabled ?? 0),
+            'onboarding_completed' => (int) ($row->onboarding_completed ?? 0),
+            'new_joiners'          => (int) ($row->new_joiners ?? 0),
+        ]);
     }
 
     public function show(Request $request, $id)
     {
+        /* Resolved ONCE.
+         *
+         * This used to resolve the id, fetch the row, run the self-or-can_view
+         * check, and then do all three again through authorizeViewOrSelf() —
+         * two identical loads of the record and its two dozen relations, plus a
+         * second decrypt of the id, for one GET. It halved the endpoint: 52
+         * queries became 26 with nothing else changed.
+         *
+         * The check kept is the cheaper of the two and enforces exactly the
+         * same rule — an employee may always read their OWN profile (the
+         * self-service page) without the module grant, anyone else's needs
+         * can_view. It reads user_id off the row already in hand;
+         * authorizeViewOrSelf() asked the database the same question a second
+         * time from the other direction.
+         */
         $row = $this->resolveRow($request, $this->resolveIdParam($id));
-        // An employee may always view their OWN profile (the self-service
-        // /profile page) without holding the master.employees can_view grant.
-        // Viewing anyone else's record still requires the module permission.
         if ((int) ($row->user_id ?? 0) !== (int) $request->user()->id) {
             $this->authorize($request, 'can_view');
         }
-        $empId = $this->resolveIdParam($id);
-        $this->authorizeViewOrSelf($request, $empId);
-        $row = $this->resolveRow($request, $empId);
         /* Resolved shift window (branch Shift Details → this employee's shift
            name). Computed, not stored: the employees table holds only the shift
            NAME, so the profile had no way to show the actual timings. */

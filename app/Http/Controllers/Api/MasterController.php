@@ -277,7 +277,30 @@ class MasterController extends Controller
     {
         $this->authorizeMaster($request, $slug, 'can_view');
         $modelClass = $this->resolveModel($slug);
-        $q = $modelClass::query()->with(self::OWNERSHIP_WITH)->orderByDesc('id');
+
+        /* ?fields=id,name — for the callers that only need to fill a dropdown.
+         *
+         * A master row is built for the Master pages, which show who created it
+         * and which client and branch own it: three eager-loaded relations plus
+         * the four *_name attributes withOwnership() derives from them. That is
+         * 427 bytes a row, and /master/countries returns 249 of them — 104 KB
+         * for a picker that renders an id and a label.
+         *
+         * Opt-in, so the Master pages and every other existing caller are
+         * untouched. Column names are intersected with the table's real columns
+         * before they reach the query: the value arrives from the URL, and
+         * select() would otherwise take whatever it was handed.
+         */
+        $requestedFields = collect(explode(',', (string) $request->query('fields')))
+            ->map(fn ($f) => trim($f))
+            ->filter()
+            ->values();
+        $slim = $requestedFields->isNotEmpty();
+
+        $q = $modelClass::query()->orderByDesc('id');
+        if (!$slim) {
+            $q->with(self::OWNERSHIP_WITH);
+        }
         // Eager-load the state relation for state_codes so the list endpoint
         // returns the state name inline (master_states has tens of thousands
         // of subdivisions — downloading the whole table just to translate an
@@ -321,6 +344,15 @@ class MasterController extends Controller
             if ($hasCountryId) {
                 $q->where('country_id', $countryId);
             }
+        }
+
+        if ($slim) {
+            // Anything not an actual column is dropped rather than passed
+            // through; `id` is always kept because every caller keys on it.
+            $columns = collect(\Illuminate\Support\Facades\Schema::getColumnListing((new $modelClass)->getTable()));
+            $safe = $requestedFields->intersect($columns)->values();
+            if (!$safe->contains('id') && $columns->contains('id')) $safe->push('id');
+            return response()->json($q->get($safe->isEmpty() ? ['*'] : $safe->all()));
         }
 
         return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));

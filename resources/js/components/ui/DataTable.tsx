@@ -79,6 +79,31 @@ export interface DataTableProps<T> {
    *  screen — the extra rows spill below the fold and the page scrolls. */
   minAutoRows?: number;
   paginate?: boolean;
+  /**
+   * Hand paging to the server. Omit it and the table behaves exactly as it
+   * always has — every screen that doesn't pass this is untouched.
+   *
+   * When present, `data` is understood to be ONE page that the caller has
+   * already fetched: the browser stops slicing, the pager's arrows and its
+   * "showing x–y of z" read `total` instead of `data.length`, and moving to
+   * another page is reported through `onPageChange` for the caller to refetch.
+   *
+   * `pageIndex` is controlled — the table renders the page it is given and
+   * never advances on its own, so a page that fails to load doesn't leave the
+   * pager claiming a page the rows don't belong to.
+   *
+   * `onPageSizeChange` fires for BOTH sources of a size change: the rows-per-page
+   * picker and `autoFitRows` re-measuring after a resize.
+   *
+   * Search must be server-side too when this is set (pass `searchValue` /
+   * `onSearchChange`), otherwise the box filters the current page only.
+   */
+  serverPagination?: {
+    total: number;
+    pageIndex: number;
+    onPageChange: (pageIndex: number) => void;
+    onPageSizeChange?: (pageSize: number) => void;
+  };
   accent?: DataTableAccent;
   minWidth?: number;
   fitToViewport?: boolean;
@@ -156,6 +181,7 @@ export default function DataTable<T extends object>({
   autoFitRows = false,
   minAutoRows = 2,
   paginate = true,
+  serverPagination,
   accent = 'violet',
   minWidth,
   fitToViewport = false,
@@ -217,7 +243,30 @@ export default function DataTable<T extends object>({
     () => allColumns.some(c => (c.meta as DataTableColumnMeta | undefined)?.width !== undefined),
     [allColumns],
   );
-  const [pageIndex, setPageIndex] = useState(0);
+  /* Which page is showing. Server mode reads it from the caller so the table
+     can never move to a page whose rows haven't arrived; otherwise it's local
+     state and nothing outside needs to know. */
+  const serverMode = !!serverPagination;
+  const [ownPageIndex, setOwnPageIndex] = useState(0);
+  const pageIndex = serverMode ? serverPagination!.pageIndex : ownPageIndex;
+
+  const onPageChange = serverPagination?.onPageChange;
+  const setPageIndex = useCallback((next: number | ((prev: number) => number)) => {
+    const resolved = typeof next === 'function' ? next(pageIndex) : next;
+    // The reset-on-search/tab effect below fires per keystroke; without this
+    // guard server mode would refetch page 1 on every letter typed.
+    if (resolved === pageIndex) return;
+    if (onPageChange) onPageChange(resolved);
+    else setOwnPageIndex(resolved);
+  }, [pageIndex, onPageChange]);
+
+  /* Report the page size the table settled on. Covers both ways it can change —
+     the rows-per-page picker and autoFitRows re-measuring after a resize — so
+     the caller doesn't have to watch for each separately. Held in a ref so a
+     caller passing an inline arrow doesn't re-fire this on every render. */
+  const onPageSizeChangeRef = useRef(serverPagination?.onPageSizeChange);
+  onPageSizeChangeRef.current = serverPagination?.onPageSizeChange;
+  useEffect(() => { onPageSizeChangeRef.current?.(pageSize); }, [pageSize]);
 
   const table = useReactTable({
     data,
@@ -241,11 +290,20 @@ export default function DataTable<T extends object>({
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: paginate ? getPaginationRowModel() : undefined,
+    // Server mode receives one page already sliced — running the slicer over it
+    // again would cut a 25-row page down to the first 25 of itself and, worse,
+    // show nothing at all on page 2 onwards. The `pagination` state above is
+    // still passed so the Sr No column keeps numbering from the page offset.
+    getPaginationRowModel: paginate && !serverMode ? getPaginationRowModel() : undefined,
     autoResetPageIndex: false,
   });
 
-  const filteredCount = table.getFilteredRowModel().rows.length;
+  /* Rows behind the pager. Client mode counts what survived the in-browser
+     filter; server mode has to be told, because the rows it holds are one page
+     and `data.length` would report "1–25 of 25" on every page of 500. */
+  const filteredCount = serverMode
+    ? serverPagination!.total
+    : table.getFilteredRowModel().rows.length;
   const pageCount = paginate ? Math.max(1, Math.ceil(filteredCount / pageSize)) : 1;
   useEffect(() => { if (pageIndex > pageCount - 1) setPageIndex(pageCount - 1); }, [pageIndex, pageCount]);
   useEffect(() => { setPageIndex(0); }, [activeTab, inputValue, filterChips?.length]);

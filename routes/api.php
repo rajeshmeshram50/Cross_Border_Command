@@ -674,6 +674,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
 
     Route::get   ('/employees/next-code',         [EmployeeController::class, 'nextCode']);
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
+    // Ahead of apiResource below — otherwise "stats" is read as an {employee} id.
+    Route::get   ('/employees/stats',             [EmployeeController::class, 'stats']);
     Route::get   ('/employees/department-tree/{departmentId}', [EmployeeController::class, 'departmentOrgTree'])->whereNumber('departmentId');
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
 

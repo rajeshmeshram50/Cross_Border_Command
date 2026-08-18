@@ -13,6 +13,10 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { useAuth } from '../../contexts/AuthContext';
 import api from '../../api';
+/* Static on purpose, for now. xlsx is 875 KB and only the Export button needs
+   it, but twelve other screens still import it this way — and a module stays in
+   the main chunk if ANY importer is static, so switching this one file alone
+   moved nothing. Worth doing as its own pass across all thirteen. */
 import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
@@ -307,12 +311,34 @@ export default function HrEmployees() {
   const [saving, setSaving] = useState(false);
   const [loadingEmployees, setLoadingEmployees] = useState(true);
 
+  /* ── Server-side paging ────────────────────────────────────────────────
+     The list used to fetch every employee and do the paging, searching and
+     filtering in the browser. That cost 297 queries and 533 KB on a 111-row
+     tenant and would not have survived a real one. The server now returns one
+     page; everything below is what the browser needs to ask for it. */
+  const [page, setPage] = useState(0);              // 0-based, as DataTable counts
+  const [perPage, setPerPage] = useState(25);       // replaced by DataTable's autoFit size
+  const [totalEmployees, setTotalEmployees] = useState(0);
+
+  /* Typing is not a request. Without this every letter fires a page-1 fetch and
+     the results arrive out of order — the answer to "bha" landing after the
+     answer to "bhavika". */
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  /* Any change to what is being asked for puts us back on the first page.
+     Staying on page 4 while narrowing a search to three results shows an empty
+     table with a pager insisting there are four pages. */
+  useEffect(() => { setPage(0); }, [debouncedQ, tab, deptFilter]);
+
   const [mDepts, setMDepts] = useState<any[]>([]);
   const [mDesignations, setMDesignations] = useState<any[]>([]);
   const [mRoles, setMRoles] = useState<any[]>([]);
   const [mLegalEntities, setMLegalEntities] = useState<any[]>([]);
   const [mCountries, setMCountries] = useState<any[]>([]);
-  const [mStates, setMStates] = useState<any[]>([]);
   const [mHolidayGroups, setMHolidayGroups] = useState<any[]>([]);
   // Overtime rates sourced from the Overtime (OT) Master — active rates only.
   const [mOvertimeRates, setMOvertimeRates] = useState<any[]>([]);
@@ -387,20 +413,102 @@ export default function HrEmployees() {
     () => mCountries.map(c => ({ value: String(c.id), label: c.name })),
     [mCountries],
   );
-  const statesForCountry = useCallback((countryId: string) => {
-    if (!countryId) return [] as { value: string; label: string }[];
-    return mStates
-      .filter(s => String(s.country_id) === String(countryId))
-      .map(s => ({ value: String(s.id), label: s.name }));
-  }, [mStates]);
+  /* States are fetched for the country that was picked, not all of them.
+     /master/states is the whole world's subdivisions — 773 KB and about a
+     second — and this form only ever shows the ~30 belonging to one country at
+     a time. The endpoint has taken ?country_id since ClientForm and BranchForm
+     moved to it; this screen was the last one still pulling the lot and
+     filtering in the browser.
+
+     Cached per country id so switching back and forth between the current and
+     permanent address doesn't re-fetch, and so editing an employee whose two
+     addresses share a country costs one call rather than two. */
+  const [statesByCountry, setStatesByCountry] = useState<Record<string, { value: string; label: string }[]>>({});
+  const statesInFlightRef = useRef<Set<string>>(new Set());
+
+  const ensureStates = useCallback((countryId: string) => {
+    const id = String(countryId || '').trim();
+    if (!id || statesInFlightRef.current.has(id)) return;
+    statesInFlightRef.current.add(id);
+    api.get('/master/states', { params: { country_id: id, fields: 'id,name' } })
+      .then(r => {
+        const list = Array.isArray(r.data) ? r.data : [];
+        setStatesByCountry(prev => ({
+          ...prev,
+          [id]: [...list]
+            .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)))
+            .map((s: any) => ({ value: String(s.id), label: s.name })),
+        }));
+      })
+      // Dropped from the in-flight set so a transient failure can be retried
+      // the next time the country is touched, instead of leaving the picker
+      // permanently empty.
+      .catch(() => { statesInFlightRef.current.delete(id); });
+  }, []);
+  /* The department filter is held as a NAME (it feeds a dropdown built from
+     department names), but the API filters by id. Resolved here rather than
+     changing the filter's shape, which the toolbar and the export both read. */
+  const deptFilterId = useMemo(() => {
+    const name = deptFilter.trim().toLowerCase();
+    if (!name || name === 'all depts') return null;
+    return mDepts.find((d: any) => String(d.name).trim().toLowerCase() === name)?.id ?? null;
+  }, [deptFilter, mDepts]);
+
+  /* Guards against an older response overwriting a newer one. Typing narrows
+     the result set, so the slow early query is exactly the one most likely to
+     land last — and it would put back the rows the user has already typed past. */
+  const employeesReqRef = useRef(0);
+
   const reloadEmployees = useCallback(async () => {
+    const token = ++employeesReqRef.current;
     try {
-      const r = await api.get('/employees');
-      setApiEmployees(Array.isArray(r.data) ? r.data : []);
+      const r = await api.get('/employees', {
+        params: {
+          // Trims the row to the eleven columns this table renders — see
+          // EmployeeController::LIST_COLUMNS. The wizard fetches its own full
+          // record, so nothing here needs the rest.
+          view: 'list',
+          page: page + 1,                 // the API counts from 1, DataTable from 0
+          per_page: perPage,
+          enabled: tab === 'active' ? 1 : 0,
+          ...(debouncedQ ? { search: debouncedQ } : {}),
+          ...(deptFilterId ? { department_id: deptFilterId } : {}),
+        },
+      });
+      if (token !== employeesReqRef.current) return;
+      // `?? r.data` keeps this working if the envelope ever goes away again —
+      // the endpoint only paginates for callers that ask.
+      const body = r.data ?? {};
+      setApiEmployees(Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []));
+      setTotalEmployees(Number(body.total ?? (Array.isArray(body) ? body.length : 0)) || 0);
     } catch {
+      if (token !== employeesReqRef.current) return;
       setApiEmployees([]);
+      setTotalEmployees(0);
     } finally {
-      setLoadingEmployees(false);
+      if (token === employeesReqRef.current) setLoadingEmployees(false);
+    }
+  }, [page, perPage, tab, debouncedQ, deptFilterId]);
+
+  /* KPI cards + tab badges. Separate from the list because they describe the
+     whole roster, not the page — counting the 25 rows on screen would report
+     "Total Employees 25" for every tenant. */
+  const [counts, setCounts] = useState({
+    total: 0, active: 0, disabled: 0, onboarding_completed: 0, new_joiners: 0,
+  });
+  const reloadCounts = useCallback(async () => {
+    try {
+      const r = await api.get('/employees/stats');
+      setCounts({
+        total: Number(r.data?.total) || 0,
+        active: Number(r.data?.active) || 0,
+        disabled: Number(r.data?.disabled) || 0,
+        onboarding_completed: Number(r.data?.onboarding_completed) || 0,
+        new_joiners: Number(r.data?.new_joiners) || 0,
+      });
+    } catch {
+      /* Non-fatal — the cards keep their last values rather than flashing zeros
+         over numbers that were correct a moment ago. */
     }
   }, []);
 
@@ -418,28 +526,68 @@ export default function HrEmployees() {
         .then(r => setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []))
         .catch(() => setMLegalEntities([])),
       api.get('/holiday-groups').then(r => setMHolidayGroups(Array.isArray(r.data) ? r.data : [])).catch(() => setMHolidayGroups([])),
-      api.get('/master/countries').then(r => setMCountries(
+      /* ?fields — the picker renders an id and a label; the full master row
+         carries its owning client, branch and creator too, which is 104 KB
+         across 249 countries instead of 8. */
+      api.get('/master/countries', { params: { fields: 'id,name' } }).then(r => setMCountries(
         Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
       )),
-      api.get('/master/states').then(r => setMStates(
-        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
-      )),
+      /* /master/states is deliberately absent — it returns every subdivision on
+         earth (773 KB, ~1 s) and this form shows one country's at a time. See
+         ensureStates() above, which fetches them per country. */
     ]);
   }, []);
+  /* ── Master lists: still loaded, just not in front of the table ─────────
+     Nothing on this screen reads them. Every column renders off the employee
+     row itself; they exist for the Add/Edit wizard and the Onboarding Link
+     dialog. Fetched with the page they put 880 KB of country and state lists
+     (states alone is 773 KB / ~1 s) ahead of the first paint of a screen that
+     shows neither.
+
+     So the fetch is unchanged — only its timing. This flag turns on when the
+     browser goes idle after the table has painted, or the moment a dialog that
+     needs them opens, whichever comes first. Nothing is removed and no dialog
+     can open to empty dropdowns; the lists simply stop blocking the list. */
+  const [mastersWanted, setMastersWanted] = useState(false);
   useEffect(() => {
-    reloadEmployees();
-    reloadMasters();
-  }, [reloadEmployees, reloadMasters]);
+    const want = () => setMastersWanted(true);
+    /* requestIdleCallback runs this after the browser has finished painting.
+       Safari still doesn't have it, so a short timer stands in — the point is
+       only to get off the critical path, not to be precise. The 2s timeout
+       keeps a permanently busy tab from starving the fetch entirely. */
+    const ric = (window as any).requestIdleCallback as
+      | ((cb: () => void, opts?: { timeout: number }) => number) | undefined;
+    if (ric) {
+      const id = ric(want, { timeout: 2000 });
+      return () => (window as any).cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(want, 600);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => { reloadEmployees(); }, [reloadEmployees]);
+  useEffect(() => { reloadCounts(); }, [reloadCounts]);
+  useEffect(() => { if (mastersWanted) reloadMasters(); }, [mastersWanted, reloadMasters]);
+
+  /* After anything that changes WHO is on the roster — a save, a delete, an
+     enable/disable. The KPI cards are their own endpoint now, so a mutation
+     that only reloaded the rows would leave "Active Employees" showing the
+     figure from before the toggle. Counts are best-effort: a failed refresh
+     leaves the last good numbers rather than blanking the cards. */
+  const reloadAfterMutation = useCallback(async () => {
+    await reloadEmployees();
+    reloadCounts().catch(() => { /* cards keep their previous values */ });
+  }, [reloadEmployees, reloadCounts]);
 
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') reloadEmployees().catch(() => { }); };
+    const refresh = () => { if (document.visibilityState === 'visible') reloadAfterMutation().catch(() => { }); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
       window.removeEventListener('focus', refresh);
       document.removeEventListener('visibilitychange', refresh);
     };
-  }, [reloadEmployees]);
+  }, [reloadAfterMutation]);
 
   const apiRows = useMemo(() => apiEmployees.map(apiToRow), [apiEmployees]);
 
@@ -587,7 +735,7 @@ export default function HrEmployees() {
     try {
       const r = await api.delete(`/employees/${dbId}/force`);
       toast.success('Employee deleted', r?.data?.message || `${row.name} has been permanently removed.`);
-      await reloadEmployees();
+      await reloadAfterMutation();
       setConfirmDelete(null);
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Could not delete this employee.';
@@ -598,6 +746,14 @@ export default function HrEmployees() {
   };
 
   const [empOpen, setEmpOpen] = useState(false);
+  /* The safety net for the idle preload above: if either dialog is opened
+     before the browser ever went idle, the lists are pulled in right then. So
+     the dropdowns are never empty because of the deferral — at worst they fill
+     a moment after the dialog appears, exactly as they would have if the fetch
+     had started on page load and not yet returned. */
+  useEffect(() => {
+    if (empOpen || onboardOpen) setMastersWanted(true);
+  }, [empOpen, onboardOpen]);
   const [empMode, setEmpMode] = useState<'add' | 'edit'>('add');
   const [empEditingName, setEmpEditingName] = useState<string>('');
   const [empStep, setEmpStep] = useState<1 | 2 | 3 | 4>(1);
@@ -642,8 +798,14 @@ export default function HrEmployees() {
   const [ePermCity, setEPermCity] = useState('');
   const [ePermState, setEPermState] = useState('');
   const [ePermCountry, setEPermCountry] = useState('');
-  const currentAddressStates = useMemo(() => statesForCountry(eCurCountry), [statesForCountry, eCurCountry]);
-  const permanentAddressStates = useMemo(() => statesForCountry(ePermCountry), [statesForCountry, ePermCountry]);
+  /* Fetch on the country, not on open: this also covers editing, where the
+     country arrives from the saved record rather than from a click — without
+     it the State picker would sit empty next to a country that is already
+     filled in. */
+  useEffect(() => { ensureStates(eCurCountry); }, [eCurCountry, ensureStates]);
+  useEffect(() => { ensureStates(ePermCountry); }, [ePermCountry, ensureStates]);
+  const currentAddressStates = statesByCountry[eCurCountry] ?? [];
+  const permanentAddressStates = statesByCountry[ePermCountry] ?? [];
   const [ePermPin, setEPermPin] = useState('');
   const [eJoinDate, setEJoinDate] = useState('');
   const [eDept, setEDept] = useState('');
@@ -714,6 +876,8 @@ export default function HrEmployees() {
        access to. The "required" rule below only bites when options exist, so
        the form stays completable. */
     if (!leavePerm.canView) { setLeavePlanOptions([]); return; }
+    // Wizard-only, like the master lists — see the mastersWanted note above.
+    if (!mastersWanted) return;
 
     leavePlansApi.list()
       .then(plans => {
@@ -726,7 +890,7 @@ export default function HrEmployees() {
         );
       })
       .catch(err => console.warn('[HrEmployees] failed to load leave plans', err));
-  }, [leavePerm.canView]);
+  }, [leavePerm.canView, mastersWanted]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
   const holidayGroupSelectOptions = useMemo(() => {
@@ -744,6 +908,8 @@ export default function HrEmployees() {
   // branch (or the union across branches when "All Branches" is active).
   const [branchShiftOptions, setBranchShiftOptions] = useState<Array<{ value: string; label: string }>>([]);
   useEffect(() => {
+    // Wizard Step 3 only — deferred with the rest, see mastersWanted above.
+    if (!mastersWanted) return;
     api.get('/branch-shifts')
       .then(r => {
         const list = Array.isArray(r.data?.shifts) ? r.data.shifts : [];
@@ -756,7 +922,7 @@ export default function HrEmployees() {
           })));
       })
       .catch(() => setBranchShiftOptions([]));
-  }, []);
+  }, [mastersWanted]);
   // Effective dropdown: prefer branch-configured shifts; fall back to the
   // built-in defaults only when the branch has none. Always include the
   // employee's currently-saved shift so editing never blanks an old value.
@@ -947,19 +1113,36 @@ export default function HrEmployees() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  /* "Edit this employee" arriving from the Onboarding hub (it navigates here
+     with openEditEmpCode). This used to look the code up in the loaded rows,
+     which held every employee — it now holds one page, and an employee sitting
+     on page 4 would land the user on the list with no modal and no explanation,
+     because the state is cleared either way. So a miss falls back to fetching
+     that one record: show() resolves an emp_code as readily as an id. */
   useEffect(() => {
     const incoming = (location.state as any)?.openEditEmpCode as string | undefined;
     if (!incoming) return;
-    if (apiRows.length === 0) return;
-    const match = apiRows.find(r => r.id === incoming);
-    if (match) {
-      const back = (location.state as any)?.returnTo as string | undefined;
+    if (loadingEmployees) return;   // wait for the page, else every load is a miss
+
+    const back = (location.state as any)?.returnTo as string | undefined;
+    const open = (row: EmployeeRow) => {
       if (back) setReturnToOnClose(back);
-      openEditEmployee(match);
+      openEditEmployee(row);
+    };
+
+    const onPage = apiRows.find(r => r.id === incoming);
+    if (onPage) {
+      open(onPage);
+    } else {
+      api.get(`/employees/${encodeURIComponent(incoming)}`)
+        .then(r => { const raw = r.data?.employee ?? r.data; if (raw?.id) open(apiToRow(raw)); })
+        .catch(() => toast.error('Could not open employee', `${incoming} was not found.`));
     }
+    // Cleared immediately either way — a back/forward that replays this state
+    // should not re-open the wizard over whatever the user is doing by then.
     navigate(location.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiRows, location.state]);
+  }, [apiRows, loadingEmployees, location.state]);
   const openPermissions = (row: EmployeeRow) => {
     navigate(`/hr/employees/${encodeURIComponent(row.encryptedId || row.id)}/permissions`, { state: { employee: row } });
   };
@@ -1001,7 +1184,7 @@ export default function HrEmployees() {
           try {
             await api.patch(`/employees/${dbId}/restore`);
             toast.success('Employee enabled', `${pending.employee.name} can sign in again.`);
-            await reloadEmployees();
+            await reloadAfterMutation();
             // Re-enabled employee becomes an eligible manager again — refresh
             // the pool so the dropdown reflects it without a page reload.
             reloadManagers().catch(() => { /* swallow */ });
@@ -1718,9 +1901,25 @@ export default function HrEmployees() {
     await proceedFresh();
   };
 
-  const openEditEmployee = (row: EmployeeRow) => {
-    const raw = (row as any)._raw as ApiEmployee | undefined;
+  /* The wizard reads about sixty fields off the record — addresses, payroll,
+     assets, policies — while the list only ever shows eleven columns. It used
+     to take them from the row it was handed, which meant the list endpoint had
+     to carry the whole employee for every row on screen just in case one of
+     them was edited (including bank and PAN details that nothing renders).
+     Fetching the one record being opened costs a single fast call and lets the
+     list payload be a list payload. The row's own copy is kept as a fallback so
+     a failed fetch still opens a usable form rather than a blank one. */
+  const openEditEmployee = async (row: EmployeeRow) => {
     const dbId = (row as any)._dbId as number | undefined;
+    let raw = (row as any)._raw as ApiEmployee | undefined;
+    if (dbId) {
+      try {
+        const r = await api.get(`/employees/${dbId}`);
+        raw = (r.data?.employee ?? r.data ?? raw) as ApiEmployee | undefined;
+      } catch {
+        toast.warning('Opened with partial details', 'Could not load the full record — check the fields before saving.');
+      }
+    }
     resetEmpForm();
     setEmpMode('edit');
     setEmpEditingName(row.name);
@@ -2248,7 +2447,7 @@ export default function HrEmployees() {
             .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
         }
       }
-      reloadEmployees().catch(() => { /* swallow — table just stays stale */ });
+      reloadAfterMutation().catch(() => { /* swallow — table just stays stale */ });
       return true;
     } catch (err: any) {
       const fieldErrors = err?.response?.data?.errors;
@@ -2378,7 +2577,7 @@ export default function HrEmployees() {
       if (finalEmpId) {
         await persistBreakup(finalEmpId);
       }
-      reloadEmployees().catch(() => { /* swallow */ });
+      reloadAfterMutation().catch(() => { /* swallow */ });
       reloadManagers().catch(() => { /* swallow */ });
       closeEmp();
     } catch (err: any) {
@@ -2404,7 +2603,7 @@ export default function HrEmployees() {
     try {
       await api.delete(`/employees/${dbId}`);
       toast.success('Employee removed', `${name} disabled.`);
-      await reloadEmployees();
+      await reloadAfterMutation();
       // A disabled employee is no longer a valid manager — refresh the pool so
       // the Reporting Manager dropdown drops them without a page reload.
       reloadManagers().catch(() => { /* swallow */ });
@@ -2450,59 +2649,22 @@ export default function HrEmployees() {
     setEPermPin(eCurPin);
   }, [eSameAsCurrent, eCurAddr1, eCurAddr2, eCurCity, eCurState, eCurCountry, eCurPin]);
 
-  const departments = useMemo(() => {
-    const fromMaster = mDepts.map((d: any) => d.name).filter(Boolean);
-    const fromRows = apiRows.map(e => e.department).filter(d => d && d !== '—');
-    const merged = fromMaster.length > 0
-      ? Array.from(new Set([...fromMaster, ...fromRows]))
-      : Array.from(new Set(fromRows));
-    return ['All Depts', ...merged];
-  }, [mDepts, apiRows]);
+  /* Master list only. This used to union the department master with the names
+     found on the loaded rows; with one page loaded that second source would
+     narrow the list to whichever departments happen to appear on the page the
+     user is standing on. */
+  const departments = useMemo(
+    () => ['All Depts', ...Array.from(new Set(mDepts.map((d: any) => d.name).filter(Boolean)))],
+    [mDepts],
+  );
 
-  const counts = useMemo(() => {
-    const todayMs = Date.now();
-    const MONTH_MS = 30.44 * 24 * 60 * 60 * 1000;
-
-    const probationWindow = (e: any): 'in' | 'done' | null => {
-      if (!e.enabled) return null;
-      const dojRaw = e._raw?.date_of_joining;
-      const months = Number(e._raw?.probation_months || 0);
-      if (!dojRaw || months <= 0) return null;
-      const doj = new Date(dojRaw).getTime();
-      if (Number.isNaN(doj)) return null;
-      return (todayMs - doj) < months * MONTH_MS ? 'in' : 'done';
-    };
-    const rawStatus = (e: any) => String(e._raw?.status || '');
-
-    const total = apiRows.length;
-    const active = apiRows.filter(e => e.enabled).length;
-    const disabled = apiRows.filter(e => !e.enabled).length;
-    const on_leave = apiRows.filter(e => rawStatus(e) === 'On Leave').length;
-    const onboarding_completed = apiRows.filter(e => e.onboarding === 'Completed').length;
-    const new_joiners = apiRows.filter(e => e.onboarding === 'In Progress').length;
-    const probation_in_progress = apiRows.filter(e => probationWindow(e) === 'in').length;
-    const probation_completed = apiRows.filter(e => probationWindow(e) === 'done').length;
-    const exit_in_progress = apiRows.filter(e => rawStatus(e) === 'Notice Period').length;
-    const total_exited = apiRows.filter(e => {
-      const s = rawStatus(e);
-      return s === 'Resigned' || s === 'Terminated';
-    }).length;
-
-    return {
-      total,
-      active,
-      disabled,
-      on_leave,
-      onboarding_completed,
-      new_joiners,
-      probation_in_progress,
-      probation_completed,
-      exit_in_progress,
-      total_exited,
-      activeTab: apiRows.filter(e => e.enabled).length,
-      disabledTab: apiRows.filter(e => !e.enabled).length,
-    };
-  }, [apiRows]);
+  /* The KPI figures now come from GET /employees/stats (see reloadCounts
+     above). They used to be derived here by filtering the full employee array,
+     which only worked while this screen fetched every row — with one page in
+     hand the same code would report the page as the company.
+     Five of the values it computed (on_leave, probation_in_progress,
+     probation_completed, exit_in_progress, total_exited) were never rendered
+     anywhere, so they are not part of the endpoint. */
 
   const [managerCandidates, setManagerCandidates] = useState<{ id: number; kind: string; label: string; department_id?: number | null; is_hod?: boolean; rank?: number | null }[]>([]);
   const reloadManagers = useCallback(async () => {
@@ -2517,7 +2679,11 @@ export default function HrEmployees() {
       setManagerCandidates([]);
     }
   }, []);
-  useEffect(() => { reloadManagers(); }, [reloadManagers]);
+  /* Reporting-manager pool — read only by the wizard's manager picker and the
+     department-HOD default, so it defers with the master lists. reloadManagers()
+     is still called directly after a save / enable / disable, which is when the
+     pool actually changes. */
+  useEffect(() => { if (mastersWanted) reloadManagers(); }, [mastersWanted, reloadManagers]);
   const reportingManagerOptions = useMemo(
     () => {
       // Reporting-manager eligibility is driven by POSITION ONLY (see
@@ -2563,36 +2729,41 @@ export default function HrEmployees() {
     setEReportingMgr(prev => (!prev || String(prev).startsWith('branch_user:')) ? deptHodValue : prev);
   }, [deptHodValue]);
 
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    const df = deptFilter.trim().toLowerCase();
-    return apiRows.filter(e => {
-      if (statusFilter !== 'All') {
-        if (tab === 'active' && !e.enabled) return false;
-        if (tab === 'disabled' && e.enabled) return false;
-      }
-      if (statusFilter === 'Active' && !e.enabled) return false;
-      if (statusFilter === 'Disabled' && e.enabled) return false;
-      if (df && df !== 'all depts' && String(e.department || '').trim().toLowerCase() !== df) return false;
-      if (!s) return true;
-      return [e.name, e.id, e.department, e.designation, e.primaryRole, e.email]
-        .some(v => (v || '').toLowerCase().includes(s));
-    });
-  }, [q, tab, deptFilter, statusFilter, apiRows]);
+  /* The tab, the search box and the department filter are all applied by the
+     API now (see reloadEmployees), so the rows that arrive ARE the rows to
+     show. Filtering them again in the browser would only be able to hide rows
+     from the current page, which reads as results going missing. */
 
   /* Paging, rows-per-page and the fit-to-viewport measuring all moved into
      <DataTable> (components/ui/DataTable) — this page no longer tracks them. */
 
   const [exporting, setExporting] = useState(false);
-  const handleExportEmployees = () => {
+  /* Export covers the whole filtered set, not the page on screen.
+     It used to hand XLSX whatever the browser was holding, which was every
+     employee — now that is 25 of them, and an export that silently ships one
+     page while the button still says "Export" is worse than one that fails.
+     So it re-asks for the same filters WITHOUT paging and exports that. */
+  const handleExportEmployees = async () => {
     if (exporting) return;
-    const exportRows = filtered;
-    if (exportRows.length === 0) {
-      toast.info('Nothing to export', 'No employees match the current filters.');
-      return;
-    }
     setExporting(true);
     try {
+      const r = await api.get('/employees', {
+        params: {
+          view: 'list',                   // the sheet uses the same eleven columns
+          enabled: tab === 'active' ? 1 : 0,
+          ...(debouncedQ ? { search: debouncedQ } : {}),
+          ...(deptFilterId ? { department_id: deptFilterId } : {}),
+        },
+      });
+      const body = r.data ?? {};
+      const raw: ApiEmployee[] = Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : []);
+      const exportRows = raw.map(apiToRow);
+
+      if (exportRows.length === 0) {
+        toast.info('Nothing to export', 'No employees match the current filters.');
+        return;
+      }
+
       const sheetRows = exportRows.map((e, i) => ({
         'Sr No': i + 1,
         'Employee': e.name,
@@ -3024,7 +3195,7 @@ export default function HrEmployees() {
 
 
             <DataTable<EmployeeRow>
-              data={filtered}
+              data={apiRows}
               columns={employeeColumns}
               serial
               accent="violet"
@@ -3032,9 +3203,19 @@ export default function HrEmployees() {
               fitToViewport
               autoFitRows
               loading={loadingEmployees || tabSwitching}
+              /* The rows are one page fetched by reloadEmployees; the table
+                 stops slicing and reports page moves back here instead.
+                 onPageSizeChange covers autoFitRows re-measuring on resize as
+                 well as the rows-per-page picker. */
+              serverPagination={{
+                total: totalEmployees,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               tabs={[
-                { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-line', count: counts.activeTab },
-                { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-line', count: counts.disabledTab },
+                { key: 'active', label: 'Active Employees', icon: 'ri-user-follow-line', count: counts.active },
+                { key: 'disabled', label: 'Disabled Employees', icon: 'ri-user-unfollow-line', count: counts.disabled },
               ]}
               activeTab={tab}
               onTabChange={k => {
@@ -5206,128 +5387,11 @@ function ActionBtn({
   );
 }
 
-function MultiSelectChips({
-  value,
-  onChange,
-  options,
-  placeholder = 'Select…',
-  disabled,
-}: {
-  value: string[];
-  onChange: (next: string[]) => void;
-  options: { value: string; label: string }[];
-  placeholder?: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (open) {
-      setTimeout(() => searchRef.current?.focus(), 0);
-    } else {
-      setQuery('');
-    }
-  }, [open]);
-
-  const toggleVal = (v: string) => {
-    if (value.includes(v)) onChange(value.filter(x => x !== v));
-    else onChange([...value, v]);
-  };
-  const remove = (v: string) => onChange(value.filter(x => x !== v));
-
-  const filteredOptions = query.trim()
-    ? options.filter(o => o.label.toLowerCase().includes(query.trim().toLowerCase()))
-    : options;
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
-
-      <div
-        role="button"
-        tabIndex={disabled ? -1 : 0}
-        aria-disabled={disabled}
-        onClick={() => { if (!disabled) setOpen(o => !o); }}
-        className={`mschips-toggle${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}
-      >
-        {value.length === 0 && <span className="mschips-placeholder">{placeholder}</span>}
-        {value.map(v => {
-          const opt = options.find(o => o.value === v);
-          return (
-            <span key={v} className="mschips-chip">
-              {opt?.label || v}
-              {!disabled && (
-                <button
-                  type="button"
-                  className="mschips-chip-x"
-                  onClick={(e) => { e.stopPropagation(); remove(v); }}
-                  aria-label={`Remove ${opt?.label || v}`}
-                >
-                  <i className="ri-close-line" style={{ fontSize: 14 }} />
-                </button>
-              )}
-            </span>
-          );
-        })}
-        <i className="ri-arrow-down-s-line mschips-chev" />
-      </div>
-
-      {open && !disabled && (
-        <div className="mschips-menu">
-          <div className="mschips-search-wrap">
-            <i className="ri-search-line mschips-search-icon" />
-            <input
-              ref={searchRef}
-              type="text"
-              className="mschips-search"
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search roles…"
-              onClick={e => e.stopPropagation()}
-            />
-          </div>
-          <div className="mschips-list">
-            {options.length === 0 ? (
-              <div className="px-3 py-2 text-muted" style={{ fontSize: 12 }}>No options</div>
-            ) : filteredOptions.length === 0 ? (
-              <div className="px-3 py-2 text-muted text-center" style={{ fontSize: 12 }}>No matches for &ldquo;{query}&rdquo;</div>
-            ) : filteredOptions.map(opt => {
-              const on = value.includes(opt.value);
-              return (
-                <div
-                  key={opt.value}
-                  className={`mschips-item${on ? ' is-on' : ''}`}
-                  onClick={() => toggleVal(opt.value)}
-                >
-                  <span className="mschips-check">
-                    {on && <i className="ri-check-line" style={{ fontSize: 12 }} />}
-                  </span>
-                  {opt.label}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+/* MultiSelectChips lived here and was replaced by MasterMultiSelect (see the
+   note beside the Ancillary Role picker: this one rendered every selected chip,
+   so ten roles stacked into four rows and pushed the field out of the form
+   grid). The replacement landed but the original was left behind — 122 lines
+   that nothing in the codebase referenced. Deleted. */
 
 function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
   const [display, setDisplay] = useState(0);
