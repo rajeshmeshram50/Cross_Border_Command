@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { Badge, Button, CardBody, Input, Spinner } from 'reactstrap';
+import { resolveDependencies } from '../utils/moduleDependencies';
 
 export interface PermModule {
   id: number;
@@ -173,10 +174,76 @@ export default function PermissionMatrix({
     return out;
   };
 
+  const bySlug = useMemo(() => {
+    const map = new Map<string, PermModule>();
+    modules.forEach(m => map.set(m.slug, m));
+    return map;
+  }, [modules]);
+
+  /**
+   * Which modules are currently pulled in as dependencies, and by whom.
+   * Keyed by module id → names of the modules that require it. Drives both the
+   * auto-tick in emit() and the read-only lock on the View checkbox.
+   */
+  const dependencyCauses = useMemo(() => {
+    const activeSlugs: string[] = [];
+    leaves.forEach(m => {
+      const row = matrix[m.id];
+      if (row && PERMS.some(p => row[p.key])) activeSlugs.push(m.slug);
+    });
+    const resolved = resolveDependencies(activeSlugs);
+    const out: Record<number, string[]> = {};
+    Object.entries(resolved).forEach(([slug, causes]) => {
+      const mod = bySlug.get(slug);
+      if (!mod || !isLeaf(mod)) return;
+      out[mod.id] = causes.map(c => bySlug.get(c)?.name || c);
+    });
+    return out;
+  }, [leaves, matrix, bySlug, tree]);
+
+  /**
+   * Force can_view on for every module the ticked ones depend on (HRMS
+   * dependency matrix). Only view is implied — a feeder screen never inherits
+   * action flags — and anything the granter can't grant is skipped, same as
+   * every other cell.
+   */
+  const withDependencyViews = (
+    next: Record<number, Record<PermKey, boolean>>
+  ): Record<number, Record<PermKey, boolean>> => {
+    const activeSlugs: string[] = [];
+    leaves.forEach(m => {
+      const row = next[m.id];
+      if (row && PERMS.some(p => row[p.key])) activeSlugs.push(m.slug);
+    });
+    if (activeSlugs.length === 0) return next;
+
+    const out = { ...next };
+    Object.keys(resolveDependencies(activeSlugs)).forEach(slug => {
+      const mod = bySlug.get(slug);
+      if (!mod || !isLeaf(mod)) return;
+      if (!isPermAllowed(mod.slug, 'can_view')) return;
+      out[mod.id] = { ...(out[mod.id] || emptyPerms()), can_view: true };
+    });
+    return out;
+  };
+
   // All matrix mutations funnel through emit() so the "action implies view"
-  // invariant is enforced no matter which control changed (single cell, row,
-  // column, branch, or Select-All).
-  const emit = (next: Record<number, Record<PermKey, boolean>>) => onChange(withImpliedView(next));
+  // and "module implies its dependencies" invariants are enforced no matter
+  // which control changed (single cell, row, column, branch, or Select-All).
+  const emit = (next: Record<number, Record<PermKey, boolean>>) =>
+    onChange(withDependencyViews(withImpliedView(next)));
+
+  // Rows saved before the dependency matrix existed (or edited straight in the
+  // DB) can violate the invariants. Normalise once the modules + saved matrix
+  // have loaded so what's on screen is what a save would store.
+  useEffect(() => {
+    if (modules.length === 0 || Object.keys(matrix).length === 0) return;
+    const normalized = withDependencyViews(withImpliedView(matrix));
+    const changed = Object.keys(normalized).some(id =>
+      PERMS.some(p => !!normalized[Number(id)][p.key] !== !!matrix[Number(id)]?.[p.key])
+    );
+    if (changed) onChange(normalized);
+  }, [modules, matrix]);
 
   const toggle = (modId: number, key: PermKey) => {
     const mod = tree.byId.get(modId);
@@ -370,6 +437,7 @@ export default function PermissionMatrix({
       const { on: rowOn, total: rowTotal } = rowSummary(mod.id);
       const rowAllOn = rowOn === rowTotal;
       const rowAllowedCount = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).length;
+      const requiredBy = dependencyCauses[mod.id] || [];
       const leafStyle = getLeafStyle(mod.slug);
       rows.push(
         <tr
@@ -403,6 +471,16 @@ export default function PermissionMatrix({
                   Default
                 </Badge>
               )}
+              {requiredBy.length > 0 && !mod.is_default && (
+                <Badge
+                  pill
+                  color="warning"
+                  className="ms-1 fw-normal"
+                  title={`Auto-granted View because it is required by: ${requiredBy.join(', ')}`}
+                >
+                  Required by {requiredBy.length === 1 ? requiredBy[0] : `${requiredBy.length} modules`}
+                </Badge>
+              )}
             </div>
           </td>
           <td className="text-center py-2">
@@ -421,8 +499,14 @@ export default function PermissionMatrix({
             // every action implies visibility, so it can't be unchecked while
             // an action is granted. Untick the actions first to free it.
             const anyActionOn = ACTION_KEYS.some(k => !!rowPerms[k]);
+            // …and locked ON while another granted module depends on this one
+            // (HRMS dependency matrix): unticking it would leave that module's
+            // dropdowns and lookups broken. Untick the dependent module first.
+            const lockedByDependency = requiredBy.length > 0 && !mod.is_default
+              && isPermAllowed(mod.slug, 'can_view');
             return PERMS.map(p => {
-              const lockedByAction = p.key === 'can_view' && anyActionOn && !mod.is_default;
+              const lockedByAction = p.key === 'can_view'
+                && (anyActionOn || lockedByDependency) && !mod.is_default;
               // Default modules (Dashboard, Profile) are auto-granted to every user
               // by SubscriptionController.activatePlan(). Lock the checkboxes so they
               // appear checked and read-only — toggling them off would be misleading
@@ -432,7 +516,9 @@ export default function PermissionMatrix({
               const title = mod.is_default
                 ? 'Default module — automatically granted'
                 : lockedByAction
-                  ? 'View is required by Add / Edit / Delete / Export / Import / Approve'
+                  ? (anyActionOn
+                    ? 'View is required by Add / Edit / Delete / Export / Import / Approve'
+                    : `View is required by ${requiredBy.join(', ')}`)
                   : undefined;
               return (
                 <td key={p.key} className="text-center py-2">
