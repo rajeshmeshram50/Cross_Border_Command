@@ -1121,7 +1121,13 @@ export default function ExpenseSettlementModal({
             <div className="esm-hpanel">
               <div className="esm-hp"><label>EXPENSE ID</label><div>{summary.claim_no || '—'}</div></div>
               <div className="esm-hp"><label>EMPLOYEE</label><div>{summary.employee_name || '—'}</div></div>
-              <div className="esm-hp"><label>CLAIMED AMOUNT</label><div>{inr(claimed)}</div></div>
+              {/* Claimed leads because that is what the label says, but once HR
+                  sanctions a different net THAT is the figure disbursed and
+                  recovered — and the EMI two fields along is already derived from
+                  it, so showing only the claimed amount left the header quietly
+                  self-contradicting (₹5,00,000 claimed, EMI built off ₹5,00,300).
+                  Same "value + muted tail" idiom as the split schedule. */}
+              <div className="esm-hp"><label>CLAIMED AMOUNT</label><div>{inr(claimed)}{summary.sanctioned_amount != null && Math.abs(Number(summary.sanctioned_amount) - claimed) > 0.005 && <span className="esm-sched-tail">net {inr(Number(summary.sanctioned_amount))}</span>}</div></div>
               <div className="esm-hp"><label>CATEGORY</label><div>{summary.category_name || '—'}</div></div>
               <div className="esm-hp"><label>RAISED DATE</label><div>{fmtDate(summary.expense_date)}</div></div>
               <div className="esm-hp"><label>CURRENCY</label><div>{summary.currency || 'INR'}</div></div>
@@ -1161,8 +1167,8 @@ export default function ExpenseSettlementModal({
                     <div className="esm-hp"><label>RECOVERY MODE</label><div>{rlbl}</div></div>
                     <div className="esm-hp"><label>RECOVERY START</label><div>{fmtDate(summary.recovery_start)}</div></div>
                     {rmode !== 'lumpsum' && <>
-                      <div className="esm-hp"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div>{effMonths || '—'}{schedUneven && <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75, marginTop: 2, whiteSpace: 'nowrap' }}>{`${effMonths - 1} + 1 final`}</div>}</div></div>
-                      <div className="esm-hp"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div>{summary.monthly_emi != null ? inr(summary.monthly_emi) : '—'}{schedUneven && <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75, marginTop: 2, whiteSpace: 'nowrap' }}>{`last ${inr(schedLast)}`}</div>}</div></div>
+                      <div className="esm-hp"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div>{effMonths ? (schedUneven ? <>{effMonths - 1} <span className="esm-sched-tail">+ 1</span></> : effMonths) : '—'}</div></div>
+                      <div className="esm-hp"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div>{summary.monthly_emi == null ? '—' : schedUneven ? <>{inr(summary.monthly_emi)} <span className="esm-sched-tail">+ {inr(schedLast)}</span></> : inr(summary.monthly_emi)}</div></div>
                       <div className="esm-hp"><label>END DATE</label><div>{rEnd}</div></div>
                     </>}
                   </div>
@@ -1204,7 +1210,11 @@ export default function ExpenseSettlementModal({
                   Details) and for COMPANY advances (additions/deductions don't
                   apply; the amounts live in the distribution). A SELF advance
                   still shows it (claimed / paid / pending / adjustments). */}
-              {!managerReview && !isCompanyAdvance && (
+              {/* Expense claims only. A COMPANY advance is paid in one payout and a
+                  SELF advance is recovered from salary — for both, "advance paid /
+                  balance / progress" restates the header, while the figures that
+                  actually matter live in Adjustments and the Recovery strip. */}
+              {!managerReview && !isAdvance && (
               <div className={`esm-kpis ${inReview ? 'esm-kpis--4' : ''}`}>
                 <div className="esm-kpi esm-kpi-teal">
                   <span className="esm-kpi-ico"><IcoDoc /></span>
@@ -1363,8 +1373,8 @@ export default function ExpenseSettlementModal({
                           <div className="esm-ro"><label>RECOVERY MODE</label><div className="esm-ro-v esm-ro-sm">{rlbl}</div></div>
                           <div className="esm-ro"><label>RECOVERY START</label><div className="esm-ro-v esm-ro-sm">{fmtDate(summary.recovery_start)}</div></div>
                           {rmode !== 'lumpsum' && <>
-                            <div className="esm-ro"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div className="esm-ro-v esm-ro-sm">{rmonths || '—'}{schedUneven && <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75, marginTop: 2, whiteSpace: 'nowrap' }}>{`${rmonths - 1} + 1 final`}</div>}</div></div>
-                            <div className="esm-ro"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div className="esm-ro-v esm-ro-sm">{summary.monthly_emi != null ? inr(summary.monthly_emi) : '—'}{schedUneven && <div style={{ fontSize: 10.5, fontWeight: 400, opacity: .75, marginTop: 2, whiteSpace: 'nowrap' }}>{`last ${inr(schedLast)}`}</div>}</div></div>
+                            <div className="esm-ro"><label>NO. OF {rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><div className="esm-ro-v esm-ro-sm">{rmonths ? (schedUneven ? <>{rmonths - 1} <span className="esm-sched-tail">+ 1</span></> : rmonths) : '—'}</div></div>
+                            <div className="esm-ro"><label>{rmode === 'bimonthly' ? 'AMOUNT / CYCLE' : 'MONTHLY EMI'}</label><div className="esm-ro-v esm-ro-sm">{summary.monthly_emi == null ? '—' : schedUneven ? <>{inr(summary.monthly_emi)} <span className="esm-sched-tail">+ {inr(schedLast)}</span></> : inr(summary.monthly_emi)}</div></div>
                             <div className="esm-ro"><label>END DATE</label><div className="esm-ro-v esm-ro-sm">{rEnd}</div></div>
                           </>}
                         </div>
@@ -1401,7 +1411,7 @@ export default function ExpenseSettlementModal({
                   already says "fully paid") and utilisation lives in the
                   Confirmation section, so a progress bar just adds noise. A SELF
                   advance keeps it (recovered gradually, so progress is useful). */}
-              {!firstPayment && !isCompanyAdvance && (
+              {!firstPayment && !isAdvance && (
                 showSettleSection ? (
                   <div className="esm-prog2 esm-prog2--band">
                     <div className="esm-prog2-hd">
@@ -1589,6 +1599,51 @@ export default function ExpenseSettlementModal({
                         {!isCompanyAdvance && <div className="esm-sumrow"><span>Deductions (−)</span><span className={(editDeductions ? totalDeduction : (summary.deduction_amount || 0)) > 0 ? 'is-neg' : ''}>− {inr(editDeductions ? totalDeduction : (summary.deduction_amount || 0))}</span></div>}
                         <div className={`esm-sumrow is-grand ${sanctioned <= 0 ? 'is-bad' : ''}`}><span>Net Payable (Sanctioned)</span><span>{inr(sanctioned)}</span></div>
                       </div>
+
+                      {/* Live recovery preview — SELF advance only. The strip in the
+                          header is built from the figures the server stored at REQUEST
+                          time, so while HR types an addition or deduction it still shows
+                          the old instalment and only jumps after approval. Salary
+                          recovery is the whole point of a self advance, so the new plan
+                          is shown as it is typed. The maths mirrors the server exactly
+                          (AdvanceRequestController: round(sanctioned / months, 2), final
+                          cycle absorbs the rounding remainder) so this preview and the
+                          stored schedule can never disagree. */}
+                      {isAdvance && (summary.used_for ?? 'self') !== 'company'
+                        && editDeductions && summary.recovery_mode && (() => {
+                        const rmode  = summary.recovery_mode;
+                        const rstep  = rmode === 'bimonthly' ? 2 : 1;
+                        const cycles = rmode === 'lumpsum' ? 1 : (summary.recovery_months ?? 0);
+                        const per    = cycles > 0 ? +(sanctioned / cycles).toFixed(2) : 0;
+                        const last   = cycles > 1 ? +(sanctioned - per * (cycles - 1)).toFixed(2) : per;
+                        const uneven = cycles > 1 && Math.abs(last - per) > 0.005;
+                        const oldPer = summary.monthly_emi ?? 0;
+                        const moved  = oldPer > 0 && Math.abs(per - oldPer) > 0.005;
+                        const end    = (() => {
+                          if (!summary.recovery_start) return '—';
+                          const d = new Date(summary.recovery_start);
+                          return new Date(d.getFullYear(), d.getMonth() + (cycles - 1) * rstep, 1)
+                            .toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                        })();
+                        return (
+                          <div className={`esm-recalc ${moved ? 'is-moved' : ''}`}>
+                            <div className="esm-recalc-hd">
+                              <i className="ri-refresh-line" />
+                              <span>Recovery {moved ? '— updates on approval' : 'plan'}</span>
+                            </div>
+                            <div className="esm-recalc-grid">
+                              <div><label>MODE</label><b>{rmode === 'emi' ? 'EMI' : rmode === 'bimonthly' ? 'Bi-Monthly' : 'Lump Sum'}</b></div>
+                              <div><label>{rmode === 'bimonthly' ? 'CYCLES' : 'MONTHS'}</label><b>{cycles ? (uneven ? <>{cycles - 1} <span className="esm-sched-tail">+ 1</span></> : cycles) : '—'}</b></div>
+                              <div>
+                                <label>{rmode === 'bimonthly' ? 'PER CYCLE' : 'MONTHLY EMI'}</label>
+                                <b>{inr(per)}{uneven && <span className="esm-sched-tail">+ {inr(last)}</span>}</b>
+                                {moved && <em className="esm-recalc-was">was {inr(oldPer)}</em>}
+                              </div>
+                              <div><label>END DATE</label><b>{end}</b></div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -3043,13 +3098,13 @@ const CSS = `
 /* Embedded claim summary panel. Left edge indented past the hero icon so it
    lines up under the "Settle…" text; right edge stops at the close (×) button's
    left edge (32px button + a small gap). */
-.esm-hpanel{display:grid;grid-template-columns:repeat(4,1fr);gap:14px 20px;margin-left:62px;margin-right:40px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 18px;}
+.esm-hpanel{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 20px;margin-left:62px;margin-right:40px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:14px 18px;}
 /* Emphasised bottom divider + spacing only in the review popup. */
 .esm-modal--fit .esm-hpanel{border-bottom:2px solid rgba(255,255,255,.45);margin-bottom:16px;}
 .esm-hp{min-width:0;}
 .esm-hp label{display:block;font-size:9.5px;font-weight:800;letter-spacing:.08em;opacity:.8;text-transform:uppercase;margin-bottom:3px;}
 .esm-hp>div{font-size:14px;font-weight:800;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.esm-hp-proof{grid-column:span 2;}
+.esm-hp-proof{grid-column:span 3;}
 .esm-hp-none{font-size:12px;font-weight:600;opacity:.75;}
 .esm-hp-docs{display:flex;flex-wrap:wrap;gap:6px;}
 .esm-hp-doc{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:5px 10px;border-radius:8px;background:rgba(255,255,255,.16);color:#fff;text-decoration:none;font-size:var(--esm-proof-fs);font-weight:600;border:none;font-family:inherit;}
@@ -3060,8 +3115,8 @@ const CSS = `
 .esm-hp-doc-act:hover{opacity:1;}
 .esm-hp-more{cursor:pointer;background:rgba(255,255,255,.24);font-weight:700;}
 .esm-hp-more:hover{background:rgba(255,255,255,.36);}
-@media (max-width:820px){.esm-hpanel{grid-template-columns:repeat(2,1fr);margin-left:0;margin-right:0;}.esm-hp-proof{grid-column:span 2;}}
-@media (max-width:480px){.esm-hpanel{grid-template-columns:1fr;}.esm-hp-proof{grid-column:span 1;}}
+@media (max-width:820px){.esm-hpanel{grid-template-columns:repeat(2,1fr);margin-left:0;margin-right:0;}.esm-hp-proof{grid-column:span 2;}.esm-hpanel .esm-sched-row{grid-column:span 2;}}
+@media (max-width:480px){.esm-hpanel{grid-template-columns:1fr;}.esm-hp-proof{grid-column:span 1;}.esm-hpanel .esm-sched-row{grid-column:span 1;}}
 .esm-hero-ico{width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.18);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
 .esm-hero-eyebrow{font-size:10.5px;font-weight:800;letter-spacing:.09em;opacity:.85;margin-bottom:2px;}
 .esm-hero-title{font-size:20px;font-weight:800;line-height:1.15;}
@@ -3120,7 +3175,11 @@ const CSS = `
    It gets its own full-width row split five ways instead — equal widths, one
    line, and the labels stay aligned with the grid above. */
 .esm-grid12 .esm-sched-row{grid-column:span 12;display:grid;grid-template-columns:repeat(5,1fr);gap:14px 20px;align-items:start;}
-.esm-hpanel .esm-sched-row{grid-column:span 4;display:grid;grid-template-columns:repeat(5,1fr);gap:14px 20px;align-items:start;}
+/* The schedule is a different KIND of fact from the identity fields above —
+   five parts of one repayment plan, not five independent values — so it keeps
+   its own 5-up split and earns a rule above it. Without the divider the 5
+   columns just read as misaligned against the 3 above. */
+.esm-hpanel .esm-sched-row{grid-column:span 3;display:grid;grid-template-columns:repeat(5,1fr);gap:14px 20px;align-items:start;padding-top:12px;margin-top:2px;border-top:1px solid rgba(255,255,255,.20);}
 @media (max-width:900px){.esm-grid12 .esm-sched-row,.esm-hpanel .esm-sched-row{grid-template-columns:repeat(3,1fr);}}
 @media (max-width:600px){.esm-grid12 .esm-sched-row,.esm-hpanel .esm-sched-row{grid-template-columns:repeat(2,1fr);}}
 .esm-grid12 .c4{grid-column:span 4;}
@@ -3271,6 +3330,27 @@ textarea.esm-in{resize:vertical;}
 .esm-vline{width:1px;flex-shrink:0;background:#e2e8f0;align-self:stretch;}
 [data-bs-theme="dark"] .esm-vline{background:#173947;}
 .esm-ded-r .esm-sumbox{margin-top:0;height:100%;display:flex;flex-direction:column;}
+.esm-sched-tail{font-weight:600;opacity:.62;white-space:nowrap;margin-left:3px;}
+.esm-recalc{margin-top:10px;border:1px solid #bae6fd;background:#f0f9ff;border-radius:12px;padding:10px 12px;}
+.esm-recalc.is-moved{border-color:#fcd34d;background:#fffbeb;}
+.esm-recalc-hd{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#0369a1;margin-bottom:8px;}
+.esm-recalc.is-moved .esm-recalc-hd{color:#b45309;}
+.esm-recalc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px;}
+.esm-recalc-grid > div{display:flex;flex-direction:column;gap:2px;min-width:0;}
+.esm-recalc-grid label{font-size:8.5px;font-weight:700;letter-spacing:.05em;color:#64748b;margin:0;}
+.esm-recalc-grid b{font-size:12px;font-weight:800;color:#0c4a6e;white-space:nowrap;min-width:0;}
+/* This strip is four columns inside the summary card — roughly a third of the
+   modal — so an inline tail like "₹4,166.67 + ₹4,246.00" is wider than its
+   track and, being nowrap, spilled over END DATE instead of wrapping. Here the
+   split stacks under its own value; the header strip is full width, so it keeps
+   the tail inline. */
+.esm-recalc-grid .esm-sched-tail{display:block;margin-left:0;margin-top:1px;}
+.esm-recalc-grid em{font-size:9.5px;font-style:normal;color:#64748b;white-space:nowrap;}
+.esm-recalc-was{color:#b45309 !important;}
+[data-bs-theme="dark"] .esm-recalc{background:#082f49;border-color:#0c4a6e;}
+[data-bs-theme="dark"] .esm-recalc.is-moved{background:#2a1f05;border-color:#78350f;}
+[data-bs-theme="dark"] .esm-recalc-grid b{color:#cffafe;}
+@media (max-width:640px){.esm-recalc-grid{grid-template-columns:repeat(2,1fr);}}
 .esm-ded-r .esm-sumrow.is-grand{margin-top:auto;}
 @media (max-width:720px){.esm-ded-split{flex-direction:column;}.esm-ded-l,.esm-ded-r{flex:1 1 auto;width:100%;}}
 .esm-ded-hd{display:flex;align-items:center;justify-content:space-between;}
