@@ -4,6 +4,7 @@ import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { saveApiBlob } from '../../../utils/downloadFile';
+import Tooltip from '../../../components/ui/Tooltip';
 /* .rec-form-content — the shared dialog shell used by every other popup. */
 import '../../../../css/recruitment.css';
 
@@ -91,9 +92,14 @@ export default function DocGenerateModal({
   const [sending, setSending]       = useState(false);
   // Synchronous double-submit guard — `sending` only disables on next render.
   const sendingRef = useRef(false);
-  /** Set the first time a custom value is edited, so the debounced preview
-   *  below doesn't fire a duplicate render right after the mount one. */
+  /** Set the first time a custom value is edited — until then there is nothing
+   *  the preview could be out of date against. */
   const valuesTouched = useRef(false);
+  /** Template the opening preview has already been built for, so the effect
+   *  below fires once per open however its dependencies settle. */
+  const previewBuiltFor = useRef<number | null>(null);
+  /** The `values` the panel on screen was rendered from. */
+  const previewSignature = useRef<string>('');
 
   // ── Bootstrap: load template + known tokens whenever the modal opens ──────
   useEffect(() => {
@@ -105,6 +111,8 @@ export default function DocGenerateModal({
     setPreviewHtml('');
     setTokensFailed(false);
     valuesTouched.current = false;   // fresh open — nothing edited yet
+    previewBuiltFor.current = null;
+    previewSignature.current = '';
     (async () => {
       try {
         const [tplRes, tokRes] = await Promise.all([
@@ -190,6 +198,9 @@ export default function DocGenerateModal({
         custom_values: values,
       });
       setPreviewHtml(data?.rendered_html || '');
+      // Remember exactly which values this render was built from, so the
+      // "out of date" flag reflects a real difference rather than any keypress.
+      previewSignature.current = JSON.stringify(values);
     } catch (err: any) {
       toast.error('Preview failed', err?.response?.data?.message || 'Please try again.');
     } finally {
@@ -197,28 +208,29 @@ export default function DocGenerateModal({
     }
   };
 
-  // Auto-build the first preview once the template + fields are loaded.
+  /* Build the preview ONCE per open, then only when asked.
+     The deps here (template, employeeId) settle at different moments as their
+     fetches land, so this effect ran more than once on a single open — two
+     identical /preview requests before the operator had typed anything. The
+     ref pins it to the first time all three are ready. */
   useEffect(() => {
-    if (isOpen && template && employeeId) refreshPreview();
+    if (!isOpen || !template || !employeeId) return;
+    if (previewBuiltFor.current === templateId) return;
+    previewBuiltFor.current = templateId ?? null;
+    refreshPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, template, employeeId]);
 
-  /* Re-render when a filled value settles. The preview used to build ONCE on
-     open and then only on an explicit click, so typing into a custom field left
-     the panel showing the document without it — the operator had to know to
-     press Refresh, and reviewing a stale preview is exactly the mistake this
-     step exists to prevent. Debounced so it isn't a request per keystroke, and
-     skipped while a save/send is in flight (that request carries the values;
-     re-rendering underneath it races what is being written).
-     `valuesTouched` keeps this from firing a second, identical preview straight
-     after the mount one. */
-  useEffect(() => {
-    if (!isOpen || !template || !employeeId) return;
-    if (!valuesTouched.current || busy) return;
-    const t = setTimeout(() => refreshPreview(), 600);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [values]);
+  /* Editing a value no longer fires a preview.
+     It used to re-render 600ms after every change, which meant a request per
+     field on the way through the form and a visible wait each time. The
+     rendered document only has to be right at the moment it is produced, and
+     Save and Send both post the CURRENT values — the preview is a reading aid,
+     not the source. So the panel is refreshed on demand instead, and marks
+     itself out-of-date in the meantime so nobody reviews a stale page thinking
+     it is current. */
+  const previewStale = valuesTouched.current && !previewing
+    && previewSignature.current !== JSON.stringify(values);
 
   /* Saves the generated-document record, then streams it back in the chosen
      format. Both formats come off the SAME saved row, so the DOCX and the PDF
@@ -353,16 +365,29 @@ export default function DocGenerateModal({
                    custom widget that `disabled` alone does not reach. */
                 <fieldset
                   disabled={busy}
-                  className="row g-2 mb-2"
+                  className="dgm-fieldgrid row g-2 mb-2"
                   style={{
-                    border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+                    minInlineSize: 'auto',
                     ...(busy ? { pointerEvents: 'none', opacity: 0.6 } : {}),
                   }}
                 >
                   {customFields.map(cf => (
-                    <div key={cf.id} className="col-md-6">
+                    // Three across on a desktop-width dialog, two on a laptop.
+                    // At two, a template with a dozen variables ran well past
+                    // the fold and the preview under it was never in view.
+                    <div key={cf.id} className="col-md-6 col-xl-4">
+                      {/* Token names are operator-typed and can run to any
+                          length; a long one used to overrun its column and
+                          print across the field beside it. Cut it and keep the
+                          whole name reachable on hover — the type stays outside
+                          the clamp so it never gets trimmed away.
+                          `disabled` when nothing was cut, so a short name does
+                          not carry a hover that just repeats what is on screen. */}
                       <label className="dgm-label">
-                        {cf.name} <span className="dgm-label-type">({cf.type})</span>
+                        <Tooltip label={cf.name} disabled={cf.name.length <= MAX_LABEL_CHARS}>
+                          <span className="dgm-label-name">{truncateLabel(cf.name)}</span>
+                        </Tooltip>
+                        {' '}<span className="dgm-label-type">({cf.type})</span>
                       </label>
                       {cf.type === 'textarea' ? (
                         <textarea className="dgm-input" rows={2}
@@ -399,15 +424,30 @@ export default function DocGenerateModal({
               )}
 
               {/* Preview */}
-              <div className="dgm-section-title mt-3 d-flex align-items-center justify-content-between">
-                <span><i className="ri-eye-line me-1" /> Preview</span>
+              <div className="dgm-section-title mt-2 d-flex align-items-center justify-content-between">
+                <span className="d-inline-flex align-items-center">
+                  <i className="ri-eye-line me-1" /> Preview
+                  {/* The panel no longer re-renders as you type, so it has to
+                      say when it has fallen behind — otherwise the operator
+                      reviews an old page believing it is current. */}
+                  {previewStale && (
+                    <span className="dgm-stale"><i className="ri-information-line" /> Out of date</span>
+                  )}
+                </span>
                 {/* `busy`, not just `previewing` — re-rendering the preview
                     while a save or send is in flight races the very values
                     that request is carrying. */}
-                <button type="button" className="dgm-refresh" onClick={refreshPreview} disabled={busy}>
+                <Tooltip label="Re-renders the panel below with the values above. Download PDF and Send for Signature always use the current values, whether or not the preview has been refreshed.">
+                <button
+                  type="button"
+                  className={`dgm-refresh${previewStale ? ' is-stale' : ''}`}
+                  onClick={refreshPreview}
+                  disabled={busy}
+                >
                   <i className={`${previewing ? 'ri-loader-4-line dgm-spin' : 'ri-refresh-line'} me-1`} />
-                  {previewing ? 'Rendering…' : 'Refresh preview'}
+                  {previewing ? 'Rendering…' : 'Save preview'}
                 </button>
+                </Tooltip>
               </div>
               <div className="dgm-preview-stage">
                 <div className="dgm-preview-paper">
@@ -436,11 +476,14 @@ export default function DocGenerateModal({
                 Each names the save AND the download, since the old "Save
                 Generated" mentioned only the save and the file arriving in the
                 browser came as a surprise. */}
-            <button type="button" className="dgm-btn dgm-btn-outline" onClick={() => onDownload('pdf')} disabled={busy || !isActive || loading}
-              title="Saves this document against the employee (counts toward Generated) and downloads a PDF — renders identically in every reader">
-              <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-file-pdf-2-line'} me-1`} />
-              {saving ? 'Saving…' : 'Save & PDF'}
-            </button>
+            {/* The label says "Download", so the hover has to carry the half it
+                leaves out: this also files the document against the employee. */}
+            <Tooltip label="Saves this document against the employee (counts toward Generated) and downloads a PDF — renders identically in every reader">
+              <button type="button" className="dgm-btn dgm-btn-outline" onClick={() => onDownload('pdf')} disabled={busy || !isActive || loading}>
+                <i className={`${saving ? 'ri-loader-4-line dgm-spin' : 'ri-file-pdf-2-line'} me-1`} />
+                {saving ? 'Saving…' : 'Download PDF'}
+              </button>
+            </Tooltip>
             {/* Save & DOCX — hidden on request. PhpWord writes images in the
                 legacy VML form, so the letterhead can vanish depending on the
                 reader; PDF above is the reliable copy. onDownload('docx') and
@@ -460,6 +503,17 @@ export default function DocGenerateModal({
       </div>
     </Modal>
   );
+}
+
+/** Longest token name shown in full above a field; the rest is on hover. */
+const MAX_LABEL_CHARS = 30;
+
+/* Cut in JS rather than with a CSS ellipsis: the label is two parts — the name
+   and the "(type)" hint — and a CSS clamp on the whole line would eat the hint
+   first, which is the half that says what to enter. */
+function truncateLabel(name: string): string {
+  const s = String(name ?? '');
+  return s.length > MAX_LABEL_CHARS ? s.slice(0, MAX_LABEL_CHARS).trimEnd() + '…' : s;
 }
 
 // Wrap remaining {{Token}} text with a styled "unfilled placeholder" chip so
@@ -517,7 +571,7 @@ function ScopedStyles() {
          and at 800px the preview sheet left too little room for the document to
          read like the page it becomes. Still capped by the viewport so nothing
          overflows on a small laptop screen. */
-      .modal-dialog.dgm-dialog { max-width: min(980px, calc(100vw - 32px)); }
+      .modal-dialog.dgm-dialog { max-width: min(1180px, calc(100vw - 32px)); }
       .dgm { display: flex; flex-direction: column; max-height: 86vh; }
       .dgm-head {
         display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -536,17 +590,52 @@ function ScopedStyles() {
       }
       .dgm-close:disabled { opacity: 0.5; cursor: default; }
 
-      .dgm-body { padding: 18px 20px; overflow-y: auto; }
+      .dgm-body { padding: 14px 16px; overflow-y: auto; }
       .dgm-loading { padding: 40px 0; text-align: center; color: #6b7280; font-size: 13.5px; }
       .dgm-section-title {
         font-size: 11.5px; font-weight: 800; letter-spacing: 0.4px; color: #6b7280;
-        text-transform: uppercase; margin-bottom: 10px;
+        text-transform: uppercase; margin-bottom: 8px;
       }
-      .dgm-label { font-size: 11.5px; font-weight: 700; color: #6b7280; margin-bottom: 5px; display: block; }
+      /* The variables sit on a tinted panel of their own so the eye reads one
+         block of inputs and then the document, instead of a loose field grid
+         running straight into the preview. */
+      .dgm-fieldgrid {
+        background: #f8fafc; border: 1px solid #eef2f7; border-radius: 10px;
+        padding: 12px 8px 4px;
+        /* This element is the grid row AND the panel. A row carries negative
+           side margins to cancel its columns' gutter padding; left on, they
+           would pull the first and last column out through the panel's border.
+           Zero them and let the column padding be the inset. */
+        margin-left: 0; margin-right: 0;
+      }
+      /* One line, and a hard clamp so a token name with no spaces in it — the
+         common case — cannot push the label past its column either. */
+      .dgm-label {
+        font-size: 11px; font-weight: 700; color: #6b7280; margin-bottom: 3px;
+        display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .dgm-label-name { cursor: help; }
       .dgm-label-type { font-size: 10px; color: #9ca3af; font-weight: 500; }
       .dgm-input {
-        width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid #e5e7eb;
-        font-size: 13.5px; background: #fff; line-height: 1.4; color: #1f2937;
+        width: 100%; padding: 6px 10px; border-radius: 7px; border: 1px solid #e5e7eb;
+        font-size: 13px; background: #fff; line-height: 1.4; color: #1f2937;
+        transition: border-color .15s ease, box-shadow .15s ease;
+      }
+      .dgm-input:hover:not(:focus) { border-color: #d7dce4; }
+      /* The date fields are the shared MasterDatePicker, which brings its own
+         38px shell, 10px radius and card background. Sitting in the same grid
+         as a 34px text input it read as a bigger, greyer, differently-shaped
+         control. Pin the two to one shell so a row of mixed field types lines
+         up. Textareas are excluded — they are sized by their rows. */
+      .dgm-fieldgrid .dgm-input:not(textarea),
+      .dgm-fieldgrid .master-datepicker-toggle { height: 34px; min-height: 34px; }
+      .dgm-fieldgrid .master-datepicker-toggle {
+        padding: 0 10px; border-radius: 7px; font-size: 13px;
+        background: #fff; border-color: #e5e7eb; box-shadow: none;
+      }
+      [data-bs-theme="dark"] .dgm-fieldgrid .master-datepicker-toggle,
+      [data-layout-mode="dark"] .dgm-fieldgrid .master-datepicker-toggle {
+        background: #0f172a; border-color: rgba(255,255,255,0.10);
       }
       .dgm-input:focus { outline: none; border-color: #a5b4fc; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
       .dgm-empty {
@@ -554,10 +643,27 @@ function ScopedStyles() {
         padding: 16px; text-align: center; color: #4338ca; font-size: 13px;
       }
       .dgm-refresh {
+        display: inline-flex; align-items: center;
         border: 1px solid #c7d2fe; background: #fff; color: #4338ca; border-radius: 7px;
-        font-size: 11.5px; font-weight: 700; padding: 4px 10px; cursor: pointer; text-transform: none; letter-spacing: 0;
+        font-size: 11.5px; font-weight: 700; padding: 5px 12px; cursor: pointer; text-transform: none; letter-spacing: 0;
+        transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
       }
+      .dgm-refresh:hover:not(:disabled) { background: #eef2ff; border-color: #a5b4fc; }
       .dgm-refresh:disabled { opacity: 0.6; cursor: default; }
+      /* Filled while the panel is behind the form — the one moment pressing it
+         actually changes what you see, so it should read as the next step
+         rather than as one more quiet control. */
+      .dgm-refresh.is-stale {
+        background: #4338ca; border-color: #4338ca; color: #fff;
+        box-shadow: 0 2px 8px rgba(67,56,202,0.28);
+      }
+      .dgm-refresh.is-stale:hover:not(:disabled) { background: #3730a3; border-color: #3730a3; }
+      .dgm-stale {
+        display: inline-flex; align-items: center; gap: 4px; margin-left: 8px;
+        background: #fffbeb; border: 1px solid #fcd34d; color: #92400e;
+        border-radius: 999px; padding: 1px 8px;
+        font-size: 10px; font-weight: 700; text-transform: none; letter-spacing: 0;
+      }
       .dgm-preview-stage { background: #f1f5f9; border-radius: 10px; padding: 18px; }
       .dgm-preview-paper {
         max-width: 820px; margin: 0 auto; background: #fff; border-radius: 6px; overflow: hidden;
@@ -578,7 +684,13 @@ function ScopedStyles() {
       .dgm-unfilled {
         display: inline-block; background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e;
         padding: 1px 8px; margin: 0 1px; border-radius: 4px; border: 1px dashed #f59e0b;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; font-weight: 700; white-space: nowrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; font-weight: 700;
+        /* nowrap kept a long token name on one line, and a token name has no
+           spaces to break at — the chip ran straight off the edge of the page
+           it is supposed to be sitting on. Let it wrap mid-word and cap it at
+           the paper's width so the preview stays a preview. */
+        max-width: 100%; white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+        vertical-align: bottom;
       }
 
       .dgm-footer {

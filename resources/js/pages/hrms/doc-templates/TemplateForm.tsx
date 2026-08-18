@@ -1228,7 +1228,11 @@ function Step3(props: {
 }
 
 /* ── Small style helpers ───────────────────────────────────────────────────── */
-const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 18, background: '#fafaff' };
+/* marginBottom is the gap BETWEEN section cards, so it follows the page's 8px
+   rhythm. `padding` is the breathing room INSIDE a card, around form fields —
+   a different measurement with a different job, left at 18 so the fields do
+   not crowd their own border. */
+const sectionStyle: React.CSSProperties = { border: '1px solid #e5e7eb', borderRadius: 12, padding: 18, marginBottom: 8, background: '#fafaff' };
 const sectionLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6366f1', textTransform: 'uppercase', marginBottom: 12 };
 const fieldLabel: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, letterSpacing: 0.4, color: '#6b7280', textTransform: 'uppercase', marginBottom: 6, display: 'block' };
 const req: React.CSSProperties = { color: '#ef4444' };
@@ -1249,6 +1253,20 @@ function TplFormDarkStyles() {
   return (
     <style>{`
       @keyframes tplspin { to { transform: rotate(360deg); } }
+
+      /* ── One 8px rhythm, matching the templates list ─────────────────────
+         Scoped with :has so only this page moves. The app-wide .page-content
+         is shared by every screen, and its TOP padding is the clearance under
+         the fixed topbar rather than decoration, so that one is left alone. */
+      .page-content:has(.tpl-form-page) { padding-left: 8px; padding-right: 8px; padding-bottom: 8px; }
+
+      /* Velzon's grid reads --vz-gutter-*, not the Bootstrap names; without it
+         the cards would sit 12px inside an 8px frame. */
+      .page-content:has(.tpl-form-page) > .row { --vz-gutter-x: 8px; --bs-gutter-x: 8px; }
+
+      /* Header card to body card. Was Bootstrap's mb-3 (16px), twice the gap
+         between the sections inside. */
+      .tpl-form-page > .card { margin-bottom: 8px !important; }
 
       /* The shared back pill is built for a light header strip; this one sits on
          a purple gradient, so it keeps the white fill (it reads as the way out)

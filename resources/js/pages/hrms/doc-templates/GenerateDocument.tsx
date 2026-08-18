@@ -121,6 +121,8 @@ export default function GenerateDocument() {
 
   const [step, setStep] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  /** employee_id → the live run they already have for THIS template. */
+  const [alreadySent, setAlreadySent] = useState<Map<number, { id: number; status: string; code: string | null }>>(new Map());
   const [customByEmp, setCustomByEmp] = useState<Record<number, Record<string, string>>>({});
   const [previews, setPreviews] = useState<Record<number, string>>({});
   const [previewing, setPreviewing] = useState(false);
@@ -135,18 +137,34 @@ export default function GenerateDocument() {
     let cancelled = false;
     (async () => {
       try {
-        const [tplRes, tokensRes, empRes] = await Promise.all([
+        const [tplRes, tokensRes, empRes, runsRes] = await Promise.all([
           api.get(`/hr-document-templates/${templateId}`),
           api.get('/hr-custom-fields/known-tokens').catch(() => ({ data: { employee: [], custom_fields: [] } })),
           // onboarded_only → only Active, fully-onboarded, non-disabled staff
           // are selectable (excludes exited / inactive / half-onboarded), the
           // same gate Recruitment's people-pickers use.
           api.get('/employees', { params: { onboarded_only: 1 } }),
+          /* Who already has this document in flight.
+             The backend refuses to create a second ACTIVE run for the same
+             template + employee — it returns the existing one instead — so
+             sending again does nothing but still reported success. The list
+             has to know, or Step 1 keeps offering people who cannot receive
+             anything and the confirmation afterwards is untrue. */
+          api.get('/hr-document-signatures', { params: { template_id: templateId } }).catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         setTemplate(tplRes.data as TemplateRow);
         setKnownTokens(tokensRes.data as KnownTokens);
         setEmployees(Array.isArray(empRes.data) ? empRes.data : (empRes.data?.data ?? []));
+
+        const runs: any[] = Array.isArray(runsRes.data) ? runsRes.data : (runsRes.data?.data ?? []);
+        const active = new Map<number, { id: number; status: string; code: string | null }>();
+        for (const r of runs) {
+          if (r?.status === 'Pending' || r?.status === 'In Progress') {
+            active.set(Number(r.employee_id), { id: r.id, status: r.status, code: r.code ?? null });
+          }
+        }
+        setAlreadySent(active);
       } catch (err: any) {
         if (!cancelled) {
           toast.error('Could not load', err?.response?.data?.message || 'Template or employee list failed to load.');
@@ -318,9 +336,16 @@ export default function GenerateDocument() {
      signed copy (backend store() merges custom_values). One run per employee. */
   const onSendForSignature = async () => {
     setSending(true);
-    let ok = 0; let fail = 0;
+    let ok = 0; let fail = 0; let skipped = 0;
     try {
       for (const e of selectedEmployees) {
+        /* Second line of defence. The list was read when the page opened, and
+           someone else may have sent this document since — from the Evidence
+           Vault, or from this page in another tab. The server would return the
+           existing run with a 200, which the old count read as a success and
+           reported as "sent", so the operator was told something happened that
+           had not. Counted as skipped and named as such below. */
+        if (alreadySent.has(e.id)) { skipped++; continue; }
         try {
           await api.post('/hr-document-signatures', {
             template_id: templateId,
@@ -331,8 +356,15 @@ export default function GenerateDocument() {
         } catch { fail++; }
       }
       if (ok > 0) {
-        toast.success('Sent for signature', `${ok} document(s) sent to the signing workflow${fail ? ` · ${fail} failed` : ''}.`);
+        toast.success(
+          'Sent for signature',
+          `${ok} document(s) sent to the signing workflow`
+          + (skipped ? ` · ${skipped} already sent` : '')
+          + (fail ? ` · ${fail} failed` : '') + '.',
+        );
         navigate('/hr/doc-templates');
+      } else if (skipped > 0 && fail === 0) {
+        toast.info('Already sent', `${skipped} selected employee(s) already have this document awaiting signature. Nothing new was sent.`);
       } else {
         toast.error('Could not send', 'No documents were sent. Make sure the template has a signing workflow configured.');
       }
@@ -486,6 +518,7 @@ export default function GenerateDocument() {
               category={template.employee_category}
               selectedIds={selectedIds}
               setSelectedIds={setSelectedIds}
+              alreadySent={alreadySent}
             />
           )}
           {step === 2 && (
@@ -587,6 +620,8 @@ function Step1(props: {
   category?: string;
   selectedIds: Set<number>;
   setSelectedIds: (s: Set<number>) => void;
+  /** employee_id -> the live run they already hold for this template. */
+  alreadySent: Map<number, { id: number; status: string; code: string | null }>;
 }) {
   const [search, setSearch] = useState('');
 
@@ -609,14 +644,20 @@ function Step1(props: {
   const safePage = Math.min(page, totalPages);
   const pageRows = filtered.slice((safePage - 1) * PER_PAGE, safePage * PER_PAGE);
 
-  const allChecked = filtered.length > 0 && filtered.every(e => props.selectedIds.has(e.id));
+  /* Select-all works on the people who can actually receive the document.
+     Counting the locked ones would leave the box unchecked forever (they can
+     never be selected), and adding them would put recipients into the list
+     that the send silently drops. */
+  const selectable = filtered.filter(e => !props.alreadySent.has(e.id));
+  const allChecked = selectable.length > 0 && selectable.every(e => props.selectedIds.has(e.id));
   const toggleAll = () => {
     const next = new Set(props.selectedIds);
-    if (allChecked) filtered.forEach(e => next.delete(e.id));
-    else            filtered.forEach(e => next.add(e.id));
+    if (allChecked) selectable.forEach(e => next.delete(e.id));
+    else            selectable.forEach(e => next.add(e.id));
     props.setSelectedIds(next);
   };
   const toggleOne = (id: number) => {
+    if (props.alreadySent.has(id)) return;
     const next = new Set(props.selectedIds);
     next.has(id) ? next.delete(id) : next.add(id);
     props.setSelectedIds(next);
@@ -670,15 +711,30 @@ function Step1(props: {
           ) : pageRows.map((e, i) => {
             const checked = props.selectedIds.has(e.id);
             const name = `${e.first_name ?? ''} ${e.last_name ?? ''}`.trim() || `Employee #${e.id}`;
+            /* This person already has a live run for this template. The server
+               will not create a second one, so offering them again would send
+               nothing and still report success. Locked out here instead, with
+               the reason on the row rather than hidden in a tooltip. */
+            const sentRun = props.alreadySent.get(e.id);
             return (
               <label key={e.id} className="gd-row"
+                title={sentRun ? 'Already sent to this employee — waiting on the signers.' : undefined}
                 style={{ display: 'grid', gridTemplateColumns: '56px 32px 1fr 140px 160px 160px', gap: 12, padding: '10px 14px',
                   borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
-                  background: checked ? '#eef2ff' : '#fff', alignItems: 'center', cursor: 'pointer' }}>
+                  background: sentRun ? '#f9fafb' : checked ? '#eef2ff' : '#fff', alignItems: 'center',
+                  cursor: sentRun ? 'not-allowed' : 'pointer', opacity: sentRun ? 0.65 : 1 }}>
                 <div className="gd-row-cell" style={{ fontSize: 12.5, fontWeight: 700, color: '#6b7280' }}>{(safePage - 1) * PER_PAGE + i + 1}</div>
-                <input type="checkbox" checked={checked} onChange={() => toggleOne(e.id)} style={{ cursor: 'pointer' }} />
+                <input type="checkbox" checked={checked} disabled={!!sentRun} onChange={() => toggleOne(e.id)} style={{ cursor: sentRun ? 'not-allowed' : 'pointer' }} />
                 <div>
-                  <div style={{ fontWeight: 700, color: '#1f2937' }} className="gd-row-name">{name}</div>
+                  <div style={{ fontWeight: 700, color: '#1f2937', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} className="gd-row-name">
+                    {name}
+                    {sentRun && (
+                      <span style={{ fontSize: 10.5, fontWeight: 800, color: '#92400e', background: '#fef3c7',
+                        border: '1px solid #fde68a', borderRadius: 999, padding: '1px 8px', whiteSpace: 'nowrap' }}>
+                        Already sent{sentRun.code ? ` · ${sentRun.code}` : ''}
+                      </span>
+                    )}
+                  </div>
                   <div style={{ fontSize: 11.5, color: '#6b7280' }} className="gd-row-sub">{e.email || '—'}</div>
                 </div>
                 <div className="gd-row-cell" style={{ fontSize: 12.5, color: '#374151', fontFamily: 'monospace' }}>{e.emp_code || '—'}</div>

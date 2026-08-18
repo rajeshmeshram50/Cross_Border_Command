@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\EmployeeExit;
 use App\Models\ExitNoticePayment;
+use App\Models\Module;
+use App\Models\Permission;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -131,8 +133,8 @@ class ExitNoticePaymentController extends Controller
     {
         $user = $request->user();
         abort_if(!$user, 401);
-        abort_if(!in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true), 403,
-            'Only HR can record a payment on an employee\'s behalf.');
+        abort_if(!$this->hasExitAccess($user, 'can_edit'), 403,
+            'You need edit access to Exit Management to record a payment on an employee\'s behalf.');
 
         $employee = $this->scopedEmployee($request, $employee);
         $exit     = $this->activeExit($employee);
@@ -211,8 +213,8 @@ class ExitNoticePaymentController extends Controller
     {
         $user = $request->user();
         abort_if(!$user, 401);
-        abort_if(!in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true), 403,
-            'Only HR can verify a notice-period payment.');
+        abort_if(!$this->hasExitAccess($user, 'can_edit'), 403,
+            'You need edit access to Exit Management to verify a notice-period payment.');
 
         $row = ExitNoticePayment::findOrFail($id);
         if (!$user->isSuperAdmin() && $user->client_id && (int) $row->client_id !== (int) $user->client_id) {
@@ -446,9 +448,44 @@ class ExitNoticePaymentController extends Controller
             abort(403, 'Employee belongs to a different organization.');
         }
         $isSelf  = (int) ($employee->user_id ?? 0) === (int) $user->id;
-        $isAdmin = in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true);
-        abort_if(!$isSelf && !$isAdmin, 403, 'You can only manage your own notice-period payment.');
+        abort_if(!$isSelf && !$this->hasExitAccess($user, 'can_view'), 403,
+            'You can only manage your own notice-period payment.');
 
         return $employee;
+    }
+
+    /**
+     * Whoever runs Exit Management can act on the notice-period payment.
+     *
+     * This used to be a USER TYPE test — super_admin / client_admin /
+     * branch_user only — which had nothing to do with who actually holds the
+     * module. An HR executive on an `employee` account, granted Exit
+     * Management and working the exit wizard, was refused at the one stage
+     * that takes money ("Only HR can record a payment on an employee's
+     * behalf") after filling the whole form, while a branch_user with no exit
+     * rights at all sailed through. The permission the admin ticks on the
+     * Exit Management row is the thing that should govern it, and it is the
+     * same check ExitController::authorizeExit() applies to every other stage
+     * of the same wizard — so the payment stage no longer disagrees with the
+     * five around it.
+     *
+     * Admin tiers are still accepted outright, so nobody who can do this today
+     * loses the ability: this widens the gate, it does not move it.
+     */
+    private function hasExitAccess($user, string $flag): bool
+    {
+        if (!$user) return false;
+        if ($user->isSuperAdmin()) return true;
+        if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
+
+        $moduleId = Module::where('slug', 'hr.exit')->value('id');
+        // Module row not seeded yet — fall back to the admin tiers above,
+        // which have already been allowed through.
+        if (!$moduleId) return false;
+
+        return Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where($flag, true)
+            ->exists();
     }
 }

@@ -67,12 +67,12 @@ class ExitController extends Controller
     private function employeeIdsExiting(?int $clientId): array
     {
         return EmployeeExit::query()
-            ->when($clientId !== null, fn ($q) => $q->where('client_id', $clientId))
+            ->when($clientId !== null, fn($q) => $q->where('client_id', $clientId))
             ->whereNotNull('exit_type')
             ->where('exit_case_status', 'Open')
             ->whereNull('rehired_at')
             ->pluck('employee_id')
-            ->map(fn ($v) => (int) $v)
+            ->map(fn($v) => (int) $v)
             ->all();
     }
 
@@ -134,22 +134,50 @@ class ExitController extends Controller
      * absent — they survive the reset.
      */
     private const CASE_COLUMNS = [
-        'exit_type', 'initiated_by', 'reason_for_exit', 'other_reason',
-        'notice_date', 'last_working_day', 'reporting_manager_id', 'comments',
-        'business_impact', 'replacement_required',
-        'clearances', 'asset_returns', 'handover_notes',
-        'validation', 'final_employee_status', 'profile_lock',
-        'exit_case_status', 'hr_sign_off', 'stage_status', 'current_stage', 'completed_at',
-        'notice_settlement_mode', 'notice_payment_choice',
-        'notice_days_required', 'notice_days_served',
-        'notice_days_unserved', 'notice_settlement_basis', 'notice_per_day_rate',
-        'notice_settlement_amount', 'notice_settlement_status', 'notice_payment', 'fnf',
-        'blacklisted', 'blacklist_reason',
-        'documents_released', 'documents_released_at', 'documents_released_by',
+        'exit_type',
+        'initiated_by',
+        'reason_for_exit',
+        'other_reason',
+        'notice_date',
+        'last_working_day',
+        'reporting_manager_id',
+        'comments',
+        'business_impact',
+        'replacement_required',
+        'clearances',
+        'asset_returns',
+        'handover_notes',
+        'validation',
+        'final_employee_status',
+        'profile_lock',
+        'exit_case_status',
+        'hr_sign_off',
+        'stage_status',
+        'current_stage',
+        'completed_at',
+        'notice_settlement_mode',
+        'notice_payment_choice',
+        'notice_days_required',
+        'notice_days_served',
+        'notice_days_unserved',
+        'notice_settlement_basis',
+        'notice_per_day_rate',
+        'notice_settlement_amount',
+        'notice_settlement_status',
+        'notice_payment',
+        'fnf',
+        'blacklisted',
+        'blacklist_reason',
+        'documents_released',
+        'documents_released_at',
+        'documents_released_by',
         // The rehire stamps go too: the row is a LIVE case again, so leaving
         // them set would make every "is this person exited?" reader treat the
         // new exit as already spent.
-        'rehired_at', 'rehired_by', 'rehire_restart_onboarding', 'rehire_note',
+        'rehired_at',
+        'rehired_by',
+        'rehire_restart_onboarding',
+        'rehire_note',
     ];
 
     /**
@@ -235,6 +263,17 @@ class ExitController extends Controller
         if ($fnfIsPaid) {
             $row->fnf                   = $lockedFnf;
             $row->notice_payment_choice = $lockedChoice;
+        }
+
+        if (!$fnfIsPaid && $this->isFnfPaid($row)) {
+            $lwd = $row->last_working_day
+                ? \Carbon\Carbon::parse($row->last_working_day)->toDateString()
+                : null;
+            if ($lwd && $lwd > \Carbon\Carbon::now(self::DISPLAY_TZ)->toDateString()) {
+                abort(422, 'The Full & Final can only be settled from the last working day ('
+                    . \Carbon\Carbon::parse($lwd)->format('d M Y')
+                    . ') onwards — it prices the exit month up to that day.');
+            }
         }
 
         /* Closing the case is complete()'s job ALONE — that is what stamps the
@@ -338,8 +377,8 @@ class ExitController extends Controller
         $advCheck = $this->fnfAdvances($employee, $gateLwd);
         if (!($advCheck['all_complete'] ?? true)) {
             $refs = collect($advCheck['items'] ?? [])
-                ->filter(fn ($i) => empty($i['complete']))
-                ->map(fn ($i) => $i['reference'])
+                ->filter(fn($i) => empty($i['complete']))
+                ->map(fn($i) => $i['reference'])
                 ->filter()->values()->all();
             abort(422, 'Company advance(s) not fully settled: ' . implode(', ', $refs)
                 . '. Settle, return the balance (with each payment approved), or raise the reimbursement before completing the exit.');
@@ -357,7 +396,7 @@ class ExitController extends Controller
         $orphans = $this->activeDirectReports($employee);
         if ($orphans->isNotEmpty()) {
             $names = $orphans->take(5)
-                ->map(fn ($e) => $e->display_name ?: $e->emp_code)
+                ->map(fn($e) => $e->display_name ?: $e->emp_code)
                 ->filter()->implode(', ');
             $more = $orphans->count() > 5 ? ' and ' . ($orphans->count() - 5) . ' more' : '';
             abort(422, $orphans->count() . ' employee(s) still report to this person (' . $names . $more
@@ -500,7 +539,7 @@ class ExitController extends Controller
             ->with(['department:id,name', 'designation:id,name'])
             ->orderBy('display_name')
             ->get()
-            ->map(fn ($e) => [
+            ->map(fn($e) => [
                 'id'          => $e->id,
                 'name'        => $e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')),
                 'emp_code'    => $e->emp_code,
@@ -542,13 +581,13 @@ class ExitController extends Controller
         $loginUsers = \App\Models\User::query()
             ->whereIn('user_type', ['client_admin', 'client_user', 'branch_user'])
             ->where('status', 'active')
-            ->when($employee->client_id, fn ($q) => $q->where('client_id', $employee->client_id))
-            ->when($reportBranchIds !== [], fn ($q) => $q->where(
-                fn ($w) => $w->whereNull('branch_id')->orWhereIn('branch_id', $reportBranchIds)
+            ->when($employee->client_id, fn($q) => $q->where('client_id', $employee->client_id))
+            ->when($reportBranchIds !== [], fn($q) => $q->where(
+                fn($w) => $w->whereNull('branch_id')->orWhereIn('branch_id', $reportBranchIds)
             ))
             ->orderBy('name')
             ->get(['id', 'name', 'user_type', 'designation'])
-            ->map(fn ($u) => [
+            ->map(fn($u) => [
                 'id'          => $u->id,
                 // Flags this as a USER id, not an employee id — the two id
                 // spaces overlap, so the client must send the kind back.
@@ -565,7 +604,7 @@ class ExitController extends Controller
         return response()->json([
             'employee_id' => $employee->id,
             'login_users' => $loginUsers,
-            'reports'     => $reports->map(fn ($e) => [
+            'reports'     => $reports->map(fn($e) => [
                 'id'          => $e->id,
                 'name'        => $e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')),
                 'emp_code'    => $e->emp_code,
@@ -631,10 +670,12 @@ class ExitController extends Controller
                    employee, so the chain simply ends there. */
                 if ($managerUser > 0) {
                     $u = \App\Models\User::find($managerUser);
-                    if (!$u
+                    if (
+                        !$u
                         || !in_array($u->user_type, ['client_admin', 'client_user', 'branch_user'], true)
                         || (string) $u->status !== 'active'
-                        || ($employee->client_id && (int) $u->client_id !== (int) $employee->client_id)) {
+                        || ($employee->client_id && (int) $u->client_id !== (int) $employee->client_id)
+                    ) {
                         abort(422, 'The selected login user is not an active manager for this client.');
                     }
                     $report = Employee::findOrFail($reportId);
@@ -642,8 +683,10 @@ class ExitController extends Controller
                        the server-side twin of the pool's branch filter. A NULL
                        branch means a client-level user (Director / CEO), who is
                        above branches and eligible everywhere. */
-                    if ($u->branch_id !== null && $report->branch_id !== null
-                        && (int) $u->branch_id !== (int) $report->branch_id) {
+                    if (
+                        $u->branch_id !== null && $report->branch_id !== null
+                        && (int) $u->branch_id !== (int) $report->branch_id
+                    ) {
                         abort(422, "{$u->name} belongs to a different branch and cannot manage "
                             . ($report->display_name ?: $report->emp_code) . '.');
                     }
@@ -914,7 +957,7 @@ class ExitController extends Controller
                     ->whereNull('deleted_at')
                     ->where('email_active', true)
                     ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $u->email)])
-                    ->where(fn ($q) => $u->client_id === null
+                    ->where(fn($q) => $u->client_id === null
                         ? $q->whereNull('client_id')
                         : $q->where('client_id', $u->client_id))
                     ->exists();
@@ -1013,12 +1056,26 @@ class ExitController extends Controller
         $rows = DB::table('advance_requests')
             ->where('employee_id', $employee->id)
             ->whereRaw('LOWER(hr_status) = ?', ['approved'])
-            ->get(['id', 'advance_no', 'advance_type', 'amount', 'used_for',
-                   'recovery_start', 'recovery_mode', 'recovery_months', 'monthly_emi',
-                   'recovery_direct_payments',
-                   'employee_settled_at', 'settle_type', 'settle_balance',
-                   'settle_approval_status', 'settle_returned_at', 'settle_return_scheduled_at',
-                   'settle_return_payments', 'settle_reimbursement_claim_id']);
+            ->get([
+                'id',
+                'advance_no',
+                'advance_type',
+                'amount',
+                'used_for',
+                'recovery_start',
+                'recovery_mode',
+                'recovery_months',
+                'monthly_emi',
+                'recovery_direct_payments',
+                'employee_settled_at',
+                'settle_type',
+                'settle_balance',
+                'settle_approval_status',
+                'settle_returned_at',
+                'settle_return_scheduled_at',
+                'settle_return_payments',
+                'settle_reimbursement_claim_id'
+            ]);
 
         $hasReturnLedger = \Illuminate\Support\Facades\Schema::hasTable('advance_recovery_ledger');
         $items = [];
@@ -1039,7 +1096,7 @@ class ExitController extends Controller
                 // profile (not payroll) — count them so the F&F doesn't re-recover
                 // money that's already been paid back.
                 $directPaid = round(array_sum(array_map(
-                    fn ($p) => (float) ($p['amount'] ?? 0),
+                    fn($p) => (float) ($p['amount'] ?? 0),
                     json_decode((string) ($r->recovery_direct_payments ?? '[]'), true) ?: []
                 )), 2);
                 if ($r->recovery_start) {
@@ -1062,10 +1119,15 @@ class ExitController extends Controller
                 if ($outstanding <= 0.005) continue;   // fully recovered — nothing to do
                 $total += $outstanding;
                 $items[] = [
-                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
-                    'used_for' => 'self', 'amount' => round($amount, 2),
-                    'recovered' => round($recovered, 2), 'outstanding' => $outstanding,
-                    'settle_state' => 'self_recover', 'complete' => true,
+                    'id' => $r->id,
+                    'reference' => $r->advance_no,
+                    'type' => $r->advance_type,
+                    'used_for' => 'self',
+                    'amount' => round($amount, 2),
+                    'recovered' => round($recovered, 2),
+                    'outstanding' => $outstanding,
+                    'settle_state' => 'self_recover',
+                    'complete' => true,
                     'note' => $directPaid > 0.005
                         ? 'Balance after direct pay-off recovered from the final settlement.'
                         : 'Recover the outstanding balance from the final settlement.',
@@ -1084,10 +1146,15 @@ class ExitController extends Controller
             if (!$settled) {
                 $incomplete++;
                 $items[] = [
-                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
-                    'used_for' => 'company', 'amount' => round($amount, 2),
-                    'recovered' => 0.0, 'outstanding' => 0.0,
-                    'settle_state' => 'not_settled', 'complete' => false,
+                    'id' => $r->id,
+                    'reference' => $r->advance_no,
+                    'type' => $r->advance_type,
+                    'used_for' => 'company',
+                    'amount' => round($amount, 2),
+                    'recovered' => 0.0,
+                    'outstanding' => 0.0,
+                    'settle_state' => 'not_settled',
+                    'complete' => false,
                     'note' => 'Company advance not settled/approved yet — settle it before closing the exit.',
                 ];
                 continue;
@@ -1113,10 +1180,15 @@ class ExitController extends Controller
                 if (!$complete) $incomplete++;
                 if ($outstanding > 0.005) $total += $outstanding;
                 $items[] = [
-                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
-                    'used_for' => 'company', 'amount' => round($amount, 2),
-                    'recovered' => $returned, 'outstanding' => $outstanding,
-                    'settle_state' => $complete ? 'return_complete' : 'return_pending', 'complete' => $complete,
+                    'id' => $r->id,
+                    'reference' => $r->advance_no,
+                    'type' => $r->advance_type,
+                    'used_for' => 'company',
+                    'amount' => round($amount, 2),
+                    'recovered' => $returned,
+                    'outstanding' => $outstanding,
+                    'settle_state' => $complete ? 'return_complete' : 'return_pending',
+                    'complete' => $complete,
                     'note' => $complete
                         ? 'Unspent balance returned in full.'
                         : 'Employee still owes the unreturned balance — recover it in the F&F (or wait for approval of pending payments).',
@@ -1131,10 +1203,15 @@ class ExitController extends Controller
                 $raised = (bool) $r->settle_reimbursement_claim_id;
                 if (!$raised) $incomplete++;
                 $items[] = [
-                    'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
-                    'used_for' => 'company', 'amount' => round($amount, 2),
-                    'recovered' => round($amount, 2), 'outstanding' => 0.0,
-                    'settle_state' => $raised ? 'reimburse_raised' : 'reimburse_pending', 'complete' => $raised,
+                    'id' => $r->id,
+                    'reference' => $r->advance_no,
+                    'type' => $r->advance_type,
+                    'used_for' => 'company',
+                    'amount' => round($amount, 2),
+                    'recovered' => round($amount, 2),
+                    'outstanding' => 0.0,
+                    'settle_state' => $raised ? 'reimburse_raised' : 'reimburse_pending',
+                    'complete' => $raised,
                     'note' => $raised
                         ? 'Over-spend reimbursement raised — paid to the employee via the claims section.'
                         : 'Over-spend not yet raised as a reimbursement claim — raise it before closing the exit.',
@@ -1144,10 +1221,15 @@ class ExitController extends Controller
 
             // Settled 'equal' — spend equals the advance, nothing owed either way.
             $items[] = [
-                'id' => $r->id, 'reference' => $r->advance_no, 'type' => $r->advance_type,
-                'used_for' => 'company', 'amount' => round($amount, 2),
-                'recovered' => round($amount, 2), 'outstanding' => 0.0,
-                'settle_state' => 'settled_equal', 'complete' => true,
+                'id' => $r->id,
+                'reference' => $r->advance_no,
+                'type' => $r->advance_type,
+                'used_for' => 'company',
+                'amount' => round($amount, 2),
+                'recovered' => round($amount, 2),
+                'outstanding' => 0.0,
+                'settle_state' => 'settled_equal',
+                'complete' => true,
                 'note' => 'Settled — spend equals the advance.',
             ];
         }
@@ -1174,8 +1256,8 @@ class ExitController extends Controller
         $rows = DB::table('expense_claims')
             ->where('employee_id', $employee->id)
             ->whereRaw('LOWER(hr_status) = ?', ['approved'])
-            ->where(fn ($q) => $q->whereNull('settlement_status')
-                                 ->orWhereRaw('LOWER(settlement_status) <> ?', ['paid']))
+            ->where(fn($q) => $q->whereNull('settlement_status')
+                ->orWhereRaw('LOWER(settlement_status) <> ?', ['paid']))
             ->get(['id', 'claim_no', 'title', 'category_name', 'amount', 'sanctioned_amount', 'total_paid']);
 
         $items = [];
@@ -1259,7 +1341,7 @@ class ExitController extends Controller
         if (!$lwd || !$row->notice_date) {
             return;
         }
-        $normalize = fn ($d) => $d ? \Carbon\Carbon::parse($d)->toDateString() : null;
+        $normalize = fn($d) => $d ? \Carbon\Carbon::parse($d)->toDateString() : null;
         if ($normalize($lwd) === $normalize($storedLwd)) {
             return;   // untouched — see the extension carve-out above
         }
@@ -1425,8 +1507,11 @@ class ExitController extends Controller
             $row->documents_released    = false;
             $row->documents_released_at = null;
             $row->documents_released_by = null;
-            abort_if($isReleased, 422,
-                'Exit documents cannot be released until the Full & Final settlement has been paid.');
+            abort_if(
+                $isReleased,
+                422,
+                'Exit documents cannot be released until the Full & Final settlement has been paid.'
+            );
             return;
         }
 
@@ -1711,8 +1796,11 @@ class ExitController extends Controller
 
         $isSelf = $selfByUserId || $selfByCode;
 
-        abort_if($isSelf, 403,
-            'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.');
+        abort_if(
+            $isSelf,
+            403,
+            'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.'
+        );
     }
 
     /**
@@ -1801,7 +1889,7 @@ class ExitController extends Controller
             $managerPayload = [
                 'id'           => $manager->id,
                 'display_name' => $manager->display_name
-                                  ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')),
+                    ?: trim(($manager->first_name ?? '') . ' ' . ($manager->last_name ?? '')),
                 'emp_code'     => $manager->emp_code,
                 'disabled'     => $mgrDisabled,
             ];

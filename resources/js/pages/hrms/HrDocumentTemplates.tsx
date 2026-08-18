@@ -603,6 +603,29 @@ function ActionBtn({ icon, tone, onClick, title }: { icon: string; tone: 'primar
 function DtmDarkStyles() {
   return (
     <style>{`
+      /* ── One 8px rhythm for this page ────────────────────────────────────
+         Every edge and every gap the reader can see is the same 8px, so the
+         frame around the page matches the space between its parts.
+
+         Scoped with :has to this page only. The app-wide .page-content sets
+         12px sides and 40px at the bottom, and it is shared by every screen —
+         changing it there would move all of them.
+
+         The TOP padding is left alone on purpose: it is not decoration, it is
+         the clearance under the fixed topbar, and shrinking it slides the
+         header strip beneath the navigation. */
+      .page-content:has(.dtm-page) { padding-left: 8px; padding-right: 8px; padding-bottom: 8px; }
+
+      /* Velzon's grid reads --vz-gutter-*, not the Bootstrap names. A row
+         carries negative side margins to cancel its columns' padding, so the
+         gutter has to come down with the page padding or the card would sit
+         12px inside an 8px frame. */
+      .page-content:has(.dtm-page) > .row { --vz-gutter-x: 8px; --bs-gutter-x: 8px; }
+
+      /* The KPI strip stood 24px off the table while the header above it stood
+         8px, which is what made the page look unevenly spaced. */
+      .dtm-page > .row.mb-4 { margin-bottom: 8px !important; }
+
       /* Bulk-action bar — same floating pill the Trade Documents / Agreements
          popup uses (.lasm-bulk-bar). It used to be a pale lavender strip with
          outline buttons stretched across the full width, which read as part of

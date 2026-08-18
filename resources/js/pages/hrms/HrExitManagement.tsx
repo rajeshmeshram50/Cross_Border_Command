@@ -1369,20 +1369,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
        used when the amount simply isn't known yet. */
     const earlyExit = !!fnfDues.payroll?.early_exit;
     setFnfLines(s => {
-      /* Prefill when the line is empty OR still zero. `s.basic || …` alone made
-         a zero STICKY: a settlement opened while the old calendar-day estimate
-         returned ₹0 (which it did for anyone paid via a salary structure with
-         no annual_salary) kept that 0 forever, even once the payroll engine
-         could price the month properly. A zero earned salary is never a
-         deliberate HR entry worth protecting; any non-zero figure they typed
-         still is. */
-      const current = Number(s.basic);
-      const keep = s.basic !== '' && Number.isFinite(current) && current !== 0;
-      if (keep) return s;
+      /* The exit-month salary is COMPUTED, not entered — the field is
+         read-only (see its FnfRow), and the payroll engine is the only thing
+         that decides it. So the line tracks the pulled figure rather than
+         preserving whatever it happened to hold: a stale value from an earlier
+         open can no longer be corrected by hand, and leaving one on screen
+         under a read-only box would present it as the engine's answer when it
+         isn't.
+
+         Once the settlement is marked PAID this stops: the stage is then the
+         record of money that has left the building, and re-syncing it would
+         leave the stored net disagreeing with the amount actually transferred.
+
+         (This used to keep any non-zero figure HR had typed. That protection
+         belonged to an editable field; with no way to type here, the only
+         values it can now preserve are stale ones.) */
+      if (fnfMarkedPaid) return s;
       if (earlyExit) return { ...s, basic: '0' };
       return { ...s, basic: earned ? String(earned) : '' };
     });
-  }, [fnfDues]);
+  }, [fnfDues, fnfMarkedPaid]);
 
   const duesAdvances = Number(fnfDues?.advances?.total ?? 0);
   const duesClaims   = Number(fnfDues?.claims?.total ?? 0);
@@ -1512,6 +1518,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (iso > todayIso) return 'A payment cannot be dated in the future.';
     return '';
   };
+
+  /* CBC #92 — the Full & Final cannot be settled before the employee's LAST
+     WORKING DAY. The settlement prices the exit month up to and including that
+     day (PayrollService::earnedSalaryForExitMonth) and nets off leave, dues and
+     recoveries; paying it while the employee is still working means paying
+     against days not yet worked, on figures that will still move. The day
+     itself counts — an F&F paid ON the last working day is normal practice —
+     so the test is strictly "today is earlier than the LWD".
+
+     No LWD recorded yet ⇒ not blocked here: Stage 1 already makes the date
+     mandatory, and inventing a second gate for a missing value would report
+     the wrong problem. */
+  const fnfBeforeLwd = !!lwd && todayIso < lwd;
   /* CEILING — the last working day can never be LATER than the notice period
      end date; the two may be the SAME day (serving the notice in full, which is
      what a standard resignation looks like). The notice period end is the last
@@ -1805,7 +1824,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [validation, setValidation] = useState<boolean[]>([false, false, false, false, false]);
   const [draftSaving, setDraftSaving] = useState(false);
   const [completing, setCompleting]   = useState(false);
-  const [empStatus, setEmpStatus] = useState('Active');
   const [profileLock, setProfileLock] = useState('Unlocked');
   const [exitCaseStatus, setExitCaseStatus] = useState('Open');
   const [hrSignOff, setHrSignOff] = useState('Pending');
@@ -1911,7 +1929,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         if (Array.isArray(data.validation) && data.validation.length) {
           setValidation(data.validation.map((v: any) => !!v));
         }
-        setEmpStatus(String(data.final_employee_status ?? data.employee_status ?? 'Active'));
         setProfileLock(String(data.profile_lock ?? 'Unlocked'));
         setExitCaseStatus(String(data.exit_case_status ?? 'Open'));
         setHrSignOff(String(data.hr_sign_off ?? 'Pending'));
@@ -2179,9 +2196,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       return Math.round((done / total) * 100);
     }
     if (n === 'closure') {
-      // Final actions now expose only Employee Status + HR Final Sign-off.
-      // Only HR Final Sign-off (Approved) is a real completion gate — Employee
-      // Status is informational and must NOT hold the progress below 100%.
+      // Final actions expose only HR Final Sign-off, which is the single
+      // completion gate. (Employee Status used to sit beside it; it decided
+      // nothing and was removed — see the Final Actions row.)
       const validationDone = validation.filter(Boolean).length;
       const finalsDone = (hrSignOff === 'Approved' ? 1 : 0);
       const total = validation.length + 1;
@@ -2307,7 +2324,6 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     handover_notes:        handoverNotes.trim() || null,
     documents_released:    docsReleased,
     validation,
-    final_employee_status: empStatus || null,
     profile_lock:          profileLock || null,
     hr_sign_off:           hrSignOff || null,
     // Null when the question doesn't apply, so "not asked" stays distinct from
@@ -2712,6 +2728,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
        from re-submitting the same save. */
     if (fnfPaid) {
       toast.info('Already settled', 'This Full & Final settlement has already been recorded as paid.');
+      return;
+    }
+    /* CBC #92 — not before the last working day. Re-checked here and not only
+       on the disabled button: the date lives on Stage 1 and can be pushed out
+       after this stage was opened, so the view can be stale by the time it is
+       clicked. */
+    if (fnfBeforeLwd) {
+      toast.warning('Too early to settle',
+        `The Full & Final can be paid from the last working day (${fmtDateShort(lwd)}) onwards.`);
       return;
     }
     if (!fnfDoc) {
@@ -3423,9 +3448,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                     money actually transferred, with nothing to reconcile the
                     two. */}
                 <div className="ep-fnf">
+                  {/* Read-only: this line is the payroll engine's own figure
+                      for the exit month (earnedSalaryForExitMonth), and the
+                      breakdown below shows how it was reached. A typed
+                      override would silently contradict that breakdown — the
+                      components, the per-day rate and the LOP would all still
+                      describe a number no longer on screen. Adjustments belong
+                      on the Bonus / Other Recovery lines, which stay editable. */}
                   <FnfRow label="Salary for the Exit Month (earned up to the last working day)"
-                          value={fnfLines.basic}       onChange={v => setFnfLines(s => ({ ...s, basic: v }))}
-                          
+                          value={fnfLines.basic} readOnly
                           hint={(() => {
                             const p = fnfDues?.payroll;
                             if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
@@ -3434,18 +3465,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             if (p.early_exit) return p.note;
                             const b = p.breakdown;
                             if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
+                            /* Component-level detail moved into the
+                               <FnfSalaryBreakdown> panel below — it used to be
+                               crammed into this one line, where a five-component
+                               structure ran past the width of the row and the
+                               figures could not be read against each other.
+                               The caption keeps only the days context. */
                             const parts: string[] = [
                               `${b.paid_days} paid of ${b.working_days} working days in ${p.cycle}`,
                             ];
-                            if (b.lop_days > 0)       parts.push(`LOP ${b.lop_days}d (−${fmtMoney(b.lop_amount)})`);
-                            if (b.overtime_hours > 0) parts.push(`overtime ${b.overtime_hours}h (${fmtMoney(b.overtime_amount)})`);
-                            const comps = (b.earnings || [])
-                              .map((x: any) => `${x.label} ${fmtMoney(x.amount)}`)
-                              .join(' · ');
-                            if (comps) parts.push(comps);
-                            parts.push(`gross ${fmtMoney(b.gross_earnings)} − deductions ${fmtMoney(b.total_deductions)}`);
+                            if (b.lop_days > 0)       parts.push(`LOP ${b.lop_days}d`);
+                            if (b.overtime_hours > 0) parts.push(`overtime ${b.overtime_hours}h`);
                             return `${parts.join(' · ')}. Computed on the payroll basis — this employee was skipped in that cycle's run.`;
                           })()} />
+                  {/* Payslip-style component breakdown for the line above, so
+                      Finance can see WHICH heads make up the exit-month figure
+                      (Basic / HRA / allowances vs PT / PF / LOP) instead of
+                      reading a single unexplained total. Same source as the
+                      payslip: PayrollService::earnedSalaryForExitMonth(). */}
+                  <FnfSalaryBreakdown payroll={fnfDues?.payroll} fmtMoney={fmtMoney} />
                   <FnfRow label="Leave Encashment"             value={fnfLines.leaveEncash} onChange={v => setFnfLines(s => ({ ...s, leaveEncash: v }))} readOnly={fnfPaid} />
                   <FnfRow label="Bonus / Incentives"           value={fnfLines.bonus}       onChange={v => setFnfLines(s => ({ ...s, bonus: v }))} readOnly={fnfPaid} />
 
@@ -3618,13 +3656,29 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                   ) : (
                     <div className="ep-settle-actions">
                       <button type="button" className="ep-btn ep-btn--complete"
-                        disabled={settleSaving}
+                        disabled={settleSaving || fnfBeforeLwd}
+                        title={fnfBeforeLwd
+                          ? `Available from the last working day (${fmtDateShort(lwd)}).`
+                          : undefined}
                         onClick={markFnfPaid}>
                         <i className="ri-wallet-3-line" />
                         {settlement === 'pay_in_lieu' && settle.amount > 0
                           ? 'Mark F&F Paid & Notice Settled'
                           : 'Mark F&F Paid'}
                       </button>
+                    </div>
+                  )}
+                  {/* CBC #92 — say WHY the button is dead. A greyed-out action
+                      with no reason reads as a broken screen, and the date it
+                      is waiting on lives two stages back. */}
+                  {!fnfPaid && fnfBeforeLwd && (
+                    <div className="ep-settle-note is-due">
+                      <i className="ri-time-line" />
+                      <span>
+                        The Full &amp; Final can be settled from the last working day
+                        (<strong>{fmtDateShort(lwd)}</strong>) onwards — it prices the exit month up
+                        to that day, so the figures are not final until then.
+                      </span>
                     </div>
                   )}
                   {settlement === 'pay_in_lieu' && settle.amount <= 0 && (
@@ -4075,7 +4129,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
                 <div className="ep-section-label">Final Actions</div>
                 <Row className="g-2 mb-2">
-                  <Col md={6}><EpField label="Employee Status"><EpSelect value={empStatus} onChange={setEmpStatus} options={['Active','Inactive','Exited']} /></EpField></Col>
+                  {/* Employee Status was removed here (CBC #90). It offered
+                      Active / Inactive / Exited as if HR chose the terminal
+                      state, but nothing on completion read it: the employee's
+                      real status comes from the EXIT TYPE via
+                      ExitController::resolveFinalStatus() — Terminated for a
+                      termination or absconding, Resigned otherwise — and
+                      "Exited" is not even a value employees.status accepts.
+                      A control that looks decisive and decides nothing is
+                      worse than no control. */}
                   <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
 
                   {/* Asked on every exit type — a clean resignation can still
@@ -4806,6 +4868,298 @@ function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
         />
       </span>
     </div>
+  );
+}
+
+/* Component-level breakdown of "Salary for the Exit Month", laid out like the
+   payslip's Earnings / Deductions tables so the two read the same way — the
+   figure is produced by the SAME payroll engine
+   (PayrollService::earnedSalaryForExitMonth → computeForEmployee), it is just
+   settled in the F&F instead of in that month's run.
+
+   One deliberate difference from the payslip: any ADVANCE recovery the engine
+   deducted for the month is left out here. The F&F recovers the FULL
+   outstanding advance on its own "Advance Recovery" line below, and the
+   backend adds the month's EMI back into `amount` for exactly that reason
+   (see earnedSalaryForExitMonth). Listing it in both places would show the
+   same rupees being taken twice. Loan recovery is NOT added back, so it stays.
+
+   With that exclusion, the arithmetic shown closes:
+     gross earnings − deductions shown = the amount on the row above.        */
+function FnfSalaryBreakdown({ payroll, fmtMoney }: {
+  payroll: any; fmtMoney: (n: number) => string;
+}) {
+  /* Collapsed by default. The F&F stage is a list of settlement lines; a
+     permanently-open component table for one of them buries the others under a
+     screen of payroll detail. It is opened when somebody is checking the
+     figure, which is not most of the time. */
+  const [open, setOpen] = useState(false);
+  const b = payroll?.breakdown;
+  // No payroll basis (employee never ran through a cycle) or an early exit
+  // where every figure is zero — the row's own hint already explains it, and
+  // an all-zero table would only add noise.
+  if (!payroll || payroll.early_exit || !b) return null;
+
+  const earnings: any[] = Array.isArray(b.earnings) ? b.earnings.filter((r: any) => Number(r?.amount) !== 0) : [];
+  const deductions: any[] = (Array.isArray(b.deductions) ? b.deductions : [])
+    .filter((r: any) => r?.code !== 'advance' && Number(r?.amount) !== 0);
+  if (!earnings.length && !deductions.length) return null;
+
+  const totalEarnings   = earnings.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const totalDeductions = deductions.reduce((s, r) => s + Number(r.amount || 0), 0);
+  const advanceHeld     = (Array.isArray(b.deductions) ? b.deductions : [])
+    .filter((r: any) => r?.code === 'advance')
+    .reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+
+  /* The component rows show the MONTHLY PACKAGE exactly as the employee
+     master / onboarding Compensation step shows it — Basic ₹28,125, HRA
+     ₹16,875 and so on. `b.earnings` holds the same heads ALREADY pro-rated to
+     the days on the books, which is why this card used to disagree with the
+     master under identical labels. The pro-rated figure is still shown, but as
+     a derived line ("Salary for This Cycle") rather than in place of the
+     package, so both are on screen and the step between them is visible.
+
+     Fallback to the pro-rated list for a payload from before
+     structure_components existed, minus the OT / bonus lines, which are not
+     part of the package. */
+  const extras: any[] = (Array.isArray(b.extra_earnings) ? b.extra_earnings : [])
+    .filter((r: any) => Number(r?.amount) !== 0);
+  const extraCodes = new Set(extras.map((r: any) => r.code));
+  const components: any[] = (Array.isArray(b.structure_components) && b.structure_components.length
+    ? b.structure_components
+    : earnings.filter((r: any) => !extraCodes.has(r.code))
+  ).filter((r: any) => Number(r?.amount) !== 0);
+
+  const monthlyFull   = Number(b.monthly_gross_full || 0)
+    || components.reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+  const structureFor  = Number(b.structure_gross || 0);
+  const perDay        = Number(b.per_day_rate || 0);
+  const proration     = Number(b.proration ?? 1);
+  const activeDays    = Number(b.active_days || 0);
+  const cycleDays     = Number(b.cycle_days || 0);
+  const workingDays   = Number(b.working_days || 0);
+  const paidDays      = Number(b.paid_days || 0);
+  const lopDays       = Number(b.lop_days || 0);
+  const earnedGross   = Number(b.earned_gross || 0);
+  const nDays = (n: number) => `${Number(n.toFixed(2))}`;
+  /* Two different per-day rates exist and they are NOT interchangeable:
+       · gross ÷ cycle days   — prices the pro-ration for a mid-cycle exit.
+       · LOP per day          — prices an absent day, on whatever basis the
+                                BRANCH's LOP policy sets (basic or gross,
+                                calendar or working days).
+     Each is shown next to the figure it actually produced. */
+  const perDayGross = cycleDays > 0 && monthlyFull > 0 ? monthlyFull / cycleDays : 0;
+  const divisorDays = Number(b.lop_divisor_days || 0);
+  const perDayBasis = perDay > 0 && divisorDays > 0
+    ? `${b.lop_basis === 'gross' ? `Monthly gross ${fmtMoney(monthlyFull)}` : `Monthly basic ${fmtMoney(Number(b.monthly_basic_full || 0))}`}`
+      + ` ÷ ${nDays(divisorDays)} ${b.lop_divisor === 'working' ? 'working' : 'calendar'} days`
+    : '';
+  // Mid-cycle exit / join: the package was pro-rated before anything else was
+  // applied. On a full month the two figures are equal and the step is noise.
+  const isProrated = structureFor > 0 && proration < 1;
+
+  const stats = [
+    { label: 'Working days', value: b.working_days },
+    { label: 'Paid days',    value: b.paid_days },
+    { label: 'LOP days',     value: b.lop_days },
+    { label: 'OT hours',     value: b.overtime_hours },
+  ].filter(s => Number(s.value) > 0 || s.label === 'Paid days');
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`ep-fnf-bd-toggle${open ? ' is-open' : ''}`}
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+      >
+        <i className={open ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'} />
+        <span>{open ? 'Hide full breakdown' : 'See full breakdown'}</span>
+        <em>
+          {payroll.cycle} · gross {fmtMoney(totalEarnings)} − deductions {fmtMoney(totalDeductions)}
+        </em>
+      </button>
+
+      {open && (
+    <div className="ep-fnf-bd">
+      <div className="ep-fnf-bd-head">
+        <span>Breakdown — {payroll.cycle}</span>
+        <div className="ep-fnf-bd-stats">
+          {stats.map(s => (
+            <span key={s.label}><em>{s.label}</em>{Number(s.value)}</span>
+          ))}
+        </div>
+      </div>
+
+      <div className="ep-fnf-bd-grid">
+        <div className="ep-fnf-bd-card">
+          <div className="ep-fnf-bd-card-head is-earn">
+            <span className="ep-fnf-bd-dot" /> EARNINGS — MONTHLY SALARY
+          </div>
+          <table className="ep-fnf-bd-table">
+            <tbody>
+              {/* The monthly package, verbatim from the salary structure —
+                  same heads and same figures as Edit Employee → Compensation
+                  and the onboarding Compensation step. */}
+              {components.map((r, i) => (
+                <tr key={`${r.code ?? r.label}-${i}`}>
+                  <td>{r.label}</td>
+                  <td>{fmtMoney(Number(r.amount || 0))}</td>
+                </tr>
+              ))}
+              {!components.length && <tr><td colSpan={2} className="is-empty">No earning components.</td></tr>}
+            </tbody>
+            <tfoot>
+              {/* The left card stops at the package — everything that turns it
+                  into THIS cycle's money lives in the right-hand card, so the
+                  two read as "what they're paid" then "what they earned". */}
+              <tr className="is-earn">
+                <td>Monthly Gross<em>Basic + allowances, as per the salary structure</em></td>
+                <td>{fmtMoney(monthlyFull)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div className="ep-fnf-bd-card">
+          <div className="ep-fnf-bd-card-head is-earn">
+            <span className="ep-fnf-bd-dot" /> THIS CYCLE{payroll.cycle ? ` — ${String(payroll.cycle).toUpperCase()}` : ''}
+          </div>
+          <table className="ep-fnf-bd-table">
+            <tbody>
+              {/* How the monthly package on the left becomes this cycle's pay:
+                  one day of it, times the days on the books. */}
+              <tr>
+                <td>
+                  Salary for This Cycle
+                  <em>
+                    {perDayGross > 0 && `${fmtMoney(perDayGross)}/day × `}
+                    {nDays(activeDays)} day(s) on the books
+                    {cycleDays > 0 && ` of ${nDays(cycleDays)}`}
+                  </em>
+                </td>
+                <td>{fmtMoney(structureFor)}</td>
+              </tr>
+              {perDayGross > 0 && (
+                <tr className="is-sub">
+                  <td>
+                    One Day&apos;s Salary
+                    <em>Monthly gross {fmtMoney(monthlyFull)} ÷ {nDays(cycleDays)} calendar days</em>
+                  </td>
+                  <td>{fmtMoney(perDayGross)}</td>
+                </tr>
+              )}
+              {activeDays > 0 && (
+                <tr className="is-sub">
+                  <td>
+                    Days Paid
+                    {/* Calendar days on the books — NOT the attendance-paid
+                        working days, which the header chips report separately
+                        (they read 0 of 14 here because no attendance was
+                        recorded, so every working day fell to LOP). Two
+                        different counts; labelling makes them tellable apart
+                        instead of looking like a contradiction. */}
+                    <em>
+                      calendar days employed this cycle
+                      {workingDays > 0 && ` · attendance: ${nDays(paidDays)} of ${nDays(workingDays)} working days paid`}
+                    </em>
+                  </td>
+                  <td>{nDays(activeDays)}{cycleDays > 0 && ` of ${nDays(cycleDays)}`}</td>
+                </tr>
+              )}
+
+              {/* Overtime / bonus sit OUTSIDE the package — they are added to
+                  the cycle's pay, never pro-rated with it. */}
+              {extras.map((r, i) => (
+                <tr key={`x-${r.code ?? r.label}-${i}`}>
+                  <td>{r.label}</td>
+                  <td>{fmtMoney(Number(r.amount || 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              {/* Labelled "this cycle" on purpose: sitting beside the full
+                  monthly package, a bare "Total Earnings" that reads lower
+                  looks like an error rather than a pro-ration. */}
+              <tr className="is-earn">
+                <td>Total Earnings{isProrated ? ' (this cycle)' : ''}</td>
+                <td>{fmtMoney(totalEarnings)}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div className="ep-fnf-bd-card-head is-ded is-mid">
+            <span className="ep-fnf-bd-dot" /> DEDUCTIONS
+          </div>
+          <table className="ep-fnf-bd-table">
+            <tbody>
+              {deductions.map((r, i) => (
+                <tr key={`${r.code ?? r.label}-${i}`}>
+                  <td>
+                    {r.label}
+                    {/* Show the workings on the loss-of-pay line — it is the
+                        one deduction whose size follows from the days above.
+                        It is priced at the BRANCH LOP rate, which is a
+                        different rate from the per-day salary above (basic vs
+                        gross), so the caption names its basis rather than
+                        leaving two unequal "per day" figures on one card.
+                        Suppressed when the two don't reconcile: the engine caps
+                        LOP at the pro-rated basic, and a caption that doesn't
+                        multiply out to the figure beside it is worse than no
+                        caption at all. */}
+                    {r.code === 'lop' && lopDays > 0 && perDay > 0
+                      && Math.abs(lopDays * perDay - Number(r.amount || 0)) < 1 && (
+                      <em>
+                        {nDays(lopDays)} day(s) × {fmtMoney(perDay)}
+                        {perDayBasis && ` — ${perDayBasis.toLowerCase()}`}
+                      </em>
+                    )}
+                  </td>
+                  <td>{fmtMoney(Number(r.amount || 0))}</td>
+                </tr>
+              ))}
+              {!deductions.length && <tr><td colSpan={2} className="is-empty">No deductions this cycle.</td></tr>}
+            </tbody>
+            <tfoot>
+              <tr className="is-ded"><td>Total Deductions</td><td>{fmtMoney(totalDeductions)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div className="ep-fnf-bd-net">
+        <span>Earned up to the last working day — gross {fmtMoney(totalEarnings)} − deductions {fmtMoney(totalDeductions)}</span>
+        <strong>{fmtMoney(totalEarnings - totalDeductions)}</strong>
+      </div>
+
+      {/* Why PF / ESI / PT are smaller here than on the employee master: they
+          are charged on the salary actually EARNED, not on the monthly
+          package. Only worth saying when the two genuinely differ. */}
+      {earnedGross > 0 && structureFor > 0 && earnedGross < structureFor - 1 && (
+        <div className="ep-fnf-bd-note">
+          <i className="ri-information-line" />
+          <span>
+            PF, ESI and Professional Tax are charged on the salary actually earned
+            ({fmtMoney(earnedGross)} of the {fmtMoney(structureFor)} for this cycle, after loss of
+            pay) — which is why they read lower here than the fixed monthly figures on the
+            employee&apos;s salary structure.
+          </span>
+        </div>
+      )}
+
+      {advanceHeld > 0 && (
+        <div className="ep-fnf-bd-note">
+          <i className="ri-information-line" />
+          <span>
+            The {fmtMoney(advanceHeld)} advance EMI payroll would have deducted this month is
+            excluded here — the full outstanding advance is recovered on the Advance Recovery
+            line below, so counting it twice would understate the settlement.
+          </span>
+        </div>
+      )}
+    </div>
+      )}
+    </>
   );
 }
 

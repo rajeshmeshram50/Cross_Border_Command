@@ -39,6 +39,13 @@ export interface EmployeeProfileCtx {
   signedDocs: any[];
   uploadedDocs: any[];
   organizationalDocs: any[];
+  /** Templates the employee's current department + designation require, each
+   *  stamped with `is_sent` / `signature_status` by the match endpoint. */
+  applicableDocs: any[];
+  /** HR-side viewer: the applicable list and its Send action are theirs. */
+  canSendDocuments: boolean;
+  sendApplicableDoc: (templateId: number, name: string) => void | Promise<void>;
+  sendingTemplateId: number | null;
   exitDocs: any[];
   signedLoading: boolean;
   uploadedLoading: boolean;

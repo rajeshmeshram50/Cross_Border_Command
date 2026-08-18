@@ -16,6 +16,41 @@ class Employee extends Model
 {
     use SoftDeletes;
 
+    /**
+     * Stamp the previous designation whenever the grade changes.
+     *
+     * On the model rather than at the call sites because a designation can be
+     * written from several of them — the Employee form, the onboarding wizard's
+     * Stage 1, and any future bulk edit — and a promotion recorded by only some
+     * of them is worse than none: HR would see promotion paperwork appear for
+     * one route and not another with no way to tell why.
+     *
+     * `saving`, not `saved`: the stamp has to go into the same UPDATE as the
+     * new designation, otherwise a failure between the two writes leaves the
+     * record claiming a promotion that did not happen.
+     *
+     * Guarded on `isDirty` + a real difference so re-saving a form without
+     * touching the designation does not rewrite the date — the promotion date
+     * has to survive every later edit to the employee, or it dates the last
+     * profile save instead.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (self $employee) {
+            if (!$employee->exists || !$employee->isDirty('designation_id')) return;
+
+            $before = $employee->getOriginal('designation_id');
+            $after  = $employee->designation_id;
+
+            // Setting a designation for the first time is not a promotion, and
+            // neither is clearing one.
+            if ($before === null || $after === null || (int) $before === (int) $after) return;
+
+            $employee->previous_designation_id = $before;
+            $employee->designation_changed_at  = now();
+        });
+    }
+
     protected $fillable = [
         'client_id', 'branch_id', 'created_by', 'user_id',
         'emp_code',
@@ -120,6 +155,7 @@ class Employee extends Model
         'stage4_completed_at' => 'datetime',
         'wizard_step_completed' => 'integer',
         'onboarding_stage_completed' => 'integer',
+        'designation_changed_at' => 'datetime',
     ];
 
     /**

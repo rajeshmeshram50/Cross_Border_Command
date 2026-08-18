@@ -6597,6 +6597,10 @@
 }
 .ep-settle-note.is-ok { background: #ecfdf5; border-color: #a7f3d0; color: #065f46; }
 .ep-settle-note.is-no { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+/* "Waiting on something" — neither a success nor a failure. Used by the F&F
+   stage to explain a Mark F&F Paid button that is disabled until the last
+   working day (CBC #92). */
+.ep-settle-note.is-due { background: #fffbeb; border-color: #fde68a; color: #92400e; }
 
 /* ══ Full & Final breakdown ════════════════════════════════════════════ */
 .ep-fnf { border: 1px solid var(--vz-border-color); border-radius: 12px; overflow: hidden; }
@@ -6622,6 +6626,141 @@
 }
 .ep-fnf-net span:last-child { font-variant-numeric: tabular-nums; font-size: 16px; }
 
+/* Exit-month component breakdown — sits inside .ep-fnf directly under the
+   "Salary for the Exit Month" row. Mirrors the payslip's Earnings /
+   Deductions cards (.ep-pay-table-* in EmployeeProfile.css) so the same
+   figures read the same way in both places, but defined here because
+   HrExitManagement only imports this stylesheet. */
+/* Disclosure for the breakdown. Sits as its own row inside .ep-fnf, directly
+   under the exit-month line it explains, so the collapsed stage reads as a
+   plain list of settlement lines. */
+.ep-fnf-bd-toggle {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  padding: 7px 14px; border: 0; border-bottom: 1px solid var(--vz-border-color);
+  background: var(--vz-card-bg); color: #6d28d9;
+  font-size: 11.5px; font-weight: 700; text-align: left;
+}
+.ep-fnf-bd-toggle:hover { background: rgba(109,40,217,0.05); }
+.ep-fnf-bd-toggle i { font-size: 15px; line-height: 1; }
+.ep-fnf-bd-toggle em {
+  font-style: normal; font-weight: 500; font-size: 10.5px;
+  color: var(--vz-secondary-color); margin-left: auto; text-align: right;
+}
+[data-bs-theme="dark"] .ep-fnf-bd-toggle { color: #c4b5fd; }
+[data-bs-theme="dark"] .ep-fnf-bd-toggle:hover { background: rgba(139,92,246,0.10); }
+
+.ep-fnf-bd {
+  padding: 10px 14px 12px;
+  background: var(--vz-secondary-bg);
+  border-bottom: 1px solid var(--vz-border-color);
+}
+.ep-fnf-bd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-bottom: 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: 0.10em;
+  text-transform: uppercase; color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-stats { display: flex; gap: 10px; flex-wrap: wrap; letter-spacing: 0; }
+.ep-fnf-bd-stats span {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--vz-body-color);
+  background: var(--vz-card-bg); border: 1px solid var(--vz-border-color);
+  border-radius: 999px; padding: 1px 9px;
+}
+.ep-fnf-bd-stats em {
+  font-style: normal; font-weight: 600; text-transform: none;
+  color: var(--vz-secondary-color);
+}
+/* align-items: start — the two cards hold different numbers of rows (the
+   monthly package on the left, the cycle's earnings AND deductions on the
+   right). Left to stretch, the shorter card grows to match its neighbour and
+   its rows drift away from the heading with dead space above them. */
+.ep-fnf-bd-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start;
+}
+@media (max-width: 767px) { .ep-fnf-bd-grid { grid-template-columns: 1fr; } }
+.ep-fnf-bd-card {
+  background: var(--vz-card-bg); border: 1px solid var(--vz-border-color);
+  border-radius: 10px; overflow: hidden;
+}
+.ep-fnf-bd-card-head {
+  display: flex; align-items: center; gap: 6px; padding: 7px 12px;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.10em;
+  border-bottom: 1px solid var(--vz-border-color);
+}
+.ep-fnf-bd-card-head.is-earn { color: #108548; }
+.ep-fnf-bd-card-head.is-ded  { color: #b91c1c; }
+/* Second heading inside a card (the deductions block sits under the cycle's
+   earnings in the right-hand card), so it needs a rule above it too. */
+.ep-fnf-bd-card-head.is-mid { border-top: 1px solid var(--vz-border-color); }
+.ep-fnf-bd-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.ep-fnf-bd-table { width: 100%; margin: 0; font-size: 11.5px; }
+.ep-fnf-bd-table td { padding: 6px 12px; border-bottom: 1px solid var(--vz-border-color); }
+.ep-fnf-bd-table td:last-child {
+  text-align: right; font-weight: 600; font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.ep-fnf-bd-table tbody tr:last-child td { border-bottom: none; }
+.ep-fnf-bd-table td.is-empty {
+  text-align: left; font-weight: 400; color: var(--vz-secondary-color);
+}
+/* Derivation rows (monthly salary → one day's salary → days paid). Tinted and
+   set apart from the component rows above them: they explain the money, they
+   are not more of it, and adding them into the column total would double-count
+   the same salary. */
+.ep-fnf-bd-table tbody tr.is-sub td {
+  background: var(--vz-secondary-bg);
+  border-top: 1px dashed var(--vz-border-color);
+  border-bottom: none;
+  color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-table tbody tr.is-sub + tr.is-sub td { border-top-style: dotted; }
+.ep-fnf-bd-table tbody tr.is-sub td:last-child {
+  font-weight: 700; color: var(--vz-body-color);
+}
+/* Monthly Gross — the sum of the component rows directly above it, so it reads
+   as their subtotal rather than as one more derivation line. */
+.ep-fnf-bd-table tbody tr.is-sub.is-strong td {
+  border-top-style: solid; color: var(--vz-body-color); font-weight: 700;
+}
+.ep-fnf-bd-table tbody tr.is-sub em {
+  display: block; font-style: normal; font-size: 10px; font-weight: 400;
+  color: var(--vz-secondary-color); margin-top: 1px;
+}
+.ep-fnf-bd-table tbody td em,
+.ep-fnf-bd-table tfoot td em {
+  display: block; font-style: normal; font-size: 10px; font-weight: 400;
+  color: var(--vz-secondary-color); margin-top: 1px;
+}
+.ep-fnf-bd-table tfoot td {
+  border-top: 1px solid var(--vz-border-color); border-bottom: none; font-weight: 700;
+}
+.ep-fnf-bd-table tfoot tr.is-earn td { background: rgba(16,185,129,0.06); color: #108548; }
+.ep-fnf-bd-table tfoot tr.is-ded  td { background: rgba(239,68,68,0.06); color: #b91c1c; }
+.ep-fnf-bd-net {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap; margin-top: 8px; padding: 8px 12px;
+  border-radius: 9px; background: rgba(109,40,217,0.07);
+  border: 1px solid rgba(109,40,217,0.20);
+  font-size: 11.5px; font-weight: 600; color: var(--vz-body-color);
+}
+.ep-fnf-bd-net strong { font-size: 13.5px; font-variant-numeric: tabular-nums; color: #5b21b6; }
+.ep-fnf-bd-note {
+  display: flex; align-items: flex-start; gap: 6px; margin-top: 8px;
+  font-size: 10.5px; line-height: 1.45; color: var(--vz-secondary-color);
+}
+.ep-fnf-bd-note i { font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+
+[data-bs-theme="dark"] .ep-fnf-bd-card-head.is-earn { color: #34d399; }
+[data-bs-theme="dark"] .ep-fnf-bd-card-head.is-ded  { color: #f87171; }
+[data-bs-theme="dark"] .ep-fnf-bd-table tfoot tr.is-earn td { background: rgba(16,185,129,0.12); color: #34d399; }
+[data-bs-theme="dark"] .ep-fnf-bd-table tfoot tr.is-ded  td { background: rgba(239,68,68,0.12); color: #f87171; }
+[data-bs-theme="dark"] .ep-fnf-bd-net {
+  background: rgba(139,92,246,0.14); border-color: rgba(139,92,246,0.34);
+}
+[data-bs-theme="dark"] .ep-fnf-bd-net strong { color: #c4b5fd; }
+
 [data-bs-theme="dark"] .ep-fnf-row { background: rgba(16,185,129,0.08); }
 [data-bs-theme="dark"] .ep-fnf-row.is-ded { background: rgba(239,68,68,0.08); }
 [data-bs-theme="dark"] .ep-settle.is-due .ep-settle-band { background: rgba(245,158,11,0.10); }
@@ -6629,6 +6768,7 @@
 [data-bs-theme="dark"] .ep-settle.is-no  .ep-settle-band { background: rgba(239,68,68,0.10); }
 [data-bs-theme="dark"] .ep-settle-note.is-ok { background: rgba(16,185,129,0.12); color: #6ee7b7; }
 [data-bs-theme="dark"] .ep-settle-note.is-no { background: rgba(239,68,68,0.12); color: #fca5a5; }
+[data-bs-theme="dark"] .ep-settle-note.is-due { background: rgba(245,158,11,0.12); border-color: rgba(245,158,11,0.38); color: #fcd34d; }
 [data-bs-theme="dark"] .ep-type-change { background: rgba(124,58,237,0.18); border-color: rgba(124,58,237,0.35); color: #c4b5fd; }
 
 @media (max-width: 767px) {
@@ -7026,6 +7166,50 @@
    .rec-btn-primary) rather than the one-off 28px/7px pair this used to be —
    same 10px radius, same 12.5px label, same gap. Height stays a notch under
    the 36px page buttons because these live inside a list row. */
+/* ── Promotion documents still to send ─────────────────────────────────────
+   Amber, not the vault's violet: everything else in this modal is signed
+   evidence and reads as done, so the one block that still needs a decision
+   has to be visibly a different kind of thing. */
+.ev-promo-block {
+  border: 1px solid #fde68a;
+  background: #fffbeb;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+.ev-promo-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ev-promo-icon {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(245,158,11,0.18); color: #a16207; font-size: 15px;
+}
+.ev-promo-title { font-size: 13px; font-weight: 800; color: #92400e; }
+.ev-promo-sub   { font-size: 11px; color: #a16207; }
+.ev-promo-count {
+  margin-left: auto; flex-shrink: 0;
+  background: #f59e0b; color: #fff;
+  border-radius: 999px; padding: 1px 9px;
+  font-size: 11px; font-weight: 800;
+}
+/* The rows themselves are plain `.ev-doc`, so they match the signed list
+   exactly. Only the card they sit on is amber. */
+/* Two classes so this also outranks `.ev-doc:last-child`, which zeroes the
+   bottom border and would have left the last card three-sided. */
+.ev-doc.ev-doc--promo {
+  background: #fff; border: 1px solid #fde68a; border-radius: 9px;
+  padding: 8px 12px;
+}
+.ev-doc.ev-doc--promo:hover { background: #fffdf7; }
+.ev-doc--promo + .ev-doc--promo { margin-top: 6px; }
+.ev-doc-icon--promo { background: rgba(245,158,11,0.18); color: #a16207; }
+.ev-doc-status--not-sent { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+[data-bs-theme="dark"] .ev-doc--promo { background: #1c2531; border-color: rgba(245,158,11,0.30); }
+.ev-promo-row .ev-doc-btn { margin-left: auto; flex-shrink: 0; }
+.ev-promo-spin { display: inline-block; animation: ev-promo-spin 0.8s linear infinite; }
+@keyframes ev-promo-spin { to { transform: rotate(360deg); } }
+[data-bs-theme="dark"] .ev-promo-block { background: rgba(245,158,11,0.10); border-color: rgba(245,158,11,0.35); }
+[data-bs-theme="dark"] .ev-promo-row   { background: #1c2531; border-color: rgba(245,158,11,0.30); }
+
 .ev-doc-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   height: 32px;

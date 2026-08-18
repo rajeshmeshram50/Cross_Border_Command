@@ -607,6 +607,16 @@ export default function HrEmployeeOnboarding() {
      View-only reads the lists, the checklist and the evidence vault. */
   const perm = useModulePermission('hr.onboarding', 'onboarding records');
 
+  /* The pencil opens the EMPLOYEE editor, and every stage of the wizard writes
+     to /employees/{id} — so the grant that decides whether any of it can be
+     saved belongs to the Employee module, not to Onboarding.
+     Reading only `hr.onboarding` let someone with full Onboarding access but
+     view-only on Employee open the editor, fill it in and lose the lot: the
+     button said yes because Onboarding said yes, and the server said no
+     because Employee said no. Two different modules were answering two halves
+     of one question. */
+  const empPerm = useModulePermission('hr.employee', 'employee records');
+
   const [tab, setTab] = useState<'pending' | 'completed'>('pending');
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
@@ -922,14 +932,17 @@ export default function HrEmployeeOnboarding() {
             {/* Greyed but still clickable when the grant is missing, so the
                 click can name the permission — a `disabled` button would
                 swallow it and say nothing. */}
-            <Tooltip label={perm.lockedTitle('edit') ?? 'Edit Employee'}>
+            {/* Gated on the EMPLOYEE grant — that is what the editor writes
+                with. Onboarding's own can_edit does not qualify anyone to
+                change an employee record. */}
+            <Tooltip label={empPerm.lockedTitle('edit') ?? 'Edit Employee'}>
               <button
                 type="button"
                 className="onb-edit-btn flex-shrink-0"
                 aria-label="Edit Employee"
-                aria-disabled={!perm.canEdit || undefined}
-                style={perm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
-                onClick={() => perm.guard('edit', () => openEdit(r))}
+                aria-disabled={!empPerm.canEdit || undefined}
+                style={empPerm.canEdit ? undefined : { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' }}
+                onClick={() => empPerm.guard('edit', () => openEdit(r))}
               >
                 <i className="ri-pencil-line" style={{ fontSize: 14 }} />
               </button>
@@ -970,7 +983,7 @@ export default function HrEmployeeOnboarding() {
     // perm.* included so the action cells re-render when a grant refresh lands
     // after mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  ], [tab, perm.canAdd, perm.canEdit]);
+  ], [tab, perm.canAdd, perm.canEdit, empPerm.canEdit]);
 
   return (
     <>
@@ -1922,6 +1935,15 @@ function InitiateOnboardingModal({
   /* Leave Plan on stage 1 is Leave-module data — gated on hr.leave, not on
      whoever may run onboarding (QA #13). */
   const leavePerm = useModulePermission('hr.leave', 'leave plans');
+  /* Every stage of this wizard writes to /employees/{id} — the profile, the
+     documents, the salary, the stage counter. So the grant that decides
+     whether ANY of it can be saved is the Employee module's, not Onboarding's.
+     Someone with full Onboarding access but view-only on Employee could fill
+     the whole wizard in and lose it at the first save: the form let them,
+     because Onboarding let them, and the server refused, because Employee
+     refused. Read it here and stop them at the form instead. */
+  const empPerm = useModulePermission('hr.employee', 'employee records');
+  const readOnly = !empPerm.canEdit;
   const [activeStage, setActiveStage] = useState(1);
   // Stage 5 (Policies & Agreements) live signing status: total matched
   // agreement templates vs how many have a COMPLETED signing run. Lets the
@@ -2915,6 +2937,19 @@ const isValidBankName = (v: string) => {
   return !!s && bankNameHasLetters(s) && BANK_NAME_RE.test(s);
 };
 
+/* Work Details requirements, in ONE place.
+   validateStage1 turns these into messages and the sidebar counts them toward
+   the stage percentage. Listing them twice is exactly how the two drifted
+   apart before: a field could be required by the gate and invisible to the
+   progress figure, or marked * in the form and known to neither. */
+const STAGE1_WORK_REQUIRED: Array<[string, string]> = [
+  ['leave_plan',     'Leave plan is required'],
+  ['holiday_list',   'Holiday list is required'],
+  ['shift',          'Shift is required'],
+  ['weekly_off',     'Weekly off is required'],
+  ['expense_policy', 'Expense policy is required'],
+];
+
 /** Validate Stage 1 required fields before allowing navigation. */
 const validateStage1 = (): boolean => {
   const errors: Record<string, string> = {};
@@ -3057,8 +3092,16 @@ const validateStage1 = (): boolean => {
            && !String(s1.reporting_manager).startsWith('branch_user:'))
     errors.reporting_manager = 'An HOD must report to a Branch User (Director / CEO).';
 
-  // Work Details — Expense Policy is required (marked * in the form).
-  if (!s1.expense_policy?.toString().trim()) errors.expense_policy = 'Expense policy is required';
+  /* Work Details — every field the form marks with a *.
+     Only Expense Policy was ever checked here. Leave Plan, Holiday List, Shift
+     and Weekly Off carried the same asterisk but nothing read them, so all four
+     could be left blank and Next Stage still went through — and because they
+     were missing from the progress list too, the stage read 100% while empty.
+     They are not cosmetic: leave balance, holiday calendar, shift timing and
+     the weekly-off pattern are what attendance and payroll compute against. */
+  for (const [key, message] of STAGE1_WORK_REQUIRED) {
+    if (!String((s1 as any)[key] ?? '').trim()) errors[key] = message;
+  }
 
   /* The breakup is saved to salary_structures on this same submit, so an
      invalid one has to block here — otherwise the employee row persists and the
@@ -3649,6 +3692,26 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     ...(s1.enable_payroll !== false
       ? [s1.annual_salary, s1.salary_effective_from, s1.pf_eligible]
       : []),
+
+    /* Work Details — the same five validateStage1 checks, from the shared list.
+       All five were missing here, so an employee with no leave plan, holiday
+       list, shift or weekly off still showed the stage at 100%. */
+    ...STAGE1_WORK_REQUIRED.map(([key]) => (s1 as any)[key]),
+
+    /* Asset answers, and the picker only while the answer is Yes — mirroring
+       the condition validateStage1 applies. Counting the picker unconditionally
+       would hold an employee with no laptop below 100% forever with nothing on
+       screen left to fill; not counting the Yes/No at all let an unanswered
+       question read as complete. */
+    s1.laptop_assigned,
+    ...(String(s1.laptop_assigned ?? '') === 'Yes' ? [s1.laptop_master_asset_id] : []),
+    s1.mobile_assigned,
+    ...(String(s1.mobile_assigned ?? '') === 'Yes' ? [s1.mobile_master_asset_id] : []),
+
+    // Free-text probation / notice count only while "Custom" is chosen — the
+    // same condition that decides whether validateStage1 looks at them.
+    ...(probationIsCustom ? [s1.probation_policy] : []),
+    ...(noticeIsCustom    ? [s1.notice_period]    : []),
   ];
   const stage1Filled = stage1RequiredFields.filter(v => String(v ?? '').trim()).length;
   const stage1LivePct = Math.round((stage1Filled / stage1RequiredFields.length) * 100);
@@ -4114,6 +4177,21 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               </span>
             </div>
 
+            {/* Said once, at the top, on every stage — because every stage
+                here writes to the employee record. Without it the wizard
+                looked ordinary and the refusal only arrived after the form
+                had been filled in, which is the bug this answers. */}
+            {readOnly && (
+              <div className="onb-readonly-banner">
+                <i className="ri-lock-2-line" />
+                <span>
+                  <strong>View-only access.</strong> You can read this onboarding, but nothing on
+                  these stages can be saved — that needs edit access to employee records. Ask an
+                  administrator to grant it.
+                </span>
+              </div>
+            )}
+
             {/* Per-stage progress banner removed — the sidebar already
                 shows overall + per-stage progress, so this was redundant
                 and visually noisy on top of every stage. */}
@@ -4462,7 +4540,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     {s1Errors.probation_policy && <div className="onb-error-msg">{s1Errors.probation_policy}</div>}
                   </Col>
                   <Col md={3}><label className="onb-init-label">Probation End Date <span className="auto">AUTO</span></label><input className="onb-init-input is-autofilled" readOnly tabIndex={-1} value={onbProbation.endDisplay} placeholder={!s1.date_of_joining ? 'Set joining date' : (onbProbation.months > 0 ? '' : 'No probation')} /></Col>
-                  <Col md={3}>
+                  <Col md={3} data-field="notice_period">
                     <label className="onb-init-label">Notice Period<span className="req">*</span></label>
                     {/* Custom option mirrored from the Employee form. Without it
                         an onboarding could only record one of the four presets,
@@ -4514,10 +4592,15 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
               <div className="onb-init-section-body">
                 <p className="onb-init-subgroup">Leave &amp; Attendance</p>
                 <Row className="g-3">
-                  <Col md={4}><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => setS1(p => ({ ...p, leave_plan: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => setS1(p => ({ ...p, holiday_list: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} placeholder={shiftPlaceholder} onChange={(v) => setS1(p => ({ ...p, shift: v }))} /></Col>
-                  <Col md={4}><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} placeholder="Select weekly off" onChange={(v) => setS1(p => ({ ...p, weekly_off: v }))} /></Col>
+                  {/* Each of these carries the same error wiring Expense Policy
+                      already had — data-field so scrollToFirstError can reach
+                      it, `invalid` for the red border, and the message below.
+                      Without it a blocked Next Stage showed only a toast and
+                      left the operator hunting for which field it meant. */}
+                  <Col md={4} data-field="leave_plan"><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} invalid={!!s1Errors.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => { setS1(p => ({ ...p, leave_plan: v })); setS1Errors(p => ({ ...p, leave_plan: '' })); }} />{s1Errors.leave_plan && <div className="onb-error-msg">{s1Errors.leave_plan}</div>}</Col>
+                  <Col md={4} data-field="holiday_list"><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} invalid={!!s1Errors.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => { setS1(p => ({ ...p, holiday_list: v })); setS1Errors(p => ({ ...p, holiday_list: '' })); }} />{s1Errors.holiday_list && <div className="onb-error-msg">{s1Errors.holiday_list}</div>}</Col>
+                  <Col md={4} data-field="shift"><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} invalid={!!s1Errors.shift} placeholder={shiftPlaceholder} onChange={(v) => { setS1(p => ({ ...p, shift: v })); setS1Errors(p => ({ ...p, shift: '' })); }} />{s1Errors.shift && <div className="onb-error-msg">{s1Errors.shift}</div>}</Col>
+                  <Col md={4} data-field="weekly_off"><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} invalid={!!s1Errors.weekly_off} placeholder="Select weekly off" onChange={(v) => { setS1(p => ({ ...p, weekly_off: v })); setS1Errors(p => ({ ...p, weekly_off: '' })); }} />{s1Errors.weekly_off && <div className="onb-error-msg">{s1Errors.weekly_off}</div>}</Col>
                   <Col md={4}><label className="onb-init-label">Attendance Number</label><input className="onb-init-input" placeholder="Attendance number" value={s1.attendance_number} onChange={e => setS1(p => ({ ...p, attendance_number: e.target.value }))} /></Col>
                   <Col md={4}><label className="onb-init-label">Overtime Applicable</label><MasterSelect options={ONB_YES_NO} value={overtimeApplicable} placeholder="Select" onChange={(v) => { setOvertimeApplicable(v); if (v !== 'Yes') setS1(p => ({ ...p, overtime: '' })); }} /></Col>
                   {overtimeApplicable === 'Yes' && (
@@ -5099,11 +5182,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
     // verification are action-driven), so there's nothing for Save Draft to
     // persist. Without this the greyed button gave no reason on hover.
     title={
-      (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
-        ? 'Nothing to save as a draft on this stage — use the actions above, then Next Stage / Complete Onboarding.'
-        : 'Save your progress so far without marking the stage complete.'
+      readOnly
+        ? empPerm.lockedTitle('edit') ?? 'You have view-only access to employee records.'
+        : (activeStage !== 1 && activeStage !== 3 && activeStage !== 4)
+          ? 'Nothing to save as a draft on this stage — use the actions above, then Next Stage / Complete Onboarding.'
+          : 'Save your progress so far without marking the stage complete.'
     }
     disabled={
+      readOnly ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving) ||
@@ -5137,7 +5223,9 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   <button
     type="button"
     className="onb-init-btn-next"
+    title={readOnly ? (empPerm.lockedTitle('edit') ?? undefined) : undefined}
     disabled={
+      readOnly ||
       (activeStage === 1 && s1Saving) ||
       (activeStage === 3 && s1Saving) ||
       (activeStage === 4 && s4Saving)
@@ -5617,6 +5705,12 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   onProgress?: (p: { required: number; uploaded: number }) => void;
 }>(({ emp, onDocsChanged, onProgress }, ref) => {
   const toast = useToast();
+  /* Read here rather than passed down: this stage uploads to
+     /employees/{id}/documents on its own, so it owns that decision. Same grant
+     the rest of the wizard saves with — Onboarding access alone does not
+     qualify anyone to attach documents to an employee record. */
+  const empPerm = useModulePermission('hr.employee', 'employee records');
+  const readOnly = !empPerm.canEdit;
 
   /* Latest date a PREVIOUS employment may run to: the day before this employer's
      joining date. The pickers were capped at today instead, which let a joiner
@@ -6115,6 +6209,15 @@ const Stage2Documents = forwardRef<Stage2DocumentsHandle, {
   const triggerUpload = (docKey: string, docName: string, accept: string, maxMb?: number) => {
     if (!emp?.dbId) {
       toast.error('Cannot upload', 'Save the employee first — no record id yet.');
+      return;
+    }
+    /* Stage 2's uploads POST to /employees/{id}/documents, so they need the
+       same Employee grant the rest of the wizard does. Stopped here rather
+       than only on the buttons: the file picker is opened from JS, so the
+       refusal has to be in the code path, not just in the styling — and it
+       must come BEFORE the file dialog, not after the user has chosen a file. */
+    if (readOnly) {
+      empPerm.guard('edit', () => {});
       return;
     }
     /* Hard guard, not just the disabled buttons. The picker is a detached
