@@ -71,7 +71,27 @@ class HrDocumentSignatureController extends Controller
          * `?: 0` fails closed: a login with no employees row matches nothing
          * rather than falling through to the client-wide scope. */
         $viewer = $request->user();
-        if ($viewer && $viewer->user_type === 'employee') {
+        /* ...but HR are employees too.
+         *
+         * `user_type === 'employee'` is not "a person with no business seeing
+         * colleagues' documents" — it is simply "has an employees row", which
+         * is what almost every login in a tenant looks like, HR included. So
+         * this pin silently rewrote employee_id for the very staff whose job is
+         * to run onboarding: Stage 5 asked for the subject's signature runs and
+         * got the VIEWER'S own instead, which for their own account is normally
+         * none at all.
+         *
+         * The row then had no run to read. "Send for Signature" stayed on a
+         * document already out for signing (CBC #114), and stayed on one both
+         * parties had already signed, instead of turning into View/Download
+         * (CBC #115) — the send worked every time; only reading it back was
+         * scoped to the wrong person.
+         *
+         * The privacy rule it enforces is real and stays: an ordinary employee
+         * must not read a colleague's signed documents. It is just conditioned
+         * on the HR grant now, which is the thing that actually distinguishes
+         * the two cases. Anyone without it is still pinned to themselves. */
+        if ($viewer && $viewer->user_type === 'employee' && !$this->mayReadOthersDocuments($viewer)) {
             $q->where('employee_id', Employee::where('user_id', $viewer->id)->value('id') ?: 0);
         } elseif ($request->has('employee_id')) {
             /* An employee_id that is PRESENT but not a positive integer must
@@ -234,6 +254,46 @@ class HrDocumentSignatureController extends Controller
                 ];
             }
 
+            /* A workflow nobody can act on must not be created.
+             *
+             * resolveSignerUser() falls back to [null, "<Role> (unassigned)"]
+             * when a role has no real person behind it — an employee with no
+             * reporting manager set, a client with no admin. Its docblock says
+             * that lets "the admin still send the doc and re-assign manually
+             * later", but there is no re-assign endpoint and never was: the
+             * routes are action / reject / cancel / remind, none of which
+             * changes a signer.
+             *
+             * The consequence is a dead document. Signer identity is matched by
+             * user_id — `(int)($s['user_id'] ?? 0) === $user->id` in
+             * assertEmployeeMayRead — and a null becomes 0, which equals no
+             * real login. So the run sits Pending forever, appears in nobody's
+             * inbox, and cannot be signed. Worse, the idempotency guard above
+             * then treats it as an ACTIVE run, so every later Send returns this
+             * same corpse and the button goes permanently quiet: from the
+             * Evidence Vault it reads exactly as "Send does nothing" (CBC #112).
+             *
+             * Refusing at the click is the honest outcome — it names the role
+             * and what to fix, instead of recording a send that never happened.
+             * Cancelling the stuck run remains the way out for any already
+             * created. */
+            if (!$signersTpl) {
+                abort(422, "\"{$tpl->name}\" has no signers configured, so there is nobody to send it to. Add a signer to the template first.");
+            }
+            $unresolved = array_values(array_filter(
+                $resolved,
+                fn ($r) => ($r['user_id'] ?? null) === null,
+            ));
+            if ($unresolved) {
+                $roles = implode(', ', array_map(
+                    fn ($r) => (string) ($r['role_name'] ?: 'Signer'),
+                    $unresolved,
+                ));
+                $who = $emp->display_name ?: $emp->emp_code;
+                abort(422, "Cannot send: no active user resolves to {$roles} for {$who}."
+                    . ' Set that person on the employee record (or the template) and send again.');
+            }
+
             // Resolve placeholders to lock the body text at send time. The
             // per-signer Sign/Date tokens are intentionally NOT substituted
             // here — they're filled in by the action handler when each
@@ -245,6 +305,23 @@ class HrDocumentSignatureController extends Controller
             $buildCtx = $ref->getMethod('buildTokenContext'); $buildCtx->setAccessible(true);
             $resolve  = $ref->getMethod('resolveTokens');     $resolve->setAccessible(true);
             $ctx = $buildCtx->invoke($hrTplController, $emp->loadMissing(['client']), $signersTpl);
+
+            /* Name the people we JUST recorded, rather than letting the token
+               context work them out a second time.
+               $resolved above is the authoritative list — it is what the
+               workflow routes to, what the reminder emails address, and what
+               the audit log names. Deriving {{SignerNName}} independently means
+               two answers to one question, and they diverge the moment a
+               reporting line changes between the two calls: the frozen document
+               would name somebody the workflow never asks to sign. One list,
+               used for both. (CBC #95 fixed the resolver they share; this makes
+               the send path stop asking twice.) */
+            foreach ($resolved as $r) {
+                $n = ((int) $r['index']) + 1;
+                $ctx["Signer{$n}Name"] = (string) ($r['name'] ?? '');
+                $ctx["Signer{$n}Role"] = (string) ($r['role_name'] ?? '');
+            }
+
             // Overlay the wizard-entered custom field values onto the token
             // context so {{CustomToken}} placeholders are frozen with the
             // user's edits (not left blank) at send time.
@@ -847,6 +924,33 @@ class HrDocumentSignatureController extends Controller
     }
 
     /* ───── HELPERS ───── */
+
+    /**
+     * May this employee-tier login read OTHER employees' signature runs?
+     *
+     * True when they hold view rights on the HR Document Templates module —
+     * the same grant that lets them open the templates and send documents in
+     * the first place, so it is already the line between "HR staff" and
+     * "everybody else" everywhere else in this feature.
+     */
+    private function mayReadOthersDocuments(?User $user): bool
+    {
+        if (!$user) return false;
+
+        $moduleId = \App\Models\Module::where('slug', 'hr.doc_templates')->value('id');
+        // No module row means the tenant never had the feature broken out into
+        // grants; fall back to the same admin tiers HrDocumentTemplateController
+        // waves through in that case rather than locking HR out of their own
+        // screen.
+        if (!$moduleId) {
+            return in_array($user->user_type, ['client_admin', 'branch_user'], true);
+        }
+
+        return \App\Models\Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+    }
 
     private function loadForAction(Request $request, int $id): HrDocumentSignature
     {

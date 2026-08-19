@@ -423,8 +423,15 @@ class HrGeneratedDocumentController extends Controller
         // `legal_entity_name`, a column that never existed on the old
         // master_legal_entities table either, so CompanyName always silently
         // fell through to the client org name.
+        /* ...and finally the BRANCH's own name. Without a last resort this
+           returned '', and a footer written as "{{CompanyName}} Confidential"
+           then printed a bare "Confidential" on every page — read as the
+           document's classification rather than as a name that failed to
+           resolve (CBC #113). Every employee has a branch, so this always has
+           something true to say. */
         $companyName = $emp->legalEntity?->name
             ?: $emp->branch?->client?->org_name
+            ?: $emp->branch?->name
             ?: '';
 
         /* CompanyLogo and CompanyAddress were both hardcoded to '' — a template

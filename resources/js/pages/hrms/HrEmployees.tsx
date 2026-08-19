@@ -286,7 +286,28 @@ const KPI_CARDS = [
 
 type ExpiryDays = 3 | 7 | 15;
 
-export default function HrEmployees() {
+/* Normally the /hr/employees page. It is ALSO mountable as just its Add/Edit
+   wizard, which is what `embedEditCode` does — the Onboarding hub renders it
+   that way so its pencil opens the employee editor over the onboarding list
+   instead of navigating to this page and opening it there (CBC #98).
+
+   The wizard is ~1,400 lines of JSX over a hundred pieces of state that all
+   live in this component. Lifting it into a shared component so two pages
+   could mount it would be a far larger and riskier change than letting the
+   second page mount THIS component in a mode where the list is not drawn — and
+   it keeps exactly one implementation of the form, which is the property that
+   actually matters: the two screens cannot drift apart.
+
+   In embed mode nothing but the dialogs renders, and the list/stats requests
+   that feed the table are skipped — the caller's own page is on screen behind
+   the modal, and re-fetching a table nobody can see is pure cost. */
+export default function HrEmployees({ embedEditCode, onEmbedClose }: {
+  /** emp_code to open the edit wizard for, instead of rendering the list. */
+  embedEditCode?: string;
+  /** Fired when the wizard closes so the host page can unmount this. */
+  onEmbedClose?: () => void;
+} = {}) {
+  const embedded = !!embedEditCode;
   // Active branch — the auto-fetched Legal Entity resolves against it.
   const { selectedBranchId } = useBranchSwitcher();
   const { user: authUser } = useAuth();
@@ -460,6 +481,8 @@ export default function HrEmployees() {
   const employeesReqRef = useRef(0);
 
   const reloadEmployees = useCallback(async () => {
+    // No table on screen in embed mode — see the note on the component.
+    if (embedded) return;
     const token = ++employeesReqRef.current;
     /* Every fetch, not just the first. Paging and searching were instant while
        they happened in the browser, so the table never needed to say it was
@@ -493,7 +516,7 @@ export default function HrEmployees() {
     } finally {
       if (token === employeesReqRef.current) setLoadingEmployees(false);
     }
-  }, [page, perPage, tab, debouncedQ, deptFilterId]);
+  }, [embedded, page, perPage, tab, debouncedQ, deptFilterId]);
 
   /* KPI cards + tab badges. Separate from the list because they describe the
      whole roster, not the page — counting the 25 rows on screen would report
@@ -502,6 +525,7 @@ export default function HrEmployees() {
     total: 0, active: 0, disabled: 0, onboarding_completed: 0, new_joiners: 0,
   });
   const reloadCounts = useCallback(async () => {
+    if (embedded) return;   // the KPI cards these feed are not rendered
     try {
       const r = await api.get('/employees/stats');
       setCounts({
@@ -515,7 +539,7 @@ export default function HrEmployees() {
       /* Non-fatal — the cards keep their last values rather than flashing zeros
          over numbers that were correct a moment ago. */
     }
-  }, []);
+  }, [embedded]);
 
   const reloadMasters = useCallback(() => {
     Promise.allSettled([
@@ -553,7 +577,9 @@ export default function HrEmployees() {
      browser goes idle after the table has painted, or the moment a dialog that
      needs them opens, whichever comes first. Nothing is removed and no dialog
      can open to empty dropdowns; the lists simply stop blocking the list. */
-  const [mastersWanted, setMastersWanted] = useState(false);
+  /* Embed mode starts wanted: the wizard IS the screen, so the dropdowns it
+     needs are on the critical path rather than behind it. */
+  const [mastersWanted, setMastersWanted] = useState<boolean>(() => !!embedEditCode);
   useEffect(() => {
     const want = () => setMastersWanted(true);
     /* requestIdleCallback runs this after the browser has finished painting.
@@ -1122,36 +1148,57 @@ export default function HrEmployees() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  /* "Edit this employee" arriving from the Onboarding hub (it navigates here
-     with openEditEmpCode). This used to look the code up in the loaded rows,
-     which held every employee — it now holds one page, and an employee sitting
-     on page 4 would land the user on the list with no modal and no explanation,
-     because the state is cleared either way. So a miss falls back to fetching
-     that one record: show() resolves an emp_code as readily as an id. */
+  /* Straight to the record.
+   *
+   * This used to wait for `loadingEmployees` to clear and then look the code up
+   * in the page it had just fetched. Two costs, both visible: the wizard could
+   * not appear until the whole list had loaded AND painted — which is the
+   * employee tab opening first, then the editor over it (CBC #98) — and an
+   * employee on page 4 was a miss, which then paid for a SECOND request.
+   *
+   * The list was never needed. One employee is being opened, so one employee is
+   * asked for, immediately, in parallel with whatever else the page is doing;
+   * show() resolves an emp_code as readily as an id. The record is handed
+   * straight to the wizard, which would otherwise re-fetch the same row. */
   useEffect(() => {
-    const incoming = (location.state as any)?.openEditEmpCode as string | undefined;
+    /* Two ways in, one path out. `embedEditCode` is the Onboarding hub
+       rendering this component's wizard INSIDE its own page; the router-state
+       form is the older cross-page navigation, kept so any deep link still
+       works. Either way it is one emp_code and one dialog. */
+    const incoming = embedEditCode
+      ?? ((location.state as any)?.openEditEmpCode as string | undefined);
     if (!incoming) return;
-    if (loadingEmployees) return;   // wait for the page, else every load is a miss
 
     const back = (location.state as any)?.returnTo as string | undefined;
-    const open = (row: EmployeeRow) => {
-      if (back) setReturnToOnClose(back);
-      openEditEmployee(row);
-    };
+    if (back) setReturnToOnClose(back);
 
-    const onPage = apiRows.find(r => r.id === incoming);
-    if (onPage) {
-      open(onPage);
-    } else {
-      api.get(`/employees/${encodeURIComponent(incoming)}`)
-        .then(r => { const raw = r.data?.employee ?? r.data; if (raw?.id) open(apiToRow(raw)); })
-        .catch(() => toast.error('Could not open employee', `${incoming} was not found.`));
+    /* Open the shell on the CLICK, fill it when the record lands — the same
+       rule openEditEmployee() follows for a row that is already on screen.
+       Here the id has to be looked up first, so without this the dialog would
+       not appear until that round trip came back and the pencil would read as
+       a dead button for its duration. */
+    if (embedEditCode) {
+      setEmpMode('edit');
+      setEmpOpen(true);
+      setEmpLoading(true);
     }
-    // Cleared immediately either way — a back/forward that replays this state
-    // should not re-open the wizard over whatever the user is doing by then.
-    navigate(location.pathname, { replace: true, state: null });
+
+    api.get(`/employees/${encodeURIComponent(incoming)}`)
+      .then(r => {
+        const raw = r.data?.employee ?? r.data;
+        if (!raw?.id) throw new Error('not found');
+        openEditEmployee(apiToRow(raw), raw);
+      })
+      .catch(() => {
+        toast.error('Could not open employee', `${incoming} was not found.`);
+        onEmbedClose?.();
+      });
+
+    // Cleared immediately — a back/forward that replays this state should not
+    // re-open the wizard over whatever the user is doing by then.
+    if (!embedEditCode) navigate(location.pathname, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiRows, loadingEmployees, location.state]);
+  }, [embedEditCode, location.state]);
   const openPermissions = (row: EmployeeRow) => {
     navigate(`/hr/employees/${encodeURIComponent(row.encryptedId || row.id)}/permissions`, { state: { employee: row } });
   };
@@ -1293,6 +1340,7 @@ export default function HrEmployees() {
       setReturnToOnClose(null);
       navigate(target);
     }
+    onEmbedClose?.();
   };
 
   const [editingDbId, setEditingDbId] = useState<number | null>(null);
@@ -1925,9 +1973,13 @@ export default function HrEmployees() {
      Fetching the one record being opened costs a single fast call and lets the
      list payload be a list payload. The row's own copy is kept as a fallback so
      a failed fetch still opens a usable form rather than a blank one. */
-  const openEditEmployee = async (row: EmployeeRow) => {
+  /* `preloaded` — the full record when the caller already has it (the deep-link
+     from Onboarding fetches it to find the id in the first place). Without it
+     that path asked for the same row twice, and the second request was in front
+     of the fields the user was waiting on. */
+  const openEditEmployee = async (row: EmployeeRow, preloaded?: ApiEmployee) => {
     const dbId = (row as any)._dbId as number | undefined;
-    let raw = (row as any)._raw as ApiEmployee | undefined;
+    let raw = preloaded ?? ((row as any)._raw as ApiEmployee | undefined);
 
     /* Open on the click, fill when the record lands.
        The fetch used to sit in front of setEmpOpen, so Edit did nothing at all
@@ -1941,7 +1993,7 @@ export default function HrEmployees() {
     editingDbIdRef.current = dbId ?? null;
     setEmpOpen(true);
 
-    if (dbId) {
+    if (dbId && !preloaded) {
       setEmpLoading(true);
       try {
         const r = await api.get(`/employees/${dbId}`);
@@ -1951,6 +2003,11 @@ export default function HrEmployees() {
       } finally {
         setEmpLoading(false);
       }
+    } else if (preloaded) {
+      /* The caller already paid for the record, so there is nothing to wait
+         for — but the shell it opened may have turned the skeleton on, and
+         only the fetch branch above ever turns it off. */
+      setEmpLoading(false);
     }
 
     if (raw) {
@@ -3170,6 +3227,7 @@ export default function HrEmployees() {
     <>
       <MasterFormStyles />
 
+      {!embedded && (
       <Row>
         <Col xs={12}>
           <div className="hr-employees-surface" style={{ background: 'transparent' }}>
@@ -3311,6 +3369,7 @@ export default function HrEmployees() {
           </div>
         </Col>
       </Row>
+      )}
 
       <DeleteConfirmModal
         open={!!confirmDelete}
