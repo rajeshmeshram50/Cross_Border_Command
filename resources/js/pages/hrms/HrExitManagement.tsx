@@ -4206,7 +4206,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
             {currentKey === 'closure' && (
               <>
-                <div className="ep-section-label">Final Validation Checklist</div>
+                {/* Every one of the five below must be ticked before Complete
+                    Exit unlocks (see the exitPending rule "Every final-validation
+                    checklist item must be ticked"), so the section carries the
+                    marker its individual rows can't. */}
+                <div className="ep-section-label">
+                  Final Validation Checklist<ReqStar />
+                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: 'none', letterSpacing: 0, color: 'var(--vz-secondary-color)' }}>
+                    — all {validation.length} required
+                  </span>
+                </div>
                 <div className="ep-checklist mb-3">
                   {[
                     { title: 'All clearances obtained',    sub: 'Manager, IT, Admin, Finance, Legal' },
@@ -4237,14 +4246,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       "Exited" is not even a value employees.status accepts.
                       A control that looks decisive and decides nothing is
                       worse than no control. */}
-                  <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
+                  {/* Required: Pending AND Rejected both block Complete Exit —
+                      only "Approved" clears it. */}
+                  <Col md={6}><EpField label="HR Final Sign-off" required><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
 
                   {/* Asked on every exit type — a clean resignation can still
                       warrant a re-hire bar. */}
                   {blacklistApplies && (
                     <>
                       <Col md={6}>
-                        <EpField label="Blacklist Employee">
+                        {/* Required as a DECISION, not as a blank to fill: it
+                            defaults to No and is written to the exit record
+                            either way, so the marker says "you are answering
+                            this" rather than "this is empty". */}
+                        <EpField label="Blacklist Employee" required>
                           {/* LOCKED on a termination — Yes is the only valid
                               answer, so the control is disabled rather than
                               merely pre-filled. Options collapse to ['Yes'] too:
@@ -4311,6 +4326,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: directReportCount > 0 ? '#b45309' : '#0d9488' }}>
                           Reporting Manager Dependency
+                          {/* Only while it actually blocks. Once every report has
+                              been moved the panel stays mounted to show what was
+                              done, and an asterisk on a finished task reads as
+                              an outstanding one. */}
+                          {directReportCount > 0 && <ReqStar />}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 3 }}>
                           {directReportCount > 0
@@ -5295,17 +5315,23 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
   );
 }
 
+/* The required marker, in one place.
+   EpField drew its own inline asterisk, so the SECTIONS that are equally
+   mandatory — the validation checklist, the sign-off, the manager dependency —
+   had no way to carry one without a second hand-rolled copy that would drift
+   from it in colour or weight. Everything now renders this (CBC #100). */
+function ReqStar() {
+  return (
+    <span aria-hidden="true" style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}>*</span>
+  );
+}
+
 function EpField({ label, required, invalid, children }: { label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }) {
   return (
     <div className={`ep-field${invalid ? ' ep-field--invalid' : ''}`}>
       <div className="ep-field-label">
         {label}
-        {required && (
-          <span
-            aria-hidden="true"
-            style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}
-          >*</span>
-        )}
+        {required && <ReqStar />}
       </div>
       {children}
     </div>
