@@ -15,6 +15,18 @@ export interface PermModule {
 
 export type PermKey = 'can_view' | 'can_add' | 'can_edit' | 'can_delete' | 'can_export' | 'can_import' | 'can_approve';
 
+/**
+ * A matrix row. `is_auto` marks a row the dependency matrix granted rather than
+ * one the operator ticked — it is NOT a permission, so it is deliberately kept
+ * out of PermKey and never counted, rendered, or toggled as a column.
+ *
+ * The distinction has to be stored, not guessed: both kinds of row are usually
+ * can_view-only, and inferring "this one was implied" collapses on mutually
+ * dependent modules (Payroll requires Exit, Exit requires Payroll — each
+ * explains the other, so every row looks implied and the seed set empties).
+ */
+export type PermRow = Record<PermKey, boolean> & { is_auto?: boolean };
+
 // Every action below requires being able to see the module, so granting any of
 // them implies can_view. Mirrors the backend rule in
 // PermissionController::savePermissions — keep the two in sync.
@@ -22,9 +34,9 @@ const ACTION_KEYS: PermKey[] = ['can_add', 'can_edit', 'can_delete', 'can_export
 
 /** Force can_view on for any leaf row that has at least one action flag set. */
 function withImpliedView(
-  next: Record<number, Record<PermKey, boolean>>
-): Record<number, Record<PermKey, boolean>> {
-  const out: Record<number, Record<PermKey, boolean>> = {};
+  next: Record<number, PermRow>
+): Record<number, PermRow> {
+  const out: Record<number, PermRow> = {};
   for (const [id, row] of Object.entries(next)) {
     const merged = { ...row };
     if (ACTION_KEYS.some((k) => merged[k])) merged.can_view = true;
@@ -100,8 +112,8 @@ function TriStateCheckbox({
 
 interface Props {
   modules: PermModule[];
-  matrix: Record<number, Record<PermKey, boolean>>;
-  onChange: (next: Record<number, Record<PermKey, boolean>>) => void;
+  matrix: Record<number, PermRow>;
+  onChange: (next: Record<number, PermRow>) => void;
   /** If provided, disables checkboxes user can't grant (keyed by module slug). Pass null for super admin. */
   grantableBy?: Record<string, Record<PermKey, boolean>> | null;
   loading?: boolean;
@@ -186,12 +198,13 @@ export default function PermissionMatrix({
    * auto-tick in emit() and the read-only lock on the View checkbox.
    */
   const dependencyCauses = useMemo(() => {
-    const activeSlugs: string[] = [];
+    const explicitSlugs: string[] = [];
     leaves.forEach(m => {
       const row = matrix[m.id];
-      if (row && PERMS.some(p => row[p.key])) activeSlugs.push(m.slug);
+      if (!row || row.is_auto) return;
+      if (PERMS.some(p => row[p.key])) explicitSlugs.push(m.slug);
     });
-    const resolved = resolveDependencies(activeSlugs);
+    const resolved = resolveDependencies(explicitSlugs);
     const out: Record<number, string[]> = {};
     Object.entries(resolved).forEach(([slug, causes]) => {
       const mod = bySlug.get(slug);
@@ -208,29 +221,46 @@ export default function PermissionMatrix({
    * every other cell.
    */
   const withDependencyViews = (
-    next: Record<number, Record<PermKey, boolean>>
-  ): Record<number, Record<PermKey, boolean>> => {
-    const activeSlugs: string[] = [];
+    next: Record<number, PermRow>
+  ): Record<number, PermRow> => {
+    const explicitSlugs: string[] = [];
     leaves.forEach(m => {
       const row = next[m.id];
-      if (row && PERMS.some(p => row[p.key])) activeSlugs.push(m.slug);
+      if (!row || row.is_auto) return;
+      if (PERMS.some(p => row[p.key])) explicitSlugs.push(m.slug);
     });
-    if (activeSlugs.length === 0) return next;
 
+    const required = new Set(Object.keys(resolveDependencies(explicitSlugs)));
     const out = { ...next };
-    Object.keys(resolveDependencies(activeSlugs)).forEach(slug => {
+
+    required.forEach(slug => {
       const mod = bySlug.get(slug);
       if (!mod || !isLeaf(mod)) return;
       if (!isPermAllowed(mod.slug, 'can_view')) return;
-      out[mod.id] = { ...(out[mod.id] || emptyPerms()), can_view: true };
+      const existing = out[mod.id];
+      // An explicit grant outranks an implied one — don't demote it to auto,
+      // or its action flags would be swept away by the cleanup below.
+      if (existing && existing.is_auto === false && PERMS.some(p => existing[p.key])) return;
+      out[mod.id] = { ...(existing || emptyPerms()), can_view: true, is_auto: true };
     });
+
+    // Release auto rows nothing requires any more, so unticking the module that
+    // pulled a feeder in takes the feeder with it instead of letting the grant
+    // grow monotonically.
+    leaves.forEach(m => {
+      const row = out[m.id];
+      if (!row?.is_auto) return;
+      if (required.has(m.slug)) return;
+      out[m.id] = { ...emptyPerms(), is_auto: false };
+    });
+
     return out;
   };
 
   // All matrix mutations funnel through emit() so the "action implies view"
   // and "module implies its dependencies" invariants are enforced no matter
   // which control changed (single cell, row, column, branch, or Select-All).
-  const emit = (next: Record<number, Record<PermKey, boolean>>) =>
+  const emit = (next: Record<number, PermRow>) =>
     onChange(withDependencyViews(withImpliedView(next)));
 
   // Rows saved before the dependency matrix existed (or edited straight in the
@@ -241,6 +271,7 @@ export default function PermissionMatrix({
     const normalized = withDependencyViews(withImpliedView(matrix));
     const changed = Object.keys(normalized).some(id =>
       PERMS.some(p => !!normalized[Number(id)][p.key] !== !!matrix[Number(id)]?.[p.key])
+      || !!normalized[Number(id)].is_auto !== !!matrix[Number(id)]?.is_auto
     );
     if (changed) onChange(normalized);
   }, [modules, matrix]);
@@ -248,9 +279,11 @@ export default function PermissionMatrix({
   const toggle = (modId: number, key: PermKey) => {
     const mod = tree.byId.get(modId);
     if (!mod || !isPermAllowed(mod.slug, key)) return;
+    // Touching a cell by hand makes the row the operator's own, so it seeds the
+    // dependency walk from here on instead of being treated as implied.
     emit({
       ...matrix,
-      [modId]: { ...(matrix[modId] || emptyPerms()), [key]: !(matrix[modId]?.[key]) },
+      [modId]: { ...(matrix[modId] || emptyPerms()), [key]: !(matrix[modId]?.[key]), is_auto: false },
     });
   };
 
@@ -262,7 +295,7 @@ export default function PermissionMatrix({
     const allowedKeys = PERMS.filter(p => isPermAllowed(mod.slug, p.key)).map(p => p.key);
     if (allowedKeys.length === 0) return;
     const allOn = allowedKeys.every(k => current[k]);
-    const nextRow: Record<PermKey, boolean> = { ...current };
+    const nextRow: PermRow = { ...current, is_auto: false };
     allowedKeys.forEach(k => { nextRow[k] = !allOn; });
     emit({ ...matrix, [modId]: nextRow });
   };
@@ -281,7 +314,7 @@ export default function PermissionMatrix({
     const next = { ...matrix };
     desc.forEach(m => {
       if (!isPermAllowed(m.slug, key)) return;
-      next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
+      next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn, is_auto: false };
     });
     emit(next);
   };
@@ -298,7 +331,7 @@ export default function PermissionMatrix({
     const allOn = totalSlots.every(([m, k]) => matrix[m.id]?.[k]);
     const next = { ...matrix };
     totalSlots.forEach(([m, k]) => {
-      next[m.id] = { ...(next[m.id] || emptyPerms()), [k]: !allOn };
+      next[m.id] = { ...(next[m.id] || emptyPerms()), [k]: !allOn, is_auto: false };
     });
     emit(next);
   };
@@ -319,15 +352,15 @@ export default function PermissionMatrix({
     const next = { ...matrix };
     leaves.forEach(m => {
       if (!isPermAllowed(m.slug, key)) return;
-      next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn };
+      next[m.id] = { ...(next[m.id] || emptyPerms()), [key]: !allOn, is_auto: false };
     });
     emit(next);
   };
 
   const selectAll = (val: boolean) => {
-    const next: Record<number, Record<PermKey, boolean>> = {};
+    const next: Record<number, PermRow> = {};
     leaves.forEach(m => {
-      next[m.id] = {} as Record<PermKey, boolean>;
+      next[m.id] = { is_auto: false } as PermRow;
       PERMS.forEach(p => {
         next[m.id][p.key] = val && isPermAllowed(m.slug, p.key);
       });
@@ -710,7 +743,7 @@ export default function PermissionMatrix({
  */
 export function extractLeafPermissions(
   modules: PermModule[],
-  matrix: Record<number, Record<PermKey, boolean>>
+  matrix: Record<number, PermRow>
 ) {
   const byId = new Map<number, PermModule>();
   const childrenMap = new Map<number | null, PermModule[]>();
@@ -729,8 +762,12 @@ export function extractLeafPermissions(
         module_id: m.id,
         can_view: true, can_add: true, can_edit: true, can_delete: true,
         can_export: true, can_import: true, can_approve: true,
+        is_auto: false,
       };
     }
-    return { module_id: m.id, ...(matrix[m.id] || emptyPerms()) };
+    const row = matrix[m.id] || emptyPerms();
+    // is_auto rides along so the backend knows which rows are the operator's
+    // own ticks and can seed the dependency walk from those alone.
+    return { module_id: m.id, ...row, is_auto: !!(row as PermRow).is_auto };
   });
 }
