@@ -384,6 +384,17 @@ export default function Inbox() {
         toast.error('Remark required', 'Add a remark explaining what should change.');
         return;
       }
+      /* Consent is required to reject too.
+         This branch returns before the shared check further down, so rejecting
+         was the one way to close a document without confirming you had read
+         it. A rejection is the decision most likely to be questioned later —
+         "why was my request turned down" — so the record that the decider had
+         actually read the document matters more here, not less. */
+      if (!consent) {
+        setConsentError(true);
+        toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
+        return;
+      }
       const targetRun = actionRun;
       const runId = targetRun.id;
       const code  = targetRun.code || 'this document';
@@ -406,7 +417,7 @@ export default function Inbox() {
       }
       setSubmitting(true);
       try {
-        await api.post(`/hr-document-signatures/${runId}/reject`, { reason });
+        await api.post(`/hr-document-signatures/${runId}/reject`, { reason, consent });
         toast.success('Rejected', `${code} returned with your remark.`);
         load();
       } catch (err: any) {
@@ -1264,9 +1275,10 @@ export default function Inbox() {
                    missing we keep it clickable (styled blocked) so the click
                    toasts WHY (submitDecision already guards the empty remark). */
                 disabled={submitting}
-                aria-disabled={!actionNote.trim()}
-                title={actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
-                style={!actionNote.trim() ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
+                aria-disabled={!actionNote.trim() || !consent}
+                title={!consent ? 'Tick the consent box first'
+                     : actionNote.trim() ? 'Reject with this remark' : 'Add a remark first'}
+                style={(!actionNote.trim() || !consent) ? { opacity: 0.6, cursor: 'not-allowed' } : undefined}
                 className={`inbox-btn-reject ib-btn-sendback ${actionNote.trim() ? 'is-ready' : 'is-blocked'}`}>
                 <i className="ri-close-circle-line me-1" />Reject &amp; Send Back
               </button>

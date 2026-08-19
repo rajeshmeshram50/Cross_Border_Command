@@ -8,6 +8,7 @@ import PermissionMatrix, {
   emptyPerms,
   type PermKey,
   type PermModule,
+  type PermRow,
 } from '../../components/PermissionMatrix';
 import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
@@ -25,7 +26,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
   const toast = useToast();
   const [adminUser, setAdminUser] = useState<any>(null);
   const [modules, setModules] = useState<PermModule[]>([]);
-  const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
+  const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   // Fallback display name so the breadcrumb is meaningful when the parent
@@ -55,7 +56,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
       const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
       setModules(mods);
 
-      const m: Record<number, Record<PermKey, boolean>> = {};
+      const m: Record<number, PermRow> = {};
       mods.forEach(mod => { m[mod.id] = emptyPerms(); });
 
       // admin_permissions arrives inline now — no extra fetch needed.
@@ -68,6 +69,7 @@ export default function ClientPermissions({ clientId, clientName, onBack }: Prop
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
+            is_auto: !!p.is_auto,
           };
         }
       });

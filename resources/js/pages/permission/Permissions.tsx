@@ -10,6 +10,7 @@ import PermissionMatrix, {
   emptyPerms,
   type PermKey,
   type PermModule,
+  type PermRow,
 } from '../../components/PermissionMatrix';
 import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
@@ -40,7 +41,7 @@ export default function Permissions() {
   const [mode, setMode] = useState<'employee' | 'department'>('employee');
   const [departments, setDepartments] = useState<{ id: number; name: string }[]>([]);
   const [selectedDeptId, setSelectedDeptId] = useState<string>('');
-  const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
+  const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
   const [myPerms, setMyPerms] = useState<Record<string, Record<PermKey, boolean>> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +105,7 @@ export default function Permissions() {
   const loadUserPermissions = (userId: string) => {
     if (!userId || modules.length === 0) { setMatrix({}); return; }
     setLoadingPerms(true);
-    const freshMatrix: Record<number, Record<PermKey, boolean>> = {};
+    const freshMatrix: Record<number, PermRow> = {};
     modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
 
     api.get(`/permissions/user/${userId}`).then(res => {
@@ -114,6 +115,7 @@ export default function Permissions() {
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
+            is_auto: !!p.is_auto,
           };
         }
       });
@@ -125,7 +127,7 @@ export default function Permissions() {
   const loadDepartmentPermissions = (deptId: string) => {
     if (!deptId || modules.length === 0) { setMatrix({}); return; }
     setLoadingPerms(true);
-    const freshMatrix: Record<number, Record<PermKey, boolean>> = {};
+    const freshMatrix: Record<number, PermRow> = {};
     modules.forEach(mod => { freshMatrix[mod.id] = emptyPerms(); });
 
     api.get(`/permissions/department/${deptId}`).then(res => {
@@ -135,6 +137,7 @@ export default function Permissions() {
             can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
             can_delete: !!p.can_delete, can_export: !!p.can_export,
             can_import: !!p.can_import, can_approve: !!p.can_approve,
+            is_auto: !!p.is_auto,
           };
         }
       });
