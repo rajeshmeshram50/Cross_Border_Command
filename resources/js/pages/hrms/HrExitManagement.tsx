@@ -3528,8 +3528,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           hint={(() => {
                             const p = fnfDues?.payroll;
                             if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
-                            /* Early exit — a day/LOP breakdown of an all-zero
-                               month explains nothing; the reason does. */
+                            /* Early exit — the RULE is the headline, not the
+                               day count. The cycle it was computed from is in
+                               the breakdown panel below for anyone checking. */
                             if (p.early_exit) return p.note;
                             const b = p.breakdown;
                             if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
@@ -3605,8 +3606,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 : 'Not yet recovered. Settle it at the Notice Period Payment stage, or record the mode there as "Adjusted against F&F dues" to deduct it here.'} />
                   )}
 
+                  {/* readOnly={fnfPaid} — the block comment above says every
+                      editable figure carries it, and after CBC #96 removed
+                      Leave Encashment and Bonus this is the only one left, so
+                      it was the only one the rule still had to reach. Without
+                      it a paid settlement could still be re-typed here, moving
+                      the net away from the amount actually transferred. */}
                   <FnfRow label="Other Recovery"               value={fnfLines.loan}        onChange={v => setFnfLines(s => ({ ...s, loan: v }))} deduction
-                          hint="Anything not pulled automatically — loans, asset damage, notice shortfall settled elsewhere." />
+                          readOnly={fnfPaid}
+                          hint={fnfPaid
+                            ? 'Locked — the settlement has been paid.'
+                            : 'Free input — anything not pulled automatically: loans, asset damage, notice shortfall settled elsewhere.'} />
                   <div className="ep-fnf-net">
                     {/* A NEGATIVE net means deductions (advances / recovery)
                         exceed the earnings — the company doesn't pay out, the
@@ -4932,29 +4942,60 @@ function SettlementSummary({
   );
 }
 
-/* One line of the Full & Final breakdown. */
+/* One line of the Full & Final breakdown.
+
+   Most lines on this card are computed — payroll's exit-month figure, the
+   claims the Expense module owes, the advances still outstanding. Exactly ONE
+   is typed by hand (Other Recovery). Both used to render as an <input>, and
+   because the computed ones arrive carrying a figure while the typed one
+   starts empty, the affordance came out BACKWARDS: the locked boxes looked
+   filled-in and alive, and the only box anybody may actually type in was the
+   one showing grey placeholder text (CBC #98).
+
+   So a computed line no longer draws a control at all — it is a locked figure
+   with a padlock. The one field on the card that IS a control is the only
+   thing on screen shaped like one, and says so on its label. */
 function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
   label: string; value: string | null | undefined; onChange?: (v: string) => void;
   deduction?: boolean; readOnly?: boolean; hint?: string;
 }) {
+  const editable = !readOnly && !!onChange;
   return (
-    <div className={`ep-fnf-row${deduction ? ' is-ded' : ''}`}>
+    <div className={`ep-fnf-row${deduction ? ' is-ded' : ''}${editable ? ' is-editable' : ''}`}>
       <span className="ep-fnf-label">
-        {label}
+        <span className="ep-fnf-label-top">
+          {label}
+          {editable && (
+            <span className="ep-fnf-tag" title="Free input — type any amount here">
+              <i className="ri-pencil-line" />Editable
+            </span>
+          )}
+        </span>
         {hint && <em className="ep-fnf-hint">{hint}</em>}
       </span>
       <span className="ep-fnf-amt">
         {deduction && <i className="ep-fnf-sign">−</i>}
-        {/* `value ?? ''` — the input must stay CONTROLLED. A saved blank round-
-            trips through the API as null (ConvertEmptyStringsToNull), and a
-            null here would flip the field to uncontrolled mid-life, so it stops
-            tracking state. The load path already normalises; this is the leaf
-            guard so no future caller can reintroduce it. */}
-        <input
-          className="ep-fnf-in" type="number" min={0} value={value ?? ''}
-          readOnly={readOnly} disabled={readOnly}
-          onChange={e => onChange?.(e.target.value)} placeholder="0.00"
-        />
+        {editable ? (
+          /* `value ?? ''` — the input must stay CONTROLLED. A saved blank round-
+             trips through the API as null (ConvertEmptyStringsToNull), and a
+             null here would flip the field to uncontrolled mid-life, so it stops
+             tracking state. The load path already normalises; this is the leaf
+             guard so no future caller can reintroduce it. */
+          <span className="ep-fnf-field">
+            <i className="ep-fnf-cur">₹</i>
+            <input
+              className="ep-fnf-in" type="number" min={0} step="0.01" value={value ?? ''}
+              onChange={e => onChange!(e.target.value)} placeholder="0.00"
+              aria-label={`${label} — enter an amount`}
+              title="Free input — type any amount to deduct from this settlement"
+            />
+          </span>
+        ) : (
+          <span className="ep-fnf-ro" title="Calculated automatically — not editable here">
+            <i className="ri-lock-2-line" />
+            <span>{value ?? '0'}</span>
+          </span>
+        )}
       </span>
     </div>
   );
@@ -4984,10 +5025,18 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
      figure, which is not most of the time. */
   const [open, setOpen] = useState(false);
   const b = payroll?.breakdown;
-  // No payroll basis (employee never ran through a cycle) or an early exit
-  // where every figure is zero — the row's own hint already explains it, and
-  // an all-zero table would only add noise.
-  if (!payroll || payroll.early_exit || !b) return null;
+  /* Only a genuinely absent payroll basis hides this — an employee who never
+     ran through a cycle at all, where there is nothing to tabulate.
+
+     An EARLY EXIT no longer hides it. It used to: the settlement is zero, so
+     the panel was suppressed as noise. But the zero is a POLICY decision, and
+     suppressing the panel left "Salary for the Exit Month ₹0" standing alone
+     with no way for Finance to see the cycle it was computed from, or to check
+     the rule had been applied to the right person. The engine now returns the
+     real cycle with an Early Exit Recovery line that takes it all back
+     (PayrollService::earnedSalaryForExitMonth), so the table shows the money
+     that was given up and closes on zero — which is the thing worth seeing. */
+  if (!payroll || !b) return null;
 
   const earnings: any[] = Array.isArray(b.earnings) ? b.earnings.filter((r: any) => Number(r?.amount) !== 0) : [];
   const deductions: any[] = (Array.isArray(b.deductions) ? b.deductions : [])
@@ -5029,7 +5078,6 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
   const workingDays   = Number(b.working_days || 0);
   const paidDays      = Number(b.paid_days || 0);
   const lopDays       = Number(b.lop_days || 0);
-  const earnedGross   = Number(b.earned_gross || 0);
   const nDays = (n: number) => `${Number(n.toFixed(2))}`;
   /* Two different per-day rates exist and they are NOT interchangeable:
        · gross ÷ cycle days   — prices the pro-ration for a mid-cycle exit.
@@ -5221,18 +5269,13 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
         <strong>{fmtMoney(totalEarnings - totalDeductions)}</strong>
       </div>
 
-      {/* Why PF / ESI / PT are smaller here than on the employee master: they
-          are charged on the salary actually EARNED, not on the monthly
-          package. Only worth saying when the two genuinely differ. */}
-      {earnedGross > 0 && structureFor > 0 && earnedGross < structureFor - 1 && (
+      {/* Why the table above closes on zero. Without this the Early Exit
+          Recovery line reads as an unexplained deduction the size of the whole
+          salary — the one line on the card most likely to be queried. */}
+      {payroll?.early_exit && (
         <div className="ep-fnf-bd-note">
           <i className="ri-information-line" />
-          <span>
-            PF, ESI and Professional Tax are charged on the salary actually earned
-            ({fmtMoney(earnedGross)} of the {fmtMoney(structureFor)} for this cycle, after loss of
-            pay) — which is why they read lower here than the fixed monthly figures on the
-            employee&apos;s salary structure.
-          </span>
+          <span>{payroll.note}</span>
         </div>
       )}
 

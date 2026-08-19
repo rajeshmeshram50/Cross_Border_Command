@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\GuardsDevTooling;
 use App\Http\Controllers\Controller;
 use App\Support\WeekOff;
 use Carbon\Carbon;
@@ -25,14 +26,14 @@ use Illuminate\Support\Facades\DB;
  */
 class SandwichTestController extends Controller
 {
+    use GuardsDevTooling;
+
     private const REASON = 'Sandwich test leave';
 
     public function seed(Request $request)
     {
         $user = $request->user();
-        if (!$user || $user->user_type === 'employee') {
-            abort(403, 'Only an admin / branch user can generate sandwich test data.');
-        }
+        $this->guardDevToolAccess($user, 'generate sandwich test data');
 
         $data = $request->validate([
             'year'             => ['required', 'integer', 'min:2020', 'max:2100'],
@@ -48,15 +49,7 @@ class SandwichTestController extends Controller
         $branchId = (int) $data['branch_id'];
         $mode     = $data['leave_mode'] ?? 'both';
 
-        // Tenant guard — a non-super-admin may only target their own scope.
-        if ($user->user_type !== 'super_admin') {
-            if ($user->client_id && $clientId !== (int) $user->client_id) {
-                abort(403, 'Out of your client scope.');
-            }
-            if ($user->user_type === 'branch_user' && $user->branch_id && $branchId !== (int) $user->branch_id) {
-                abort(403, 'Out of your branch scope.');
-            }
-        }
+        $this->guardDevToolScope($user, $clientId, $branchId);
 
         $emps = DB::table('employees')
             ->where('client_id', $clientId)->where('branch_id', $branchId)

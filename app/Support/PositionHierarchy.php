@@ -32,9 +32,22 @@ class PositionHierarchy
         'Intern / Trainee'         => 6,
     ];
 
+    /**
+     * Bottom of the chart — held by someone with NO designation at all.
+     *
+     * Deliberately a real rank rather than null: null means "unknown", and the
+     * leniency below then let such a person manage anyone, up to and including
+     * an HOD. Having no position is not an unrecognised position; it is no
+     * position, and it cannot sit above one.
+     */
+    public const UNRANKED = 99;
+
     public static function rankForDesignationName(?string $name): ?int
     {
-        if ($name === null) return null;
+        // No designation on the record → the bottom of the chart, never above
+        // anybody. An unrecognised custom TITLE still returns null and keeps
+        // the lenient path, so a tenant's own job titles never block a save.
+        if ($name === null || trim($name) === '') return self::UNRANKED;
         return self::DESIGNATION_RANK[trim($name)] ?? null;
     }
 
@@ -51,6 +64,10 @@ class PositionHierarchy
      * either rank is unknown (a custom/legacy designation not in the map) we stay
      * lenient and allow it — the map covers the seeded designations, and we never
      * want to block a valid save over an unrecognised title.
+     *
+     * Note that "no designation" is NOT unknown: it resolves to UNRANKED above,
+     * a real number that loses every comparison, so someone without a position
+     * is never eligible to manage someone who has one.
      */
     public static function eligible(?int $hireRank, ?int $managerRank): bool
     {

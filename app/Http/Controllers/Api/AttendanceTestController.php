@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Concerns\GuardsDevTooling;
 use App\Http\Controllers\Controller;
 use App\Support\WeekOff;
 use Carbon\Carbon;
@@ -21,6 +22,8 @@ use Illuminate\Support\Facades\DB;
  */
 class AttendanceTestController extends Controller
 {
+    use GuardsDevTooling;
+
     private const IST = 'Asia/Kolkata';
     /** Marks the weekly leaves this tool creates, so re-runs can clear them. */
     private const LEAVE_TAG = 'Attendance test —';
@@ -55,9 +58,7 @@ class AttendanceTestController extends Controller
     public function seed(Request $request)
     {
         $user = $request->user();
-        if (!$user || $user->user_type === 'employee') {
-            abort(403, 'Only an admin / branch user can generate attendance test data.');
-        }
+        $this->guardDevToolAccess($user, 'generate attendance test data');
 
         $data = $request->validate([
             'client_id'        => ['required', 'integer'],
@@ -74,15 +75,7 @@ class AttendanceTestController extends Controller
         $branchId = (int) $data['branch_id'];
         $status   = $data['working_status'] ?? 'Present';
 
-        // Tenant guard — non-super-admins are locked to their own scope.
-        if ($user->user_type !== 'super_admin') {
-            if ($user->client_id && $clientId !== (int) $user->client_id) {
-                abort(403, 'Out of your client scope.');
-            }
-            if ($user->user_type === 'branch_user' && $user->branch_id && $branchId !== (int) $user->branch_id) {
-                abort(403, 'Out of your branch scope.');
-            }
-        }
+        $this->guardDevToolScope($user, $clientId, $branchId);
 
         $start = Carbon::parse($data['start_date'])->startOfDay();
         $end   = Carbon::parse($data['end_date'])->startOfDay();

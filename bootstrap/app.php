@@ -25,6 +25,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'user.active' => \App\Http\Middleware\EnsureUserActive::class,
         ]);
 
+        // Dev Tools → Load Testing. Inert unless the caller sends X-Profile: 1,
+        // and hard-disabled outside local/staging, so it costs normal traffic
+        // nothing. Appended to the api group so it wraps the whole stack and
+        // therefore counts the queries auth and tenant checks make too.
+        $middleware->appendToGroup('api', \App\Http\Middleware\ProfileRequest::class);
+
         // eSSL / ZKTeco terminals POST to /iclock/* over plain HTTP and cannot
         // carry a CSRF token — exempt the device push path (it is tenant-guarded
         // by device Serial in EsslDeviceController). See ESSL doc §17.

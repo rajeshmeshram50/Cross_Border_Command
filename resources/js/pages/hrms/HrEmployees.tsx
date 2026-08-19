@@ -2289,13 +2289,20 @@ export default function HrEmployees() {
     leavePlanOptions, holidayGroupOptions, eLeavePlan, eHolidayList, eShift, eWeeklyOff, eExpensePolicy,
     eOvertimeApplicable, eOvertime]);
 
-  const salaryEffectiveCap = useMemo(() => {
-    if (!eJoinDate) return '';
-    const d = new Date(eJoinDate);
-    const cap = new Date(d.getFullYear(), d.getMonth() + 6, d.getDate());
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${cap.getFullYear()}-${pad(cap.getMonth() + 1)}-${pad(cap.getDate())}`;
+  /* Keep the salary effective date locked to the joining date.
+     The field on screen is read-only, but the VALUE still has to be written —
+     it is what the payload turns into salary_structures.effective_from, and
+     editing the joining date has to carry through rather than leaving the old
+     date behind on the structure. */
+  useEffect(() => {
+    setESalaryFrom(prev => (prev === (eJoinDate || '') ? prev : (eJoinDate || '')));
+    clearEErr('salary_effective_from');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eJoinDate]);
+
+  /* `salaryEffectiveCap` (joining + 6 months) is gone with the free date
+     picker it bounded — the effective date is now the joining date itself, so
+     there is no range left to cap. */
 
   // Probation length + end date, derived live from the joining date and the
   // selected probation policy. Stored on save so the daily probation-completion
@@ -2327,12 +2334,17 @@ export default function HrEmployees() {
     // Frequency picker was removed — salary is always entered "Per annum",
     // so it's never user-editable and must not block the form. (Defaulted to
     // 'Per annum' on load/reset.)
-    if (!eSalaryFrom) {
+    /* Same rule as the onboarding wizard: the first salary runs from the day
+       the employee joined, so this date IS the joining date. The field mirrors
+       it and is read-only; this still checks, because a record saved before
+       the rule existed — or a direct API write — can arrive with the two out
+       of step. */
+    if (!eJoinDate) {
+      e.salary_effective_from = 'Set the joining date — the salary effective date follows it';
+    } else if (!eSalaryFrom) {
       e.salary_effective_from = 'Effective-from date is required';
-    } else if (eJoinDate && eSalaryFrom < eJoinDate) {
-      e.salary_effective_from = `Salary effective date can't be before the joining date (${eJoinDate})`;
-    } else if (eJoinDate && eSalaryFrom > salaryEffectiveCap) {
-      e.salary_effective_from = `Salary effective date must be within 6 months of joining (on or before ${salaryEffectiveCap})`;
+    } else if (eSalaryFrom !== eJoinDate) {
+      e.salary_effective_from = 'Salary effective date must be the same as the joining date';
     }
     if (eDetailedBreakup) {
       const hasRowErrors = Object.keys(breakupErrors.earnings).length > 0
@@ -2344,7 +2356,7 @@ export default function HrEmployees() {
       }
     }
     return e;
-  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, salaryEffectiveCap, eDetailedBreakup, breakupErrors]);
+  }, [eEnablePayroll, eAnnualSalary, eSalaryFreq, eSalaryFrom, eJoinDate, eDetailedBreakup, breakupErrors]);
 
   const firstStepWithErrors = (errs: Record<string, string>): 1 | 2 | 3 | 4 | null => {
     if (Object.keys(errs).length === 0) return null;
@@ -2720,6 +2732,12 @@ export default function HrEmployees() {
       const hireRank = rankForDesignationName(
         mDesignations.find(x => String(x.id) === String(eDesignation))?.name,
       );
+      /* A manager must sit strictly higher. `r == null` stays lenient for a
+         tenant's own custom job title the rank map does not know — but NOT for
+         someone with no designation at all: the server now ranks those at the
+         bottom (PositionHierarchy::UNRANKED), so they lose this comparison
+         instead of slipping through it. That gap is how an HOD ended up
+         reporting to an Employee. */
       const rankOk = (r?: number | null) =>
         hireRank == null || r == null || r < hireRank;
       let base = managerCandidates
@@ -2752,8 +2770,33 @@ export default function HrEmployees() {
   }, [managerCandidates, eDept, eDesignation, hodDesignationId]);
   useEffect(() => {
     if (!deptHodValue) return;
-    setEReportingMgr(prev => (!prev || String(prev).startsWith('branch_user:')) ? deptHodValue : prev);
+    /* Fills an EMPTY field only. It used to overwrite a Branch User manager as
+       well, treating one as a placeholder the HOD supersedes — but a Branch
+       User is a deliberate choice, and together with the designation handler
+       clearing the field, that is what made the manager change by itself when
+       a designation was edited. A default may fill a blank; it may not
+       overrule an answer somebody gave. */
+    setEReportingMgr(prev => (prev ? prev : deptHodValue));
   }, [deptHodValue]);
+
+  /* A manager the new designation no longer allows leaves the field BLANK.
+   *
+   * The picker's options are filtered by rank, so promoting someone to their
+   * manager's grade drops that manager out of the list while the field still
+   * holds them. MasterSelect, unable to find a label for the value, falls back
+   * to printing it raw — which is the "employee:564" the form was showing.
+   * Blank is the honest state: the old answer is not valid any more and a new
+   * one has to be chosen. It is cleared rather than swapped, so nothing is
+   * ever silently chosen on the operator's behalf.
+   *
+   * Guarded on the candidate list being loaded — before it arrives every value
+   * looks unmatched, and clearing then would wipe the saved manager of every
+   * record the moment its form opened. */
+  useEffect(() => {
+    if (!eReportingMgr || managerCandidates.length === 0) return;
+    if (reportingManagerOptions.some(o => o.value === eReportingMgr)) return;
+    setEReportingMgr('');
+  }, [eReportingMgr, reportingManagerOptions, managerCandidates.length]);
 
   /* The tab, the search box and the department filter are all applied by the
      API now (see reloadEmployees), so the rows that arrive ARE the rows to
@@ -4253,19 +4296,15 @@ export default function HrEmployees() {
                       </Col>
                       <Col md={4}>
                         <label className="emp-label">Designation<span className="req">*</span></label>
+                        {/* Does not touch the Reporting Manager itself. The
+                            eligibility effect above clears it only when the new
+                            designation genuinely rules that manager out, and
+                            leaves it alone otherwise — so a valid manager
+                            survives a designation edit, and an invalid one goes
+                            blank instead of being replaced by somebody else. */}
                         <MasterSelect value={eDesignation} onChange={(v) => {
                           setEDesignation(v);
                           clearEErr('designation_id');
-                          // A Branch User as reporting manager is valid ONLY for an HOD.
-                          // Clear the manager whenever the designation ↔ manager pairing
-                          // breaks that rule — HOD needs a Branch User; any other
-                          // designation must NOT keep a Branch User manager.
-                          const nowHod = !!hodDesignationId && String(v) === hodDesignationId;
-                          const rmIsBranchUser = String(eReportingMgr || '').startsWith('branch_user:');
-                          if (eReportingMgr && (nowHod ? !rmIsBranchUser : rmIsBranchUser)) {
-                            setEReportingMgr('');
-                            clearEErr('reporting_manager_id');
-                          }
                         }} placeholder="Select designation" options={designationOptions} invalid={!!eErrors.designation_id} />
                         {eErrors.designation_id && <small className="emp-err">{eErrors.designation_id}</small>}
                       </Col>
@@ -4728,12 +4767,18 @@ export default function HrEmployees() {
                         />
                       </button>
                       <span className="emp-payroll-banner-text" style={{ fontSize: 13, fontWeight: 600 }}>
-                        {/* This gates the whole Compensation step (CTC, effective
-                          date, breakup) — `enable_payroll`. It said "Enable PF",
-                          which is the PF Applicable dropdown right below it, so
-                          the two read as contradicting each other on screen. */}
-                        Enable payroll for this employee
+                        {/* Labelled "PF Applicable" on request. The flag behind
+                          it is `enable_payroll` and it gates the WHOLE
+                          Compensation step — CTC, effective date and the salary
+                          breakup as well as PF — so the note below carries that
+                          scope, because the label no longer does. There is also
+                          a separate "PF Applicable" dropdown inside this block;
+                          the two now read alike on one screen. */}
+                        PF Applicable for this Employee
                       </span>
+                    </div>
+                    <div style={{ fontSize: 11.5, color: '#6b7280', margin: '-6px 0 12px 2px', lineHeight: 1.45 }}>
+                      Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
                     </div>
                     <Row className="g-3">
                       <Col md={6}>
@@ -4787,15 +4832,26 @@ export default function HrEmployees() {
                         )}
                         {eErrors.annual_salary && <small className="emp-err">{eErrors.annual_salary}</small>}
                       </Col>
+                      {/* The first salary runs from the day the employee joined,
+                          so this is the joining date and nothing else. It was a
+                          free picker bounded only by "not before joining, within
+                          six months", which let the two drift apart and dated
+                          the salary structure wrongly. Mirrored and read-only —
+                          there is one right answer, so asking for it and then
+                          rejecting the wrong ones is just a slower way of
+                          filling it in. */}
                       <Col md={6}>
-                        <label className="emp-label">Salary Effective From{eEnablePayroll && <span className="req">*</span>}</label>
-                        <MasterDatePicker
-                          value={eSalaryFrom}
-                          onChange={(v) => { setESalaryFrom(v); clearEErr('salary_effective_from'); }}
-                          placeholder="dd-mm-yyyy"
-                          minDate={eJoinDate || undefined}
-                          maxDate={salaryEffectiveCap || undefined}
-                          invalid={!!eErrors.salary_effective_from}
+                        <label className="emp-label">
+                          Salary Effective From
+                          <span className="hint">(same as joining date)</span>
+                        </label>
+                        <input
+                          className="emp-input is-readonly"
+                          readOnly
+                          tabIndex={-1}
+                          value={eJoinDate ? new Date(eJoinDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+                          placeholder="Set the joining date first"
+                          title="Always the joining date — the first salary structure starts the day the employee joins."
                         />
                         {eErrors.salary_effective_from && <small className="emp-err">{eErrors.salary_effective_from}</small>}
                       </Col>
