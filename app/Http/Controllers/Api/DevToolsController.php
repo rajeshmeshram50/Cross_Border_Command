@@ -24,6 +24,114 @@ use Illuminate\Http\Request;
  */
 class DevToolsController extends Controller
 {
+    /**
+     * Same gate zoho() uses. Extracted so a second Dev Tools endpoint cannot
+     * drift from the first — a third copy is how one of them ends up open.
+     */
+    private function guardDevTools(Request $request): void
+    {
+        $user = $request->user();
+        if (!$user) abort(401);
+        if (in_array($user->user_type, ['super_admin', 'client_admin'], true)) {
+            return;
+        }
+        $moduleId = \App\Models\Module::where('slug', 'dev-tools')->value('id');
+        $ok = $moduleId && \App\Models\Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)->where('can_view', true)->exists();
+        if (!$ok) {
+            abort(403, 'You do not have permission to view Dev Tools.');
+        }
+    }
+
+    /**
+     * GET /api/dev-tools/profile/{id}
+     *
+     * The full statement list for one profiled request, keyed by the
+     * X-Profile-Id header that request came back with. Kept out of the headers
+     * because a page firing 20 queries produces far more text than a header can
+     * hold — and out of the response body because the body has to stay identical
+     * to a normal call for the timings to mean anything.
+     */
+    public function profileDetail(Request $request, string $id): JsonResponse
+    {
+        $this->guardDevTools($request);
+
+        $data = \Illuminate\Support\Facades\Cache::get(
+            \App\Http\Middleware\ProfileRequest::cacheKey($id)
+        );
+        if (!$data) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'That capture has expired — re-run the request to inspect it.',
+            ], 404);
+        }
+
+        return response()->json(['status' => true] + $data);
+    }
+
+    /**
+     * GET /api/dev-tools/api-usage?path=/employees
+     *
+     * Every front-end call site for one endpoint, plus the controller action
+     * that serves it. Timing tells you an endpoint is expensive; this tells you
+     * what it would cost to change — an endpoint called from one screen and one
+     * called from nine are the same number on a chart and opposite decisions.
+     */
+    public function apiUsage(Request $request): JsonResponse
+    {
+        $this->guardDevTools($request);
+
+        if (!app()->environment(['local', 'staging'])) {
+            return response()->json(['status' => false, 'message' => 'Disabled outside local / staging.'], 403);
+        }
+
+        $path = (string) $request->query('path', '');
+        if ($path === '') {
+            return response()->json(['status' => false, 'message' => 'A ?path= is required.'], 422);
+        }
+
+        return response()->json(
+            ['status' => true] + \App\Support\ApiUsageScanner::find($path)
+        );
+    }
+
+    /**
+     * GET /api/dev-tools/profile-targets
+     *
+     * The module → page → requests map behind Load Testing, plus the weight of
+     * each page's React component. The browser replays the requests itself with
+     * X-Profile: 1 rather than having the server call itself, so the timings
+     * include real network and auth cost instead of a loopback that skips both.
+     */
+    public function profileTargets(Request $request): JsonResponse
+    {
+        $this->guardDevTools($request);
+
+        if (!app()->environment(['local', 'staging'])) {
+            return response()->json(['status' => false, 'message' => 'Load Testing is disabled outside local / staging.'], 403);
+        }
+
+        $user     = $request->user();
+        $clientId = $user->client_id ?: 1;
+        $branchId = $request->integer('branch_id') ?: $user->branch_id;
+
+        $modules = \App\Support\DevToolsProfileTargets::all($clientId, $branchId);
+        foreach ($modules as &$m) {
+            foreach ($m['pages'] as &$p) {
+                $p['frontend'] = \App\Support\DevToolsProfileTargets::frontendInfo($p['component'] ?? null);
+                $p['assets']   = \App\Support\DevToolsProfileTargets::assetGraph($p['component'] ?? null);
+            }
+            unset($p);
+        }
+        unset($m);
+
+        return response()->json([
+            'status'  => true,
+            'modules' => $modules,
+            'context' => ['client_id' => $clientId, 'branch_id' => $branchId],
+        ]);
+    }
+
     /** GET /api/dev-tools/zoho/{type} — one Zoho entity type per tab. */
     public function zoho(Request $request, string $type): JsonResponse
     {

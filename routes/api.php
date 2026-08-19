@@ -585,6 +585,12 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/p2p/purchase-orders/{id}/sync-payment',       [PurchaseOrderController::class, 'syncPayment'])->whereNumber('id');
 
     // Dev Tools — read-only Zoho Books data inspector (admin-only; gated inside).
+    // Dev Tools → Load Testing: which module/page combinations can be profiled.
+    // Gated inside the controller (same rule as the Zoho tab) and refused
+    // outside local/staging.
+    Route::get   ('/dev-tools/profile-targets',                   [\App\Http\Controllers\Api\DevToolsController::class, 'profileTargets']);
+    Route::get   ('/dev-tools/api-usage',                          [\App\Http\Controllers\Api\DevToolsController::class, 'apiUsage']);
+    Route::get   ('/dev-tools/profile/{id}',                      [\App\Http\Controllers\Api\DevToolsController::class, 'profileDetail']);
     Route::get   ('/dev-tools/zoho/{type}',                       [\App\Http\Controllers\Api\DevToolsController::class, 'zoho'])
         ->whereIn('type', ['items', 'vendors', 'purchase-orders', 'vendor-credits', 'bills', 'payments']);
     Route::get   ('/p2p/purchase-orders/{id}/attachment-status',  [PurchaseOrderController::class, 'attachmentStatus'])->whereNumber('id');

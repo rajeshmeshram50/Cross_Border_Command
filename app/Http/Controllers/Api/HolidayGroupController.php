@@ -154,19 +154,17 @@ class HolidayGroupController extends Controller
         return $q->firstOrFail();
     }
 
+    /** Sequential HGRP code. Shared allocator — see \App\Support\DocumentNumber. */
     private function allocateCode($clientId, $branchId): string
     {
-        $q = HolidayGroup::query()->withTrashed()->lockForUpdate();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-
-        $max = 0;
-        foreach ($q->pluck('code') as $c) {
-            if (preg_match('/^HGRP-(\d+)$/i', (string) $c, $m)) {
-                $n = (int) $m[1];
-                if ($n > $max) $max = $n;
-            }
-        }
-        return 'HGRP-' . str_pad((string) ($max + 1), 4, '0', STR_PAD_LEFT);
+        return \App\Support\DocumentNumber::next(
+            \App\Models\HolidayGroup::class,
+            'code',
+            'HGRP',
+            $clientId,
+            $branchId,
+            withTrashed: true,
+        );
     }
 
     private function authorizeAction(Request $request, string $perm): void

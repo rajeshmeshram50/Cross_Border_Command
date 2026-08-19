@@ -578,12 +578,21 @@ class AnnouncementController extends Controller
         return [$path, $file->getClientOriginalName()];
     }
 
+    /** Sequential ANN code. Shared allocator — see \App\Support\DocumentNumber.
+     *
+     *  peekNextCode() below keeps the local buildNext() on purpose: it is the
+     *  unlocked preview behind GET /announcements/next-code, and must NOT take a
+     *  lock — a preview that locked rows would block real writes for its caller. */
     private function allocateCode($clientId, $branchId): string
     {
-        $q = Announcement::query()->withTrashed()->lockForUpdate();
-        $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
-        $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
-        return $this->buildNext($q->pluck('code'));
+        return \App\Support\DocumentNumber::next(
+            \App\Models\Announcement::class,
+            'code',
+            'ANN',
+            $clientId,
+            $branchId,
+            withTrashed: true,
+        );
     }
 
     private function peekNextCode($clientId, $branchId): string

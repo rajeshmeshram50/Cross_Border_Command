@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
+import LoadTesting from './LoadTesting';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { useAuth } from '../../contexts/AuthContext';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
@@ -118,6 +119,10 @@ const IcoSearch = () => (
 export default function DevTools() {
   const { user } = useAuth();
   const isSuperAdmin = user?.user_type === 'super_admin';
+  // Top-level section. Zoho Books is the original inspector; Load Testing is a
+  // per-page profiler. They share only the hero strip, so they switch here
+  // rather than becoming another row of tab pills inside the list shell.
+  const [section, setSection] = useState<'zoho' | 'load'>('zoho');
   const [active, setActive] = useState(TABS[0].key);
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
@@ -184,19 +189,44 @@ export default function DevTools() {
             <span className="cstrip__online-dot" />
           </div>
           <div>
-            <div className="cstrip__title">Dev Tools · Zoho Books</div>
-            <div className="cstrip__sub">Read-only view of the Zoho Books data we store — ids &amp; sync state stamped on each record.</div>
+            <div className="cstrip__title">Dev Tools · {section === 'zoho' ? 'Zoho Books' : 'Performance Lens'}</div>
+            <div className="cstrip__sub">
+              {section === 'zoho'
+                ? 'Read-only view of the Zoho Books data we store — ids & sync state stamped on each record.'
+                : 'Replay a page\u2019s API calls to see timing, database cost, payload size, the files it loads and where each endpoint is used.'}
+            </div>
           </div>
         </div>
         <div className="cstrip__right">
-          <button className="cstrip__action-btn" onClick={load} disabled={loading}>
-            <span className="cstrip__action-btn-sheen" />
-            <IcoRefresh spin={loading} />{loading ? 'Loading…' : 'Refresh'}
-          </button>
+          {/* Section switcher — sits before Refresh, which only applies to the
+              Zoho list; Load Testing has its own Run button. */}
+          <div className="dt-sections">
+            {([['zoho', 'Zoho Books'], ['load', 'Performance Lens']] as const).map(([k, lbl]) => (
+              <button
+                key={k}
+                type="button"
+                className={`dt-section ${section === k ? 'is-active' : ''}`}
+                onClick={() => setSection(k)}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+          {section === 'zoho' && (
+            <button className="cstrip__action-btn" onClick={load} disabled={loading}>
+              <span className="cstrip__action-btn-sheen" />
+              <IcoRefresh spin={loading} />{loading ? 'Loading…' : 'Refresh'}
+            </button>
+          )}
         </div>
       </div>
 
+      {section === 'load' && (
+        <div className="s360-list s360-panel"><LoadTesting /></div>
+      )}
+
       {/* ── List shell ── */}
+      {section === 'zoho' && (
       <div className="s360-list s360-panel">
         <div className="s360-toolbar">
           <div className="s360-tabs">
@@ -249,6 +279,7 @@ export default function DevTools() {
           />
         )}
       </div>
+      )}
     </div>
   );
 }
@@ -259,4 +290,12 @@ const EXTRA = `
 @keyframes dvt-spin{to{transform:rotate(360deg);}}
 .s360m .rvtbl tbody td{padding-top:14px;padding-bottom:14px;}
 .s360m .rvtbl tbody tr.rvtbl-row{height:52px;}
+/* Section switcher in the hero strip. Sits on the teal gradient, so it uses
+   translucent white rather than a card background — a solid pill would read as
+   a detached control floating on the banner. */
+.dt-sections{display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:rgba(8,47,73,.28);border:1px solid rgba(255,255,255,.38);margin-right:10px;}
+.dt-section{border:none;background:transparent;color:#fff;font-size:12.5px;font-weight:700;letter-spacing:.01em;padding:6px 15px;border-radius:8px;cursor:pointer;white-space:nowrap;text-shadow:0 1px 2px rgba(8,47,73,.45);transition:background .15s ease,color .15s ease;}
+.dt-section:hover{color:#fff;background:rgba(255,255,255,.12);}
+.dt-section.is-active{background:#fff;color:#0b5e73;text-shadow:none;font-weight:800;box-shadow:0 2px 8px rgba(8,47,73,.28);}
+@media (max-width:720px){.dt-sections{margin-right:0;}}
 `;
