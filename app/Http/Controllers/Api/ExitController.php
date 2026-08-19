@@ -122,6 +122,18 @@ class ExitController extends Controller
         return Employee::query()
             ->where('reporting_manager_id', $employee->id)
             ->whereNotIn('status', self::EXITED_STATUSES)
+            /* Belt-and-braces for a FINISHED exit whose status column was never
+               written back. Such a row is someone who has already left, and it
+               counted here as a dependency that had to be reassigned before
+               this exit could complete — an ex-employee permanently blocking a
+               current one, with no way to clear it from this screen. Only the
+               finished half: an exit still Open means the person is on the
+               books today and their reporting line still has to go somewhere. */
+            ->whereDoesntHave('exit', fn ($q) => $q
+                ->whereNull('rehired_at')
+                ->where(fn ($w) => $w
+                    ->where('exit_case_status', 'Closed')
+                    ->orWhere('final_employee_status', 'Exited')))
             ->with(['department:id,name', 'designation:id,name'])
             ->orderBy('display_name')
             ->get();
@@ -520,6 +532,40 @@ class ExitController extends Controller
             ->where('client_id', $employee->client_id)
             ->whereNotIn('status', self::EXITED_STATUSES)
             ->where('id', '!=', $employee->id)
+            /* ALREADY GONE — dropped outright, not greyed.
+             *
+             * `status` is the wrong question to ask on its own: it only flips
+             * at complete(), so a finished exit whose status column was never
+             * written leaves the person reading as Active and they were offered
+             * here as a replacement manager. Handing an exiting employee's
+             * reports to somebody who has themselves left is not a pick anyone
+             * should be able to make, and picking one only produced a 422 from
+             * reassignReports() — the list offered a choice the server was
+             * always going to refuse.
+             *
+             * Note this is the FINISHED half only. Someone whose exit is still
+             * Open is deliberately left in the list, shown disabled with an
+             * "Exiting" badge (see `exiting` below) — dropping them silently is
+             * what turns "why isn't X here?" into a support call.
+             *
+             * A REHIRED exit is spent history: the person is active staff
+             * again, so `rehired_at` takes the row out of consideration. Same
+             * rule as EmployeeController::managers(). */
+            ->whereDoesntHave('exit', fn ($q) => $q
+                ->whereNull('rehired_at')
+                ->where(fn ($w) => $w
+                    ->where('exit_case_status', 'Closed')
+                    ->orWhere('final_employee_status', 'Exited')))
+            /* FULLY ONBOARDED ONLY — the same gate the employee master's
+             * manager picker applies (EmployeeController::managers), whose own
+             * comment says it "mirrors the fully-onboarded gate used by Exit
+             * Management". It did not: this screen never had one, so every
+             * half-finished onboarding record in the tenant was offered here as
+             * a reporting manager while being correctly hidden two screens
+             * away. Someone still mid-onboarding has no settled department,
+             * designation or reporting line of their own, which is exactly the
+             * context this assignment is supposed to be judged on. */
+            ->where('onboarding_stage_completed', '>=', 6)
             /* No designation, no candidacy.
              *
              * PositionHierarchy::eligible() is lenient by design — an unknown
@@ -715,6 +761,15 @@ class ExitController extends Controller
                 }
                 if (in_array((string) $manager->status, self::EXITED_STATUSES, true) || $manager->trashed()) {
                     abort(422, 'The selected reporting manager is not an active employee.');
+                }
+
+                /* Server-side twin of the pool's onboarding gate. The list no
+                   longer offers half-onboarded employees; this is what stops a
+                   direct call doing it anyway, and keeps the rule in the same
+                   place as the rest of the assignment checks. */
+                if ((int) ($manager->onboarding_stage_completed ?? 0) < 6) {
+                    $who = $manager->display_name ?: $manager->emp_code;
+                    abort(422, "{$who} has not completed onboarding, so they cannot be made a reporting manager yet.");
                 }
 
                 /* Server-side twin of the pool's whereNotNull('designation_id').

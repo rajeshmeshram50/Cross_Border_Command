@@ -479,54 +479,7 @@ class PayrollService
          *
          * Zeroed rather than skipped so the F&F still renders the line (with
          * its reason) and every downstream total keeps a numeric field to add. */
-        if (ProbationGuard::isEarlyExit($employee, $lwd, $resignationDate)) {
-            $tenure = ProbationGuard::tenureDays($employee, $resignationDate ?: $lwd);
-
-            return [
-                'cycle'         => $lwd->format('F Y'),
-                'monthly_gross' => 0.0,
-                'month_days'    => (int) $end->day,
-                'earned_days'   => 0.0,
-                'amount'        => 0.0,
-                'early_exit'    => true,
-                'breakdown'     => [
-                    'working_days'      => 0.0,
-                    'present_days'      => 0.0,
-                    'paid_days'         => 0.0,
-                    'weekoff_days'      => 0.0,
-                    'lop_days'          => 0.0,
-                    'paid_leave_days'   => 0.0,
-                    'unpaid_leave_days' => 0.0,
-                    'overtime_hours'    => 0.0,
-                    'overtime_amount'   => 0.0,
-                    'gross_earnings'    => 0.0,
-                    'structure_gross'   => 0.0,
-                    'monthly_gross_full' => 0.0,
-                    'monthly_basic_full' => 0.0,
-                    'proration'          => 1.0,
-                    'active_days'        => 0.0,
-                    'cycle_days'         => 0.0,
-                    'structure_components' => [],
-                    'extra_earnings'       => [],
-                    'earned_gross'         => 0.0,
-                    'earned_basic'         => 0.0,
-                    'earned_factor'        => 0.0,
-                    'lop_amount'        => 0.0,
-                    'per_day_rate'      => 0.0,
-                    'lop_basis'         => 'basic',
-                    'lop_divisor'       => 'calendar',
-                    'lop_divisor_days'  => 0.0,
-                    'total_deductions'  => 0.0,
-                    'net_pay'           => 0.0,
-                    'earnings'          => [],
-                    'deductions'        => [],
-                ],
-                'note' => 'No salary for this cycle — '
-                    . ($tenure !== null ? "exited on day {$tenure} of joining, within " : 'exited within ')
-                    . ProbationGuard::EARLY_EXIT_DAYS
-                    . ' days, so payroll is not processed for this employee.',
-            ];
-        }
+        $earlyExit = ProbationGuard::isEarlyExit($employee, $lwd, $resignationDate);
 
         $period = PayrollPeriod::where('client_id', $employee->client_id)
             ->where('branch_id', $employee->branch_id)
@@ -548,6 +501,64 @@ class PayrollService
 
         $amount = round((float) $slip['net_pay'] + (float) ($slip['advance_recovery'] ?? 0), 2);
 
+        /* EARLY EXIT — joined and left within ProbationGuard::EARLY_EXIT_DAYS.
+         * Such an employee "is not put through payroll at all": the regular run
+         * already drops them (eligibleEmployees), and the F&F must agree or the
+         * policy is defeated — the month would simply be settled here instead
+         * of there, for the same money. So the settlement is ZERO.
+         *
+         * It is zeroed by DEDUCTING it, not by blanking the cycle. The old
+         * version returned an all-empty breakdown and the F&F hid the panel
+         * entirely, which left "Salary for the Exit Month ₹0" on screen with
+         * nothing behind it — indistinguishable from a payroll bug, and no way
+         * for Finance to see what was given up or to check the rule was applied
+         * to the right person. Now the real cycle is computed and shown in full
+         * — the package, the days, the statutory deductions — and one final
+         * recovery line takes the whole earned balance back, so the breakdown
+         * reads as a policy decision that lands on zero rather than an absence.
+         *
+         * `amount` is 0 either way; only what Finance can SEE changes. */
+        if ($earlyExit) {
+            $tenure = ProbationGuard::tenureDays($employee, $resignationDate ?: $lwd);
+            $gross  = round((float) ($slip['gross_earnings'] ?? 0), 2);
+
+            /* The advance EMI is dropped rather than balanced against. Nothing
+               is paid this cycle, so no instalment can be recovered FROM it —
+               and the F&F recovers the full outstanding advance on its own line
+               regardless. Leaving it here would show the same rupees taken
+               twice, and the F&F panel hides `advance` anyway, so the displayed
+               total would not have closed on zero. */
+            $kept = array_values(array_filter(
+                is_array($slip['deductions'] ?? null) ? $slip['deductions'] : [],
+                fn($d) => ($d['code'] ?? null) !== 'advance' && round((float) ($d['amount'] ?? 0), 2) !== 0.0,
+            ));
+            $keptTotal = round(array_sum(array_map(fn($d) => (float) ($d['amount'] ?? 0), $kept)), 2);
+
+            /* Whatever survives the statutory deductions is what would have
+               been paid — so that is exactly what this line takes back, and
+               earnings − deductions closes on 0.00 to the paisa. max() guards
+               the pathological case where deductions already exceed gross. */
+            $recovery = round(max(0, $gross - $keptTotal), 2);
+            if ($recovery > 0) {
+                $kept[] = [
+                    'code'   => 'early_exit',
+                    'label'  => 'Early Exit Recovery — no salary payable for this cycle',
+                    'amount' => $recovery,
+                ];
+            }
+
+            $note = 'No salary for this cycle — '
+                . ($tenure !== null ? "exited on day {$tenure} of joining, within " : 'exited within ')
+                . ProbationGuard::EARLY_EXIT_DAYS
+                . ' days, so payroll is not processed for this employee. The cycle is shown'
+                . ' in full below and recovered in full, settling at zero.';
+
+            $slip['deductions']       = $kept;
+            $slip['total_deductions'] = round($keptTotal + $recovery, 2);
+            $slip['net_pay']          = 0.0;
+            $amount                   = 0.0;
+        }
+
         return [
             'cycle'         => $lwd->format('F Y'),
             'monthly_gross' => (float) ($slip['gross_earnings'] ?? 0),
@@ -556,6 +567,7 @@ class PayrollService
             // figure the money is actually built from.
             'earned_days'   => (float) ($slip['paid_days'] ?? 0),
             'amount'        => max(0, $amount),
+            'early_exit'    => $earlyExit,
             // The full payroll breakdown, so the F&F stage can show WHY the
             // number is what it is instead of an unexplained total.
             'breakdown'     => [
@@ -600,8 +612,8 @@ class PayrollService
                 'earnings'          => $slip['earnings'] ?? [],
                 'deductions'        => $slip['deductions'] ?? [],
             ],
-            'note' => 'Excluded from the ' . $lwd->format('F Y')
-                . ' payroll run — computed here on the same basis and settled in the F&F.',
+            'note' => $earlyExit ? $note : ('Excluded from the ' . $lwd->format('F Y')
+                . ' payroll run — computed here on the same basis and settled in the F&F.'),
         ];
     }
 
