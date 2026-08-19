@@ -56,8 +56,16 @@ class ModuleDependencies
         ],
 
         // ── Time & pay ─────────────────────────────────────────────────────
+        // Biometric Device has no module row of its own — it rides on
+        // hr.attendance, which is already listed here.
+        //
+        // hr.exit is DELIBERATELY here even though the printed HRMS matrix
+        // sheet omits it from the Payroll row: full-and-final settlement is
+        // driven off the exit record, so Payroll without Exit shows an empty
+        // FnF screen. Confirmed by the product owner 2026-08-19 — the sheet is
+        // the stale side. Don't "correct" this back without re-checking there.
         'hr.payroll' => [
-            'hr.employee', 'hr.onboarding', 'hr.attendance', 'hr.leave', 'hr.holiday',
+            'hr.employee', 'hr.onboarding', 'hr.exit', 'hr.attendance', 'hr.leave', 'hr.holiday',
             'master.overtime_rates',
         ],
         'hr.attendance' => [
@@ -108,7 +116,14 @@ class ModuleDependencies
      * dependency, so callers only see what the grant added on top of what the
      * operator explicitly ticked.
      *
-     * @param  iterable<string>  $slugs
+     * IMPORTANT: pass ONLY the modules the operator explicitly ticked. Feeding
+     * the auto-granted rows back in makes the walk transitive by the back door
+     * — Recruitment → Employee → countries / leave / holiday, → Exit → Payroll
+     * / Attendance / Expense → overtime + expense masters — which is precisely
+     * what this matrix rules out. Callers tell the two apart via the `is_auto`
+     * column on permissions / department_permissions.
+     *
+     * @param  iterable<string>  $slugs  explicitly granted module slugs
      * @return string[]
      */
     public static function resolve(iterable $slugs): array

@@ -43,8 +43,14 @@ export const MODULE_DEPENDENCIES: Record<string, string[]> = {
   ],
 
   // Time & pay
+  // Biometric Device has no module row of its own — it rides on hr.attendance,
+  // which is already listed here.
+  //
+  // hr.exit is deliberately included even though the printed HRMS matrix sheet
+  // omits it from the Payroll row (full-and-final settlement reads the exit
+  // record). Confirmed 2026-08-19 — see ModuleDependencies.php for the note.
   'hr.payroll': [
-    'hr.employee', 'hr.onboarding', 'hr.attendance', 'hr.leave', 'hr.holiday',
+    'hr.employee', 'hr.onboarding', 'hr.exit', 'hr.attendance', 'hr.leave', 'hr.holiday',
     'master.overtime_rates',
   ],
   'hr.attendance': [
@@ -70,18 +76,23 @@ export const MODULE_DEPENDENCIES: Record<string, string[]> = {
 export type SlugNameMap = Record<string, string>;
 
 /**
- * The dependencies of `activeSlugs` — ONE HOP ONLY, exactly the matrix row.
+ * The dependencies of the EXPLICITLY ticked modules — ONE HOP ONLY, exactly the
+ * matrix row.
  *
  * Deliberately not transitive: following the chain dragged the whole HR tree
  * plus a dozen masters into every grant, which is neither what the matrix says
  * nor what an admin ticking one box expects to hand out.
  *
+ * Pass only the operator's own ticks. Auto-granted rows carry `is_auto` (see the
+ * permissions table); feeding them back in walks the matrix a second hop and
+ * reintroduces exactly the cascade this function exists to prevent.
+ *
  * Returns a map of required slug → the ticked modules that pulled it in (used
  * for the "Required by Payroll, Attendance" tooltip). Seeds are excluded, so a
  * module is never listed as its own dependency.
  */
-export function resolveDependencies(activeSlugs: Iterable<string>): Record<string, string[]> {
-  const seeds = new Set(activeSlugs);
+export function resolveDependencies(explicitSlugs: Iterable<string>): Record<string, string[]> {
+  const seeds = new Set(explicitSlugs);
   const required: Record<string, Set<string>> = {};
 
   seeds.forEach((seed) => {

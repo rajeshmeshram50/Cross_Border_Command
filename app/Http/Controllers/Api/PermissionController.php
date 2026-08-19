@@ -263,6 +263,7 @@ class PermissionController extends Controller
             'permissions.*.can_export' => 'boolean',
             'permissions.*.can_import' => 'boolean',
             'permissions.*.can_approve' => 'boolean',
+            'permissions.*.is_auto'   => 'boolean',
         ]);
 
         /* Authorization — grant scope:
@@ -446,6 +447,9 @@ class PermissionController extends Controller
                     'can_export' => $canExport,
                     'can_import' => $canImport,
                     'can_approve' => $canApprove,
+                    // Auto rows are the ones the dependency matrix added; the
+                    // next save reads this back so it never re-seeds from them.
+                    'is_auto' => filter_var($perm['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN),
                     'granted_by' => $grantedById,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -502,42 +506,68 @@ class PermissionController extends Controller
         $slugById = $modules->pluck('slug', 'id')->all();
         $idBySlug = $modules->pluck('id', 'slug')->all();
 
-        // Rows the operator actually asked for — any flag counts as "in use".
-        $activeSlugs = [];
+        // Seeds = rows the operator actually ticked. A row flagged is_auto was
+        // put there by a previous run of this very method, and re-seeding from
+        // it would walk the matrix a second hop (see ModuleDependencies).
+        $seedSlugs = [];
         $byModuleId = [];
         foreach ($payload as $perm) {
             $moduleId = (int) ($perm['module_id'] ?? 0);
             $byModuleId[$moduleId] = $perm;
+            $slug = $slugById[$moduleId] ?? null;
+            if ($slug === null) continue;
+            if (filter_var($perm['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
 
             foreach (self::FLAGS as $flag) {
                 if (filter_var($perm[$flag] ?? false, FILTER_VALIDATE_BOOLEAN)) {
-                    if (isset($slugById[$moduleId])) $activeSlugs[] = $slugById[$moduleId];
+                    $seedSlugs[] = $slug;
                     break;
                 }
             }
         }
 
-        if ($activeSlugs === []) return [$payload, []];
-
         $granterPerms = ($granter === null || $granter->isSuperAdmin())
             ? null
             : Permission::where('user_id', $granter->id)->get()->keyBy('module_id');
 
+        // No seeds left (the operator cleared every explicit tick) still has to
+        // fall through to the cleanup below — returning early here would strand
+        // the feeders of the module that was just unticked.
+        $required = $seedSlugs === [] ? [] : ModuleDependencies::resolve($seedSlugs);
+
         $autoGranted = [];
-        foreach (ModuleDependencies::resolve($activeSlugs) as $depSlug) {
+        foreach ($required as $depSlug) {
             $depId = $idBySlug[$depSlug] ?? null;
             if (!$depId) continue; // slug not seeded in this deployment — ignore
 
-            // Already granted view by the operator? Nothing to do.
-            if (filter_var($byModuleId[$depId]['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
+            // Already granted view by the operator? Leave it alone — an explicit
+            // grant outranks an implied one and must keep its action flags.
+            $existing = $byModuleId[$depId] ?? null;
+            $isExplicit = $existing !== null
+                && !filter_var($existing['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            if ($isExplicit && filter_var($existing['can_view'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
 
             // Delegation cap: the granter must hold view on it themselves.
             if ($granterPerms !== null && !($granterPerms->get($depId)?->can_view)) continue;
 
-            $row = $byModuleId[$depId] ?? ['module_id' => $depId];
+            $row = $existing ?? ['module_id' => $depId];
             $row['can_view'] = true;
+            $row['is_auto'] = true;
             $byModuleId[$depId] = $row;
             $autoGranted[] = $depSlug;
+        }
+
+        // Drop auto rows that nothing requires any more. Without this, unticking
+        // the module that pulled a feeder in would leave the feeder granted
+        // forever, and the grant would only ever grow.
+        $requiredIds = [];
+        foreach ($required as $depSlug) {
+            if (isset($idBySlug[$depSlug])) $requiredIds[$idBySlug[$depSlug]] = true;
+        }
+        foreach ($byModuleId as $moduleId => $row) {
+            if (!filter_var($row['is_auto'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
+            if (isset($requiredIds[$moduleId])) continue;
+            unset($byModuleId[$moduleId]);
         }
 
         return [array_values($byModuleId), $autoGranted];
@@ -638,6 +668,7 @@ class PermissionController extends Controller
             'permissions.*.can_export'  => 'boolean',
             'permissions.*.can_import'  => 'boolean',
             'permissions.*.can_approve' => 'boolean',
+            'permissions.*.is_auto'   => 'boolean',
         ]);
 
         $clientId  = $authUser->client_id;
@@ -663,6 +694,8 @@ class PermissionController extends Controller
 
                 // Action implies visibility (mirrors savePermissions()).
                 if ($anyOn && !$values['can_view']) $values['can_view'] = true;
+
+                $values['is_auto'] = (bool) ($p['is_auto'] ?? false);
 
                 $keys = ['client_id' => $clientId, 'department_id' => $deptId, 'module_id' => (int) $p['module_id']];
 

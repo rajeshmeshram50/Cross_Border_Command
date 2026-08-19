@@ -18,6 +18,8 @@ class DepartmentPermission extends Model
         'can_export',
         'can_import',
         'can_approve',
+
+        'is_auto',
         'granted_by',
     ];
 
@@ -31,6 +33,8 @@ class DepartmentPermission extends Model
             'can_export'  => 'boolean',
             'can_import'  => 'boolean',
             'can_approve' => 'boolean',
+
+            'is_auto' => 'boolean',
         ];
     }
 

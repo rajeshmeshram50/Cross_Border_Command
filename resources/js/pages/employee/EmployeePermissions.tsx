@@ -8,6 +8,7 @@ import PermissionMatrix, {
   emptyPerms,
   type PermKey,
   type PermModule,
+  type PermRow,
 } from '../../components/PermissionMatrix';
 import { ShimmerPermissions } from '../../components/ui/Shimmer';
 
@@ -46,7 +47,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
   const { user: authUser } = useAuth();
   const isSuperAdmin = authUser?.user_type === 'super_admin';
   const [modules, setModules] = useState<PermModule[]>([]);
-  const [matrix, setMatrix] = useState<Record<number, Record<PermKey, boolean>>>({});
+  const [matrix, setMatrix] = useState<Record<number, PermRow>>({});
   // Granter's own perms — used to disable checkboxes for flags they can't pass
   // down. Without this, the UI lets you toggle anything and the save call
   // surprises you with a 422 from PermissionController:208 ("you cannot grant
@@ -76,7 +77,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
       try {
         const modRes = await api.get('/modules');
         const mods: PermModule[] = (modRes.data as PermModule[]).filter(m => !HIDDEN_SLUGS.has(m.slug));
-        const m: Record<number, Record<PermKey, boolean>> = {};
+        const m: Record<number, PermRow> = {};
         mods.forEach(mod => { m[mod.id] = emptyPerms(); });
 
         if (numericId > 0) {
@@ -89,6 +90,7 @@ export default function EmployeePermissions({ employeeId, employee, onBack }: Pr
                   can_view: !!p.can_view, can_add: !!p.can_add, can_edit: !!p.can_edit,
                   can_delete: !!p.can_delete, can_export: !!p.can_export,
                   can_import: !!p.can_import, can_approve: !!p.can_approve,
+            is_auto: !!p.is_auto,
                 };
               }
             });
