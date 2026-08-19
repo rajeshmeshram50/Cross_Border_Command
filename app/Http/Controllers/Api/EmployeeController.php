@@ -2315,7 +2315,25 @@ class EmployeeController extends Controller
             ? ['required', 'numeric', 'min:0.01', "max:{$salaryMax}"]
             : ['nullable',  'numeric', 'min:0',    "max:{$salaryMax}"];
         $salaryFreqRule = $requireSalary ? ['required', 'string', 'max:30']   : ['nullable', 'string', 'max:30'];
-        $salaryFromRule = $requireSalary ? ['required', 'date']               : ['nullable', 'date'];
+        /* The first salary runs from the day the employee joined, so the
+         * effective date IS the joining date. Both forms mirror it and show it
+         * read-only; enforced here too because the form is not the only way in
+         * — a direct API call could still date the salary structure wrongly,
+         * and salary_structures.effective_from is what payroll reads.
+         *
+         * Only checked when a joining date is present in the same payload or
+         * already on the record: a partial update that touches neither has
+         * nothing to compare against. */
+        $joiningForSalary = $request->input('date_of_joining')
+            ?: ($employeeId ? Employee::whereKey($employeeId)->value('date_of_joining') : null);
+        $joiningForSalary = $joiningForSalary
+            ? Carbon::parse($joiningForSalary)->toDateString()
+            : null;
+
+        $salaryFromRule = $requireSalary ? ['required', 'date'] : ['nullable', 'date'];
+        if ($joiningForSalary) {
+            $salaryFromRule[] = 'date_equals:' . $joiningForSalary;
+        }
 
         $noTags = ['not_regex:/[<>]/'];
 

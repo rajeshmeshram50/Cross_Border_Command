@@ -427,7 +427,10 @@ class HrDocumentSignatureController extends Controller
 
     public function reject(Request $request, $id)
     {
-        $data = $request->validate(['reason' => 'required|string|max:500']);
+        $data = $request->validate([
+            'reason'  => 'required|string|max:500',
+            'consent' => 'nullable',
+        ]);
         return DB::transaction(function () use ($request, $data, $id) {
             $user = $request->user();
             $row  = $this->loadForAction($request, (int) $id);
@@ -437,9 +440,23 @@ class HrDocumentSignatureController extends Controller
             if (!$current) abort(404);
             if ((int) ($current['user_id'] ?? 0) !== (int) $user->id) abort(403);
 
-            $current['status']   = 'Rejected';
-            $current['acted_at'] = now()->toIso8601String();
-            $current['note']     = $data['reason'];
+            /* Informed-consent gate — the same one `action()` applies, which
+             * this endpoint never had: rejecting was the one way to close a
+             * document without confirming you had read it.
+             *
+             * A rejection is a decision ON the document, and it is the decision
+             * most likely to be questioned later — "why was my request turned
+             * down" — so the evidence that the decider had actually read it
+             * matters more here, not less. Recorded on the signer slot beside
+             * the reason, exactly as it is for a signature. */
+            if (!filter_var($data['consent'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                abort(422, 'You must confirm you have read and understood the document before you reject it.');
+            }
+
+            $current['status']     = 'Rejected';
+            $current['acted_at']   = now()->toIso8601String();
+            $current['consent_at'] = now()->toIso8601String();
+            $current['note']       = $data['reason'];
             $signers[$idx] = $current;
             $row->signers = $signers;
             $row->status  = 'Rejected';

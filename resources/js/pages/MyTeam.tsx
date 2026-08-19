@@ -365,6 +365,19 @@ export default function MyTeam() {
       return;
     }
 
+    /* Documents only — consent is required to REJECT as well as to sign.
+       The shared check sits in submitDecision, which this handler never runs,
+       so rejecting was the one way to close a document without confirming you
+       had read it. A rejection is the decision most likely to be questioned
+       later — "why was my request turned down" — so the record that the
+       decider actually read it matters more here, not less.
+       Deliberately below the expense and leave branches: those have no
+       document to have read. */
+    if (!consent) {
+      toast.error('Consent required', 'Tick the box confirming you have read and understood the document.');
+      return;
+    }
+
     const targetItem = actionItem;
     const itemId = targetItem.id;
     const docCode = targetItem.code || 'this document';
@@ -387,7 +400,7 @@ export default function MyTeam() {
     }
     setActionSubmitting(true);
     try {
-      await api.post(`/hr-document-signatures/${itemId}/reject`, { reason });
+      await api.post(`/hr-document-signatures/${itemId}/reject`, { reason, consent });
       toast.success('Rejected', `${docCode} returned to the sender with your reason.`);
       loadApprovals();
     } catch (err: any) {

@@ -2799,12 +2799,10 @@ const [nextLoading, setNextLoading] = useState(false);
   // HOD now supersedes; never override a manager deliberately chosen.
   useEffect(() => {
     if (isHodSelected || !deptHodOpt) return;
-    setS1(p => {
-      if (!p.reporting_manager || String(p.reporting_manager).startsWith('branch_user:')) {
-        return p.reporting_manager === deptHodOpt.value ? p : { ...p, reporting_manager: deptHodOpt.value };
-      }
-      return p;
-    });
+    /* Fills an EMPTY field only — same rule as the Employee form. Overwriting
+       a Branch User treated a real choice as a placeholder, which is how a
+       manager ended up changing on its own when the designation was edited. */
+    setS1(p => (p.reporting_manager ? p : { ...p, reporting_manager: deptHodOpt.value }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isHodSelected, deptHodOpt?.value]);
 // Two-step confirmation before flipping the employee to "complete". Once
@@ -2855,8 +2853,20 @@ const joinMin = (joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : j
 // allow up to 1 year before today. Hard cap at 1 year ahead so an
 // admin can schedule a near-future increment but not type "2012" or
 // "2050" by mistake.
-const salaryMin = s1.date_of_joining || _shiftYears(-1);
-const salaryMax = _shiftYears(1);
+/* The salary min/max bounds are gone with the free date picker they framed —
+   the effective date is the joining date now, so there is no range to bound. */
+
+/* Keep the salary effective date locked to the joining date.
+   The field on screen is read-only, but the VALUE still has to be written —
+   the payload is what creates salary_structures.effective_from, and an edit to
+   the joining date has to carry through to it rather than leaving the old one
+   behind. */
+useEffect(() => {
+  const doj = s1.date_of_joining || '';
+  setS1(p => (p.salary_effective_from === doj ? p : { ...p, salary_effective_from: doj }));
+  setS1Errors(p => (p.salary_effective_from ? { ...p, salary_effective_from: '' } : p));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [s1.date_of_joining]);
 
 // Probation length + end date, derived live from the joining date + probation
 // policy. Stored on save (probation_months / probation_end_date) so the daily
@@ -3037,15 +3047,16 @@ const validateStage1 = (): boolean => {
     } else if (annualNum > 999_999_999_999) {
       errors.annual_salary = 'Salary amount is too large (max 999,999,999,999)';
     }
+    /* The salary effective date IS the joining date — the field mirrors it and
+       is read-only. Checked anyway because the value can still arrive wrong:
+       a record saved before this rule existed, or a direct API write. */
     const sef = s1.salary_effective_from?.trim() ?? '';
-    if (!sef) {
+    if (!doj) {
+      errors.salary_effective_from = 'Set the joining date — the salary effective date follows it';
+    } else if (!sef) {
       errors.salary_effective_from = 'Salary effective date is required';
-    } else if (sef < salaryMin) {
-      errors.salary_effective_from = doj
-        ? 'Salary effective date cannot be before the joining date'
-        : 'Salary effective date is too far in the past';
-    } else if (sef > salaryMax) {
-      errors.salary_effective_from = 'Salary effective date cannot be more than a year in the future';
+    } else if (sef !== doj) {
+      errors.salary_effective_from = 'Salary effective date must be the same as the joining date';
     }
     /* PF Applicable must be answered, not defaulted. The control offers Yes/No
        off a boolean, so an untouched field rendered as "No" and read back as a
@@ -4467,7 +4478,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                     {s1Errors.date_of_joining && <div className="onb-error-msg">{s1Errors.date_of_joining}</div>}
                   </Col>
                   <Col md={4} data-field="department_id"><label className="onb-init-label">Department<span className="req">*</span></label><MasterSelect options={departmentOpts} loading={mastersLoading} placeholder="Select department" value={s1.department_id} invalid={!!s1Errors.department_id} onChange={(v) => { setS1(p => ({ ...p, department_id: v })); setS1Errors(p => ({ ...p, department_id: '' })); }} />{s1Errors.department_id && <div className="onb-error-msg">{s1Errors.department_id}</div>}</Col>
-                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { const nowHod = !!hodDesignationId && String(v) === hodDesignationId; setS1(p => { const rmIsBranchUser = String(p.reporting_manager || '').startsWith('branch_user:'); const clearMgr = nowHod && !!p.reporting_manager && !rmIsBranchUser; return { ...p, designation_id: v, reporting_manager: clearMgr ? '' : p.reporting_manager }; }); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
+                  <Col md={4} data-field="designation_id"><label className="onb-init-label">Designation<span className="req">*</span></label><MasterSelect options={designationOpts} loading={mastersLoading} placeholder="Select designation" value={s1.designation_id} invalid={!!s1Errors.designation_id} onChange={(v) => { setS1(p => ({ ...p, designation_id: v })); setS1Errors(p => ({ ...p, designation_id: '', reporting_manager: '' })); }} />{s1Errors.designation_id && <div className="onb-error-msg">{s1Errors.designation_id}</div>}</Col>
                   {/* Primary & Ancillary share the same list, but a role can't be
                       both — exclude the other side's pick from each dropdown. */}
                   <Col md={4} data-field="primary_role_id"><label className="onb-init-label">Primary Role<span className="req">*</span></label><MasterSelect options={roleOpts.filter(o => !(s1.ancillary_role_ids ?? []).includes(o.value))} loading={mastersLoading} placeholder="Select role" value={s1.primary_role_id} invalid={!!s1Errors.primary_role_id} onChange={(v) => { setS1(p => ({ ...p, primary_role_id: v, ancillary_role_ids: (p.ancillary_role_ids ?? []).filter((id: string) => id !== v) })); setS1Errors(p => ({ ...p, primary_role_id: '' })); }} />{s1Errors.primary_role_id && <div className="onb-error-msg">{s1Errors.primary_role_id}</div>}</Col>
@@ -4774,7 +4785,14 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       so it carries the same words. It said "PF", which is the
                       PF Applicable dropdown below it — one flag reading as two
                       different settings depending on which screen you opened. */}
-                  <span className="onb-init-toggle-label">{s1.enable_payroll ? 'Payroll enabled for this employee' : 'Enable payroll for this employee'}</span>
+                  <span className="onb-init-toggle-label">PF Applicable for this Employee</span>
+                </div>
+                {/* Same wording as the Employee form so one flag does not read
+                    as two different settings depending on the screen. The scope
+                    note is here for the same reason it is there: the label says
+                    PF, the flag switches off the whole compensation block. */}
+                <div className="onb-init-toggle-hint">
+                  Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
@@ -4820,20 +4838,26 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   )}
   {s1Errors.annual_salary && <div className="onb-error-msg">{s1Errors.annual_salary}</div>}
 </Col>
+                  {/* The first salary runs from the day the person joined, so
+                      this is the joining date and nothing else. It used to be a
+                      free date picker bounded only by "not before joining, not
+                      more than a year out", which let the two drift apart and
+                      quietly dated the salary structure wrongly.
+                      Read-only and mirrored instead of validated-and-rejected:
+                      there is only one right answer, so asking for it and then
+                      refusing the wrong ones is just a slower way of filling it
+                      in. Same treatment as Probation End Date above. */}
                   <Col md={4} data-field="salary_effective_from">
   <label className="onb-init-label">
-    Salary Effective From {s1.enable_payroll !== false && <span className="req">*</span>}
+    Salary Effective From <span className="auto">AUTO</span>
   </label>
-  <MasterDatePicker
-    placeholder="Select effective date"
-    value={s1.salary_effective_from}
-    invalid={!!s1Errors.salary_effective_from}
-    minDate={salaryMin}
-    maxDate={salaryMax}
-    onChange={(v) => {
-      setS1(p => ({ ...p, salary_effective_from: v }));
-      setS1Errors(p => ({ ...p, salary_effective_from: '' }));
-    }}
+  <input
+    className="onb-init-input is-autofilled"
+    readOnly
+    tabIndex={-1}
+    value={s1.date_of_joining ? new Date(s1.date_of_joining).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : ''}
+    placeholder="Set the joining date first"
+    title="Always the joining date — the first salary structure starts the day the employee joins."
   />
   {s1Errors.salary_effective_from && <div className="onb-error-msg">{s1Errors.salary_effective_from}</div>}
 </Col>
