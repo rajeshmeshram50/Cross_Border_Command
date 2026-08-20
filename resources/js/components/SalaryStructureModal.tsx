@@ -23,6 +23,10 @@ export interface SalaryEmployeeLite {
   version?: number | null;
   effective_from?: string | null;
   source?: 'structure' | 'annual_salary' | 'none';
+  /** A live exit case is open for this employee (status stays 'Active' until
+   *  the exit is finalised, so it cannot be read off `status`). */
+  exit_in_progress?: boolean;
+  exit_last_working_day?: string | null;
 }
 
 interface Props {

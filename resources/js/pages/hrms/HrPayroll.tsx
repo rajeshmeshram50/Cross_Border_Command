@@ -1454,7 +1454,24 @@ export default function HrPayroll() {
               style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
               {initials}
             </div>
-            <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
+            <div className="min-w-0">
+              <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
+              {/* An exit under way leaves employees.status on 'Active' until it
+                  is finalised, so without this the row looked like ordinary
+                  staff awaiting a salary revision. */}
+              {emp.exit_in_progress && (
+                <span
+                  className="onb-pill"
+                  style={{ background: '#fdd9d6', color: '#b1401d', fontSize: 10, marginTop: 2 }}
+                  title={emp.exit_last_working_day
+                    ? `Exit in progress — last working day ${emp.exit_last_working_day}`
+                    : 'Exit in progress'}
+                >
+                  <span className="d" style={{ background: '#f06548' }} />
+                  Exit in progress
+                </span>
+              )}
+            </div>
           </div>
         );
       },
@@ -1512,10 +1529,24 @@ export default function HrPayroll() {
       meta: { width: '12%', align: 'center' },
       cell: info => {
         const emp = info.row.original;
+        /* Someone on their way out is not a candidate for a salary revision —
+           what they are owed to their last working day is settled by the exit's
+           full & final, not by re-cutting their structure here. The row still
+           shows (payroll must pay them until they leave); the action does not. */
+        const exiting = !!emp.exit_in_progress;
         return (
-          <button type="button" className="onb-vault-btn" onClick={() => setSalaryEmp(emp)}>
-            <i className={`me-1 ${emp.has_structure ? 'ri-edit-line' : 'ri-add-line'}`} style={{ fontSize: 13 }} />
-            {emp.has_structure ? 'Revise' : 'Set Salary'}
+          <button
+            type="button"
+            className="onb-vault-btn"
+            disabled={exiting}
+            style={exiting ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            title={exiting
+              ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
+              : undefined}
+            onClick={() => { if (!exiting) setSalaryEmp(emp); }}
+          >
+            <i className={`me-1 ${exiting ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
+            {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
           </button>
         );
       },
