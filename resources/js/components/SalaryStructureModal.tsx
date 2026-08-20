@@ -182,19 +182,63 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const addRow = (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void) =>
     setList([...list, { code: `comp_${list.length + 1}`, label: '', amount: 0 }]);
 
-  const removeRow = async (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void, i: number) => {
+  /**
+   * Removing an EARNING keeps the monthly gross where it was: the deleted
+   * amount is folded into Basic Salary rather than vanishing.
+   *
+   * The gross is the employee's agreed pay — restructuring how it is split
+   * between Basic / HRA / Special is not meant to change what they earn.
+   * Deleting a row used to just drop its amount, so a ₹33,333 gross split
+   * 16,667 / 10,000 / 6,666 collapsed to ₹16,667 the moment HRA and Special
+   * were removed, silently halving the salary.
+   *
+   * Basic is the target because it is the component every structure has and
+   * the one statutory heads are priced off. If Basic itself is the row being
+   * removed (or there is no Basic), the amount goes to the first remaining
+   * earning so the total still holds. Deductions are NOT merged — one
+   * deduction is not a substitute for another.
+   */
+  const removeRow = async (
+    list: SalaryComponent[],
+    setList: (v: SalaryComponent[]) => void,
+    i: number,
+    kind: 'earn' | 'ded' = 'earn',
+  ) => {
     const comp = list[i];
+    const amount = Number(comp?.amount) || 0;
+
+    let mergeIdx = -1;
+    if (kind === 'earn' && amount > 0) {
+      mergeIdx = list.findIndex((c, idx) => idx !== i && c.code === 'basic');
+      if (mergeIdx === -1) mergeIdx = list.findIndex((_, idx) => idx !== i);
+    }
+    const mergeLabel = mergeIdx !== -1 ? (list[mergeIdx].label.trim() || 'the first earning') : null;
+
     const ok = await confirm({
       title: 'Remove component?',
-      message: comp?.label?.trim()
-        ? <>Remove <strong>{comp.label.trim()}</strong> from the salary structure?</>
-        : <>Remove this component from the salary structure?</>,
+      message: (
+        <>
+          {comp?.label?.trim()
+            ? <>Remove <strong>{comp.label.trim()}</strong> from the salary structure?</>
+            : <>Remove this component from the salary structure?</>}
+          {mergeLabel && (
+            <> Its ₹{fmtINR(amount)} will be added to <strong>{mergeLabel}</strong>, so the monthly gross stays ₹{fmtINR(grossTotal)}.</>
+          )}
+        </>
+      ),
       tone: 'danger',
       confirmLabel: 'Remove',
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    setList(list.filter((_, idx) => idx !== i));
+
+    // Credit the target first, then drop the row — doing it in this order
+    // keeps the indexes valid regardless of which side the target sits on.
+    setList(
+      list
+        .map((c, idx) => (idx === mergeIdx ? { ...c, amount: (Number(c.amount) || 0) + amount } : c))
+        .filter((_, idx) => idx !== i),
+    );
   };
 
   const save = async () => {
@@ -274,7 +318,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <span title="Untick the box above to remove" style={{ width: 28, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}><i className="ri-lock-line" /></span>
           ) : (
             <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
-              onClick={() => removeRow(list, setList, i)} title="Remove">
+              onClick={() => removeRow(list, setList, i, kind)} title="Remove">
               <i className="ri-delete-bin-line" />
             </button>
           )}
