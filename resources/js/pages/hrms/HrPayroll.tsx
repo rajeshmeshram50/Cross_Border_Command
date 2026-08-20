@@ -1115,7 +1115,7 @@ export default function HrPayroll() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: monthly CTC sits on a second line under the name.
-      meta: { width: '20%', wrap: true },
+      meta: { width: '18%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1139,8 +1139,8 @@ export default function HrPayroll() {
       },
     },
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '9%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '12%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
     { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
     {
@@ -1971,7 +1971,15 @@ export default function HrPayroll() {
               data={filtered}
               columns={processingColumns}
               className="pay-tbl-run"
-              serial={{ header: 'Sr. No.' }}
+              /* Percentage, not the default 56px. Every other column here is a
+                 percentage of the table, so a pixel-width serial column made
+                 the budget "100% + 56px" — impossible to satisfy, so the
+                 browser shrank the percentage columns by however much 56px
+                 happened to be at that viewport (3.7% at the 1500px minimum,
+                 2.9% at 1900px). Column edges therefore moved as the window
+                 resized and never matched the other tabs. With the serial
+                 inside the 100% the proportions hold at any width. */
+              serial={{ header: 'Sr. No.', width: '4%' }}
               accent="violet"
               /* Fills the viewport instead of collapsing to row count — each of
                  these tables is the only one on its tab, so it owns the space
