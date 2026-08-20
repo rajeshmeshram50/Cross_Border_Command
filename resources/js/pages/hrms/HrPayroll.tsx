@@ -35,6 +35,8 @@ interface CycleMonth {
   run_status?: string | null;
   /** Run is approved/paid — frozen against regeneration (Rule 14). */
   run_locked?: boolean;
+  /** Frozen but recoverable: approved with nothing disbursed yet. */
+  can_reopen?: boolean;
 }
 
 interface SeqInfo {
@@ -42,6 +44,7 @@ interface SeqInfo {
   processable?: boolean;
   run_status?: string | null;
   run_locked?: boolean;
+  can_reopen?: boolean;
 }
 
 interface PayrollRow {
@@ -152,6 +155,7 @@ const buildYearMonths = (
       processable: isFuture ? false : (seq?.processable ?? true),
       run_status: seq?.run_status ?? null,
       run_locked: !isFuture && !!seq?.run_locked,
+      can_reopen: !isFuture && !!seq?.can_reopen,
     };
   });
 };
@@ -254,6 +258,7 @@ export default function HrPayroll() {
         map[`${c.year}-${c.month}`] = {
           blocked_by: c.blocked_by, processable: c.processable,
           run_status: c.run_status, run_locked: c.run_locked,
+          can_reopen: c.can_reopen,
         };
       }
     }
@@ -596,13 +601,32 @@ export default function HrPayroll() {
      on one used to fire the request and come back with "already approved/paid
      and cannot be regenerated" — disable it and say so up front instead. */
   const runLockedCycle = !!cycle?.run_locked;
+  /* …but "frozen" is not the same as "finished". Only a cycle that actually
+     disbursed money is final. An approved run that was never paid (Proceed to
+     Pay, then the payment popup closed) is recoverable — that is the state HR
+     and QA actually get stuck in — so it gets a Reopen button instead of a
+     dead Run button. The server decides which is which (`can_reopen` also
+     rules out a partial disbursement, where reopening would re-pay people).
+
+     `lockedFallback` covers months OUTSIDE the server's trailing 13-month
+     window: those carry no verdict at all, so the strip lets Run fire and the
+     422 is the first news of the lock. Recording it here turns that one failed
+     click into the same Reopen button rather than a dead end. */
+  const [lockedFallback, setLockedFallback] = useState<string | null>(null);
+  const canReopenCycle =
+    (runLockedCycle && cycle?.can_reopen !== false && cycle?.run_status !== 'paid')
+    || (!!cycle && lockedFallback === cycle.key);
   const cycleLocked = isFutureCycle || !!blockedByCycle || runLockedCycle;
   const cycleLockReason = isFutureCycle
     ? `${cycle?.label} hasn't started yet — a future cycle has no attendance to process.`
     : blockedByCycle
       ? `Complete the ${blockedByCycle} payroll first — cycles must be processed in order.`
       : runLockedCycle
-        ? `${cycle?.label} is already ${cycle?.run_status} — reopen the cycle to re-run it.`
+        // A paid (or part-paid) cycle is deliberately final — don't promise a
+        // reopen that the server will refuse; the correction goes to next cycle.
+        ? (canReopenCycle
+            ? `${cycle?.label} is already ${cycle?.run_status} but not disbursed — reopen it to run payroll again.`
+            : `${cycle?.label} has already been paid — corrections must be posted as an adjustment in the next cycle.`)
         : undefined;
 
   // Switch the displayed year — keep the same month if possible, else snap to
@@ -617,6 +641,23 @@ export default function HrPayroll() {
     setSelectedYear(y);
     setCycleKey((sameMonth ?? live ?? open[open.length - 1] ?? months[0]).key);
   };
+
+  /* Re-read the cycle strip from the server.
+   *
+   * This used to run ONCE on mount, so `run_locked` went stale the moment the
+   * run was approved in this same session: Proceed to Pay approves the run,
+   * and if the payment popup is then closed without disbursing, the cycle is
+   * frozen server-side while the page still believed it was runnable. Run
+   * Payroll stayed green, fired, and came back "already approved/paid and
+   * cannot be regenerated" — with no way out of it on screen. Every mutation
+   * that can change a run's status now refreshes this. */
+  const loadCycles = useMemo(() => () =>
+    api.get('/payroll/cycles')
+      .then(res => {
+        const list = (res.data?.data ?? []) as CycleMonth[];
+        if (Array.isArray(list) && list.length) setRawCycles(list);
+      })
+      .catch(() => {}), []);
 
   useEffect(() => {
     api.get('/payroll/cycles')
@@ -696,10 +737,44 @@ export default function HrPayroll() {
         await api.post('/payroll/finalize-attendance', { month, year });
       }
       await api.post('/payroll/run', { month, year });
-      await reloadCycle();
+      await Promise.all([reloadCycle(), loadCycles()]);
       setRunOpen(true);
     } catch (err: any) {
-      toast.error('Payroll run failed', err?.response?.data?.message || 'Could not generate payroll.');
+      const msg = err?.response?.data?.message || 'Could not generate payroll.';
+      // The cycle is frozen server-side (approved/paid) while this page thought
+      // it was runnable — pull the fresh verdict so the button turns into
+      // Reopen Cycle instead of leaving the user to click Run forever.
+      if (err?.response?.status === 422 && /approved|locked/i.test(msg)) {
+        await loadCycles();
+        // Months outside the 13-month strip carry no server verdict, so the
+        // refresh above tells us nothing — remember the lock locally.
+        if (!/paid/i.test(msg) && cycle?.key) setLockedFallback(cycle.key);
+      }
+      toast.error('Payroll run failed', msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /* Reopen an approved-but-unpaid cycle for corrections.
+   *
+   * The backend has always had POST /payroll/reopen (it clears the payslips,
+   * cancels any pending disbursement and drops the run back to draft) but
+   * nothing on this screen ever called it — so an approval that was abandoned
+   * at the payment step blocked the month permanently. A paid cycle is still
+   * refused server-side; that one genuinely is final. */
+  const reopenCycle = async () => {
+    if (busy) return;
+    const month = cycle?.month, year = cycle?.year;
+    if (!month || !year) return;
+    setBusy(true);
+    try {
+      await api.post('/payroll/reopen', { month, year });
+      setLockedFallback(null);
+      await Promise.all([reloadCycle(), loadCycles()]);
+      toast.success('Cycle reopened', `${cycle.label} is open again — run payroll to regenerate it.`);
+    } catch (err: any) {
+      toast.error('Could not reopen', err?.response?.data?.message || 'This cycle could not be reopened.');
     } finally {
       setBusy(false);
     }
@@ -719,6 +794,10 @@ export default function HrPayroll() {
       setRunOpen(false);
       setPaymentRunId(runMeta.id);
       setPaymentOpen(true);
+      // Approval just froze the cycle — keep the strip honest so closing the
+      // payment popup leaves a correct Reopen button rather than a Run button
+      // that can only fail.
+      loadCycles();
     } catch (err: any) {
       toast.error('Could not start payment', err?.response?.data?.message || 'Approve the payroll first.');
     } finally {
@@ -1453,23 +1532,29 @@ export default function HrPayroll() {
           </div>
           <Button
             className="rounded-pill fw-bold d-inline-flex align-items-center pay-hero-run"
-            onClick={runPayroll}
-            disabled={busy || cycleLocked}
-            title={cycleLockReason}
+            onClick={canReopenCycle ? reopenCycle : runPayroll}
+            disabled={busy || (cycleLocked && !canReopenCycle)}
+            title={canReopenCycle
+              ? `${cycle.label} is already ${cycle.run_status} but not disbursed — reopen it to run payroll again.`
+              : cycleLockReason}
             style={{
               padding: '10px 18px',
               fontSize: 13,
               color: '#fff',
-              background: 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
+              background: canReopenCycle
+                ? 'linear-gradient(135deg,#f7a325 0%,#d9820a 100%)'
+                : 'linear-gradient(135deg,#0ab39c 0%,#078b78 100%)',
               boxShadow: '0 8px 18px rgba(90,63,209,0.32)',
-              opacity: (busy || cycleLocked) ? 0.6 : 1,
+              opacity: (busy || (cycleLocked && !canReopenCycle)) ? 0.6 : 1,
             }}
           >
             {/* Animated spinner while processing (the static loader icon read as
                 "no loader"). Matches the Export button's Spinner pattern. */}
             {busy
               ? <><Spinner size="sm" className="me-2" /> Processing…</>
-              : <><i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} /> Run Payroll</>}
+              : canReopenCycle
+                ? <><i className="ri-lock-unlock-line me-2" style={{ fontSize: 16 }} /> Reopen Cycle</>
+                : <><i className="ri-play-circle-line me-2" style={{ fontSize: 16 }} /> Run Payroll</>}
           </Button>
           <Dropdown isOpen={exportOpen} toggle={() => { if (!downloading) setExportOpen(v => !v); }}>
             <DropdownToggle
@@ -1995,10 +2080,10 @@ export default function HrPayroll() {
 
       <PaymentDisbursementModal
         open={paymentOpen}
-        onClose={() => setPaymentOpen(false)}
+        onClose={() => { setPaymentOpen(false); loadCycles(); }}
         runId={paymentRunId}
         cycleLabel={cycle.label}
-        onPaid={() => { reloadCycle(); }}
+        onPaid={() => { reloadCycle(); loadCycles(); }}
       />
 
       <SalaryStructureModal

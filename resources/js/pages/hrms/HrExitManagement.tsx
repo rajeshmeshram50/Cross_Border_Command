@@ -161,34 +161,44 @@ export default function HrExitManagement() {
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
 
-  const counts = useMemo(() => {
-    const total       = employees.length;
-    const active      = employees.filter(e => e.status === 'Active').length;
-    const inProgress  = employees.filter(e => e.status === 'Exit In Progress').length;
-    const exited      = employees.filter(e => e.status === 'Exited').length;
-    const missing     = employees.filter(e => e.status === 'Missing Details').length;
-    return { total, active, inProgress, exited, missing };
-  }, [employees]);
-
-  const filtered = useMemo(() => {
+  /* The one search predicate, shared with `filtered` below.
+     It lived only inside the table's filter, so the KPI tiles and the tab
+     badges counted the whole roster however narrow the search was — type a name
+     and the cards still read the company total (CBC #103). */
+  const matchesSearch = useCallback((e: EmployeeRow) => {
     const needle = search.trim().toLowerCase();
-    return employees
-      .filter(e => {
-        if (tab === 'active')      return e.status === 'Active' || e.status === 'Missing Details';
-        if (tab === 'in-progress') return e.status === 'Exit In Progress';
-        if (tab === 'exited')      return e.status === 'Exited';
-        return true;
-      })
-      .filter(e => {
-        if (!needle) return true;
-        return (
-          e.name.toLowerCase().includes(needle) ||
-          e.empId.toLowerCase().includes(needle) ||
-          e.department.toLowerCase().includes(needle) ||
-          e.designation.toLowerCase().includes(needle)
-        );
-      });
-  }, [employees, tab, search]);
+    if (!needle) return true;
+    return (
+      e.name.toLowerCase().includes(needle) ||
+      e.empId.toLowerCase().includes(needle) ||
+      e.department.toLowerCase().includes(needle) ||
+      e.designation.toLowerCase().includes(needle)
+    );
+  }, [search]);
+
+  const counts = useMemo(() => {
+    /* Search narrows the cards; the TAB deliberately does not. These tiles are
+       the status breakdown the tabs themselves are cut from — filter them by
+       tab and the tab you are on holds the total while every other tile reads
+       0, which is a breakdown that no longer breaks anything down. */
+    const rows        = employees.filter(matchesSearch);
+    const total       = rows.length;
+    const active      = rows.filter(e => e.status === 'Active').length;
+    const inProgress  = rows.filter(e => e.status === 'Exit In Progress').length;
+    const exited      = rows.filter(e => e.status === 'Exited').length;
+    const missing     = rows.filter(e => e.status === 'Missing Details').length;
+    return { total, active, inProgress, exited, missing };
+  }, [employees, matchesSearch]);
+
+  const filtered = useMemo(() => employees
+    .filter(e => {
+      if (tab === 'active')      return e.status === 'Active' || e.status === 'Missing Details';
+      if (tab === 'in-progress') return e.status === 'Exit In Progress';
+      if (tab === 'exited')      return e.status === 'Exited';
+      return true;
+    })
+    .filter(matchesSearch),
+  [employees, tab, matchesSearch]);
 
   /* Employee names clip to a hard character count rather than to whatever the
      column happens to be — the full name is always one hover away, and a fixed
@@ -3528,8 +3538,9 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           hint={(() => {
                             const p = fnfDues?.payroll;
                             if (!p) return 'Payroll skipped this employee for the exit month — their earned salary belongs here.';
-                            /* Early exit — a day/LOP breakdown of an all-zero
-                               month explains nothing; the reason does. */
+                            /* Early exit — the RULE is the headline, not the
+                               day count. The cycle it was computed from is in
+                               the breakdown panel below for anyone checking. */
                             if (p.early_exit) return p.note;
                             const b = p.breakdown;
                             if (!b) return `${p.earned_days} of ${p.month_days} days in ${p.cycle} — payroll skipped this employee for that cycle.`;
@@ -3605,8 +3616,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 : 'Not yet recovered. Settle it at the Notice Period Payment stage, or record the mode there as "Adjusted against F&F dues" to deduct it here.'} />
                   )}
 
+                  {/* readOnly={fnfPaid} — the block comment above says every
+                      editable figure carries it, and after CBC #96 removed
+                      Leave Encashment and Bonus this is the only one left, so
+                      it was the only one the rule still had to reach. Without
+                      it a paid settlement could still be re-typed here, moving
+                      the net away from the amount actually transferred. */}
                   <FnfRow label="Other Recovery"               value={fnfLines.loan}        onChange={v => setFnfLines(s => ({ ...s, loan: v }))} deduction
-                          hint="Anything not pulled automatically — loans, asset damage, notice shortfall settled elsewhere." />
+                          readOnly={fnfPaid}
+                          hint={fnfPaid
+                            ? 'Locked — the settlement has been paid.'
+                            : 'Free input — anything not pulled automatically: loans, asset damage, notice shortfall settled elsewhere.'} />
                   <div className="ep-fnf-net">
                     {/* A NEGATIVE net means deductions (advances / recovery)
                         exceed the earnings — the company doesn't pay out, the
@@ -3640,11 +3660,42 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <>
                 <div className="ep-section-label" style={{ marginTop: 14 }}>Finance Approval &amp; Payment</div>
                 <div className="ep-approval-card ep-details-card mb-2">
+                  {/* Says why the two fields above are dead. Without it a greyed
+                      Approval box on a resignation reads as a broken form — the
+                      date it is waiting on is set two stages back. */}
+                  {!fnfPaid && fnfBeforeLwd && (
+                    <div className="ep-settle-note is-due mb-2">
+                      <i className="ri-time-line" />
+                      <span>
+                        Approval and payment open on the last working day
+                        (<strong>{fmtDateShort(lwd)}</strong>). Everything else on this stage saves now —
+                        the exit month is priced up to that day, so the settlement figures are not
+                        final until then.
+                      </span>
+                    </div>
+                  )}
                   <Row className="g-2">
                     <Col md={6}>
-                      <EpField label="Finance Controller Approval" required invalid={!fnfPaid && fnfMeta.approval !== 'Approved'}>
+                      {/* Locked until the last working day, like "Mark F&F Paid"
+                          beside it.
+
+                          Approval + a payment date IS the settlement as far as
+                          the server is concerned (ExitController::isFnfPaid),
+                          and settling before the last working day is refused —
+                          the exit month is priced up to that day, so the figures
+                          are not final yet. But the refusal aborted the WHOLE
+                          `PUT .../exit` call, so on a resignation still serving
+                          notice, filling these two fields silently killed the
+                          save for every OTHER field on the stage too: reopen it
+                          and the work was gone and the bar back at 0% (CBC #102).
+
+                          Greying them keeps the same rule and costs nothing —
+                          nobody can approve a payment they are not yet allowed
+                          to make — while the rest of the stage saves normally.
+                          The note under the button already explains the date. */}
+                      <EpField label="Finance Controller Approval" required invalid={!fnfPaid && !fnfBeforeLwd && fnfMeta.approval !== 'Approved'}>
                         <EpSelect value={fnfMeta.approval} onChange={v => setFnfMeta(s => ({ ...s, approval: v }))}
-                          options={['Pending', 'Approved', 'Rejected']} disabled={fnfPaid} />
+                          options={['Pending', 'Approved', 'Rejected']} disabled={fnfPaid || fnfBeforeLwd} />
                       </EpField>
                     </Col>
                     <Col md={6}>
@@ -3659,7 +3710,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             can be neither paid before the exit began nor dated
                             in the future — this records a payment that has
                             already happened. */}
-                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid} min={exitStartIso || undefined} max={todayIso} />
+                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid || fnfBeforeLwd} min={exitStartIso || undefined} max={todayIso} />
                       </EpField>
                     </Col>
                   </Row>
@@ -4196,7 +4247,16 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
             {currentKey === 'closure' && (
               <>
-                <div className="ep-section-label">Final Validation Checklist</div>
+                {/* Every one of the five below must be ticked before Complete
+                    Exit unlocks (see the exitPending rule "Every final-validation
+                    checklist item must be ticked"), so the section carries the
+                    marker its individual rows can't. */}
+                <div className="ep-section-label">
+                  Final Validation Checklist<ReqStar />
+                  <span style={{ marginLeft: 6, fontWeight: 500, textTransform: 'none', letterSpacing: 0, color: 'var(--vz-secondary-color)' }}>
+                    — all {validation.length} required
+                  </span>
+                </div>
                 <div className="ep-checklist mb-3">
                   {[
                     { title: 'All clearances obtained',    sub: 'Manager, IT, Admin, Finance, Legal' },
@@ -4227,14 +4287,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       "Exited" is not even a value employees.status accepts.
                       A control that looks decisive and decides nothing is
                       worse than no control. */}
-                  <Col md={6}><EpField label="HR Final Sign-off"><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
+                  {/* Required: Pending AND Rejected both block Complete Exit —
+                      only "Approved" clears it. */}
+                  <Col md={6}><EpField label="HR Final Sign-off" required><EpSelect value={hrSignOff} onChange={setHrSignOff} options={['Pending','Approved','Rejected']} /></EpField></Col>
 
                   {/* Asked on every exit type — a clean resignation can still
                       warrant a re-hire bar. */}
                   {blacklistApplies && (
                     <>
                       <Col md={6}>
-                        <EpField label="Blacklist Employee">
+                        {/* Required as a DECISION, not as a blank to fill: it
+                            defaults to No and is written to the exit record
+                            either way, so the marker says "you are answering
+                            this" rather than "this is empty". */}
+                        <EpField label="Blacklist Employee" required>
                           {/* LOCKED on a termination — Yes is the only valid
                               answer, so the control is disabled rather than
                               merely pre-filled. Options collapse to ['Yes'] too:
@@ -4301,6 +4367,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: directReportCount > 0 ? '#b45309' : '#0d9488' }}>
                           Reporting Manager Dependency
+                          {/* Only while it actually blocks. Once every report has
+                              been moved the panel stays mounted to show what was
+                              done, and an asterisk on a finished task reads as
+                              an outstanding one. */}
+                          {directReportCount > 0 && <ReqStar />}
                         </div>
                         <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', marginTop: 3 }}>
                           {directReportCount > 0
@@ -4932,29 +5003,60 @@ function SettlementSummary({
   );
 }
 
-/* One line of the Full & Final breakdown. */
+/* One line of the Full & Final breakdown.
+
+   Most lines on this card are computed — payroll's exit-month figure, the
+   claims the Expense module owes, the advances still outstanding. Exactly ONE
+   is typed by hand (Other Recovery). Both used to render as an <input>, and
+   because the computed ones arrive carrying a figure while the typed one
+   starts empty, the affordance came out BACKWARDS: the locked boxes looked
+   filled-in and alive, and the only box anybody may actually type in was the
+   one showing grey placeholder text (CBC #98).
+
+   So a computed line no longer draws a control at all — it is a locked figure
+   with a padlock. The one field on the card that IS a control is the only
+   thing on screen shaped like one, and says so on its label. */
 function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
   label: string; value: string | null | undefined; onChange?: (v: string) => void;
   deduction?: boolean; readOnly?: boolean; hint?: string;
 }) {
+  const editable = !readOnly && !!onChange;
   return (
-    <div className={`ep-fnf-row${deduction ? ' is-ded' : ''}`}>
+    <div className={`ep-fnf-row${deduction ? ' is-ded' : ''}${editable ? ' is-editable' : ''}`}>
       <span className="ep-fnf-label">
-        {label}
+        <span className="ep-fnf-label-top">
+          {label}
+          {editable && (
+            <span className="ep-fnf-tag" title="Free input — type any amount here">
+              <i className="ri-pencil-line" />Editable
+            </span>
+          )}
+        </span>
         {hint && <em className="ep-fnf-hint">{hint}</em>}
       </span>
       <span className="ep-fnf-amt">
         {deduction && <i className="ep-fnf-sign">−</i>}
-        {/* `value ?? ''` — the input must stay CONTROLLED. A saved blank round-
-            trips through the API as null (ConvertEmptyStringsToNull), and a
-            null here would flip the field to uncontrolled mid-life, so it stops
-            tracking state. The load path already normalises; this is the leaf
-            guard so no future caller can reintroduce it. */}
-        <input
-          className="ep-fnf-in" type="number" min={0} value={value ?? ''}
-          readOnly={readOnly} disabled={readOnly}
-          onChange={e => onChange?.(e.target.value)} placeholder="0.00"
-        />
+        {editable ? (
+          /* `value ?? ''` — the input must stay CONTROLLED. A saved blank round-
+             trips through the API as null (ConvertEmptyStringsToNull), and a
+             null here would flip the field to uncontrolled mid-life, so it stops
+             tracking state. The load path already normalises; this is the leaf
+             guard so no future caller can reintroduce it. */
+          <span className="ep-fnf-field">
+            <i className="ep-fnf-cur">₹</i>
+            <input
+              className="ep-fnf-in" type="number" min={0} step="0.01" value={value ?? ''}
+              onChange={e => onChange!(e.target.value)} placeholder="0.00"
+              aria-label={`${label} — enter an amount`}
+              title="Free input — type any amount to deduct from this settlement"
+            />
+          </span>
+        ) : (
+          <span className="ep-fnf-ro" title="Calculated automatically — not editable here">
+            <i className="ri-lock-2-line" />
+            <span>{value ?? '0'}</span>
+          </span>
+        )}
       </span>
     </div>
   );
@@ -4984,10 +5086,18 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
      figure, which is not most of the time. */
   const [open, setOpen] = useState(false);
   const b = payroll?.breakdown;
-  // No payroll basis (employee never ran through a cycle) or an early exit
-  // where every figure is zero — the row's own hint already explains it, and
-  // an all-zero table would only add noise.
-  if (!payroll || payroll.early_exit || !b) return null;
+  /* Only a genuinely absent payroll basis hides this — an employee who never
+     ran through a cycle at all, where there is nothing to tabulate.
+
+     An EARLY EXIT no longer hides it. It used to: the settlement is zero, so
+     the panel was suppressed as noise. But the zero is a POLICY decision, and
+     suppressing the panel left "Salary for the Exit Month ₹0" standing alone
+     with no way for Finance to see the cycle it was computed from, or to check
+     the rule had been applied to the right person. The engine now returns the
+     real cycle with an Early Exit Recovery line that takes it all back
+     (PayrollService::earnedSalaryForExitMonth), so the table shows the money
+     that was given up and closes on zero — which is the thing worth seeing. */
+  if (!payroll || !b) return null;
 
   const earnings: any[] = Array.isArray(b.earnings) ? b.earnings.filter((r: any) => Number(r?.amount) !== 0) : [];
   const deductions: any[] = (Array.isArray(b.deductions) ? b.deductions : [])
@@ -5029,7 +5139,6 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
   const workingDays   = Number(b.working_days || 0);
   const paidDays      = Number(b.paid_days || 0);
   const lopDays       = Number(b.lop_days || 0);
-  const earnedGross   = Number(b.earned_gross || 0);
   const nDays = (n: number) => `${Number(n.toFixed(2))}`;
   /* Two different per-day rates exist and they are NOT interchangeable:
        · gross ÷ cycle days   — prices the pro-ration for a mid-cycle exit.
@@ -5221,18 +5330,13 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
         <strong>{fmtMoney(totalEarnings - totalDeductions)}</strong>
       </div>
 
-      {/* Why PF / ESI / PT are smaller here than on the employee master: they
-          are charged on the salary actually EARNED, not on the monthly
-          package. Only worth saying when the two genuinely differ. */}
-      {earnedGross > 0 && structureFor > 0 && earnedGross < structureFor - 1 && (
+      {/* Why the table above closes on zero. Without this the Early Exit
+          Recovery line reads as an unexplained deduction the size of the whole
+          salary — the one line on the card most likely to be queried. */}
+      {payroll?.early_exit && (
         <div className="ep-fnf-bd-note">
           <i className="ri-information-line" />
-          <span>
-            PF, ESI and Professional Tax are charged on the salary actually earned
-            ({fmtMoney(earnedGross)} of the {fmtMoney(structureFor)} for this cycle, after loss of
-            pay) — which is why they read lower here than the fixed monthly figures on the
-            employee&apos;s salary structure.
-          </span>
+          <span>{payroll.note}</span>
         </div>
       )}
 
@@ -5252,17 +5356,23 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
   );
 }
 
+/* The required marker, in one place.
+   EpField drew its own inline asterisk, so the SECTIONS that are equally
+   mandatory — the validation checklist, the sign-off, the manager dependency —
+   had no way to carry one without a second hand-rolled copy that would drift
+   from it in colour or weight. Everything now renders this (CBC #100). */
+function ReqStar() {
+  return (
+    <span aria-hidden="true" style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}>*</span>
+  );
+}
+
 function EpField({ label, required, invalid, children }: { label: string; required?: boolean; invalid?: boolean; children: React.ReactNode }) {
   return (
     <div className={`ep-field${invalid ? ' ep-field--invalid' : ''}`}>
       <div className="ep-field-label">
         {label}
-        {required && (
-          <span
-            aria-hidden="true"
-            style={{ color: '#dc2626', marginLeft: 3, fontWeight: 700 }}
-          >*</span>
-        )}
+        {required && <ReqStar />}
       </div>
       {children}
     </div>

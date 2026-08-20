@@ -1,6 +1,6 @@
 import { Fragment, forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Card, CardBody, Col, Row, Button, Input, Modal, ModalBody } from 'reactstrap';
-import { useNavigate } from 'react-router-dom';
+import HrEmployees from '../hrms/HrEmployees';
 import { MasterSelect, MasterMultiSelect, MasterDatePicker, MasterFormStyles } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -600,7 +600,6 @@ const EMPLOYEE_TYPES = [
 export default function HrEmployeeOnboarding() {
   // Redirects to /hr/employees with a hint so the destination page can
   // open the full 4-step wizard for the chosen row.
-  const navigate = useNavigate();
 
   /* Per-action grants for the Onboarding hub. Starting the wizard creates an
      onboarding record → can_add; editing the employee behind a row → can_edit.
@@ -697,26 +696,34 @@ export default function HrEmployeeOnboarding() {
   // Edit Employee modal — opened from the Action column pencil button
   const [editOpen, setEditOpen] = useState(false);
   const [editRow,  setEditRow]  = useState<OnboardRow | null>(null);
-  // Edit redirects to the HR Employees list with a navigation-state hint
-  // so the destination page can pop the full 4-step Add/Edit wizard for
-  // the chosen row. `returnTo` carries the path we came from so save/close
-  // sends the user straight back here instead of stranding them on the
-  // employees list. Falls back to the legacy inline modal only if the
-  // row's emp_code is missing (shouldn't happen for live API rows).
+  /* The full 4-step Add/Edit wizard, opened HERE.
+   *
+   * This used to navigate to /hr/employees carrying the emp_code in router
+   * state and let that page pop the wizard. The whole employee list therefore
+   * had to load and paint before the dialog could appear over it, which is the
+   * employee tab opening first and the editor arriving second (CBC #98) — and
+   * on close the user had to be steered back with a `returnTo` hint.
+   *
+   * The list was never wanted. HrEmployees now mounts in an embed mode that
+   * renders only its dialogs (see its `embedEditCode` prop), so the same one
+   * implementation of the form opens straight over this page. No navigation,
+   * nothing to return from, and no second copy of the wizard to keep in step.
+   *
+   * The legacy inline modal below is still the fallback for a row with no
+   * emp_code, which shouldn't happen for live API rows. */
+  const [wizardEmpCode, setWizardEmpCode] = useState<string | null>(null);
   const openEdit  = (row: OnboardRow) => {
     if (row?.empId) {
-      navigate('/hr/employees', {
-        state: {
-          openEditEmpCode: row.empId,
-          returnTo: '/hr/employee-onboarding',
-        },
-      });
+      setWizardEmpCode(row.empId);
       return;
     }
     setEditRow(row);
     setEditOpen(true);
   };
   const closeEdit = () => { setEditOpen(false); setEditRow(null); };
+  /* Reload on close: the wizard writes to the same employee rows this list
+     renders, so a saved change has to be visible without a manual refresh. */
+  const closeWizard = () => { setWizardEmpCode(null); reloadApiRows(); };
 
   // Pagination — mirrors the Employee page (rows-per-page dropdown, default 10).
   /* Paging lives in <DataTable> now. */
@@ -725,9 +732,35 @@ export default function HrEmployeeOnboarding() {
   // own page index whenever the tab or search changes).
   useEffect(() => { setStatusFilter('All'); setQ(''); }, [tab]);
 
+  /* The one search predicate, shared with `filtered` below.
+     It was written out only inside the table's filter, so the KPI tiles and the
+     tab badges counted the whole roster no matter what was typed — search for
+     one person and the cards still read the company total (CBC #118). */
+  const matchesQuery = useCallback((r: OnboardRow) => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return true;
+    return (
+      r.name.toLowerCase().includes(needle)         ||
+      r.empId.toLowerCase().includes(needle)        ||
+      r.department.toLowerCase().includes(needle)   ||
+      r.designation.toLowerCase().includes(needle)  ||
+      r.primaryRole.toLowerCase().includes(needle)  ||
+      r.managerName.toLowerCase().includes(needle)
+    );
+  }, [q]);
+
   const counts = useMemo(() => {
-    const pendingRows   = liveSplit.pending;
-    const completedRows = liveSplit.completed;
+    /* Search and department narrow the cards; the STATUS filter deliberately
+       does not. These tiles are the status breakdown — In Progress, Not
+       Started, Completed — so filtering them by status would leave the tile you
+       picked holding the total and every other tile reading 0, which is a
+       breakdown that no longer breaks anything down. Search and department are
+       different: they change WHO is being counted, which is exactly what the
+       cards are meant to report. */
+    const keep = (r: OnboardRow) =>
+      (deptFilter === 'All' || r.department === deptFilter) && matchesQuery(r);
+    const pendingRows   = liveSplit.pending.filter(keep);
+    const completedRows = liveSplit.completed.filter(keep);
     const all = [...pendingRows, ...completedRows];
     return {
       total:     all.length,
@@ -737,27 +770,15 @@ export default function HrEmployeeOnboarding() {
       missing:   pendingRows.filter(r => r.profile < 60).length,
       pending:   pendingRows.length,
     };
-  }, [liveSplit]);
+  }, [liveSplit, deptFilter, matchesQuery]);
 
   const rows = tab === 'pending' ? liveSplit.pending : liveSplit.completed;
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return rows
-      .filter(r => deptFilter === 'All' || r.department === deptFilter)
-      .filter(r => statusFilter === 'All' || r.status === statusFilter)
-      .filter(r => {
-        if (!needle) return true;
-        return (
-          r.name.toLowerCase().includes(needle)         ||
-          r.empId.toLowerCase().includes(needle)        ||
-          r.department.toLowerCase().includes(needle)   ||
-          r.designation.toLowerCase().includes(needle)  ||
-          r.primaryRole.toLowerCase().includes(needle)  ||
-          r.managerName.toLowerCase().includes(needle)
-        );
-      });
-  }, [rows, q, deptFilter, statusFilter]);
+  const filtered = useMemo(() => rows
+    .filter(r => deptFilter === 'All' || r.department === deptFilter)
+    .filter(r => statusFilter === 'All' || r.status === statusFilter)
+    .filter(matchesQuery),
+  [rows, deptFilter, statusFilter, matchesQuery]);
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
      4+18+8+9+10+8+7+11+9+8+8. */
@@ -1126,7 +1147,14 @@ export default function HrEmployeeOnboarding() {
         }}
       />
 
-      {/* ── Edit Employee Modal ── */}
+      {/* ── Edit Employee wizard, in place ──
+          Mounted only while a row is being edited, so the employee page's
+          machinery is not standing by behind this list the rest of the time. */}
+      {wizardEmpCode && (
+        <HrEmployees embedEditCode={wizardEmpCode} onEmbedClose={closeWizard} />
+      )}
+
+      {/* ── Edit Employee Modal (legacy fallback — row with no emp_code) ── */}
       <EditEmployeeModal
         isOpen={editOpen}
         onClose={closeEdit}
@@ -4066,6 +4094,49 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const overallPct = Math.round(stagesView.reduce((a, s) => a + s.progress, 0) / stagesView.length);
   const currentStage = stagesView[activeStage - 1];
 
+  /* Profile Completion, computed from what is actually on this screen.
+   *
+   * NOT `emp.profile` (the server's `profile_completion` accessor). That blends
+   * filled fields with `onboarding_stage_completed`, and the column is a HIGH
+   * WATER MARK — the furthest stage reached, not a count of stages finished.
+   * Stages can be completed out of order, so an employee can sit at 5 with
+   * Stage 2 barely started, and the server has no per-stage state to know it:
+   * `stage4_completed_at` is the only per-stage column that exists. The bar
+   * therefore read 92% for a fully-finished record and would have read 100%
+   * for one with no documents uploaded — wrong in both directions (CBC #101).
+   *
+   * `stagesView` above already works out the truth, live, for the sidebar and
+   * the Stage Completion Summary. This reads the same source, so the three
+   * numbers on screen can no longer disagree.
+   *
+   * Stages 1-5 only. Stage 6 is the Complete Onboarding click itself, and
+   * counting it means the bar can never reach 100% while HR is standing on
+   * Stage 6 looking at it to decide whether to press the button — which is the
+   * complaint that started this. The five content stages are the work; stage 6
+   * is the sign-off on that work. */
+  const PROFILE_FIELDS = [
+    'first_name', 'last_name', 'gender', 'date_of_birth',
+    'work_country_id', 'nationality_country_id',
+    'email', 'mobile',
+    'address_line1', 'city', 'state_id', 'country_id', 'pincode',
+    'department_id', 'designation_id', 'primary_role_id', 'date_of_joining',
+  ];
+  const profilePct = (() => {
+    const r: any = (emp as any)?.raw ?? {};
+    const filled = PROFILE_FIELDS.filter(f => {
+      const v = r[f];
+      return v !== null && v !== undefined && v !== '' && v !== 0 && v !== '0';
+    }).length;
+    const dataPart = (filled / PROFILE_FIELDS.length) * 50;
+    // Mean progress, not a count of Completed — a stage sitting at 22% should
+    // move the bar, or "why is it stuck?" is the next question.
+    const content = stagesView.filter(s => s.num <= 5);
+    const stagePart = content.length
+      ? (content.reduce((a, s) => a + s.progress, 0) / (content.length * 100)) * 50
+      : 0;
+    return Math.max(0, Math.min(100, Math.round(dataPart + stagePart)));
+  })();
+
   return (
     <Modal
       isOpen={isOpen}
@@ -4115,7 +4186,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             </div>
             <div className="d-flex align-items-center gap-2 flex-wrap">
               <span className="onb-init-status-pill"><i className="ri-time-line" /> Status: {emp.status}</span>
-              <span className="onb-init-status-pill"><i className="ri-user-line" /> Profile: {emp.profile}% complete</span>
+              <span className="onb-init-status-pill"><i className="ri-user-line" /> Profile: {profilePct}% complete</span>
             </div>
           </div>
 
@@ -4253,7 +4324,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 onProgress={handleStage5Progress}
               />
             )}
-            {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} onActivated={onSaved} />}
+            {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} profilePct={profilePct} onActivated={onSaved} />}
 
             {activeStage === 1 && (
             <>
@@ -8287,9 +8358,12 @@ function Stage5Policies({ emp, onProgress }: {
 // Completion runs through the footer's guarded "Complete Onboarding" flow.
 
 function Stage6Verify({
-  emp, stagesView, onActivated,
+  emp, stagesView, profilePct, onActivated,
 }: {
   emp: OnboardRow;
+  /** Computed in the wizard shell from `stagesView` + the profile fields —
+   *  see the note there for why the server's `emp.profile` is not used. */
+  profilePct: number;
   /** Live per-stage status computed in the parent. Stage 6 reads
    *  `status === 'Completed'` for each row to decide Verified vs Pending,
    *  so the summary updates the moment the user advances/finishes any
@@ -8302,30 +8376,31 @@ function Stage6Verify({
   // button that set it; the footer's Complete Onboarding closes the wizard and
   // refetches, so there is no in-between frame left to paper over.
   //
-  // The HR Final Approval row's "Verified" pill stays gated by the STRICTER
-  // check below (activated AND every prior stage Completed). Activation on its
-  // own is not enough: a row that slipped through with stages 2–5 pending
-  // would otherwise make the wizard mis-report 6/6 Verified.
-  /* Macro watermark only — see the matching note on `isActivated` in the wizard
-     shell. Reading `status === 'Active'` as "onboarding done" made this summary
-     report 6/6 Verified for an employee whose onboarding had never been
-     completed. */
-  const isActivated = Number(emp?.raw?.onboarding_stage_completed ?? 0) >= 6;
   const isStageDone = (num: number): boolean =>
     !!stagesView.find(s => s.num === num && s.status === 'Completed');
-  const allPriorStagesDone =
-    isStageDone(1) && isStageDone(2) && isStageDone(3) && isStageDone(4) && isStageDone(5);
-  const hrFinalVerified = isActivated && allPriorStagesDone;
+  /* Five rows, not six.
+   *
+   * The "HR Final Approval" row was removed: it reported on the very action
+   * this screen exists to perform. Its pill could only turn Verified once the
+   * employee had been activated, so for every reader of this summary — anyone
+   * still deciding whether to press Complete Onboarding — it was permanently
+   * Pending, listing the reader's own next click back at them as an
+   * outstanding task. The five rows below are the work that has to be true
+   * before that click; the click itself is the footer button, not a checklist
+   * item about itself.
+   *
+   * `isActivated` / `allPriorStagesDone` / `hrFinalVerified` went with it —
+   * they existed only to gate that row. The equivalent guard still runs where
+   * it matters, on the footer's Complete Onboarding flow, which refuses while
+   * any stage is pending. */
   const stageRows: { num: number; name: string; sub: string; icon: string; cls: string; verified: boolean }[] = [
     { num: 1, name: 'Employee Onboarding Setup',     sub: 'Basic details, job info & compensation · Stage 1', icon: 'ri-user-line',                cls: 's1', verified: isStageDone(1) },
     { num: 2, name: 'Document Management',           sub: 'Identity, education & employment docs · Stage 2',  icon: 'ri-file-list-3-line',         cls: 's2', verified: isStageDone(2) },
     { num: 3, name: 'Provisioning & Asset Setup',    sub: 'Email, systems, devices & access · Stage 3',       icon: 'ri-computer-line',            cls: 's3', verified: isStageDone(3) },
     { num: 4, name: 'Payroll & Finance Setup',       sub: 'Bank, PAN, PF/ESIC & salary structure · Stage 4',  icon: 'ri-money-dollar-circle-line', cls: 's4', verified: isStageDone(4) },
     { num: 5, name: 'Policies & Agreements',         sub: 'NDA, employment agreement & signing · Stage 5',    icon: 'ri-shield-check-line',        cls: 's5', verified: isStageDone(5) },
-    { num: 6, name: 'HR Final Approval',             sub: 'HR sign-off & verification',                       icon: 'ri-user-star-line',           cls: 's6', verified: hrFinalVerified },
   ];
   const verifiedCount = stageRows.filter(s => s.verified).length;
-  const readyPct = Math.round((verifiedCount / stageRows.length) * 100);
 
   return (
     <>
@@ -8354,9 +8429,9 @@ function Stage6Verify({
             <p className="onb-ver-info-label">Profile Completion</p>
             <div className="d-flex align-items-center gap-2 mt-1">
               <div className="onb-ver-info-track">
-                <div className="onb-ver-info-fill" style={{ width: `${emp.profile}%` }} />
+                <div className="onb-ver-info-fill" style={{ width: `${profilePct}%` }} />
               </div>
-              <span className="onb-ver-info-pct">{emp.profile}%</span>
+              <span className="onb-ver-info-pct">{profilePct}%</span>
             </div>
           </div>
         </div>

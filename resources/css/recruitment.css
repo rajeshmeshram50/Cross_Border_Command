@@ -675,6 +675,30 @@
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 .rec-input::placeholder { color: #9ca3af; }
+
+/* Disabled — a real "you cannot type here" look.
+   `.rec-input` pins its own background and colour, which beat the browser's
+   default disabled rendering, so a frozen field was pixel-identical to a live
+   one. Forms that lock their inputs mid-save (see the Holiday group dialog)
+   need that difference to be visible or the lock is invisible. The hover rule
+   is cancelled for the same reason: a purple border on a dead field invites
+   the click it is refusing. */
+.rec-input:disabled {
+  background: var(--vz-secondary-bg, #f3f4f6);
+  color: var(--vz-secondary-color, #6b7280);
+  border-color: var(--vz-border-color, #e5e7eb);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.rec-input:disabled:hover {
+  border-color: var(--vz-border-color, #e5e7eb);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .rec-input:disabled {
+  background: rgba(255,255,255,0.04);
+  color: var(--vz-secondary-color, #9ca3af);
+}
+
 .rec-input:hover,
 .rec-form-modal .master-select-wrap .master-select-toggle:hover,
 .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle:hover {
@@ -6677,15 +6701,56 @@
 }
 .ep-fnf-row.is-ded { background: #fef2f2; }
 .ep-fnf-label { font-size: 12.5px; font-weight: 600; display: flex; flex-direction: column; }
+.ep-fnf-label-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
 .ep-fnf-hint { font-style: normal; font-size: 10.5px; font-weight: 400; color: var(--vz-secondary-color); }
 .ep-fnf-amt { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 .ep-fnf-sign { font-style: normal; font-weight: 800; color: #b91c1c; }
-.ep-fnf-in {
-  width: 130px; text-align: right; font: inherit; font-size: 13px; font-weight: 700;
-  font-variant-numeric: tabular-nums; padding: 5px 9px; border-radius: 7px;
-  border: 1px solid var(--vz-border-color); background: var(--vz-card-bg); color: var(--vz-body-color);
+
+/* ── Computed lines ───────────────────────────────────────────────────────
+   A figure, not a control. These used to render as a disabled <input>, which
+   on a card where the ONE typeable field starts empty made the locked lines
+   look like the live ones (CBC #98). No box, no border — a padlock and the
+   number, so the only thing shaped like a field is the field. */
+.ep-fnf-ro {
+  display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px;
+  width: 130px; padding: 5px 9px; font-size: 13px; font-weight: 700;
+  font-variant-numeric: tabular-nums; color: var(--vz-secondary-color);
 }
-.ep-fnf-in:disabled { background: var(--vz-secondary-bg); color: var(--vz-secondary-color); }
+.ep-fnf-ro > i { font-size: 12px; opacity: 0.55; }
+
+/* ── The one free-input line ──────────────────────────────────────────────
+   Carries every affordance the locked rows deliberately don't: a real border,
+   the card background, a currency prefix, a text cursor and a focus ring. */
+.ep-fnf-field {
+  display: inline-flex; align-items: center; gap: 2px; width: 130px;
+  padding: 4px 8px; border-radius: 7px; background: var(--vz-card-bg);
+  border: 1.5px solid rgba(109,40,217,0.45);
+  box-shadow: 0 1px 2px rgba(76,29,149,0.10);
+  transition: border-color .15s, box-shadow .15s;
+  cursor: text;
+}
+.ep-fnf-field:hover { border-color: rgba(109,40,217,0.75); }
+.ep-fnf-field:focus-within {
+  border-color: #6d28d9; box-shadow: 0 0 0 3px rgba(109,40,217,0.18);
+}
+.ep-fnf-cur { font-style: normal; font-size: 12px; font-weight: 700; color: var(--vz-secondary-color); }
+.ep-fnf-in {
+  flex: 1; min-width: 0; width: 100%; text-align: right; font: inherit; font-size: 13px;
+  font-weight: 700; font-variant-numeric: tabular-nums;
+  padding: 1px 0; border: 0; background: transparent; color: var(--vz-body-color);
+  outline: none;
+}
+.ep-fnf-in::placeholder { color: var(--vz-secondary-color); opacity: 0.65; font-weight: 600; }
+
+/* "Editable" tag on the label — the explicit answer to "is this free input?",
+   for anyone reading the labels rather than the boxes. */
+.ep-fnf-tag {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
+  background: rgba(109,40,217,0.12); border: 1px solid rgba(109,40,217,0.30); color: #6d28d9;
+}
+.ep-fnf-tag > i { font-size: 10px; }
 .ep-fnf-net {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px; background: linear-gradient(135deg, #4c1d95, #6d28d9);
@@ -6830,6 +6895,17 @@
 
 [data-bs-theme="dark"] .ep-fnf-row { background: rgba(16,185,129,0.08); }
 [data-bs-theme="dark"] .ep-fnf-row.is-ded { background: rgba(239,68,68,0.08); }
+[data-bs-theme="dark"] .ep-fnf-field {
+  border-color: rgba(167,139,250,0.50); box-shadow: none;
+  background: rgba(255,255,255,0.04);
+}
+[data-bs-theme="dark"] .ep-fnf-field:hover { border-color: rgba(167,139,250,0.80); }
+[data-bs-theme="dark"] .ep-fnf-field:focus-within {
+  border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,0.22);
+}
+[data-bs-theme="dark"] .ep-fnf-tag {
+  background: rgba(167,139,250,0.16); border-color: rgba(167,139,250,0.36); color: #c4b5fd;
+}
 [data-bs-theme="dark"] .ep-settle.is-due .ep-settle-band { background: rgba(245,158,11,0.10); }
 [data-bs-theme="dark"] .ep-settle.is-ok  .ep-settle-band { background: rgba(16,185,129,0.10); }
 [data-bs-theme="dark"] .ep-settle.is-no  .ep-settle-band { background: rgba(239,68,68,0.10); }

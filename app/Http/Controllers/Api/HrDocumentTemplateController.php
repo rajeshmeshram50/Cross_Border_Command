@@ -627,15 +627,55 @@ class HrDocumentTemplateController extends Controller
             'HRA'   => '',
 
             // Organisation — best-effort from the tenant Client row.
-            'CompanyName'    => (string) ($emp->client?->org_name ?? ''),
+            /* Falls back all the way to the BRANCH name.
+             *
+             * Footers are commonly written as "{{CompanyName}} Confidential",
+             * so an unresolved token does not leave a blank — it leaves the
+             * word "Confidential" standing on its own at the foot of every
+             * page, which reads as the document's classification rather than
+             * as a missing name (CBC #113). There is always a branch, so there
+             * is always something truthful to print.
+             *
+             * This also read only `client->org_name`, while the generate path
+             * resolved the employing legal entity first — the same one-token,
+             * two-implementations split as the signer names. Same order in both
+             * now: legal entity, then the org behind the branch, then the
+             * client, then the branch itself. */
+            'CompanyName'    => (string) ($emp->legalEntity?->name
+                ?: $emp->branch?->client?->org_name
+                ?: $emp->client?->org_name
+                ?: $emp->branch?->name
+                ?: ''),
             'CompanyAddress' => '',
             'CompanyLogo'    => '',
         ];
 
-        // Signer{N}{Name|Date} — N is 1-indexed, matching the editor sidebar.
+        /* Signer{N}{Name|Role|Date} — N is 1-indexed, matching the editor sidebar.
+         *
+         * {{Signer{N}Name}} is the REAL PERSON the slot resolves to for this
+         * employee, not the workflow role label. It used to be the label, so a
+         * document whose signer role is "Reporting Manager" printed the words
+         * "Reporting Manager" on the signature line instead of the manager's
+         * name — and one whose role is "Employee" printed "Employee" where the
+         * employee's own name belonged (CBC #95).
+         *
+         * That was fixed once already, but only in HrGeneratedDocumentController
+         * — and this method is what the Evidence Vault's View/Generate buttons
+         * and the signature SEND path actually call, so the two screens named
+         * different people for the same document. Both now go through the one
+         * resolver (App\Support\SignerResolver), which is the whole reason it
+         * was pulled out into App\Support in the first place.
+         *
+         * The label is still reachable as {{Signer{N}Role}} for templates that
+         * genuinely want to print "Reporting Manager" as a caption under the
+         * signature line, which is the only legitimate use it had here. */
         foreach ($signers as $i => $s) {
             $n = $i + 1;
-            $ctx["Signer{$n}Name"] = (string) ($s['role_name'] ?? $s['designation_name'] ?? '');
+            $roleName = (string) ($s['role_name'] ?? '');
+            $ctx["Signer{$n}Role"] = $roleName;
+            $ctx["Signer{$n}Name"] = $roleName !== ''
+                ? \App\Support\SignerResolver::name($roleName, $emp)
+                : (string) ($s['designation_name'] ?? '');
             $ctx["Signer{$n}Date"] = '';
             // Designation token is still resolved in case a legacy template
             // references it — value falls back to role name when the wizard
