@@ -1333,11 +1333,11 @@ export default function HrPayroll() {
     // Derived per row and reused by both the deductions total and Net Payable.
     const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
     return [
-      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '8%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
       {
         header: 'Employee',
         accessorKey: 'name',
-        meta: { width: '14%' },
+        meta: { width: '12%' },
         cell: info => {
           const r = info.row.original;
           return (
@@ -1363,7 +1363,7 @@ export default function HrPayroll() {
         meta: { width: '6%', align: 'right' },
         cell: info => <span className="fs-13" style={{ color: info.row.original.tds ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.tds === 0 ? '₹0' : `₹${fmtINR(info.row.original.tds)}`}</span>,
       },
-      { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
+      { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
       { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
       {
         header: 'Total Deductions',
@@ -1382,11 +1382,18 @@ export default function HrPayroll() {
       {
         header: () => <div className="text-center">Status</div>,
         accessorKey: 'status',
-        meta: { width: '5%', align: 'center' },
+        /* 9%, matching the Processing tab's Status column. At 5% the cell was
+           ~95px against the table's 1900px min-width, while the widest pill
+           ("Pending Review") measures ~117px — so the badge overflowed its own
+           cell and sat across the Payslip column next to it. The four points
+           come off Employee / Emp ID / LOP Deducted, which all had slack. */
+        meta: { width: '9%', align: 'center' },
         cell: info => {
           const tone = toneFor(info.row.original.status);
           return (
-            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
+            // nowrap: a pill must never wrap to a second line and reflow the
+            // row height; if space ever runs short again the table scrolls.
+            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11, whiteSpace: 'nowrap' }}>
               <span className="d" style={{ background: tone.dot }} />
               {info.row.original.status}
             </span>
