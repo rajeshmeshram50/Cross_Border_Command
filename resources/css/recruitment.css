@@ -675,6 +675,30 @@
   transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
 }
 .rec-input::placeholder { color: #9ca3af; }
+
+/* Disabled — a real "you cannot type here" look.
+   `.rec-input` pins its own background and colour, which beat the browser's
+   default disabled rendering, so a frozen field was pixel-identical to a live
+   one. Forms that lock their inputs mid-save (see the Holiday group dialog)
+   need that difference to be visible or the lock is invisible. The hover rule
+   is cancelled for the same reason: a purple border on a dead field invites
+   the click it is refusing. */
+.rec-input:disabled {
+  background: var(--vz-secondary-bg, #f3f4f6);
+  color: var(--vz-secondary-color, #6b7280);
+  border-color: var(--vz-border-color, #e5e7eb);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.rec-input:disabled:hover {
+  border-color: var(--vz-border-color, #e5e7eb);
+  box-shadow: none;
+}
+[data-bs-theme="dark"] .rec-input:disabled {
+  background: rgba(255,255,255,0.04);
+  color: var(--vz-secondary-color, #9ca3af);
+}
+
 .rec-input:hover,
 .rec-form-modal .master-select-wrap .master-select-toggle:hover,
 .rec-form-modal .master-datepicker-wrap .master-datepicker-toggle:hover {

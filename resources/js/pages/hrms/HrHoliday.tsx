@@ -171,23 +171,39 @@ export default function HrHoliday() {
            still overflowed when the text had no spaces to break on (e.g. a
            pasted "wwwww…" run): `fit-content` then sized the div past the
            column and the text painted over the Group cell. `textOverflow`
-           handles any content, and `overflowWrap` lets an unbroken NAME wrap
-           instead of pushing the row wide. Full text stays on hover. */
+           handles any content, whatever it contains.
+
+           The NAME clips on one line now, exactly like the description under
+           it. It used to `overflowWrap: anywhere` instead, which kept a long
+           name inside the column but paid for it in HEIGHT — a pasted title ran
+           to three lines and dragged the whole row with it, so four holidays
+           filled the screen (CBC #54). One line each keeps every row the same
+           height whatever is in it, and the full text is one hover away on both
+           lines rather than only on the description. */
+        const clip = {
+          maxWidth: '100%',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap' as const,
+        };
         return (
           <>
-            <div className="fw-bold fs-13" style={{ overflowWrap: 'anywhere' }}>{r.name}</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <Tooltip label={r.name}>
+                <div className="fw-bold fs-13" style={clip}>{r.name}</div>
+              </Tooltip>
+              {/* A recurring holiday shows on every year's calendar, so the row
+                  needs to say so — the Date column shows one year and reads as
+                  a one-off without it. */}
+              {r.is_recurring && (
+                <Tooltip label="Repeats every year on this date">
+                  <i className="ri-repeat-2-line" style={{ fontSize: 12, color: '#7c5cfc', flexShrink: 0 }} />
+                </Tooltip>
+              )}
+            </div>
             {r.description && (
               <Tooltip label={r.description}>
-                <div
-                  className="text-muted"
-                  style={{
-                    fontSize: 11.5,
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
+                <div className="text-muted" style={{ fontSize: 11.5, ...clip }}>
                   {r.description}
                 </div>
               </Tooltip>
@@ -676,7 +692,8 @@ function HolidayModal({
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)' }}>Manage a company holiday date</div>
               </div>
             </div>
-            <button type="button" onClick={onClose} style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32 }}>
+            <button type="button" onClick={onClose} disabled={saving}
+              style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 32, height: 32, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
@@ -688,8 +705,14 @@ function HolidayModal({
               <label className="rec-form-label">Holiday Name<span className="req">*</span></label>
               {/* Letters, numbers, spaces and basic name punctuation only — strips
                   special chars (@, #, $, …) as the user types/pastes. */}
+              {/* Every control on this form freezes while the save is in
+                  flight, matching the buttons below. They all stayed live, so a
+                  second click could fire another submit and anything changed
+                  after the first one was never in the request — the form showed
+                  one holiday and the server stored another (CBC #53). */}
               <input type="text" className={`rec-input${errors.name ? ' is-invalid' : ''}`} placeholder="e.g. Republic Day"
-                value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z0-9 .'\-]/g, ''))} maxLength={191} />
+                value={name} onChange={e => setName(e.target.value.replace(/[^a-zA-Z0-9 .'\-]/g, ''))} maxLength={191}
+                disabled={saving} />
               {errors.name && <div className="rec-error"><i className="ri-error-warning-line" />{errors.name}</div>}
             </Col>
 
@@ -699,7 +722,7 @@ function HolidayModal({
                 <span className="text-muted" style={{ fontWeight: 400, fontSize: 10.5, marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>(The group decides which employees get this holiday.)</span>
               </label>
               <MasterSelect value={groupId} onChange={(v) => { setGroupId(v); setErrors(e => ({ ...e, group: '' })); }}
-                options={groupOptions} invalid={!!errors.group}
+                options={groupOptions} invalid={!!errors.group} disabled={saving}
                 placeholder={groupOptions.length ? 'Select group' : 'No active groups — create one via Groups'} />
               {errors.group && <div className="rec-error"><i className="ri-error-warning-line" />{errors.group}</div>}
             </Col>
@@ -707,21 +730,42 @@ function HolidayModal({
             <Col md={6}>
               <label className="rec-form-label">Type<span className="req">*</span></label>
               <MasterSelect value={type} onChange={(v) => { setType(v as HolidayType); setErrors(e => ({ ...e, type: '' })); }}
-                options={TYPE_OPTIONS} invalid={!!errors.type} placeholder="Select type" />
+                options={TYPE_OPTIONS} invalid={!!errors.type} disabled={saving} placeholder="Select type" />
               {errors.type && <div className="rec-error"><i className="ri-error-warning-line" />{errors.type}</div>}
             </Col>
 
             <Col md={6}>
               <label className="rec-form-label">Date<span className="req">*</span></label>
-              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={minDateStr} />
+              <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={minDateStr} disabled={saving} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
             </Col>
 
             <Col md={12}>
+              {/* The only piece of "repeat every year" that was missing.
+                  `isRecurring` state, the edit-time hydration, the payload
+                  field, the API validation and every consumer of it (holiday
+                  list expansion, attendance, leave day-counting, payroll) were
+                  all already built and working — there was simply no control to
+                  turn it on, so every holiday saved as one-off (CBC #55). */}
+              <label className="rec-toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 8, border: '1px solid var(--vz-border-color)', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
+                <input type="checkbox" checked={isRecurring} disabled={saving}
+                  onChange={e => setIsRecurring(e.target.checked)} />
+                <i className="ri-repeat-2-line" />
+                Repeat every year
+              </label>
+              <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                {isRecurring
+                  ? `Falls on the same date every year — the year in the date above is only the first one.`
+                  : 'One-off — this holiday applies to the selected date only.'}
+              </div>
+            </Col>
+
+            <Col md={12}>
               <label className="rec-form-label">Description</label>
               <textarea className="rec-input" rows={2} placeholder="Optional note shown to employees"
-                value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} style={{ resize: 'vertical' }} />
+                value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} style={{ resize: 'vertical' }}
+                disabled={saving} />
             </Col>
           </Row>
         </div>
@@ -965,22 +1009,33 @@ function ManageGroupsModal({
             <div style={{ padding: '14px 20px', background: 'linear-gradient(135deg, #6d28d9 0%, #8b5cf6 60%, #a78bfa 100%)' }}>
               <div className="d-flex align-items-center justify-content-between">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15 }}>{editing ? 'Edit Group' : 'Add Group'}</h5>
-                <button type="button" onClick={closeForm} style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30 }}>
+                {/* Guarded like Cancel below. The backdrop and Esc are already
+                    disabled for this dialog, which left this ✕ as the only way
+                    to walk out mid-save. */}
+                <button type="button" onClick={closeForm} disabled={saving}
+                  style={{ background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', borderRadius: 8, width: 30, height: 30, opacity: saving ? 0.5 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
                   <i className="ri-close-line" style={{ fontSize: 18 }} />
                 </button>
               </div>
             </div>
             <div style={{ padding: '18px 20px' }}>
               <Row className="g-3">
+                {/* Frozen while the save is in flight, like the buttons below.
+                    Both stayed editable, so anything typed after clicking Save
+                    was never in the request — the field showed one value and the
+                    server stored another, with nothing on screen to say so
+                    (CBC #50). */}
                 <Col md={12}>
                   <label className="rec-form-label">Group Name<span className="req">*</span></label>
                   <input type="text" className={`rec-input${nameErr ? ' is-invalid' : ''}`} placeholder="e.g. Indian Employees"
-                    value={name} onChange={e => { setName(e.target.value); setNameErr(''); }} maxLength={191} autoFocus />
+                    value={name} onChange={e => { setName(e.target.value); setNameErr(''); }} maxLength={191} autoFocus
+                    disabled={saving} />
                   {nameErr && <div className="rec-error"><i className="ri-error-warning-line" />{nameErr}</div>}
                 </Col>
                 <Col md={12}>
                   <label className="rec-form-label">Description</label>
-                  <input type="text" className="rec-input" placeholder="Optional" value={description} onChange={e => setDescription(e.target.value)} maxLength={1000} />
+                  <input type="text" className="rec-input" placeholder="Optional" value={description} onChange={e => setDescription(e.target.value)} maxLength={1000}
+                    disabled={saving} />
                 </Col>
               </Row>
             </div>

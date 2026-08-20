@@ -19,6 +19,8 @@ import { MasterSelect } from '../../components/ui/MasterSelect';
  */
 
 type Req = { method: string; url: string; label: string; write?: boolean; body?: Record<string, unknown> };
+/** A queued request plus the module/page it belongs to — the grouping key. */
+type Queued = Req & { moduleKey: string; moduleLabel: string; pageLabel: string };
 type Action = { key: string; label: string; kind: 'read' | 'write'; requests: Req[] };
 type Frontend = {
   lines: number | null; source_kb: number | null;
@@ -44,6 +46,9 @@ type Result = {
   rows: number | null;
   profileId: string | null;
   rolledBack: boolean;
+  moduleKey: string;
+  moduleLabel: string;
+  pageLabel: string;
   error?: string;
 };
 
@@ -66,6 +71,10 @@ export default function LoadTesting() {
   const [modules, setModules] = useState<Module[]>([]);
   const [loadingTargets, setLoadingTargets] = useState(true);
   const [targetsError, setTargetsError] = useState<string | null>(null);
+  // What the endpoint actually replied, so the empty state can explain itself
+  // instead of leaving you guessing between 'not built', 'no permission' and
+  // 'wrong response shape' — three very different fixes.
+  const [diag, setDiag] = useState<string | null>(null);
 
   const [moduleKey, setModuleKey] = useState('');
   const [pageKey, setPageKey] = useState('');
@@ -88,8 +97,17 @@ export default function LoadTesting() {
     api.get('/dev-tools/profile-targets')
       .then(res => {
         if (cancelled) return;
-        const mods: Module[] = res.data?.modules ?? [];
+        const mods: Module[] = Array.isArray(res.data?.modules) ? res.data.modules : [];
         setModules(mods);
+        if (!mods.length) {
+          setDiag(
+            typeof res.data === 'string'
+              // 200 but a document body: the request never reached the endpoint —
+              // usually a stale bundle calling a route that did not exist yet.
+              ? `HTTP ${res.status} returned a document, not JSON — the built assets are probably stale. Run \`npm run build\` and hard-reload.`
+              : `HTTP ${res.status}, keys: [${Object.keys(res.data ?? {}).join(', ') || 'none'}] — expected a "modules" array.`,
+          );
+        }
         if (mods.length) {
           setModuleKey(mods[0].key);
           setPageKey(mods[0].pages[0]?.key ?? '');
@@ -97,7 +115,14 @@ export default function LoadTesting() {
         }
       })
       .catch(err => {
-        if (!cancelled) setTargetsError(err?.response?.data?.message || 'Could not load profile targets.');
+        if (cancelled) return;
+        const st = err?.response?.status;
+        setTargetsError(
+          err?.response?.data?.message
+          || (st === 404 ? 'Endpoint not found (404) — the route is registered on the server but this build may predate it.'
+            : st === 403 ? 'Not permitted, or the app is not running in local/staging.'
+            : `Could not load profile targets${st ? ` (HTTP ${st})` : ''}.`),
+        );
       })
       .finally(() => { if (!cancelled) setLoadingTargets(false); });
     return () => { cancelled = true; };
@@ -110,15 +135,49 @@ export default function LoadTesting() {
   /* What Run will fire. The two "All" options flatten wider and wider: every
      action on a page, or every action on every page of the module — one press to
      see the whole surface rather than stepping through nine combinations. */
-  const queued: Req[] = useMemo(() => {
+  const queued: Queued[] = useMemo(() => {
+    const tag = (m: Module, p: Page, rs: Req[]): Queued[] =>
+      rs.map(r => ({ ...r, moduleKey: m.key, moduleLabel: m.label, pageLabel: p.label }));
+
+    // Benchmark: every request the registry knows about, so the summary can rank
+    // modules against each other rather than showing one in isolation.
+    if (moduleKey === '__all') {
+      return modules.flatMap(m => m.pages.flatMap(p => tag(m, p, p.actions.flatMap(a => a.requests))));
+    }
+    if (!module) return [];
     if (pageKey === '__all') {
-      return (module?.pages ?? []).flatMap(p => p.actions.flatMap(a => a.requests));
+      return module.pages.flatMap(p => tag(module, p, p.actions.flatMap(a => a.requests)));
     }
+    if (!page) return [];
     if (actionKey === '__all') {
-      return (page?.actions ?? []).flatMap(a => a.requests);
+      return tag(module, page, page.actions.flatMap(a => a.requests));
     }
-    return action?.requests ?? [];
-  }, [module, page, action, pageKey, actionKey]);
+    return tag(module, page, action?.requests ?? []);
+  }, [modules, module, page, action, moduleKey, pageKey, actionKey]);
+
+  /** True while the whole app is being measured — switches the view to a ranking. */
+  const benchmarking = moduleKey === '__all';
+
+  /** Per-module totals, the number you actually optimise against. */
+  const byModule = useMemo(() => {
+    const acc = new Map<string, {
+      label: string; requests: number; serverMs: number; queryMs: number;
+      queries: number; sizeKb: number; slowest: Result | null;
+    }>();
+    for (const r of results) {
+      const cur = acc.get(r.moduleKey) ?? {
+        label: r.moduleLabel, requests: 0, serverMs: 0, queryMs: 0, queries: 0, sizeKb: 0, slowest: null,
+      };
+      cur.requests += 1;
+      cur.serverMs += r.serverMs ?? 0;
+      cur.queryMs  += r.queryMs ?? 0;
+      cur.queries  += r.queries ?? 0;
+      cur.sizeKb   += r.sizeKb;
+      if (!cur.slowest || (r.serverMs ?? 0) > (cur.slowest.serverMs ?? 0)) cur.slowest = r;
+      acc.set(r.moduleKey, cur);
+    }
+    return [...acc.values()].sort((a, b) => b.serverMs - a.serverMs);
+  }, [results]);
 
   const pageOptions = useMemo(() => [
     ...(module?.pages ?? []).map(p => ({ value: p.key, label: p.label })),
@@ -174,6 +233,7 @@ export default function LoadTesting() {
           rows,
           profileId: h['x-profile-id'] || null,
           rolledBack: h['x-profile-rolled-back'] === '1',
+          moduleKey: r.moduleKey, moduleLabel: r.moduleLabel, pageLabel: r.pageLabel,
         });
       } catch (err: any) {
         out.push({
@@ -182,6 +242,7 @@ export default function LoadTesting() {
           totalMs: Math.round(performance.now() - t0),
           serverMs: null, queryMs: null, queries: null, sizeKb: 0, rows: null,
           profileId: null, rolledBack: false,
+          moduleKey: r.moduleKey, moduleLabel: r.moduleLabel, pageLabel: r.pageLabel,
           error: err?.response?.data?.message || err?.message || 'Request failed',
         });
       }
@@ -241,7 +302,18 @@ export default function LoadTesting() {
 
   if (loadingTargets) return <div className="lt-empty">Loading modules…</div>;
   if (targetsError)   return <div className="lt-empty lt-empty--err">{targetsError}</div>;
-  if (!modules.length) return <div className="lt-empty">No profile targets configured.</div>;
+  if (!modules.length) {
+    return (
+      <div className="lt-empty">
+        <b>No profile targets came back.</b>
+        {diag && <div className="lt-diag">{diag}</div>}
+        <div className="lt-diag-hint">
+          The registry lives in <code>app/Support/DevToolsProfileTargets.php</code>. This screen is
+          local/staging only.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="lt">
@@ -253,7 +325,10 @@ export default function LoadTesting() {
           <span>MODULE</span>
           <MasterSelect
             value={moduleKey}
-            options={modules.map(m => ({ value: m.key, label: `${m.group} · ${m.label}` }))}
+            options={[
+              ...modules.map(m => ({ value: m.key, label: `${m.group} · ${m.label}` })),
+              ...(modules.length > 1 ? [{ value: '__all', label: 'All modules — benchmark' }] : []),
+            ]}
             searchable={false}
             onChange={v => {
               const m = modules.find(x => x.key === v);
@@ -265,6 +340,7 @@ export default function LoadTesting() {
           />
         </div>
 
+        {!benchmarking && (
         <div className="lt-field">
           <span>PAGE</span>
           <MasterSelect
@@ -278,8 +354,9 @@ export default function LoadTesting() {
             }}
           />
         </div>
+        )}
 
-        {pageKey !== '__all' && (
+        {!benchmarking && pageKey !== '__all' && (
           <div className="lt-field">
             <span>ACTION</span>
             <MasterSelect
@@ -303,7 +380,7 @@ export default function LoadTesting() {
       </div>
 
       {/* ── Front-end weight of the page ── */}
-      {page?.frontend && (
+      {!benchmarking && page?.frontend && (
         <div className="lt-fe">
           <div><label>COMPONENT</label><b title={page.component}>{shortPath(page.component)}</b></div>
           <div><label>SOURCE</label><b>{page.frontend.lines ?? '—'} lines{page.frontend.source_kb ? ` · ${page.frontend.source_kb} KB` : ''}</b></div>
@@ -322,7 +399,7 @@ export default function LoadTesting() {
       )}
 
       {/* ── Every file the browser loads for this page ── */}
-      {page?.assets && page.assets.totals.files > 0 && (
+      {!benchmarking && page?.assets && page.assets.totals.files > 0 && (
         <div className="lt-assets">
           <button type="button" className="lt-assets-hd" onClick={() => setShowFiles(v => !v)}>
             <span className={`lt-caret ${showFiles ? 'is-open' : ''}`}>▸</span>
@@ -354,6 +431,69 @@ export default function LoadTesting() {
                 ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Module ranking (benchmark mode) ── */}
+      {benchmarking && byModule.length > 0 && (
+        <div className="lt-rank">
+          <div className="lt-rank-hd">
+            <b>Server time by module</b>
+            <span>
+              {results.length} of {queued.length} request(s) measured — ranked by time spent
+              inside Laravel, which is the part your code controls
+            </span>
+          </div>
+
+          <div className="lt-rank-tblwrap">
+            <table className="lt-rank-tbl">
+              <thead>
+                <tr>
+                  <th>MODULE</th><th className="num">REQ</th>
+                  <th>SERVER TIME</th>
+                  <th className="num">DB</th><th className="num">QUERIES</th>
+                  <th className="num">PAYLOAD</th><th>SLOWEST CALL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byModule.map(m => {
+                  const worst = byModule[0].serverMs || 1;
+                  // DB time as a share of server time: a high bar that is mostly
+                  // dark is a database problem, mostly light is PHP.
+                  const dbShare = m.serverMs > 0 ? Math.min(100, (m.queryMs / m.serverMs) * 100) : 0;
+                  return (
+                    <tr key={m.label}>
+                      <td className="lt-rank-name">{m.label}</td>
+                      <td className="num">{m.requests}</td>
+                      <td className="lt-rank-barcell">
+                        <span className="lt-rank-track">
+                          <span className="lt-rank-fill" style={{ width: `${Math.max(4, (m.serverMs / worst) * 100)}%` }}>
+                            <span className="lt-rank-db" style={{ width: `${dbShare}%` }} />
+                          </span>
+                        </span>
+                        <b>{Math.round(m.serverMs)} ms</b>
+                      </td>
+                      <td className="num">{Math.round(m.queryMs)} ms</td>
+                      <td className="num">{m.queries}</td>
+                      <td className="num">{m.sizeKb} KB</td>
+                      <td className="lt-rank-slow" title={m.slowest?.url}>
+                        {m.slowest ? `${m.slowest.label} · ${Math.round(m.slowest.serverMs ?? 0)} ms` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="lt-rank-key">
+            <span><i className="lt-key-sw lt-key-sw--db" /> database</span>
+            <span><i className="lt-key-sw lt-key-sw--php" /> PHP / framework</span>
+            <span className="lt-rank-note">
+              Measured on this machine against this dataset — useful for ranking modules
+              against each other, not as an absolute production figure.
+            </span>
+          </div>
         </div>
       )}
 
@@ -452,6 +592,9 @@ export default function LoadTesting() {
                     <span className="lt-lbl">{r.label}</span>
                     <span className="lt-useico">where used ▸</span>
                   </button>
+                  {benchmarking && (
+                    <div className="lt-crumb">{r.moduleLabel} · {r.pageLabel}</div>
+                  )}
                   <div className="lt-url"><span className="lt-m">{r.method}</span>{r.url}</div>
                   {r.error && <div className="lt-errmsg">{r.error}</div>}
                 </td>
@@ -540,6 +683,10 @@ const CSS = `
 .lt{display:flex;flex-direction:column;gap:14px;padding:14px 16px 18px;}
 .lt-empty{padding:34px;text-align:center;color:#64748b;font-size:13px;}
 .lt-empty--err{color:#b91c1c;}
+.lt-empty b{display:block;font-size:13px;color:#0f172a;margin-bottom:6px;}
+.lt-diag{font-size:11.5px;color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;max-width:640px;margin:0 auto 8px;text-align:left;}
+.lt-diag-hint{font-size:10.5px;color:#94a3b8;}
+.lt-diag-hint code{font-family:ui-monospace,monospace;background:#f1f5f9;padding:1px 5px;border-radius:4px;}
 .lt-bar{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;}
 .lt-field{display:flex;flex-direction:column;gap:4px;min-width:210px;}
 .lt-field span{font-size:9.5px;font-weight:800;letter-spacing:.06em;color:#64748b;}
@@ -575,6 +722,32 @@ const CSS = `
 [data-bs-theme="dark"] .lt-fe b{color:#cffafe;}
 [data-bs-theme="dark"] .lt-tbl td{border-color:#1e293b;}
 [data-bs-theme="dark"] .lt-tbl tfoot td{background:#111c33;}
+.lt-crumb{font-size:9.5px;font-weight:700;color:#0891b2;letter-spacing:.02em;}
+.lt-rank{border:1px solid #bae6fd;background:#f8fdff;border-radius:12px;overflow:hidden;}
+.lt-rank-hd{display:flex;flex-direction:column;gap:2px;padding:10px 14px;background:#e0f2fe;}
+.lt-rank-hd b{font-size:12px;color:#0c4a6e;}
+.lt-rank-hd span{font-size:10px;color:#0369a1;}
+.lt-rank-tblwrap{overflow-x:auto;}
+.lt-rank-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.lt-rank-tbl th{text-align:left;font-size:9px;font-weight:800;letter-spacing:.05em;color:#64748b;padding:8px 12px;white-space:nowrap;}
+.lt-rank-tbl th.num,.lt-rank-tbl td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.lt-rank-tbl td{padding:7px 12px;border-top:1px solid #e8f4fa;vertical-align:middle;}
+.lt-rank-name{font-weight:800;color:#0c4a6e;white-space:nowrap;}
+.lt-rank-barcell{display:flex;align-items:center;gap:9px;min-width:230px;}
+.lt-rank-barcell b{font-size:11.5px;color:#0c4a6e;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.lt-rank-track{flex:1;height:14px;background:#e2e8f0;border-radius:999px;overflow:hidden;min-width:110px;}
+.lt-rank-fill{display:block;height:100%;background:#7dd3fc;border-radius:999px;position:relative;}
+.lt-rank-db{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#0e7490,#0891b2);border-radius:999px 0 0 999px;}
+.lt-rank-slow{font-size:10.5px;color:#64748b;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.lt-rank-key{display:flex;align-items:center;gap:14px;padding:8px 14px;font-size:10px;color:#64748b;flex-wrap:wrap;}
+.lt-key-sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:4px;vertical-align:-1px;}
+.lt-key-sw--db{background:#0891b2;}
+.lt-key-sw--php{background:#7dd3fc;}
+.lt-rank-note{margin-left:auto;font-style:italic;max-width:420px;}
+[data-bs-theme="dark"] .lt-rank{background:#082f49;border-color:#0c4a6e;}
+[data-bs-theme="dark"] .lt-rank-hd{background:#0c4a6e;}
+[data-bs-theme="dark"] .lt-rank-hd b,[data-bs-theme="dark"] .lt-rank-name,[data-bs-theme="dark"] .lt-rank-barcell b{color:#cffafe;}
+[data-bs-theme="dark"] .lt-rank-tbl td{border-color:#0c4a6e;}
 .lt-usebtn{display:flex;align-items:center;gap:8px;border:none;background:none;padding:0;cursor:pointer;text-align:left;}
 .lt-usebtn .lt-lbl{font-weight:700;color:#0f172a;}
 .lt-useico{font-size:9px;font-weight:800;color:#0891b2;opacity:0;transition:opacity .12s ease;white-space:nowrap;}

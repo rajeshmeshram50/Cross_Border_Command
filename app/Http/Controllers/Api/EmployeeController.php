@@ -189,22 +189,7 @@ class EmployeeController extends Controller
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
-        if ($search = $request->query('search')) {
-            $q->where(function ($w) use ($search) {
-                $w->where('display_name', 'ilike', "%{$search}%")
-                    ->orWhere('emp_code', 'ilike', "%{$search}%")
-                    ->orWhere('email', 'ilike', "%{$search}%")
-                    ->orWhere('mobile', 'ilike', "%{$search}%")
-                    // Department / designation / role names are searchable too.
-                    // The HR list used to filter the whole array in the browser
-                    // and matched on those three; once the list is paginated the
-                    // browser only holds one page, so anything the server can't
-                    // find is simply unfindable.
-                    ->orWhereHas('department', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
-                    ->orWhereHas('designation', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
-                    ->orWhereHas('primaryRole', fn ($r) => $r->where('name', 'ilike', "%{$search}%"));
-            });
-        }
+        $this->applySearch($q, $request->query('search'));
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
@@ -352,12 +337,46 @@ class EmployeeController extends Controller
      * The definitions below mirror apiToRow() in HrEmployees.tsx exactly. If
      * either side changes, the cards stop agreeing with the rows beneath them.
      */
+    /**
+     * Free-text filter shared by the list and the counts.
+     *
+     * Extracted because stats() has to narrow by exactly the same rule as
+     * index(): the tab badges sat at their unfiltered totals while the table
+     * below them showed three rows, so the page contradicted itself (QA #173).
+     * Two copies of a nine-clause OR would drift the first time one is edited.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $q
+     */
+    private function applySearch($q, ?string $search): void
+    {
+        if (!$search = trim((string) $search)) {
+            return;
+        }
+        $q->where(function ($w) use ($search) {
+            $w->where('display_name', 'ilike', "%{$search}%")
+                ->orWhere('emp_code', 'ilike', "%{$search}%")
+                ->orWhere('email', 'ilike', "%{$search}%")
+                ->orWhere('mobile', 'ilike', "%{$search}%")
+                // Department / designation / role names are searchable too.
+                // The HR list used to filter the whole array in the browser and
+                // matched on those three; once the list is paginated the browser
+                // only holds one page, so anything the server can't find is
+                // simply unfindable.
+                ->orWhereHas('department', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
+                ->orWhereHas('designation', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
+                ->orWhereHas('primaryRole', fn ($r) => $r->where('name', 'ilike', "%{$search}%"));
+        });
+    }
+
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');
 
         $q = Employee::query()->withTrashed();
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+        /* Same narrowing the list applies, so the badges describe the rows on
+           screen. Absent search = whole roster, exactly as before. */
+        $this->applySearch($q, $request->query('search'));
 
         /* "Enabled" is not a column: a row counts as active when it is not
            soft-deleted AND its status is none of the three that mean the person

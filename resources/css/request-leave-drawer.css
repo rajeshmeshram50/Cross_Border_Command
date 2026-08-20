@@ -84,6 +84,18 @@
 }
 .lvr-section-title i { color: #7c5cfc; font-size: 14px; }
 
+/* Required-field marker (QA #113/#114/#115). Red rather than the drawer's
+   violet, because it has to read as "you must" and not as decoration; the
+   section titles are already violet-accented. aria-hidden in the markup, so a
+   screen reader is not told to type a star. */
+.lvr-req {
+  color: #dc2626;
+  font-weight: 800;
+  margin-left: 3px;
+  line-height: 1;
+}
+.lvr-mini-label .lvr-req { margin-left: 2px; }
+
 .lvr-count-pill {
   margin-left: auto;
   background: #ede9fe; color: #5a3fd1;

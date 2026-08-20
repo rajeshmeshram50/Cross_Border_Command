@@ -97,24 +97,21 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
       meta: { width: '46%', wrap: true },
       cell: info => {
         const h = info.row.original;
+        /* One line each, ellipsis, full text on hover.
+           Both lines used to grow instead of clip — the name with
+           `overflow-wrap: anywhere` and the description with a 2-line clamp —
+           so a long title turned one row into four and pushed the rest of the
+           table off the first screen. Clipping keeps every row the same height
+           whatever is pasted into it, and nothing is lost: the title attribute
+           carries the full text on both lines. */
         return (
           <>
-            <span className="hcp-name">{h.name}</span>
-            {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
-            {/* Clamp + break mid-word: an unbroken description (a pasted
-                "wwww…" run) would otherwise widen the Date / Type columns. */}
+            <div className="hcp-name-row">
+              <span className="hcp-name" title={h.name}>{h.name}</span>
+              {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
+            </div>
             {h.description && (
-              <div
-                title={h.description}
-                style={{
-                  fontSize: 11.5, color: '#94a3b8', marginTop: 2,
-                  overflowWrap: 'anywhere',
-                  display: '-webkit-box', WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical', overflow: 'hidden',
-                }}
-              >
-                {h.description}
-              </div>
+              <div className="hcp-desc" title={h.description}>{h.description}</div>
             )}
           </>
         );
@@ -157,8 +154,13 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
        and the footer pager all come from it, so this file only styles what
        goes INSIDE the cells. A pasted, space-less name must break rather than
        stretch the row past the Date / Type columns. */
-    .hcp-name { font-weight: 700; color: #0f172a; overflow-wrap: anywhere; }
-    .hcp-recur { margin-left: 7px; font-size: 9.5px; font-weight: 800; color: #7c3aed; background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+    /* min-width:0 lets the name shrink far enough for its own ellipsis —
+       a flex item defaults to its content's min-content width and would push
+       the RECURRING pill out of the column instead of clipping. */
+    .hcp-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .hcp-name { font-weight: 700; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hcp-desc { font-size: 11.5px; color: #94a3b8; margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hcp-recur { flex-shrink: 0; font-size: 9.5px; font-weight: 800; color: #7c3aed; background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
     .hcp-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid; }
     .hcp-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 

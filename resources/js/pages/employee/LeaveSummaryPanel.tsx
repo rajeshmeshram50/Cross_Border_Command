@@ -277,60 +277,75 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         ) : pending.map(r => (
           <div
             key={r.id}
-            className="lsp-request-card d-flex align-items-center gap-3 p-3 mb-2"
+            className="lsp-request-card p-3 mb-2"
             style={{ background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 12, cursor: 'pointer' }}
             onClick={() => setDetailsRequestId(r.id)}
           >
-            <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 44, height: 44, background: '#ece6ff' }}>
-              <i className="ri-flight-takeoff-line" style={{ color: '#5a3fd1', fontSize: 20 }} />
-            </span>
-            <div className="d-grid gap-1" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', flex: 1, minWidth: 0 }}>
-              <div>
-                <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>PAST LEAVE</div>
-                <div style={{ fontSize: 13 }}>
-                  {shortDate(r.from_date)} – {shortDate(r.to_date)}
-                  <span className="text-muted ms-1">({Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'})</span>
+            <div className="d-flex align-items-center gap-3">
+              <span className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0" style={{ width: 44, height: 44, background: '#ece6ff' }}>
+                <i className="ri-flight-takeoff-line" style={{ color: '#5a3fd1', fontSize: 20 }} />
+              </span>
+              <div className="d-grid gap-1" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', flex: 1, minWidth: 0 }}>
+                <div>
+                  <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>PAST LEAVE</div>
+                  <div style={{ fontSize: 13 }}>
+                    {shortDate(r.from_date)} – {shortDate(r.to_date)}
+                    <span className="text-muted ms-1">({Number(r.days)} {Number(r.days) === 1 ? 'day' : 'days'})</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>LEAVE TYPE</div>
+                  <div style={{ fontSize: 13 }}>{r.leave_type?.name ?? '—'}</div>
+                </div>
+                <div>
+                  <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>REQUESTED ON</div>
+                  <div style={{ fontSize: 13 }}>{fmtDate(r.created_at)}</div>
+                </div>
+                <div>
+                  <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>STATUS</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Pending</div>
+                  <button
+                    type="button"
+                    className="btn btn-link p-0"
+                    style={{ fontSize: 12, color: '#5a3fd1', textDecoration: 'underline' }}
+                    onClick={(e) => { e.stopPropagation(); openApprovers(r.id); }}
+                  >
+                    View Approvers
+                  </button>
                 </div>
               </div>
-              <div>
-                <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>LEAVE TYPE</div>
-                <div style={{ fontSize: 13 }}>{r.leave_type?.name ?? '—'}</div>
-              </div>
-              <div>
-                <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>REQUESTED ON</div>
-                <div style={{ fontSize: 13 }}>{fmtDate(r.created_at)}</div>
-              </div>
-              <div>
-                <div className="text-muted" style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: 0.5 }}>STATUS</div>
-                <div style={{ fontSize: 13, fontWeight: 600 }}>Pending</div>
-                <button
-                  type="button"
-                  className="btn btn-link p-0"
-                  style={{ fontSize: 12, color: '#5a3fd1', textDecoration: 'underline' }}
-                  onClick={(e) => { e.stopPropagation(); openApprovers(r.id); }}
-                >
-                  View Approvers
-                </button>
-              </div>
+              <button
+                type="button"
+                className="btn btn-link p-0"
+                style={{ fontSize: 12, color: '#dc2626' }}
+                onClick={(e) => { e.stopPropagation(); cancel(r.id); }}
+                disabled={cancellingId === r.id}
+                title={cancellingId === r.id ? 'Cancelling…' : 'Cancel request'}
+              >
+                <i
+                  className={cancellingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-close-circle-line'}
+                  style={{ fontSize: 20 }}
+                />
+              </button>
             </div>
-            <button
-              type="button"
-              className="btn btn-link p-0"
-              style={{ fontSize: 12, color: '#dc2626' }}
-              onClick={(e) => { e.stopPropagation(); cancel(r.id); }}
-              disabled={cancellingId === r.id}
-              title={cancellingId === r.id ? 'Cancelling…' : 'Cancel request'}
-            >
-              <i
-                className={cancellingId === r.id ? 'ri-loader-4-line ri-spin' : 'ri-close-circle-line'}
-                style={{ fontSize: 20 }}
-              />
-            </button>
-          </div>
-        ))}
-        {pending.filter(r => r.reason).slice(0, 1).map(r => (
-          <div key={`note-${r.id}`} className="text-muted ps-3" style={{ fontSize: 12 }}>
-            <strong>Leave Note:</strong> {r.reason}
+
+            {/* Inside the card, under the row. overflowWrap: anywhere because a
+                note can be one unbroken string with no spaces to break at —
+                which is what pushed the page sideways (QA #118). */}
+            {r.reason && (
+              <div
+                className="text-muted mt-2 pt-2"
+                style={{
+                  fontSize: 12,
+                  borderTop: '1px dashed var(--vz-border-color)',
+                  overflowWrap: 'anywhere',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap',
+                }}
+              >
+                <strong>Leave Note:</strong> {r.reason}
+              </div>
+            )}
           </div>
         ))}
       </div>

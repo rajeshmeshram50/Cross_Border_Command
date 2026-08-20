@@ -215,24 +215,6 @@ export default function DataTable<T extends object>({
   const [autoSize, setAutoSize] = useState<number | null>(null);
   const [manualSize, setManualSize] = useState<number | null>(null);
   const pageSize = manualSize ?? pageSizeProp ?? autoSize ?? DEFAULT_PAGE_SIZE;
-  /* ── Auto-fit convergence guard ──────────────────────────────────────────
-     With serverPagination the fitted row count is REPORTED BACK and refetched,
-     so the measurement is not a read-only observation of the layout — it
-     changes it. That closes a loop: more rows make the page taller, a taller
-     page gives the window a scrollbar, the scrollbar narrows the viewport, the
-     toolbar and KPI strip above the table re-wrap, the table starts lower, and
-     the next measurement fits FEWER rows — which removes the scrollbar again.
-     The table then walks 2 -> 3 -> 4 -> 3 -> 2 forever, one XHR per step.
-
-     No amount of care inside fitRows() fixes that; the layout genuinely has no
-     stable answer. So the loop is broken from the outside: every size this
-     settling pass has already proposed is remembered, and the first time one
-     comes back around the fit is declared settled and left alone. Cleared on a
-     real window resize (below), which is when re-fitting is actually wanted. */
-  const autoSizeRef = useRef<number | null>(null);
-  autoSizeRef.current = autoSize;
-  const fitSeenRef = useRef<Set<number>>(new Set());
-  const fitSettledRef = useRef(false);
 
   const [sorting, setSorting] = useState<SortingState>(initialSort ?? []);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -284,7 +266,13 @@ export default function DataTable<T extends object>({
      caller passing an inline arrow doesn't re-fire this on every render. */
   const onPageSizeChangeRef = useRef(serverPagination?.onPageSizeChange);
   onPageSizeChangeRef.current = serverPagination?.onPageSizeChange;
-  useEffect(() => { onPageSizeChangeRef.current?.(pageSize); }, [pageSize]);
+  const sizeIsDecided = manualSize !== null || pageSizeProp !== undefined || autoSize !== null;
+  useEffect(() => {
+    // Skip the fallback default: reporting it makes the caller fetch a page size
+    // that came from neither the user nor the measurement.
+    if (!sizeIsDecided) return;
+    onPageSizeChangeRef.current?.(pageSize);
+  }, [pageSize, sizeIsDecided]);
 
   const table = useReactTable({
     data,
@@ -330,6 +318,12 @@ export default function DataTable<T extends object>({
   const colIds = table.getVisibleFlatColumns().map(c => c.id);
   const colCount = colIds.length;
   const isEmpty = !loading && rows.length === 0;
+  /** Size last handed to the caller, so an identical re-fit is a no-op. */
+  const lastEmittedRef = useRef<number | null>(null);
+  /** Emits since the last genuine resize — capped, see fitRows. */
+  const fitEmitsRef = useRef(0);
+  /** Set once the fitted size is within a row of what is displayed. */
+  const settledRef = useRef(false);
   const fitRows = useCallback(() => {
     const el = rootRef.current;
     if (!el || !autoFitRows || manualSize !== null) return;
@@ -350,23 +344,55 @@ export default function DataTable<T extends object>({
      * page control below already exists to reach the rest. Never 0: a page must
      * show something. */
     const next = Math.max(minAutoRows, Math.floor(avail / rowH));
-    if (fitSettledRef.current || next === autoSizeRef.current) return;
-    // Proposed once already and moved away from -> the layout is oscillating.
-    // Keep what is on screen rather than paying for another round trip.
-    if (fitSeenRef.current.has(next)) { fitSettledRef.current = true; return; }
-    fitSeenRef.current.add(next);
-    setAutoSize(next);
-  }, [autoFitRows, manualSize, minAutoRows]);
 
-  /* A real resize is a new question, so it reopens the fit. Everything else
-     that calls fitRows() (the ResizeObserver, the post-load re-measure) is
-     downstream of the table's own size changes and must stay inside the
-     guard, or it would just clear the evidence of the loop it caused. */
-  const refitFromScratch = useCallback(() => {
-    fitSeenRef.current.clear();
-    fitSettledRef.current = false;
-    fitRows();
-  }, [fitRows]);
+    // Settled for this viewport — see the ±1 branch below.
+    if (settledRef.current) return;
+
+    // Already showing it — re-emitting would only restart the cycle.
+    if (lastEmittedRef.current === next) return;
+
+    /* Ignore an off-by-one correction. Server-paginated tables pay a request per
+       size change, and one extra row is not worth one — while ±1 is precisely
+       what the appearing/disappearing scrollbar oscillates by. A real difference
+       (a tall window, a collapsed banner) moves it by far more and still applies.
+
+       Measured against the size ACTUALLY IN PLAY, not just the last size this
+       component emitted. On mount nothing has been emitted yet, so keying only
+       on lastEmittedRef skipped this guard entirely — and a page that opened at
+       a remembered 4 while the fit said 3 spent a whole second request to lose
+       one row. That was the leftover second call on every refresh. */
+    /* What the caller is currently showing, or null when nothing has been
+       decided yet. Null means this is the first real measurement, and it should
+       be reported as-is: comparing it to DEFAULT_PAGE_SIZE judged it against a
+       number nobody chose, and comparing it to itself would settle without ever
+       telling the caller. */
+    const baseline = lastEmittedRef.current ?? (sizeIsDecided ? pageSize : null);
+    if (serverPagination && baseline !== null && Math.abs(next - baseline) <= 1) {
+      /* Close enough — and therefore final. Recording the baseline alone was
+         not sufficient: the fit oscillates by a row, so the NEXT measurement
+         could sit two rows from that baseline and buy a request anyway. Once a
+         size is within a row of what is displayed it is the right size, and
+         continuing to measure can only cost requests. Released by a real
+         resize, which is the one event that changes the answer. */
+      settledRef.current = true;
+      return;
+    }
+
+    /* One correction per viewport, then stop.
+
+       Two was meant to cover the rowH fallback (44 before any row renders, the
+       true height after). But the page above this table is still loading while
+       we measure — ten master requests land over four seconds, each shifting
+       everything above the table — so the fit chased a moving target and spent
+       both emits on it: per_page went 2 → 10 → 2, three fetches for one screen.
+
+       The debounce below means the single measurement we do take is of a
+       settled layout, so one correction is enough. */
+    fitEmitsRef.current += 1;
+    lastEmittedRef.current = next;
+    settledRef.current = true;
+    setAutoSize(next);
+  }, [autoFitRows, manualSize, minAutoRows, serverPagination, pageSize, sizeIsDecided]);
 
   useEffect(() => {
     const el = rootRef.current;
@@ -405,14 +431,28 @@ export default function DataTable<T extends object>({
        when `loading` drops, so the fit is taken as soon as there is something
        honest to measure. */
     if (loading) return;
-    fitRows();
+
+    /* Measure only once the page has stopped moving. Content above this table
+       (KPI cards, master-driven controls) arrives over several seconds, and each
+       arrival fires the observer — measuring on every one meant measuring a
+       layout mid-flight and acting on the answer. */
+    let debounce: number | undefined;
+    const fitSoon = () => {
+      window.clearTimeout(debounce);
+      debounce = window.setTimeout(fitRows, 250);
+    };
+
     const t = window.setTimeout(fitRows, 120);
-    window.addEventListener('resize', refitFromScratch);
+    /* A real resize legitimately changes the answer, so clear the oscillation
+       freeze before re-fitting — otherwise a window the user actually resized
+       would stay stuck at whatever size we settled on. */
+    const onResize = () => { fitEmitsRef.current = 0; settledRef.current = false; fitSoon(); };
+    window.addEventListener('resize', onResize);
     // Anything above the table can grow (a collapsible "what we do here"
     // banner, a KPI strip) — re-fit when the page's own height changes.
     let ro: ResizeObserver | undefined;
     if (typeof ResizeObserver !== 'undefined') {
-      ro = new ResizeObserver(() => fitRows());
+      ro = new ResizeObserver(fitSoon);
       if (rootRef.current?.parentElement) ro.observe(rootRef.current.parentElement);
       // The horizontal scrollbar appears and disappears as columns/width change
       // and it is part of the budget above. Nothing over the table moves when
@@ -422,10 +462,11 @@ export default function DataTable<T extends object>({
     }
     return () => {
       window.clearTimeout(t);
-      window.removeEventListener('resize', refitFromScratch);
+      window.clearTimeout(debounce);
+      window.removeEventListener('resize', onResize);
       ro?.disconnect();
     };
-  }, [autoFitRows, fitRows, refitFromScratch, loading, children]);
+  }, [autoFitRows, fitRows, loading, children]);
 
   /* The search box, built once and either left in the toolbar or portaled into
      the caller's `searchHost`. Same node either way, so query state, the clear

@@ -198,8 +198,10 @@ class HrDocumentTemplateController extends Controller
 
     public function update(Request $request, $id)
     {
-        $this->authorize($request, 'can_edit');
         $row = $this->resolveRow($request, (int) $id);
+        // After resolveRow, because the rule depends on the row: the author of
+        // an unpublished draft may finish it with can_add alone (QA #36).
+        $this->authorizeTemplateWrite($request, $row);
         $this->guardHierarchicalAction($request->user(), $row, 'edit');
 
         $data = $this->validatePayload($request, $row->id);
@@ -284,10 +286,12 @@ class HrDocumentTemplateController extends Controller
      */
     public function uploadDocx(Request $request, $id)
     {
-        $this->authorize($request, 'can_edit');
         $request->validate(['docx' => 'required|file|mimes:doc,docx|max:' . self::DOCX_MAX_KB]);
 
         $row = $this->resolveRow($request, (int) $id);
+        // Stage 3 writes the Word file into the draft the user just created,
+        // so the gate depends on the row, not the bare permission (QA #36).
+        $this->authorizeTemplateWrite($request, $row);
 
         // Parse from the uploaded file's REAL local temp path (getRealPath) — NOT
         // from the stored path. On the server the public disk is Azure Blob, so
@@ -987,6 +991,43 @@ class HrDocumentTemplateController extends Controller
 
     /* ───── HELPERS ───── */
 
+    /**
+     * Edit gate for the template wizard.
+     *
+     * Stage 1 creates the row (can_add) and every later stage updates it, so
+     * can_add on its own bought nothing — you could create an empty draft and
+     * were then refused at every save (QA #36). A user who may create templates
+     * may finish the DRAFT they created; anything already published, or authored
+     * by someone else, still needs can_edit.
+     */
+    private function authorizeTemplateWrite(Request $request, $template): void
+    {
+        $user = $request->user();
+
+        $isOwnDraft = $user
+            && $template
+            && (int) $template->created_by === (int) $user->id
+            && strcasecmp((string) $template->status, 'Draft') === 0;
+
+        if ($isOwnDraft && $this->hasPerm($user, 'can_add')) {
+            return;
+        }
+        $this->authorize($request, 'can_edit');
+    }
+
+    /** Quiet permission probe — no abort, for use in a compound decision. */
+    private function hasPerm($user, string $perm): bool
+    {
+        if (!$user) return false;
+        if ($user->isSuperAdmin()) return true;
+        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
+        if (!$moduleId) {
+            return in_array($user->user_type, ['client_admin', 'branch_user'], true);
+        }
+        return Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)->where($perm, true)->exists();
+    }
+
     private function authorize(Request $request, string $perm): void
     {
         $user = $request->user();
@@ -1002,7 +1043,36 @@ class HrDocumentTemplateController extends Controller
             ->where('module_id', $moduleId)
             ->where($perm, true)
             ->exists();
-        if (!$allowed) abort(403, "Missing {$perm} on " . self::MODULE_SLUG);
+        if (!$allowed) {
+            abort(403, self::denialMessage($perm));
+        }
+    }
+
+    /**
+     * Why the action was refused, in the words of the person refused (QA #37).
+     *
+     * "Missing can_edit on hr.doc_templates" is the column name and the module
+     * slug — accurate, and useless to an HR user who cannot act on it. These say
+     * which permission is missing and who can grant it.
+     */
+    private static function denialMessage(string $perm): string
+    {
+        $what = match ($perm) {
+            'can_add'    => 'create document templates',
+            'can_edit'   => 'edit document templates',
+            'can_delete' => 'delete document templates',
+            'can_view'   => 'view document templates',
+            default      => 'perform this action on document templates',
+        };
+        $hint = $perm === 'can_edit'
+            /* The common case behind this message: someone was granted Add but
+               not Edit, created a draft, and then could not touch it again —
+               because after the first save every step of the wizard is an
+               update. Naming that explicitly saves a support round trip. */
+            ? ' You can create a new template, but changing one — including '
+              . 'completing a draft you just created — needs Edit as well.'
+            : '';
+        return "You don't have permission to {$what}.{$hint} Ask an administrator to grant it under Permissions → Document Templates.";
     }
 
     private function resolveOwnership(Request $request): array

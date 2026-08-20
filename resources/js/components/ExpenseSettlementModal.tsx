@@ -2318,6 +2318,7 @@ export default function ExpenseSettlementModal({
       {showForm && summary && (
         <div className="esm-sub-backdrop" onMouseDown={() => { if (!saving) setShowForm(false); }}>
           <div className="esm-sub-modal" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            {saving && <BusyVeil label="Recording payment…" />}
             <div className="esm-sub-head">
               <div className="esm-sub-head-l">
                 <span className="esm-sub-head-ico"><i className="ri-bank-card-line" /></span>
@@ -2689,6 +2690,7 @@ export default function ExpenseSettlementModal({
       {settleFinalizeAsk && summary && (
         <div className="esm-sub-backdrop" onMouseDown={() => { if (!settleSaving) setSettleFinalizeAsk(false); }}>
           <div className="esm-confirm" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            {saving && <BusyVeil label={confirmKind === 'approve' ? 'Approving…' : 'Rejecting…'} />}
             <span className="esm-confirm-ico is-approve"><i className="ri-lock-2-line" /></span>
             <div className="esm-confirm-title">Finalise this settlement?</div>
             <div className="esm-confirm-msg">
@@ -2892,6 +2894,7 @@ export default function ExpenseSettlementModal({
       {confirmKind && summary && (
         <div className="esm-sub-backdrop" onMouseDown={() => { if (!saving) setConfirmKind(null); }}>
           <div className="esm-confirm" onMouseDown={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            {saving && <BusyVeil label={confirmKind === 'approve' ? 'Approving…' : 'Rejecting…'} />}
             <span className={`esm-confirm-ico ${confirmKind === 'approve' ? 'is-approve' : 'is-reject'}`}>
               <i className={confirmKind === 'approve' ? 'ri-checkbox-circle-line' : 'ri-close-circle-line'} />
             </span>
@@ -2922,6 +2925,11 @@ export default function ExpenseSettlementModal({
                   value={rejectReason}
                   maxLength={1000}
                   onChange={e => setRejectReason(e.target.value)}
+                  /* Disabled as well as veiled: the veil blocks the mouse, but a
+                     textarea that already has focus keeps taking keystrokes
+                     underneath it — so the reason could still be edited after
+                     the request carrying it had gone. */
+                  disabled={saving}
                   autoFocus
                 />
                 {/* Live character counter — mirrors the backend max:1000 cap
@@ -2944,6 +2952,29 @@ export default function ExpenseSettlementModal({
       )}
     </div>,
     document.body,
+  );
+}
+
+/**
+ * Busy veil for a dialog that is submitting.
+ *
+ * Disabling the submit button alone is not enough: the rest of the form stays
+ * live, so the amount, the note or a rejection reason can still be edited after
+ * the request that carries them has left. What lands on the server then differs
+ * from what is on screen, and nothing tells the user which one won.
+ *
+ * The veil covers the whole dialog and swallows pointer events. Fields are
+ * ALSO disabled individually, because an overlay does not stop the keyboard —
+ * a textarea that already holds focus keeps accepting input underneath it.
+ */
+function BusyVeil({ label }: { label: string }) {
+  return (
+    <div className="esm-veil" aria-live="polite" aria-busy="true">
+      <div className="esm-veil-box">
+        <i className="ri-loader-4-line ri-spin" />
+        <span>{label}</span>
+      </div>
+    </div>
   );
 }
 
@@ -3372,7 +3403,7 @@ textarea.esm-in{resize:vertical;}
 [data-bs-theme="dark"] .esm-sec-actions-hint{color:#cbd5e1;}
 /* Bold Submit (lock deduction) button */
 .esm-btn-submit{border:none;border-radius:9px;padding:8px 26px;font-size:13.5px;font-weight:800;letter-spacing:.02em;cursor:pointer;color:#fff;background:linear-gradient(120deg,#059669,#0891b2);box-shadow:0 4px 12px rgba(5,150,105,.32);}
-.esm-btn-submit:hover{filter:brightness(1.06);}
+.esm-btn-submit:hover:not(:disabled){filter:brightness(1.06);}
 .esm-btn-submit:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* KPI strip — exact styling/colors from the PO "Payment Summary" modal */
 .esm-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;}
@@ -3496,10 +3527,10 @@ textarea.esm-in{resize:vertical;}
 .esm-foot-hint i{color:#0891b2;font-size:15px;flex-shrink:0;}
 .esm-foot-r{display:flex;gap:10px;flex-shrink:0;}
 .esm-btn-ghost{border:1.5px solid #d5dfe4;background:#fff;color:#475569;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
-.esm-btn-ghost:hover{background:#f1f5f9;}
+.esm-btn-ghost:hover:not(:disabled){background:#f1f5f9;}
 [data-bs-theme="dark"] .esm-btn-ghost{background:#0b2029;border-color:#173947;color:#cbd5e1;}
 .esm-btn-primary{border:none;border-radius:10px;padding:9px 22px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(120deg,#0891b2,#06b6d4);box-shadow:0 4px 12px rgba(8,145,178,.28);}
-.esm-btn-primary:hover{filter:brightness(1.05);}
+.esm-btn-primary:hover:not(:disabled){filter:brightness(1.05);}
 .esm-btn-primary:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 /* Review footer — approve / reject */
 .esm-btn-approve{border:none;border-radius:10px;padding:9px 24px;font-size:13px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 4px 12px rgba(5,150,105,.3);}
@@ -3510,7 +3541,15 @@ textarea.esm-in{resize:vertical;}
 .esm-btn-reject:disabled{opacity:.55;cursor:not-allowed;box-shadow:none;}
 .esm-reject-in{flex:1;min-width:0;}
 /* Approve / Reject confirmation dialog */
-.esm-confirm{width:100%;max-width:440px;background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;box-shadow:0 30px 80px rgba(15,23,42,.5);}
+.esm-veil{position:absolute;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.78);backdrop-filter:blur(1.5px);border-radius:inherit;cursor:progress;}
+.esm-veil-box{display:flex;align-items:center;gap:9px;font-size:12.5px;font-weight:800;color:#0c4a6e;background:#fff;border:1px solid #bae6fd;border-radius:999px;padding:8px 16px;box-shadow:0 6px 20px rgba(8,47,73,.16);}
+.esm-veil-box i{font-size:16px;color:#0891b2;}
+[data-bs-theme="dark"] .esm-veil{background:rgba(8,23,35,.78);}
+[data-bs-theme="dark"] .esm-veil-box{background:#0f172a;border-color:#0c4a6e;color:#cffafe;}
+/* The veil is absolutely positioned, so both dialogs must establish a
+   containing block or it would cover the whole viewport instead. */
+.esm-sub-modal{position:relative;}
+.esm-confirm{position:relative;width:100%;max-width:440px;background:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;box-shadow:0 30px 80px rgba(15,23,42,.5);}
 [data-bs-theme="dark"] .esm-confirm{background:#0f172a;color:#e2e8f0;}
 .esm-confirm-ico{width:52px;height:52px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff;}
 .esm-confirm-ico.is-approve{background:linear-gradient(135deg,#0ab39c,#059669);box-shadow:0 8px 20px rgba(5,150,105,.35);}
