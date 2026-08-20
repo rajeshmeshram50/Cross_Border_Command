@@ -210,11 +210,26 @@ class SalaryStructureController extends Controller
                 'created_by'      => $user?->id,
             ]);
 
-            // Keep the employee's PF / ESI flags in sync with the structure so
-            // the Employee form + onboarding form reflect a flag enabled here.
+            /* Keep the employee record in step with the revision.
+             *
+             * PF / ESI flags so the Employee + onboarding forms reflect a flag
+             * enabled here — and annual_salary, which previously did NOT move.
+             * A revision from ₹26,000 to ₹21,000 a month left annual_salary at
+             * ₹3,12,000, so Salary Setup and the structure showed the new
+             * figures while the Employee Salary form still showed the old CTC,
+             * and the form's own breakup-vs-CTC comparison then reported the
+             * employee as ₹60,000 "under the salary".
+             *
+             * The two are meant to be equal — both this modal and the Employee
+             * form treat "breakup total == annual salary" as the matching
+             * state — so the accepted revision becomes the new agreed figure.
+             * This runs only AFTER the cap check above has passed, so a
+             * revision can still never raise pay beyond the configured salary;
+             * increasing it remains an Employee-record change. */
             $employee->update([
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
+                'annual_salary'  => round($monthlyGross * 12, 2),
             ]);
 
             return $created;
