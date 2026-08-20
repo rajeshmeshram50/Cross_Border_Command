@@ -1333,11 +1333,11 @@ export default function HrPayroll() {
     // Derived per row and reused by both the deductions total and Net Payable.
     const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
     return [
-      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '7%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '6%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
       {
         header: 'Employee',
         accessorKey: 'name',
-        meta: { width: '12%' },
+        meta: { width: '10%' },
         cell: info => {
           const r = info.row.original;
           return (
@@ -1364,7 +1364,7 @@ export default function HrPayroll() {
         cell: info => <span className="fs-13" style={{ color: info.row.original.tds ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.tds === 0 ? '₹0' : `₹${fmtINR(info.row.original.tds)}`}</span>,
       },
       { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
-      { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
+      { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
       {
         header: 'Total Deductions',
         id: 'totalDeductions',
@@ -2092,6 +2092,10 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={reportColumns}
                 accent="violet"
+                /* Same 4% percentage the Processing tab uses, so the two
+                   tables' serial columns line up and the width budget stays
+                   at exactly 100% (see the note on Processing's serial). */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 className="pay-tbl-report"
                 fitToViewport
                 autoFitRows
