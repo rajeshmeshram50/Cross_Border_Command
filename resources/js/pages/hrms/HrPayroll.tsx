@@ -305,7 +305,17 @@ export default function HrPayroll() {
       .catch(() => setRoster([]))
       .finally(() => setRosterLoading(false));
   };
-  useEffect(() => { if (tab === 'salary' && roster.length === 0) loadRoster(); /* eslint-disable-next-line */ }, [tab]);
+  /* Loaded on mount, not on first visit to the tab.
+   *
+   * The Salary Setup badge counts employees with no salary structure, which it
+   * reads straight off this roster — so while the fetch was deferred until the
+   * tab was opened, the badge sat at 0 and only corrected itself once someone
+   * clicked it. The count exists precisely to tell HR there is something to
+   * deal with in there, so it has to be right before the tab is visited.
+   *
+   * The other three tabs already have their counts on mount (they come from
+   * the payroll rows), so this also stops Salary Setup being the odd one out. */
+  useEffect(() => { loadRoster(); /* eslint-disable-next-line */ }, []);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
