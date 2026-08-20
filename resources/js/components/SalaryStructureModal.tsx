@@ -152,7 +152,14 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const salaryAnnual = employee.annual_salary ? Math.round(employee.annual_salary) : 0;
   const breakupAnnual = Math.round(grossTotal * 12);
   const salaryDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
-  const overSalary = salaryDiff > 0;
+  /* Rounding slack, matching SalaryStructureController::SALARY_ROUNDING_SLACK.
+     The default split is seeded from annual ÷ 12 rounded to the rupee, so a
+     legitimate breakup can annualise a few rupees high (₹5,00,000 →
+     ₹41,667/mo → ₹5,00,004/yr). Without this the form would flag — and the
+     server would reject — its own seeded values. */
+  const SALARY_SLACK = 12;
+  const overSalary = salaryDiff > SALARY_SLACK;
+  const underSalary = salaryDiff < -SALARY_SLACK;
 
   // A box is LOCKED only when the employee already has it applicable (set on the
   // Employee form) — you can't turn it off here. If it's NOT applicable yet, you
@@ -194,6 +201,18 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
     if (!clean.length) { toast.error('Add earnings', 'Add at least one earning component.'); return; }
     if (grossTotal <= 0) { toast.error('Invalid salary', 'Total earnings must be greater than zero.'); return; }
+    /* A breakup may not pay more than the salary agreed on the employee record.
+       This was shown in red but never enforced, so the larger figure saved and
+       every payroll run afterwards paid it. The server refuses it too — this
+       check just reports it without a round trip. */
+    if (overSalary) {
+      toast.error(
+        'Salary exceeds the configured amount',
+        `The breakup comes to ₹${fmtINR(breakupAnnual)} a year — ₹${fmtINR(salaryDiff)} more than ${employee.name}'s salary of ₹${fmtINR(salaryAnnual)}. `
+        + 'Reduce the components, or raise the salary on the employee record first.',
+      );
+      return;
+    }
     setSaving(true);
     try {
       const res = await api.post('/salary-structures', {
@@ -340,14 +359,16 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (overSalary ? '#dc2626' : '#0a8754') }}>
                   ≈ ₹{fmtINR(breakupAnnual)} / year
                 </div>
-                {salaryAnnual > 0 && salaryDiff !== 0 && (
+                {salaryAnnual > 0 && (overSalary || underSalary) && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: overSalary ? '#dc2626' : '#0a8754' }}>
                     {overSalary
-                      ? `₹${fmtINR(salaryDiff)} over the salary (₹${fmtINR(salaryAnnual)})`
+                      ? `₹${fmtINR(salaryDiff)} over the salary (₹${fmtINR(salaryAnnual)}) — cannot be saved`
                       : `₹${fmtINR(Math.abs(salaryDiff))} under the salary (₹${fmtINR(salaryAnnual)})`}
                   </div>
                 )}
-                {salaryAnnual > 0 && salaryDiff === 0 && (
+                {/* Within the rounding slack counts as matching, so the seeded
+                    split does not read as "₹4 over". */}
+                {salaryAnnual > 0 && !overSalary && !underSalary && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                 )}
               </div>

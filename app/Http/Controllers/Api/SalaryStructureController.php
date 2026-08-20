@@ -22,6 +22,11 @@ use Illuminate\Support\Facades\DB;
  */
 class SalaryStructureController extends Controller
 {
+    /** Rupees per year a breakup may exceed the configured salary by before it
+     *  is rejected — one rupee a month, enough to absorb the rounding in the
+     *  form's annual ÷ 12 seed and nothing more. */
+    private const SALARY_ROUNDING_SLACK = 12;
+
     /**
      * Salary roster — every payable employee with their CURRENT structure
      * status. Drives the "Salary Setup" tab so HR can see who has a salary
@@ -140,6 +145,38 @@ class SalaryStructureController extends Controller
 
         $monthlyGross = collect($data['earnings'])->sum(fn ($c) => (float) $c['amount']);
         $monthlyDeductions = collect($data['deductions'] ?? [])->sum(fn ($c) => (float) $c['amount']);
+
+        /* A structure may not pay more than the salary agreed on the employee
+         * record. The modal already showed a red "over the salary" hint, but
+         * nothing enforced it on either side, so the larger figure saved
+         * silently and every subsequent payroll run paid it.
+         *
+         * Tolerance: the form seeds the split from annual_salary / 12 ROUNDED
+         * to the rupee, so a perfectly legitimate breakup can annualise a few
+         * rupees above the configured figure (₹5,00,000 → ₹41,667/mo →
+         * ₹5,00,004/yr). One rupee per month absorbs that without letting a
+         * real overpayment through.
+         *
+         * No configured salary means there is nothing to validate against —
+         * the structure then IS the source of truth, so it is allowed. */
+        $configuredAnnual = (float) ($employee->annual_salary ?? 0);
+        if ($configuredAnnual > 0) {
+            $annualised = $monthlyGross * 12;
+            if (($annualised - $configuredAnnual) > self::SALARY_ROUNDING_SLACK) {
+                $over = $annualised - $configuredAnnual;
+                return response()->json([
+                    'message' => 'Total earnings come to ₹' . number_format($annualised, 2)
+                        . ' a year, which is ₹' . number_format($over, 2)
+                        . " more than {$employee->first_name}'s configured salary of ₹"
+                        . number_format($configuredAnnual, 2)
+                        . '. Reduce the components, or raise the salary on the employee record first.',
+                    'errors' => ['earnings' => [
+                        'Annual total ₹' . number_format($annualised, 2)
+                        . ' exceeds the configured salary ₹' . number_format($configuredAnnual, 2) . '.',
+                    ]],
+                ], 422);
+            }
+        }
 
         $structure = DB::transaction(function () use ($data, $employee, $user, $monthlyGross, $monthlyDeductions) {
             // Supersede the current active structure (Rule 19 — never overwrite).
