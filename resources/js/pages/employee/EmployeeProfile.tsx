@@ -111,6 +111,25 @@ const asName = (v: unknown): string =>
 /** First day of the month AFTER the given ISO date (defaults to today).
  *  Salary recovery on an advance can only begin in the month following the
  *  request — the current month's payroll is already in flight (CBC #93). */
+/**
+ * Latest month recovery may begin — the end of the same month one year on.
+ *
+ * The picker had a floor but no ceiling, so 04-Jan-2040 was selectable against a
+ * request raised in Aug 2026 (CBC #157). A recovery that starts more than a year
+ * after the advance is taken is not a schedule, it is an open-ended loan.
+ */
+const recoveryLatestStart = (iso?: string | null): string => {
+  const base = /^(\d{4})-(\d{2})/.exec(String(iso || ''));
+  const now = new Date();
+  const y = base ? Number(base[1]) : now.getFullYear();
+  const m = base ? Number(base[2]) : now.getMonth() + 1;   // 1-based
+  // Day 0 of month m (1-based → 0-based m means the NEXT month) is the last day
+  // of month m, one year on.
+  const d = new Date(y + 1, m, 0);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
 const nextMonthFirst = (iso?: string | null): string => {
   const base = /^(\d{4})-(\d{2})/.exec(String(iso || ''));
   const now = new Date();
@@ -3748,6 +3767,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                       // Earliest is the 1st of the month after the request —
                       // the requested month's payroll has already run (CBC #93).
                       minDate={nextMonthFirst(advRequestedDate)}
+                      // …and a ceiling: recovery must begin within a year of the
+                      // request, or the calendar happily offers 2040 (CBC #157).
+                      maxDate={recoveryLatestStart(advRequestedDate)}
                     />
                     {advErrors.recovery_start && <div className="ep-claim-err"><i className="ri-error-warning-line" />{advErrors.recovery_start}</div>}
                   </Col>
@@ -4085,13 +4107,19 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
                                       <i className="ri-checkbox-circle-fill flex-shrink-0" style={{ color: '#16a34a' }} />
                                       <span>{it.file.name}</span>
                                     </button>
-                                    <button type="button" className="ep-claim-file-x ep-file-act-dl flex-shrink-0" title="Download" onClick={() => downloadAdvItemFile(it.file!)}>
-                                      <i className="ri-download-2-line" />
-                                    </button>
-                                    <label className="ep-claim-file-x ep-file-act-swap flex-shrink-0" title="Replace file" style={{ cursor: 'pointer', marginBottom: 0 }}>
-                                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="d-none" onChange={pickAdvItemFile(i)} />
-                                      <i className="ri-refresh-line" />
-                                    </label>
+                                    {/* Grouped and spaced: these two used to sit
+                                        4px apart, so a slightly-off click on
+                                        Download opened the file picker instead
+                                        (CBC #149). */}
+                                    <span className="adv-file-actions flex-shrink-0">
+                                      <button type="button" className="ep-claim-file-x ep-file-act-dl" title="Download this file" onClick={() => downloadAdvItemFile(it.file!)}>
+                                        <i className="ri-download-2-line" />
+                                      </button>
+                                      <label className="ep-claim-file-x ep-file-act-swap" title="Replace with a different file" style={{ cursor: 'pointer', marginBottom: 0 }}>
+                                        <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="d-none" onChange={pickAdvItemFile(i)} />
+                                        <i className="ri-refresh-line" />
+                                      </label>
+                                    </span>
                                   </div>
                                 ) : (
                                   <label

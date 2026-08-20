@@ -2080,7 +2080,16 @@ function InitiateOnboardingModal({
       setOvertimeRateOpts(
         rows
           .filter((o: any) => String(o.status).toLowerCase() === 'active')
-          .map((o: any) => ({ value: String(o.rate_name), label: String(o.rate_name) })),
+          /* `name` first, `rate_name` second.
+             The list arrives from /master/bulk?fields=id,name, which projects the
+             master's label column AS `name` — master_overtime_rates spells it
+             `rate_name`, so reading only that key produced a dropdown of
+             "undefined" for every option. Both keys are accepted so a full master
+             row (which carries rate_name) still renders if this is ever fed from
+             the unslimmed endpoint. The VALUE stays the rate name either way:
+             `employees.overtime` stores the label, not the id. */
+          .map((o: any) => { const n = String(o.name ?? o.rate_name ?? '').trim(); return { value: n, label: n }; })
+          .filter((o: { value: string }) => o.value !== ''),
       );
     }).catch(() => { if (!isStale()) setOvertimeRateOpts([]); }), []);
   // Explicit Yes/No toggle. Derived from the saved `overtime` value on

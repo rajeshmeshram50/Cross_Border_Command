@@ -1567,6 +1567,7 @@ class ExpenseClaimController extends Controller
                     'amount'       => (float) $p->amount,
                     'method'       => $p->method ?? null,
                     'paid_by_name' => $p->payer?->name,
+                    'paid_by_role' => $p->payer?->user_type,
                     'paid_at'      => optional($p->paid_at ?? $p->created_at)->toIso8601String(),
                 ])->values()->all();
             })(),
@@ -1652,6 +1653,7 @@ class ExpenseClaimController extends Controller
                 'zoho_synced_at' => optional($p->zoho_synced_at)->toIso8601String(),
                 'zoho_expense_url' => $p->zoho_expense_id ? $this->zohoExpenseUrl((string) $p->zoho_expense_id) : null,
                 'paid_by_name' => $p->payer?->name,
+                'paid_by_role' => $p->payer?->user_type,
                 'paid_at'      => optional($p->paid_at)->toIso8601String(),
             ])->all(),
         ]);

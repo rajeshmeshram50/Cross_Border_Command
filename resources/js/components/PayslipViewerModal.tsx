@@ -166,11 +166,15 @@ export default function PayslipViewerModal({
   // can't scroll behind it; restore the previous values on close/unmount.
   useEffect(() => {
     if (!open) return;
-    const b = document.body.style.overflow;
-    const h = document.documentElement.style.overflow;
-    document.body.style.overflow = 'hidden';
-    document.documentElement.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
+    /* html/body alone are not enough: this app scrolls inside
+       <div class="main-content"> (velzon/Layouts/index.tsx), so locking only
+       the document left the page behind the viewer scrolling freely. */
+    const targets: HTMLElement[] = [document.documentElement, document.body];
+    document.querySelectorAll<HTMLElement>('main, .main-content, .page-content')
+      .forEach(el => targets.push(el));
+    const prev = targets.map(el => el.style.overflow);
+    targets.forEach(el => { el.style.overflow = 'hidden'; });
+    return () => { targets.forEach((el, i) => { el.style.overflow = prev[i]; }); };
   }, [open]);
 
   if (!open) return null;

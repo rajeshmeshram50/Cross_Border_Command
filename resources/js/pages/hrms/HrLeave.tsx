@@ -43,6 +43,16 @@ type ApprovalState = 'Pending' | 'Approved' | 'Rejected' | 'NA';
 // apiToRow) so it was dropped from the type + the Payroll filter (bug #69).
 type PayrollMode = 'Paid Leave' | 'Unpaid';
 type ProofState = 'Uploaded' | 'Missing' | 'N/A';
+/* Local calendar date, not UTC. toISOString() converts to UTC first, so in
+   IST (UTC+5:30) every load before 05:30 asked for YESTERDAY — the panel then
+   reported "no one is on leave today" for a day nobody had leave on yet
+   (CBC #109). */
+const localToday = (): string => {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+};
+
 type EscalationReason = 'manager_rejected' | 'aged_out' | 'manager_unavailable' | 'hr_raised' | 'none';
 
 interface PersonRef {
@@ -86,6 +96,9 @@ interface LeaveRequest {
 
   escalatedToHr: boolean;
   escalationReason: EscalationReason;
+  /** Reporting manager is away, so HR is the one who can act. Server-computed —
+   *  it is a runtime permission, not a level on the stored chain. */
+  rmUnavailable: boolean;
 
   // Whether the logged-in viewer can Approve/Reject this row right now (it's
   // pending AND it's their turn in the manager→HR chain). Server-computed.
@@ -201,8 +214,17 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
   // stays idle/grey while the request is still awaiting the manager.
   const rmDecided = r.managerStatus === 'Approved' || r.managerStatus === 'Rejected';
   const hrReviewed = !!r.hrViewedAt && rmDecided;
+  /* When the manager is away there is no HR LEVEL on the chain — HR acts in
+     the manager's place on level 1, so hrStatus stays 'NA' and the node would
+     sit grey next to an Approved request. Read the overall outcome instead:
+     whoever acted, acted as HR. */
+  const hrStoodIn = r.escalationReason === 'manager_unavailable';
   const hrDecision: ApprovalNode['decision'] =
     !r.escalatedToHr ? (hrReviewed ? 'viewed' : 'idle')
+    : hrStoodIn
+      ? (r.status === 'Approved' ? 'approved'
+        : r.status === 'Rejected' ? 'rejected'
+        : 'pending')
     : r.hrStatus === 'Approved' ? 'approved'
     : r.hrStatus === 'Rejected' ? 'rejected'
     : r.hrStatus === 'Pending'  ? 'pending'
@@ -211,6 +233,10 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     !r.escalatedToHr ? (hrReviewed ? 'Reviewed by HR' : 'CC — informational only')
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Approved' ? 'Override approved'
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Rejected' ? 'Concurred with manager'
+    : r.escalationReason === 'manager_unavailable'
+      ? (r.status === 'Approved' ? 'Manager on leave — approved by HR'
+        : r.status === 'Rejected' ? 'Manager on leave — rejected by HR'
+        : 'Manager on leave — awaiting HR')
     : r.escalationReason === 'aged_out'         ? 'Auto-escalated · 7-day rule'
     : r.escalationReason === 'hr_raised'        ? 'HR raised the request'
     : r.hrStatus === 'Pending'  ? 'Awaiting HR review'
@@ -227,7 +253,13 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     comment: r.hrComment,
   };
 
-  return [self, manager, hr];
+  /* HR appears only when HR is actually part of this request.
+     Leave is reporting-manager-only, so an always-drawn HR node implied a
+     step that did not exist — a manager-approved request showed "Approved"
+     beside a grey HR chip, which reads as "HR still has to sign off".
+     It earns its place when the manager is away and HR has to stand in, or
+     when the chain genuinely carries a second level. */
+  return r.escalatedToHr ? [self, manager, hr] : [self, manager];
 };
 
 function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
@@ -277,7 +309,12 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   // HR is a real approval step (not just informational CC) only when the chain
   // has a second level that wasn't auto-skipped. Drives whether the HR node
   // renders its own decision in the timeline.
+  /* HR is involved when the chain carries a real second level, OR when the
+     reporting manager is unavailable and HR has to step in (Bug 55). The
+     second case is not a chain level — it is a runtime permission — so the
+     server reports it separately as rm_unavailable. */
   const hasHrLevel = !!chain && chain.length > 1 && chain[1]?.status !== 'Skipped';
+  const rmUnavailable = !!(api as any).rm_unavailable;
 
   const typeMap: Record<string, LeaveType> = {
     'Sick Leave': 'Sick', 'Casual Leave': 'Casual', 'Annual Leave': 'Annual',
@@ -330,8 +367,9 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
     hrActionAt: chain?.[1]?.acted_at ? chain[1].acted_at.slice(0, 10) : undefined,
     hrComment: chain?.[1]?.comment ?? undefined,
     hrViewedAt: (api as any).hr_viewed_at ? String((api as any).hr_viewed_at).slice(0, 10) : undefined,
-    escalatedToHr: hasHrLevel,
-    escalationReason: 'none',
+    escalatedToHr: hasHrLevel || rmUnavailable,
+    escalationReason: (rmUnavailable && !hasHrLevel ? 'manager_unavailable' : 'none') as EscalationReason,
+    rmUnavailable,
     canActNow: !!(api as any).can_act_now,
     stage,
     stageNote: undefined,
@@ -395,7 +433,17 @@ export default function HrLeave() {
         await leaveRequestsApi.reject(id, comment.trim() || undefined);
       }
       await loadRequests();
-      toast.success(action === 'approve' ? 'Leave approved' : 'Leave rejected', 'The request has been updated.');
+      /* Say WHY this was yours to act on. Without it, acting on a colleague's
+         leave as HR looks like a permissions accident rather than the
+         manager-away rule doing its job. */
+      if (row.rmUnavailable) {
+        toast.success(
+          action === 'approve' ? 'Approved by HR' : 'Rejected by HR',
+          'Reporting manager is on leave, so HR acted on this request.',
+        );
+      } else {
+        toast.success(action === 'approve' ? 'Leave approved' : 'Leave rejected', 'The request has been updated.');
+      }
     } catch (err: any) {
       const msg = err?.response?.data?.message || err?.message || 'Action failed';
       toast.error('Action failed', msg);
@@ -424,14 +472,14 @@ export default function HrLeave() {
   const openDetail = (r: LeaveRequest) => {
     setDetail(r);
     if (!isHrViewer || r.hrViewedAt) return;
-    const stamp = new Date().toISOString().slice(0, 10);
+    const stamp = localToday();
     setDetail(prev => (prev && prev.id === r.id ? { ...prev, hrViewedAt: stamp } : prev));
     setRequests(prev => prev.map(x => (x.id === r.id ? { ...x, hrViewedAt: stamp } : x)));
     leaveRequestsApi.hrView(Number(r.id)).catch(err => console.warn('[HrLeave] hr-view failed', err));
   };
   const [holidaysOpen, setHolidaysOpen] = useState(false);
   const [todayOpen, setTodayOpen] = useState(true);
-  const [onLeaveDate, setOnLeaveDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [onLeaveDate, setOnLeaveDate] = useState<string>(() => localToday());
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const isPendingRow = (r: LeaveRequest) => r.stage.startsWith('Pending');
@@ -747,7 +795,7 @@ export default function HrLeave() {
                     </span>
                     <span className="lv-today-banner-text">
                       <span className="lv-today-banner-title">
-                        {onLeaveDate === new Date().toISOString().slice(0, 10) ? 'On Leave Today' : 'On Leave'}
+                        {onLeaveDate === localToday() ? 'On Leave Today' : 'On Leave'}
                       </span>
                       <span className="lv-today-banner-sub">
                         <i className="ri-calendar-event-line" />
@@ -784,7 +832,7 @@ export default function HrLeave() {
                     <div className="att-date-nav-pick">
                       <MasterDatePicker
                         value={onLeaveDate}
-                        onChange={v => setOnLeaveDate(v || new Date().toISOString().slice(0, 10))}
+                        onChange={v => setOnLeaveDate(v || localToday())}
                         placeholder="Pick date"
                       />
                     </div>
@@ -799,11 +847,11 @@ export default function HrLeave() {
                     >
                       <i className="ri-arrow-right-s-line" />
                     </button>
-                    {onLeaveDate !== new Date().toISOString().slice(0, 10) && (
+                    {onLeaveDate !== localToday() && (
                       <button
                         type="button"
                         className="att-date-nav-today"
-                        onClick={() => setOnLeaveDate(new Date().toISOString().slice(0, 10))}
+                        onClick={() => setOnLeaveDate(localToday())}
                       >
                         Today
                       </button>
@@ -832,9 +880,9 @@ export default function HrLeave() {
                       <i className="ri-emotion-happy-line" />
                     </span>
                     <div className="fw-bold mt-2" style={{ fontSize: 13 }}>
-                      {onLeaveDate === new Date().toISOString().slice(0, 10)
+                      {onLeaveDate === localToday()
                         ? 'No one is on leave today'
-                        : onLeaveDate < new Date().toISOString().slice(0, 10)
+                        : onLeaveDate < localToday()
                           ? `No one was on leave on ${formatDate(onLeaveDate)}`
                           : `No one is on leave on ${formatDate(onLeaveDate)}`}
                     </div>

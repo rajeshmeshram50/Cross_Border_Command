@@ -51,6 +51,7 @@ interface RecruitmentInfo {
   employmentType: string | null;
   openings: number;
   experience: string | null;
+  qualification: string | null;
   workMode: string | null;
   priority: string | null;
   hiringManagerRaw: string | null;
@@ -493,6 +494,11 @@ export default function HrCandidates() {
                   <Field label="Hiring Manager" value={recruitment.hiringManagerRaw} />
                   <Field label="Assigned HR"    value={recruitment.assignedHrName} />
                 </div>
+                {recruitment.qualification && (
+                  <div className="cand-rec-grid cand-rec-grid--wide">
+                    <Field label="Qualification" value={recruitment.qualification} />
+                  </div>
+                )}
               </div>
             )}
 

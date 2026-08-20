@@ -1814,25 +1814,11 @@ class PayrollService
         $cycleEarnings = round($proratedGross + $overtimeAmount + $bonusAmount, 2);
 
         $pf  = 0;
-        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $cycleEarnings > 0) {
-            /* PF = 12% of the cycle's TOTAL EARNINGS.
-               ---------------------------------------
-               Set by the business (Aug 2026), replacing "12% of the earned
-               BASIC, capped at the ₹15,000 EPF wage ceiling". Two consequences
-               to be aware of when reading a slip:
-                 · the base is GROSS, so allowances are now pensionable here;
-                 · there is NO wage ceiling, so PF is no longer capped at
-                   ₹1,800/month, and `employees.pf_type` (statutory | standard)
-                   no longer changes the figure — both branches computed off
-                   basic and neither survives this rule.
-               This is a deliberate departure from the statutory EPF basis; if
-               it is ever reverted, the old rule was:
-                   $base = pf_type === 'standard' ? $earnedBasic
-                                                  : min($earnedBasic, self::PF_WAGE_CEILING);
-               Charged on earnings BEFORE loss of pay, matching the "Total
-               Earnings (this cycle)" figure it is quoted against — a slip
-               where the two disagreed is exactly what prompted the change. */
-            $pf = round($cycleEarnings * self::PF_RATE, 2);
+        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+            $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
+                ? $earnedBasic
+                : min($earnedBasic, self::PF_WAGE_CEILING);
+            $pf = round(max(0, $pfBase) * self::PF_RATE, 2);
             // PF was charged on an assumption, not a recorded employment type.
             // Info rather than warning: it is the correct default and holding
             // every half-filled record for review would drown the run.
@@ -2116,7 +2102,7 @@ class PayrollService
                in for the package — the F&F breakdown was showing pro-rated
                figures under the same labels the master shows full ones, and
                the two read as a contradiction. */
-            'structure_components' => array_values(array_map(fn ($c) => [
+            'structure_components' => array_values(array_map(fn($c) => [
                 'code'   => $c['code'] ?? 'comp',
                 'label'  => $c['label'] ?? 'Component',
                 'amount' => round((float) ($c['amount'] ?? 0), 2),

@@ -622,6 +622,18 @@
 .rec-form-section-sub   { font-size: 10.5px; color: var(--vz-secondary-color); margin: 0; line-height: 1.15; }
 /* Dark-blue gradient labels — rich navy→royal-blue sweep so the
    UPPERCASE field titles read as a strong, professional accent. */
+/* Label + character count on one line. The label keeps its own bottom margin,
+   so the row must not add another. */
+.rec-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.rec-label-row .rec-form-label { margin-bottom: 4px; }
+.rec-charcount {
+  font-size: 10px; font-weight: 700; line-height: 1.15;
+  color: #878a99; margin-bottom: 4px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;   /* stops the count jittering as it grows */
+}
+.rec-charcount.is-max { color: #f06548; }
+[data-bs-theme="dark"] .rec-charcount { color: #9b9eaa; }
+
 .rec-form-label {
   font-size: 10px; font-weight: 800;
   letter-spacing: 0.06em; text-transform: uppercase;
@@ -3195,6 +3207,38 @@
 @media (max-width: 575px) {
   .cand-rec-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 }
+/* Third row — one field across the full width.
+   Qualification carries up to 255 characters; in a 1/5-width cell that wraps to
+   five or six lines and pushes the whole summary band down, so it gets the row
+   to itself and wraps naturally instead. */
+.cand-rec-grid--wide {
+  /* Keeps the parent's 5-column track so the field lines up with the columns
+     above it rather than floating in its own geometry. */
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 10px;
+}
+/* Ends where Employment Type ends — three columns of five.
+   Full width put 255 characters on ONE edge-to-edge line, which is the hardest
+   possible thing to read. Three columns forces the wrap and keeps the value
+   inside the same visual block as the fields above it. */
+.cand-rec-grid--wide .cand-field {
+  grid-column: span 3;
+}
+.cand-rec-grid--wide .cand-field-value {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+@media (max-width: 1199px) {
+  /* The parent drops to 3 columns here, so 3 IS the full width. */
+  .cand-rec-grid--wide { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 575px) {
+  /* Parent is 2 columns — spanning 3 would invent a third track and overflow. */
+  .cand-rec-grid--wide { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cand-rec-grid--wide .cand-field { grid-column: span 2; }
+}
+
 /* Top half spacing — replaces the fold divider with plain breathing
    room so the upper / lower bands read as one continuous grid. */
 .cand-rec-grid--top {
@@ -5567,6 +5611,16 @@
   box-shadow: 0 0 0 3px rgba(220,38,38,0.22);
 }
 .ep-field--invalid .ep-field-label { color: #b91c1c; }
+/* Inline field error, under the input it belongs to.
+   `.ep-input--invalid` reddened the box but there was nowhere to say WHY, so
+   forms in this namespace had to fall back to a toast — which names one problem
+   at a time and disappears before the user reaches the field it meant. */
+.ep-field-err {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 4px; font-size: 11.5px; font-weight: 600; color: #b91c1c;
+}
+.ep-field-err > i { font-size: 13px; flex-shrink: 0; }
+[data-bs-theme="dark"] .ep-field-err { color: #fca5a5; }
 [data-bs-theme="dark"] .ep-input--invalid,
 [data-bs-theme="dark"] .ep-input.ep-input--invalid {
   background: rgba(239,68,68,0.10);
@@ -12461,32 +12515,11 @@
             animation: emp-spin-rotate 0.7s linear infinite;
             font-size: 16px;
           }
-          /* Top progress bar — slim animated stripe across the very top
-             of the modal when a step save is in flight. Mirrors the
-             feedback pattern used on iOS Safari + GitHub's command bar:
-             a thin indeterminate sweep tells the user "something is
-             happening" without blocking the form. */
+          /* One busy indicator only — the Save button. A top sweep bar, a
+             stepper shimmer and a button spinner all running at once read as
+             three separate things happening rather than one save. */
           .emp-modal-wide .modal-content {
             position: relative;
-          }
-          .emp-modal-wide.is-saving .modal-content::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(90deg,
-              transparent 0%,
-              #a78bfa 20%,
-              #f5b06f 50%,
-              #a78bfa 80%,
-              transparent 100%);
-            background-size: 200% 100%;
-            animation: emp-progress-sweep 1.1s linear infinite;
-            z-index: 100;
-          }
-          @keyframes emp-progress-sweep {
-            from { background-position:  100% 0; }
-            to   { background-position: -100% 0; }
           }
           /* Repaint the borrowed recruitment buttons to match the Add
              Employee header palette (deep indigo → violet → lavender)
@@ -12622,46 +12655,6 @@
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
 
-          /* Shimmer overlay used on the stepper while saving / hydrating —
-             the entire bar gets a soft moving sheen so the user sees that
-             the form is doing work (the Next button alone can feel slow). */
-          @keyframes emp-stepper-shimmer {
-            0%   { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, #eef2f7 0%, #f8f9fc 50%, #eef2f7 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle.is-active {
-            animation: emp-stepper-pulse 1s ease-in-out infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-label.is-active::after {
-            content: '';
-            display: inline-block;
-            width: 10px; height: 10px;
-            border: 2px solid rgba(124,92,252,0.30);
-            border-top-color: #7c5cfc;
-            border-radius: 50%;
-            margin-left: 6px;
-            vertical-align: middle;
-            animation: emp-stepper-spin 0.7s linear infinite;
-          }
-          @keyframes emp-stepper-pulse {
-            0%, 100% { box-shadow: 0 4px 12px rgba(124,92,252,0.30); transform: scale(1); }
-            50%      { box-shadow: 0 6px 20px rgba(124,92,252,0.55); transform: scale(1.06); }
-          }
-          @keyframes emp-stepper-spin {
-            to { transform: rotate(360deg); }
-          }
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
           /* Make the stepper item itself act as a click target so the user can
              jump between steps. The button is unstyled — child .emp-stepper-circle
              and .emp-stepper-label keep all visual responsibility. */

@@ -570,8 +570,23 @@
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
         }
         .adv-file-open:hover span { text-decoration: underline; }
-        .ep-file-act-dl:hover   { background: #0ea5e9; color: #fff; }
-        .ep-file-act-swap:hover { background: #f59e0b; color: #fff; }
+        /* Coloured AT REST, not only on hover — the point is to aim correctly
+           the first time, and hover feedback arrives too late for that. */
+        .adv-file-actions {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;                      /* was 4px, via the row's gap-1 */
+          padding-left: 8px;
+          margin-left: 2px;
+          border-left: 1px solid rgba(0,0,0,0.10);
+        }
+        .adv-file-actions .ep-claim-file-x {
+          width: 26px; height: 26px; font-size: 14px;   /* was 20px / 12px */
+        }
+        .ep-file-act-dl        { background: #e0f2fe; color: #0369a1; }
+        .ep-file-act-dl:hover  { background: #0ea5e9; color: #fff; }
+        .ep-file-act-swap      { background: #fef3c7; color: #b45309; }
+        .ep-file-act-swap:hover{ background: #f59e0b; color: #fff; }
 
         /* ── Approval Flow card — replaces the old "System Intelligence"
            placeholder. Renders the You → Reporting Manager → HR/Finance chain. */
