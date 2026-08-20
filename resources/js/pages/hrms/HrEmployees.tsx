@@ -289,6 +289,16 @@ type ExpiryDays = 3 | 7 | 15;
 /* Per-screen so other tables can adopt the same pattern without colliding. */
 const PER_PAGE_KEY = 'cbc.hr.employees.perPage';
 
+/* How long the body sheen runs. Both in one place so the timing can be judged
+   on screen instead of guessed at.
+
+   SHEEN_ON_STEP_MS is deliberately long right now (5s) so the effect can
+   actually be watched between step 1 and step 2 — it is a review value, not a
+   shipping one. A step transition wants ~500ms; anything above about 800ms
+   stops reading as a transition and starts reading as the form being stuck. */
+const SHEEN_ON_LOAD_MS = 100;
+const SHEEN_ON_STEP_MS = 5000;   // REVIEW VALUE — restore to 500 before shipping
+
 /* Normally the /hr/employees page. It is ALSO mountable as just its Add/Edit
    wizard, which is what `embedEditCode` does — the Onboarding hub renders it
    that way so its pencil opens the employee editor over the onboarding list
@@ -1424,7 +1434,30 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   };
 
   const [returnToOnClose, setReturnToOnClose] = useState<string | null>(null);
+  /* A sheen over the body whenever its contents are replaced, in two lengths.
+
+     500ms on steps 2-4: arriving at one of those swaps a whole panel of fields
+     at once, and the swap is instant enough to read as a flicker. The movement
+     makes it read as a transition instead.
+
+     100ms on step 1: nothing is being swapped there — the fields are simply
+     filled in once the record lands. But an instant fill is its own problem:
+     against a fast API the skeleton is replaced so abruptly that there is no
+     signal the data arrived at all. A brief pass marks the moment without
+     pretending to be a wait.
+
+     Keyed on empLoading as well as empStep, so the step-1 pass runs when the
+     record LANDS rather than when the dialog opens. */
+  const [stepSheen, setStepSheen] = useState(false);
+  useEffect(() => {
+    // The skeleton owns the screen while the record is still in flight.
+    if (!empOpen || empLoading) { setStepSheen(false); return; }
+    setStepSheen(true);
+    const t = setTimeout(() => setStepSheen(false), empStep === 1 ? SHEEN_ON_LOAD_MS : SHEEN_ON_STEP_MS);
+    return () => clearTimeout(t);
+  }, [empStep, empOpen, empLoading]);
   const closeEmp = () => {
+    baselineArmedRef.current = false;
     setEmpOpen(false);
     setEmpLoading(false);
     resetEmpForm();
@@ -2091,12 +2124,17 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setEmpEditingName(row.name);
     setEditingDbId(dbId ?? null);
     editingDbIdRef.current = dbId ?? null;
-    /* Opening an existing record. The baseline stays null so the FIRST Next
-       still saves — the form is populated asynchronously and a fingerprint taken
-       now could capture half-filled state. From the second step on, an untouched
-       form skips the request. */
+    /* Opening an existing record. No fingerprint YET — the form is populated
+       asynchronously, so one taken here would capture empty fields and then
+       differ from every later state, which is worse than having none.
+
+       Instead the baseline is armed and taken once the form settles (see the
+       effect below). Without it the first Save & Next always wrote, even on a
+       record nobody had touched: the skip needs something to compare against,
+       and the very first comparison had nothing. */
     savedPayloadRef.current = null;
     savedStepRef.current = 0;
+    baselineArmedRef.current = true;
     assignedPlanRef.current = null;
     setEmpOpen(true);
 
@@ -2263,6 +2301,10 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
 
     const lastStep = Math.max(0, Math.min(4, Number((raw as any)?.wizard_step_completed ?? 0)));
+    /* What the SERVER already has. Left at 0 the skip could never fire on the
+       first step, because progress would always look like it still had to be
+       written — even for a record that finished the wizard weeks ago. */
+    savedStepRef.current = lastStep;
     const resumeAt: 1 | 2 | 3 | 4 =
       lastStep === 0 || lastStep === 4 ? 1 : (((lastStep + 1) as 1 | 2 | 3 | 4));
     setEmpStep(resumeAt);
@@ -2645,6 +2687,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const savedStepRef = useRef<number>(0);
   /** Leave plan already posted for this record, so it is not re-sent each step. */
   const assignedPlanRef = useRef<number | null>(null);
+  /** An existing record is loading and still owes us its opening fingerprint. */
+  const baselineArmedRef = useRef(false);
 
   /* Keys whose value differs from the last successful save.
 
@@ -2661,6 +2705,33 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     Object.keys(next).filter(k =>
       k !== 'wizard_step_completed'
       && JSON.stringify(next[k]) !== JSON.stringify(base[k]));
+
+  /* Fingerprint an opened record once its form stops moving.
+
+     Timing is the whole difficulty. The fields are filled from the API in one
+     commit, but several values are DERIVED from them a commit later — display
+     name from the name parts, salary date from the joining date, the legal
+     entity from the branch. A fingerprint taken on the first commit would
+     predate those, so an untouched form would still read as changed and save
+     anyway, which is the bug this is here to fix.
+
+     So the snapshot is deferred by a tick and that tick is cancelled by any
+     re-render: it only lands once a render produces no further render, which is
+     exactly the definition of "the form has settled". No dependency array for
+     the same reason — the settling renders are driven by a hundred separate
+     pieces of state and listing them would be a list nobody can keep correct.
+
+     Worst case, if something re-renders forever, the fingerprint is never taken
+     and we fall back to today's behaviour of always saving. Never wrong, just
+     not saved work. */
+  useEffect(() => {
+    if (!baselineArmedRef.current || !empOpen || empLoading) return;
+    const t = setTimeout(() => {
+      savedPayloadRef.current = buildEmployeePayload(savedStepRef.current);
+      baselineArmedRef.current = false;
+    }, 0);
+    return () => clearTimeout(t);
+  });
 
   const persistCurrentStepInner = async (stepCompleted: number): Promise<boolean> => {
     try {
@@ -4077,7 +4148,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         centered
         size="lg"
         contentClassName="border-0"
-        modalClassName={`emp-modal-wide${saving ? ' is-saving' : ''}`}
+        modalClassName="emp-modal-wide"
         scrollable
         backdrop="static"
         keyboard={false}
@@ -4141,7 +4212,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             </div>
           </div>
 
-          <div ref={empStepRailRef} className={`emp-stepper-bar${saving ? ' is-loading' : ''}`} style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
+          <div ref={empStepRailRef} className="emp-stepper-bar" style={{ padding: '16px 28px', borderBottom: '1px solid var(--vz-border-color)' }}>
             <div className="d-flex align-items-start">
               {[
                 { n: 1, label: 'Basic Details' },
@@ -4182,6 +4253,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               body as feedback), and the disabled <fieldset> below kills
               keyboard edits — otherwise users could keep typing during the
               PUT and the form looked saved while holding unsaved changes. */}
+          <div style={{ position: 'relative' }}>
+          {stepSheen && <div className="emp-step-sheen" aria-hidden="true" />}
           <div
             ref={empScrollRef}
             aria-busy={saving}
@@ -5361,6 +5434,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               )}
               </>)}
             </fieldset>
+          </div>
           </div>
 
           <div

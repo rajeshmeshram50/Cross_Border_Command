@@ -12461,32 +12461,52 @@
             animation: emp-spin-rotate 0.7s linear infinite;
             font-size: 16px;
           }
-          /* Top progress bar — slim animated stripe across the very top
-             of the modal when a step save is in flight. Mirrors the
-             feedback pattern used on iOS Safari + GitHub's command bar:
-             a thin indeterminate sweep tells the user "something is
-             happening" without blocking the form. */
+          /* Step-change sheen — one 500ms pass, then gone.
+
+             Sits on a non-scrolling wrapper rather than on the scroll box
+             itself: an overlay inside a scrollable element scrolls away with
+             the content, so it would slide off the moment the panel moved. */
+          .emp-step-sheen {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            pointer-events: none;
+            border-radius: 12px;
+            background: linear-gradient(100deg,
+              transparent 30%,
+              rgba(124,92,252,0.07) 45%,
+              rgba(255,255,255,0.55) 50%,
+              rgba(124,92,252,0.07) 55%,
+              transparent 70%);
+            background-size: 240% 100%;
+            /* Matches SHEEN_ON_STEP_MS in HrEmployees.tsx. If the CSS finishes
+               first the overlay sits there invisible for the remainder, which
+               looks like nothing happened at all. */
+            animation: emp-step-sheen-sweep 5000ms ease-out 1 forwards;
+          }
+          @keyframes emp-step-sheen-sweep {
+            from { background-position: 130% 0; }
+            to   { background-position: -130% 0; }
+          }
+          [data-bs-theme="dark"] .emp-step-sheen,
+          [data-layout-mode="dark"] .emp-step-sheen {
+            background: linear-gradient(100deg,
+              transparent 30%,
+              rgba(124,92,252,0.10) 45%,
+              rgba(255,255,255,0.10) 50%,
+              rgba(124,92,252,0.10) 55%,
+              transparent 70%);
+            background-size: 240% 100%;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .emp-step-sheen { animation: none; background: none; }
+          }
+
+          /* One busy indicator only — the Save button. A top sweep bar, a
+             stepper shimmer and a button spinner all running at once read as
+             three separate things happening rather than one save. */
           .emp-modal-wide .modal-content {
             position: relative;
-          }
-          .emp-modal-wide.is-saving .modal-content::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(90deg,
-              transparent 0%,
-              #a78bfa 20%,
-              #f5b06f 50%,
-              #a78bfa 80%,
-              transparent 100%);
-            background-size: 200% 100%;
-            animation: emp-progress-sweep 1.1s linear infinite;
-            z-index: 100;
-          }
-          @keyframes emp-progress-sweep {
-            from { background-position:  100% 0; }
-            to   { background-position: -100% 0; }
           }
           /* Repaint the borrowed recruitment buttons to match the Add
              Employee header palette (deep indigo → violet → lavender)
@@ -12622,46 +12642,6 @@
           .emp-stepper-line { flex: 1; height: 2px; background: #e5e7eb; margin: 0 6px; align-self: flex-start; margin-top: 16px; transition: background .2s ease; }
           .emp-stepper-line.is-done { background: #0ab39c; }
 
-          /* Shimmer overlay used on the stepper while saving / hydrating —
-             the entire bar gets a soft moving sheen so the user sees that
-             the form is doing work (the Next button alone can feel slow). */
-          @keyframes emp-stepper-shimmer {
-            0%   { background-position: -200% 0; }
-            100% { background-position: 200% 0; }
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, #eef2f7 0%, #f8f9fc 50%, #eef2f7 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-circle.is-active {
-            animation: emp-stepper-pulse 1s ease-in-out infinite;
-          }
-          .emp-stepper-bar.is-loading .emp-stepper-label.is-active::after {
-            content: '';
-            display: inline-block;
-            width: 10px; height: 10px;
-            border: 2px solid rgba(124,92,252,0.30);
-            border-top-color: #7c5cfc;
-            border-radius: 50%;
-            margin-left: 6px;
-            vertical-align: middle;
-            animation: emp-stepper-spin 0.7s linear infinite;
-          }
-          @keyframes emp-stepper-pulse {
-            0%, 100% { box-shadow: 0 4px 12px rgba(124,92,252,0.30); transform: scale(1); }
-            50%      { box-shadow: 0 6px 20px rgba(124,92,252,0.55); transform: scale(1.06); }
-          }
-          @keyframes emp-stepper-spin {
-            to { transform: rotate(360deg); }
-          }
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-circle:not(.is-active):not(.is-done),
-          [data-bs-theme="dark"] .emp-stepper-bar.is-loading .emp-stepper-line:not(.is-done) {
-            background: linear-gradient(90deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0.04) 100%);
-            background-size: 200% 100%;
-            animation: emp-stepper-shimmer 1.2s linear infinite;
-          }
           /* Make the stepper item itself act as a click target so the user can
              jump between steps. The button is unstyled — child .emp-stepper-circle
              and .emp-stepper-label keep all visual responsibility. */
