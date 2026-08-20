@@ -4,6 +4,7 @@ import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import { KpiTile, AnimatedNumber } from '../EmployeeProfileShared';
 import RegularizationModal, { type RegPrefillPunch } from '../../hrms/RegularizationModal';
+import { to12h } from '../../hrms/RegularizationApprovals';
 import { regularizationApi, type ApiRegularization } from '../../hrms/regularizationApi';
 import AttendanceLogsView, { type AttLog } from './AttendanceLogsView';
 import WorklistPager from '../../../components/ui/WorklistPager';
@@ -381,7 +382,7 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                     </thead>
                     <tbody>
                       {visibleRegs.map(rg => {
-                        const punches = (rg.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
+                        const punches = (rg.punches ?? []).map(p => `${to12h(p.in)}–${to12h(p.out)}`).join(', ');
                         const tone =
                           rg.status === 'Approved' ? { bg: '#dcfce7', fg: '#15803d' } :
                           rg.status === 'Rejected' ? { bg: '#fee2e2', fg: '#b91c1c' } :

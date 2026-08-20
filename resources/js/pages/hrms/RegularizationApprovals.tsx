@@ -6,6 +6,27 @@ import { Shimmer } from '../../components/ui/Shimmer';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { regularizationApi, type ApiRegularization, type RegularizationStatus } from './regularizationApi';
 
+/* 12-hour clock, to match the attendance tables this screen sits under —
+   those render through fmtClock/renderTime with hour24 hardcoded false, so a
+   24-hour "13:00" here was the only place in the attendance area still showing
+   one, and the same punch read differently on two tables of the same page.
+
+   Applied to the STRING rather than to parsed fields because these two columns
+   are prose as often as times: `original_display` is a server-built summary
+   that can read "No punches (absent)". Rewriting only the HH:MM runs inside it
+   leaves that wording alone. The >23 guard keeps a duration or any other
+   colon-separated pair from being mistaken for a clock time. */
+export const to12h = (s?: string | null): string => {
+  if (!s) return '—';
+  return s.replace(/(\d{1,2}):(\d{2})/g, (m, h: string, mm: string) => {
+    const n = Number(h);
+    if (n > 23) return m;
+    const ampm = n >= 12 ? 'PM' : 'AM';
+    const h12  = n % 12 === 0 ? 12 : n % 12;
+    return `${String(h12).padStart(2, '0')}:${mm} ${ampm}`;
+  });
+};
+
 const STATUS_FILTERS: { key: RegularizationStatus | 'All'; label: string }[] = [
   { key: 'Pending',  label: 'Pending' },
   { key: 'Approved', label: 'Approved' },
@@ -219,7 +240,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                     </tr>
                   ) : paged.map(r => {
                     const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
-                    const punches = (r.punches ?? []).map(p => `${p.in ?? '—'}–${p.out ?? '—'}`).join(', ');
+                    const punches = (r.punches ?? []).map(p => `${to12h(p.in)}–${to12h(p.out)}`).join(', ');
                     return (
                       <tr key={r.id}>
                         <td className="fw-semibold">{empName(r)}</td>
@@ -229,7 +250,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                           {r.type && <div className="ep-fs-11 text-muted">{r.type}</div>}
                         </td>
                         <td className="font-monospace ep-fs-12 text-muted" style={{ whiteSpace: 'nowrap' }}>
-                          {r.mode === 'exempt' ? '—' : (r.original_display || '—')}
+                          {r.mode === 'exempt' ? '—' : to12h(r.original_display)}
                         </td>
                         <td className="font-monospace ep-fs-12" style={{ whiteSpace: 'nowrap' }}>
                           {r.mode === 'exempt' ? '—' : (punches || '—')}

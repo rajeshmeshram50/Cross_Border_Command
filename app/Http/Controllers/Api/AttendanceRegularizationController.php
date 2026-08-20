@@ -122,9 +122,16 @@ class AttendanceRegularizationController extends Controller
         // otherwise view and approve regularizations but not create one on
         // behalf of an employee, getting "You can only raise a regularization
         // request for yourself" (bug #15).
-        $isAdmin = in_array($user->user_type, self::ADMIN_TYPES, true);
-        if (!$isAdmin && (int) ($employee->user_id ?? 0) !== (int) $user->id) {
-            abort(403, 'You can only raise a regularization request for yourself.');
+        $isAdmin  = in_array($user->user_type, self::ADMIN_TYPES, true);
+        $isSelf   = (int) ($employee->user_id ?? 0) === (int) $user->id;
+        /* Filing on behalf: an Attendance grant plus the target being somewhere
+           below this login in the reporting chain. Tenant-wide filing stays
+           with the admin tiers — the grant lets a manager fix their own team's
+           logs, not everybody's. */
+        $onBehalf = !$isSelf && $this->hasAttendanceGrant($user)
+            && ($isAdmin || $this->managesEmployee($user, $employee));
+        if (!$isAdmin && !$isSelf && !$onBehalf) {
+            abort(403, 'You can only raise a regularization request for yourself, or for someone who reports to you with the Attendance permission.');
         }
 
         // Date guard — regularization is for a PAST or current day, never a
@@ -470,15 +477,24 @@ class AttendanceRegularizationController extends Controller
         ]);
 
         // Authorization — the requester's reporting manager, or HR/admin scope.
-        $isAdminScope = in_array($user->user_type, self::ADMIN_TYPES, true);
+        $isAdminScope = $this->hasAttendanceGrant($user, 'can_edit');
         if (!$isAdminScope && !$this->isReportingManager($user, $row)) {
             abort(403, 'You cannot act on this regularization request — only the reporting manager or HR can.');
         }
 
-        // No one may APPROVE their own request — not even via the admin scope.
+        /* No one may APPROVE their own request — not even via the admin scope.
+         *
+         * TWO ways it is theirs, and only the first was checked. The obvious
+         * one is being the SUBJECT. The other is having RAISED it: now that a
+         * manager with the Attendance grant can file on an employee's behalf,
+         * raising and approving would be one uninterrupted action by one
+         * person, which is the whole point of having an approval step. */
         $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
         if ($next === 'Approved' && $ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
             abort(403, 'You cannot approve your own regularization request.');
+        }
+        if ($next === 'Approved' && $row->created_by && (int) $row->created_by === (int) $user->id) {
+            abort(403, 'You raised this request, so someone else has to approve it.');
         }
 
         /* Payroll gate, re-checked at DECISION time.
@@ -1179,6 +1195,51 @@ class AttendanceRegularizationController extends Controller
 
     /** Is the signed-in user the reporting manager of the request's employee?
      *  Matches both an Employee-row RM and a login-User RM (admin manager). */
+    /**
+     * Does this login hold the Attendance module grant?
+     *
+     * ADMIN_TYPES is a `user_type` list, and `user_type` is not a privilege —
+     * almost every login in a tenant is `employee`, HR included. So an HR user
+     * granted Attendance could open this screen and approve, but filing on
+     * behalf of anyone fell through to the self-service rule and answered "You
+     * can only raise a regularization request for yourself" (CBC #59).
+     *
+     * The grant is the thing that actually separates the two cases, so that is
+     * what gets asked. Ordinary employees hold no grant and keep the
+     * self-service rule exactly as before.
+     */
+    private function hasAttendanceGrant($user, string $perm = 'can_add'): bool
+    {
+        if (!$user) return false;
+        if (in_array($user->user_type, self::ADMIN_TYPES, true)) return true;
+
+        $moduleId = \App\Models\Module::where('slug', 'hr.attendance')->value('id');
+        if (!$moduleId) return false;
+
+        return \App\Models\Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where($perm, true)
+            ->exists();
+    }
+
+    /** Is $employee somewhere BELOW this login in the reporting chain? */
+    private function managesEmployee($user, Employee $employee): bool
+    {
+        $myEmpId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
+        $seen = [];
+        $cursor = $employee;
+        // Walk upward. The depth cap is a backstop against a reporting loop
+        // that already exists in the data, the same guard ExitController uses.
+        for ($i = 0; $i < 20 && $cursor; $i++) {
+            if (isset($seen[$cursor->id])) break;
+            $seen[$cursor->id] = true;
+            if ($cursor->reporting_manager_user_id && (int) $cursor->reporting_manager_user_id === (int) $user->id) return true;
+            if ($myEmpId && $cursor->reporting_manager_id && (int) $cursor->reporting_manager_id === $myEmpId) return true;
+            $cursor = $cursor->reporting_manager_id ? Employee::find($cursor->reporting_manager_id) : null;
+        }
+        return false;
+    }
+
     private function isReportingManager($user, AttendanceRegularization $row): bool
     {
         $emp = Employee::find($row->employee_id);

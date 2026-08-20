@@ -192,14 +192,6 @@ export default function HrHoliday() {
               <Tooltip label={r.name}>
                 <div className="fw-bold fs-13" style={clip}>{r.name}</div>
               </Tooltip>
-              {/* A recurring holiday shows on every year's calendar, so the row
-                  needs to say so — the Date column shows one year and reads as
-                  a one-off without it. */}
-              {r.is_recurring && (
-                <Tooltip label="Repeats every year on this date">
-                  <i className="ri-repeat-2-line" style={{ fontSize: 12, color: '#7c5cfc', flexShrink: 0 }} />
-                </Tooltip>
-              )}
             </div>
             {r.description && (
               <Tooltip label={r.description}>
@@ -595,6 +587,12 @@ function HolidayModal({
   const [date, setDate] = useState('');
   const [type, setType] = useState<HolidayType | ''>('');
   const [groupId, setGroupId] = useState('');
+  /* No control for this any more — the "Repeat every year" checkbox was
+     removed. The state stays only so an EDIT round-trips whatever is already
+     stored: it hydrates from the record below and goes back out unchanged, so
+     saving a holiday that was already flagged recurring (they can still arrive
+     through the Excel import) does not silently turn the flag off. A new
+     holiday starts false and there is no longer any way to make it true. */
   const [isRecurring, setIsRecurring] = useState(false);
   const [description, setDescription] = useState('');
 
@@ -739,26 +737,6 @@ function HolidayModal({
               <MasterDatePicker value={date} onChange={setDate} invalid={!!errors.date} minDate={minDateStr} disabled={saving} />
               {date && <div className="text-muted mt-1" style={{ fontSize: 11.5 }}>{weekdayName(date)}</div>}
               {errors.date && <div className="rec-error"><i className="ri-error-warning-line" />{errors.date}</div>}
-            </Col>
-
-            <Col md={12}>
-              {/* The only piece of "repeat every year" that was missing.
-                  `isRecurring` state, the edit-time hydration, the payload
-                  field, the API validation and every consumer of it (holiday
-                  list expansion, attendance, leave day-counting, payroll) were
-                  all already built and working — there was simply no control to
-                  turn it on, so every holiday saved as one-off (CBC #55). */}
-              <label className="rec-toggle" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderRadius: 8, border: '1px solid var(--vz-border-color)', cursor: saving ? 'not-allowed' : 'pointer', fontSize: 12, fontWeight: 600, opacity: saving ? 0.6 : 1 }}>
-                <input type="checkbox" checked={isRecurring} disabled={saving}
-                  onChange={e => setIsRecurring(e.target.checked)} />
-                <i className="ri-repeat-2-line" />
-                Repeat every year
-              </label>
-              <div className="text-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                {isRecurring
-                  ? `Falls on the same date every year — the year in the date above is only the first one.`
-                  : 'One-off — this holiday applies to the selected date only.'}
-              </div>
             </Col>
 
             <Col md={12}>
