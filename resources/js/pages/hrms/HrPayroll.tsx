@@ -2257,16 +2257,22 @@ export default function HrPayroll() {
 
       {paySlipRow && (() => {
         const r = paySlipRow;
-        const basic   = Math.round(r.earnings * 0.50);
-        const hra     = Math.round(r.earnings * 0.25);
-        const special = r.earnings - basic - hra;
+        /* Until the real components arrive, show the ONE figure that is
+           already known to be true — the row's gross — as a single line.
+           (#85)
+           It used to render an invented 50 / 25 / 25 split of that gross:
+
+               basic = earnings * 0.50, hra = earnings * 0.25, …
+
+           none of which was the employee's actual structure (the app's own
+           seed is 50/30/20, and a real structure can be anything). The slip
+           opened on those figures and then visibly rewrote itself when the
+           breakup loaded, so the first thing the reader saw was wrong.
+           A single truthful line simply gains detail instead: the total never
+           moves, and no number on screen is ever a guess. */
         const earnings: PayslipLine[] = payslipBreakup?.earnings?.length
           ? payslipBreakup.earnings
-          : [
-              { label: 'Basic Salary',          amount: basic },
-              { label: 'House Rent Allowance (HRA)', amount: hra },
-              { label: 'Special Allowance',     amount: special },
-            ];
+          : [{ label: 'Gross Earnings', amount: r.earnings }];
         const deductions: PayslipLine[] = payslipBreakup?.deductions?.length
           ? payslipBreakup.deductions
           : [

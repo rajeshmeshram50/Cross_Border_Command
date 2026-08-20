@@ -104,8 +104,14 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           const d = res.data?.data ?? {};
           setEarnings((d.earnings ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
           setDeductions((d.deductions ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
-          setPfApplicable(!!d.pf_applicable);
-          setEsiApplicable(!!d.esi_applicable);
+          /* The EMPLOYEE record is the master for applicability, so a stale
+             structure flag must not hide a deduction the employee is entitled
+             to. Seeding from the structure alone produced an impossible state:
+             pf_eligible on the employee disabled the box, while pf_applicable
+             false on the structure left it unticked — so PF was missing from
+             Salary Setup with no way to add it (#89). */
+          setPfApplicable(!!d.pf_applicable || !!employee.pf_eligible);
+          setEsiApplicable(!!d.esi_applicable || !!employee.esi_applicable);
           setPtApplicable(d.pt_applicable !== false);
         })
         .catch(() => setEarnings(splitFromGross(grossSeed)))
@@ -175,11 +181,21 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const overSalary = salaryDiff > SALARY_SLACK;
   const underSalary = salaryDiff < -SALARY_SLACK;
 
-  // A box is LOCKED only when the employee already has it applicable (set on the
-  // Employee form) — you can't turn it off here. If it's NOT applicable yet, you
-  // CAN enable it here; saving propagates the flag back to the employee record.
-  const pfLocked = !!employee.pf_eligible;
-  const esiLocked = !!employee.esi_applicable;
+  /* All three boxes are editable (#88).
+   *
+   * PF and ESI used to be locked whenever the employee record already had them
+   * applicable, while Professional Tax was always editable — because PT has no
+   * employee-level field to lock against. That left one row greyed out and the
+   * next one beside it live, with no visible reason for the difference.
+   *
+   * Locking was also what produced #89: a locked box seeded false from the
+   * structure could be neither shown as applicable nor switched on.
+   *
+   * Nothing is lost by unlocking. The two records are kept in step both ways —
+   * saving here writes the flags back to the employee
+   * (SalaryStructureController::store), and editing the employee mirrors them
+   * onto the active structure (EmployeeController::update, #90) — so whichever
+   * screen is used, the pair stays consistent. */
 
   const updateRow = (
     list: SalaryComponent[],
@@ -414,21 +430,21 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 />
               </div>
               <div className="col-md-8">
-                {/* Locked (✓ from the Employee form) → can't turn off, edit amount
-                    only. Unlocked → you can enable it here; it updates the
-                    employee + onboarding forms on save. */}
+                {/* All three behave the same way: tick to apply, untick to
+                    remove, and the choice is written back to the employee
+                    record on save. */}
                 <div className="d-flex align-items-end gap-3 flex-wrap">
-                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: pfLocked ? 'var(--vz-secondary-color)' : undefined, cursor: pfLocked ? 'not-allowed' : 'pointer' }} title={pfLocked ? 'Set on the Employee form' : ''}>
-                    <input type="checkbox" checked={pfApplicable} disabled={pfLocked} onChange={e => { if (!pfLocked) setPfApplicable(e.target.checked); }} /> PF (12%){pfLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={pfApplicable} onChange={e => setPfApplicable(e.target.checked)} /> PF (12%)
                   </label>
-                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: esiLocked ? 'var(--vz-secondary-color)' : undefined, cursor: esiLocked ? 'not-allowed' : 'pointer' }} title={esiLocked ? 'Set on the Employee form' : ''}>
-                    <input type="checkbox" checked={esiApplicable} disabled={esiLocked} onChange={e => { if (!esiLocked) setEsiApplicable(e.target.checked); }} /> ESI{esiLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={esiApplicable} onChange={e => setEsiApplicable(e.target.checked)} /> ESI
                   </label>
                   <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
                     <input type="checkbox" checked={ptApplicable} onChange={e => setPtApplicable(e.target.checked)} /> Professional Tax
                   </label>
                 </div>
-                <small className="text-muted" style={{ fontSize: 10.5 }}>🔒 = already set on the Employee form (locked). Enable an unlocked one here and it updates the Employee &amp; onboarding forms too.</small>
+                <small className="text-muted" style={{ fontSize: 10.5 }}>Changing any of these here updates the Employee &amp; onboarding forms too, so the two stay in step.</small>
               </div>
             </div>
 
