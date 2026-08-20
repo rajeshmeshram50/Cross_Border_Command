@@ -27,6 +27,9 @@ export interface SalaryEmployeeLite {
    *  the exit is finalised, so it cannot be read off `status`). */
   exit_in_progress?: boolean;
   exit_last_working_day?: string | null;
+  /** Seeds Effective From, and floors the picker — a salary cannot take effect
+   *  before the employee joined. */
+  date_of_joining?: string | null;
 }
 
 interface Props {
@@ -78,7 +81,13 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   // (Re)initialise the form whenever the modal opens for an employee.
   useEffect(() => {
     if (!open || !employee) return;
-    setEffectiveFrom(todayISO());
+    /* Seeded from the joining date, not today (#87). A salary runs from the
+       day the employee joined — the Add/Edit Employee wizard already enforces
+       exactly that ("Salary effective date must be the same as the joining
+       date"), and this screen was the one place that ignored it and opened on
+       whatever today happened to be. Falls back to today only when the record
+       carries no joining date. */
+    setEffectiveFrom(employee.date_of_joining || todayISO());
     setNote('');
     // PF / ESI applicability mirror the employee record (set on the Employee
     // form); they're locked here. PT defaults on (no employee-level flag).
@@ -390,7 +399,18 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <div className="row g-3 mb-3">
               <div className="col-md-4">
                 <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Effective From</label>
-                <MasterDatePicker value={effectiveFrom} onChange={setEffectiveFrom} placeholder="Select date" />
+                {/* Floored at the joining date — a salary cannot take effect
+                    before the employee existed (#87). Deliberately NOT capped
+                    at today: the engine supports a future-dated revision on
+                    purpose (activeStructure resolves the version in force on a
+                    given date, so a revision dated next month leaves the
+                    current cycle alone), and capping would break that. */}
+                <MasterDatePicker
+                  value={effectiveFrom}
+                  onChange={setEffectiveFrom}
+                  minDate={employee.date_of_joining || undefined}
+                  placeholder="Select date"
+                />
               </div>
               <div className="col-md-8">
                 {/* Locked (✓ from the Employee form) → can't turn off, edit amount

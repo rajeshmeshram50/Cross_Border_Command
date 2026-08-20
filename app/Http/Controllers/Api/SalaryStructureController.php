@@ -108,6 +108,12 @@ class SalaryStructureController extends Controller
                 'pf_type'       => $e->pf_type, // statutory | standard | null
                 'esi_applicable'=> strtolower((string) ($e->esi_applicable ?? '')) === 'yes',
                 'annual_salary' => $e->annual_salary !== null ? (float) $e->annual_salary : null,
+                // The first salary runs from the day they joined, so the modal
+                // seeds Effective From with this instead of today, and refuses
+                // anything earlier (#87).
+                'date_of_joining' => $e->date_of_joining
+                    ? \Carbon\Carbon::parse($e->date_of_joining)->toDateString()
+                    : null,
                 'has_structure' => (bool) $s,
                 'structure_id'  => $s?->id,
                 'monthly_gross' => $s ? (float) $s->monthly_gross : ($e->annual_salary ? round((float) $e->annual_salary / 12, 2) : 0),
