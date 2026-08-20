@@ -397,6 +397,26 @@ export default function DataTable<T extends object>({
   useEffect(() => {
     const el = rootRef.current;
     if (!el || !fitToViewport) return;
+
+    /* A rows-per-page the user picked themselves owns the height from then on.
+     *
+     * fitToViewport pins the card to whatever space is left below it, and the
+     * rows area scrolls inside that. On a page carrying a lot above the table
+     * that space is only a couple of rows tall — so choosing "10" set the page
+     * size to 10 correctly, but eight of those rows sat behind an inner
+     * scrollbar and the table still looked like it was showing 2. The setting
+     * appeared to do nothing.
+     *
+     * Releasing the pin lets the card grow to the rows that were asked for and
+     * the PAGE scroll instead, which is what picking a row count means. The
+     * automatic fit still owns the height until someone overrides it. */
+    if (manualSize !== null) {
+      el.style.flex = '';
+      el.style.height = '';
+      el.style.maxHeight = '';
+      return;
+    }
+
     const size = () => {
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
@@ -418,7 +438,7 @@ export default function DataTable<T extends object>({
       window.clearTimeout(t);
       ro?.disconnect();
     };
-  }, [fitToViewport, loading]);
+  }, [fitToViewport, loading, manualSize]);
 
   useEffect(() => {
     if (!autoFitRows) return;
@@ -668,7 +688,11 @@ export default function DataTable<T extends object>({
                   an empty table. These keep the ruled lines and zebra running to
                   the pager. Rendered only when the page is genuinely short, and
                   never in place of the empty state. */}
-              {!loading && rows.length > 0 && autoFitRows && pageSize > rows.length &&
+              {/* Only while the AUTOMATIC fit owns the height. Once the user
+                  picks a row count the card grows to the rows themselves, so
+                  padding a 6-row result out to a chosen 50 would draw 44 blank
+                  lines instead of filling a fixed box. */}
+              {!loading && rows.length > 0 && autoFitRows && manualSize === null && pageSize > rows.length &&
                 Array.from({ length: pageSize - rows.length }, (_, i) => (
                   <tr key={`dt-fill-${i}`} className="dt-fill-row" aria-hidden>
                     <td colSpan={colCount}>&nbsp;</td>
