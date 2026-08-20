@@ -1253,7 +1253,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the salary basis; only the basis, the monthly figure and the payment
      record are actually entered. `settleStatus` is the gate Final
      Deactivation & Closure reads. */
-  /* Always monthly BASIC — the recovery is priced on basic ÷ 30. A gross/basic
+  /* Always monthly BASIC — the recovery is priced on basic ÷ days-in-month. A gross/basic
      choice only invited two different figures for the same settlement. */
   const noticeBasis = 'basic' as const;
   const [monthlyAmount, setMonthlyAmount] = useState('');
@@ -1345,7 +1345,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   /* The settlement figures. Overtime-style rule set:
        · days served  = last working day − notice start, clamped to the period
        · unserved     = required − served
-       · per-day rate = monthly figure ÷ 30
+       · per-day rate = monthly figure ÷ the DAYS IN THE EXIT MONTH
        · amount       = unserved × rate, and always 0 when the notice was served
      A late-starting exit, a probation exit or a resignation inside the 15-day
      early-exit window carries no notice period, so `required` collapses to 0
@@ -1363,9 +1363,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
-    const perDay   = monthly > 0 ? monthly / 30 : 0;
+    const monthDays = (() => {
+      if (!lwd) return 30;
+      const d = new Date(lwd + 'T00:00:00');
+      const n = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      return n > 0 ? n : 30;
+    })();
+    const perDay   = monthly > 0 ? monthly / monthDays : 0;
     const amount   = settlement === 'served' ? 0 : Math.round(unserved * perDay * 100) / 100;
-    return { required, served, unserved, monthly, perDay, amount };
+    return { required, served, unserved, monthly, perDay, monthDays, amount };
   }, [noticeWaived, employee?.noticePeriodDays, noticeDate, lwd, monthlyAmount, settlement]);
 
   /* NA once nothing is owed; otherwise Pending until the money is accounted
@@ -4958,7 +4964,7 @@ function ExitTypePickerModal({ open, employee, current, onClose, onPick, busy }:
 function SettlementSummary({
   settle, settlement, status, monthly, fmtMoney,
 }: {
-  settle: { required: number; served: number; unserved: number; perDay: number; amount: number };
+  settle: { required: number; served: number; unserved: number; perDay: number; monthDays: number; amount: number };
   settlement: Settlement;
   status: string;
   monthly: string;
@@ -4989,7 +4995,8 @@ function SettlementSummary({
         <div><span>Days served</span><strong>{settle.served}</strong></div>
         <div><span>{settlement === 'pay_in_lieu' ? 'Days to pay' : 'Days unserved'}</span><strong>{settle.unserved}</strong></div>
         {/* Fixed, not a choice: the notice recovery is always priced on monthly
-            BASIC ÷ 30, so offering "gross" only invited an inconsistent figure. */}
+            BASIC ÷ the exit month's days, so offering "gross" only invited an
+            inconsistent figure. */}
         <div><span>Salary basis</span><strong>Monthly Basic</strong></div>
         <div>
           {/* Read-only: derived from the employee's package (annual ÷ 12 × 50%),
@@ -4997,7 +5004,10 @@ function SettlementSummary({
               figure that doesn't match payroll. */}
           <span>Monthly basic</span><strong>{fmtMoney(Number(monthly) || 0)}</strong>
         </div>
-        <div><span>Per-day rate</span><strong>{fmtMoney(settle.perDay)}</strong></div>
+        {/* The divisor is on screen: a per-day rate with no stated basis is the
+            one number on this card nobody can verify by eye, and it is exactly
+            the one that was wrong. */}
+        <div><span>Per-day rate <span style={{ opacity: 0.7 }}>(basic ÷ {settle.monthDays})</span></span><strong>{fmtMoney(settle.perDay)}</strong></div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
+import { pfDeduction } from '../utils/salaryBreakup';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
 
@@ -106,16 +107,16 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const grossTotal = useMemo(() => earnings.reduce((s, c) => s + (Number(c.amount) || 0), 0), [earnings]);
   const dedTotal = useMemo(() => deductions.reduce((s, c) => s + (Number(c.amount) || 0), 0), [deductions]);
 
-  /* Live PF estimate — 12% of the monthly GROSS (business rule, Aug 2026),
-     mirroring PayrollService::computeForEmployee(). It used to be 12% of the
-     BASIC with the ₹15,000 statutory ceiling for `pf_type` Statutory; that
-     branch no longer exists in the engine, so showing it here would quote a
-     figure payroll does not deduct. */
+  /* Live PF estimate — 12% of BASIC on the statutory basis, mirroring
+     PayrollService::computeForEmployee(): `pf_type` Statutory (or unset) caps
+     the basic at the ₹15,000 EPF ceiling, Standard uses the full basic.
+     Shares pfDeduction() with the employee form and the onboarding wizard so
+     all three quote the one figure payroll will deduct. */
   const basicAmt = useMemo(() => Number(earnings.find(c => c.code === 'basic')?.amount) || 0, [earnings]);
-  const pfAmt = useMemo(() => {
-    if (!pfApplicable) return 0;
-    return Math.round(grossTotal * 0.12);
-  }, [pfApplicable, grossTotal]);
+  const pfAmt = useMemo(
+    () => pfDeduction(basicAmt, String(employee?.pf_type ?? ''), pfApplicable),
+    [basicAmt, employee?.pf_type, pfApplicable],
+  );
 
   // Ticking PF / ESI / Professional Tax drops a labelled row into Fixed
   // Deductions; unticking removes it. PF's amount is auto (12% of basic, by
@@ -248,7 +249,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           <div className="d-flex align-items-center" style={{ flex: 1, position: 'relative' }}>
             <span style={{ position: 'absolute', left: 8, fontSize: 12, color: 'var(--vz-secondary-color)' }}>₹</span>
             <input type="number" min={0} className="form-control form-control-sm" style={{ paddingLeft: 18, textAlign: 'right', background: amountLocked ? 'var(--vz-light, #f3f3f9)' : undefined }}
-              value={c.amount} readOnly={amountLocked} title={amountLocked ? 'Auto — 12% of the monthly gross' : undefined}
+              value={c.amount} readOnly={amountLocked} title={amountLocked ? 'Auto — 12% of Basic Salary (capped at the ₹15,000 EPF ceiling unless PF Type is Standard)' : undefined}
               onChange={e => updateRow(list, setList, i, 'amount', e.target.value)} />
           </div>
           {locked ? (
@@ -323,7 +324,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
               <li><strong>Basic Salary</strong> — 50% of monthly gross (statutory minimum, Code on Wages 2019).</li>
               <li><strong>House Rent Allowance (HRA)</strong> — 30% of monthly gross.</li>
               <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA.</li>
-              <li><strong>PF Deduction</strong> — <strong>12% of the monthly gross</strong>. ESI / PT are the fixed-deduction rows you enter, and they are deducted <strong>in full</strong> each cycle (never scaled down for a part-month or loss of pay).</li>
+              <li><strong>PF Deduction</strong> — <strong>12% of Basic Salary</strong>; <em>Statutory</em> caps the basic at the ₹15,000 EPF ceiling (max ₹1,800/mo), <em>Standard</em> uses the full basic. ESI / PT are the fixed-deduction rows you enter, and they are deducted <strong>in full</strong> each cycle (never scaled down for a part-month or loss of pay).</li>
             </ul>
 
             <div className="row g-4">

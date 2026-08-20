@@ -18,11 +18,18 @@ export interface SalBreakComp { code: string; label: string; amount: number }
  *  added by HR and survives a re-seed. */
 export const SPLIT_CODES = ['basic', 'hra', 'special'];
 
-/** Rows where ₹0 is a real answer rather than an unfilled field: PT is nil below
- *  the first slab, ESI is nil above the wage ceiling, and Special Allowance is
- *  nil once the other components use up the whole CTC. HR's own rows still have
- *  to carry a positive amount. */
-export const ZERO_OK_CODES = ['pf', 'esi', 'pt', 'special'];
+/** Rows where ₹0 is a real answer rather than an unfilled field: ESI is nil
+ *  above the wage ceiling, PF is nil when the employee is out of scope, and
+ *  Special Allowance is nil once the other components use up the whole CTC.
+ *  HR's own rows still have to carry a positive amount.
+ *
+ *  'pt' is deliberately NOT here. Professional Tax is typed by hand now (the
+ *  slab suggestion that used to sit above these rows has been removed), and a
+ *  hand-typed 0 is indistinguishable from a field nobody filled — it saves
+ *  silently and the deduction never comes out. Ticking PT Applicable and then
+ *  leaving it at 0 is the mistake this catches; untick the box instead, which
+ *  removes the row altogether. */
+export const ZERO_OK_CODES = ['pf', 'esi', 'special'];
 
 export const MAX_COMP_AMOUNT = 99999999.99;
 export const MAX_COMP_LABEL  = 120;
