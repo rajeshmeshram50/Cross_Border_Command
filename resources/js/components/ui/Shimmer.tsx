@@ -598,10 +598,12 @@ export function ShimmerProfile() {
  * the real hero colour makes the page resolve into itself instead.
  * ─────────────────────────────────────────────────────────────────────── */
 export function ShimmerEmployeeProfile() {
-  // The hero is dark, so its placeholders need the translucent-white
-  // treatment the page already uses for its own hero shimmers
-  // (.ep-hero-shimmer) rather than the default light-grey gradient.
-  const onDark: React.CSSProperties = { background: 'rgba(255,255,255,0.18)' };
+  /* The hero band is dark, so placeholders need a translucent-white base
+   * instead of the default light grey. Only background-COLOR is overridden:
+   * the `background` shorthand would also wipe the background-image that
+   * carries the sweeping highlight, leaving dead grey blocks instead of a
+   * shimmer — which is the very thing this bug is about. */
+  const onDark: React.CSSProperties = { backgroundColor: 'rgba(255,255,255,0.18)' };
 
   return (
     <div
