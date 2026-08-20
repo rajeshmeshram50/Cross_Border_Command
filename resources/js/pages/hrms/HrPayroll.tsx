@@ -1433,7 +1433,7 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '26%' },
+      meta: { width: '23%' },
       cell: info => {
         const emp = info.row.original;
         const accent = '#7c5cfc';
@@ -1456,7 +1456,7 @@ export default function HrPayroll() {
       meta: { width: '12%' },
       cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department', accessorKey: 'department', meta: { width: '16%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department', accessorKey: 'department', meta: { width: '15%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Monthly Gross',
       accessorKey: 'monthly_gross',
@@ -2127,6 +2127,10 @@ export default function HrPayroll() {
               <DataTable<SalaryEmployeeLite>
                 data={roster}
                 columns={rosterColumns}
+                /* Percentage, matching Processing and Salary Report — the
+                   56px default would put a pixel column into a percentage
+                   budget, which is the drift fixed in #66. */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 className="pay-tbl-roster"
                 accent="violet"
                 fitToViewport
