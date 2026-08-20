@@ -63,6 +63,23 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   const [balanceTypes, setBalanceTypes] = useState<ApiEmployeeBalanceType[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const notifyBoxRef = useRef<HTMLDivElement | null>(null);
+  /* The picker is a dropdown: closed until the field is used, so the form does
+     not carry a permanently open list of colleagues under it. */
+  const [notifyOpen, setNotifyOpen] = useState(false);
+
+  useEffect(() => {
+    if (!notifyOpen) return;
+    const onDocDown = (ev: MouseEvent) => {
+      if (!notifyBoxRef.current?.contains(ev.target as Node)) setNotifyOpen(false);
+    };
+    const onEsc = (ev: KeyboardEvent) => { if (ev.key === 'Escape') setNotifyOpen(false); };
+    document.addEventListener('mousedown', onDocDown);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDocDown);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [notifyOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -71,7 +88,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
     setDayMode('full'); setHalfType('first_half');
     setNote('');
     setNotifySearch(''); setDebouncedSearch('');
-    setNotifyOptions([]); setSelectedNotify([]);
+    setNotifyOptions([]); setSelectedNotify([]); setNotifyOpen(false);
   }, [isOpen]);
 
   useEffect(() => {
@@ -84,15 +101,23 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   }, [isOpen, employeeId]);
 
   useEffect(() => {
+    // Show the spinner from the first keystroke, not from the fetch — the
+    // 300ms debounce is otherwise dead air with stale results on screen.
+    if (notifyOpen && notifySearch.trim()) setSearchLoading(true);
     const t = setTimeout(() => setDebouncedSearch(notifySearch.trim()), 300);
     return () => clearTimeout(t);
   }, [notifySearch]);
 
   const [searchError, setSearchError] = useState<string | null>(null);
+  /* Distinct from "no results": between the keystroke and the response there
+     was NO signal at all, so an empty dropdown read as "nobody matches" while
+     the request was still in flight (CBC #123). */
+  const [searchLoading, setSearchLoading] = useState(false);
   useEffect(() => {
-    if (!debouncedSearch) { setNotifyOptions([]); setSearchError(null); return; }
+    if (!notifyOpen) { setSearchLoading(false); return; }
     let alive = true;
     setSearchError(null);
+    setSearchLoading(true);
     api.get('/leave-requests/colleagues', { params: { search: debouncedSearch, limit: 12, employee_id: employeeId } })
       .then(r => {
         if (!alive) return;
@@ -115,9 +140,12 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
         const msg = err?.response?.data?.message || err?.message || 'Search failed';
         setSearchError(msg);
         setNotifyOptions([]);
-      });
+      })
+      // Cleared however the request ends. A spinner that survives a failure is
+      // worse than none — it never resolves and the user waits forever.
+      .finally(() => { if (alive) setSearchLoading(false); });
     return () => { alive = false; };
-  }, [debouncedSearch, employeeId]);
+  }, [notifyOpen, debouncedSearch, employeeId]);
 
   // Half-day is only meaningful on a single calendar day (matches the backend
   // rule) AND only for leave types whose setup enables "Allow half day leave".
@@ -170,10 +198,34 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
   };
   const removeNotify = (id: number) => setSelectedNotify(prev => prev.filter(s => s.id !== id));
 
-  const canSubmit = !!fromDate && !!toDate && !!leaveTypeId && !submitting;
+  /* Whether the form is COMPLETE — used for the button's tone, not to block
+     the click. A disabled button cannot tell you why it is disabled. */
+  const isComplete = !!fromDate && !!toDate && !!leaveTypeId;
 
   const submit = async () => {
-    if (!canSubmit) return;
+    if (submitting) return;
+
+    /* Name the first missing field rather than doing nothing (CBC #112).
+       Ordered the way the form reads, so the message points at the first gap
+       the user would meet on their way down. */
+    if (!fromDate || !toDate) {
+      await Swal.fire({
+        title: 'Select the leave dates',
+        text: 'Choose both a From and a To date before requesting leave.',
+        icon: 'warning', confirmButtonText: 'OK', confirmButtonColor: '#f06548',
+      });
+      return;
+    }
+    if (!leaveTypeId) {
+      await Swal.fire({
+        title: 'Please select a leave type',
+        text: balanceTypes.length === 0
+          ? 'No leave types are available to you yet — ask HR to add you to a leave plan.'
+          : 'Leave Type is required. Pick the type of leave you are applying for.',
+        icon: 'warning', confirmButtonText: 'OK', confirmButtonColor: '#f06548',
+      });
+      return;
+    }
     // Past guard — leave can't start before today.
     if (fromDate < minStartDate) {
       await Swal.fire({
@@ -464,63 +516,101 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
               </div>
             )}
 
-            <div className="lvr-search-wrap" ref={notifyBoxRef}>
-              <i className="ri-search-line lvr-search-icon" />
-              <input
-                type="text"
-                className="lvr-input lvr-search-input"
-                placeholder="Search employees by name or code…"
-                value={notifySearch}
-                onChange={e => setNotifySearch(e.target.value)}
-              />
+            <div className="lvr-notify-dd" ref={notifyBoxRef}>
+              <div className="lvr-search-wrap">
+                <i className="ri-search-line lvr-search-icon" />
+                <input
+                  type="text"
+                  className="lvr-input lvr-search-input"
+                  placeholder="Search employees by name or code…"
+                  value={notifySearch}
+                  onChange={e => { setNotifySearch(e.target.value); setNotifyOpen(true); }}
+                  onFocus={() => setNotifyOpen(true)}
+                  role="combobox"
+                  aria-expanded={notifyOpen}
+                  aria-controls="lvr-notify-panel"
+                />
+                {/* Feedback sits in the field, where the user is looking. */}
+                {searchLoading
+                  ? <i className="ri-loader-4-line lvr-search-spinner" aria-hidden="true" />
+                  : <i
+                      className={`ri-arrow-down-s-line lvr-search-caret${notifyOpen ? ' is-open' : ''}`}
+                      aria-hidden="true"
+                      onMouseDown={ev => { ev.preventDefault(); setNotifyOpen(o => !o); }}
+                    />}
+              </div>
+
+              {notifyOpen && (
+                <div className="lvr-notify-panel" id="lvr-notify-panel" role="listbox" aria-multiselectable="true">
+                  {searchLoading && (
+                    <div className="lvr-search-loading" role="status" aria-live="polite">
+                      <i className="ri-loader-4-line" />
+                      <span>Searching employees…</span>
+                    </div>
+                  )}
+
+                  {!searchLoading && searchError && (
+                    <div className="lvr-empty-search">
+                      <i className="ri-error-warning-line" />
+                      <span>{searchError}</span>
+                    </div>
+                  )}
+
+                  {!searchLoading && !searchError && notifyOptions.length > 0 && (
+                    <div className="lvr-notify-list">
+                      {notifyOptions.map(e => {
+                        const checked = isSelected(e.id);
+                        return (
+                          <label
+                            key={e.id}
+                            className={`lvr-notify-row ${checked ? 'is-selected' : ''}`}
+                            role="option"
+                            aria-selected={checked}
+                          >
+                            <input
+                              type="checkbox"
+                              className="lvr-notify-check"
+                              checked={checked}
+                              onChange={() => toggleNotify(e)}
+                            />
+                            {e.photo_url ? (
+                              <img src={e.photo_url} alt={e.name} className="lvr-notify-avatar" />
+                            ) : (
+                              <span
+                                className="lvr-notify-avatar lvr-notify-avatar-letter"
+                                style={{ background: `linear-gradient(135deg, ${accentFor(e.id)}, ${accentFor(e.id)}cc)` }}
+                              >
+                                {initialsOf(e.name)}
+                              </span>
+                            )}
+                            <div className="lvr-notify-meta">
+                              <div className="lvr-notify-name">{e.name}</div>
+                              {e.designation && (
+                                <div className="lvr-notify-sub">{e.designation}</div>
+                              )}
+                              <div className="lvr-notify-code">
+                                Employee Number: {e.emp_code}
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!searchLoading && !searchError && notifyOptions.length === 0 && (
+                    <div className="lvr-empty-search">
+                      <i className="ri-search-eye-line" />
+                      <span>
+                        {debouncedSearch
+                          ? `No employees matched "${debouncedSearch}".`
+                          : 'No colleagues available to notify.'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-
-            {notifyOptions.length > 0 && (
-              <div className="lvr-notify-list">
-                {notifyOptions.map(e => {
-                  const checked = isSelected(e.id);
-                  return (
-                    <label
-                      key={e.id}
-                      className={`lvr-notify-row ${checked ? 'is-selected' : ''}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="lvr-notify-check"
-                        checked={checked}
-                        onChange={() => toggleNotify(e)}
-                      />
-                      {e.photo_url ? (
-                        <img src={e.photo_url} alt={e.name} className="lvr-notify-avatar" />
-                      ) : (
-                        <span
-                          className="lvr-notify-avatar lvr-notify-avatar-letter"
-                          style={{ background: `linear-gradient(135deg, ${accentFor(e.id)}, ${accentFor(e.id)}cc)` }}
-                        >
-                          {initialsOf(e.name)}
-                        </span>
-                      )}
-                      <div className="lvr-notify-meta">
-                        <div className="lvr-notify-name">{e.name}</div>
-                        {e.designation && (
-                          <div className="lvr-notify-sub">{e.designation}</div>
-                        )}
-                        <div className="lvr-notify-code">
-                          Employee Number: {e.emp_code}
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-
-            {!notifyOptions.length && debouncedSearch && !searchError && (
-              <div className="lvr-empty-search">
-                <i className="ri-search-eye-line" />
-                <span>No employees matched "{debouncedSearch}".</span>
-              </div>
-            )}
             {searchError && (
               <div className="lvr-warning" style={{ marginTop: 8 }}>
                 <i className="ri-error-warning-line" />
@@ -538,7 +628,10 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
             type="button"
             className="lvr-btn-primary"
             onClick={submit}
-            disabled={!canSubmit}
+            // Only the in-flight state blocks the click — an incomplete form
+            // gets an explanation from submit() instead of silence.
+            disabled={submitting}
+            aria-disabled={!isComplete}
           >
             {submitting ? <><i className="ri-loader-4-line ri-spin" /> Submitting…</> : <><i className="ri-send-plane-2-line" /> Request</>}
           </button>

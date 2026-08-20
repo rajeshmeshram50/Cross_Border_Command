@@ -709,15 +709,27 @@ class LeaveRequestController extends Controller
         // the UI uses to show Approve/Reject vs. a View-only row, so HR can't
         // act before the manager and a manager-rejected request shows View-only.
         $isHrScope = in_array($user->user_type, ['client_admin', 'branch_user'], true);
-        $rows->each(function (LeaveRequest $row) use ($user, $isHrScope) {
+        /* One pass for the whole page instead of ~3 queries per row.
+           isReportingManagerUnavailable() was being called inside the loop,
+           so a page of 25 rows cost 75 queries to answer one boolean. */
+        $rmAway = $this->rmUnavailableMap($rows);
+        $rows->each(function (LeaveRequest $row) use ($user, $isHrScope, $rmAway) {
             $chain = is_array($row->approval_chain) ? $row->approval_chain : [];
             $idx = max(0, ((int) ($row->current_approval_level ?? 1)) - 1);
+            $away = (bool) ($rmAway[$row->id] ?? false);
+
+            /* Surfaced to the SPA so the Approval Chain column can show an HR
+               step only when HR is genuinely part of this request. Leave is
+               reporting-manager-only; HR appears solely when the manager is
+               away and someone has to stand in. */
+            $row->rm_unavailable = $away;
+
             // HR can act when the reporting manager is unavailable (Bug 55) —
             // otherwise leave stays reporting-manager-only.
             $row->can_act_now = $row->status === 'Pending'
                 && ($user->user_type === 'super_admin'
                     || $this->canActOnLevel($user, $chain, $idx, $row)
-                    || ($isHrScope && $this->isReportingManagerUnavailable($row)));
+                    || ($isHrScope && $away));
         });
 
         return response()->json(['data' => $rows]);
@@ -1418,6 +1430,85 @@ class LeaveRequestController extends Controller
      * approval is allowed to fall through to HR so requests don't deadlock under
      * a manager who is away on vacation. (Bug 55)
      */
+    /**
+     * isReportingManagerUnavailable() for a whole page, in a fixed number of
+     * queries rather than three per row.
+     *
+     * Same four conditions as the single-row version — RM record missing,
+     * inactive, login disabled, or on an approved leave covering today — just
+     * answered set-at-a-time.
+     *
+     * @param  \Illuminate\Support\Collection<int, LeaveRequest>  $rows
+     * @return array<int, bool>  keyed by leave_request id
+     */
+    private function rmUnavailableMap($rows): array
+    {
+        if ($rows->isEmpty()) return [];
+
+        $empIds = $rows->pluck('employee_id')->filter()->unique()->values()->all();
+        if (empty($empIds)) return [];
+
+        $employees = Employee::whereIn('id', $empIds)
+            ->get(['id', 'reporting_manager_id', 'reporting_manager_user_id'])
+            ->keyBy('id');
+
+        $rmEmpIds = $employees->pluck('reporting_manager_id')->filter()->unique()->values()->all();
+        $rmUserIds = $employees->pluck('reporting_manager_user_id')->filter()->unique()->values()->all();
+
+        $rmEmployees = $rmEmpIds
+            ? Employee::whereIn('id', $rmEmpIds)->get(['id', 'status', 'user_id'])->keyBy('id')
+            : collect();
+
+        // Logins to check: the RMs' own, plus any RM stored directly as a user.
+        $userIds = array_values(array_unique(array_merge(
+            $rmEmployees->pluck('user_id')->filter()->all(),
+            $rmUserIds,
+        )));
+        $users = $userIds
+            ? User::whereIn('id', $userIds)->get(['id', 'status'])->keyBy('id')
+            : collect();
+
+        $todayStr = now(self::DISPLAY_TZ)->toDateString();
+        $onLeave = $rmEmpIds
+            ? LeaveRequest::whereIn('employee_id', $rmEmpIds)
+                ->where('status', 'Approved')
+                ->whereDate('from_date', '<=', $todayStr)
+                ->whereDate('to_date', '>=', $todayStr)
+                ->pluck('employee_id')
+                ->map(fn ($v) => (int) $v)
+                ->flip()
+            : collect();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $emp = $employees->get($row->employee_id);
+            if (!$emp) { $out[$row->id] = false; continue; }
+
+            if ($emp->reporting_manager_id) {
+                $rm = $rmEmployees->get($emp->reporting_manager_id);
+                if (!$rm) { $out[$row->id] = true; continue; }                  // record gone
+                if (strcasecmp((string) $rm->status, 'Active') !== 0) { $out[$row->id] = true; continue; }
+                if ($rm->user_id) {
+                    $u = $users->get($rm->user_id);
+                    if ($u && strcasecmp((string) $u->status, 'active') !== 0) { $out[$row->id] = true; continue; }
+                }
+                $out[$row->id] = $onLeave->has((int) $emp->reporting_manager_id);
+                continue;
+            }
+
+            if ($emp->reporting_manager_user_id) {
+                $u = $users->get($emp->reporting_manager_user_id);
+                $out[$row->id] = !$u || strcasecmp((string) $u->status, 'active') !== 0;
+                continue;
+            }
+
+            // No manager assigned at all — same verdict as the per-row version.
+            $out[$row->id] = true;
+        }
+
+        return $out;
+    }
+
     public function isReportingManagerUnavailable(LeaveRequest $row): bool
     {
         $emp = Employee::find($row->employee_id);

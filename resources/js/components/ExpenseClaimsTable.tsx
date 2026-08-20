@@ -546,13 +546,23 @@ function ExpenseActionCell({
             // The viewer's OWN claim isn't self-approvable — show the button
             // greyed (still clickable so onReview can toast the reason).
             const isOwn = mode === 'hr' && currentEmployeeId != null && Number(c.employee_id) === Number(currentEmployeeId);
+
+            /* Stage, not permission (CBC #158). Green while the reporting
+               manager still has to act; faint blue once they have and it is
+               HR's turn. A viewer holding BOTH roles otherwise saw an unchanged
+               green button after approving at manager level, so nothing said
+               the first step was done. */
+            const atHrStage = c.manager_status === 'approved' && c.hr_status === 'pending';
+            const reviewBtnStyle = atHrStage
+              ? { background: '#b6d9f7', color: '#08406f', border: '1px solid #8dc3ef' }
+              : { background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', color: '#fff', border: 'none' };
             return (
               <button
                 type="button"
                 onClick={() => onReview(c)}
                 title={isOwn ? 'Your own request — your reporting manager approves it' : undefined}
                 className="btn btn-sm d-inline-flex align-items-center justify-content-center gap-1 rounded-pill fw-semibold"
-                style={{ height: 28, padding: '0 12px', fontSize: 11.5, color: '#fff', border: 'none', background: 'linear-gradient(135deg,#0ab39c,#02c8a7)', whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
+                style={{ height: 28, padding: '0 12px', fontSize: 11.5, ...reviewBtnStyle, whiteSpace: 'nowrap', ...(isOwn ? { opacity: 0.5, cursor: 'not-allowed' } : null) }}
               >
                 <i className="ri-eye-line" /> Review &amp; Approve
               </button>

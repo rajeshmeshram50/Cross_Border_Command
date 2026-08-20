@@ -319,6 +319,67 @@
   background: #f9fafb;
   border-color: #d1d5db;
 }
+/* Notify Colleagues — a real dropdown.
+   The list used to sit permanently below the field, pushing the footer down
+   and leaving a wall of colleagues under a form about dates. It now opens on
+   demand and floats, so the form keeps its shape. */
+.lvr-notify-dd { position: relative; }
+.lvr-notify-panel {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  max-height: 292px;
+  overflow-y: auto;
+  background: var(--vz-card-bg, #fff);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px -8px rgba(16, 24, 34, 0.22);
+}
+.lvr-notify-panel .lvr-search-loading,
+.lvr-notify-panel .lvr-empty-search { margin: 0; border: 0; }
+.lvr-notify-panel .lvr-notify-list { max-height: none; overflow: visible; }
+
+/* Caret doubles as the open/close affordance. */
+.lvr-search-caret {
+  position: absolute;
+  right: 12px; top: 50%;
+  transform: translateY(-50%);
+  color: #9aa2ae;
+  font-size: 17px;
+  cursor: pointer;
+  transition: transform 140ms ease;
+}
+.lvr-search-caret.is-open { transform: translateY(-50%) rotate(180deg); }
+
+/* Search feedback — CBC #123.
+   The field spins from the first keystroke (through the 300ms debounce) until
+   the response settles, so the gap is never silent. */
+.lvr-search-spinner {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #7c5cfc;
+  font-size: 15px;
+  animation: lvr-spin 0.7s linear infinite;
+  pointer-events: none;
+}
+.lvr-search-loading {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  border-radius: 8px;
+  color: #6b7280;
+  font-size: 13px;
+}
+.lvr-search-loading i { color: #7c5cfc; animation: lvr-spin 0.7s linear infinite; }
+@keyframes lvr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lvr-search-spinner, .lvr-search-loading i { animation: none; }
+}
+
 .lvr-btn-primary {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 9px 18px;

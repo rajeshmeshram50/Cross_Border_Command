@@ -179,6 +179,7 @@ class CandidateController extends Controller
                 'employmentType'   => $rec->employment_type,
                 'openings'         => (int) $rec->openings,
                 'experience'       => $rec->experience,
+                'qualification'    => $rec->qualification,
                 'workMode'         => $rec->work_mode,
                 'priority'         => $rec->priority,
                 'hiringManagerRaw' => $mgrName ?: null,

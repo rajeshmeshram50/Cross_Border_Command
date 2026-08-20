@@ -35,6 +35,7 @@ interface RecruitmentRow {
   employmentType: EmployType;
   openings: number;
   experience: string;
+  qualification: string;
   workMode: WorkMode;
   ctcRange: string;
   priority: Priority;
@@ -119,6 +120,7 @@ function apiToRow(api: any): RecruitmentRow {
     employmentType: (api?.employment_type || 'Full Time') as EmployType,
     openings:       Number(api?.openings) || 1,
     experience:     api?.experience || '',
+    qualification:  api?.qualification || '',
     workMode:       (api?.work_mode || 'Hybrid') as WorkMode,
     ctcRange:       api?.ctc_range || '',
     priority:       (api?.priority || 'Medium') as Priority,
@@ -969,10 +971,32 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       else if (dr.length > 3000) e.dailyResp = 'Max 3000 characters';
     }
 
-    const skillList = requiredSkills.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-    if (skillList.length === 0)     e.requiredSkills = 'Required';
-    else if (skillList.length < 2)  e.requiredSkills = 'Add at least 2 skills';
-    else if (skillList.length > 20) e.requiredSkills = 'Max 20 skills';
+    /* Separators: comma, semicolon, newline and bullet (CBC #58).
+       Only comma and newline were accepted before, so skills typed the way
+       people actually type them — "React; Node; AWS", or one per bullet, or a
+       pasted paragraph — collapsed into a SINGLE entry. The user had plainly
+       added several skills and was still told to "add at least 2", which is
+       why the message read as wrong: the count was wrong, not the rule.
+
+       Space is deliberately NOT a separator — "Spring Boot" and "Machine
+       Learning" are one skill each, and splitting on space would turn every
+       two-word skill into two. */
+    const skillList = requiredSkills.split(/[\n,;•|]+/).map(s => s.trim()).filter(Boolean);
+    const TOO_LONG = skillList.find(s => s.length > 100);
+
+    if (skillList.length === 0) {
+      e.requiredSkills = 'Required';
+    } else if (skillList.length < 2) {
+      // State the rule, not just the target — the previous wording never
+      // explained that the separator is what the count depends on.
+      e.requiredSkills = 'Separate each skill with a comma — at least 2 required';
+    } else if (skillList.length > 20) {
+      e.requiredSkills = 'Max 20 skills';
+    } else if (TOO_LONG) {
+      // A pasted paragraph parses as one very long "skill". Say that, rather
+      // than letting it through as a valid entry.
+      e.requiredSkills = 'Each skill must be 100 characters or less — enter skills, not a description';
+    }
 
     if (!requiredExp)           e.requiredExp    = 'Required';
 
@@ -2030,6 +2054,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [employmentType, setEmploymentType]   = useState<EmployType | ''>('');
   const [openings, setOpenings]               = useState('');
   const [experience, setExperience]           = useState('');
+  const [qualification, setQualification]     = useState('');
   const [workMode, setWorkMode]               = useState<WorkMode | ''>('');
   const [priority, setPriority]               = useState<Priority | ''>('');
   const [hiringManagerId, setHiringManagerId] = useState('');
@@ -2154,7 +2179,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   type CreateErrors = Partial<Record<
     'jobTitle' | 'department' | 'designation' | 'primaryRole' | 'employmentType' | 'openings' | 'experience'
     | 'workMode' | 'priority' | 'hiringManager' | 'assignedHr' | 'startDate' | 'deadline'
-    | 'jobDescription' | 'requirements' | 'ctcRange',
+    | 'jobDescription' | 'requirements' | 'ctcRange' | 'qualification',
     string
   >>;
   const [errors, setErrors] = useState<CreateErrors>({});
@@ -2170,6 +2195,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setEmploymentType(editing.employmentType);
       setOpenings(String(editing.openings));
       setExperience(editing.experience || '');
+      setQualification(editing.qualification || '');
       setWorkMode(editing.workMode);
       setPriority(editing.priority);
       setHiringManagerId(editing.hiringManagerId != null ? String(editing.hiringManagerId) : '');
@@ -2206,6 +2232,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setEmploymentType((HR_TO_REC_EMP_TYPE[hr.employment_type] || '') as EmployType | '');
       setOpenings(hr.openings ? String(hr.openings) : '');
       setExperience((hr.required_experience || '') as string);
+      setQualification((hr.required_qualification || '') as string);
       setWorkMode((HR_TO_REC_WORK_MODE[hr.work_mode] || '') as WorkMode | '');
       setPriority((hr.urgency || '') as Priority | '');
       setHiringManagerId('');
@@ -2213,14 +2240,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       setStartDate('');
       setDeadline(hr.target_join_date ? String(hr.target_join_date).slice(0, 10) : '');
       setJobDescription(ucFirst((hr.job_description || '') as string));
-      const reqParts = [hr.required_skills, hr.required_qualification].filter(Boolean);
-      setRequirements(ucFirst(reqParts.join('\n')));
+      setRequirements(ucFirst((hr.required_skills || '') as string));
       setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
       setErrors({});
     } else {
       setJobTitle(''); setDepartmentId(''); setDesignationId(''); setPrimaryRoleId('');
       setCtcRange(''); setEmploymentType('');
-      setOpenings(''); setExperience(''); setWorkMode(''); setPriority('');
+      setOpenings(''); setExperience(''); setQualification(''); setWorkMode(''); setPriority('');
       setHiringManagerId(''); setAssignedHrId(''); setStartDate(''); setDeadline('');
       setJobDescription(''); setRequirements('');
       setPostOnPortal(false); setNotifyTeamLeads(false); setEnableReferralBonus(false);
@@ -2280,6 +2306,11 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     }
     if (!priority)               e.priority        = 'Required';
     if (!experience)             e.experience      = 'Required';
+    // Optional, but capped. maxLength on the input stops typing at 255 and the
+    // server rejects beyond it — neither tells the user why, and a PASTED value
+    // longer than the cap is silently truncated by the browser. This is the
+    // only place that says what happened.
+    if (qualification.trim().length > 255) e.qualification = 'Max 255 characters';
     if (!hiringManagerId)        e.hiringManager   = 'Required';
     if (!assignedHrId)           e.assignedHr      = 'Required';
     // A disabled/inactive person (only present as an injected option, not in the
@@ -2342,6 +2373,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
       employment_type:       employmentType,
       openings:              Number(openings) || 1,
       experience:            experience || null,
+      qualification:         qualification.trim() || null,
       work_mode:             workMode || null,
       ctc_range:             ctcRange || null,
       priority,
@@ -2557,7 +2589,31 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 />
                 {errors.experience && <div className="rec-error"><i className="ri-error-warning-line" />{errors.experience}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={4}>
+                {/* Optional by design (CBC #56) — no asterisk, no validation
+                    entry. A recruitment may have no formal qualification
+                    requirement, and requiring it would block every existing
+                    row from being edited. */}
+                {/* Counter sits on the LABEL row, not over the input: the field is
+                    a third of the row wide, and an absolutely-positioned count
+                    inside it would sit on top of a long value. */}
+                <div className="rec-label-row">
+                  <label className="rec-form-label"><i className="ri-graduation-cap-line" />Qualification</label>
+                  <span className={`rec-charcount${qualification.length >= 255 ? ' is-max' : ''}`}>
+                    {qualification.length}/255
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={255}
+                  className={`rec-input${errors.qualification ? ' is-invalid' : ''}`}
+                  placeholder="e.g. B.Tech, MBA"
+                  value={qualification}
+                  onChange={e => { setQualification(e.target.value); clear('qualification'); }}
+                />
+                {errors.qualification && <div className="rec-error"><i className="ri-error-warning-line" />{errors.qualification}</div>}
+              </Col>
+              <Col md={4}>
                 <label className="rec-form-label"><i className="ri-map-pin-line" />Work Mode</label>
                 <MasterSelect
                   value={workMode}
@@ -2568,7 +2624,7 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                 />
                 {errors.workMode && <div className="rec-error"><i className="ri-error-warning-line" />{errors.workMode}</div>}
               </Col>
-              <Col md={6}>
+              <Col md={4}>
                 <label className="rec-form-label"><i className="ri-money-rupee-circle-line" />CTC Range (LPA)</label>
                 <input
                   type="text"
