@@ -155,6 +155,20 @@ class PayrollController extends Controller
                 ->groupBy('payroll_period_id')
                 ->map(fn ($g) => $g->sortByDesc('id')->first());
 
+        /* Which runs already have money out of the door. An approved run that
+           was never disbursed is reopenable; one that paid SOME employees (the
+           rest held for bank details) is not — reopening would wipe and re-pay
+           them, so PayrollController::reopen refuses it. Surfaced here so the
+           screen can hide the Reopen action instead of offering a button that
+           can only 422. One grouped query, not one per cycle. */
+        $paidRunIds = $latestRuns->isEmpty()
+            ? collect()
+            : Payslip::whereIn('payroll_run_id', $latestRuns->pluck('id'))
+                ->where('status', 'Paid')
+                ->distinct()
+                ->pluck('payroll_run_id')
+                ->flip();
+
         /* Cycles no longer have to run in calendar order — a month can be
            processed whether or not the month before it was completed. The
            `blocked_by` key stays in the payload (always null) so the existing
@@ -188,6 +202,12 @@ class PayrollController extends Controller
                 'blocked_by'  => null,
                 'run_status'  => $existingRun?->status,
                 'run_locked'  => (bool) $runLocked,
+                // Frozen but recoverable: approved, nothing disbursed yet, and
+                // the period itself not sealed by a full payment.
+                'can_reopen'  => (bool) $runLocked
+                    && $existingRun->status !== 'paid'
+                    && ($existing?->status !== 'locked')
+                    && !$paidRunIds->has($existingRun->id),
                 'processable' => !$isFuture && !$runLocked,
             ];
             $cursor->addMonth();
@@ -399,7 +419,13 @@ class PayrollController extends Controller
             return response()->json(['message' => 'Some employees are already paid in this cycle — pay the remaining held employees instead of reopening.'], 422);
         }
 
-        $this->payroll->reopen($period);
+        // The service re-asserts the paid guard itself; surface it as a 422
+        // like every other payroll rule instead of letting it 500.
+        try {
+            $this->payroll->reopen($period);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         $this->audit($request, 'reopen', $period, "Payroll reopened for {$period->label}");
 
         return response()->json([
