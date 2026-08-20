@@ -363,18 +363,19 @@ export default function HrExpenseManagement() {
       cur.spent += Number(r.amount || 0);
       byKey.set(key, cur);
     }
-    for (const c of categories) {
-      const key = `id:${c.id}`;
-      if (!byKey.has(key)) {
-        byKey.set(key, { id: c.id, name: c.name, spent: 0 });
-      }
-    }
-    return Array.from(byKey.values()).map(row => ({
-      ...row,
-      color: colorForCat(`${row.id ?? ''}:${row.name}`),
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFilteredRows, categories]);
+    /* Categories with no approved claim are NOT padded in (CBC #159).
+       They used to be, which is why the legend carried a dozen entries reading
+       "—" and the axis reserved a slot for each. The chart answers "where did
+       the money go"; a category no money went to is not an answer. */
+    return Array.from(byKey.values())
+      .filter(row => Number(row.spent) > 0)
+      .map(row => ({
+        ...row,
+        color: colorForCat(`${row.id ?? ''}:${row.name}`),
+      }));
+    // `categories` is no longer read here — the padding loop that used it is
+    // gone, so it leaves the dependency list with it.
+  }, [dateFilteredRows]);
 
   // Advance Requests analytics — grouped by Advance Type (only APPROVED advances
   // count toward the disbursed total), mirroring the expense category rollup.
@@ -395,7 +396,8 @@ export default function HrExpenseManagement() {
   // breakdown for advances.
   const spendByCategory = useMemo(
     () => [...(isAdvanceModule ? advanceTypeRollup : categoryRollup)].sort((a, b) => {
-      if ((b.spent > 0) !== (a.spent > 0)) return b.spent > 0 ? 1 : -1;
+      // Biggest spend first; alphabetical to break exact ties. The old
+      // "non-zero before zero" step is gone with the padded rows it sorted.
       if (b.spent !== a.spent) return b.spent - a.spent;
       return a.name.localeCompare(b.name);
     }),

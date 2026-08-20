@@ -197,6 +197,10 @@ class AdvanceRequestController extends Controller
         // requested_date is pinned to today by the rules below, so "now" is the
         // right base even if the client omits or fakes it.
         $minRecoveryStart = now()->addMonthNoOverflow()->startOfMonth()->toDateString();
+        // …and the latest: the end of the same month a year on. Without a
+        // ceiling the picker offered dates years out (CBC #157), and a recovery
+        // starting that late is an open-ended loan rather than a schedule.
+        $maxRecoveryStart = now()->addYear()->endOfMonth()->toDateString();
 
         // The browser normalises <textarea> newlines to CRLF when serialising
         // multipart/form-data, so a reason the employee typed as 492 chars (each
@@ -231,7 +235,7 @@ class AdvanceRequestController extends Controller
             // requested month's payroll is already in flight, so no deduction
             // can land on it (CBC #93). Same rule the settle-return schedule
             // already enforces further down.
-            'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:' . $minRecoveryStart],
+            'recovery_start'      => ['required_if:used_for,self', 'nullable', 'date', 'after_or_equal:' . $minRecoveryStart, 'before_or_equal:' . $maxRecoveryStart],
             'recovery_mode'       => ['required_if:used_for,self', 'nullable', 'string', 'in:' . implode(',', self::RECOVERY_MODES)],
             // Months + monthly EMI only required when mode='emi'. The
             // validator below promotes them to required-when conditionally.
@@ -252,6 +256,7 @@ class AdvanceRequestController extends Controller
             'requested_date.after_or_equal'  => 'Requested date must be today (the request creation date).',
             'requested_date.before_or_equal' => 'Requested date cannot be in the future — it is the request creation date.',
             'recovery_start.after_or_equal'  => 'Recovery must start in the month after the requested date (this month’s payroll may already be done).',
+            'recovery_start.before_or_equal' => 'Recovery must start within a year of the requested date.',
             'reason.max'                     => 'Reason is too long — please keep it under 500 characters.',
             'amount.min'                     => 'Minimum advance amount is ₹100.',
         ]);
@@ -984,6 +989,7 @@ class AdvanceRequestController extends Controller
                     'amount'       => (float) $p->amount,
                     'method'       => $p->method ?? null,
                     'paid_by_name' => $p->payer?->name,
+                    'paid_by_role' => $p->payer?->user_type,
                     'paid_at'      => optional($p->paid_at ?? $p->created_at)->toIso8601String(),
                 ])->values()->all();
             })(),
@@ -1793,6 +1799,7 @@ class AdvanceRequestController extends Controller
                 'zoho_synced_at' => optional($p->zoho_synced_at)->toIso8601String(),
                 'zoho_expense_url' => $p->zoho_expense_id ? $this->zohoExpenseUrl((string) $p->zoho_expense_id) : null,
                 'paid_by_name' => $p->payer?->name,
+                'paid_by_role' => $p->payer?->user_type,
                 'paid_at'      => optional($p->paid_at)->toIso8601String(),
             ])->all(),
             // Advance-specific settle context so the modal can render the

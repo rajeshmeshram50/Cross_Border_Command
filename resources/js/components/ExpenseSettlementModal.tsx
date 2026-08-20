@@ -57,7 +57,7 @@ type Summary = {
     payment_type: string | null; reference_number?: string | null; expense_type: string | null;
     note: string | null; proof_name: string | null; proof_url: string | null;
     zoho_status: string | null; zoho_expense_url: string | null;
-    paid_by_name: string | null; paid_at: string | null;
+    paid_by_name: string | null; paid_by_role?: string | null; paid_at: string | null;
   }[];
   // Salary-recovery schedule (self advance).
   recovery_start?: string | null;
@@ -1726,7 +1726,7 @@ export default function ExpenseSettlementModal({
                                 />
                               </th>
                             )}
-                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{isAdvance && <th>UTR / REF NO</th>}{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAID BY</th><th>DATE</th>{zohoEligible && <th>ZOHO BOOK STATUS</th>}{!readOnly && zohoEligible && <th>ACTION</th>}
+                            <th>SR NO</th><th>AMOUNT PAID</th><th>METHOD</th>{isAdvance && <th>UTR / REF NO</th>}{!isAdvance && <th>EXPENSE TYPE</th>}<th>PROOF</th><th>PAYMENT DONE BY</th><th>DATE</th>{zohoEligible && <th>ZOHO</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -1761,27 +1761,46 @@ export default function ExpenseSettlementModal({
                                   </a>
                                 ) : '—'}
                               </td>
-                              <td>{p.paid_by_name || '—'}</td>
+                              <td>
+                                {p.paid_by_name || '—'}
+                                {/* The role, because a branch_user account can be
+                                    named after the company — "AgroTech Private
+                                    Limited" in that column read as the payer
+                                    rather than the person who recorded it. */}
+                                {p.paid_by_role && (
+                                  <div className="esm-muted" style={{ fontSize: 11, marginTop: 1 }}>
+                                    {p.paid_by_role === 'branch_user' ? 'Branch User'
+                                      : p.paid_by_role === 'client_admin' ? 'Client Admin'
+                                      : p.paid_by_role === 'super_admin' ? 'Super Admin'
+                                      : 'HR User'}
+                                  </div>
+                                )}
+                              </td>
                               <td>{fmtDate(p.paid_at)}</td>
                               {zohoEligible && (
-                              <td>
-                                <span className={`esm-zpill ${synced ? 'is-synced' : 'is-unsynced'}`}>
-                                  <i className={synced ? 'ri-checkbox-circle-line' : 'ri-time-line'} /> {synced ? 'Synced' : 'Not Synced'}
-                                </span>
-                              </td>
-                              )}
-                              {!readOnly && zohoEligible && (
                                 <td>
                                   {synced ? (
-                                    p.zoho_expense_url ? (
-                                      <a className="esm-zbtn esm-zbtn--view" href={p.zoho_expense_url} target="_blank" rel="noreferrer">
-                                        <i className="ri-external-link-line" /> View in Zoho
-                                      </a>
-                                    ) : (
-                                      <span className="esm-muted">—</span>
-                                    )
+                                    /* Done — nothing left to do here, so the cell
+                                       just says so. The old pairing of a "Synced"
+                                       pill with a "View in Zoho" button stated the
+                                       same fact twice and sent people off-site for
+                                       something this row already answers. */
+                                    <span className="esm-zpill is-synced">
+                                      <i className="ri-checkbox-circle-line" /> Synced
+                                    </span>
+                                  ) : readOnly ? (
+                                    /* Read-only viewers still need the status,
+                                       they just cannot act on it. */
+                                    <span className="esm-zpill is-unsynced">
+                                      <i className="ri-time-line" /> Not Synced
+                                    </span>
                                   ) : (
-                                    <button type="button" className="esm-zbtn" onClick={() => syncZoho(p.id)} disabled={syncingId === p.id || bulkSyncing}>
+                                    <button
+                                      type="button"
+                                      className="esm-zbtn"
+                                      onClick={() => syncZoho(p.id)}
+                                      disabled={syncingId === p.id || bulkSyncing}
+                                    >
                                       <i className="ri-refresh-line" /> {syncingId === p.id ? 'Syncing…' : 'Sync to Zoho'}
                                     </button>
                                   )}

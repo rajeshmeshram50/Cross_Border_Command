@@ -20,7 +20,7 @@ class Recruitment extends Model
 
         'job_title',
         'department_id', 'designation_id', 'primary_role_id',
-        'employment_type', 'openings', 'experience',
+        'employment_type', 'openings', 'experience', 'qualification',
         'work_mode', 'ctc_range', 'priority',
 
         'hiring_manager_id', 'assigned_hr_id',

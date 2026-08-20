@@ -69,22 +69,29 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     api.get('/employees').then(r => setEmployees(Array.isArray(r.data) ? r.data : [])).catch(() => setEmployees([]));
   }, [open]);
 
-  // Lock background scroll while open (QA #99). The app layout scrolls inside
-  // its <main> container, not <body>/<html>, so lock all three and restore on
-  // close.
+  /* Lock background scroll while open (QA #99).
+   *
+   * The lock used to target `main`, which is the HTML element — but this app
+   * scrolls inside <div class="main-content"> (see velzon/Layouts/index.tsx,
+   * where #layout-wrapper is overflow:hidden and .main-content carries
+   * overflowY:auto). There is no <main> element on the page at all, so the
+   * query matched nothing and the page behind the modal kept scrolling.
+   *
+   * Every plausible scroll container is locked by selector rather than one
+   * guessed element, and each one's previous inline value is restored — not
+   * blanked — so a container that was deliberately styled keeps its styling. */
   useEffect(() => {
     if (!open) return;
-    const html = document.documentElement;
-    const body = document.body;
-    const main = document.querySelector('main') as HTMLElement | null;
-    const prev = { html: html.style.overflow, body: body.style.overflow, main: main?.style.overflow ?? '' };
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    if (main) main.style.overflow = 'hidden';
+
+    const targets: HTMLElement[] = [document.documentElement, document.body];
+    document.querySelectorAll<HTMLElement>('main, .main-content, .page-content')
+      .forEach(el => targets.push(el));
+
+    const prev = targets.map(el => el.style.overflow);
+    targets.forEach(el => { el.style.overflow = 'hidden'; });
+
     return () => {
-      html.style.overflow = prev.html;
-      body.style.overflow = prev.body;
-      if (main) main.style.overflow = prev.main;
+      targets.forEach((el, i) => { el.style.overflow = prev[i]; });
     };
   }, [open]);
 

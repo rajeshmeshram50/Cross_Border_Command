@@ -234,6 +234,7 @@ class RecruitmentController extends Controller
             ->whereRaw('COALESCE(assigned_hr_id, 0) = ?',  [$numNorm($val('assigned_hr_id'))])
             ->whereRaw("LOWER(COALESCE(employment_type, '')) = ?", [$norm($val('employment_type'))])
             ->whereRaw("LOWER(COALESCE(experience, '')) = ?",      [$norm($val('experience'))])
+            ->whereRaw("LOWER(COALESCE(qualification, '')) = ?",   [$norm($val('qualification'))])
             ->whereRaw("LOWER(COALESCE(work_mode, '')) = ?",       [$norm($val('work_mode'))])
             ->whereRaw("LOWER(COALESCE(ctc_range, '')) = ?",       [$norm($val('ctc_range'))])
             ->whereRaw("LOWER(COALESCE(priority, '')) = ?",        [$norm($val('priority'))])
@@ -482,6 +483,10 @@ class RecruitmentController extends Controller
             'employment_type'   => ['nullable', Rule::in(self::EMPLOYMENT_TYPES)],
             'openings'          => 'nullable|integer|min:1|max:9999',
             'experience'        => 'nullable|string|max:30',
+            // Optional (CBC #56). A recruitment may legitimately have no formal
+            // qualification requirement, and requiring it would block every
+            // existing row from being edited.
+            'qualification'     => 'nullable|string|max:255',
             'work_mode'         => ['nullable', Rule::in(self::WORK_MODES)],
             // A single value or a proper "min-max" range — exactly one
             // hyphen, numbers/decimals only. Rejects multiple hyphens
