@@ -8,6 +8,8 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useBranchSwitcher } from '../../contexts/BranchSwitcherContext';
 import { SALES_GROUPS, CLM_GROUPS, HR_GROUPS, P2P_GROUPS } from '../../constants';
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
+import { onNetworkChange, stopAll, resumeAll, pendingRequests } from '../../api';
+import { useToast } from '../../contexts/ToastContext';
 import logoFallback from '../assets/images/igc-logo.png';
 import * as LucideIcons from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -183,6 +185,7 @@ type DD = 'sales' | 'clm' | 'hr' | 'p2p';
 
 export default function IdimsHeader() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { user, logout, tenantThemeEnabled, toggleTenantTheme } = useAuth();
   const { theme, toggle: toggleTheme } = useTheme();
   const { selectedBranch } = useBranchSwitcher();
@@ -202,6 +205,14 @@ export default function IdimsHeader() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [isFs, setIsFs] = useState(false);
+
+  /* Live network state for the Stop / Resume button: how many reads are on
+     the wire, and how many the user has stopped and not yet resumed.
+     Subscribing rather than polling — the registry announces on every add,
+     release and park, so the badge is exact rather than up to an interval
+     stale, and an idle app does no work at all. */
+  const [net, setNet] = useState({ pending: 0, paused: 0 });
+  useEffect(() => onNetworkChange(setNet), []);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileExpand, setMobileExpand] = useState<DD | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -353,6 +364,28 @@ export default function IdimsHeader() {
     setSearchOpen(false); setMoreOpen(false); setMoreExpand(null);
   };
   const go = (path: string) => { closeMenus(); setMobileOpen(false); navigate(path); };
+  /* One button, two jobs.
+     Paused wins when both counts are non-zero: parked requests are pages
+     frozen mid-load, and unfreezing them matters more than stopping whatever
+     started since. After the resume the button flips straight back to Stop
+     for anything still running. */
+  const toggleNetwork = () => {
+    if (net.paused) {
+      const n = resumeAll();
+      if (n) toast.info(n === 1 ? 'Resumed 1 request' : `Resumed ${n} requests`);
+      return;
+    }
+    const inFlight = pendingRequests();
+    const n = stopAll();
+    if (!n) return;
+    toast.info(
+      n === 1 ? 'Stopped 1 request' : `Stopped ${n} requests`,
+      'Click again to resume — '
+        + inFlight.slice(0, 2).map(r => r.url.split('?')[0]).join(', ')
+        + (inFlight.length > 2 ? ` +${inFlight.length - 2} more` : ''),
+    );
+  };
+
   const toggleFs = () => {
     if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
     else document.exitFullscreen?.();
@@ -742,6 +775,29 @@ export default function IdimsHeader() {
               </div>
 
               <div className="idims-actions">
+                {/* Stop / Resume loading. Always rendered — appearing only while
+                    busy would shift the whole icon row every time a page
+                    loads, and the user could never find it to click in time.
+                    It sits disabled and muted when there is nothing to do. */}
+                <button
+                  type="button"
+                  className={`idims-action-btn idims-stop-btn${net.paused ? ' is-paused' : net.pending ? ' is-busy' : ''}`}
+                  title={net.paused
+                    ? `Resume ${net.paused} stopped request${net.paused === 1 ? '' : 's'}`
+                    : net.pending
+                      ? `Stop loading (${net.pending} request${net.pending === 1 ? '' : 's'} in progress)`
+                      : 'Nothing loading'}
+                  aria-label={net.paused ? 'Resume loading' : 'Stop loading'}
+                  disabled={!net.pending && !net.paused}
+                  onClick={() => { closeMenus(); toggleNetwork(); }}
+                >
+                  {net.paused ? IC.resume : IC.stop}
+                  {!!(net.paused || net.pending) && (
+                    <span className="idims-stop-count">
+                      {(net.paused || net.pending) > 9 ? '9+' : (net.paused || net.pending)}
+                    </span>
+                  )}
+                </button>
                 <button type="button" className="idims-action-btn" title="Toggle theme" onClick={() => { closeMenus(); toggleThemeSynced(); }}>
                   {theme === 'dark' ? IC.sun : IC.moon}
                 </button>
@@ -1056,6 +1112,8 @@ const IC = {
   sun: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></svg>,
   maximize: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3" /></svg>,
   minimize: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3m8 0v-3a2 2 0 0 1 2-2h3" /></svg>,
+  resume: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M10.5 9.2v5.6l4.3-2.8z" fill="currentColor" stroke="none" /></svg>,
+  stop: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><rect x="9" y="9" width="6" height="6" rx="1" /></svg>,
   clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15.5 14" /></svg>,
   mail: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="m22 7-10 6L2 7" /></svg>,
   bell: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" /></svg>,
@@ -1328,6 +1386,27 @@ const IDIMS_CSS = `
   .idims-dark .idims-clm-subcol + .idims-clm-subcol { border-top-color: #262B38; }
 }
 @keyframes idimsDD { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
+/* Stop loading — muted and inert until something is actually on the wire,
+   so a permanently visible button in a dense icon row does not read as
+   clickable when it would do nothing. */
+.idims-stop-btn { position: relative; }
+.idims-stop-btn:disabled { opacity: .32; cursor: default; }
+.idims-stop-btn.is-busy { color: #DC2626; }
+.idims-stop-btn.is-busy svg { animation: idims-stop-pulse 1.4s ease-in-out infinite; }
+.idims-stop-btn.is-busy:hover:not(:disabled) { background: rgba(220,38,38,.10); color: #B91C1C; }
+.idims-stop-btn.is-paused { color: #D97706; }
+.idims-stop-btn.is-paused:hover:not(:disabled) { background: rgba(217,119,6,.10); color: #B45309; }
+.idims-stop-btn.is-paused .idims-stop-count { background: #D97706; }
+.idims-stop-count {
+  position: absolute; top: 1px; right: 1px;
+  min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 7px; background: #DC2626; color: #fff;
+  font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+  pointer-events: none;
+}
+@keyframes idims-stop-pulse { 0%,100% { opacity: 1; } 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .idims-stop-btn.is-busy svg { animation: none; } }
+
 .idims-dd-topbar { height: 4px; flex-shrink: 0; background: linear-gradient(90deg,#7C3AED 0%,#A78BFA 28%,#0EA5E9 52%,#38BDF8 68%,#0D9488 84%,#2DD4BF 100%); }
 /* flex:1 + min-height:0 lets the content scroll within the height-capped panel
    so a tall mega-menu (CLM) never spills below the viewport and gets clipped. */
