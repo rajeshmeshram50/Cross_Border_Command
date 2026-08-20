@@ -51,6 +51,35 @@ export default function PayrollTab() {
   const emptyPay = { amount: '', payment_mode: 'UPI', bank_name: '', utr_cheque_number: '', payment_date: '', employee_note: '' };
   const [payForm, setPayForm] = useState<Record<string, string>>(emptyPay);
   const [payFile, setPayFile] = useState<File | null>(null);
+
+  /* Matches ExitNoticePaymentController: mimes pdf,jpg,jpeg,png,webp + max:5120.
+     Checked HERE, when the file is picked, not on submit — an oversized file
+     used to be accepted silently, and the failure only surfaced once the POST
+     had been made. Worse, PHP discards the whole request body when
+     post_max_size is exceeded, so the server then saw EVERY field as empty and
+     answered with whichever one it validates first: the report is a file-size
+     problem being announced as "Payment Date is required" (CBC #182). Rejecting
+     at selection means the request is never made and the message names the
+     actual fault. */
+  const PAY_FILE_MAX_MB = 5;
+  const PAY_FILE_TYPES = ['pdf', 'jpg', 'jpeg', 'png', 'webp'];
+  const pickPayFile = (f: File | null) => {
+    if (!f) { setPayFile(null); return; }
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    if (!PAY_FILE_TYPES.includes(ext)) {
+      toast.error('Unsupported file type', `${ext ? '.' + ext : 'That file'} is not accepted — upload a PDF, JPG, PNG or WEBP.`);
+      return;
+    }
+    const mb = f.size / (1024 * 1024);
+    if (mb > PAY_FILE_MAX_MB) {
+      toast.error(
+        'File is too large',
+        `${f.name} is ${mb.toFixed(1)} MB. The maximum is ${PAY_FILE_MAX_MB} MB — compress it or upload a smaller screenshot.`,
+      );
+      return;
+    }
+    setPayFile(f);
+  };
 /* A submission awaiting HR verification still leaves `outstanding` > 0, so the
    amount alone can't gate the button — a second, duplicate row could be filed
    while the first is under review. Rejected rows must stay resubmittable. */
@@ -133,10 +162,27 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
 
   const setBankField = (k: string, v: string) => setBankForm(p => ({ ...p, [k]: v }));
 
+  /* The three fields a payout cannot happen without. Marked * on the form and
+     enforced here — the dialog looked mandatory (CBC #174) but would happily
+     save a blank account, leaving a payroll run pointed at nothing. */
+  const BANK_REQUIRED: Array<[keyof typeof bankForm & string, string]> = [
+    ['bank_name', 'Bank Name'],
+    ['bank_account_number', 'Account Number'],
+    ['ifsc_code', 'IFSC Code'],
+  ];
+
   const saveBank = async () => {
     const f = bankForm;
+    const missing = BANK_REQUIRED.filter(([k]) => !String(f[k] ?? '').trim()).map(([, label]) => label);
+    if (missing.length) {
+      toast.error(
+        missing.length === 1 ? `${missing[0]} is required` : 'Required fields are empty',
+        `Fill in ${missing.join(', ')} before saving.`,
+      );
+      return;
+    }
     // Mirror the server-side IFSC rule so the user gets instant feedback.
-    if (f.ifsc_code && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(f.ifsc_code.trim())) {
+    if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(String(f.ifsc_code ?? '').trim())) {
       toast.error('Invalid IFSC', 'Enter a valid IFSC code (e.g. HDFC0001234).');
       return;
     }
@@ -772,7 +818,13 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                           rendered as an unstyled grey "Choose file" button. */}
                       <label className={`npay-drop${payFile ? ' has-file' : ''}`}>
                         <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" hidden
-                          onChange={e => setPayFile((e.target as HTMLInputElement).files?.[0] ?? null)} />
+                          onChange={e => {
+                            const el = e.target as HTMLInputElement;
+                            pickPayFile(el.files?.[0] ?? null);
+                            // Clear the input so re-picking the SAME rejected file
+                            // fires onChange again instead of looking inert.
+                            el.value = '';
+                          }} />
                         <span className="npay-drop-ico">
                           <i className={payFile ? fileIcon(payFile.name) : 'ri-upload-cloud-2-line'} />
                         </span>
@@ -861,7 +913,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Bank Name</Label>
+                    <Label className="ep-field-label">Bank Name <span className="text-danger">*</span></Label>
                     <Input
                       value={bankForm.bank_name || ''}
                       maxLength={150}
@@ -872,7 +924,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Account Number</Label>
+                    <Label className="ep-field-label">Account Number <span className="text-danger">*</span></Label>
                     <Input
                       value={bankForm.bank_account_number || ''}
                       maxLength={30}
@@ -883,7 +935,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">IFSC Code</Label>
+                    <Label className="ep-field-label">IFSC Code <span className="text-danger">*</span></Label>
                     <Input
                       value={bankForm.ifsc_code || ''}
                       maxLength={11}

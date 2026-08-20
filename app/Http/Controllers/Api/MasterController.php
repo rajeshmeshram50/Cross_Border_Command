@@ -406,7 +406,33 @@ class MasterController extends Controller
             $columns = collect(\Illuminate\Support\Facades\Schema::getColumnListing((new $modelClass)->getTable()));
             $safe = $requestedFields->intersect($columns)->values();
             if (!$safe->contains('id') && $columns->contains('id')) $safe->push('id');
-            return response()->json($q->get($safe->isEmpty() ? ['*'] : $safe->all()));
+            $select = $safe->all();
+
+            /* `name` is the label EVERY caller of this endpoint reads, but a
+             * dozen masters spell their label column differently — rate_name,
+             * plan_name, wh_name, module_name and so on. Asking for
+             * ?fields=id,name then intersecting against the real columns
+             * dropped `name` on those tables and returned rows of nothing but
+             * an id, so the dropdown rendered "undefined" for every option
+             * (overtime_rates in the employee and onboarding forms).
+             *
+             * Aliasing keeps the endpoint's promise — ask for `name`, get a
+             * name — without every caller having to know which master spells
+             * it which way. The alias source comes from the table's own column
+             * listing, never from the request, so nothing user-supplied reaches
+             * the raw fragment. Masters with no label-ish column at all are
+             * left exactly as they were. */
+            if ($requestedFields->contains('name') && !$columns->contains('name')) {
+                $label = $columns->first(fn ($c) => str_ends_with($c, '_name'))
+                    ?? $columns->first(fn ($c) => in_array($c, ['title', 'label'], true));
+                if ($label) {
+                    $select[] = \Illuminate\Support\Facades\DB::raw(
+                        '"' . $label . '" as name'
+                    );
+                }
+            }
+
+            return response()->json($q->get(empty($select) ? ['*'] : $select));
         }
 
         return response()->json($q->get()->map(fn ($r) => $this->withOwnership($r)));

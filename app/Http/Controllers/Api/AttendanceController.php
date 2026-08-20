@@ -224,13 +224,32 @@ class AttendanceController extends Controller
                     $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
                 });
             }
-            $emp = $q->first();
+            /* The viewer's OWN row wins when the code is ambiguous.
+             *
+             * emp_code is supposed to be unique per tenant but is not enforced
+             * to be, and this database has seven codes carrying two or three
+             * employees each. `->first()` with no ordering then resolves the
+             * slug to whichever row the engine happens to return — usually the
+             * lowest id, i.e. somebody else. The access check below compares
+             * user_id against THAT row, so an employee opening their own
+             * profile was told they have no access to it, while colleagues
+             * whose code happened to be unique worked fine. That is the
+             * "works for some people, not others" report.
+             *
+             * Asking for the viewer's own row first makes the self-path exact
+             * regardless of duplicates; ordering the fallback by id makes the
+             * non-self case at least deterministic instead of arbitrary. */
+            $emp = (clone $q)->where('user_id', $user->id)->first()
+                ?: $q->orderBy('id')->first();
             // If a tenant-scoped lookup found nothing, fall back to a global
             // lookup so the self-path (employee viewing their OWN profile via
             // /profile, which uses their emp_code) still works even when the
             // row's client_id is null but the user has a client_id set.
             if (!$emp) {
-                $emp = Employee::where('emp_code', $employeeId)->first();
+                $emp = Employee::where('emp_code', $employeeId)
+                    ->where('user_id', $user->id)
+                    ->first()
+                    ?: Employee::where('emp_code', $employeeId)->orderBy('id')->first();
             }
         }
         if (!$emp) abort(404, 'Employee not found.');

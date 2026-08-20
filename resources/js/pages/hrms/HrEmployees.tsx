@@ -28,7 +28,7 @@ import { leavePlansApi } from './leavePlansApi';
    how the figures drift apart. */
 import {
   type SalBreakComp, SPLIT_CODES, MAX_COMP_AMOUNT, MAX_COMP_LABEL, CTC_ROUNDING_SLACK,
-  seedBreakup, absorbIntoSpecial, statutoryPt, breakupSignature, validateBreakup,
+  seedBreakup, absorbIntoSpecial, statutoryPt, pfDeduction, breakupSignature, validateBreakup,
 } from '../../utils/salaryBreakup';
 import { resolveProbation } from '../../utils/probation';
 import { useModulePermission } from '../../hooks/useModulePermission';
@@ -400,7 +400,16 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const overtimeRateOptions = useMemo(
     () => mOvertimeRates
       .filter(o => String(o.status ?? 'Active').toLowerCase() === 'active')
-      .map(o => ({ value: String(o.rate_name), label: String(o.rate_name) })),
+      /* `name` first, `rate_name` second.
+         The list arrives from /master/bulk?fields=id,name, which projects the
+         master's label column AS `name` — master_overtime_rates spells it
+         `rate_name`, so reading only that key produced a dropdown of
+         "undefined" for every option. Both keys are accepted so a full master
+         row (which carries rate_name) still renders if this is ever fed from
+         the unslimmed endpoint. The VALUE stays the rate name either way:
+         `employees.overtime` stores the label, not the id. */
+      .map((o: any) => { const n = String(o.name ?? o.rate_name ?? '').trim(); return { value: n, label: n }; })
+      .filter((o: { value: string }) => o.value !== ''),
     [mOvertimeRates],
   );
 
@@ -1629,17 +1638,17 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      went on coming off the net, for an employee who had just been taken off
      payroll and had no field on screen to turn it back off with. */
   const pfActive = eEnablePayroll && ePfEligible;
-  /* PF = 12% of the monthly GROSS (business rule, Aug 2026) — not 12% of basic
-     with the ₹15,000 statutory ceiling, which is what this used to derive.
-     Mirrors PayrollService::computeForEmployee(), where PF is charged on the
-     cycle's total earnings; the figure shown here has to be the one payroll
-     will actually deduct, or this screen goes back to promising ₹1,800 while
-     the payslip takes something else. `pf_type` no longer changes the result —
-     both of its branches were basic-based. */
-  const breakupPf = useMemo(() => {
-    if (!pfActive) return 0;
-    return Math.round(breakupGross * 0.12);
-  }, [pfActive, breakupGross]);
+  /* PF = 12% of BASIC on the statutory basis — Statutory (or unset) caps the
+     basic at the ₹15,000 EPF ceiling, so ₹1,800/mo; Standard uses the full
+     basic. Mirrors PayrollService::computeForEmployee(); the figure shown here
+     has to be the one payroll actually deducts. Shares pfDeduction() with the
+     onboarding wizard and SalaryStructureModal so the three screens cannot
+     quote different numbers for one employee — which is what the short-lived
+     gross-based rule caused. */
+  const breakupPf = useMemo(
+    () => pfDeduction(breakupBasic, ePfType, pfActive),
+    [breakupBasic, ePfType, pfActive],
+  );
   // Net = Gross − PF estimate − fixed deductions. ESI / PT are NOT
   // auto-computed — they're added as editable rows in Fixed Deductions
   // (so they're part of breakupDed when present), filled by HR / accounts.
@@ -1784,21 +1793,12 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
      correction rather than silently rewritten — it is still HR's figure to set.
      ESI is left out: eligibility carries across a contribution period, so the
      form cannot tell a stale figure from a deliberate one. */
-  const statutoryDrift = useMemo(() => {
-    if (!ePtApplicable) return null;
-    const row = eDeductions.find(d => d.code === 'pt');
-    if (!row) return null;
-    const typed = Number(row.amount) || 0;
-    const should = statutoryPt(breakupGross, eGender);
-    return Math.abs(typed - should) >= 0.01 ? { typed, should } : null;
-  }, [ePtApplicable, eDeductions, breakupGross, eGender]);
-
-  const applyStatutoryFigures = () => {
-    setEDeductions(prev => prev.map(d => (
-      d.code === 'pt' ? { ...d, amount: statutoryPt(breakupGross, eGender) } : d
-    )));
-    clearEErr('salary_breakup');
-  };
+  /* The "Professional Tax is ₹X; the slab works out to ₹Y — Use slab figure"
+     banner lived here. Removed: PT is a free-input field, so nagging that a
+     deliberately typed figure differs from the slab was noise, and the button
+     beside it could overwrite that figure in one click. What replaces it is a
+     rule rather than a suggestion — PT is no longer in ZERO_OK_CODES, so the
+     form refuses to save it at 0 (see utils/salaryBreakup). */
 
   const renderBreakTable = (which: 'earn' | 'ded', accent: string, heading: string) => {
     const list = which === 'earn' ? eEarnings : eDeductions;
@@ -5272,7 +5272,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                           <li><strong>Basic Salary</strong> — 50% of the monthly gross (statutory minimum under Code on Wages, 2019; you can adjust the components below).</li>
                           <li><strong>House Rent Allowance (HRA)</strong> — 30% of the monthly gross.</li>
                           <li><strong>Special Allowance</strong> — the remaining balance after Basic + HRA and any component you add, so the gross stays on the CTC.</li>
-                          <li><strong>PF Deduction</strong> — <strong>12% of the monthly gross</strong>. Toggle PF on/off via <em>PF Applicable</em> above.</li>
+                          <li><strong>PF Deduction</strong> — <strong>12% of Basic Salary</strong>; <em>Statutory</em> caps the basic at the ₹15,000 EPF ceiling (max ₹1,800/mo), <em>Standard</em> uses the full basic. Toggle PF on/off via <em>PF Applicable</em> above.</li>
                           <li><strong>ESI / Professional Tax</strong> — whatever you enter here is deducted <strong>in full</strong> each cycle; they are not scaled down for a part-month or for loss of pay.</li>
                         </ul>
                         <div className="d-flex align-items-center gap-3 flex-wrap mb-3">
@@ -5286,18 +5286,6 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             Ticking one adds it to Fixed Deductions — editable, and payroll uses what's saved here.
                           </span>
                         </div>
-                        {statutoryDrift && (
-                          <div className="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2 p-2 px-3"
-                            style={{ background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 8, fontSize: 11.5 }}>
-                            <span className="text-muted">
-                              Professional Tax is ₹{statutoryDrift.typed.toLocaleString('en-IN')}; the slab for this salary works out to ₹{statutoryDrift.should.toLocaleString('en-IN')}.
-                            </span>
-                            <button type="button" onClick={applyStatutoryFigures}
-                              style={{ fontSize: 11, fontWeight: 700, color: '#5a3fd1', background: '#5a3fd112', border: '1px solid #5a3fd133', borderRadius: 8, padding: '3px 11px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                              Use slab figure
-                            </button>
-                          </div>
-                        )}
                         <Row className="g-4">
                           <Col md={6}>{renderBreakTable('earn', '#108548', 'Earnings')}</Col>
                           <Col md={6}>{renderBreakTable('ded', '#b91c1c', 'Fixed Deductions (optional)')}</Col>
@@ -5337,7 +5325,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             {pfActive && (
                               <div className="d-flex align-items-center justify-content-between mt-2 px-3" style={{ fontSize: 12.5 }}>
                                 <span className="text-muted">
-                                  Provident Fund (PF) — 12% of the monthly gross
+                                  Provident Fund (PF) — 12% of Basic Salary
                                   (₹{breakupGross.toLocaleString('en-IN')})
                                 </span>
                                 <span className="fw-semibold" style={{ color: '#b91c1c' }}>− ₹{breakupPf.toLocaleString('en-IN')}/mo</span>
