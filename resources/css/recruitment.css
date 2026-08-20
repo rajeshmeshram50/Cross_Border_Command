@@ -5567,6 +5567,16 @@
   box-shadow: 0 0 0 3px rgba(220,38,38,0.22);
 }
 .ep-field--invalid .ep-field-label { color: #b91c1c; }
+/* Inline field error, under the input it belongs to.
+   `.ep-input--invalid` reddened the box but there was nowhere to say WHY, so
+   forms in this namespace had to fall back to a toast — which names one problem
+   at a time and disappears before the user reaches the field it meant. */
+.ep-field-err {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 4px; font-size: 11.5px; font-weight: 600; color: #b91c1c;
+}
+.ep-field-err > i { font-size: 13px; flex-shrink: 0; }
+[data-bs-theme="dark"] .ep-field-err { color: #fca5a5; }
 [data-bs-theme="dark"] .ep-input--invalid,
 [data-bs-theme="dark"] .ep-input.ep-input--invalid {
   background: rgba(239,68,68,0.10);

@@ -799,8 +799,21 @@ class AttendanceController extends Controller
                 (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffLabel, $holidaySet, $mByIso,
                 $leaveDaysByEmp[$emp->id] ?? []
             );
+            /* No tracked working days -> NO percentage, not a perfect one.
+             *
+             * The denominator is zero whenever nothing was ever expected of the
+             * employee in the window: they joined after it, or every day in it
+             * is a weekly-off, company holiday, approved leave or still in the
+             * future. Reporting 100% there invented a score out of no data —
+             * present 0, absent 0, compliance 100% is the exact reading QA
+             * filed (CBC #66), and it is the same wrong answer for someone who
+             * has not started yet as for someone with a spotless month.
+             *
+             * null instead, so the tile can say "no working days" rather than
+             * pick a number. 0 would be just as false in the other direction:
+             * it reads as total non-attendance when nothing was owed. */
             $compliancePct = $tracked === 0
-                ? 100
+                ? null
                 : (int) round(min(100, max(0, $presentDays / $tracked * 100)));
 
             // 90-day log — covers EVERY day in the window so the calendar

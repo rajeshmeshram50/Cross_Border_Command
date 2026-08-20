@@ -72,14 +72,21 @@ class ExitNoticePaymentController extends Controller
         $data = $request->validate([
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
-            'bank_name'         => ['required', 'string', 'max:120'],
-            'utr_cheque_number' => ['required', 'string', 'max:40'],
+            /* Shapes, not just presence. The form filters both as they are
+               typed, but a request can arrive from anywhere, and these two end
+               up on a payment record Finance reconciles against a bank
+               statement: a bank name of "%#%^&*(" or a reference of "#$%&*()"
+               is unusable there (CBC #183 / #184). */
+            'bank_name'         => ['required', 'string', 'max:120', 'regex:/^[A-Za-z ]+$/'],
+            'utr_cheque_number' => ['required', 'string', 'regex:/^[0-9]{1,12}$/'],
             'payment_date'      => ['required', 'date', 'before_or_equal:' . Carbon::now(self::DISPLAY_TZ)->toDateString()],
             'employee_note'     => ['nullable', 'string', 'max:500'],
             'attachment'        => ['required', 'file', 'mimes:pdf,jpg,jpeg,png,webp', 'max:5120'],
         ], [
             'attachment.required' => 'Upload a screenshot or receipt of the payment.',
             'payment_date.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
+            'bank_name.regex'         => 'Bank Name can contain letters and spaces only.',
+            'utr_cheque_number.regex' => 'UTR / Cheque Number must be digits only, up to 12.',
         ]);
 
         // A reference can only be claimed once per employee — the same transfer
@@ -143,8 +150,13 @@ class ExitNoticePaymentController extends Controller
         $data = $request->validate([
             'amount'            => ['required', 'numeric', 'min:1', 'max:99999999.99'],
             'payment_mode'      => ['required', 'string', 'max:40'],
-            'bank_name'         => ['required', 'string', 'max:120'],
-            'utr_cheque_number' => ['required', 'string', 'max:40'],
+            /* Shapes, not just presence. The form filters both as they are
+               typed, but a request can arrive from anywhere, and these two end
+               up on a payment record Finance reconciles against a bank
+               statement: a bank name of "%#%^&*(" or a reference of "#$%&*()"
+               is unusable there (CBC #183 / #184). */
+            'bank_name'         => ['required', 'string', 'max:120', 'regex:/^[A-Za-z ]+$/'],
+            'utr_cheque_number' => ['required', 'string', 'regex:/^[0-9]{1,12}$/'],
             /* Same ceiling as store() above. A payment is a record of money that
                has already moved, so it cannot be dated in the future — this path
                (HR recording on the employee's behalf) was the one place the rule
@@ -154,6 +166,8 @@ class ExitNoticePaymentController extends Controller
             'verdict'           => ['required', 'in:Approved,Rejected'],
         ], [
             'payment_date.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
+            'bank_name.regex'         => 'Bank Name can contain letters and spaces only.',
+            'utr_cheque_number.regex' => 'UTR / Cheque Number must be digits only, up to 12.',
         ]);
 
         if ($data['verdict'] === 'Approved' && (float) $data['amount'] + 0.005 < $due['amount']) {
