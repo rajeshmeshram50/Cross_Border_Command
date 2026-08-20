@@ -951,6 +951,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::put ('/docs-guide/content', [DocsGuideController::class, 'update']);
 
     Route::get   ('/master-counts',           [MasterController::class, 'counts']);
+    // Several master lists in one call. MUST be declared before /master/{slug},
+    // or 'bulk' is matched as a slug and the endpoint is unreachable.
+    Route::get   ('/master/bulk',             [MasterController::class, 'bulk']);
     Route::get   ('/master/{slug}',           [MasterController::class, 'list']);
     Route::post  ('/master/{slug}',           [MasterController::class, 'store']);
 

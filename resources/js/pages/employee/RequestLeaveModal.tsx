@@ -283,11 +283,11 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-calendar-line" />
-              <span>Leave Dates</span>
+              <span>Leave Dates</span><span className="lvr-req" aria-hidden="true">*</span>
             </div>
             <div className="lvr-date-strip">
               <div className="lvr-date-cell">
-                <label className="lvr-mini-label">From</label>
+                <label className="lvr-mini-label">From<span className="lvr-req" aria-hidden="true">*</span></label>
                 <MasterDatePicker
                   value={fromDate}
                   onChange={(v) => {
@@ -305,7 +305,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 </div>
               </div>
               <div className="lvr-date-cell">
-                <label className="lvr-mini-label">To</label>
+                <label className="lvr-mini-label">To<span className="lvr-req" aria-hidden="true">*</span></label>
                 <MasterDatePicker
                   value={toDate}
                   onChange={setToDate}
@@ -319,7 +319,7 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
           <div className="lvr-section">
             <div className="lvr-section-title">
               <i className="ri-bookmark-line" />
-              <span>Leave Type</span>
+              <span>Leave Type</span><span className="lvr-req" aria-hidden="true">*</span>
             </div>
             {balanceTypes.length === 0 ? (
               <div className="lvr-warning">

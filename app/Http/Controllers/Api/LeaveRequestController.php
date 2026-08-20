@@ -94,7 +94,13 @@ class LeaveRequestController extends Controller
             // LV-22: bound the free-text fields (were unbounded → DoS/storage bloat).
             'reason' => ['nullable', 'string', 'max:2000'],
             'attachment_path' => ['nullable', 'string', 'max:1024'],
+            /* The inner key needs its own rule. validated() returns only keys
+               that HAVE rules, so 'notify' => ['array'] alone let the array
+               through and stripped employee_ids out of it — the request stored
+               notify => [] and no colleague was ever CC'd (QA #117). */
             'notify' => ['nullable', 'array'],
+            'notify.employee_ids' => ['nullable', 'array'],
+            'notify.employee_ids.*' => ['integer', 'exists:employees,id'],
             'handover_required' => ['nullable', 'boolean'],
             'cover_person_id' => ['nullable', 'integer', 'exists:employees,id'],
             'handover_notes' => ['nullable', 'string', 'max:5000'],

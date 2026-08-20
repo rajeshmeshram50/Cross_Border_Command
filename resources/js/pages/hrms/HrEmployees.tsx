@@ -286,6 +286,9 @@ const KPI_CARDS = [
 
 type ExpiryDays = 3 | 7 | 15;
 
+/* Per-screen so other tables can adopt the same pattern without colliding. */
+const PER_PAGE_KEY = 'cbc.hr.employees.perPage';
+
 export default function HrEmployees() {
   // Active branch — the auto-fetched Legal Entity resolves against it.
   const { selectedBranchId } = useBranchSwitcher();
@@ -317,7 +320,38 @@ export default function HrEmployees() {
      tenant and would not have survived a real one. The server now returns one
      page; everything below is what the browser needs to ask for it. */
   const [page, setPage] = useState(0);              // 0-based, as DataTable counts
-  const [perPage, setPerPage] = useState(25);       // replaced by DataTable's autoFit size
+  /* Opening guess, before autoFit has measured anything. Deliberately small: it
+     is what a short viewport shows anyway, so the fit usually agrees and no
+     second request is needed. A tall window fits far more, and that difference
+     is large enough to clear the one-row threshold in DataTable's fit, so it
+     still corrects in a single step. */
+  /* Page size that fitted on the last visit. Reading it here means the opening
+     request is usually already the right size, so autoFit measures, agrees, and
+     never emits — one request instead of two.
+
+     Falls back to 5, which is close to what a short viewport shows anyway. A
+     stored value that no longer fits (different monitor, resized window) is
+     corrected by the fit exactly once and the new value stored, so it
+     self-heals rather than being wrong forever.
+
+     Lazy initialiser: localStorage is read once on mount, not on every render.
+     Guarded because a private-mode browser can throw on access. */
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 5;
+    } catch {
+      return 5;
+    }
+  });
+
+  /* Persist whatever the table settles on — the fit's answer, or a size the
+     user picked explicitly from Rows per page. Both are worth remembering: the
+     explicit choice especially, since re-deriving it every visit would keep
+     overriding a deliberate decision. */
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
   const [totalEmployees, setTotalEmployees] = useState(0);
 
   /* Typing is not a request. Without this every letter fires a page-1 fetch and
@@ -503,7 +537,13 @@ export default function HrEmployees() {
   });
   const reloadCounts = useCallback(async () => {
     try {
-      const r = await api.get('/employees/stats');
+      /* Pass the search so the badges describe the rows on screen. Without it
+         the tabs read "Active 13 / Disabled 3" above a table showing three
+         matches — the page contradicting itself (QA #173). Empty search sends
+         nothing, so the unfiltered totals are unchanged. */
+      const r = await api.get('/employees/stats', {
+        params: debouncedQ ? { search: debouncedQ } : undefined,
+      });
       setCounts({
         total: Number(r.data?.total) || 0,
         active: Number(r.data?.active) || 0,
@@ -515,14 +555,43 @@ export default function HrEmployees() {
       /* Non-fatal — the cards keep their last values rather than flashing zeros
          over numbers that were correct a moment ago. */
     }
-  }, []);
+  }, [debouncedQ]);
 
   const reloadMasters = useCallback(() => {
     Promise.allSettled([
-      api.get('/master/departments').then(r => setMDepts(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/designations').then(r => setMDesignations(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/roles').then(r => setMRoles(Array.isArray(r.data) ? r.data : [])),
-      api.get('/master/overtime_rates').then(r => setMOvertimeRates(Array.isArray(r.data) ? r.data : [])).catch(() => setMOvertimeRates([])),
+      /* One request for the five MasterController lists, instead of five.
+         Each was a full round trip serialised behind the browser's connection
+         limit — 2.3s to 5.1s on the wire for ~13 KB that changes monthly. The
+         payload was never the problem; the request count was.
+
+         ?fields=id,name because these fill dropdowns: without it /master/countries
+         alone ships 104 KB of ownership metadata for 249 rows.
+
+         Per-key rather than all-or-nothing: bulk() omits a master the user may
+         not view rather than failing the call, so one missing grant cannot blank
+         the other four. Each key keeps the shape its own endpoint returned. */
+      api.get('/master/bulk', {
+        params: {
+          keys: 'departments,designations,roles,overtime_rates,countries',
+          fields: 'id,name',
+        },
+      }).then(r => {
+        const d = r.data?.data ?? {};
+        const rows = (k: string): any[] => {
+          const v = d[k];
+          return Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : [];
+        };
+        setMDepts(rows('departments'));
+        setMDesignations(rows('designations'));
+        setMRoles(rows('roles'));
+        setMOvertimeRates(rows('overtime_rates'));
+        setMCountries(
+          [...rows('countries')].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
+        );
+      }).catch(() => {
+        setMDepts([]); setMDesignations([]); setMRoles([]);
+        setMOvertimeRates([]); setMCountries([]);
+      }),
       /* Legal entities = the client's BRANCHES (the branch carries the
          GST/PAN/CIN and bank accounts). /branch-legal-entities is a permission-
          free form lookup — HR staff who can add an employee often can't manage
@@ -531,12 +600,6 @@ export default function HrEmployees() {
         .then(r => setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []))
         .catch(() => setMLegalEntities([])),
       api.get('/holiday-groups').then(r => setMHolidayGroups(Array.isArray(r.data) ? r.data : [])).catch(() => setMHolidayGroups([])),
-      /* ?fields — the picker renders an id and a label; the full master row
-         carries its owning client, branch and creator too, which is 104 KB
-         across 249 countries instead of 8. */
-      api.get('/master/countries', { params: { fields: 'id,name' } }).then(r => setMCountries(
-        Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []
-      )),
       /* /master/states is deliberately absent — it returns every subdivision on
          earth (773 KB, ~1 s) and this form shows one country's at a time. See
          ensureStates() above, which fetches them per country. */
@@ -584,8 +647,34 @@ export default function HrEmployees() {
     reloadCounts().catch(() => { /* cards keep their previous values */ });
   }, [reloadEmployees, reloadCounts]);
 
+  /* Refresh the table when the tab comes back, so a row someone else changed
+     is not shown stale.
+
+     Two guards, both learned the hard way:
+
+     THROTTLED — 'focus' fires on every return to the window, including clicking
+     from DevTools back into the page. Unthrottled it re-fetched the list AND the
+     stat cards on each of those, which is most of what a developer sees in the
+     network panel while debugging anything else. AuthContext throttles its own
+     /me for the same reason; this matches its 60s.
+
+     SUPPRESSED WHILE THE WIZARD IS OPEN — the table it refreshes is behind the
+     modal. Nobody can see the result, and closeEmp() refreshes on the way out
+     anyway, so the fetch is pure waste at exactly the moment the user is doing
+     something expensive. */
+  const empOpenRef = useRef(false);
+
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') reloadAfterMutation().catch(() => { }); };
+    const THROTTLE_MS = 60 * 1000;
+    let lastAt = 0;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (empOpenRef.current) return;
+      const now = Date.now();
+      if (now - lastAt < THROTTLE_MS) return;
+      lastAt = now;
+      reloadAfterMutation().catch(() => { /* table just stays stale */ });
+    };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => {
@@ -751,6 +840,10 @@ export default function HrEmployees() {
   };
 
   const [empOpen, setEmpOpen] = useState(false);
+  /* Mirrors the two dialog flags into the ref the focus listener above reads.
+     It lives here rather than beside that listener because empOpen is declared
+     on the line above — reading it any earlier is a temporal dead zone error. */
+  useEffect(() => { empOpenRef.current = empOpen || onboardOpen; }, [empOpen, onboardOpen]);
   /* True between the dialog appearing and its record arriving. Edit opens on
      the click now, so there is a window where the wizard is on screen with
      nothing in it — this drives the skeleton that fills it. */
@@ -1288,6 +1381,10 @@ export default function HrEmployees() {
     setEmpOpen(false);
     setEmpLoading(false);
     resetEmpForm();
+    /* Step saves no longer refresh the table (nothing behind the modal is
+       visible), so the refresh happens here instead — covering the abandoned
+       case too, where steps were saved but the wizard was never completed. */
+    reloadAfterMutation().catch(() => { /* table just stays stale */ });
     if (returnToOnClose) {
       const target = returnToOnClose;
       setReturnToOnClose(null);
@@ -1913,6 +2010,9 @@ export default function HrEmployees() {
     setEmpEditingName('');
     setEditingDbId(null);
     editingDbIdRef.current = null;
+    savedPayloadRef.current = null;   // new record — nothing saved yet
+    savedStepRef.current = 0;
+    assignedPlanRef.current = null;
     setEmpOpen(true);
     await proceedFresh();
   };
@@ -1939,6 +2039,13 @@ export default function HrEmployees() {
     setEmpEditingName(row.name);
     setEditingDbId(dbId ?? null);
     editingDbIdRef.current = dbId ?? null;
+    /* Opening an existing record. The baseline stays null so the FIRST Next
+       still saves — the form is populated asynchronously and a fingerprint taken
+       now could capture half-filled state. From the second step on, an untouched
+       form skips the request. */
+    savedPayloadRef.current = null;
+    savedStepRef.current = 0;
+    assignedPlanRef.current = null;
     setEmpOpen(true);
 
     if (dbId) {
@@ -2463,12 +2570,83 @@ export default function HrEmployees() {
     };
   };
 
+  /* Serialised payload as it stood after the last successful save — the baseline
+     a "Save & Next" is compared against.
+
+     The wizard posted on every Next whether or not anything had been edited. The
+     server then validated all 104 fields, ran its permission and uniqueness
+     checks — 29 queries — and Eloquent wrote nothing, because nothing was dirty.
+     Clicking through an edit to reach step 3 paid that round trip twice for two
+     steps the user never touched.
+
+     Compared as the PAYLOAD rather than the form state on purpose:
+     buildEmployeePayload trims strings and turns '' into null, so two states that
+     differ on screen can be identical once normalised. Comparing raw inputs would
+     report a change that does not exist and save anyway. */
+  const savedPayloadRef = useRef<Record<string, any> | null>(null);
+  /** Highest wizard_step_completed the SERVER has stored for this record. */
+  const savedStepRef = useRef<number>(0);
+  /** Leave plan already posted for this record, so it is not re-sent each step. */
+  const assignedPlanRef = useRef<number | null>(null);
+
+  /* Keys whose value differs from the last successful save.
+
+     wizard_step_completed is excluded on purpose — it increments on every Next,
+     so counting it would make every step look "changed" and defeat both the skip
+     and the diff. Whether progress needs persisting is tracked by savedStepRef.
+
+     Compared with JSON.stringify per key because several values are arrays
+     (other_master_asset_ids) or nulls; === would report every array as changed. */
+  const changedKeys = (
+    base: Record<string, any>,
+    next: Record<string, any>,
+  ): string[] =>
+    Object.keys(next).filter(k =>
+      k !== 'wizard_step_completed'
+      && JSON.stringify(next[k]) !== JSON.stringify(base[k]));
+
   const persistCurrentStepInner = async (stepCompleted: number): Promise<boolean> => {
     try {
       const payload = buildEmployeePayload(stepCompleted);
       const currentId = editingDbIdRef.current ?? editingDbId;
+      const base = savedPayloadRef.current;
+      const changed = base ? changedKeys(base, payload) : null;
+
+      /* Nothing changed since the last save — and the row already records at
+         least this step — so there is nothing to persist. Skip the request and
+         let the caller advance.
+
+         The step check matters: the payload carries wizard_step_completed, so
+         moving forward always differs from the baseline. It is only a no-op when
+         the server has already stored progress at or beyond this step. */
+      if (
+        currentId
+        && changed !== null
+        && changed.length === 0
+        // Progress still has to reach the server. Skipping when the stored step
+        // is behind would let someone close the wizard and reopen it at an
+        // earlier step than they actually completed.
+        && savedStepRef.current >= stepCompleted
+      ) {
+        return true;
+      }
+
       if (currentId) {
-        await api.put(`/employees/${currentId}`, payload);
+        /* Only what moved. The wizard used to post all 104 fields on every step:
+           the server then validated all of them, re-derived every dependent
+           column and re-wrote relations — 353 queries and 18 writes to change one
+           field, versus 88 and 3 for the field alone.
+
+           A partial body is safe because update() validates with nullable
+           rather than required, and Laravel's validated() returns only the keys
+           that were actually sent, so absent fields are never filled and never
+           overwritten. The first save of a record still sends everything: until
+           one succeeds there is no trustworthy baseline to diff against. */
+        const body = changed
+          ? { ...Object.fromEntries(changed.map(k => [k, payload[k]])),
+              wizard_step_completed: payload.wizard_step_completed }
+          : payload;
+        await api.put(`/employees/${currentId}`, body);
       } else {
         const r = await api.post('/employees', payload);
         const newId: number | undefined = r?.data?.employee?.id;
@@ -2477,15 +2655,29 @@ export default function HrEmployees() {
           setEditingDbId(newId);
         }
       }
+      /* Re-assigning the same employee to the same plan on every step is a write
+         that changes nothing. Only post when the selection differs from what was
+         last sent. */
       const empId = editingDbIdRef.current;
       if (empId && eLeavePlan) {
         const planId = Number(eLeavePlan);
-        if (Number.isFinite(planId)) {
+        if (Number.isFinite(planId) && assignedPlanRef.current !== planId) {
+          assignedPlanRef.current = planId;
           leavePlansApi.assignEmployees(planId, [empId])
-            .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
+            .catch(err => {
+              // Let a later step retry rather than silently leaving it unassigned.
+              assignedPlanRef.current = null;
+              console.warn('[HrEmployees] leave plan assign failed', err);
+            });
         }
       }
-      reloadAfterMutation().catch(() => { /* swallow — table just stays stale */ });
+      // New baseline: everything up to here is now what the server holds.
+      savedPayloadRef.current = buildEmployeePayload(stepCompleted);
+      savedStepRef.current = Math.max(savedStepRef.current, stepCompleted);
+      /* Deliberately NOT refreshing the list here. This runs on every step of an
+         open wizard, and the table it would refresh is behind the modal — the
+         user cannot see the result, and the final submit refreshes anyway. It
+         cost a list fetch plus a stats fetch per step. */
       return true;
     } catch (err: any) {
       const fieldErrors = err?.response?.data?.errors;
@@ -2615,7 +2807,8 @@ export default function HrEmployees() {
       if (finalEmpId) {
         await persistBreakup(finalEmpId);
       }
-      reloadAfterMutation().catch(() => { /* swallow */ });
+      // closeEmp() refreshes the list, so no reloadAfterMutation() here — it
+      // would fetch the same two endpoints twice on finish.
       reloadManagers().catch(() => { /* swallow */ });
       closeEmp();
     } catch (err: any) {
@@ -3083,14 +3276,21 @@ export default function HrEmployees() {
                   locked   → a fact about the USER (no can_edit). Greyed but
                              still clickable, so the click names the missing
                              permission instead of doing nothing. */}
+            {/* Disabled until grants have loaded. A hard refresh renders this
+                column before /me returns, and until then every can*() reads
+                false — so the first click was denied and only the second, once
+                the response landed, opened the dialog. Showing it as pending is
+                honest; refusing a permission we have not checked is not. */}
             <ActionBtn
-              title={isSelf
-                ? "You can't edit your own record"
-                : (perm.lockedTitle('edit') ?? 'Edit')}
+              title={!perm.ready
+                ? 'Checking your permissions…'
+                : isSelf
+                  ? "You can't edit your own record"
+                  : (perm.lockedTitle('edit') ?? 'Edit')}
               icon="ri-pencil-line" color="info"
               onClick={() => perm.guard('edit', () => openEditEmployee(e))}
-              disabled={rowDisabled || isSelf}
-              locked={!perm.canEdit}
+              disabled={rowDisabled || isSelf || !perm.ready}
+              locked={perm.ready && !perm.canEdit}
             />
             {/* Asset assignment saves through PUT /employees/{id}, which the
                 API gates on can_edit — so a view-only user would otherwise

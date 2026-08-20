@@ -273,6 +273,60 @@ class MasterController extends Controller
         return response()->json($out);
     }
 
+    /**
+     * GET /api/master/bulk?keys=departments,designations,roles&fields=id,name
+     *
+     * Several master lists in one response.
+     *
+     * The Employee screen opened with ten separate master fetches, each a full
+     * round trip, serialised behind the browser's connection limit — 2.3s to
+     * 6.6s on the wire for about 30 KB of data that changes maybe monthly. The
+     * payload was never the problem; the request count was.
+     *
+     * Each key is served by list() itself rather than a re-implementation, so a
+     * change to scoping, permissions or the ?fields trim applies to both paths
+     * automatically. A key the caller may not see is omitted rather than
+     * failing the whole call — one forbidden master should not blank nine
+     * legitimate ones.
+     */
+    public function bulk(Request $request)
+    {
+        $keys = collect(explode(',', (string) $request->query('keys')))
+            ->map(fn ($k) => trim($k))
+            ->filter()
+            ->unique()
+            // Bounded: the parameter comes from the URL, and each key is a
+            // query. Twenty is far more than any screen asks for.
+            ->take(20)
+            ->values();
+
+        if ($keys->isEmpty()) {
+            return response()->json(['status' => false, 'message' => 'Pass ?keys=a,b,c'], 422);
+        }
+
+        $out = [];
+        $skipped = [];
+        foreach ($keys as $slug) {
+            try {
+                $res = $this->list($request, $slug);
+                $out[$slug] = $res instanceof \Illuminate\Http\JsonResponse
+                    ? $res->getData(true)
+                    : $res;
+            } catch (\Throwable $e) {
+                // Unknown slug, or no permission for this one master.
+                $skipped[$slug] = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpException
+                    ? $e->getStatusCode()
+                    : 500;
+            }
+        }
+
+        return response()->json([
+            'status'  => true,
+            'data'    => $out,
+            'skipped' => $skipped,
+        ]);
+    }
+
     public function list(Request $request, string $slug)
     {
         $this->authorizeMaster($request, $slug, 'can_view');

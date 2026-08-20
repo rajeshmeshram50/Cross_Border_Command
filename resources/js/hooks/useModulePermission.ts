@@ -63,6 +63,8 @@ export interface ModulePermission {
   deny: (action: PermAction) => false;
   /** Run `run` when allowed; otherwise explain via toast. Returns whether it ran. */
   guard: (action: PermAction, run: () => void) => boolean;
+  /** False until the signed-in user (and therefore their grants) has loaded. */
+  ready: boolean;
   /** Tooltip text for a locked control — undefined when the action is allowed. */
   lockedTitle: (action: PermAction) => string | undefined;
 }
@@ -74,6 +76,10 @@ export interface ModulePermission {
 export function useModulePermission(slug: string, subject: string): ModulePermission {
   const { user } = useAuth();
   const toast = useToast();
+
+  /* Super admins carry no permissions map (they bypass it), so requiring one
+     would leave them permanently "not ready". */
+  const ready = !!user && (user.user_type === 'super_admin' || user.permissions !== undefined);
 
   const flags = useMemo(() => {
     const isSuperAdmin = user?.user_type === 'super_admin';
@@ -117,12 +123,16 @@ export function useModulePermission(slug: string, subject: string): ModulePermis
   }, [toast, subject]);
 
   const guard = useCallback((action: PermAction, run: () => void) => {
+    /* Grants not loaded yet: refusing here would claim the user lacks a
+       permission we have not checked. Callers disable their controls while
+       !ready, so this is only reached on a click that raced the load. */
+    if (!ready) return false;
     if (!can(action)) { deny(action); return false; }
     run();
     return true;
-  }, [can, deny]);
+  }, [ready, can, deny]);
 
-  return { ...flags, can, deny, guard, lockedTitle };
+  return { ...flags, ready, can, deny, guard, lockedTitle };
 }
 
 export default useModulePermission;
