@@ -241,19 +241,46 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     );
   };
 
+  /**
+   * Put the whole difference between the breakup and the configured salary
+   * into Basic Salary, so a mismatch can be corrected in one click instead of
+   * the user having to work out the arithmetic themselves.
+   *
+   * The monthly delta is rounded to the rupee, which can leave the annualised
+   * total a few rupees off — that is exactly what SALARY_SLACK exists to
+   * absorb, so the result always saves.
+   */
+  const balanceToBasic = () => {
+    const deltaMonthly = Math.round((salaryAnnual - breakupAnnual) / 12); // + add, − remove
+    if (!deltaMonthly) return;
+    setEarnings(prev => {
+      if (!prev.length) {
+        return [{ code: 'basic', label: 'Basic Salary', amount: Math.max(0, deltaMonthly) }];
+      }
+      const idx = prev.findIndex(c => c.code === 'basic');
+      const target = idx !== -1 ? idx : 0;
+      return prev.map((c, i) =>
+        i === target ? { ...c, amount: Math.max(0, (Number(c.amount) || 0) + deltaMonthly) } : c);
+    });
+  };
+
   const save = async () => {
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
     if (!clean.length) { toast.error('Add earnings', 'Add at least one earning component.'); return; }
     if (grossTotal <= 0) { toast.error('Invalid salary', 'Total earnings must be greater than zero.'); return; }
-    /* A breakup may not pay more than the salary agreed on the employee record.
-       This was shown in red but never enforced, so the larger figure saved and
-       every payroll run afterwards paid it. The server refuses it too — this
-       check just reports it without a round trip. */
-    if (overSalary) {
+    /* The breakup has to ADD UP to the salary on the employee record — not more
+       (#70) and not less (#74). Both were shown in red but neither was
+       enforced, so an over-figure saved and got paid, and an under-figure
+       (components typed down to ₹1) silently reduced the agreed salary. The
+       server refuses both; this reports it without a round trip. */
+    if (overSalary || underSalary) {
       toast.error(
-        'Salary exceeds the configured amount',
-        `The breakup comes to ₹${fmtINR(breakupAnnual)} a year — ₹${fmtINR(salaryDiff)} more than ${employee.name}'s salary of ₹${fmtINR(salaryAnnual)}. `
-        + 'Reduce the components, or raise the salary on the employee record first.',
+        overSalary ? 'Salary exceeds the configured amount' : 'Salary is short of the configured amount',
+        `The breakup comes to ₹${fmtINR(breakupAnnual)} a year — ₹${fmtINR(Math.abs(salaryDiff))} `
+        + `${overSalary ? 'more than' : 'short of'} ${employee.name}'s salary of ₹${fmtINR(salaryAnnual)}. `
+        + (overSalary
+            ? 'Reduce the components, or raise the salary on the employee record first.'
+            : 'Use "Balance to Basic" to put the difference back, or lower the salary on the employee record first.'),
       );
       return;
     }
@@ -403,11 +430,23 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (overSalary ? '#dc2626' : '#0a8754') }}>
                   ≈ ₹{fmtINR(breakupAnnual)} / year
                 </div>
+                {/* Either direction blocks the save, so both read the same way
+                    and both offer the one-click correction. */}
                 {salaryAnnual > 0 && (overSalary || underSalary) && (
-                  <div style={{ fontSize: 10.5, fontWeight: 600, color: overSalary ? '#dc2626' : '#0a8754' }}>
-                    {overSalary
-                      ? `₹${fmtINR(salaryDiff)} over the salary (₹${fmtINR(salaryAnnual)}) — cannot be saved`
-                      : `₹${fmtINR(Math.abs(salaryDiff))} under the salary (₹${fmtINR(salaryAnnual)})`}
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#dc2626' }}>
+                    ₹{fmtINR(Math.abs(salaryDiff))} {overSalary ? 'over' : 'short of'} the salary
+                    {' '}(₹{fmtINR(salaryAnnual)}) — cannot be saved
+                    <button
+                      type="button"
+                      onClick={balanceToBasic}
+                      style={{
+                        marginLeft: 8, fontSize: 10, fontWeight: 700, padding: '1px 8px',
+                        borderRadius: 999, border: '1px solid #dc262655',
+                        background: 'transparent', color: '#dc2626',
+                      }}
+                    >
+                      Balance to Basic
+                    </button>
                   </div>
                 )}
                 {/* Within the rounding slack counts as matching, so the seeded

@@ -146,33 +146,44 @@ class SalaryStructureController extends Controller
         $monthlyGross = collect($data['earnings'])->sum(fn ($c) => (float) $c['amount']);
         $monthlyDeductions = collect($data['deductions'] ?? [])->sum(fn ($c) => (float) $c['amount']);
 
-        /* A structure may not pay more than the salary agreed on the employee
-         * record. The modal already showed a red "over the salary" hint, but
-         * nothing enforced it on either side, so the larger figure saved
-         * silently and every subsequent payroll run paid it.
+        /* The breakup must ADD UP to the salary agreed on the employee record —
+         * not more (#70) and not less (#74). It is a split of that figure, not
+         * a second opinion on it.
+         *
+         * Neither direction was enforced. Over: the larger figure saved and
+         * every payroll run afterwards paid it. Under: setting components to
+         * ₹1 saved a ₹2,00,004 structure against a ₹4,00,000 salary, and the
+         * modal reported "₹1,99,996 under the salary" while still saving —
+         * which, now that an accepted revision writes back to the employee
+         * record, would have silently halved someone's agreed pay.
          *
          * Tolerance: the form seeds the split from annual_salary / 12 ROUNDED
-         * to the rupee, so a perfectly legitimate breakup can annualise a few
-         * rupees above the configured figure (₹5,00,000 → ₹41,667/mo →
-         * ₹5,00,004/yr). One rupee per month absorbs that without letting a
-         * real overpayment through.
+         * to the rupee, so a legitimate breakup can land a few rupees either
+         * side (₹5,00,000 → ₹41,667/mo → ₹5,00,004/yr). One rupee a month
+         * absorbs that and nothing more.
          *
          * No configured salary means there is nothing to validate against —
          * the structure then IS the source of truth, so it is allowed. */
         $configuredAnnual = (float) ($employee->annual_salary ?? 0);
         if ($configuredAnnual > 0) {
             $annualised = $monthlyGross * 12;
-            if (($annualised - $configuredAnnual) > self::SALARY_ROUNDING_SLACK) {
-                $over = $annualised - $configuredAnnual;
+            $diff = $annualised - $configuredAnnual;          // + over, − under
+            if (abs($diff) > self::SALARY_ROUNDING_SLACK) {
+                $over = $diff > 0;
+                $gap  = number_format(abs($diff), 2);
+                $name = $employee->first_name ?: 'this employee';
                 return response()->json([
                     'message' => 'Total earnings come to ₹' . number_format($annualised, 2)
-                        . ' a year, which is ₹' . number_format($over, 2)
-                        . " more than {$employee->first_name}'s configured salary of ₹"
-                        . number_format($configuredAnnual, 2)
-                        . '. Reduce the components, or raise the salary on the employee record first.',
+                        . ' a year, which is ₹' . $gap . ($over ? ' more than' : ' short of')
+                        . " {$name}'s configured salary of ₹" . number_format($configuredAnnual, 2)
+                        . '. The breakup has to add up to the salary — '
+                        . ($over
+                            ? 'reduce the components, or raise the salary on the employee record first.'
+                            : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                              . 'or lower the salary on the employee record first.'),
                     'errors' => ['earnings' => [
-                        'Annual total ₹' . number_format($annualised, 2)
-                        . ' exceeds the configured salary ₹' . number_format($configuredAnnual, 2) . '.',
+                        'Annual total ₹' . number_format($annualised, 2) . ' does not match the configured salary ₹'
+                        . number_format($configuredAnnual, 2) . '.',
                     ]],
                 ], 422);
             }
