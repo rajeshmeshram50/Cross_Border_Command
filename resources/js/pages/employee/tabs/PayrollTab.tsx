@@ -157,35 +157,57 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
       bank_branch: empDetail?.bank_branch || '',
       bank_account_type: empDetail?.bank_account_type || '',
     });
+    setBankErrors({});
     setBankOpen(true);
   };
 
-  const setBankField = (k: string, v: string) => setBankForm(p => ({ ...p, [k]: v }));
+  /* Per-field errors, shown UNDER the field they belong to.
+     A toast names one problem at a time and is gone before the user reaches
+     the field it meant; with seven required fields that is a guessing game.
+     Same treatment the employee form gives its fields. */
+  const [bankErrors, setBankErrors] = useState<Record<string, string>>({});
+  const setBankField = (k: string, v: string) => {
+    setBankForm(p => ({ ...p, [k]: v }));
+    // Clear this field's error the moment it is touched.
+    setBankErrors(p => (p[k] ? { ...p, [k]: '' } : p));
+  };
+  const bankErr = (k: string) => (bankErrors[k]
+    ? <div className="ep-field-err"><i className="ri-error-warning-line" />{bankErrors[k]}</div>
+    : null);
+  const bankInv = (k: string) => (bankErrors[k] ? ' ep-input--invalid' : '');
 
-  /* The three fields a payout cannot happen without. Marked * on the form and
-     enforced here — the dialog looked mandatory (CBC #174) but would happily
-     save a blank account, leaving a payroll run pointed at nothing. */
-  const BANK_REQUIRED: Array<[keyof typeof bankForm & string, string]> = [
+  /* Every field on this dialog is required — a payout account is only usable
+     complete, and a half-filled one leaves a payroll run pointed at something
+     the bank will reject. The dialog LOOKED mandatory but saved anything
+     (CBC #174). */
+  const BANK_REQUIRED: Array<[string, string]> = [
+    ['salary_payment_mode', 'Salary Payment Mode'],
     ['bank_name', 'Bank Name'],
     ['bank_account_number', 'Account Number'],
     ['ifsc_code', 'IFSC Code'],
+    ['account_holder_name', 'Name on Account'],
+    ['bank_branch', 'Branch'],
+    ['bank_account_type', 'Account Type'],
   ];
 
   const saveBank = async () => {
     const f = bankForm;
-    const missing = BANK_REQUIRED.filter(([k]) => !String(f[k] ?? '').trim()).map(([, label]) => label);
-    if (missing.length) {
-      toast.error(
-        missing.length === 1 ? `${missing[0]} is required` : 'Required fields are empty',
-        `Fill in ${missing.join(', ')} before saving.`,
-      );
-      return;
-    }
+    const errs: Record<string, string> = {};
+    BANK_REQUIRED.forEach(([k, label]) => {
+      if (!String(f[k] ?? '').trim()) errs[k] = `${label} is required`;
+    });
     // Mirror the server-side IFSC rule so the user gets instant feedback.
-    if (!/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(String(f.ifsc_code ?? '').trim())) {
-      toast.error('Invalid IFSC', 'Enter a valid IFSC code (e.g. HDFC0001234).');
+    if (!errs.ifsc_code && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(String(f.ifsc_code ?? '').trim())) {
+      errs.ifsc_code = 'Enter a valid IFSC code (e.g. HDFC0001234).';
+    }
+    if (Object.keys(errs).length) {
+      setBankErrors(errs);
+      // The toast stays as the "something is wrong" cue; the detail is now on
+      // the fields themselves, where it can be read while fixing them.
+      toast.error('Check the highlighted fields', 'Every field on this form is required.');
       return;
     }
+    setBankErrors({});
     if (!empDetail?.id) return;
     setSavingBank(true);
     try {
@@ -796,19 +818,30 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                   <Col md={6}>
                     <FormGroup className="mb-0">
                       <Label className="ep-field-label">Your Bank Name <span className="text-danger">*</span></Label>
+                      {/* Letters and spaces only, filtered as it is typed — a
+                          bank name has no digits or punctuation in it, and the
+                          field was taking "%#%^&*(&^%$" straight through to the
+                          payment record (CBC #183). Filtering beats a
+                          submit-time error: the character simply never appears,
+                          so there is nothing to correct. */}
                       <Input value={payForm.bank_name} placeholder="Bank you paid from"
-                        onChange={e => setPayField('bank_name', e.target.value)} />
+                        maxLength={150}
+                        onChange={e => setPayField('bank_name', e.target.value.replace(/[^A-Za-z ]/g, ''))} />
                     </FormGroup>
                   </Col>
                   <Col md={6}>
                     <FormGroup className="mb-0">
                       <Label className="ep-field-label">UTR / Cheque Number <span className="text-danger">*</span></Label>
-                      <Input value={payForm.utr_cheque_number} maxLength={22}
+                      {/* Digits only, up to 12 (CBC #184). The field used to
+                          accept any shape on the reasoning that a UPI reference
+                          is not a UTR — but that let "#$%&*()" be filed as a
+                          payment reference, which is unusable when Finance goes
+                          to match the transfer. */}
+                      <Input value={payForm.utr_cheque_number} maxLength={12}
+                        inputMode="numeric"
                         placeholder="UPI ref or cheque number"
-                        onChange={e => setPayField('utr_cheque_number', e.target.value)} />
-                      {/* No format rule — a UPI reference isn't a UTR and can
-                          carry any shape, so only presence is enforced. */}
-                      <small className="text-muted">UPI reference or cheque number.</small>
+                        onChange={e => setPayField('utr_cheque_number', e.target.value.replace(/\D/g, '').slice(0, 12))} />
+                      <small className="text-muted">Digits only, up to 12.</small>
                     </FormGroup>
                   </Col>
                   <Col xs={12}>
@@ -899,8 +932,8 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
               <Row className="g-3">
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Salary Payment Mode</Label>
-                    <Input
+                    <Label className="ep-field-label">Salary Payment Mode <span className="text-danger">*</span></Label>
+                    <Input className={`ep-input${bankInv('salary_payment_mode')}`}
                       type="select"
                       value={bankForm.salary_payment_mode || 'bank'}
                       onChange={e => setBankField('salary_payment_mode', e.target.value)}
@@ -909,76 +942,85 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                       <option value="cheque">Cheque</option>
                       <option value="cash">Cash</option>
                     </Input>
+                    {bankErr('salary_payment_mode')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
                     <Label className="ep-field-label">Bank Name <span className="text-danger">*</span></Label>
-                    <Input
+                    <Input className={`ep-input${bankInv('bank_name')}`}
                       value={bankForm.bank_name || ''}
                       maxLength={150}
-                      onChange={e => setBankField('bank_name', e.target.value)}
+                      // Same letters-and-spaces rule as the payment form's bank
+                      // name — one field, two screens, one shape.
+                      onChange={e => setBankField('bank_name', e.target.value.replace(/[^A-Za-z ]/g, ''))}
                       placeholder="e.g. HDFC Bank"
                     />
+                    {bankErr('bank_name')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
                     <Label className="ep-field-label">Account Number <span className="text-danger">*</span></Label>
-                    <Input
+                    <Input className={`ep-input${bankInv('bank_account_number')}`}
                       value={bankForm.bank_account_number || ''}
                       maxLength={30}
                       onChange={e => setBankField('bank_account_number', e.target.value)}
                       placeholder="Account number"
                     />
+                    {bankErr('bank_account_number')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
                     <Label className="ep-field-label">IFSC Code <span className="text-danger">*</span></Label>
-                    <Input
+                    <Input className={`ep-input${bankInv('ifsc_code')}`}
                       value={bankForm.ifsc_code || ''}
                       maxLength={11}
                       onChange={e => setBankField('ifsc_code', e.target.value.toUpperCase())}
                       placeholder="e.g. HDFC0001234"
                     />
+                    {bankErr('ifsc_code')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Name on Account</Label>
-                    <Input
+                    <Label className="ep-field-label">Name on Account <span className="text-danger">*</span></Label>
+                    <Input className={`ep-input${bankInv('account_holder_name')}`}
                       value={bankForm.account_holder_name || ''}
                       maxLength={150}
                       onChange={e => setBankField('account_holder_name', e.target.value)}
                       placeholder="Account holder name"
                     />
+                    {bankErr('account_holder_name')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Branch</Label>
-                    <Input
+                    <Label className="ep-field-label">Branch <span className="text-danger">*</span></Label>
+                    <Input className={`ep-input${bankInv('bank_branch')}`}
                       value={bankForm.bank_branch || ''}
                       maxLength={150}
                       onChange={e => setBankField('bank_branch', e.target.value)}
                       placeholder="Branch name"
                     />
+                    {bankErr('bank_branch')}
                   </FormGroup>
                 </Col>
                 <Col md={6}>
                   <FormGroup className="mb-0">
-                    <Label className="ep-field-label">Account Type</Label>
-                    <Input
+                    <Label className="ep-field-label">Account Type <span className="text-danger">*</span></Label>
+                    <Input className={`ep-input${bankInv('bank_account_type')}`}
                       type="select"
                       value={bankForm.bank_account_type || ''}
                       onChange={e => setBankField('bank_account_type', e.target.value)}
                     >
-                      <option value="">—</option>
+                      <option value="">Select account type</option>
                       <option value="Savings">Savings</option>
                       <option value="Current">Current</option>
                       <option value="Salary">Salary</option>
                     </Input>
+                    {bankErr('bank_account_type')}
                   </FormGroup>
                 </Col>
               </Row>
