@@ -1045,6 +1045,15 @@ export default function HrPayroll() {
     const pendingReview  = rows.filter(r => r.status === 'Pending Review').length;
     const onHold         = rows.filter(r => r.status === 'On Hold').length;
     const totalPayroll   = rows.reduce((s, r) => s + r.netPay, 0);
+    /* How much of that headline is NOT settled. "Total Payroll" is captioned
+       "Net disbursable", but it sums every row — including slips the engine
+       parked as Pending Review (a cycle with no attendance recorded lands
+       here) or On Hold. Those amounts can still move, so the caption has to
+       say how much of the figure is provisional rather than presenting the
+       whole of it as final. */
+    const provisionalPayroll = rows
+      .filter(r => r.status === 'Pending Review' || r.status === 'On Hold')
+      .reduce((s, r) => s + r.netPay, 0);
     const avgCtc         = totalEmployees ? Math.round(rows.reduce((s, r) => s + r.ctc, 0) / totalEmployees) : 0;
     const attMismatch    = rows.filter(r => r.attMismatch || r.attSource === 'Review').length;
     const syncedEmployees    = rows.filter(r => r.attSource === 'Biometric').length;
@@ -1065,6 +1074,7 @@ export default function HrPayroll() {
       pendingReview,
       onHold,
       totalPayroll,
+      provisionalPayroll,
       avgCtc,
       attMismatch,
       syncedEmployees,
@@ -1133,7 +1143,44 @@ export default function HrPayroll() {
     { header: 'Designation', accessorKey: 'designation', meta: { width: '12%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
     { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
-    { header: 'Net Pay',    accessorKey: 'netPay',     meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-bold">₹{fmtINR(info.row.original.netPay)}</span> },
+    {
+      header: 'Net Pay',
+      accessorKey: 'netPay',
+      meta: { width: '9%', align: 'right' },
+      /* A slip the engine has not settled (On Hold, or Pending Review — which
+         is what a cycle with no attendance recorded produces) still carried an
+         exact rupee figure in bold, reading as a final, payable amount. The
+         number is a real computation, so hiding it would be worse: it is what
+         HR needs in order to judge the exception. It just must not claim to be
+         final. Dim it and mark it Provisional until the slip is settled. */
+      cell: info => {
+        const r = info.row.original;
+        const provisional = r.status === 'Pending Review' || r.status === 'On Hold';
+        return (
+          <div className="d-flex flex-column align-items-end" style={{ lineHeight: 1.25 }}>
+            <span
+              className={`fs-13 ${provisional ? 'fw-semibold' : 'fw-bold'}`}
+              style={provisional ? { color: 'var(--vz-secondary-color)' } : undefined}
+              title={provisional
+                ? `Provisional — this slip is ${r.status}. The figure is a live calculation and can change once the exception is resolved.`
+                : undefined}
+            >
+              ₹{fmtINR(r.netPay)}
+            </span>
+            {provisional && (
+              <span
+                style={{
+                  fontSize: 9, fontWeight: 800, letterSpacing: '0.04em',
+                  textTransform: 'uppercase', color: '#a06f00',
+                }}
+              >
+                Provisional
+              </span>
+            )}
+          </div>
+        );
+      },
+    },
     {
       /* Att. = days actually PRESENT per the attendance record (not paid_days,
          which also counts paid leave/holidays). Denominator is the cycle's
@@ -1808,7 +1855,12 @@ export default function HrPayroll() {
           }
 
           const subtitle =
-            k.key === 'totalPayroll'   ? `Net disbursable · ${cycle.label}` :
+            k.key === 'totalPayroll'
+              ? (counts.provisionalPayroll > 0
+                  // Don't call the figure "net disbursable" while part of it is
+                  // still an unsettled estimate — name the provisional slice.
+                  ? `Incl. ${fmtINRShort(counts.provisionalPayroll)} provisional · ${cycle.label}`
+                  : `Net disbursable · ${cycle.label}`) :
             k.key === 'readyProcessed' ? 'Employees processed' :
             k.key === 'pendingReview'  ? 'Awaiting action' :
                                          'Blocked — resolve first';
