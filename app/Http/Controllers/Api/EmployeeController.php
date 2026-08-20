@@ -1515,7 +1515,38 @@ class EmployeeController extends Controller
         // reads (salary / PF / gender / state / bank / joining / status), push
         // the change into any non-locked payslip already generated for this
         // employee so payroll stays in sync everywhere. Locked runs are frozen.
-        $payrollFields = ['annual_salary', 'enable_payroll', 'pf_eligible', 'gender', 'state_id',
+        /* Mirror the applicability flags onto the ACTIVE salary structure.
+         *
+         * PF is charged only when BOTH the structure and the employee say so:
+         *
+         *     if ($pfApplicable && $employee->pf_eligible && …)
+         *
+         * where $pfApplicable comes from the structure. Saving a structure
+         * already writes its flags back to the employee, but nothing did the
+         * reverse — so switching PF Applicable from No to Yes on the employee
+         * left the structure's flag at false and PF stayed ₹0 on every payslip
+         * and in the Salary Report, with no clue why. The recompute below then
+         * faithfully recomputed the same zero. (#90)
+         *
+         * ESI is the same pairing and is mirrored with it. */
+        if (array_key_exists('pf_eligible', $data) || array_key_exists('esi_applicable', $data)) {
+            $activeStructure = \App\Models\SalaryStructure::where('employee_id', $row->id)
+                ->where('status', 'active')->orderByDesc('version')->first();
+            if ($activeStructure) {
+                $patch = [];
+                if (array_key_exists('pf_eligible', $data)) {
+                    $patch['pf_applicable'] = (bool) $row->pf_eligible;
+                }
+                if (array_key_exists('esi_applicable', $data)) {
+                    $patch['esi_applicable'] = strtolower((string) $row->esi_applicable) === 'yes';
+                }
+                if ($patch) {
+                    $activeStructure->update($patch);
+                }
+            }
+        }
+
+        $payrollFields = ['annual_salary', 'enable_payroll', 'pf_eligible', 'esi_applicable', 'gender', 'state_id',
             'date_of_joining', 'status', 'bank_account_number', 'ifsc_code', 'salary_payment_mode'];
         if (!empty(array_intersect($payrollFields, array_keys($data)))) {
             try {

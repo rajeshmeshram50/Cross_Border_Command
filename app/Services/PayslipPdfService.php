@@ -100,6 +100,17 @@ class PayslipPdfService
                 'payable_int' => (int) round((float) $slip->paid_days),
                 'working'     => $this->num($slip->working_days),
                 'lop'         => $this->num($slip->lop_days),
+                /* Calendar length of the pay period (#91). The slip carried
+                   payable / working / LOP days but never the month's own
+                   length, so there was nothing to read the other three
+                   against — "Total Working Days 11" on an August slip gives
+                   the reader no way to tell that August has 31 days and the
+                   employee was only employed for part of it. Taken from the
+                   period rather than the run date, so a slip reprinted later
+                   still reports its own month. */
+                'in_month'    => optional($slip->period)->period_start
+                    ? \Carbon\Carbon::parse($slip->period->period_start)->daysInMonth
+                    : null,
             ],
             'earnings'        => $earnings,
             'deductions'      => $deductions,
