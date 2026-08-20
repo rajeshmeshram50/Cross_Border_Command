@@ -216,20 +216,29 @@ export default function HrPayroll() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // When we jump out of the "Payroll Execution Blocked" popup to fix an issue
-  // (Open Employee / Go to Attendance), tag the navigation with a return
-  // context. The destination's Back/Close reads `returnPage` and comes back
-  // here instead of the generic Active-Employees list (#38). `reopenRun` then
-  // re-surfaces the popup so the payroll-execution context is preserved.
-  const returnCtx = { returnPage: 'hr-payroll', returnData: { reopenRun: true } };
+  /* When we jump out of the "Payroll Execution Blocked" popup to fix an issue
+     (Open Employee / Go to Attendance), tag the navigation with a return
+     context. The destination's Back/Close reads `returnPage` and comes back
+     here instead of the generic Active-Employees list (#38). `reopenRun` then
+     re-surfaces the popup so the payroll-execution context is preserved.
+
+     `cycle` travels with it. Coming back re-mounts this page, and the mount
+     effect picks the cycle from scratch — it takes the first In Progress month
+     of the year, and the strip runs oldest-first, so someone who left from June
+     landed on January. Carrying the month back is what makes the return land
+     where they were. Built at click time so it reflects the cycle on screen. */
+  const buildReturnCtx = () => ({
+    returnPage: 'hr-payroll',
+    returnData: { reopenRun: true, cycleKey },
+  });
 
   const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string; encryptedId?: string | null }) => {
     setRunOpen(false);
     if (action.kind === 'attendance') {
-      navigate('/hr/attendance', { state: returnCtx });
+      navigate('/hr/attendance', { state: buildReturnCtx() });
     } else if (action.kind === 'employee' && (issue.encryptedId || issue.empCode)) {
       // Prefer the opaque encrypted token so the URL never exposes EMP-###.
-      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`, { state: returnCtx });
+      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`, { state: buildReturnCtx() });
     }
   };
 
@@ -684,6 +693,19 @@ export default function HrPayroll() {
           // cycle belongs to a prior year (e.g. 2026 not yet started). Within
           // the current year, snap the cycle to: this year's active cycle →
           // the current month → this year's first month.
+          /* Returning from an employee / attendance detour restores the cycle
+             the user left from. Without this the picker below runs and takes
+             the year's FIRST In Progress month — January on most tenants — so
+             closing Employee Details dropped someone working on June back to
+             January. */
+          const returned = (location.state as { cycleKey?: string } | null)?.cycleKey;
+          const returnedTo = returned ? list.find(c => monthKey(c.year!, c.month! - 1) === returned) : null;
+          if (returnedTo) {
+            setSelectedYear(returnedTo.year!);
+            setCycleKey(returned!);
+            return;
+          }
+
           const curY = today.getFullYear();
           const curM = today.getMonth() + 1;
           setSelectedYear(curY);
