@@ -1247,7 +1247,7 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '28%', wrap: true },
+      meta: { width: '25%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1318,7 +1318,7 @@ export default function HrPayroll() {
     {
       header: () => <div className="text-center">Mismatch</div>,
       accessorKey: 'mismatch',
-      meta: { width: '12%', align: 'center' },
+      meta: { width: '11%', align: 'center' },
       cell: info => {
         const m = info.row.original.mismatch;
         return m ? <span style={{ color: '#b1401d', fontWeight: 600 }} className="fs-13">{m}</span> : <span className="text-muted">—</span>;
@@ -2040,6 +2040,10 @@ export default function HrPayroll() {
               <DataTable<PayrollRow>
                 data={filtered}
                 columns={biometricColumns}
+                /* Percentage, matching the other three tabs — the 56px default
+                   would put a pixel column into a percentage budget, which is
+                   the layout drift fixed in #66. */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 accent="violet"
                 className="pay-tbl-att"
                 fitToViewport
