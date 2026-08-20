@@ -34,6 +34,33 @@ use RuntimeException;
  */
 class PayrollService
 {
+    /**
+     * Memoised results of the "does this optional table/column exist?" probes.
+     *
+     * The engine guards every optional source (overtime, bonus, holidays,
+     * advances, PT slabs …) with a Schema check, and those guards sit INSIDE
+     * the per-employee loop. Each call is a real round-trip to the information
+     * schema, so a 13-employee run fired 164 of them — 43% of the entire run's
+     * queries — all re-asking questions whose answer cannot change while the
+     * run is executing. Cached per service instance (one instance handles one
+     * run), so a migration between requests is still picked up.
+     */
+    private array $schemaCache = [];
+
+    /** Run-scoped memo for read-only master lookups (PT slabs, holiday lists). */
+    private array $masterCache = [];
+
+    private function hasTable(string $table): bool
+    {
+        return $this->schemaCache["t:{$table}"] ??= Schema::hasTable($table);
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        return $this->schemaCache["c:{$table}.{$column}"]
+            ??= ($this->hasTable($table) && Schema::hasColumn($table, $column));
+    }
+
     // EPF statutory wage ceiling — PF is 12% of basic capped at this.
     private const PF_WAGE_CEILING = 15000;
     private const PF_RATE         = 0.12;
@@ -163,6 +190,10 @@ class PayrollService
      */
     public function recomputeEmployeePayslips(int $employeeId): int
     {
+        // Called straight after a salary structure / attendance edit — reread the
+        // master data rather than serving a memo built before that edit.
+        $this->masterCache = [];
+
         $employee = Employee::find($employeeId);
         if (!$employee) {
             return 0;
@@ -301,7 +332,7 @@ class PayrollService
      */
     public function computeFnf(Employee $employee, array $opts = []): array
     {
-        $exit = Schema::hasTable('employee_exits')
+        $exit = $this->hasTable('employee_exits')
             ? DB::table('employee_exits')->where('employee_id', $employee->id)->first()
             : null;
         $lwd = $exit && $exit->last_working_day ? Carbon::parse($exit->last_working_day) : Carbon::now();
@@ -374,7 +405,7 @@ class PayrollService
      *  approved amount is treated as recoverable at settlement). */
     private function outstandingAdvances(int $employeeId): float
     {
-        if (!Schema::hasTable('advance_requests')) {
+        if (!$this->hasTable('advance_requests')) {
             return 0;
         }
         return (float) DB::table('advance_requests')
@@ -389,7 +420,7 @@ class PayrollService
     {
         $employees = $this->eligibleEmployees($period);
         $total = $employees->count();
-        if ($total === 0 || !Schema::hasTable('attendances')) {
+        if ($total === 0 || !$this->hasTable('attendances')) {
             return ['total' => $total, 'with_attendance' => 0, 'missing' => $total];
         }
         $withAttendance = DB::table('attendances')
@@ -923,7 +954,7 @@ class PayrollService
      */
     private function resignationMap(array $employeeIds): array
     {
-        if (empty($employeeIds) || !Schema::hasTable('employee_exits')) {
+        if (empty($employeeIds) || !$this->hasTable('employee_exits')) {
             return [];
         }
         return DB::table('employee_exits')
@@ -947,7 +978,7 @@ class PayrollService
      */
     private function paidInPreviousPeriod(PayrollPeriod $period, array $employeeIds): array
     {
-        if (empty($employeeIds) || !Schema::hasTable('payslips')) {
+        if (empty($employeeIds) || !$this->hasTable('payslips')) {
             return [];
         }
         $prev = Carbon::create((int) $period->year, (int) $period->month, 1)->subMonth();
@@ -978,7 +1009,7 @@ class PayrollService
      */
     private function exitMap(array $employeeIds): array
     {
-        if (empty($employeeIds) || !Schema::hasTable('employee_exits')) {
+        if (empty($employeeIds) || !$this->hasTable('employee_exits')) {
             return [];
         }
         return DB::table('employee_exits')
@@ -998,6 +1029,10 @@ class PayrollService
      */
     public function generate(PayrollPeriod $period, array $ctx): PayrollRun
     {
+        // Start from a cold master cache: this run reads whatever is on disk NOW,
+        // not what a previous call on this instance happened to see.
+        $this->masterCache = [];
+
         if (!$period->attendance_finalized) {
             throw new RuntimeException('Payroll cannot be processed because attendance is not finalized.');
         }
@@ -1325,7 +1360,7 @@ class PayrollService
             $employee->resolveShiftWindow()[0],
             $shortPolicy
         );
-        $leave = $this->leaveAggregates($employee->id, $winStart, $winEnd);
+        $leave = $this->leaveAggregates($employee, $winStart, $winEnd);
         // Holidays from the employee's assigned holiday group that fall on a
         // working day in the active window — paid like leave, never LOP.
         $holidayDays = $this->holidayAggregates($employee, $winStart, $winEnd);
@@ -2316,7 +2351,7 @@ class PayrollService
      */
     private function holidayAggregates($employee, Carbon $start, Carbon $end): float
     {
-        if (!Schema::hasTable('holidays')) {
+        if (!$this->hasTable('holidays')) {
             return 0.0;
         }
         $groupId = $employee->holiday_group_id ?? null;
@@ -2375,7 +2410,7 @@ class PayrollService
      */
     private function holidayDateSet($employee, Carbon $start, Carbon $end): array
     {
-        if (!Schema::hasTable('holidays')) {
+        if (!$this->hasTable('holidays')) {
             return [];
         }
         $groupId = $employee->holiday_group_id ?? null;
@@ -2383,7 +2418,11 @@ class PayrollService
             return [];
         }
 
-        $rows = DB::table('holidays')
+        /* The raw calendar depends only on the group, so cache it per group and
+         * let the windowing below run on the cached rows — employees sharing a
+         * holiday group no longer each re-read the same table (and restDayKind
+         * calls this once per DAY per employee). */
+        $rows = $this->masterCache["hol:{$groupId}"] ??= DB::table('holidays')
             ->where('holiday_group_id', $groupId)
             ->whereNull('deleted_at')
             ->get(['date', 'is_recurring']);
@@ -2421,7 +2460,7 @@ class PayrollService
         ?string $shiftStart = null,
         array $shortHours = [],
     ): array {
-        if (!Schema::hasTable('attendances')) {
+        if (!$this->hasTable('attendances')) {
             return [
                 'present' => 0,
                 'late' => 0,
@@ -2590,7 +2629,7 @@ class PayrollService
         }
 
         $punchesByAttendance = [];
-        if ($ids && Schema::hasTable('attendance_punches')) {
+        if ($ids && $this->hasTable('attendance_punches')) {
             $punches = DB::table('attendance_punches')
                 ->whereIn('attendance_id', $ids)
                 ->orderBy('attendance_id')->orderBy('punched_at')
@@ -2711,15 +2750,18 @@ class PayrollService
      * Approved leave in the window split into paid vs unpaid by the leave
      * type's paid_unpaid flag (Rule 3). Days clipped to the active window.
      */
-    private function leaveAggregates(int $employeeId, Carbon $start, Carbon $end): array
+    /* Takes the Employee, not its id: every caller already holds the loaded
+     * model, so re-fetching it here was one extra SELECT per employee per run
+     * purely to read `weekly_off`. */
+    private function leaveAggregates(Employee $employee, Carbon $start, Carbon $end): array
     {
-        if (!Schema::hasTable('leave_requests')) {
+        if (!$this->hasTable('leave_requests')) {
             return ['paid' => 0, 'unpaid' => 0, 'sandwich_lop' => 0, 'paid_dates' => [], 'unpaid_dates' => []];
         }
 
+        $employeeId = $employee->id;
         // The employee's own weekly-off pattern decides which days inside a
         // leave span are chargeable — same rule LeaveRequestController uses.
-        $employee = Employee::find($employeeId);
         $weeklyOffLabel = (string) ($employee->weekly_off ?? '');
 
         $rows = DB::table('leave_requests')
@@ -2868,7 +2910,7 @@ class PayrollService
             return [];
         }
         foreach (['master_leave_types', 'leave_types'] as $table) {
-            if (Schema::hasTable($table) && Schema::hasColumn($table, 'paid_unpaid')) {
+            if ($this->hasTable($table) && $this->hasColumn($table, 'paid_unpaid')) {
                 return DB::table($table)->whereIn('id', $ids)->pluck('paid_unpaid', 'id')->all();
             }
         }
@@ -3087,8 +3129,18 @@ class PayrollService
      */
     private function ptSlabsFor(Employee $employee, ?string $state): array
     {
-        if ($state === null || !Schema::hasTable('master_pt_slabs')) {
+        if ($state === null || !$this->hasTable('master_pt_slabs')) {
             return [];
+        }
+
+        /* Statutory master data — identical for every employee sharing a
+         * state/client/branch, yet it was re-queried once per payslip. Cached
+         * for the life of the run (read-only reference data; a PT slab edited
+         * mid-run would not be picked up until the next run, which is the same
+         * consistency the rest of the run already assumes). */
+        $ck = "pt:{$state}:{$employee->client_id}:{$employee->branch_id}";
+        if (array_key_exists($ck, $this->masterCache)) {
+            return $this->masterCache[$ck];
         }
 
         $rows = DB::table('master_pt_slabs')
@@ -3105,7 +3157,7 @@ class PayrollService
         // seeded ladder would leave overlapping or gapped bands.
         $own = array_values(array_filter($rows, fn($r) => $r->client_id !== null));
 
-        return $own !== [] ? $own : $rows;
+        return $this->masterCache[$ck] = ($own !== [] ? $own : $rows);
     }
 
     /**
@@ -3120,7 +3172,7 @@ class PayrollService
             return trim($state);
         }
 
-        if ($employee->state_id && Schema::hasTable('master_states')) {
+        if ($employee->state_id && $this->hasTable('master_states')) {
             $name = DB::table('master_states')->where('id', $employee->state_id)->value('name');
             if (is_string($name) && trim($name) !== '') {
                 return trim($name);
@@ -3160,10 +3212,10 @@ class PayrollService
     private function advanceRecovery(int $employeeId, PayrollPeriod $period, float $cap = INF): float
     {
         $this->lastRecoveryBreakdown = [];
-        if (!Schema::hasTable('advance_requests')) {
+        if (!$this->hasTable('advance_requests')) {
             return 0;
         }
-        $hasLedger = Schema::hasTable('advance_recovery_ledger');
+        $hasLedger = $this->hasTable('advance_recovery_ledger');
         $room  = max(0.0, $cap);
         $total = 0.0;
 
@@ -3389,7 +3441,7 @@ class PayrollService
      */
     private function recordRecoveryLedger(PayrollPeriod $period, int $employeeId, array $breakdown): void
     {
-        if (empty($breakdown) || !Schema::hasTable('advance_recovery_ledger')) {
+        if (empty($breakdown) || !$this->hasTable('advance_recovery_ledger')) {
             return;
         }
         foreach ($breakdown as $b) {
@@ -3438,7 +3490,7 @@ class PayrollService
         $unset = $name === '' || strcasecmp($name, 'Not Applicable') === 0;
         $none  = ['name' => $unset ? null : $name, 'multiplier' => 1.0, 'found' => false];
 
-        if ($unset || !Schema::hasTable('master_overtime_rates')) {
+        if ($unset || !$this->hasTable('master_overtime_rates')) {
             return $none;
         }
 
@@ -3549,7 +3601,7 @@ class PayrollService
         // Attendance → "Overtime Applicable"). Staying past the shift end
         // earns nothing for an employee it isn't applicable to, so detection
         // never runs for them.
-        if (!$employee->overtimeApplicable() || !Schema::hasTable('attendances')) {
+        if (!$employee->overtimeApplicable() || !$this->hasTable('attendances')) {
             return $blank;
         }
 
@@ -3825,7 +3877,7 @@ class PayrollService
     /** Approved overtime adjustment rows for the cycle (tenant-scoped). */
     private function approvedOvertimeRows(int $employeeId, PayrollPeriod $period): array
     {
-        if (!Schema::hasTable('payroll_adjustments')) {
+        if (!$this->hasTable('payroll_adjustments')) {
             return [];
         }
         return DB::table('payroll_adjustments')
@@ -3862,7 +3914,7 @@ class PayrollService
      */
     private function approvedAdjustments(int $employeeId, PayrollPeriod $period, array $types): float
     {
-        if (!Schema::hasTable('payroll_adjustments')) {
+        if (!$this->hasTable('payroll_adjustments')) {
             return 0;
         }
         return (float) DB::table('payroll_adjustments')
@@ -3883,7 +3935,7 @@ class PayrollService
     /** Approved adjustment line items (for the payslip earnings/deductions). */
     private function adjustmentLines(int $employeeId, PayrollPeriod $period, array $types): array
     {
-        if (!Schema::hasTable('payroll_adjustments')) {
+        if (!$this->hasTable('payroll_adjustments')) {
             return [];
         }
         return DB::table('payroll_adjustments')
@@ -3911,7 +3963,7 @@ class PayrollService
         $departments = [];
         $designations = [];
         foreach ([['master_departments', 'departments'], ['master_designations', 'designations']] as [$table, $key]) {
-            if (Schema::hasTable($table) && Schema::hasColumn($table, 'name')) {
+            if ($this->hasTable($table) && $this->hasColumn($table, 'name')) {
                 ${$key} = DB::table($table)->pluck('name', 'id')->all();
             }
         }
