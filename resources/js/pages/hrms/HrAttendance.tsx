@@ -158,6 +158,13 @@ const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${String(m % 60).padSt
 const fmtLateDuration = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min`;
 // Break Taken = idle time inside the work window (gross − effective).
 const fmtDurHm = (m: number) => m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m} min`;
+/* Hours in the same shape the server formats `worked` in ("7h 05m", em dash at
+   zero). Effective and Gross sit side by side and get compared, so they must be
+   written identically — fmtDurHm above switches to "45 min" under the hour,
+   which would make one column change units and not the other. */
+const fmtWorkHm = (m: number) => m > 0
+  ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`
+  : '—';
 // Grace window (minutes after shift start) before an arrival counts as late —
 // mirrors the server rule in AttendanceController (`minutesBetween > 10`). Below
 // this an arrival is on-time; at/above it we show the minutes-late measured from
@@ -1204,12 +1211,22 @@ function LogsRequestsCard({
                               {isAbsent ? <span className="text-muted">—</span> : (
                                 <div className="att-log-eff">
                                   <EffectiveDonut effective={l.effectiveMinutes || 0} expected={l.expectedMinutes || 9 * 60} />
-                                  <span className="att-log-eff-text">{l.worked}{(l.effectiveMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</span>
+                                  {/* Each column renders ITS OWN figure.
+                                      Both used to print `l.worked`, which is the
+                                      server's formatting of effectiveMinutes
+                                      alone — so Gross echoed Effective on every
+                                      row and the real first-in→last-out span was
+                                      never shown, however long the breaks were
+                                      (CBC #58). The backend has always sent the
+                                      two separately; only this cell was wrong.
+                                      Break Taken below already read grossMinutes
+                                      directly, which is why it stayed correct. */}
+                                  <span className="att-log-eff-text">{fmtWorkHm(l.effectiveMinutes || 0)}{(l.effectiveMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</span>
                                 </div>
                               )}
                             </td>
                             <td className={isAbsent ? 'text-muted' : ''}>
-                              {isAbsent ? '—' : <>{l.worked}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
+                              {isAbsent ? '—' : <>{fmtWorkHm(l.grossMinutes || 0)}{(l.grossMinutes || 0) > (l.expectedMinutes || 9 * 60) ? ' +' : ''}</>}
                             </td>
                             <td className={isAbsent ? 'text-muted' : ''}>
                               {/* Break Taken = gross − effective (idle time inside the
