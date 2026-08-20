@@ -12505,47 +12505,6 @@
             animation: emp-spin-rotate 0.7s linear infinite;
             font-size: 16px;
           }
-          /* Step-change sheen — one 500ms pass, then gone.
-
-             Sits on a non-scrolling wrapper rather than on the scroll box
-             itself: an overlay inside a scrollable element scrolls away with
-             the content, so it would slide off the moment the panel moved. */
-          .emp-step-sheen {
-            position: absolute;
-            inset: 0;
-            z-index: 5;
-            pointer-events: none;
-            border-radius: 12px;
-            background: linear-gradient(100deg,
-              transparent 30%,
-              rgba(124,92,252,0.07) 45%,
-              rgba(255,255,255,0.55) 50%,
-              rgba(124,92,252,0.07) 55%,
-              transparent 70%);
-            background-size: 240% 100%;
-            /* Matches SHEEN_ON_STEP_MS in HrEmployees.tsx. If the CSS finishes
-               first the overlay sits there invisible for the remainder, which
-               looks like nothing happened at all. */
-            animation: emp-step-sheen-sweep 5000ms ease-out 1 forwards;
-          }
-          @keyframes emp-step-sheen-sweep {
-            from { background-position: 130% 0; }
-            to   { background-position: -130% 0; }
-          }
-          [data-bs-theme="dark"] .emp-step-sheen,
-          [data-layout-mode="dark"] .emp-step-sheen {
-            background: linear-gradient(100deg,
-              transparent 30%,
-              rgba(124,92,252,0.10) 45%,
-              rgba(255,255,255,0.10) 50%,
-              rgba(124,92,252,0.10) 55%,
-              transparent 70%);
-            background-size: 240% 100%;
-          }
-          @media (prefers-reduced-motion: reduce) {
-            .emp-step-sheen { animation: none; background: none; }
-          }
-
           /* One busy indicator only — the Save button. A top sweep bar, a
              stepper shimmer and a button spinner all running at once read as
              three separate things happening rather than one save. */

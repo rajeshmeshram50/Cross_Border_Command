@@ -289,15 +289,11 @@ type ExpiryDays = 3 | 7 | 15;
 /* Per-screen so other tables can adopt the same pattern without colliding. */
 const PER_PAGE_KEY = 'cbc.hr.employees.perPage';
 
-/* How long the body sheen runs. Both in one place so the timing can be judged
-   on screen instead of guessed at.
-
-   SHEEN_ON_STEP_MS is deliberately long right now (5s) so the effect can
-   actually be watched between step 1 and step 2 — it is a review value, not a
-   shipping one. A step transition wants ~500ms; anything above about 800ms
-   stops reading as a transition and starts reading as the form being stuck. */
-const SHEEN_ON_LOAD_MS = 100;
-const SHEEN_ON_STEP_MS = 5000;   // REVIEW VALUE — restore to 500 before shipping
+/* How long the step skeleton stands in while a panel is swapped.
+   Long enough to read as a transition, short enough not to read as a stall —
+   past roughly 800ms a skeleton stops meaning "changing" and starts meaning
+   "stuck". */
+const STEP_SHIMMER_MS = 500;
 
 /* Normally the /hr/employees page. It is ALSO mountable as just its Add/Edit
    wizard, which is what `embedEditCode` does — the Onboarding hub renders it
@@ -1458,26 +1454,16 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   };
 
   const [returnToOnClose, setReturnToOnClose] = useState<string | null>(null);
-  /* A sheen over the body whenever its contents are replaced, in two lengths.
+  /* Skeleton while a step's panel is swapped.
 
-     500ms on steps 2-4: arriving at one of those swaps a whole panel of fields
-     at once, and the swap is instant enough to read as a flicker. The movement
-     makes it read as a transition instead.
-
-     100ms on step 1: nothing is being swapped there — the fields are simply
-     filled in once the record lands. But an instant fill is its own problem:
-     against a fast API the skeleton is replaced so abruptly that there is no
-     signal the data arrived at all. A brief pass marks the moment without
-     pretending to be a wait.
-
-     Keyed on empLoading as well as empStep, so the step-1 pass runs when the
-     record LANDS rather than when the dialog opens. */
-  const [stepSheen, setStepSheen] = useState(false);
+     Only steps 2-4: step 1 is not swapped into place, it is FILLED IN once the
+     record lands, and empLoading already shows the skeleton for that. Flashing
+     a second skeleton at it would read as a glitch rather than a transition. */
+  const [stepShimmer, setStepShimmer] = useState(false);
   useEffect(() => {
-    // The skeleton owns the screen while the record is still in flight.
-    if (!empOpen || empLoading) { setStepSheen(false); return; }
-    setStepSheen(true);
-    const t = setTimeout(() => setStepSheen(false), empStep === 1 ? SHEEN_ON_LOAD_MS : SHEEN_ON_STEP_MS);
+    if (!empOpen || empLoading || empStep === 1) { setStepShimmer(false); return; }
+    setStepShimmer(true);
+    const t = setTimeout(() => setStepShimmer(false), STEP_SHIMMER_MS);
     return () => clearTimeout(t);
   }, [empStep, empOpen, empLoading]);
   const closeEmp = () => {
@@ -4268,8 +4254,6 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               body as feedback), and the disabled <fieldset> below kills
               keyboard edits — otherwise users could keep typing during the
               PUT and the form looked saved while holding unsaved changes. */}
-          <div style={{ position: 'relative' }}>
-          {stepSheen && <div className="emp-step-sheen" aria-hidden="true" />}
           <div
             ref={empScrollRef}
             aria-busy={saving}
@@ -4281,8 +4265,11 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             <fieldset disabled={saving || empLoading} style={{ border: 0, margin: 0, padding: 0, minInlineSize: 0 }}>
               {/* Edit opens on the click and fetches the record after, so the
                   body stands in for itself until that lands. */}
-              {empLoading && <EmpFormSkeleton />}
-              {!empLoading && (<>
+              {/* One skeleton, two reasons: the record is still loading, or the
+                  step's panel is being swapped. Both are "these fields are not
+                  the ones you are about to see". */}
+              {(empLoading || stepShimmer) && <EmpFormSkeleton />}
+              {!empLoading && !stepShimmer && (<>
               {empStep === 1 && (
                 <>
                   <div className="emp-section">
@@ -5437,7 +5424,6 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               )}
               </>)}
             </fieldset>
-          </div>
           </div>
 
           <div
