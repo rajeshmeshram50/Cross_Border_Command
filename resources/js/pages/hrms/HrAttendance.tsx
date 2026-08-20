@@ -1046,6 +1046,16 @@ function LogsRequestsCard({
   }, []);
 
   const [popoverIdx, setPopoverIdx] = useState<number | null>(null);
+  useEffect(() => {
+    if (popoverIdx === null) return;
+    const close = () => setPopoverIdx(null);
+    window.addEventListener('scroll', close, { capture: true, passive: true });
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, { capture: true } as any);
+      window.removeEventListener('resize', close);
+    };
+  }, [popoverIdx]);
 
   const fmtClock = (raw: string): string => {
     if (!raw || raw === '—') return raw;
