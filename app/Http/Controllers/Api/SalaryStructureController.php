@@ -40,6 +40,17 @@ class SalaryStructureController extends Controller
 
         $eq = Employee::query()
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
+            /* Fully-onboarded staff only — the same gate PayrollService's
+             * eligibleEmployees() applies, so this list means "everyone payroll
+             * will actually pay" rather than "everyone on the books".
+             *
+             * Without it, someone still part-way through onboarding appeared
+             * here with a "Set Salary" action beside fully-onboarded staff,
+             * even though payroll excludes them from every run — HR could
+             * configure a salary that would never be used, and the tab's
+             * "needs setup" badge counted people who did not need it.
+             * Same gate Exit Management and the reporting-manager picker use. */
+            ->where('onboarding_stage_completed', '>=', 6)
             ->orderBy('first_name');
         if ($user && $user->client_id) $eq->where('client_id', $user->client_id);
         if ($branch) $eq->where('branch_id', $branch);
