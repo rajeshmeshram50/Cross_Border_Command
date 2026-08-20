@@ -2188,11 +2188,9 @@ function InitiateOnboardingModal({
     return h ? String(h.id) : '';
   })();
   const roleOpts        = mRoles.map(r => ({ value: String(r.id), label: r.name }));
-  /* Holiday List — only ACTIVE groups are assignable. A group that was
-     deactivated after this employee was assigned to it is appended (flagged
-     "Inactive") so the saved value still renders instead of showing blank. */
   const holidayGroupOpts = mHolidayGroups
     .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
+    .filter(g => Number(g.holidays_count ?? 0) > 0)
     .map(g => ({ value: String(g.id), label: g.name }));
   // (`holidayGroupSelectOpts` — which folds in the saved-but-inactive group —
   // is built below, once the `s1` form state exists.)
@@ -2609,7 +2607,12 @@ function InitiateOnboardingModal({
     const opts = [...holidayGroupOpts];
     if (s1.holiday_list && !opts.some(o => o.value === String(s1.holiday_list))) {
       const g = mHolidayGroups.find(x => String(x.id) === String(s1.holiday_list));
-      if (g) opts.push({ value: String(g.id), label: `${g.name} (Inactive)` });
+      if (g) {
+        const why = String(g.status ?? 'Active').toLowerCase() === 'inactive'
+          ? 'Inactive'
+          : 'No holidays';
+        opts.push({ value: String(g.id), label: `${g.name} (${why})` });
+      }
     }
     return opts;
   })();

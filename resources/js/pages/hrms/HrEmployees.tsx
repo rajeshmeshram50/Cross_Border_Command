@@ -414,9 +414,15 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     [mOvertimeRates],
   );
 
+  /* Only groups that actually HOLD holidays.
+     An empty group is a calendar with no days in it — assigning an employee to
+     one buys them nothing and reads, on their profile, as a holiday list that
+     silently grants no holidays. `holidays_count` comes off the group model
+     already (HolidayGroup::$appends), so this needs no extra request. */
   const holidayGroupOptions = useMemo(
     () => mHolidayGroups
       .filter(g => String(g.status ?? 'Active').toLowerCase() !== 'inactive')
+      .filter(g => Number(g.holidays_count ?? 0) > 0)
       .map(g => ({ value: String(g.id), label: g.name })),
     [mHolidayGroups],
   );
@@ -1031,11 +1037,20 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   }, [leavePerm.canView, mastersWanted]);
   const [eHolidayList, setEHolidayList] = useState('');
   const [eAttendanceTracking, setEAttendanceTracking] = useState(true);
+  /* An employee ALREADY on a group the filters would hide keeps their value —
+     dropping it would silently reassign, or blank, a field the user never
+     touched. The label says which rule hid it, so the reason is on screen
+     rather than a mystery entry. */
   const holidayGroupSelectOptions = useMemo(() => {
     const opts = [...holidayGroupOptions];
     if (eHolidayList && !opts.some(o => o.value === String(eHolidayList))) {
       const g = mHolidayGroups.find(x => String(x.id) === String(eHolidayList));
-      if (g) opts.push({ value: String(g.id), label: `${g.name} (Inactive)` });
+      if (g) {
+        const why = String(g.status ?? 'Active').toLowerCase() === 'inactive'
+          ? 'Inactive'
+          : 'No holidays';
+        opts.push({ value: String(g.id), label: `${g.name} (${why})` });
+      }
     }
     return opts;
   }, [holidayGroupOptions, mHolidayGroups, eHolidayList]);

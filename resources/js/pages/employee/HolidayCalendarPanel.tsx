@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import api from '../../api';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
+import Tooltip from '../../components/ui/Tooltip';
 
 /* ──────────────────────────────────────────────────────────────────────────
  * Assigned Holiday Calendar — surfaces the holidays from the employee's
@@ -91,42 +92,58 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
      paging / sorting / the footer are the component's own — the calendar
      view stays hand-rolled because it's a month grid, not a list. */
   const holidayColumns: DataTableColumn<Holiday>[] = useMemo(() => [
+    /* Name and description are two COLUMNS, not two lines of one.
+       Stacked, the description sat under the name in a 46%-wide cell and both
+       fought for the same space — the name clipped early while half the row's
+       width stood empty to the right, and neither could be scanned down the
+       page. Split, each gets its own width and its own header, and the eye can
+       run down one of them at a time.
+
+       One line each, ellipsis, full text on hover: clipping (rather than
+       wrapping) is what keeps every row the same height whatever is pasted in,
+       and nothing is lost because `title` carries the whole string. */
     {
       header: 'Holiday Name',
       accessorKey: 'name',
-      meta: { width: '46%', wrap: true },
+      meta: { width: '30%', wrap: true },
       cell: info => {
         const h = info.row.original;
-        /* One line each, ellipsis, full text on hover.
-           Both lines used to grow instead of clip — the name with
-           `overflow-wrap: anywhere` and the description with a 2-line clamp —
-           so a long title turned one row into four and pushed the rest of the
-           table off the first screen. Clipping keeps every row the same height
-           whatever is pasted into it, and nothing is lost: the title attribute
-           carries the full text on both lines. */
         return (
-          <>
-            <div className="hcp-name-row">
-              <span className="hcp-name" title={h.name}>{h.name}</span>
-              {h.is_recurring && <span className="hcp-recur">RECURRING</span>}
-            </div>
-            {h.description && (
-              <div className="hcp-desc" title={h.description}>{h.description}</div>
-            )}
-          </>
+          <div className="hcp-name-row">
+            {/* The app's own Tooltip, the same one the Holiday module's action
+                column uses — a native `title` is the browser's, so it looked
+                different here from every other hover on the page and took a
+                second to appear. */}
+            <Tooltip label={h.name}>
+              <span className="hcp-name">{h.name}</span>
+            </Tooltip>
+          </div>
         );
+      },
+    },
+    {
+      header: 'Description',
+      accessorKey: 'description',
+      meta: { width: '28%', wrap: true },
+      cell: info => {
+        const d = String(info.getValue() ?? '').trim();
+        // An em dash, not an empty cell — a blank reads as a rendering fault,
+        // and "no description" is a real answer.
+        return d
+          ? <Tooltip label={d}><span className="hcp-desc">{d}</span></Tooltip>
+          : <span className="hcp-desc hcp-desc--empty">—</span>;
       },
     },
     {
       header: 'Date',
       accessorKey: 'date',
-      meta: { width: '24%' },
+      meta: { width: '22%' },
       cell: info => <span style={{ fontWeight: 600 }}>{fmtDate(String(info.getValue() ?? ''))}</span>,
     },
     {
       header: 'Type',
       accessorKey: 'type',
-      meta: { width: '18%' },
+      meta: { width: '16%' },
       cell: info => {
         const t = String(info.getValue() ?? '');
         const c = typeColor(t);
@@ -159,8 +176,8 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
        the RECURRING pill out of the column instead of clipping. */
     .hcp-name-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
     .hcp-name { font-weight: 700; color: #0f172a; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .hcp-desc { font-size: 11.5px; color: #94a3b8; margin-top: 2px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .hcp-recur { flex-shrink: 0; font-size: 9.5px; font-weight: 800; color: #7c3aed; background: #f3e8ff; border: 1px solid #e9d5ff; border-radius: 999px; padding: 1px 7px; vertical-align: middle; }
+    .hcp-desc { display: block; font-size: 12px; color: #64748b; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hcp-desc--empty { color: #cbd5e1; }
     .hcp-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; border: 1px solid; }
     .hcp-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 
@@ -210,7 +227,10 @@ export default function HolidayCalendarPanel({ employeeId }: { employeeId: strin
 
     /* Table chrome in dark mode is DataTable's own; only cell content here. */
     [data-bs-theme="dark"] .hcp-name { color: #f1f5f9; }
-    [data-bs-theme="dark"] .hcp-recur { background: rgba(139,92,246,.2); color: #c4b5fd; border-color: rgba(139,92,246,.4); }
+    /* The description is its own column now, so it carries its own dark
+       colour rather than inheriting the muted grey it had as a subtitle. */
+    [data-bs-theme="dark"] .hcp-desc { color: #9aa6b2; }
+    [data-bs-theme="dark"] .hcp-desc--empty { color: #4b5563; }
 
     [data-bs-theme="dark"] .hcp-empty { color: #64748b; }
     [data-bs-theme="dark"] .hcp-empty .t { color: #cbd5e1; }
