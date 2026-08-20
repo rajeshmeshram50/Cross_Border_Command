@@ -161,34 +161,44 @@ export default function HrExitManagement() {
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
 
-  const counts = useMemo(() => {
-    const total       = employees.length;
-    const active      = employees.filter(e => e.status === 'Active').length;
-    const inProgress  = employees.filter(e => e.status === 'Exit In Progress').length;
-    const exited      = employees.filter(e => e.status === 'Exited').length;
-    const missing     = employees.filter(e => e.status === 'Missing Details').length;
-    return { total, active, inProgress, exited, missing };
-  }, [employees]);
-
-  const filtered = useMemo(() => {
+  /* The one search predicate, shared with `filtered` below.
+     It lived only inside the table's filter, so the KPI tiles and the tab
+     badges counted the whole roster however narrow the search was — type a name
+     and the cards still read the company total (CBC #103). */
+  const matchesSearch = useCallback((e: EmployeeRow) => {
     const needle = search.trim().toLowerCase();
-    return employees
-      .filter(e => {
-        if (tab === 'active')      return e.status === 'Active' || e.status === 'Missing Details';
-        if (tab === 'in-progress') return e.status === 'Exit In Progress';
-        if (tab === 'exited')      return e.status === 'Exited';
-        return true;
-      })
-      .filter(e => {
-        if (!needle) return true;
-        return (
-          e.name.toLowerCase().includes(needle) ||
-          e.empId.toLowerCase().includes(needle) ||
-          e.department.toLowerCase().includes(needle) ||
-          e.designation.toLowerCase().includes(needle)
-        );
-      });
-  }, [employees, tab, search]);
+    if (!needle) return true;
+    return (
+      e.name.toLowerCase().includes(needle) ||
+      e.empId.toLowerCase().includes(needle) ||
+      e.department.toLowerCase().includes(needle) ||
+      e.designation.toLowerCase().includes(needle)
+    );
+  }, [search]);
+
+  const counts = useMemo(() => {
+    /* Search narrows the cards; the TAB deliberately does not. These tiles are
+       the status breakdown the tabs themselves are cut from — filter them by
+       tab and the tab you are on holds the total while every other tile reads
+       0, which is a breakdown that no longer breaks anything down. */
+    const rows        = employees.filter(matchesSearch);
+    const total       = rows.length;
+    const active      = rows.filter(e => e.status === 'Active').length;
+    const inProgress  = rows.filter(e => e.status === 'Exit In Progress').length;
+    const exited      = rows.filter(e => e.status === 'Exited').length;
+    const missing     = rows.filter(e => e.status === 'Missing Details').length;
+    return { total, active, inProgress, exited, missing };
+  }, [employees, matchesSearch]);
+
+  const filtered = useMemo(() => employees
+    .filter(e => {
+      if (tab === 'active')      return e.status === 'Active' || e.status === 'Missing Details';
+      if (tab === 'in-progress') return e.status === 'Exit In Progress';
+      if (tab === 'exited')      return e.status === 'Exited';
+      return true;
+    })
+    .filter(matchesSearch),
+  [employees, tab, matchesSearch]);
 
   /* Employee names clip to a hard character count rather than to whatever the
      column happens to be — the full name is always one hover away, and a fixed
@@ -3650,11 +3660,42 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 <>
                 <div className="ep-section-label" style={{ marginTop: 14 }}>Finance Approval &amp; Payment</div>
                 <div className="ep-approval-card ep-details-card mb-2">
+                  {/* Says why the two fields above are dead. Without it a greyed
+                      Approval box on a resignation reads as a broken form — the
+                      date it is waiting on is set two stages back. */}
+                  {!fnfPaid && fnfBeforeLwd && (
+                    <div className="ep-settle-note is-due mb-2">
+                      <i className="ri-time-line" />
+                      <span>
+                        Approval and payment open on the last working day
+                        (<strong>{fmtDateShort(lwd)}</strong>). Everything else on this stage saves now —
+                        the exit month is priced up to that day, so the settlement figures are not
+                        final until then.
+                      </span>
+                    </div>
+                  )}
                   <Row className="g-2">
                     <Col md={6}>
-                      <EpField label="Finance Controller Approval" required invalid={!fnfPaid && fnfMeta.approval !== 'Approved'}>
+                      {/* Locked until the last working day, like "Mark F&F Paid"
+                          beside it.
+
+                          Approval + a payment date IS the settlement as far as
+                          the server is concerned (ExitController::isFnfPaid),
+                          and settling before the last working day is refused —
+                          the exit month is priced up to that day, so the figures
+                          are not final yet. But the refusal aborted the WHOLE
+                          `PUT .../exit` call, so on a resignation still serving
+                          notice, filling these two fields silently killed the
+                          save for every OTHER field on the stage too: reopen it
+                          and the work was gone and the bar back at 0% (CBC #102).
+
+                          Greying them keeps the same rule and costs nothing —
+                          nobody can approve a payment they are not yet allowed
+                          to make — while the rest of the stage saves normally.
+                          The note under the button already explains the date. */}
+                      <EpField label="Finance Controller Approval" required invalid={!fnfPaid && !fnfBeforeLwd && fnfMeta.approval !== 'Approved'}>
                         <EpSelect value={fnfMeta.approval} onChange={v => setFnfMeta(s => ({ ...s, approval: v }))}
-                          options={['Pending', 'Approved', 'Rejected']} disabled={fnfPaid} />
+                          options={['Pending', 'Approved', 'Rejected']} disabled={fnfPaid || fnfBeforeLwd} />
                       </EpField>
                     </Col>
                     <Col md={6}>
@@ -3669,7 +3710,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                             can be neither paid before the exit began nor dated
                             in the future — this records a payment that has
                             already happened. */}
-                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid} min={exitStartIso || undefined} max={todayIso} />
+                        <EpInput type="date" value={fnfMeta.payDate} onChange={v => setFnfMeta(s => ({ ...s, payDate: v }))} disabled={fnfPaid || fnfBeforeLwd} min={exitStartIso || undefined} max={todayIso} />
                       </EpField>
                     </Col>
                   </Row>
