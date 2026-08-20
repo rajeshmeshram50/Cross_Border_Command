@@ -112,6 +112,7 @@ import GenerateDocument from '../pages/hrms/doc-templates/GenerateDocument';
 const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
 import EmployeePermissions from '../pages/employee/EmployeePermissions';
 import EmployeeProfile from '../pages/employee/EmployeeProfile';
+import { ShimmerEmployeeProfile } from './ui/Shimmer';
 import PublicOnboarding from '../pages/PublicOnboarding';
 import ClockIn from '../pages/ClockIn';
 import ModuleStubPage from '../pages/ModuleStubPage';
@@ -421,13 +422,13 @@ function EmployeeProfileWrapper() {
     return () => { cancelled = true; };
   }, [id, stateEmp]);
 
+  /* Opened WITHOUT a preloaded row — Payroll → Run Payroll → Open Employee is
+     the common case — so the record has to be fetched before the profile can
+     render. That wait used to be a bare centred spinner on an empty page; show
+     the profile's own skeleton instead, so the layout is already in place when
+     the data lands. */
   if (resolving) {
-    return (
-      <div style={{ padding: 48, textAlign: 'center', color: 'var(--vz-secondary-color)' }}>
-        <i className="ri-loader-4-line ri-spin" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-        <div style={{ fontSize: 13, fontWeight: 600 }}>Loading employee profile…</div>
-      </div>
-    );
+    return <ShimmerEmployeeProfile />;
   }
   if (resolveErr || !empCode) {
     return (

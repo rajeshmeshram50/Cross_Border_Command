@@ -582,6 +582,110 @@ export function ShimmerProfile() {
   );
 }
 
+/* ── Employee Profile (full-screen overlay) ──────────────────────────
+ * Mirrors the HR employee profile at resources/js/pages/employee/
+ * EmployeeProfile.tsx, which opens as a fixed full-screen overlay:
+ *   1. Dark hero band — square avatar, name, code + role pills, the
+ *      department·designation subline, a row of meta cells (email, phone,
+ *      joining date, reporting manager) and the two progress rings.
+ *   2. The tab strip nested inside that hero.
+ *   3. The light content pane below it — two section cards of field grids.
+ *
+ * Opening the profile from anywhere that does NOT pre-pass the employee row
+ * (Payroll → Run Payroll → Open Employee is the one QA hit) means the record
+ * has to be fetched before the page can render at all, and that wait used to
+ * show a bare centred spinner on an empty page. Reproducing the real shape in
+ * the real hero colour makes the page resolve into itself instead.
+ * ─────────────────────────────────────────────────────────────────────── */
+export function ShimmerEmployeeProfile() {
+  // The hero is dark, so its placeholders need the translucent-white
+  // treatment the page already uses for its own hero shimmers
+  // (.ep-hero-shimmer) rather than the default light-grey gradient.
+  const onDark: React.CSSProperties = { background: 'rgba(255,255,255,0.18)' };
+
+  return (
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1080,
+        display: 'flex', flexDirection: 'column',
+        background: 'var(--vz-body-bg, #f3f4f9)',
+      }}
+      aria-busy="true"
+      aria-label="Loading employee profile"
+    >
+      {/* ── Hero band ── */}
+      <div style={{ padding: '20px 28px 14px', background: 'linear-gradient(120deg,#08112b 0%,#0c1740 40%,#0f1e55 70%,#0d1848 100%)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
+          <Shimmer width={110} height={110} radius={26} style={onDark} />
+
+          <div style={{ flex: '1 1 320px', minWidth: 260, ...stack(10) }}>
+            <Shimmer width={220} height={22} style={onDark} />
+            {/* Employee code + role / status pills share one line */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <Shimmer width={70} height={11} style={onDark} />
+              <Shimmer width={96} height={20} radius={999} style={onDark} />
+              <Shimmer width={78} height={20} radius={999} style={onDark} />
+            </div>
+            <Shimmer width={280} height={12} style={onDark} />
+            {/* Meta cells — email / phone / joined / reports to */}
+            <div style={{ display: 'flex', columnGap: 26, rowGap: 10, flexWrap: 'wrap', marginTop: 2 }}>
+              {[150, 120, 100, 90].map((w, i) => (
+                <div key={i} style={{ ...row, gap: 8 }}>
+                  <Shimmer width={16} height={16} radius={5} style={onDark} />
+                  <div style={stack(6)}>
+                    <Shimmer width={38} height={8} style={onDark} />
+                    <Shimmer width={w} height={11} style={onDark} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Completion rings (Profile / Onboarding) */}
+          <div style={{ display: 'flex', gap: 22 }}>
+            {[0, 1].map(i => (
+              <div key={i} style={{ ...stack(8), alignItems: 'center' }}>
+                <Shimmer width={64} height={64} radius={999} style={onDark} />
+                <Shimmer width={60} height={9} style={onDark} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Tab strip, nested in the hero ── */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 16 }}>
+          {[92, 84, 96, 104, 88, 92, 80, 86].map((w, i) => (
+            <Shimmer key={i} width={w} height={32} radius={9} style={onDark} />
+          ))}
+        </div>
+      </div>
+
+      {/* ── Content pane ── */}
+      <div style={{ flex: '1 1 auto', overflow: 'hidden', padding: 16, ...stack(14) }}>
+        {[0, 1].map(s => (
+          <div key={s} style={{ ...card, padding: 20, ...stack(16) }}>
+            <div style={{ ...row, gap: 12 }}>
+              <Shimmer width={36} height={36} radius={10} />
+              <div style={stack(7)}>
+                <Shimmer width={170} height={15} />
+                <Shimmer width={240} height={11} />
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 18 }}>
+              {Array.from({ length: 6 }).map((_, f) => (
+                <div key={f} style={stack(8)}>
+                  <Shimmer width={`${45 + (f % 3) * 12}%`} height={10} />
+                  <Shimmer height={34} radius={9} />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Settings ───────────────────────────────────────────────────────── */
 export function ShimmerSettings() {
   return (
