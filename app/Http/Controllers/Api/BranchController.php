@@ -643,7 +643,26 @@ class BranchController extends Controller
                 // therefore never be switched back off. $request->boolean()
                 // interprets "0"/"false"/"off"/"" correctly.
                 if ($request->has('sandwich_policy')) {
-                    $branch->update(['sandwich_policy' => $request->boolean('sandwich_policy')]);
+                    $sandwichBefore = (bool) $branch->sandwich_policy;
+                    $sandwichAfter  = $request->boolean('sandwich_policy');
+                    $branch->update(['sandwich_policy' => $sandwichAfter]);
+
+                    if ($sandwichBefore !== $sandwichAfter) {
+                        /* The switch is memoised per branch for the life of the
+                         * request (payroll sizes a whole roster in one pass), so
+                         * the recompute below would otherwise price every payslip
+                         * against the value this request just replaced. */
+                        \App\Support\SandwichPolicy::flushCache();
+                        /* Same reasoning as the late-mark policy above, and the
+                         * same omission this fixes: the sandwich switch feeds
+                         * payroll's loss of pay directly — PayrollService's
+                         * leaveAggregates() charges sandwiched off-days on an
+                         * unpaid leave only while it is on — so every draft
+                         * payslip in the branch is stale the moment it is
+                         * flipped. Locked/paid runs are frozen and skipped inside
+                         * recomputeEmployeePayslips(). */
+                        $this->recomputeBranchPayslips($branch);
+                    }
                 }
 
                 // Shifts / bank accounts handled separately — the array cast would
@@ -1109,7 +1128,9 @@ class BranchController extends Controller
                 $payroll->recomputeEmployeePayslips((int) $id);
             }
         } catch (\Throwable $e) {
-            Log::warning('Late-mark policy recompute failed for branch ' . $branch->id . ': ' . $e->getMessage());
+            // Called for the late-mark, LOP and sandwich switches now, so the
+            // message no longer names one of them.
+            Log::warning('Branch policy payslip recompute failed for branch ' . $branch->id . ': ' . $e->getMessage());
         }
     }
 

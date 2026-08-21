@@ -572,22 +572,32 @@ export default function HrPayroll() {
 
   useEffect(() => { if (runOpen) loadExclusions(); }, [runOpen, loadExclusions]);
 
-  /* Excuse every still-charged sandwich leave for ONE employee.
+  /* Set the sandwich charge on one or more of an employee's leaves.
+     `waived` true excuses the off-days, false puts the policy back on — both
+     directions, because the run modal now offers a Yes/No switch rather than a
+     one-way "excuse" button, and a waiver applied by mistake has to be
+     reversible from the same place it was applied.
+
      Sequential, not Promise.all: each call re-sizes leave_requests.days, and
      the sandwich for one leave can depend on a neighbouring one — firing them
      together would let two requests size themselves against the same stale
      picture. One refresh at the end rather than per leave. */
-  const waiveSandwich = useCallback(async (items: PayrollSandwichItem[]) => {
+  const waiveSandwich = useCallback(async (items: PayrollSandwichItem[], waived: boolean) => {
     if (!items.length) return;
     setSandwichBusyIds(items.map(i => i.leave_id));
     try {
       for (const it of items) {
-        await api.post(`/leave-requests/${it.leave_id}/sandwich-waiver`, { waived: true });
+        await api.post(`/leave-requests/${it.leave_id}/sandwich-waiver`, { waived });
       }
-      await loadSandwichReview();
+      /* Both lists, not just the review one. The server recomputes the
+         employee's draft payslips as part of the waiver, so the run modal's
+         issue text and money figures are stale the moment this returns —
+         refreshing only the sandwich rows left the LOP line beside them
+         quoting the pre-toggle day count. */
+      await Promise.all([loadSandwichReview(), reloadCycleRef.current?.()]);
       toast.success(
-        'Off-days excused',
-        `${items[0].emp_name} — re-run payroll to pick up the new day count.`,
+        waived ? 'Off-days excused' : 'Off-days will be deducted',
+        `${items[0].emp_name} — the leave has been re-sized and the draft payslip updated.`,
       );
     } catch (err: any) {
       toast.error('Could not update', err?.response?.data?.message || err?.message || 'Please try again.');
@@ -754,6 +764,14 @@ export default function HrPayroll() {
   }, [cycleKey, cycleMonths]);
 
   useEffect(() => { reloadCycle(); }, [reloadCycle]);
+
+  /* reloadCycle is declared below the sandwich handlers that need it, and a
+     `const` cannot be named in a dependency array before its own declaration.
+     A ref carrying the current one is the way to call it from up there without
+     reordering the file — the ref object is stable, so nothing re-memoises,
+     and .current is always the latest closure rather than a stale capture. */
+  const reloadCycleRef = useRef(reloadCycle);
+  reloadCycleRef.current = reloadCycle;
 
   const runPayroll = async () => {
     if (busy) return;

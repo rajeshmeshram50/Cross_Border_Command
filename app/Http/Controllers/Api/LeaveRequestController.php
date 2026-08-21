@@ -811,7 +811,7 @@ class LeaveRequestController extends Controller
 
         $waived = (bool) $data['waived'];
 
-        return DB::transaction(function () use ($row, $employee, $waived, $data, $user) {
+        $response = DB::transaction(function () use ($row, $employee, $waived, $data, $user) {
             $before = (float) $row->days;
 
             $row->days = $this->computeLeaveDays(
@@ -840,6 +840,26 @@ class LeaveRequestController extends Controller
                     : 'Sandwich policy re-applied — leave re-sized to ' . (float) $row->days . ' day(s).',
             ]);
         });
+
+        /* Push the decision through to the draft payslips, exactly as approve()
+         * and cancel() do for every other leave change.
+         *
+         * This was the one leave mutation that did not. Waiving a sandwich on an
+         * UNPAID leave changes the payslip directly — PayrollService's
+         * leaveAggregates() reads `sandwich_waived` and drops the sandwiched
+         * off-days from loss of pay — but nothing recomputed, so the flag flipped
+         * and the money did not. The row on screen said "excused" while the
+         * payslip beside it still deducted the days, until somebody happened to
+         * re-run the whole cycle. It matters more now that the switch is offered
+         * inside the run modal itself, where re-running is the very next step and
+         * the figures are read before it.
+         *
+         * Outside the transaction, and best-effort inside propagateToPayroll():
+         * the waiver itself is committed either way, and approved/paid runs are
+         * frozen so nothing settled can be moved by this. */
+        $this->propagateToPayroll($row->employee_id);
+
+        return $response;
     }
 
     public function cancel(Request $request, int $id)

@@ -97,8 +97,10 @@ export interface PayrollRunModalProps {
      only place an emergency that the blanket rule cannot recognise gets caught
      before the cycle is paid. */
   sandwichItems?: PayrollSandwichItem[];
-  /** Toggle the waiver on one leave. Parent owns the API call + refresh. */
-  onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
+  /** Set the waiver on one leave — `waived` true excuses the sandwiched
+   *  off-days, false puts the policy back on. Parent owns the API call +
+   *  refresh. */
+  onWaiveSandwich?: (items: PayrollSandwichItem[], waived: boolean) => Promise<void> | void;
   /** emp_code currently saving — drives that entry's spinner. */
   /** leave_ids currently being waived — one row at a time, not a whole card. */
   sandwichBusyIds?: number[];
@@ -148,10 +150,18 @@ const initialsOf = (name: string) =>
 function SandwichRow({ item, busy, onWaive }: {
   item: PayrollSandwichItem;
   busy: boolean;
-  onWaive?: (items: PayrollSandwichItem[]) => void;
+  onWaive?: (items: PayrollSandwichItem[], waived: boolean) => void;
 }) {
   const d  = (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`;
   const od = (n: number) => `${n} ${n === 1 ? 'off-day' : 'off-days'}`;
+  /* The policy is APPLIED when the waiver is off — so "Yes, deduct" is
+     waived=false and "No" is waived=true. Stated once here rather than at each
+     call site, where the double negative is what invites an inverted click. */
+  const applied = !item.waived;
+  const set = (nextApplied: boolean) => {
+    if (busy || !onWaive || nextApplied === applied) return;
+    onWaive([item], !nextApplied);
+  };
   return (
     <div className="prm-sw-row">
       <span className="prm-sw-date">{shortRange(item.from_date, item.to_date)}</span>
@@ -161,18 +171,41 @@ function SandwichRow({ item, busy, onWaive }: {
           {item.waived ? `${od(item.sandwich_days)} excused` : `incl. ${od(item.sandwich_days)}`}
         </span>
       </span>
-      {item.waived ? (
-        <span className="prm-sw-done"><i className="ri-check-line" />Excused</span>
-      ) : (
-        <button
-          type="button"
-          className="prm-sw-btn"
-          disabled={busy || !onWaive}
-          onClick={() => onWaive?.([item])}
+      {/* A two-way switch, not a one-way button.
+          It used to offer "Don't deduct them" and then collapse to a static
+          "✓ Excused" the moment it was clicked — so a waiver applied by
+          mistake, or one carried over from the leave-approval screen, could
+          not be undone from here at all. The decision it records is a Yes/No,
+          and the server has always accepted both directions
+          (LeaveRequestController::sandwichWaiver takes `waived`), so the
+          control now shows both and always says which one is in force. */}
+      <span className="prm-sw-toggle-wrap">
+        <span className="prm-sw-toggle-cap">{busy ? 'Saving…' : 'Deduct off-days?'}</span>
+        <span
+          className={`prm-sw-toggle${busy ? ' is-busy' : ''}`}
+          role="group"
+          aria-label={`Deduct the sandwiched off-days for ${shortRange(item.from_date, item.to_date)}?`}
         >
-          {busy ? 'Saving…' : "Don't deduct them"}
-        </button>
-      )}
+          <button
+            type="button"
+            className={`prm-sw-tgl${applied ? ' is-on is-yes' : ''}`}
+            aria-pressed={applied}
+            disabled={busy || !onWaive}
+            onClick={() => set(true)}
+          >
+            Yes
+          </button>
+          <button
+            type="button"
+            className={`prm-sw-tgl${applied ? '' : ' is-on is-no'}`}
+            aria-pressed={!applied}
+            disabled={busy || !onWaive}
+            onClick={() => set(false)}
+          >
+            No
+          </button>
+        </span>
+      </span>
     </div>
   );
 }
@@ -183,7 +216,7 @@ function SandwichCard({ name, code, dept, rows, busyIds, onWaive }: {
   name: string; code: string; dept?: string;
   rows: PayrollSandwichItem[];
   busyIds: number[];
-  onWaive?: (items: PayrollSandwichItem[]) => void;
+  onWaive?: (items: PayrollSandwichItem[], waived: boolean) => void;
 }) {
   return (
     <div className="prm-sw-card">
@@ -729,7 +762,7 @@ function IssueCard({
   onAction?: (action: PayrollRunActionChip, issue: PayrollRunIssue) => void;
   /** Sandwich-inflated leaves belonging to THIS employee. */
   sandwich?: PayrollSandwichItem[];
-  onWaiveSandwich?: (items: PayrollSandwichItem[]) => Promise<void> | void;
+  onWaiveSandwich?: (items: PayrollSandwichItem[], waived: boolean) => Promise<void> | void;
   /** leave_ids currently being waived — one row at a time, not a whole card. */
   sandwichBusyIds?: number[];
 }) {
@@ -1097,6 +1130,7 @@ function PayrollRunStyles() {
       .prm-sw-sep { margin: 0 6px; opacity: .5; }
       .prm-sw-ok  { color: #0ab39c; font-weight: 600; }
       .prm-sw-entry > .prm-sw-btn,
+      .prm-sw-entry > .prm-sw-toggle-wrap,
       .prm-sw-entry > .prm-sw-done { grid-area: action; }
 
       /* Grid, not flex: the date column stays aligned down the list however
@@ -1142,6 +1176,49 @@ function PayrollRunStyles() {
       .prm-sw-btn:disabled { cursor: wait; opacity: .6; }
       [data-bs-theme="dark"] .prm-sw-btn {
         background: rgba(124,92,252,0.20); border-color: rgba(124,92,252,0.45); color: #c4b5fd;
+      }
+
+      /* Yes/No switch for the sandwich charge.
+         Both sides are always visible and exactly one is lit, so the row states
+         the decision currently in force rather than only offering the change
+         that has not been made yet. */
+      .prm-sw-toggle-wrap {
+        display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+      }
+      .prm-sw-toggle-cap {
+        font-size: 10.5px; font-weight: 600; color: var(--vz-secondary-color);
+      }
+      .prm-sw-toggle {
+        display: inline-flex; align-items: stretch;
+        border: 1px solid var(--vz-border-color); border-radius: 999px;
+        background: var(--vz-secondary-bg, #f3f4f6);
+        padding: 2px; gap: 2px;
+      }
+      .prm-sw-toggle.is-busy { opacity: .55; }
+      .prm-sw-tgl {
+        border: 0; background: transparent; color: var(--vz-secondary-color);
+        border-radius: 999px; padding: 3px 13px;
+        font-size: 11px; font-weight: 700; line-height: 1.45;
+        cursor: pointer; transition: all .15s ease;
+      }
+      .prm-sw-tgl:hover:not(:disabled):not(.is-on) { color: var(--vz-body-color); }
+      .prm-sw-tgl:disabled { cursor: wait; }
+      /* Lit states carry the meaning, so they are colour-coded to the outcome:
+         charging the off-days is the policy running (purple, as everywhere else
+         in this panel), excusing them is the relief (teal, matching the
+         "excused" chip beside it). */
+      .prm-sw-tgl.is-on.is-yes {
+        background: #ece6ff; color: #5a3fd1; box-shadow: 0 1px 2px rgba(90,63,209,.18);
+      }
+      .prm-sw-tgl.is-on.is-no {
+        background: rgba(10,179,156,.16); color: #0ab39c; box-shadow: 0 1px 2px rgba(10,179,156,.18);
+      }
+      [data-bs-theme="dark"] .prm-sw-toggle { background: rgba(255,255,255,.05); }
+      [data-bs-theme="dark"] .prm-sw-tgl.is-on.is-yes {
+        background: rgba(124,92,252,0.24); color: #c4b5fd;
+      }
+      [data-bs-theme="dark"] .prm-sw-tgl.is-on.is-no {
+        background: rgba(10,179,156,0.22); color: #4fd1c0;
       }
 
       /* Error banner under issue lists */
