@@ -1450,9 +1450,13 @@ class LeaveRequestController extends Controller
             ->where(function ($q) use ($groupId, $clientId, $branchId) {
                 $q->where(function ($w) use ($clientId, $branchId) {
                     $w->whereNull('holiday_group_id');
-                    if ($clientId) {
-                        $w->where(fn($c) => $c->whereNull('client_id')->orWhere('client_id', $clientId));
-                    }
+                    // Client must MATCH, never "match or null" — an unscoped row
+                    // is not a global holiday, and treating it as one leaks one
+                    // tenant's calendar into every other. Twin of the rule in
+                    // PayrollService::holidayDateSet().
+                    $w->where('client_id', $clientId);
+                    // Branch stays "match or null": a company holiday with no
+                    // branch covers every office of that client.
                     if ($branchId) {
                         $w->where(fn($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
                     }

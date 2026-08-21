@@ -2548,9 +2548,19 @@ class PayrollService
                 // Company-wide: no group, scoped to this client/branch.
                 $q->where(function ($w) use ($clientId, $branchId) {
                     $w->whereNull('holiday_group_id');
-                    if ($clientId) {
-                        $w->where(fn($c) => $c->whereNull('client_id')->orWhere('client_id', $clientId));
-                    }
+                    /* The client must MATCH — never "match or is null".
+                     *
+                     * A null client_id is not a global holiday, it is an
+                     * unscoped row, and treating it as global hands one tenant's
+                     * calendar to all of them. HolidayController scopes the same
+                     * way (applyScope: null means the super-admin's own scope,
+                     * not everyone's), so this agrees with the screen the rows
+                     * are created on. Every employee has a client, so there is
+                     * no case this shuts out. */
+                    $w->where('client_id', $clientId);
+                    /* Branch, by contrast, IS "match or null": a company holiday
+                     * entered without a branch covers every office of that
+                     * client, which is what a company-wide holiday means. */
                     if ($branchId) {
                         $w->where(fn($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
                     }
