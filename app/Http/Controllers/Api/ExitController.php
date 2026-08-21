@@ -1752,7 +1752,7 @@ class ExitController extends Controller
 
     private function validatePayload(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             // The wizard now offers exactly three types, chosen up-front in the
             // "Initiate Exit" picker, because each one resolves to a different
             // notice-period settlement (and therefore a different stage list).
@@ -1838,6 +1838,27 @@ class ExitController extends Controller
             'fnf.meta.payDate.before_or_equal' => 'Payment Date cannot be a future date. Please select today or a previous date.',
             'fnf.meta.payDate.date'            => 'Enter a valid payment date.',
         ]);
+
+        /* Put the WHOLE `fnf` blob back.
+         *
+         * `validate()` returns only the keys it was given rules for, and a
+         * nested rule on an array narrows that array to just the listed path.
+         * With `fnf.meta.payDate` among the rules, everything else under `fnf`
+         * was silently dropped on the way through — the settled amount, the
+         * approval, the payment mode, the line items and the uploaded document
+         * all went in and only `{"meta":{"payDate":"..."}}` came out, so a
+         * settled F&F saved as an empty one.
+         *
+         * The rules above still run (the payDate ceiling in particular); this
+         * only restores what they filtered out. The blob is wizard-owned JSON
+         * on a column the model casts to array, so it is stored as sent —
+         * exactly as it was before the nested rule was added. */
+        if ($request->has('fnf')) {
+            $fnf = $request->input('fnf');
+            $data['fnf'] = is_array($fnf) ? $fnf : null;
+        }
+
+        return $data;
     }
 
     /** Same scope rule as EmployeeController. Super admins see everything;

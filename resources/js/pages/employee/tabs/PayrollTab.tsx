@@ -196,6 +196,18 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
     BANK_REQUIRED.forEach(([k, label]) => {
       if (!String(f[k] ?? '').trim()) errs[k] = `${label} is required`;
     });
+    /* Shape-check the two name fields on SAVE as well as on input.
+       Filtering onChange only guards what is typed now — a record saved before
+       that filter existed hydrates straight back into the form, and pressing
+       Save would put the same "324567890()&" back. Checked here so a stored bad
+       value has to be corrected rather than silently re-saved. */
+    ([['bank_name', 'Bank Name'], ['account_holder_name', 'Name on Account']] as Array<[string, string]>)
+      .forEach(([k, label]) => {
+        const v = String(f[k] ?? '').trim();
+        if (!errs[k] && v && !/^[A-Za-z ]+$/.test(v)) {
+          errs[k] = `${label} can contain letters and spaces only`;
+        }
+      });
     // Mirror the server-side IFSC rule so the user gets instant feedback.
     if (!errs.ifsc_code && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(String(f.ifsc_code ?? '').trim())) {
       errs.ifsc_code = 'Enter a valid IFSC code (e.g. HDFC0001234).';
@@ -989,7 +1001,8 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                     <Input className={`ep-input${bankInv('account_holder_name')}`}
                       value={bankForm.account_holder_name || ''}
                       maxLength={150}
-                      onChange={e => setBankField('account_holder_name', e.target.value)}
+                      // Same letters-and-spaces rule as Bank Name above.
+                      onChange={e => setBankField('account_holder_name', e.target.value.replace(/[^A-Za-z ]/g, ''))}
                       placeholder="Account holder name"
                     />
                     {bankErr('account_holder_name')}
