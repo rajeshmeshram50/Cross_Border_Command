@@ -11660,6 +11660,22 @@
   background: rgba(16,185,129,0.18) !important; color: #6ee7b7 !important;
 }
 
+/* ── Salary Report — gap between the last column and the table border ──────
+   QA #92: the Payslip column sat flush against the table's right edge, its
+   button touching the border. The column was widened from 5% to 7% in
+   HrPayroll's reportColumns (the button did not fit its cell at all), and this
+   adds the breathing room the ticket asks for on top — the last cell in every
+   row, and its header, get extra right padding so the content stops short of
+   the border instead of running into it.
+
+   Scoped to .pay-tbl-report and to :last-child, so no other table and no other
+   column shifts. Not inside a media query: the flush edge is a desktop layout,
+   and on mobile these cells are re-laid out as label/value rows further down. */
+.pay-tbl-report .dt-table thead th:last-child,
+.pay-tbl-report .dt-table tbody td:last-child {
+  padding-right: 18px;
+}
+
 /* ── Payroll page (HrPayroll) — mobile / tablet (≤ 767.98px) ───────────────
    Scoped to .pay-page. Hero: title on top, then the cycle picker / Run Payroll
    / Export / Reopen stacked full-width. Tab bar flows 2-per-row. Pager wraps. */

@@ -371,11 +371,36 @@ export default function HrPayroll() {
     multiplier?: number; hourly?: number; rate?: number; rateName?: string | null;
   } | null>(null);
 
+  /** True while a payslip's detail is in flight — the viewer shows a loading
+   *  state instead of half-filled numbers. (QA #94) */
+  const [payslipLoading, setPayslipLoading] = useState(false);
+  /* The payslip whose response we are still willing to accept. Switching cycle
+     twice quickly fires two requests, and without this the SLOWER (older) one
+     could land last and overwrite the newer month's figures — a payslip showing
+     another month's numbers, with nothing on screen to say so. */
+  const payslipReqRef = useRef(0);
+
   const loadPayslipDetail = (payslipId?: number) => {
     if (!payslipId) return;
     setActivePayslipId(payslipId);
+
+    /* Clear before fetching.
+     *
+     * openPayslip() already did this, but selectRecent() — switching cycle from
+     * inside the open viewer — called straight through to here, so the previous
+     * payslip's breakup, day counts and overtime stayed on screen while the new
+     * month loaded, and any field the new response does not set kept the old
+     * value indefinitely. Clearing here covers both entry points. (QA #94) */
+    setPayslipBreakup(null);
+    setPayslipDays(null);
+    setPayslipOt(null);
+    setPayslipFinal(undefined);
+    setPayslipLoading(true);
+
+    const reqId = ++payslipReqRef.current;
     api.get(`/payroll/payslip/${payslipId}`)
       .then(res => {
+        if (reqId !== payslipReqRef.current) return;   // superseded by a newer click
         const d = res.data?.data ?? {};
         const e = (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
         const ded = (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
@@ -413,7 +438,12 @@ export default function HrPayroll() {
           });
         }
       })
-      .catch(() => {});
+      /* Swallowed, but the state is already cleared above — a failed load now
+         shows an empty slip rather than the previously opened one's figures. */
+      .catch(() => {})
+      .finally(() => {
+        if (reqId === payslipReqRef.current) setPayslipLoading(false);
+      });
   };
 
   const openPayslip = (row: PayrollRow) => {
@@ -1383,11 +1413,16 @@ export default function HrPayroll() {
     // Derived per row and reused by both the deductions total and Net Payable.
     const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
     return [
-      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '6%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      /* Emp ID 6% → 5% and Employee 10% → 9%: the two points fund the Payslip
+         column at the far right, which was too narrow for its own button (QA
+         #92). The budget has to total exactly 100% — see the serial-column note
+         above — and these two carry the most slack: an "EMP-001" code and a
+         truncating name column both sit comfortably one point smaller. */
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '5%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
       {
         header: 'Employee',
         accessorKey: 'name',
-        meta: { width: '10%' },
+        meta: { width: '9%' },
         cell: info => {
           const r = info.row.original;
           return (
@@ -1454,7 +1489,12 @@ export default function HrPayroll() {
         header: () => <div className="text-center">Payslip</div>,
         id: '__payslip',
         enableSorting: false,
-        meta: { width: '5%', align: 'center' },
+        /* 7%, up from 5% (QA #92). At 5% the cell measured ~95px against the
+           table's 1900px min-width, and 18px of that is the cell's own padding
+           — leaving ~77px for a button whose icon and "Payslip" label need
+           more. It overflowed its cell and ran into the table's right border.
+           The two points come from Emp ID and Employee above. */
+        meta: { width: '7%', align: 'center' },
         cell: info => {
           const r = info.row.original;
           // A payslip cannot be generated until the payroll status is resolved —
@@ -2335,6 +2375,7 @@ export default function HrPayroll() {
             overtimeRate={payslipOt?.rate}
             overtimeRateName={payslipOt?.rateName}
             isFinal={payslipFinal}
+            loading={payslipLoading}
             onSelectRecent={selectRecent}
             recentMonths={payslipRecent}
             payslipId={activePayslipId ?? r.payslip_id}
