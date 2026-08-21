@@ -629,7 +629,11 @@ class AuthController extends Controller
                             ->delete($this->relativeFilePath($branch->profile_photo));
                     }
                     $branch->update([
-                        'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                        'profile_photo' => $request->file('profile_photo')->storeAs(
+                            "branches/profile-photos/{$branch->id}",
+                            $this->uploadFileName($request->file('profile_photo')),
+                            'public'
+                        ),
                     ]);
                 }
             } elseif ($user->user_type === 'client_admin' && $user->client_id) {
@@ -640,7 +644,11 @@ class AuthController extends Controller
                             ->delete($this->relativeFilePath($client->profile_photo));
                     }
                     $client->update([
-                        'profile_photo' => $request->file('profile_photo')->store('clients/profile-photos', 'public'),
+                        'profile_photo' => $request->file('profile_photo')->storeAs(
+                            "clients/profile-photos/{$client->id}",
+                            $this->uploadFileName($request->file('profile_photo')),
+                            'public'
+                        ),
                     ]);
                 }
             } else {
@@ -649,7 +657,11 @@ class AuthController extends Controller
                         ->delete($this->relativeFilePath($user->profile_photo));
                 }
                 $user->update([
-                    'profile_photo' => $request->file('profile_photo')->store('users/profile-photos', 'public'),
+                    'profile_photo' => $request->file('profile_photo')->storeAs(
+                        "users/profile-photos/{$user->id}",
+                        $this->uploadFileName($request->file('profile_photo')),
+                        'public'
+                    ),
                 ]);
             }
         }
@@ -890,7 +902,11 @@ class AuthController extends Controller
                         ->delete($this->relativeFilePath($client->logo));
                 }
                 $client->update([
-                    'logo' => $request->file('logo')->store('clients/logos', 'public'),
+                    'logo' => $request->file('logo')->storeAs(
+                        "clients/logos/{$client->id}",
+                        $this->uploadFileName($request->file('logo')),
+                        'public'
+                    ),
                 ]);
             }
         }
@@ -910,7 +926,11 @@ class AuthController extends Controller
                         ->delete($this->relativeFilePath($branch->logo));
                 }
                 $branch->update([
-                    'logo' => $request->file('logo')->store('branches/logos', 'public'),
+                    'logo' => $request->file('logo')->storeAs(
+                        "branches/logos/{$branch->id}",
+                        $this->uploadFileName($request->file('logo')),
+                        'public'
+                    ),
                 ]);
             }
         }
@@ -924,11 +944,33 @@ class AuthController extends Controller
         ]);
     }
 
-    /** 
+    /**
+     * Build the on-disk filename for an uploaded logo or photo, keeping the
+     * name the user actually uploaded so the form can show the current file
+     * name after a reload instead of an opaque hash. Sanitised to a slug so
+     * odd characters can never escape the storage folder; collisions across
+     * tenants are impossible because the caller stores it under a
+     * per-client / per-branch / per-user subfolder.
+     */
+    private function uploadFileName(\Illuminate\Http\UploadedFile $file): string
+    {
+        $slug = \Illuminate\Support\Str::slug(
+            pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)
+        );
+        if ($slug === '') {
+            $slug = 'logo';
+        }
+        $slug = substr($slug, 0, 60);
+
+        $ext = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'png');
+
+        return $slug . '.' . $ext;
+    }
+
+    /**
      * Normalize a stored value (legacy "/storage/..." URL or already-relative
      * path) to a disk-relative path suitable for Storage::delete().
      */
-
     private function relativeFilePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {

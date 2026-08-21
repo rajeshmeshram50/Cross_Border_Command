@@ -1,4 +1,5 @@
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Node } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -103,14 +104,57 @@ export function buildSignerGroup(signers: SignerLite[]): PlaceholderGroup {
 }
 
 // ── Editor ───────────────────────────────────────────────────────────────────
+/**
+ * An explicit page break.
+ *
+ * Serialises to `<div class="page-break" data-page-break="true"></div>` — the
+ * exact element the CLM editor emits, so both document engines recognise one
+ * shape: `pdf/signed-document.blade.php` turns it into `page-break-after:
+ * always`, and HrTemplateDocxRenderer rewrites it into a real Word page break
+ * (PhpWord's HTML reader has no `div` node, so it has to become a styled `<p>`
+ * before it reaches PhpWord).
+ *
+ * Being a plain div means older drafts round-trip untouched and the stored
+ * contract (content_html = HTML string) is unchanged.
+ */
+const PageBreak = Node.create({
+  name: 'pageBreak',
+  group: 'block',
+  atom: true,          // one indivisible thing — no cursor inside it
+  selectable: true,
+  parseHTML() {
+    return [{ tag: 'div.page-break' }, { tag: 'div[data-page-break]' }];
+  },
+  renderHTML() {
+    // Class AND data attribute: a sanitiser can drop one, the other still
+    // carries the instruction to the PDF/DOCX side.
+    return ['div', { class: 'page-break', 'data-page-break': 'true' }];
+  },
+  addCommands() {
+    return {
+      setPageBreak: () => ({ chain }: any) =>
+        // Insert the break AND a paragraph after it — an atom at the end of the
+        // document leaves nowhere to put the caret.
+        chain().insertContent([{ type: 'pageBreak' }, { type: 'paragraph' }]).run(),
+    } as any;
+  },
+});
+
 export default function TemplateEditor({
   value,
   onChange,
   signers,
+  tokenPreviews,
 }: {
   value: string;
   onChange: (html: string) => void;
   signers: SignerLite[];
+  /* What a token will actually print, keyed by token ('{{CompanyName}}').
+     Only the organisation tokens have one today — they resolve off the
+     logged-in user's branch, and seeing the real name/address before
+     inserting is the difference between trusting the placeholder and
+     hard-typing the company name into the body. */
+  tokenPreviews?: Record<string, string>;
 }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
@@ -139,6 +183,7 @@ export default function TemplateEditor({
       StarterKit,
       Underline,
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      PageBreak,
     ],
     content: value || '<p></p>',
     onUpdate({ editor }) { onChange(editor.getHTML()); },
@@ -320,7 +365,7 @@ export default function TemplateEditor({
                           that appears straight away beats the OS box that waits
                           a second and ignores dark mode. Carries the FULL label
                           and token, since both may be truncated on screen. */}
-                      <Tooltip label={`${f.label} — ${f.token}`}>
+                      <Tooltip label={`${f.label} — ${f.token}${tokenPreviews?.[f.token] ? ` → ${tokenPreviews[f.token]}` : ''}`}>
                         <button
                           type="button"
                           className="tpl-token-btn"
@@ -429,6 +474,18 @@ export default function TemplateEditor({
 
           <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
 
+          <button
+            type="button"
+            style={{ ...btn(editor.isActive('pageBreak')), display: 'inline-flex', alignItems: 'center', gap: 5 }}
+            title="Insert a page break — the PDF and the Word copy both start a new page from here"
+            onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
+          >
+            <i className="ri-page-separator" />
+            <span style={{ fontSize: 12 }}>Page Break</span>
+          </button>
+
+          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
+
           <button type="button" style={btn(false)} onClick={() => editor.chain().focus().undo().run()}><i className="ri-arrow-go-back-line" /></button>
           <button type="button" style={btn(false)} onClick={() => editor.chain().focus().redo().run()}><i className="ri-arrow-go-forward-line" /></button>
         </div>
@@ -451,6 +508,20 @@ export default function TemplateEditor({
              target the full height so clicking empty space still focuses. */
           .tpl-editor-surface .ProseMirror { outline: none; min-height: 100%; font-size: 14px; line-height: 1.6; }
           .tpl-editor-surface .ProseMirror p { margin: 0 0 8px 0; }
+          /* Page break — invisible in the output, a labelled dashed rule here so
+             the author can see where the next page starts. */
+          .tpl-editor-surface .ProseMirror div.page-break {
+            position: relative; height: 0; margin: 18px 0 26px;
+            border-top: 2px dashed #a5b4fc;
+          }
+          .tpl-editor-surface .ProseMirror div.page-break::after {
+            content: 'Page break';
+            position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+            background: #eef2ff; color: #4338ca;
+            font-size: 9.5px; font-weight: 800; letter-spacing: .04em;
+            padding: 1px 8px; border-radius: 999px; border: 1px solid #c7d2fe;
+          }
+          .tpl-editor-surface .ProseMirror div.page-break.ProseMirror-selectednode { border-top-color: #6d28d9; }
           .tpl-editor-surface .ProseMirror p.is-editor-empty:first-child::before {
             content: 'Start typing your template here…';
             color: #9ca3af; pointer-events: none; height: 0; float: left;

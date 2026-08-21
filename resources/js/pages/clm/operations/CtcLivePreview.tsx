@@ -18,6 +18,10 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = PdfjsWorker as unknown as string;
  * through the page engine and display the result. See the design discussion in
  * CtcRichEditor (the editor only *estimates* breaks). */
 type Props = {
+  /** Endpoint that renders the draft and streams back a PDF. Defaults to the
+   *  CTC one; the HR document-template editor points it at its own. Both take
+   *  the same body ({ id, content, *_config }), so only the URL differs. */
+  endpoint?: string;
   contractId: number | null;
   content: string;
   pageConfig?: Record<string, unknown>;
@@ -26,7 +30,10 @@ type Props = {
   dark?: boolean;
 };
 
-export default function CtcLivePreview({ contractId, content, pageConfig, headerConfig, footerConfig, dark = false }: Props) {
+export default function CtcLivePreview({
+  endpoint = '/clm/ctc-contracts/preview-live',
+  contractId, content, pageConfig, headerConfig, footerConfig, dark = false,
+}: Props) {
   const [numPages, setNumPages] = useState(0);
   const [activePage, setActivePage] = useState(1);
   const [status, setStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
@@ -50,7 +57,7 @@ export default function CtcLivePreview({ contractId, content, pageConfig, header
     setErrorMsg('');
     try {
       const res = await api.post(
-        '/clm/ctc-contracts/preview-live',
+        endpoint,
         {
           id: contractId ?? undefined,
           content,
@@ -80,7 +87,7 @@ export default function CtcLivePreview({ contractId, content, pageConfig, header
       setErrorMsg(msg);
       setStatus('error');
     }
-  }, [contractId, content, pageConfig, headerConfig, footerConfig]);
+  }, [endpoint, contractId, content, pageConfig, headerConfig, footerConfig]);
 
   // Debounced refresh whenever the draft or its layout config changes.
   useEffect(() => {

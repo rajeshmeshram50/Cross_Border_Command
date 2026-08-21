@@ -62,6 +62,7 @@ class HrTemplateDocxRenderer
         $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
         $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
+        $html = self::pageBreaksToWord($html);
         $html = self::localiseImageSources($html);
         $wrapped = '<html><body>' . $html . '</body></html>';
 
@@ -97,6 +98,25 @@ class HrTemplateDocxRenderer
         return $tmp;
     }
 
+    /**
+     * Turn the editor's page break into one Word understands.
+     *
+     * The editor emits `<div class="page-break" data-page-break="true"></div>`,
+     * which the PDF stylesheet turns into `page-break-after: always`. PhpWord's
+     * HTML reader has no `div` in its node map at all, so that element (and any
+     * class-based CSS) is skipped outright — the break silently vanished from
+     * the Word copy while the PDF broke correctly. PhpWord DOES honour
+     * `page-break-after: always` as an INLINE style on a <p>, which it turns
+     * into a real Word page break, so rewrite the div into exactly that.
+     */
+    private static function pageBreaksToWord(string $html): string
+    {
+        return preg_replace(
+            '#<div[^>]*(?:class="[^"]*\bpage-break\b[^"]*"|data-page-break)[^>]*>\s*</div>#i',
+            '<p style="page-break-after: always"></p>',
+            $html
+        ) ?? $html;
+    }
     /** Streams the freshly-built DOCX as a download response. */
     public static function render($row, string $filename): BinaryFileResponse
     {

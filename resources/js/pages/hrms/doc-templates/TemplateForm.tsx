@@ -7,8 +7,12 @@ import api from '../../../api';
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import TemplateEditor from './TemplateEditor';
+/* The CLM live previewer, pointed at the HR endpoint. It is engine-agnostic —
+   POST a draft, paint the returned PDF with pdf.js — and duplicating it here
+   would mean maintaining two copies of the same pdf.js plumbing. */
+import LivePdfPreview from '../../clm/operations/CtcLivePreview';
 import HeaderFooterPanel, {
-  DEFAULT_HEADER, DEFAULT_FOOTER,
+  DEFAULT_HEADER, DEFAULT_FOOTER, FOOTER_TEXT_MAX,
   type HeaderConfig, type FooterConfig,
 } from './HeaderFooterPanel';
 
@@ -114,6 +118,32 @@ const STEPS = [
 const TEMPLATE_NAME_MAX = 100;
 
 // ── Form ─────────────────────────────────────────────────────────────────────
+/** Letterhead identity of the logged-in user's branch, as returned by
+ *  /hr-document-templates/last-branding. */
+type OrgIdentity = { name: string; address: string; logo_path: string | null; logo_url: string | null };
+
+/* Header/footer seeded from the user's OWN branch. Without this a first
+   template opened with the literal words "Company Name" in the header and
+   "Company Name Pvt. Ltd. | Confidential" in the footer — placeholder copy
+   that reads as real letterhead and went out on documents unedited. Both stay
+   fully editable; this only decides what they start as. */
+function headerFromOrg(org: OrgIdentity): HeaderConfig {
+  return {
+    ...DEFAULT_HEADER,
+    title: org.name || DEFAULT_HEADER.title,
+    logo_path: org.logo_path ?? DEFAULT_HEADER.logo_path,
+    logo_url:  org.logo_url  ?? DEFAULT_HEADER.logo_url,
+  };
+}
+
+function footerFromOrg(org: OrgIdentity): FooterConfig {
+  if (!org.name) return DEFAULT_FOOTER;
+  // Same "<name>  |  Confidential" shape as the default, trimmed to the
+  // footer strip's character budget so a long branch name can't overflow it.
+  const text = `${org.name}  |  Confidential`;
+  return { ...DEFAULT_FOOTER, text: text.slice(0, FOOTER_TEXT_MAX) };
+}
+
 export default function TemplateFormPage() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -150,9 +180,20 @@ export default function TemplateFormPage() {
   const [headerConfig, setHeaderConfig] = useState<HeaderConfig>(DEFAULT_HEADER);
   const [footerConfig, setFooterConfig] = useState<FooterConfig>(DEFAULT_FOOTER);
   const [uploadingDocx, setUploadingDocx] = useState(false);
+  // Live PDF pane beside the web editor. Off by default — it renders a real
+  // PDF on every (debounced) keystroke, so it is opt-in.
+  const [livePreview, setLivePreview] = useState(false);
   // True when Step 3's header/footer was prefilled from the tenant's last
   // template (create only) — drives the "reused / start blank" hint.
   const [brandingFromLast, setBrandingFromLast] = useState(false);
+  // The logged-in user's branch identity (name / address / logo), used to seed
+  // the letterhead of a template that carries none of its own.
+  const [orgIdentity, setOrgIdentity] = useState<OrgIdentity | null>(null);
+  /* Set while the template has no letterhead of its own — either never saved
+     with one, or still carrying the untouched "Company Name" placeholder copy.
+     Such a template adopts the branch's name/logo once it loads. */
+  const [headerUnset, setHeaderUnset] = useState(false);
+  const [footerUnset, setFooterUnset] = useState(false);
   const [downloadingDocx, setDownloadingDocx] = useState(false);
   const docxRef = useRef<HTMLInputElement | null>(null);
 
@@ -232,6 +273,15 @@ export default function TemplateFormPage() {
         // saved before this column existed) still render correctly.
         setHeaderConfig({ ...DEFAULT_HEADER, ...(row.header_config || {}) } as HeaderConfig);
         setFooterConfig({ ...DEFAULT_FOOTER, ...(row.footer_config || {}) } as FooterConfig);
+        /* A row saved with the shipped placeholder text ("Company Name") never
+           had a letterhead chosen for it — the user just never opened the
+           header/footer panel. Treat that as unset so it picks up the branch's
+           real name, the same as a template that has no config at all. */
+        setHeaderUnset(!row.header_config
+          || ((row.header_config.title ?? '').trim() === DEFAULT_HEADER.title
+              && !row.header_config.logo_path && !row.header_config.logo_url));
+        setFooterUnset(!row.footer_config
+          || (row.footer_config.text ?? '').trim() === DEFAULT_FOOTER.text.trim());
       } catch (err: any) {
         if (cancelled) return;
         const msg = err?.response?.data?.message
@@ -254,19 +304,55 @@ export default function TemplateFormPage() {
   // re-uploading the logo / re-typing the footer every time. Still fully
   // editable, and resettable to blank via the Step 3 hint.
   useEffect(() => {
-    if (editingId) return;
     let cancelled = false;
     (async () => {
       try {
         const { data } = await api.get('/hr-document-templates/last-branding');
         if (cancelled || !data) return;
-        if (data.header_config) { setHeaderConfig({ ...DEFAULT_HEADER, ...data.header_config } as HeaderConfig); setBrandingFromLast(true); }
-        if (data.footer_config) { setFooterConfig({ ...DEFAULT_FOOTER, ...data.footer_config } as FooterConfig); }
+        const org: OrgIdentity | null = data.org?.name || data.org?.logo_url ? data.org : null;
+        setOrgIdentity(org);
+        // Copying the previous template's letterhead is a NEW-template
+        // convenience; editing one must never have its saved design replaced.
+        if (editingId) return;
+        /* Previous template's letterhead wins — it is this tenant's real one,
+           already adjusted. Only when there is none do we fall back to the
+           branch's own name + logo. */
+        if (data.header_config) {
+          setHeaderConfig({ ...DEFAULT_HEADER, ...data.header_config } as HeaderConfig);
+          setBrandingFromLast(true);
+        } else if (org) {
+          setHeaderConfig(headerFromOrg(org));
+        }
+        if (data.footer_config) {
+          setFooterConfig({ ...DEFAULT_FOOTER, ...data.footer_config } as FooterConfig);
+        } else if (org) {
+          setFooterConfig(footerFromOrg(org));
+        }
       } catch { /* no previous template — keep the blank defaults */ }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingId]);
+
+  /* Sample values for the sidebar's Organization tokens, so the user can see
+     WHOSE name/address/logo the placeholder will print before inserting it. */
+  const orgTokenPreviews = useMemo(() => {
+    if (!orgIdentity) return undefined;
+    const out: Record<string, string> = {};
+    if (orgIdentity.name)     out['{{CompanyName}}']    = orgIdentity.name;
+    if (orgIdentity.address)  out['{{CompanyAddress}}'] = orgIdentity.address;
+    if (orgIdentity.logo_url) out['{{CompanyLogo}}']    = 'your branch logo';
+    return Object.keys(out).length ? out : undefined;
+  }, [orgIdentity]);
+
+  // ── Seed an empty letterhead from the branch ──────────────────────────────
+  // Runs after both the template row and the org identity have landed (they
+  // are fetched in parallel, so neither can seed on its own).
+  useEffect(() => {
+    if (!orgIdentity || !(orgIdentity.name || orgIdentity.logo_url)) return;
+    if (headerUnset) { setHeaderConfig(headerFromOrg(orgIdentity)); setHeaderUnset(false); }
+    if (footerUnset) { setFooterConfig(footerFromOrg(orgIdentity)); setFooterUnset(false); }
+  }, [orgIdentity, headerUnset, footerUnset]);
 
   // ── Auto-preview the code when category/role change (create only) ─────────
   useEffect(() => {
@@ -736,7 +822,17 @@ export default function TemplateFormPage() {
               uploadingDocx={uploadingDocx}
               downloadingDocx={downloadingDocx}
               brandingFromLast={brandingFromLast}
-              onResetBranding={() => { setHeaderConfig(DEFAULT_HEADER); setFooterConfig(DEFAULT_FOOTER); setBrandingFromLast(false); }}
+              tokenPreviews={orgTokenPreviews}
+              livePreview={livePreview} setLivePreview={setLivePreview}
+              /* Resets to THIS branch's letterhead rather than the shipped
+                 "Company Name" copy — that placeholder is never what the user
+                 wants, and it used to be one click away from going out. */
+              onResetBranding={() => {
+                const org = orgIdentity && (orgIdentity.name || orgIdentity.logo_url) ? orgIdentity : null;
+                setHeaderConfig(org ? headerFromOrg(org) : DEFAULT_HEADER);
+                setFooterConfig(org ? footerFromOrg(org) : DEFAULT_FOOTER);
+                setBrandingFromLast(false);
+              }}
             />
           )}
         </CardBody>
@@ -1092,6 +1188,8 @@ function Step3(props: {
   downloadingDocx: boolean;
   brandingFromLast?: boolean;
   onResetBranding?: () => void;
+  tokenPreviews?: Record<string, string>;
+  livePreview: boolean; setLivePreview: (v: boolean) => void;
 }) {
   const tabBtn = (active: boolean): React.CSSProperties => ({
     padding: '7px 16px', border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
@@ -1120,6 +1218,16 @@ function Step3(props: {
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" className={`tpl-editor-tab${props.editorMode === 'web'  ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'web')}  onClick={() => props.setEditorMode('web')}><i className="ri-global-line me-1" />Web Editor</button>
           <button type="button" className={`tpl-editor-tab${props.editorMode === 'word' ? ' is-active' : ''}`} style={tabBtn(props.editorMode === 'word')} onClick={() => props.setEditorMode('word')}><i className="ri-file-word-2-line me-1" />MS Word</button>
+          {/* The editor is a scrolling div, not a paginated engine, so it can only
+              hint at where a page ends. This renders the draft through the same
+              DomPDF pipeline the download uses and shows the real A4 pages. */}
+          {props.editorMode === 'web' && (
+            <button type="button" style={tabBtn(props.livePreview)}
+              title="Render the draft as a real PDF — true A4 pages, the actual header/footer, and where each page break lands"
+              onClick={() => props.setLivePreview(!props.livePreview)}>
+              <i className="ri-file-pdf-2-line me-1" />Live PDF
+            </button>
+          )}
         </div>
       </div>
 
@@ -1131,12 +1239,53 @@ function Step3(props: {
       )}
 
       {props.editorMode === 'web' && (
-        <HeaderFooterPanel
-          header={props.headerConfig} setHeader={props.setHeaderConfig}
-          footer={props.footerConfig} setFooter={props.setFooterConfig}
-        >
-          <TemplateEditor value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers} />
-        </HeaderFooterPanel>
+        /* The preview is positioned OUT OF FLOW on purpose.
+           As a normal flex item it sized itself to its own content — the
+           rendered page stack, which is as long as the document — and since a
+           flex line is as tall as its tallest item, the preview grew the row
+           and ran far past the footer band instead of matching it.
+           `align-self: stretch` cannot fix that: it stretches an auto-height
+           item to the LINE, but the line is already the item's own content
+           height. Taking it out of flow leaves the left column as the only
+           thing setting the row height, and top/bottom: 0 pins the preview to
+           exactly that — ending level with the footer strip. */
+        <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', position: 'relative' }}>
+          <div style={{
+            flex: '1 1 auto', minWidth: 0,
+            // Reserve the column the out-of-flow preview sits in.
+            marginRight: props.livePreview ? 'calc(34% + 12px)' : undefined,
+          }}>
+            <HeaderFooterPanel
+              header={props.headerConfig} setHeader={props.setHeaderConfig}
+              footer={props.footerConfig} setFooter={props.setFooterConfig}
+            >
+              <TemplateEditor value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers}
+                tokenPreviews={props.tokenPreviews} />
+            </HeaderFooterPanel>
+          </div>
+
+          {props.livePreview && (
+            <div style={{
+              position: 'absolute', top: 0, right: 0, bottom: 0,
+              width: '34%', minWidth: 320,
+              display: 'flex', minHeight: 0,
+              border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden',
+            }}>
+              {/* top/bottom: 0 makes this box's height definite, which is what
+                  the previewer's own height:100% resolves against — a document
+                  longer than the box scrolls inside it. */}
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}>
+                <LivePdfPreview
+                  endpoint="/hr-document-templates/preview-live"
+                  contractId={props.editingId}
+                  content={props.contentHtml}
+                  headerConfig={props.headerConfig as unknown as Record<string, unknown>}
+                  footerConfig={props.footerConfig as unknown as Record<string, unknown>}
+                />
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {props.editorMode === 'word' && (

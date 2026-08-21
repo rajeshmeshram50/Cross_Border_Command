@@ -127,11 +127,178 @@ class HrDocumentTemplateController extends Controller
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
         $row = $q->orderByDesc('id')->first(['header_config', 'footer_config']);
         return response()->json([
-            'header_config' => $row->header_config ?? null,
-            'footer_config' => $row->footer_config ?? null,
+            // `?->` — with no previous template at all, $row is null and the
+            // old `$row->header_config` raised "property on null" on every
+            // first-ever template.
+            'header_config' => $row?->header_config,
+            'footer_config' => $row?->footer_config,
+            // Who this user's letterhead belongs to. The first template a
+            // branch writes has no previous branding to copy, and the blank
+            // defaults printed the literal words "Company Name" in the header
+            // and footer of the draft — so every new template started off
+            // branded as somebody else's. Seeds the same values the
+            // {{CompanyName}} / {{CompanyAddress}} / {{CompanyLogo}} tokens
+            // resolve to at generate time.
+            'org' => $this->orgIdentity($request->user()),
         ]);
     }
 
+    /**
+     * The organisation a user's documents are issued by: their BRANCH first
+     * (a branch user's letterhead is their own office, not the parent org),
+     * falling back to the client row. Mirrors how {{CompanyName}},
+     * {{CompanyAddress}} and {{CompanyLogo}} resolve when a document is
+     * actually generated, so the draft the user designs matches the output.
+     */
+    private function orgIdentity(?\App\Models\User $user): array
+    {
+        $branch = $user?->branch;
+        $client = $user?->client;
+
+        $address = $branch
+            ? trim(implode(', ', array_filter([
+                trim((string) ($branch->address ?? '')),
+                trim((string) ($branch->city ?? '')),
+                trim((string) ($branch->state ?? '')),
+                trim((string) ($branch->pincode ?? '')),
+            ], fn ($v) => $v !== '')))
+            : '';
+
+        $logoPath = $branch?->logo ?: $client?->logo;
+
+        return [
+            'name'      => (string) ($branch?->name ?: $client?->org_name ?: ''),
+            'address'   => $address,
+            'logo_path' => $logoPath ? (string) $logoPath : null,
+            'logo_url'  => $logoPath ? file_url($logoPath) : null,
+        ];
+    }
+    /**
+     * Live PDF preview of a template that has not been saved yet.
+     *
+     * The editor can only ESTIMATE where a page ends — it is a scrolling div,
+     * not a paginated engine — so the only way to show true A4 pages, the real
+     * header/footer bands and where an explicit page break actually lands is to
+     * render the draft through the same DomPDF pipeline the download uses and
+     * paint the result. Same blade as the generated/signed copies
+     * (pdf.signed-document), so preview and output cannot drift.
+     *
+     * Placeholders are deliberately left as written: this previews the TEMPLATE,
+     * and a designer needs to see {{FullName}} sitting where it will print. The
+     * per-employee preview (previewForEmployee) is the one that resolves them.
+     */
+    public function previewLive(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+        @ini_set('memory_limit', '512M');
+        @set_time_limit(60);
+
+        $data = $request->validate([
+            'id'            => 'nullable|integer',
+            'content'       => 'nullable|string',
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
+        ]);
+
+        $row = null;
+        if (!empty($data['id'])) {
+            // Tenant-scoped lookup only — never trust an id from the request to
+            // reach another client's template.
+            try { $row = $this->resolveRow($request, (int) $data['id']); }
+            catch (\Throwable $e) { $row = null; }
+        }
+
+        $headerCfg = $data['header_config'] ?? (is_array($row?->header_config) ? $row->header_config : []);
+        $footerCfg = $data['footer_config'] ?? (is_array($row?->footer_config) ? $row->footer_config : []);
+
+        $html = (string) ($data['content'] ?? $row?->content_html ?? '');
+        if (trim(strip_tags($html)) === '' && !str_contains($html, '<img')) {
+            $html = '<p style="color:#9ca3af">(empty template)</p>';
+        }
+
+        // The blade only reads $row->template?->name for the <title>, and an
+        // unsaved draft has no row at all — hand it a stand-in.
+        $document = $row ?: new HrDocumentTemplate(['name' => 'Template preview']);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.signed-document', [
+            'row'         => $document,
+            'header'      => $headerCfg,
+            'footer'      => $footerCfg,
+            'logoDataUri' => $this->previewLogoDataUri($headerCfg, $request->user()),
+            // DomPDF runs headless and cannot fetch /storage over HTTP.
+            'bodyHtml'    => $this->inlineLocalImages($html),
+        ])->setPaper('A4');
+
+        // Inline so the SPA can pull it as a blob and paint it with pdf.js.
+        return $pdf->stream('template-preview.pdf');
+    }
+
+    /**
+     * Header-strip logo for the live preview: the config's saved disk path, the
+     * same config's URL mapped back to a disk path, then the signed-in user's
+     * branch (and client) logo — the same order the generated PDF uses, so the
+     * preview shows the letterhead the document will carry.
+     */
+    private function previewLogoDataUri(array $headerCfg, $user): ?string
+    {
+        $candidates = array_filter([
+            (string) ($headerCfg['logo_path'] ?? ''),
+            $this->previewDiskPath((string) ($headerCfg['logo_url'] ?? '')) ?? '',
+            (string) ($user?->branch?->logo ?? ''),
+            (string) ($user?->client?->logo ?? ''),
+        ]);
+
+        foreach ($candidates as $path) {
+            $uri = $this->previewImageDataUri($path);
+            if ($uri) return $uri;
+        }
+        return null;
+    }
+
+    /** '/storage/foo/bar.png' (or a full URL to it) → 'foo/bar.png'. */
+    private function previewDiskPath(string $src): ?string
+    {
+        $src = trim($src);
+        if ($src === '' || str_starts_with($src, 'data:')) return null;
+
+        $parsed = parse_url($src);
+        $path = ltrim(str_replace('\\', '/', $parsed['path'] ?? $src), '/');
+
+        if (preg_match('#(?:^|/)storage/(.+)$#', $path, $m)) return $m[1];
+        if (isset($parsed['scheme'])) return null;   // remote host — leave alone
+        if (str_starts_with($path, 'public/')) $path = substr($path, strlen('public/'));
+        return str_contains($path, '/') ? $path : null;
+    }
+
+    /** Public-disk file → base64 data URI, or null when unreadable. */
+    private function previewImageDataUri(string $path): ?string
+    {
+        try {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+            if (!$path || !$disk->exists($path)) return null;
+            $mime = $disk->mimeType($path) ?: 'image/png';
+            return 'data:' . $mime . ';base64,' . base64_encode($disk->get($path));
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** Rewrite local <img src> values into data URIs for DomPDF. */
+    private function inlineLocalImages(string $html): string
+    {
+        return preg_replace_callback(
+            '#<img\b([^>]*?)\bsrc=([\'"])(.*?)\2([^>]*?)/?>#i',
+            function (array $m) {
+                [$full, $pre, $q, $src, $post] = $m;
+                if ($src === '' || str_starts_with($src, 'data:')) return $full;
+                $path = $this->previewDiskPath($src);
+                if (!$path) return $full;
+                $uri = $this->previewImageDataUri($path);
+                return $uri ? '<img' . $pre . 'src=' . $q . $uri . $q . $post . '/>' : $full;
+            },
+            $html,
+        ) ?? $html;
+    }
     public function stats(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -598,6 +765,31 @@ class HrDocumentTemplateController extends Controller
         $signers = is_array($signers) ? $signers : (is_string($signers) ? json_decode($signers, true) : []);
         $signers = is_array($signers) ? $signers : [];
 
+        // Relations the letterhead + company tokens read. The call sites
+        // eager-load only the employee-facing ones, so ask for these here
+        // rather than relying on lazy loading.
+        $emp->loadMissing(['branch.client', 'legalEntity', 'client']);
+
+        /* Letterhead values off the employee's own branch — the entity that
+         * actually issues the document. The logo is emitted as an <img> so the
+         * preview renders it inline exactly as the generated document does. */
+        $empBranch = $emp->branch;
+        $branchAddress = $empBranch
+            ? trim(implode(', ', array_filter([
+                trim((string) ($empBranch->address ?? '')),
+                trim((string) ($empBranch->city ?? '')),
+                trim((string) ($empBranch->state ?? '')),
+                trim((string) ($empBranch->pincode ?? '')),
+            ], fn ($v) => $v !== '')))
+            : '';
+        $branchLogoUrl = $empBranch ? file_url($empBranch->logo) : null;
+        $branchLogo = $branchLogoUrl
+            ? sprintf(
+                '<img src="%s" alt="Company logo" style="max-height:64px;max-width:220px;" />',
+                htmlspecialchars($branchLogoUrl, ENT_QUOTES),
+            )
+            : '';
+
         $ctx = [
             // Basic
             'FirstName'      => (string) ($emp->first_name ?? ''),
@@ -646,8 +838,12 @@ class HrDocumentTemplateController extends Controller
                 ?: $emp->client?->org_name
                 ?: $emp->branch?->name
                 ?: ''),
-            'CompanyAddress' => '',
-            'CompanyLogo'    => '',
+            /* Both were hardcoded to '' here while the generate path resolved
+             * them off the employing branch — so a template that used the
+             * letterhead tokens previewed with a blank line and only came out
+             * right in the final document. Same source in both paths now. */
+            'CompanyAddress' => $branchAddress,
+            'CompanyLogo'    => $branchLogo,
         ];
 
         /* Signer{N}{Name|Role|Date} — N is 1-indexed, matching the editor sidebar.

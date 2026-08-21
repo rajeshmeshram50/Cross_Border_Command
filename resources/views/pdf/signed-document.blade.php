@@ -46,6 +46,15 @@
   .body h1, .body h2, .body h3 { margin: 14px 0 8px; }
   .body table { width: 100%; border-collapse: collapse; }
   .body img { max-width: 100%; }
+  /* Explicit break emitted by the editor's Page Break button. The div is
+     zero-height and invisible in print; only the instruction matters. Matched
+     on the class AND the data attribute so a stripped stylesheet or a
+     sanitiser that drops classes still leaves the break standing. */
+  .body div.page-break,
+  .body div[data-page-break] {
+    page-break-after: always;
+    height: 0; margin: 0; padding: 0; border: 0; line-height: 0;
+  }
 </style>
 </head>
 <body>
