@@ -72,6 +72,11 @@ export interface PayslipViewerModalProps {
    *  a badge shows and Download/Email are disabled. Undefined = treat as final
    *  (back-compat for the EmployeeProfile caller). */
   isFinal?: boolean;
+  /** True while the parent is fetching this payslip's detail. The body renders
+   *  a loading state instead of the figures: everything below the header is
+   *  derived from data that has not arrived, and drawing it early means drawing
+   *  it wrong — zeros, or the previously opened payslip's numbers. (QA #94) */
+  loading?: boolean;
   /** Fired when a "Recent Payslips" entry is clicked so the parent can load
    *  that month's payslip. */
   onSelectRecent?: (entry: PayslipRecentEntry) => void;
@@ -148,6 +153,7 @@ export default function PayslipViewerModal({
   companyInitials = '',
   hrEmail = '',
   isFinal,
+  loading = false,
   onSelectRecent,
   payslipId,
 }: PayslipViewerModalProps) {
@@ -450,6 +456,24 @@ export default function PayslipViewerModal({
 
             {/* Payslip preview */}
             <div className="ep-pay-preview">
+              {/* Nothing below here is safe to draw before the detail lands:
+                  the earnings, the deductions, every day count and the net pay
+                  are all derived from it, so an early render shows zeros or the
+                  payslip opened before this one. The sidebar stays live, so the
+                  month can still be changed while this loads. (QA #94) */}
+              {loading && (
+                <div
+                  className="d-flex flex-column align-items-center justify-content-center gap-2"
+                  style={{ minHeight: 420, color: 'var(--vz-secondary-color)' }}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Spinner style={{ width: 26, height: 26, color: '#5a3fd1' }} />
+                  <span style={{ fontSize: 12, fontWeight: 600 }}>Loading payslip…</span>
+                  <span style={{ fontSize: 11 }}>Fetching the salary breakup for this cycle.</span>
+                </div>
+              )}
+              {!loading && <>
               {/* Company hero */}
               <div className="ep-pay-company">
                 <div style={{ position: 'absolute', top: -40, right: -30, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.06)', pointerEvents: 'none' }} />
@@ -632,6 +656,7 @@ export default function PayslipViewerModal({
                 This is a computer-generated payslip. No signature required.
                 {hrEmail ? <> Queries: <a href={`mailto:${hrEmail}`}>{hrEmail}</a></> : null}
               </div>
+              </>}
             </div>
           </div>
         </div>

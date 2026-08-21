@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
 use App\Models\SalaryStructure;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Versioned salary-structure management (Rule 5 + Rule 19).
@@ -187,6 +189,44 @@ class SalaryStructureController extends Controller
         abort_unless($employee, 422, 'Employee not found.');
         if ($user && $user->client_id && (int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'Employee belongs to another tenant.');
+        }
+
+        /* Bound the effective date. (QA #87)
+         *
+         * The rule was `['required','date']` and nothing else, so the API
+         * accepted 1990-01-01 and 2099-12-31 alike. The modal seeds the joining
+         * date and sets minDate from it, but a date picker is not a validation
+         * rule — the field is editable, the endpoint is callable directly, and
+         * neither end had an upper bound at all.
+         *
+         * Two things are actually invalid:
+         *
+         *  · BEFORE the employee joined. There is no cycle for payroll to apply
+         *    it to, and activeStructure() picks by effective_from, so a
+         *    pre-joining date silently becomes the version every historic
+         *    lookup resolves to.
+         *
+         *  · Absurdly far ahead. A forward-dated revision is a real feature —
+         *    Rule 19 prices each cycle on the version in force during it, and
+         *    the payslip now names a pending one — so this cannot be "no future
+         *    dates". It only has to stop a typo'd year, which a one-year
+         *    horizon does while leaving every genuine revision room. */
+        $effective = Carbon::parse($data['effective_from'])->startOfDay();
+
+        if ($employee->date_of_joining) {
+            $joined = Carbon::parse($employee->date_of_joining)->startOfDay();
+            if ($effective->lt($joined)) {
+                throw ValidationException::withMessages(['effective_from' =>
+                    'Salary cannot take effect before the joining date ('
+                    . $joined->format('j M Y') . ').']);
+            }
+        }
+
+        $horizon = Carbon::now()->startOfDay()->addYear();
+        if ($effective->gt($horizon)) {
+            throw ValidationException::withMessages(['effective_from' =>
+                'Salary cannot take effect more than a year ahead (latest '
+                . $horizon->format('j M Y') . '). Check the date.']);
         }
 
         $monthlyGross = collect($data['earnings'])->sum(fn ($c) => (float) $c['amount']);

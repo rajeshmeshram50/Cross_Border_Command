@@ -1254,6 +1254,37 @@ class PayrollService
         [$gross, $basic, $earnComponents, $structDeductions, $pfApplicable, $esiApplicable, $ptApplicable] =
             $this->resolveCompensation($employee, $structure, $exceptions);
 
+        /* A revision that has not taken effect yet, named on the slip. (QA #96)
+         *
+         * Salary Setup and the Employee form show the structure flagged
+         * 'active' — the latest one saved. Payroll prices a cycle on the version
+         * that was in force DURING it, so a revision dated next month correctly
+         * does not touch this one. Both are right, and side by side they look
+         * like the two modules disagree about the employee's salary.
+         *
+         * Saying which version priced the cycle, and that a later one is
+         * waiting, turns a contradiction into a schedule. Info, not warning:
+         * nothing here needs fixing before the run. */
+        if ($structure) {
+            $pending = SalaryStructure::where('employee_id', $employee->id)
+                ->where('status', 'active')
+                ->whereDate('effective_from', '>', $winEnd)
+                ->orderByDesc('effective_from')
+                ->first();
+            if ($pending) {
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
+                    'Priced on the salary structure effective '
+                        . Carbon::parse($structure->effective_from)->format('j M Y')
+                        . ' (₹' . number_format((float) $structure->monthly_gross, 2) . '/month). '
+                        . 'A revision effective ' . Carbon::parse($pending->effective_from)->format('j M Y')
+                        . ' (₹' . number_format((float) $pending->monthly_gross, 2) . '/month) is saved on the '
+                        . 'employee and applies from that cycle onward.'
+                );
+            }
+        }
+
         /* Rule 19 (PAY-27) — a revision dated INSIDE the cycle is blended, not
          * applied to the whole month. resolveCompensation() above returns the
          * version in force at the END of the window, which on its own paid a
@@ -1814,7 +1845,25 @@ class PayrollService
         $cycleEarnings = round($proratedGross + $overtimeAmount + $bonusAmount, 2);
 
         $pf  = 0;
-        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+        /* $pfApplicable is ALREADY the resolved answer.
+         *
+         * resolveCompensation() reads it off the salary structure when the
+         * employee has one, and falls back to employees.pf_eligible only when
+         * they do not. This line used to AND it with employees.pf_eligible a
+         * second time, which is not a stricter version of the same question —
+         * it is a different one. The two flags are meant to be mirrors, kept in
+         * step by SalaryStructureController::store() and EmployeeController::
+         * update(), but any path that writes one without the other (onboarding,
+         * imports, seeded and legacy rows, a partial employee save that never
+         * submits the field) leaves them disagreeing. Where they disagreed as
+         * structure=yes / employee=no, PF was silently dropped: no deduction, no
+         * line on the slip, and no note saying why — the Salary Structure showed
+         * PF configured and the payslip simply did not have it. (QA #97)
+         *
+         * Removing the second gate can only ever ADD PF where the structure says
+         * it applies; every other combination resolves exactly as before, since
+         * structure=no already produced no PF whatever the employee flag said. */
+        if ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
             $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
                 ? $earnedBasic
                 : min($earnedBasic, self::PF_WAGE_CEILING);
@@ -1830,6 +1879,35 @@ class PayrollService
                         . 'Set Employment Type on the employee record to confirm.'
                 );
             }
+            /* The basic could not be identified on the structure, so half the
+             * gross was assumed for it. PF rides on that number, so an
+             * assumption here is a real deduction taken off a guess — the slip
+             * has to say so rather than print a confident figure. Warning, not
+             * info: naming an earning row "Basic" is a one-line fix and until
+             * it is done the PF is very likely wrong. */
+            if ($structure && $structure->basicIsAssumed()) {
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'warning',
+                    'No "Basic" earning row on the salary structure — PF was charged on 50% of gross '
+                        . '(₹' . number_format($basic, 2) . ') as an assumed basic. '
+                        . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
+                );
+            }
+        } elseif ($pfApplicable && !$this->isPfEligibleType($employee)) {
+            /* Configured, then withheld by the employment type — the other way
+             * this ticket's symptom appears. PF is a full-time head, so an
+             * intern / contractor / consultant is skipped deliberately; saying
+             * so is the difference between a policy and a missing deduction.
+             * Warning, because someone ticked PF on the structure and is not
+             * getting it, which is worth a look before the run is approved. */
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'PF is applicable on the salary structure but not deducted — employment type is "'
+                    . ($employee->employee_type ?: $employee->work_type)
+                    . '", and PF applies to full-time employees only.'
+            );
         }
         // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
         // the amount in the salary breakup); fall back to the statutory 0.75%
@@ -2163,6 +2241,22 @@ class PayrollService
             ->whereDate('effective_from', '<=', Carbon::parse($asOf))
             ->orderByDesc('effective_from')
             ->orderByDesc('version')
+            /* Tie-break, and the reason Payroll could show a different salary
+             * structure from the Employee form. (QA #96)
+             *
+             * effective_from + version is NOT unique in practice: a re-run
+             * seeder or any path that inserts without bumping the version leaves
+             * several rows at version 1 on the same date — this database has
+             * employees carrying seven. With both sort keys tied, the row
+             * returned was whatever the database happened to hand back first,
+             * which was the OLDEST duplicate, while Salary Setup and the
+             * Employee form show the one flagged 'active' — the newest. Two
+             * screens, two rows, two sets of components.
+             *
+             * 'active' first, then the highest id, so the pick is deterministic
+             * AND lands on the same row the rest of the app calls current. */
+            ->orderByRaw("CASE WHEN status = 'active' THEN 0 ELSE 1 END")
+            ->orderByDesc('id')
             ->first();
     }
 
@@ -2206,6 +2300,14 @@ class PayrollService
             ->whereDate('effective_from', '<=', $winEnd)
             ->orderBy('effective_from')
             ->orderBy('version')
+            /* Same duplicate-row tie as activeStructure() (QA #96), mirrored:
+             * $inForceAt() below takes the LAST match in this ascending order,
+             * so 'active' and the highest id must sort LAST for it to settle on
+             * the same row activeStructure() returns. Without it the blended
+             * rate could be built from one duplicate and the component labels
+             * from another. */
+            ->orderByRaw("CASE WHEN status = 'active' THEN 1 ELSE 0 END")
+            ->orderBy('id')
             ->get();
 
         // Versions whose effective date falls INSIDE the window are the only
@@ -2374,11 +2476,10 @@ class PayrollService
         if (!$this->hasTable('holidays')) {
             return 0.0;
         }
-        $groupId = $employee->holiday_group_id ?? null;
-        if (!$groupId) {
-            return 0.0;
-        }
-
+        /* No early return on a missing holiday group. Company holidays carry no
+         * group at all (QA #93), so bailing out here credited zero holiday days
+         * to every employee who had not been put in one — which is most of them.
+         * holidayDateSet() resolves company + group holidays together. */
         $count = 0;
         $label = (string) ($employee->weekly_off ?? '');
         foreach (array_keys($this->holidayDateSet($employee, $start, $end)) as $ds) {
@@ -2433,18 +2534,57 @@ class PayrollService
         if (!$this->hasTable('holidays')) {
             return [];
         }
-        $groupId = $employee->holiday_group_id ?? null;
-        if (!$groupId) {
-            return [];
-        }
+        $groupId  = $employee->holiday_group_id ?? null;
+        $clientId = $employee->client_id ?? null;
+        $branchId = $employee->branch_id ?? null;
 
-        /* The raw calendar depends only on the group, so cache it per group and
-         * let the windowing below run on the cached rows — employees sharing a
-         * holiday group no longer each re-read the same table (and restDayKind
-         * calls this once per DAY per employee). */
-        $rows = $this->masterCache["hol:{$groupId}"] ??= DB::table('holidays')
-            ->where('holiday_group_id', $groupId)
+        /* A holiday with NO group is a COMPANY holiday — it applies to everyone
+         * in the client, not to nobody. (QA #93)
+         *
+         * holidays.holiday_group_id is nullable and HolidayController validates
+         * it as nullable, so "add a holiday without picking a group" is a normal,
+         * supported action — it is how Holi and Company Foundation Day were
+         * entered. But every reader matched a specific group id, so those rows
+         * were dead data: not credited as paid days, not free inside a leave,
+         * invisible on the calendar. And an employee with no group assigned got
+         * NO holidays at all, because the method returned early before it looked.
+         *
+         * An employee is therefore paid for the company holidays of their client
+         * PLUS the ones belonging to their own group, if they have one. Branch
+         * narrows a company holiday when it is set; a null branch means every
+         * branch, which is what a company-wide holiday means.
+         *
+         * The early return is gone with it: a tenant that never uses groups is
+         * the common case, not an excuse to skip the lookup. */
+        $key  = 'hol:' . ($groupId ?? '-') . ':' . ($clientId ?? '-') . ':' . ($branchId ?? '-');
+        $rows = $this->masterCache[$key] ??= DB::table('holidays')
             ->whereNull('deleted_at')
+            ->where(function ($q) use ($groupId, $clientId, $branchId) {
+                // Company-wide: no group, scoped to this client/branch.
+                $q->where(function ($w) use ($clientId, $branchId) {
+                    $w->whereNull('holiday_group_id');
+                    /* The client must MATCH — never "match or is null".
+                     *
+                     * A null client_id is not a global holiday, it is an
+                     * unscoped row, and treating it as global hands one tenant's
+                     * calendar to all of them. HolidayController scopes the same
+                     * way (applyScope: null means the super-admin's own scope,
+                     * not everyone's), so this agrees with the screen the rows
+                     * are created on. Every employee has a client, so there is
+                     * no case this shuts out. */
+                    $w->where('client_id', $clientId);
+                    /* Branch, by contrast, IS "match or null": a company holiday
+                     * entered without a branch covers every office of that
+                     * client, which is what a company-wide holiday means. */
+                    if ($branchId) {
+                        $w->where(fn($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
+                    }
+                });
+                // Plus this employee's own group, when they are in one.
+                if ($groupId) {
+                    $q->orWhere('holiday_group_id', $groupId);
+                }
+            })
             ->get(['date', 'is_recurring']);
 
         $dates = [];

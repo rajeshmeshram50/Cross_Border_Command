@@ -1381,9 +1381,12 @@ class LeaveRequestController extends Controller
         $padFrom = $from->copy()->subDays($pad);
         $padTo   = $to->copy()->addDays($pad);
 
-        $holidaySet = $employee->holiday_group_id
-            ? $this->holidayDatesInRange((int) $employee->holiday_group_id, $padFrom, $padTo)
-            : [];
+        /* Unconditional now: a company holiday carries no group (QA #93), so
+         * gating the lookup on the employee having one meant an employee not
+         * placed in a group had every holiday counted as an ordinary working day
+         * — charged against their leave here, while payroll credited it as paid.
+         * The two sizing sites have to read the same calendar. */
+        $holidaySet = $this->holidayDatesInRange($employee, $padFrom, $padTo);
 
         $isOff = fn (Carbon $d): bool => \App\Support\WeekOff::isOff($weeklyOffLabel, $d)
             || isset($holidaySet[$d->toDateString()]);
@@ -1423,14 +1426,45 @@ class LeaveRequestController extends Controller
      * the single answer to "is this date an off day?", and it understands the
      * nth-Saturday patterns a day-of-week set never could. */
 
-    /** Holiday dates (Y-m-d => true) for a group within [start, end], re-anchoring
-     *  recurring holidays to the window's year. */
-    private function holidayDatesInRange(int $groupId, Carbon $start, Carbon $end): array
+    /**
+     * Holiday dates (Y-m-d => true) that apply to this EMPLOYEE within
+     * [start, end], re-anchoring recurring holidays to the window's years.
+     *
+     * Company holidays (holiday_group_id NULL, scoped by client/branch) plus the
+     * employee's own group, if they are in one — the same resolution
+     * PayrollService::holidayDateSet() performs. It takes the employee rather
+     * than a group id precisely so the company-wide half can be resolved; keyed
+     * on a group id alone it could only ever answer half the question, and an
+     * employee with no group got nothing.
+     */
+    private function holidayDatesInRange(Employee $employee, Carbon $start, Carbon $end): array
     {
         if (!\Illuminate\Support\Facades\Schema::hasTable('holidays')) return [];
+
+        $groupId  = $employee->holiday_group_id ?? null;
+        $clientId = $employee->client_id ?? null;
+        $branchId = $employee->branch_id ?? null;
+
         $rows = DB::table('holidays')
-            ->where('holiday_group_id', $groupId)
             ->whereNull('deleted_at')
+            ->where(function ($q) use ($groupId, $clientId, $branchId) {
+                $q->where(function ($w) use ($clientId, $branchId) {
+                    $w->whereNull('holiday_group_id');
+                    // Client must MATCH, never "match or null" — an unscoped row
+                    // is not a global holiday, and treating it as one leaks one
+                    // tenant's calendar into every other. Twin of the rule in
+                    // PayrollService::holidayDateSet().
+                    $w->where('client_id', $clientId);
+                    // Branch stays "match or null": a company holiday with no
+                    // branch covers every office of that client.
+                    if ($branchId) {
+                        $w->where(fn($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
+                    }
+                });
+                if ($groupId) {
+                    $q->orWhere('holiday_group_id', $groupId);
+                }
+            })
             ->get(['date', 'is_recurring']);
         $out = [];
         foreach ($rows as $r) {

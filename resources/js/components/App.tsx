@@ -20,111 +20,143 @@ import VelzonShell from '../velzon/VelzonShell';
 import AccessDenied from './AccessDenied';
 import { canAccessPath } from '../utils/routeAccess';
 import { FEATURE_FLAGS } from '../constants';
-import Login from '../pages/auth/Login';
-import ForgotPassword from '../pages/auth/ForgotPassword';
-import VerifyOTP from '../pages/auth/VerifyOTP';
-import ResetPassword from '../pages/auth/ResetPassword';
-import AdminDashboard from '../pages/dashboard/AdminDashboard';
-import ClientDashboard from '../pages/dashboard/ClientDashboard';
-import BranchDashboard from '../pages/dashboard/BranchDashboard';
-import EmployeeDashboard from '../pages/dashboard/EmployeeDashboard';
-import Clients from '../pages/client/Clients';
-import ClientForm from '../pages/client/ClientForm';
-import Branches from '../pages/branch/Branches';
-import UsersPage from '../pages/UsersPage';
-import Plans from '../pages/plan/Plans';
-import Payments from '../pages/Payments';
-import Permissions from '../pages/permission/Permissions';
-import Settings from '../pages/Settings';
-import Profile from '../pages/Profile';
-import AddPlan from '../pages/plan/AddPlan';
-import BranchForm from '../pages/branch/BranchForm';
-import BranchView from '../pages/branch/BranchView';
-import PlanSelection from '../pages/plan/PlanSelection';
-import ClientView from '../pages/client/ClientView';
-import ClientBranches from '../pages/client/ClientBranches';
-import ClientPermissions from '../pages/client/ClientPermissions';
-import ClientPayments from '../pages/client/ClientPayments';
-import ClientSettings from '../pages/client/ClientSettings';
-import MasterDashboard from '../pages/MasterDashboard';
-import MasterPage from '../pages/master/MasterPage';
-// Route-level code-split: each page (plus its lazy-loaded modals) ships as its
-// own chunk, kept out of the main app bundle. Rendered behind <Suspense> below.
+const Login = lazy(() => import('../pages/auth/Login'));
+const ForgotPassword = lazy(() => import('../pages/auth/ForgotPassword'));
+const VerifyOTP = lazy(() => import('../pages/auth/VerifyOTP'));
+const ResetPassword = lazy(() => import('../pages/auth/ResetPassword'));
+const AdminDashboard = lazy(() => import('../pages/dashboard/AdminDashboard'));
+const ClientDashboard = lazy(() => import('../pages/dashboard/ClientDashboard'));
+const BranchDashboard = lazy(() => import('../pages/dashboard/BranchDashboard'));
+const EmployeeDashboard = lazy(() => import('../pages/dashboard/EmployeeDashboard'));
+const Clients = lazy(() => import('../pages/client/Clients'));
+const ClientForm = lazy(() => import('../pages/client/ClientForm'));
+const Branches = lazy(() => import('../pages/branch/Branches'));
+const UsersPage = lazy(() => import('../pages/UsersPage'));
+const Plans = lazy(() => import('../pages/plan/Plans'));
+const Payments = lazy(() => import('../pages/Payments'));
+const Permissions = lazy(() => import('../pages/permission/Permissions'));
+const Settings = lazy(() => import('../pages/Settings'));
+const Profile = lazy(() => import('../pages/Profile'));
+const AddPlan = lazy(() => import('../pages/plan/AddPlan'));
+const BranchForm = lazy(() => import('../pages/branch/BranchForm'));
+const BranchView = lazy(() => import('../pages/branch/BranchView'));
+const PlanSelection = lazy(() => import('../pages/plan/PlanSelection'));
+const ClientView = lazy(() => import('../pages/client/ClientView'));
+const ClientBranches = lazy(() => import('../pages/client/ClientBranches'));
+const ClientPermissions = lazy(() => import('../pages/client/ClientPermissions'));
+const ClientPayments = lazy(() => import('../pages/client/ClientPayments'));
+const ClientSettings = lazy(() => import('../pages/client/ClientSettings'));
+const MasterDashboard = lazy(() => import('../pages/MasterDashboard'));
+const MasterPage = lazy(() => import('../pages/master/MasterPage'));
 const SalesCustomers = lazy(() => import('../pages/sales/core-masters/customer/SalesCustomers'));
 const SalesConsignee = lazy(() => import('../pages/sales/core-masters/consignee/SalesConsignee'));
-import SalesLeadAckMaster from '../pages/sales/core-masters/lead-ack/SalesLeadAckMaster';
-import SalesLeadWorksheet from '../pages/sales/opportunity-pipeline/SalesLeadWorksheet';
-import LeadDistributionPage from '../pages/sales/opportunity-pipeline/AssignedLeadsModal';
-import SalesLeadsDetails from '../pages/sales/opportunity-pipeline/SalesLeadsDetails';
-import SalesTodo from '../pages/sales/insights-productivity/SalesTodo';
-import SalesQPI from '../pages/sales/opportunity-pipeline/SalesQPI';
-import DeveloperShipments from '../pages/developers/DeveloperShipments';
-import SalesSignTracker from '../pages/sales/opportunity-pipeline/SalesSignTracker';
-import SalesP2PSummary from '../pages/sales/opportunity-pipeline/SalesP2PSummary';
-import SalesMatrixDetail from '../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail';
-import Products from '../pages/p2p/p2p-master-management/product-management/Products';
-import ProductView from '../pages/p2p/p2p-master-management/product-management/ProductView';
-import Vendors from '../pages/p2p/p2p-master-management/supplier-management/Vendors';
-import SalesDiagnosis from '../pages/sales/insights-productivity/SalesDiagnosis';
-import SalesResolutionCenter from '../pages/sales/insights-productivity/SalesResolutionCenter';
-import SalesAnalytics from '../pages/sales/insights-productivity/SalesAnalytics';
-import SalesPerformance from '../pages/sales/insights-productivity/SalesPerformance';
-import ClmStubPage from '../pages/clm/shared/ClmStubPage';
-import ClmAnalyticsPage from '../pages/clm/command-center/ClmAnalyticsPage';
-import ClmSegmentPage from '../pages/clm/compliance/ClmSegmentPage';
-import ClmAuthorityPage from '../pages/clm/compliance/ClmAuthorityPage';
-import ClmKycPage from '../pages/clm/compliance/ClmKycPage';
-import ClmDdPage from '../pages/clm/compliance/ClmDdPage';
-import ClmTradeLicensesPage from '../pages/clm/compliance/ClmTradeLicensesPage';
-import ClmQcPage from '../pages/clm/compliance/ClmQcPage';
-import ClmTradeDocumentsPage from '../pages/clm/document-masters/ClmTradeDocumentsPage';
-import ClmTncPage from '../pages/clm/document-masters/ClmTncPage';
-import ClmAgreementsPage from '../pages/clm/document-masters/ClmAgreementsPage';
-import ClmClauseLibraryPage from '../pages/clm/document-masters/ClmClauseLibraryPage';
-import ClmDcpPage from '../pages/clm/compliance/ClmDcpPage';
-import ClmBuyerProfilePage from '../pages/clm/operations/ClmBuyerProfilePage';
-import ClmSupplierProfilePage from '../pages/clm/operations/ClmSupplierProfilePage';
-import ClmDiagnosisResolutionPage from '../pages/clm/command-center/ClmDiagnosisResolutionPage';
-import ClmRegulatoryDefenseFilePage from '../pages/clm/command-center/ClmRegulatoryDefenseFilePage';
-import ClmCaseToCasePage from '../pages/clm/operations/ClmCaseToCasePage';
-import ClmAgreementsSentPage from '../pages/clm/operations/ClmAgreementsSentPage';
-import ClmAgreementsToApprovePage from '../pages/clm/operations/ClmAgreementsToApprovePage';
-import HrDashboard from '../pages/hrms/HrDashboard';
-import HrOverview from '../pages/hrms/HrOverview';
+const SalesLeadAckMaster = lazy(() => import('../pages/sales/core-masters/lead-ack/SalesLeadAckMaster'));
+const SalesLeadWorksheet = lazy(() => import('../pages/sales/opportunity-pipeline/SalesLeadWorksheet'));
+const LeadDistributionPage = lazy(() => import('../pages/sales/opportunity-pipeline/AssignedLeadsModal'));
+const SalesLeadsDetails = lazy(() => import('../pages/sales/opportunity-pipeline/SalesLeadsDetails'));
+const SalesTodo = lazy(() => import('../pages/sales/insights-productivity/SalesTodo'));
+const SalesQPI = lazy(() => import('../pages/sales/opportunity-pipeline/SalesQPI'));
+const DeveloperShipments = lazy(() => import('../pages/developers/DeveloperShipments'));
+const SalesSignTracker = lazy(() => import('../pages/sales/opportunity-pipeline/SalesSignTracker'));
+const SalesP2PSummary = lazy(() => import('../pages/sales/opportunity-pipeline/SalesP2PSummary'));
+const SalesMatrixDetail = lazy(() => import('../pages/sales/opportunity-pipeline/matrix/SalesMatrixDetail'));
+const Products = lazy(() => import('../pages/p2p/p2p-master-management/product-management/Products'));
+const ProductView = lazy(() => import('../pages/p2p/p2p-master-management/product-management/ProductView'));
+const Vendors = lazy(() => import('../pages/p2p/p2p-master-management/supplier-management/Vendors'));
+const SalesDiagnosis = lazy(() => import('../pages/sales/insights-productivity/SalesDiagnosis'));
+const SalesResolutionCenter = lazy(() => import('../pages/sales/insights-productivity/SalesResolutionCenter'));
+const SalesAnalytics = lazy(() => import('../pages/sales/insights-productivity/SalesAnalytics'));
+const SalesPerformance = lazy(() => import('../pages/sales/insights-productivity/SalesPerformance'));
+const ClmStubPage = lazy(() => import('../pages/clm/shared/ClmStubPage'));
+const ClmAnalyticsPage = lazy(() => import('../pages/clm/command-center/ClmAnalyticsPage'));
+const ClmSegmentPage = lazy(() => import('../pages/clm/compliance/ClmSegmentPage'));
+const ClmAuthorityPage = lazy(() => import('../pages/clm/compliance/ClmAuthorityPage'));
+const ClmKycPage = lazy(() => import('../pages/clm/compliance/ClmKycPage'));
+const ClmDdPage = lazy(() => import('../pages/clm/compliance/ClmDdPage'));
+const ClmTradeLicensesPage = lazy(() => import('../pages/clm/compliance/ClmTradeLicensesPage'));
+const ClmQcPage = lazy(() => import('../pages/clm/compliance/ClmQcPage'));
+const ClmTradeDocumentsPage = lazy(() => import('../pages/clm/document-masters/ClmTradeDocumentsPage'));
+const ClmTncPage = lazy(() => import('../pages/clm/document-masters/ClmTncPage'));
+const ClmAgreementsPage = lazy(() => import('../pages/clm/document-masters/ClmAgreementsPage'));
+const ClmClauseLibraryPage = lazy(() => import('../pages/clm/document-masters/ClmClauseLibraryPage'));
+const ClmDcpPage = lazy(() => import('../pages/clm/compliance/ClmDcpPage'));
+const ClmBuyerProfilePage = lazy(() => import('../pages/clm/operations/ClmBuyerProfilePage'));
+const ClmSupplierProfilePage = lazy(() => import('../pages/clm/operations/ClmSupplierProfilePage'));
+const ClmDiagnosisResolutionPage = lazy(() => import('../pages/clm/command-center/ClmDiagnosisResolutionPage'));
+const ClmRegulatoryDefenseFilePage = lazy(() => import('../pages/clm/command-center/ClmRegulatoryDefenseFilePage'));
+const ClmCaseToCasePage = lazy(() => import('../pages/clm/operations/ClmCaseToCasePage'));
+const ClmAgreementsSentPage = lazy(() => import('../pages/clm/operations/ClmAgreementsSentPage'));
+const ClmAgreementsToApprovePage = lazy(() => import('../pages/clm/operations/ClmAgreementsToApprovePage'));
+const HrDashboard = lazy(() => import('../pages/hrms/HrDashboard'));
+const HrOverview = lazy(() => import('../pages/hrms/HrOverview'));
 const HrEmployees = lazy(() => import('../pages/hrms/HrEmployees'));
 const HrRecruitment = lazy(() => import('../pages/recruitment/HrRecruitment'));
 const HrCandidates = lazy(() => import('../pages/recruitment/HrCandidates'));
-import HrExitManagement from '../pages/hrms/HrExitManagement';
-import HrAttendance from '../pages/hrms/HrAttendance';
-import HrLeave from '../pages/hrms/HrLeave';
-import HrLeavePlans from '../pages/hrms/HrLeavePlans';
-import HrLeaveApprovals from '../pages/hrms/HrLeaveApprovals';
-import HrHoliday from '../pages/hrms/HrHoliday';
-import HrPIP from '../pages/hrms/HrPIP';
-import HrExpenseManagement from '../pages/hrms/HrExpenseManagement';
-import HrPayroll from '../pages/hrms/HrPayroll';
-import HrBroadcastCentre from '../pages/hrms/HrBroadcastCentre';
-import HrDocumentTemplates from '../pages/hrms/HrDocumentTemplates';
-import HrCustomFields from '../pages/hrms/HrCustomFields';
-import HrBiometricDevices from '../pages/hrms/HrBiometricDevices';
-import TemplateFormPage from '../pages/hrms/doc-templates/TemplateForm';
-import GenerateDocument from '../pages/hrms/doc-templates/GenerateDocument';
+const HrExitManagement = lazy(() => import('../pages/hrms/HrExitManagement'));
+const HrAttendance = lazy(() => import('../pages/hrms/HrAttendance'));
+const HrLeave = lazy(() => import('../pages/hrms/HrLeave'));
+const HrLeavePlans = lazy(() => import('../pages/hrms/HrLeavePlans'));
+const HrLeaveApprovals = lazy(() => import('../pages/hrms/HrLeaveApprovals'));
+const HrHoliday = lazy(() => import('../pages/hrms/HrHoliday'));
+const HrPIP = lazy(() => import('../pages/hrms/HrPIP'));
+const HrExpenseManagement = lazy(() => import('../pages/hrms/HrExpenseManagement'));
+const HrPayroll = lazy(() => import('../pages/hrms/HrPayroll'));
+const HrBroadcastCentre = lazy(() => import('../pages/hrms/HrBroadcastCentre'));
+const HrDocumentTemplates = lazy(() => import('../pages/hrms/HrDocumentTemplates'));
+const HrCustomFields = lazy(() => import('../pages/hrms/HrCustomFields'));
+const HrBiometricDevices = lazy(() => import('../pages/hrms/HrBiometricDevices'));
+const TemplateFormPage = lazy(() => import('../pages/hrms/doc-templates/TemplateForm'));
+const GenerateDocument = lazy(() => import('../pages/hrms/doc-templates/GenerateDocument'));
 const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
-import EmployeePermissions from '../pages/employee/EmployeePermissions';
-import EmployeeProfile from '../pages/employee/EmployeeProfile';
+const EmployeePermissions = lazy(() => import('../pages/employee/EmployeePermissions'));
+const EmployeeProfile = lazy(() => import('../pages/employee/EmployeeProfile'));
 import { ShimmerEmployeeProfile } from './ui/Shimmer';
-import PublicOnboarding from '../pages/PublicOnboarding';
-import ClockIn from '../pages/ClockIn';
-import ModuleStubPage from '../pages/ModuleStubPage';
-import P2pBulkSourcing from '../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing';
-import PurchaseOrder from '../pages/p2p/procurement-management/purchase-order/PurchaseOrder';
+const PublicOnboarding = lazy(() => import('../pages/PublicOnboarding'));
+const ClockIn = lazy(() => import('../pages/ClockIn'));
+const ModuleStubPage = lazy(() => import('../pages/ModuleStubPage'));
+const P2pBulkSourcing = lazy(() => import('../pages/p2p/procurement-management/bulk-sourcing/P2pBulkSourcing'));
+const PurchaseOrder = lazy(() => import('../pages/p2p/procurement-management/purchase-order/PurchaseOrder'));
 const DevTools = lazy(() => import('../pages/dev-tools/DevTools'));
-import SupplierPurchaseInvoice from '../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice';
-import DebitNote from '../pages/p2p/purchase-management/debit-note/DebitNote';
-import MyTeam from '../pages/MyTeam';
-import Documentation from '../pages/Documentation';
-import Inbox from '../pages/Inbox';
-import Gmail from '../pages/Gmail';
+const SupplierPurchaseInvoice = lazy(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
+const DebitNote = lazy(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
+const MyTeam = lazy(() => import('../pages/MyTeam'));
+const Documentation = lazy(() => import('../pages/Documentation'));
+const Inbox = lazy(() => import('../pages/Inbox'));
+const Gmail = lazy(() => import('../pages/Gmail'));
+
+/* Route-transition fallback.
+ *
+ * Every page below is code-split, so navigating to one the browser has not
+ * fetched yet suspends for the length of one chunk request. This is what shows
+ * during that gap.
+ *
+ * Deliberately NOT <SplashLoader />: that is the app-boot splash, a fixed
+ * full-screen overlay on a 2.4s timer, and firing it on every menu click would
+ * cover the shell and take longer than the chunk it is waiting for. This keeps
+ * the sidebar and header on screen and only fills the content area, matching
+ * the inline spinner the employee wrappers already use.
+ *
+ * The delay-then-appear trick avoids a spinner flash on chunks that are
+ * already cached: nothing paints for the first 180ms, so a warm navigation
+ * looks instant and only a genuinely slow fetch ever shows the spinner.
+ */
+function RouteFallback() {
+  return (
+    <div
+      style={{
+        padding: 48,
+        textAlign: 'center',
+        color: 'var(--vz-secondary-color)',
+        animation: 'cbcRouteFallbackIn 0s linear 180ms forwards',
+        opacity: 0,
+      }}
+    >
+      <style>{'@keyframes cbcRouteFallbackIn{to{opacity:1}}'}</style>
+      <i className="ri-loader-4-line ri-spin" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Loading…</div>
+    </div>
+  );
+}
 
 // Create NavigateContext for consistent navigation across the app
 const NavigateContext = createContext<{
@@ -529,6 +561,7 @@ function AuthRoutes() {
   const [resetEmail, setResetEmail] = useState(state?.email || '');
 
   return (
+    <Suspense fallback={<RouteFallback />}>
     <Routes>
       <Route path="/login" element={
         <Login onForgotPassword={() => navigate('/forgot-password')} />
@@ -555,6 +588,7 @@ function AuthRoutes() {
       } />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
+    </Suspense>
   );
 }
 
@@ -699,6 +733,9 @@ function DashboardRoutes({ user }: { user: any }) {
             {!routeAllowed ? (
               <AccessDenied />
             ) : (
+            /* One boundary for every page route. Each page below is a lazy()
+               chunk; this is the only thing that has to catch their suspend. */
+            <Suspense fallback={<RouteFallback />}>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
@@ -769,8 +806,8 @@ function DashboardRoutes({ user }: { user: any }) {
                   the catch-all /master/:slug so it takes priority. */}
               <Route path="/master/segments" element={<ClmSegmentPage />} />
               <Route path="/master/:slug" element={<MasterPage />} />
-              <Route path="/sales/customers" element={<Suspense fallback={null}><SalesCustomers /></Suspense>} />
-              <Route path="/sales/consignee" element={<Suspense fallback={null}><SalesConsignee /></Suspense>} />
+              <Route path="/sales/customers" element={<SalesCustomers />} />
+              <Route path="/sales/consignee" element={<SalesConsignee />} />
               <Route path="/sales/lead-ack-master" element={<SalesLeadAckMaster />} />
               <Route path="/sales/lead-worksheet" element={<SalesLeadWorksheet />} />
               <Route path="/sales/lead-distribution" element={<LeadDistributionPage />} />
@@ -838,9 +875,9 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/clm/:slug" element={<ClmStubPage />} />
               <Route path="/hr" element={<HrDashboard />} />
               <Route path="/hr/overview" element={<HrOverview />} />
-              <Route path="/hr/employees" element={<Suspense fallback={null}><HrEmployees /></Suspense>} />
-              <Route path="/hr/recruitment" element={<Suspense fallback={null}><HrRecruitment /></Suspense>} />
-              <Route path="/hr/recruitment/:id/candidates" element={<Suspense fallback={null}><HrCandidates /></Suspense>} />
+              <Route path="/hr/employees" element={<HrEmployees />} />
+              <Route path="/hr/recruitment" element={<HrRecruitment />} />
+              <Route path="/hr/recruitment/:id/candidates" element={<HrCandidates />} />
               <Route path="/hr/exit-management" element={<HrExitManagement />} />
               {FEATURE_FLAGS.hrAttendance && (
                 <Route path="/hr/attendance" element={<HrAttendance />} />
@@ -859,11 +896,12 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/hr/doc-templates/:id/generate" element={<GenerateDocument />} />
               <Route path="/hr/custom-fields" element={<HrCustomFields />} />
               <Route path="/hr/devices" element={<HrBiometricDevices />} />
-              <Route path="/hr/employee-onboarding" element={<Suspense fallback={null}><HrEmployeeOnboarding /></Suspense>} />
+              <Route path="/hr/employee-onboarding" element={<HrEmployeeOnboarding />} />
               <Route path="/hr/employees/:id/permissions" element={<EmployeePermissionsWrapper />} />
               <Route path="/hr/employees/:id/profile" element={<EmployeeProfileWrapper />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
+            </Suspense>
             )}
           </VelzonShell>
         </BranchSwitcherProvider>
@@ -882,9 +920,11 @@ function Router() {
   // /login when no session is active.
   if (location.pathname.startsWith('/onboarding/')) {
     return (
-      <Routes>
-        <Route path="/onboarding/:token" element={<PublicOnboarding />} />
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/onboarding/:token" element={<PublicOnboarding />} />
+        </Routes>
+      </Suspense>
     );
   }
 
