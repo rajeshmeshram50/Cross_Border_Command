@@ -310,9 +310,20 @@ class ExitNoticePaymentController extends Controller
         }
 
         $stored   = (float) ($exit->notice_settlement_amount ?? 0);
-        $required = (int) ($exit->notice_days_required ?? $this->noticeDays($employee));
-        $served   = (int) ($exit->notice_days_served ?? 0);
-        if (!$exit->notice_days_served && $exit->notice_date && $exit->last_working_day) {
+
+        /* A CLOSED settlement keeps every figure it was closed on — that is the
+           record of what was actually charged or paid. An OPEN one is re-read
+           from the employee each time, because the exit columns are a snapshot
+           taken on save and go stale the moment HR edits the notice period on
+           the employee record: a record showing "15 Days" kept quoting the 30
+           it was saved with. Same rule as ExitController::liveNoticeDaysRequired,
+           so the two endpoints cannot disagree. */
+        $settled  = in_array((string) ($exit->notice_settlement_status ?? 'NA'), ['Settled', 'Rejected'], true);
+        $required = $settled
+            ? (int) ($exit->notice_days_required ?? $this->noticeDays($employee))
+            : $this->noticeDays($employee);
+        $served   = $settled ? (int) ($exit->notice_days_served ?? 0) : 0;
+        if (!$served && $exit->notice_date && $exit->last_working_day) {
             // Inclusive of the notice start day — working the notice date
             // itself is one day served, so a last working day equal to the
             // notice date counts 1, not 0. Without the +1 a notice served in
@@ -323,16 +334,24 @@ class ExitNoticePaymentController extends Controller
                 ->diffInDays(Carbon::parse($exit->last_working_day), false);
             $served = $diff < 0 ? 0 : max(0, min($required, $diff + 1));
         }
-        $unserved = (int) ($exit->notice_days_unserved ?? max(0, $required - $served));
+        $unserved = $settled
+            ? (int) ($exit->notice_days_unserved ?? max(0, $required - $served))
+            : max(0, $required - $served);
 
-        // Priced on monthly BASIC ÷ 30 calendar days.
-        $perDay = (float) ($exit->notice_per_day_rate ?? 0);
+        /* Priced on monthly BASIC divided by the days the EXIT MONTH actually
+           has — not a flat 30, which overpriced every 31-day month and did not
+           match the salary engine (PayrollService::computeFnf divides by the
+           period's real length). Same correction the wizard carries. */
+        $perDay = $settled ? (float) ($exit->notice_per_day_rate ?? 0) : 0.0;
         if ($perDay <= 0) {
-            $basic  = self::monthlyBasic($employee);
-            $perDay = $basic > 0 ? round($basic / 30, 2) : 0.0;
+            $basic = self::monthlyBasic($employee);
+            $days  = $exit->last_working_day
+                ? (int) Carbon::parse($exit->last_working_day)->daysInMonth
+                : 30;
+            $perDay = $basic > 0 && $days > 0 ? round($basic / $days, 2) : 0.0;
         }
 
-        $amount = $stored > 0 ? $stored : round($unserved * $perDay, 2);
+        $amount = ($settled && $stored > 0) ? $stored : round($unserved * $perDay, 2);
         if ($amount <= 0) {
             return $blank;
         }

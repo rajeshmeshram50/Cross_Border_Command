@@ -568,19 +568,14 @@ export default function PayrollRunModal({
           </div>
 
           {/* Footer */}
+          {/* "Fix Issues" removed (#81). It was a demo stub — its own comment
+              said so — that marked every blocking issue resolved in local state
+              without touching anything. That was not just clutter: the Re-run
+              Payroll button is gated on `blockingRemaining`, so one click
+              cleared the gate and let a run proceed with every blocker still
+              genuinely unresolved. Issues are fixed through the per-issue
+              actions (Open Employee / Go to Attendance), which do real work. */}
           <div className="prm-footer">
-            <button
-              type="button"
-              className="prm-btn prm-btn--ghost-red"
-              onClick={() => {
-                // Quick "fix all" — auto-resolve every blocking issue for the
-                // demo. Real implementation would route to each fix flow.
-                setResolvedIds(new Set(issues.map(i => i.id)));
-                setReRunError('');
-              }}
-            >
-              <i className="ri-search-line me-1" /> Fix Issues
-            </button>
             <div className="d-flex gap-2 ms-auto flex-wrap">
               <button type="button" className="prm-btn prm-btn--ghost-violet" onClick={onClose}>
                 <i className="ri-layout-grid-line me-1" /> Open Execution View

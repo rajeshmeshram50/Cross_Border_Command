@@ -139,10 +139,21 @@ export default function HrExitManagement() {
   const [rehiring, setRehiring] = useState<EmployeeRow | null>(null);
   const [vault, setVault] = useState<EmployeeRow | null>(null);
 
+  /* Guards against an older response overwriting a newer one.
+     Closing the wizard fires this twice in a row — completeExit() calls
+     onCompleted() and then onClose(), and both reload — so two GETs are in
+     flight at once. Whichever RESOLVES last wins, and that is not necessarily
+     the one issued last: if the earlier request (sent before the exit was
+     committed) lands second, its stale rows overwrite the fresh ones and the
+     table shows the state from before the exit. Only the latest request is
+     allowed to write. */
+  const listReqRef = useRef(0);
   const loadEmployees = useCallback((silent = false) => {
+    const token = ++listReqRef.current;
     if (!silent) setListLoading(true);
     api.get('/employees')
       .then(({ data }) => {
+        if (token !== listReqRef.current) return;
         const rows = (Array.isArray(data) ? data : [])
           .filter(e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6)
           .map(apiToExitRow)
@@ -155,8 +166,8 @@ export default function HrExitManagement() {
           .filter(r => !r.disabled || r.exitInitiated || r.status === 'Exited');
         setEmployees(rows);
       })
-      .catch(() => setEmployees([]))
-      .finally(() => setListLoading(false));
+      .catch(() => { if (token === listReqRef.current) setEmployees([]); })
+      .finally(() => { if (token === listReqRef.current) setListLoading(false); });
   }, []);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
@@ -1392,18 +1403,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const noticeAdjustedInFnf = settlement === 'recover'
     && String(noticePayment?.mode ?? '').startsWith('Adjusted against F&F');
 
-  /* Pull the real dues when the F&F stage is opened. Kept out of the main exit
-     load so the wizard doesn't pay for it on every open — only the stage that
-     needs it fetches it, and only once the last working day is known (the
-     earned-salary pro-ration keys off that date). */
+  const duesFetchedForRef = useRef<string | null>(null);
   useEffect(() => {
-    if (currentKey !== 'fnf' || !employee || fnfDues || duesLoading) return;
+    if (currentKey !== 'fnf') { duesFetchedForRef.current = null; return; }
+    if (!employee || duesLoading) return;
+    if (duesFetchedForRef.current === String(employee.id)) return;
+    duesFetchedForRef.current = String(employee.id);
     setDuesLoading(true);
     api.get(`/employees/${employee.id}/exit/fnf-summary`)
       .then(({ data }) => setFnfDues(data?.data ?? null))
       .catch(() => setFnfDues(null))
       .finally(() => setDuesLoading(false));
-  }, [currentKey, employee?.id, fnfDues, duesLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentKey, employee?.id]);
 
   /* Prefill the editable lines from the pulled figures — only where HR hasn't
      already typed something, so reopening the stage never overwrites their
@@ -2747,6 +2759,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      `mimes:pdf,jpg,jpeg,png` rule — the check below only saves the user a
      round-trip, it is not the guard. */
   const FNF_DOC_EXTS = ['pdf', 'jpg', 'jpeg', 'png'];
+  /* Matches the server rule on /exit/fnf-attachment (max:5120). Checked HERE so
+     the request is never made: past PHP's post_max_size the whole body is
+     discarded, the server sees no file at all, and the only message it can give
+     is a generic failure that says nothing about size. */
+  const FNF_DOC_MAX_MB = 5;
 
   const uploadFnfDoc = async (file: File | null) => {
     if (!file || !employee || fnfDocUploading) return;
@@ -2756,6 +2773,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       toast.error(
         'File type not allowed',
         'The Full & Final document must be a PDF, JPG or PNG file.',
+      );
+      return;
+    }
+
+    const mb = file.size / (1024 * 1024);
+    if (mb > FNF_DOC_MAX_MB) {
+      toast.error(
+        'File is too large',
+        `${file.name} is ${mb.toFixed(1)} MB. The maximum is ${FNF_DOC_MAX_MB} MB — compress it or upload a smaller scan.`,
       );
       return;
     }
@@ -3367,14 +3393,28 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         </Col>
                         <Col md={6}>
                           <EpField label="Bank Name" required>
-                            <EpInput value={rcv.bank} onChange={v => setRcv(s => ({ ...s, bank: v }))} placeholder="Enter bank name" />
+                            {/* Letters and spaces only, filtered as it is typed.
+                                The same field on the employee's own payment form
+                                is already filtered (CBC #183); this HR-side copy
+                                took "%#%^&*(" straight onto the payment record
+                                Finance reconciles against a bank statement
+                                (CBC #108). */}
+                            <EpInput value={rcv.bank} maxLength={120}
+                              onChange={v => setRcv(s => ({ ...s, bank: v.replace(/[^A-Za-z ]/g, '') }))}
+                              placeholder="Enter bank name" />
                           </EpField>
                         </Col>
                         <Col md={6}>
                           <EpField label="UTR / Cheque Number" required>
-                            <EpInput value={rcv.ref} onChange={v => setRcv(s => ({ ...s, ref: v }))} placeholder="UPI ref or cheque number" maxLength={22} />
+                            {/* Digits only, up to 12 — matches the employee-side
+                                field and the server rule on this same endpoint
+                                (CBC #109). A reference of "#$%&*()" cannot be
+                                matched against a bank statement. */}
+                            <EpInput value={rcv.ref}
+                              onChange={v => setRcv(s => ({ ...s, ref: v.replace(/\D/g, '').slice(0, 12) }))}
+                              placeholder="UPI ref or cheque number" maxLength={12} />
                             <div className="ep-hint" style={{ fontSize: 11, color: 'var(--vz-secondary-color)', marginTop: 4 }}>
-                              UPI reference or cheque number.
+                              UPI reference or cheque number — digits only, up to 12.
                             </div>
                           </EpField>
                         </Col>
@@ -3747,7 +3787,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       <span className="ep-fnf-drop-t2">
                         {fnfPaid
                           ? 'Locked — the settlement has been paid against this document'
-                          : fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 10 MB · required'}
+                          : fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 5 MB · required'}
                       </span>
                     </span>
                     {/* Download, not View (#59). Legacy attachments predate the
@@ -5034,14 +5074,11 @@ function FnfRow({ label, value, onChange, deduction, readOnly, hint }: {
   return (
     <div className={`ep-fnf-row${deduction ? ' is-ded' : ''}${editable ? ' is-editable' : ''}`}>
       <span className="ep-fnf-label">
-        <span className="ep-fnf-label-top">
-          {label}
-          {editable && (
-            <span className="ep-fnf-tag" title="Free input — type any amount here">
-              <i className="ri-pencil-line" />Editable
-            </span>
-          )}
-        </span>
+        {/* The "Editable" pill that used to sit here is gone. The field itself
+            now carries the affordance — a bordered box with a ₹ prefix and a
+            focus ring, against locked rows that draw no control at all — so the
+            badge was labelling something the row already says. */}
+        <span className="ep-fnf-label-top">{label}</span>
         {hint && <em className="ep-fnf-hint">{hint}</em>}
       </span>
       <span className="ep-fnf-amt">
@@ -5166,9 +5203,23 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
   // applied. On a full month the two figures are equal and the step is noise.
   const isProrated = structureFor > 0 && proration < 1;
 
+  /* Paid days = the CALENDAR days on the books this cycle, less LOP.
+   *
+   * It used to report `paid_days`, which counts attendance-paid WORKING days
+   * and so excludes week-offs and holidays — days the employee is paid for
+   * without attending. The card then contradicted itself: the chip read "Paid
+   * days 12" while the money beside it was priced as ₹3,225.81/day × 14 and the
+   * row below read "Days Paid 14 of 31". Two figures, one label, and the one on
+   * the chip was not the one the salary was built from.
+   *
+   * `active_days` is that basis, so the chip reports it — minus LOP, because a
+   * day docked for loss of pay is precisely a day not paid for. The
+   * attendance-based count is not lost: it still reads out under Days Paid as
+   * "attendance: X of Y working days paid", where the label says what it is. */
+  const paidCalendarDays = Math.max(0, activeDays - lopDays);
   const stats = [
     { label: 'Working days', value: b.working_days },
-    { label: 'Paid days',    value: b.paid_days },
+    { label: 'Paid days',    value: activeDays > 0 ? paidCalendarDays : b.paid_days },
     { label: 'LOP days',     value: b.lop_days },
     { label: 'OT hours',     value: b.overtime_hours },
   ].filter(s => Number(s.value) > 0 || s.label === 'Paid days');

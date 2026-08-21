@@ -126,6 +126,12 @@
     <hr class="rule-soft">
     <table class="grid sd">
         <tr>
+            {{-- Days in Month first: it is the figure the other three are read
+                 against, and without it "Total Working Days 11" on an August
+                 slip gives the reader nothing to compare with. (#91) --}}
+            @if(!empty($days['in_month']))
+                <td><div class="lbl">Days In Month</div><div class="val">{{ $days['in_month'] }}</div></td>
+            @endif
             <td><div class="lbl">Actual Payable Days</div><div class="val">{{ $days['payable'] }}</div></td>
             <td><div class="lbl">Total Working Days</div><div class="val">{{ $days['working'] }}</div></td>
             <td><div class="lbl">Loss Of Pay Days</div><div class="val">{{ $days['lop'] }}</div></td>

@@ -678,7 +678,17 @@ class PayrollService
             // keep a 400-employee run from firing 800 queries.
             // `state` joins them: it decides which Professional Tax slab the
             // employee is taxed on (Rule 9).
-            ->with('branch:id,shifts,late_mark_policy,state')
+            /* Every branch column the run reads must be listed here. A column
+             * list that misses one does not fail — Eloquent just returns null
+             * for it — so the policy silently resolves to its default and the
+             * branch's configured setting never applies. `lop_policy` was
+             * missing, which meant the Branch → LOP Policy setting had never
+             * once taken effect in a run: absence was always charged on the
+             * legacy basic ÷ calendar-days rule no matter what was configured.
+             * `short_hours_policy` and `sandwich_policy` are read further down
+             * the same path and were missing for the same reason. (Identical
+             * trap to the one Employee::resolveShiftWindow documents.) */
+            ->with('branch:id,shifts,late_mark_policy,lop_policy,short_hours_policy,sandwich_policy,state')
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
             // Only fully-onboarded staff belong in payroll. Half-onboarded /
             // in-progress employees (onboarding_stage_completed < 6) don't have
@@ -1615,15 +1625,35 @@ class PayrollService
             (float) $effectiveWorkingDays,
         );
         $lopAmount = round($lopPerDay * $lopDays, 2);
-        $lopAmount = min($lopAmount, $proratedBasic);
 
-        // Earned pay = pro-rated gross minus the basic-based LOP. earnedBasic
-        // drops by the same amount (LOP is entirely basic) so PF rides on the
-        // reduced basic. earnedFactor = share of pro-rated gross actually earned,
-        // used to scale other fixed deductions onto an absent month.
+        /* The ceiling has to follow the BASIS.
+         *
+         * It was pinned to the pro-rated basic whichever basis was configured,
+         * which quietly cancelled the 'gross' setting: a branch that had chosen
+         * to charge absence against the whole salary still never lost more than
+         * the basic, so an employee absent all month kept every allowance and
+         * took home over half their pay. The setting existed and did nothing.
+         *
+         * Charging on basic still caps at basic — that is what the legacy rule
+         * means and nothing about it changes here. */
+        $lopChargedOnGross = ($lopPolicy['basis'] ?? 'basic') === 'gross';
+        $lopAmount = min($lopAmount, $lopChargedOnGross ? $proratedGross : $proratedBasic);
+
+        // earnedFactor = share of pro-rated gross actually earned, used to scale
+        // other fixed deductions onto an absent month.
         $earnedGross  = round($proratedGross - $lopAmount, 2);
-        $earnedBasic  = round(max(0, $proratedBasic - $lopAmount), 2);
         $earnedFactor = $proratedGross > 0 ? min(1, $earnedGross / $proratedGross) : 0;
+        /* Basic actually earned, which is what PF rides on.
+         *
+         * On a BASIC basis the whole deduction comes out of basic, so it is
+         * subtracted directly. On a GROSS basis the absence is spread across
+         * every component, so basic keeps its share — subtracting a gross-sized
+         * deduction from basic would drive it to zero on a half-present month
+         * (gross 30,000 / basic 15,000, half absent: basic must be 7,500, not
+         * 15,000 − 15,000 = 0) and PF with it. */
+        $earnedBasic  = $lopChargedOnGross
+            ? round($proratedBasic * $earnedFactor, 2)
+            : round(max(0, $proratedBasic - $lopAmount), 2);
 
         // Build earnings JSON from structure components (pro-rated for join/exit).
         $earnings = [];

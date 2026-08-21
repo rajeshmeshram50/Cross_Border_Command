@@ -397,6 +397,26 @@ export default function DataTable<T extends object>({
   useEffect(() => {
     const el = rootRef.current;
     if (!el || !fitToViewport) return;
+
+    /* A rows-per-page the user picked themselves owns the height from then on.
+     *
+     * fitToViewport pins the card to whatever space is left below it, and the
+     * rows area scrolls inside that. On a page carrying a lot above the table
+     * that space is only a couple of rows tall — so choosing "10" set the page
+     * size to 10 correctly, but eight of those rows sat behind an inner
+     * scrollbar and the table still looked like it was showing 2. The setting
+     * appeared to do nothing.
+     *
+     * Releasing the pin lets the card grow to the rows that were asked for and
+     * the PAGE scroll instead, which is what picking a row count means. The
+     * automatic fit still owns the height until someone overrides it. */
+    if (manualSize !== null) {
+      el.style.flex = '';
+      el.style.height = '';
+      el.style.maxHeight = '';
+      return;
+    }
+
     const size = () => {
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
@@ -418,7 +438,7 @@ export default function DataTable<T extends object>({
       window.clearTimeout(t);
       ro?.disconnect();
     };
-  }, [fitToViewport, loading]);
+  }, [fitToViewport, loading, manualSize]);
 
   useEffect(() => {
     if (!autoFitRows) return;
@@ -664,20 +684,13 @@ export default function DataTable<T extends object>({
                   </tr>
                 ))
               )}
-              {/* Blank rows padding a short page out to the fitted height.
-                  `fitToViewport` stretches the card to the bottom of the window
-                  and `autoFitRows` sizes the page to match — but a tab with two
-                  results still drew two rows and left the rest of that height as
-                  one white slab, which reads as a broken layout rather than as
-                  an empty table. These keep the ruled lines and zebra running to
-                  the pager. Rendered only when the page is genuinely short, and
-                  never in place of the empty state. */}
-              {!loading && rows.length > 0 && autoFitRows && pageSize > rows.length &&
-                Array.from({ length: pageSize - rows.length }, (_, i) => (
-                  <tr key={`dt-fill-${i}`} className="dt-fill-row" aria-hidden>
-                    <td colSpan={colCount}>&nbsp;</td>
-                  </tr>
-                ))}
+              {/* A short page is left short on purpose. Blank rows used to pad
+                  it out to the fitted height so the ruled lines and zebra ran
+                  down to the pager — but they carry the same borders and
+                  striping as real rows, so a 6-record result under a 10-row
+                  page read as 6 records followed by 4 empty ones. Trailing
+                  whitespace under the last row is plainly nothing; a row-shaped
+                  blank looks like data that failed to load. */}
             </tbody>
           </table>
         </div>

@@ -927,10 +927,17 @@ class ExitController extends Controller
          * `mimes` validates the file's real type (guessed from its contents),
          * not the filename, so an .xlsx renamed to .pdf is still rejected. */
         $request->validate([
-            'attachment' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:10240'],
+            'attachment' => ['required', 'file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
         ], [
             'attachment.required' => 'Select the Full & Final document to upload.',
             'attachment.mimes'    => 'Only PDF, JPG or PNG files are accepted for the Full & Final document.',
+            /* Named, because the generic message does not survive the trip.
+               When a file is large enough to breach PHP's own post_max_size the
+               body is discarded before Laravel sees it, `attachment` reads as
+               missing, and the SPA reported the catch-all "The attachment failed
+               to upload" — true, but silent about why (CBC #112). The SPA now
+               refuses an oversized file before sending; this is the backstop. */
+            'attachment.max'      => 'The Full & Final document must be 5 MB or smaller.',
         ]);
 
         $file = $request->file('attachment');
@@ -1934,6 +1941,34 @@ class ExitController extends Controller
      * who signed this exit off — not a live pointer, and a later reassignment
      * of some other employee must not rewrite a finished record.
      */
+    /**
+     * Notice days the employee owes RIGHT NOW.
+     *
+     * `employee_exits.notice_days_required` is written on save, so it goes
+     * stale the moment HR edits the notice period on the employee record. This
+     * re-reads it from the employee for any case whose notice settlement is
+     * still open, and leaves a closed one alone: after Settled/Rejected the
+     * stored number is the record of what was actually charged or paid, and
+     * moving it would leave that amount unexplainable.
+     *
+     * The waiver is honoured too (probation / resigned inside the early-exit
+     * window), matching applyNoticeWaiver() so read and write agree.
+     */
+    private function liveNoticeDaysRequired(?EmployeeExit $row, Employee $employee): ?int
+    {
+        $stored = $row?->notice_days_required;
+        if (!$row) return $stored;
+
+        $status = (string) ($row->notice_settlement_status ?? 'NA');
+        if (in_array($status, ['Settled', 'Rejected'], true)) {
+            return $stored === null ? null : (int) $stored;
+        }
+        if (!\App\Support\ProbationGuard::noticePeriodApplies($employee, $row->notice_date)) {
+            return 0;
+        }
+        return $this->noticePeriodDays($employee);
+    }
+
     private function format(?EmployeeExit $row, Employee $employee): array
     {
         $isClosed  = (string) ($row?->exit_case_status ?? 'Open') === 'Closed';
@@ -2016,7 +2051,14 @@ class ExitController extends Controller
                The SPA reads that as "pay" (matching resolveSettlementMode) so an
                old case renders exactly as it did before this field existed. */
             'notice_payment_choice'    => $row?->notice_payment_choice,
-            'notice_days_required'     => $row?->notice_days_required,
+            /* Read LIVE from the employee while the settlement is still open.
+               The column is a snapshot taken when the exit was last saved, so
+               changing the notice period on the employee record afterwards left
+               the exit still pricing the old one — a record showing "15 Days"
+               was charged 30. Once the settlement is Settled or Rejected the
+               stored figure is the record of what was actually charged and is
+               returned untouched. */
+            'notice_days_required'     => $this->liveNoticeDaysRequired($row, $employee),
             'notice_days_served'       => $row?->notice_days_served,
             'notice_days_unserved'     => $row?->notice_days_unserved,
             'notice_settlement_basis'  => $row?->notice_settlement_basis,

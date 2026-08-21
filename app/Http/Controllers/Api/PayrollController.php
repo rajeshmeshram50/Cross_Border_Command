@@ -347,11 +347,15 @@ class PayrollController extends Controller
 
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
-        $rows = Payslip::where('payroll_period_id', $period->id)
+        $slips = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
             ->orderBy('employee_name')
-            ->get()
-            ->map(fn ($p) => $this->serializePayslip($p));
+            ->get();
+
+        // A cycle still in progress can only be judged on the days that have
+        // actually happened — see elapsedWorkingDaysMap().
+        $elapsed = $this->elapsedWorkingDaysMap($period, $slips);
+        $rows = $slips->map(fn ($p) => $this->serializePayslip($p, false, $elapsed[$p->employee_id] ?? null));
 
         return response()->json([
             'data' => [
@@ -1381,8 +1385,59 @@ class PayrollController extends Controller
         ];
     }
 
+    /**
+     * Working days that have actually ELAPSED, per employee, for a cycle whose
+     * month has not finished yet. Empty for a completed month.
+     *
+     * The Absent figure is derived as working_days − present − paid leave, and
+     * working_days is the whole month. On a cycle in progress that counted
+     * every day still to come as an absence: on 20 August, an employee with no
+     * punches yet read "Present 0 / Absent 26" — twenty-six absences in a month
+     * that had only seen seventeen working days. Clipping the denominator to
+     * the elapsed part of the month is what makes the column mean anything
+     * before month end.
+     *
+     * Weekly offs come from each employee's own pattern (the same
+     * App\Support\WeekOff the engine uses), so a Saturday-and-Sunday employee
+     * is not charged for a Saturday. Holidays are deliberately NOT removed —
+     * payroll's working_days does not remove them either, and the two figures
+     * have to be built the same way or the subtraction goes wrong.
+     *
+     * One query for the whole page, not one per row.
+     */
+    private function elapsedWorkingDaysMap(PayrollPeriod $period, $slips): array
+    {
+        if ($slips->isEmpty()) {
+            return [];
+        }
+        $today = Carbon::today();
+        $start = Carbon::parse($period->period_start)->startOfDay();
+        $end   = Carbon::parse($period->period_end)->startOfDay();
+
+        // Month already over: working_days is entirely in the past, nothing to clip.
+        if ($end->lt($today)) {
+            return [];
+        }
+        // Cycle hasn't started at all — no day can be an absence yet.
+        $cut = $today->lt($start) ? null : $today->copy()->min($end);
+
+        $offs = \App\Models\Employee::whereIn('id', $slips->pluck('employee_id')->unique()->all())
+            ->pluck('weekly_off', 'id');
+
+        $map = [];
+        foreach ($offs as $id => $label) {
+            if ($cut === null) { $map[$id] = 0.0; continue; }
+            $n = 0;
+            for ($d = $start->copy(); $d->lte($cut); $d->addDay()) {
+                if (!\App\Support\WeekOff::isOff((string) $label, $d)) $n++;
+            }
+            $map[$id] = (float) $n;
+        }
+        return $map;
+    }
+
     /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
-    private function serializePayslip(Payslip $p, bool $full = false): array
+    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null): array
     {
         $name = $p->employee_name ?: 'Employee';
         $parts = preg_split('/\s+/', trim($name));
@@ -1410,7 +1465,14 @@ class PayrollController extends Controller
             'lop_days'    => (float) $p->lop_days,
             'status'      => $p->status,
             'present'     => (float) $p->present_days,
-            'absent'      => (float) max(0, (float) $p->working_days - (float) $p->present_days - (float) $p->paid_leave_days),
+            /* Absent is derived, not stored. For a cycle still running, the
+               denominator is the elapsed part of the month rather than the
+               whole of it, so days that have not happened yet are not counted
+               as absences. Null (a finished month) keeps the full figure. */
+            'absent'      => (float) max(0, ($elapsedWorkingDays !== null
+                    ? min((float) $p->working_days, $elapsedWorkingDays)
+                    : (float) $p->working_days)
+                - (float) $p->present_days - (float) $p->paid_leave_days),
             'lateMarks'   => (int) $p->late_marks,
             'missingPunch'=> (int) $p->missing_punches,
             'unpaidLeave' => (float) $p->unpaid_leave_days,

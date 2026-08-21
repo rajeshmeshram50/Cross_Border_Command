@@ -22,6 +22,11 @@ use Illuminate\Support\Facades\DB;
  */
 class SalaryStructureController extends Controller
 {
+    /** Rupees per year a breakup may exceed the configured salary by before it
+     *  is rejected — one rupee a month, enough to absorb the rounding in the
+     *  form's annual ÷ 12 seed and nothing more. */
+    private const SALARY_ROUNDING_SLACK = 12;
+
     /**
      * Salary roster — every payable employee with their CURRENT structure
      * status. Drives the "Salary Setup" tab so HR can see who has a salary
@@ -35,12 +40,45 @@ class SalaryStructureController extends Controller
 
         $eq = Employee::query()
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
+            /* Fully-onboarded staff only — the same gate PayrollService's
+             * eligibleEmployees() applies, so this list means "everyone payroll
+             * will actually pay" rather than "everyone on the books".
+             *
+             * Without it, someone still part-way through onboarding appeared
+             * here with a "Set Salary" action beside fully-onboarded staff,
+             * even though payroll excludes them from every run — HR could
+             * configure a salary that would never be used, and the tab's
+             * "needs setup" badge counted people who did not need it.
+             * Same gate Exit Management and the reporting-manager picker use. */
+            ->where('onboarding_stage_completed', '>=', 6)
             ->orderBy('first_name');
         if ($user && $user->client_id) $eq->where('client_id', $user->client_id);
         if ($branch) $eq->where('branch_id', $branch);
 
         $employees = $eq->get();
         $ids = $employees->pluck('id')->all();
+
+        /* Employees with a LIVE exit case. The status column alone does not
+         * catch them: an exit that is under way leaves employees.status on
+         * 'Active' until it is finalised, so someone mid-exit sat in this list
+         * as an ordinary row offering "Revise" with nothing to say they were
+         * leaving.
+         *
+         * They are flagged rather than hidden. Payroll still has to pay them up
+         * to their last working day and settle the F&F, so a missing structure
+         * still matters — dropping the row would make the list read as "everyone
+         * is set up" while an exiting employee had nothing configured.
+         *
+         * A rehired exit is spent history, not a live case (same rule as
+         * EmployeeController's reporting-manager picker). */
+        $liveExits = [];
+        if (!empty($ids) && \Illuminate\Support\Facades\Schema::hasTable('employee_exits')) {
+            $liveExits = \App\Models\EmployeeExit::whereIn('employee_id', $ids)
+                ->whereNull('rehired_at')
+                ->get(['employee_id', 'last_working_day', 'exit_case_status'])
+                ->keyBy('employee_id')
+                ->all();
+        }
 
         // Active structure per employee (one query).
         $active = SalaryStructure::whereIn('employee_id', $ids)
@@ -51,9 +89,16 @@ class SalaryStructureController extends Controller
         $deptNames = $this->masterNames('master_departments');
         $desigNames = $this->masterNames('master_designations');
 
-        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames) {
+        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames, $liveExits) {
             $s = $active->get($e->id);
+            $exit = $liveExits[$e->id] ?? null;
             return [
+                // Exit under way — the row stays, but the screen marks it and
+                // does not offer a revision.
+                'exit_in_progress'  => (bool) $exit,
+                'exit_last_working_day' => $exit?->last_working_day
+                    ? \Carbon\Carbon::parse($exit->last_working_day)->toDateString()
+                    : null,
                 'employee_id'   => $e->id,
                 'emp_code'      => $e->emp_code,
                 'name'          => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
@@ -63,6 +108,12 @@ class SalaryStructureController extends Controller
                 'pf_type'       => $e->pf_type, // statutory | standard | null
                 'esi_applicable'=> strtolower((string) ($e->esi_applicable ?? '')) === 'yes',
                 'annual_salary' => $e->annual_salary !== null ? (float) $e->annual_salary : null,
+                // The first salary runs from the day they joined, so the modal
+                // seeds Effective From with this instead of today, and refuses
+                // anything earlier (#87).
+                'date_of_joining' => $e->date_of_joining
+                    ? \Carbon\Carbon::parse($e->date_of_joining)->toDateString()
+                    : null,
                 'has_structure' => (bool) $s,
                 'structure_id'  => $s?->id,
                 'monthly_gross' => $s ? (float) $s->monthly_gross : ($e->annual_salary ? round((float) $e->annual_salary / 12, 2) : 0),
@@ -141,6 +192,49 @@ class SalaryStructureController extends Controller
         $monthlyGross = collect($data['earnings'])->sum(fn ($c) => (float) $c['amount']);
         $monthlyDeductions = collect($data['deductions'] ?? [])->sum(fn ($c) => (float) $c['amount']);
 
+        /* The breakup must ADD UP to the salary agreed on the employee record —
+         * not more (#70) and not less (#74). It is a split of that figure, not
+         * a second opinion on it.
+         *
+         * Neither direction was enforced. Over: the larger figure saved and
+         * every payroll run afterwards paid it. Under: setting components to
+         * ₹1 saved a ₹2,00,004 structure against a ₹4,00,000 salary, and the
+         * modal reported "₹1,99,996 under the salary" while still saving —
+         * which, now that an accepted revision writes back to the employee
+         * record, would have silently halved someone's agreed pay.
+         *
+         * Tolerance: the form seeds the split from annual_salary / 12 ROUNDED
+         * to the rupee, so a legitimate breakup can land a few rupees either
+         * side (₹5,00,000 → ₹41,667/mo → ₹5,00,004/yr). One rupee a month
+         * absorbs that and nothing more.
+         *
+         * No configured salary means there is nothing to validate against —
+         * the structure then IS the source of truth, so it is allowed. */
+        $configuredAnnual = (float) ($employee->annual_salary ?? 0);
+        if ($configuredAnnual > 0) {
+            $annualised = $monthlyGross * 12;
+            $diff = $annualised - $configuredAnnual;          // + over, − under
+            if (abs($diff) > self::SALARY_ROUNDING_SLACK) {
+                $over = $diff > 0;
+                $gap  = number_format(abs($diff), 2);
+                $name = $employee->first_name ?: 'this employee';
+                return response()->json([
+                    'message' => 'Total earnings come to ₹' . number_format($annualised, 2)
+                        . ' a year, which is ₹' . $gap . ($over ? ' more than' : ' short of')
+                        . " {$name}'s configured salary of ₹" . number_format($configuredAnnual, 2)
+                        . '. The breakup has to add up to the salary — '
+                        . ($over
+                            ? 'reduce the components, or raise the salary on the employee record first.'
+                            : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                              . 'or lower the salary on the employee record first.'),
+                    'errors' => ['earnings' => [
+                        'Annual total ₹' . number_format($annualised, 2) . ' does not match the configured salary ₹'
+                        . number_format($configuredAnnual, 2) . '.',
+                    ]],
+                ], 422);
+            }
+        }
+
         $structure = DB::transaction(function () use ($data, $employee, $user, $monthlyGross, $monthlyDeductions) {
             // Supersede the current active structure (Rule 19 — never overwrite).
             $prev = SalaryStructure::where('employee_id', $employee->id)
@@ -173,11 +267,26 @@ class SalaryStructureController extends Controller
                 'created_by'      => $user?->id,
             ]);
 
-            // Keep the employee's PF / ESI flags in sync with the structure so
-            // the Employee form + onboarding form reflect a flag enabled here.
+            /* Keep the employee record in step with the revision.
+             *
+             * PF / ESI flags so the Employee + onboarding forms reflect a flag
+             * enabled here — and annual_salary, which previously did NOT move.
+             * A revision from ₹26,000 to ₹21,000 a month left annual_salary at
+             * ₹3,12,000, so Salary Setup and the structure showed the new
+             * figures while the Employee Salary form still showed the old CTC,
+             * and the form's own breakup-vs-CTC comparison then reported the
+             * employee as ₹60,000 "under the salary".
+             *
+             * The two are meant to be equal — both this modal and the Employee
+             * form treat "breakup total == annual salary" as the matching
+             * state — so the accepted revision becomes the new agreed figure.
+             * This runs only AFTER the cap check above has passed, so a
+             * revision can still never raise pay beyond the configured salary;
+             * increasing it remains an Employee-record change. */
             $employee->update([
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
+                'annual_salary'  => round($monthlyGross * 12, 2),
             ]);
 
             return $created;

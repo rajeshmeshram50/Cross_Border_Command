@@ -490,7 +490,18 @@ export default function PayslipViewerModal({
                   employee (OT Hours sits after Paid Days). */}
               <div className="ep-pay-kpis">
                 {[
-                  { label: 'Total Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
+                  /* Two different numbers that were being conflated.
+                     "Total Days" showed working_days — the PAYABLE working days
+                     of the window the employee was actually employed for — so a
+                     mid-August joiner read "Total Days 11" on a slip headed
+                     01–31 Aug, and the label invited the reader to compare it
+                     with the calendar. The payable figure is the right one to
+                     reconcile Paid Days and LOP against (that is deliberate, see
+                     PAY-06), it was just named as if it were the month. Now the
+                     month's own length is shown as well, and the payable figure
+                     says what it is. */
+                  { label: 'Days in Month', value: lastDayOfMonth(month, year), tint: 'rgba(99,102,241,0.10)', fg: '#4338ca' },
+                  { label: 'Payable Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
                   { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
                   { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
                   /* Week-offs are NOT inside Paid Days and must not be — the

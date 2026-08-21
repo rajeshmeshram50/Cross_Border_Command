@@ -216,20 +216,29 @@ export default function HrPayroll() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // When we jump out of the "Payroll Execution Blocked" popup to fix an issue
-  // (Open Employee / Go to Attendance), tag the navigation with a return
-  // context. The destination's Back/Close reads `returnPage` and comes back
-  // here instead of the generic Active-Employees list (#38). `reopenRun` then
-  // re-surfaces the popup so the payroll-execution context is preserved.
-  const returnCtx = { returnPage: 'hr-payroll', returnData: { reopenRun: true } };
+  /* When we jump out of the "Payroll Execution Blocked" popup to fix an issue
+     (Open Employee / Go to Attendance), tag the navigation with a return
+     context. The destination's Back/Close reads `returnPage` and comes back
+     here instead of the generic Active-Employees list (#38). `reopenRun` then
+     re-surfaces the popup so the payroll-execution context is preserved.
+
+     `cycle` travels with it. Coming back re-mounts this page, and the mount
+     effect picks the cycle from scratch — it takes the first In Progress month
+     of the year, and the strip runs oldest-first, so someone who left from June
+     landed on January. Carrying the month back is what makes the return land
+     where they were. Built at click time so it reflects the cycle on screen. */
+  const buildReturnCtx = () => ({
+    returnPage: 'hr-payroll',
+    returnData: { reopenRun: true, cycleKey },
+  });
 
   const handleIssueAction = (action: { kind?: string }, issue: { empCode?: string; encryptedId?: string | null }) => {
     setRunOpen(false);
     if (action.kind === 'attendance') {
-      navigate('/hr/attendance', { state: returnCtx });
+      navigate('/hr/attendance', { state: buildReturnCtx() });
     } else if (action.kind === 'employee' && (issue.encryptedId || issue.empCode)) {
       // Prefer the opaque encrypted token so the URL never exposes EMP-###.
-      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`, { state: returnCtx });
+      navigate(`/hr/employees/${encodeURIComponent(issue.encryptedId || issue.empCode!)}/profile`, { state: buildReturnCtx() });
     }
   };
 
@@ -305,7 +314,17 @@ export default function HrPayroll() {
       .catch(() => setRoster([]))
       .finally(() => setRosterLoading(false));
   };
-  useEffect(() => { if (tab === 'salary' && roster.length === 0) loadRoster(); /* eslint-disable-next-line */ }, [tab]);
+  /* Loaded on mount, not on first visit to the tab.
+   *
+   * The Salary Setup badge counts employees with no salary structure, which it
+   * reads straight off this roster — so while the fetch was deferred until the
+   * tab was opened, the badge sat at 0 and only corrected itself once someone
+   * clicked it. The count exists precisely to tell HR there is something to
+   * deal with in there, so it has to be right before the tab is visited.
+   *
+   * The other three tabs already have their counts on mount (they come from
+   * the payroll rows), so this also stops Salary Setup being the odd one out. */
+  useEffect(() => { loadRoster(); /* eslint-disable-next-line */ }, []);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
@@ -674,6 +693,19 @@ export default function HrPayroll() {
           // cycle belongs to a prior year (e.g. 2026 not yet started). Within
           // the current year, snap the cycle to: this year's active cycle →
           // the current month → this year's first month.
+          /* Returning from an employee / attendance detour restores the cycle
+             the user left from. Without this the picker below runs and takes
+             the year's FIRST In Progress month — January on most tenants — so
+             closing Employee Details dropped someone working on June back to
+             January. */
+          const returned = (location.state as { cycleKey?: string } | null)?.cycleKey;
+          const returnedTo = returned ? list.find(c => monthKey(c.year!, c.month! - 1) === returned) : null;
+          if (returnedTo) {
+            setSelectedYear(returnedTo.year!);
+            setCycleKey(returned!);
+            return;
+          }
+
           const curY = today.getFullYear();
           const curM = today.getMonth() + 1;
           setSelectedYear(curY);
@@ -1115,7 +1147,7 @@ export default function HrPayroll() {
       header: 'Employee',
       accessorKey: 'name',
       // wrap: monthly CTC sits on a second line under the name.
-      meta: { width: '20%', wrap: true },
+      meta: { width: '18%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1139,8 +1171,8 @@ export default function HrPayroll() {
       },
     },
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '9%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
-    { header: 'Department',  accessorKey: 'department',  meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Designation', accessorKey: 'designation', meta: { width: '12%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department',  accessorKey: 'department',  meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Designation', accessorKey: 'designation', meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
     { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
     {
@@ -1247,7 +1279,7 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '28%', wrap: true },
+      meta: { width: '25%', wrap: true },
       cell: info => {
         const r = info.row.original;
         return (
@@ -1318,7 +1350,7 @@ export default function HrPayroll() {
     {
       header: () => <div className="text-center">Mismatch</div>,
       accessorKey: 'mismatch',
-      meta: { width: '12%', align: 'center' },
+      meta: { width: '11%', align: 'center' },
       cell: info => {
         const m = info.row.original.mismatch;
         return m ? <span style={{ color: '#b1401d', fontWeight: 600 }} className="fs-13">{m}</span> : <span className="text-muted">—</span>;
@@ -1333,11 +1365,11 @@ export default function HrPayroll() {
     // Derived per row and reused by both the deductions total and Net Payable.
     const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
     return [
-      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '8%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '6%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
       {
         header: 'Employee',
         accessorKey: 'name',
-        meta: { width: '14%' },
+        meta: { width: '10%' },
         cell: info => {
           const r = info.row.original;
           return (
@@ -1363,8 +1395,8 @@ export default function HrPayroll() {
         meta: { width: '6%', align: 'right' },
         cell: info => <span className="fs-13" style={{ color: info.row.original.tds ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.tds === 0 ? '₹0' : `₹${fmtINR(info.row.original.tds)}`}</span>,
       },
-      { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
-      { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '8%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
+      { header: 'LOP Deducted', accessorKey: 'lopDeducted', meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.lopDeducted)}</span> },
+      { header: 'Advance Rec.', accessorKey: 'advanceRec',  meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13">{dim(info.row.original.advanceRec)}</span> },
       {
         header: 'Total Deductions',
         id: 'totalDeductions',
@@ -1382,11 +1414,18 @@ export default function HrPayroll() {
       {
         header: () => <div className="text-center">Status</div>,
         accessorKey: 'status',
-        meta: { width: '5%', align: 'center' },
+        /* 9%, matching the Processing tab's Status column. At 5% the cell was
+           ~95px against the table's 1900px min-width, while the widest pill
+           ("Pending Review") measures ~117px — so the badge overflowed its own
+           cell and sat across the Payslip column next to it. The four points
+           come off Employee / Emp ID / LOP Deducted, which all had slack. */
+        meta: { width: '9%', align: 'center' },
         cell: info => {
           const tone = toneFor(info.row.original.status);
           return (
-            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11 }}>
+            // nowrap: a pill must never wrap to a second line and reflow the
+            // row height; if space ever runs short again the table scrolls.
+            <span className="onb-pill" style={{ background: tone.bg, color: tone.fg, fontSize: 11, whiteSpace: 'nowrap' }}>
               <span className="d" style={{ background: tone.dot }} />
               {info.row.original.status}
             </span>
@@ -1426,7 +1465,7 @@ export default function HrPayroll() {
     {
       header: 'Employee',
       accessorKey: 'name',
-      meta: { width: '26%' },
+      meta: { width: '23%' },
       cell: info => {
         const emp = info.row.original;
         const accent = '#7c5cfc';
@@ -1437,7 +1476,24 @@ export default function HrPayroll() {
               style={{ width: 32, height: 32, fontSize: 11, background: `linear-gradient(135deg, ${accent}, ${accent}cc)` }}>
               {initials}
             </div>
-            <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
+            <div className="min-w-0">
+              <div className="fw-semibold fs-13 text-truncate">{emp.name}</div>
+              {/* An exit under way leaves employees.status on 'Active' until it
+                  is finalised, so without this the row looked like ordinary
+                  staff awaiting a salary revision. */}
+              {emp.exit_in_progress && (
+                <span
+                  className="onb-pill"
+                  style={{ background: '#fdd9d6', color: '#b1401d', fontSize: 10, marginTop: 2 }}
+                  title={emp.exit_last_working_day
+                    ? `Exit in progress — last working day ${emp.exit_last_working_day}`
+                    : 'Exit in progress'}
+                >
+                  <span className="d" style={{ background: '#f06548' }} />
+                  Exit in progress
+                </span>
+              )}
+            </div>
           </div>
         );
       },
@@ -1449,7 +1505,7 @@ export default function HrPayroll() {
       meta: { width: '12%' },
       cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span>,
     },
-    { header: 'Department', accessorKey: 'department', meta: { width: '16%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
+    { header: 'Department', accessorKey: 'department', meta: { width: '15%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     {
       header: 'Monthly Gross',
       accessorKey: 'monthly_gross',
@@ -1495,10 +1551,24 @@ export default function HrPayroll() {
       meta: { width: '12%', align: 'center' },
       cell: info => {
         const emp = info.row.original;
+        /* Someone on their way out is not a candidate for a salary revision —
+           what they are owed to their last working day is settled by the exit's
+           full & final, not by re-cutting their structure here. The row still
+           shows (payroll must pay them until they leave); the action does not. */
+        const exiting = !!emp.exit_in_progress;
         return (
-          <button type="button" className="onb-vault-btn" onClick={() => setSalaryEmp(emp)}>
-            <i className={`me-1 ${emp.has_structure ? 'ri-edit-line' : 'ri-add-line'}`} style={{ fontSize: 13 }} />
-            {emp.has_structure ? 'Revise' : 'Set Salary'}
+          <button
+            type="button"
+            className="onb-vault-btn"
+            disabled={exiting}
+            style={exiting ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+            title={exiting
+              ? `Exit in progress${emp.exit_last_working_day ? ` — last working day ${emp.exit_last_working_day}` : ''}. Settle this in Exit Management, not here.`
+              : undefined}
+            onClick={() => { if (!exiting) setSalaryEmp(emp); }}
+          >
+            <i className={`me-1 ${exiting ? 'ri-lock-line' : (emp.has_structure ? 'ri-edit-line' : 'ri-add-line')}`} style={{ fontSize: 13 }} />
+            {exiting ? 'Exiting' : (emp.has_structure ? 'Revise' : 'Set Salary')}
           </button>
         );
       },
@@ -1964,7 +2034,15 @@ export default function HrPayroll() {
               data={filtered}
               columns={processingColumns}
               className="pay-tbl-run"
-              serial={{ header: 'Sr. No.' }}
+              /* Percentage, not the default 56px. Every other column here is a
+                 percentage of the table, so a pixel-width serial column made
+                 the budget "100% + 56px" — impossible to satisfy, so the
+                 browser shrank the percentage columns by however much 56px
+                 happened to be at that viewport (3.7% at the 1500px minimum,
+                 2.9% at 1900px). Column edges therefore moved as the window
+                 resized and never matched the other tabs. With the serial
+                 inside the 100% the proportions hold at any width. */
+              serial={{ header: 'Sr. No.', width: '4%' }}
               accent="violet"
               /* Fills the viewport instead of collapsing to row count — each of
                  these tables is the only one on its tab, so it owns the space
@@ -2025,6 +2103,10 @@ export default function HrPayroll() {
               <DataTable<PayrollRow>
                 data={filtered}
                 columns={biometricColumns}
+                /* Percentage, matching the other three tabs — the 56px default
+                   would put a pixel column into a percentage budget, which is
+                   the layout drift fixed in #66. */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 accent="violet"
                 className="pay-tbl-att"
                 fitToViewport
@@ -2077,6 +2159,10 @@ export default function HrPayroll() {
                 data={filtered}
                 columns={reportColumns}
                 accent="violet"
+                /* Same 4% percentage the Processing tab uses, so the two
+                   tables' serial columns line up and the width budget stays
+                   at exactly 100% (see the note on Processing's serial). */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 className="pay-tbl-report"
                 fitToViewport
                 autoFitRows
@@ -2108,6 +2194,10 @@ export default function HrPayroll() {
               <DataTable<SalaryEmployeeLite>
                 data={roster}
                 columns={rosterColumns}
+                /* Percentage, matching Processing and Salary Report — the
+                   56px default would put a pixel column into a percentage
+                   budget, which is the drift fixed in #66. */
+                serial={{ header: 'Sr. No.', width: '4%' }}
                 className="pay-tbl-roster"
                 accent="violet"
                 fitToViewport
@@ -2167,16 +2257,22 @@ export default function HrPayroll() {
 
       {paySlipRow && (() => {
         const r = paySlipRow;
-        const basic   = Math.round(r.earnings * 0.50);
-        const hra     = Math.round(r.earnings * 0.25);
-        const special = r.earnings - basic - hra;
+        /* Until the real components arrive, show the ONE figure that is
+           already known to be true — the row's gross — as a single line.
+           (#85)
+           It used to render an invented 50 / 25 / 25 split of that gross:
+
+               basic = earnings * 0.50, hra = earnings * 0.25, …
+
+           none of which was the employee's actual structure (the app's own
+           seed is 50/30/20, and a real structure can be anything). The slip
+           opened on those figures and then visibly rewrote itself when the
+           breakup loaded, so the first thing the reader saw was wrong.
+           A single truthful line simply gains detail instead: the total never
+           moves, and no number on screen is ever a guess. */
         const earnings: PayslipLine[] = payslipBreakup?.earnings?.length
           ? payslipBreakup.earnings
-          : [
-              { label: 'Basic Salary',          amount: basic },
-              { label: 'House Rent Allowance (HRA)', amount: hra },
-              { label: 'Special Allowance',     amount: special },
-            ];
+          : [{ label: 'Gross Earnings', amount: r.earnings }];
         const deductions: PayslipLine[] = payslipBreakup?.deductions?.length
           ? payslipBreakup.deductions
           : [

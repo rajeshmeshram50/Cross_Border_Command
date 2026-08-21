@@ -24,6 +24,13 @@ export interface SalaryEmployeeLite {
   version?: number | null;
   effective_from?: string | null;
   source?: 'structure' | 'annual_salary' | 'none';
+  /** A live exit case is open for this employee (status stays 'Active' until
+   *  the exit is finalised, so it cannot be read off `status`). */
+  exit_in_progress?: boolean;
+  exit_last_working_day?: string | null;
+  /** Seeds Effective From, and floors the picker — a salary cannot take effect
+   *  before the employee joined. */
+  date_of_joining?: string | null;
 }
 
 interface Props {
@@ -75,7 +82,13 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   // (Re)initialise the form whenever the modal opens for an employee.
   useEffect(() => {
     if (!open || !employee) return;
-    setEffectiveFrom(todayISO());
+    /* Seeded from the joining date, not today (#87). A salary runs from the
+       day the employee joined — the Add/Edit Employee wizard already enforces
+       exactly that ("Salary effective date must be the same as the joining
+       date"), and this screen was the one place that ignored it and opened on
+       whatever today happened to be. Falls back to today only when the record
+       carries no joining date. */
+    setEffectiveFrom(employee.date_of_joining || todayISO());
     setNote('');
     // PF / ESI applicability mirror the employee record (set on the Employee
     // form); they're locked here. PT defaults on (no employee-level flag).
@@ -91,8 +104,14 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           const d = res.data?.data ?? {};
           setEarnings((d.earnings ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
           setDeductions((d.deductions ?? []).map((c: any) => ({ code: c.code, label: c.label, amount: Number(c.amount) || 0 })));
-          setPfApplicable(!!d.pf_applicable);
-          setEsiApplicable(!!d.esi_applicable);
+          /* The EMPLOYEE record is the master for applicability, so a stale
+             structure flag must not hide a deduction the employee is entitled
+             to. Seeding from the structure alone produced an impossible state:
+             pf_eligible on the employee disabled the box, while pf_applicable
+             false on the structure left it unticked — so PF was missing from
+             Salary Setup with no way to add it (#89). */
+          setPfApplicable(!!d.pf_applicable || !!employee.pf_eligible);
+          setEsiApplicable(!!d.esi_applicable || !!employee.esi_applicable);
           setPtApplicable(d.pt_applicable !== false);
         })
         .catch(() => setEarnings(splitFromGross(grossSeed)))
@@ -153,13 +172,30 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const salaryAnnual = employee.annual_salary ? Math.round(employee.annual_salary) : 0;
   const breakupAnnual = Math.round(grossTotal * 12);
   const salaryDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
-  const overSalary = salaryDiff > 0;
+  /* Rounding slack, matching SalaryStructureController::SALARY_ROUNDING_SLACK.
+     The default split is seeded from annual ÷ 12 rounded to the rupee, so a
+     legitimate breakup can annualise a few rupees high (₹5,00,000 →
+     ₹41,667/mo → ₹5,00,004/yr). Without this the form would flag — and the
+     server would reject — its own seeded values. */
+  const SALARY_SLACK = 12;
+  const overSalary = salaryDiff > SALARY_SLACK;
+  const underSalary = salaryDiff < -SALARY_SLACK;
 
-  // A box is LOCKED only when the employee already has it applicable (set on the
-  // Employee form) — you can't turn it off here. If it's NOT applicable yet, you
-  // CAN enable it here; saving propagates the flag back to the employee record.
-  const pfLocked = !!employee.pf_eligible;
-  const esiLocked = !!employee.esi_applicable;
+  /* All three boxes are editable (#88).
+   *
+   * PF and ESI used to be locked whenever the employee record already had them
+   * applicable, while Professional Tax was always editable — because PT has no
+   * employee-level field to lock against. That left one row greyed out and the
+   * next one beside it live, with no visible reason for the difference.
+   *
+   * Locking was also what produced #89: a locked box seeded false from the
+   * structure could be neither shown as applicable nor switched on.
+   *
+   * Nothing is lost by unlocking. The two records are kept in step both ways —
+   * saving here writes the flags back to the employee
+   * (SalaryStructureController::store), and editing the employee mirrors them
+   * onto the active structure (EmployeeController::update, #90) — so whichever
+   * screen is used, the pair stays consistent. */
 
   const updateRow = (
     list: SalaryComponent[],
@@ -176,25 +212,108 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const addRow = (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void) =>
     setList([...list, { code: `comp_${list.length + 1}`, label: '', amount: 0 }]);
 
-  const removeRow = async (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void, i: number) => {
+  /**
+   * Removing an EARNING keeps the monthly gross where it was: the deleted
+   * amount is folded into Basic Salary rather than vanishing.
+   *
+   * The gross is the employee's agreed pay — restructuring how it is split
+   * between Basic / HRA / Special is not meant to change what they earn.
+   * Deleting a row used to just drop its amount, so a ₹33,333 gross split
+   * 16,667 / 10,000 / 6,666 collapsed to ₹16,667 the moment HRA and Special
+   * were removed, silently halving the salary.
+   *
+   * Basic is the target because it is the component every structure has and
+   * the one statutory heads are priced off. If Basic itself is the row being
+   * removed (or there is no Basic), the amount goes to the first remaining
+   * earning so the total still holds. Deductions are NOT merged — one
+   * deduction is not a substitute for another.
+   */
+  const removeRow = async (
+    list: SalaryComponent[],
+    setList: (v: SalaryComponent[]) => void,
+    i: number,
+    kind: 'earn' | 'ded' = 'earn',
+  ) => {
     const comp = list[i];
+    const amount = Number(comp?.amount) || 0;
+
+    let mergeIdx = -1;
+    if (kind === 'earn' && amount > 0) {
+      mergeIdx = list.findIndex((c, idx) => idx !== i && c.code === 'basic');
+      if (mergeIdx === -1) mergeIdx = list.findIndex((_, idx) => idx !== i);
+    }
+    const mergeLabel = mergeIdx !== -1 ? (list[mergeIdx].label.trim() || 'the first earning') : null;
+
     const ok = await confirm({
       title: 'Remove component?',
-      message: comp?.label?.trim()
-        ? <>Remove <strong>{comp.label.trim()}</strong> from the salary structure?</>
-        : <>Remove this component from the salary structure?</>,
+      message: (
+        <>
+          {comp?.label?.trim()
+            ? <>Remove <strong>{comp.label.trim()}</strong> from the salary structure?</>
+            : <>Remove this component from the salary structure?</>}
+          {mergeLabel && (
+            <> Its ₹{fmtINR(amount)} will be added to <strong>{mergeLabel}</strong>, so the monthly gross stays ₹{fmtINR(grossTotal)}.</>
+          )}
+        </>
+      ),
       tone: 'danger',
       confirmLabel: 'Remove',
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    setList(list.filter((_, idx) => idx !== i));
+
+    // Credit the target first, then drop the row — doing it in this order
+    // keeps the indexes valid regardless of which side the target sits on.
+    setList(
+      list
+        .map((c, idx) => (idx === mergeIdx ? { ...c, amount: (Number(c.amount) || 0) + amount } : c))
+        .filter((_, idx) => idx !== i),
+    );
+  };
+
+  /**
+   * Put the whole difference between the breakup and the configured salary
+   * into Basic Salary, so a mismatch can be corrected in one click instead of
+   * the user having to work out the arithmetic themselves.
+   *
+   * The monthly delta is rounded to the rupee, which can leave the annualised
+   * total a few rupees off — that is exactly what SALARY_SLACK exists to
+   * absorb, so the result always saves.
+   */
+  const balanceToBasic = () => {
+    const deltaMonthly = Math.round((salaryAnnual - breakupAnnual) / 12); // + add, − remove
+    if (!deltaMonthly) return;
+    setEarnings(prev => {
+      if (!prev.length) {
+        return [{ code: 'basic', label: 'Basic Salary', amount: Math.max(0, deltaMonthly) }];
+      }
+      const idx = prev.findIndex(c => c.code === 'basic');
+      const target = idx !== -1 ? idx : 0;
+      return prev.map((c, i) =>
+        i === target ? { ...c, amount: Math.max(0, (Number(c.amount) || 0) + deltaMonthly) } : c);
+    });
   };
 
   const save = async () => {
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
     if (!clean.length) { toast.error('Add earnings', 'Add at least one earning component.'); return; }
     if (grossTotal <= 0) { toast.error('Invalid salary', 'Total earnings must be greater than zero.'); return; }
+    /* The breakup has to ADD UP to the salary on the employee record — not more
+       (#70) and not less (#74). Both were shown in red but neither was
+       enforced, so an over-figure saved and got paid, and an under-figure
+       (components typed down to ₹1) silently reduced the agreed salary. The
+       server refuses both; this reports it without a round trip. */
+    if (overSalary || underSalary) {
+      toast.error(
+        overSalary ? 'Salary exceeds the configured amount' : 'Salary is short of the configured amount',
+        `The breakup comes to ₹${fmtINR(breakupAnnual)} a year — ₹${fmtINR(Math.abs(salaryDiff))} `
+        + `${overSalary ? 'more than' : 'short of'} ${employee.name}'s salary of ₹${fmtINR(salaryAnnual)}. `
+        + (overSalary
+            ? 'Reduce the components, or raise the salary on the employee record first.'
+            : 'Use "Balance to Basic" to put the difference back, or lower the salary on the employee record first.'),
+      );
+      return;
+    }
     setSaving(true);
     try {
       const res = await api.post('/salary-structures', {
@@ -256,7 +375,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <span title="Untick the box above to remove" style={{ width: 28, textAlign: 'center', color: '#9ca3af', fontSize: 13 }}><i className="ri-lock-line" /></span>
           ) : (
             <button type="button" className="btn btn-sm" style={{ color: '#dc2626', padding: '2px 6px' }}
-              onClick={() => removeRow(list, setList, i)} title="Remove">
+              onClick={() => removeRow(list, setList, i, kind)} title="Remove">
               <i className="ri-delete-bin-line" />
             </button>
           )}
@@ -297,24 +416,35 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
             <div className="row g-3 mb-3">
               <div className="col-md-4">
                 <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Effective From</label>
-                <MasterDatePicker value={effectiveFrom} onChange={setEffectiveFrom} placeholder="Select date" />
+                {/* Floored at the joining date — a salary cannot take effect
+                    before the employee existed (#87). Deliberately NOT capped
+                    at today: the engine supports a future-dated revision on
+                    purpose (activeStructure resolves the version in force on a
+                    given date, so a revision dated next month leaves the
+                    current cycle alone), and capping would break that. */}
+                <MasterDatePicker
+                  value={effectiveFrom}
+                  onChange={setEffectiveFrom}
+                  minDate={employee.date_of_joining || undefined}
+                  placeholder="Select date"
+                />
               </div>
               <div className="col-md-8">
-                {/* Locked (✓ from the Employee form) → can't turn off, edit amount
-                    only. Unlocked → you can enable it here; it updates the
-                    employee + onboarding forms on save. */}
+                {/* All three behave the same way: tick to apply, untick to
+                    remove, and the choice is written back to the employee
+                    record on save. */}
                 <div className="d-flex align-items-end gap-3 flex-wrap">
-                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: pfLocked ? 'var(--vz-secondary-color)' : undefined, cursor: pfLocked ? 'not-allowed' : 'pointer' }} title={pfLocked ? 'Set on the Employee form' : ''}>
-                    <input type="checkbox" checked={pfApplicable} disabled={pfLocked} onChange={e => { if (!pfLocked) setPfApplicable(e.target.checked); }} /> PF (12%){pfLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={pfApplicable} onChange={e => setPfApplicable(e.target.checked)} /> PF (12%)
                   </label>
-                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, color: esiLocked ? 'var(--vz-secondary-color)' : undefined, cursor: esiLocked ? 'not-allowed' : 'pointer' }} title={esiLocked ? 'Set on the Employee form' : ''}>
-                    <input type="checkbox" checked={esiApplicable} disabled={esiLocked} onChange={e => { if (!esiLocked) setEsiApplicable(e.target.checked); }} /> ESI{esiLocked && <i className="ri-lock-line" style={{ fontSize: 11, color: '#9ca3af' }} />}
+                  <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={esiApplicable} onChange={e => setEsiApplicable(e.target.checked)} /> ESI
                   </label>
                   <label className="d-flex align-items-center gap-1" style={{ fontSize: 12.5, cursor: 'pointer' }}>
                     <input type="checkbox" checked={ptApplicable} onChange={e => setPtApplicable(e.target.checked)} /> Professional Tax
                   </label>
                 </div>
-                <small className="text-muted" style={{ fontSize: 10.5 }}>🔒 = already set on the Employee form (locked). Enable an unlocked one here and it updates the Employee &amp; onboarding forms too.</small>
+                <small className="text-muted" style={{ fontSize: 10.5 }}>Changing any of these here updates the Employee &amp; onboarding forms too, so the two stay in step.</small>
               </div>
             </div>
 
@@ -341,14 +471,28 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 <div style={{ fontSize: 11.5, fontWeight: 600, color: salaryAnnual <= 0 ? 'var(--vz-secondary-color)' : (overSalary ? '#dc2626' : '#0a8754') }}>
                   ≈ ₹{fmtINR(breakupAnnual)} / year
                 </div>
-                {salaryAnnual > 0 && salaryDiff !== 0 && (
-                  <div style={{ fontSize: 10.5, fontWeight: 600, color: overSalary ? '#dc2626' : '#0a8754' }}>
-                    {overSalary
-                      ? `₹${fmtINR(salaryDiff)} over the salary (₹${fmtINR(salaryAnnual)})`
-                      : `₹${fmtINR(Math.abs(salaryDiff))} under the salary (₹${fmtINR(salaryAnnual)})`}
+                {/* Either direction blocks the save, so both read the same way
+                    and both offer the one-click correction. */}
+                {salaryAnnual > 0 && (overSalary || underSalary) && (
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#dc2626' }}>
+                    ₹{fmtINR(Math.abs(salaryDiff))} {overSalary ? 'over' : 'short of'} the salary
+                    {' '}(₹{fmtINR(salaryAnnual)}) — cannot be saved
+                    <button
+                      type="button"
+                      onClick={balanceToBasic}
+                      style={{
+                        marginLeft: 8, fontSize: 10, fontWeight: 700, padding: '1px 8px',
+                        borderRadius: 999, border: '1px solid #dc262655',
+                        background: 'transparent', color: '#dc2626',
+                      }}
+                    >
+                      Balance to Basic
+                    </button>
                   </div>
                 )}
-                {salaryAnnual > 0 && salaryDiff === 0 && (
+                {/* Within the rounding slack counts as matching, so the seeded
+                    split does not read as "₹4 over". */}
+                {salaryAnnual > 0 && !overSalary && !underSalary && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
                 )}
               </div>
