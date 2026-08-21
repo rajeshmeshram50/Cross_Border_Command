@@ -475,13 +475,17 @@ class EmployeeController extends Controller
 
         $data = $request->validate([
             'salary_payment_mode' => 'nullable|in:bank,cheque,cash',
-            'bank_name'           => 'nullable|string|max:150',
+            /* Letters and spaces only. A bank name and an account holder
+               name are both people-and-institution names — the columns were
+               taking "324567890()&" and "Trupti#%#@@" straight onto the
+               payout record a salary is transferred against (CBC #185). */
+            'bank_name'           => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
             // PAN-style account numbers can include letters (NRE/NRO), so we
             // don't enforce digits-only — same rule as the onboarding wizard.
             'bank_account_number' => 'nullable|string|max:30',
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
             'ifsc_code'           => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
-            'account_holder_name' => 'nullable|string|max:150',
+            'account_holder_name' => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
             'bank_branch'         => 'nullable|string|max:150',
             'bank_account_type'   => 'nullable|string|max:30',
         ], [
