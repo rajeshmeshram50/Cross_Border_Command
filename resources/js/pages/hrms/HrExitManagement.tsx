@@ -5217,6 +5217,28 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
    * attendance-based count is not lost: it still reads out under Days Paid as
    * "attendance: X of Y working days paid", where the label says what it is. */
   const paidCalendarDays = Math.max(0, activeDays - lopDays);
+
+  /* The cycle's days, accounted for by REASON rather than as one total.
+     Every row is a count and a paid/unpaid verdict — no dates, and no money:
+     the figures live in the cycle card, this only says what the days were.
+     Present is derived (paid working days minus the holidays and paid leave
+     already credited inside it) so the rows sum to the days on the books
+     instead of counting a holiday twice. */
+  const weekOffDays   = Number(b.weekoff_days || 0);
+  const holidayDays   = Number(b.holiday_days || 0);
+  const paidLeaveDays = Number(b.paid_leave_days || 0);
+  const presentOnly   = Math.max(0, paidDays - holidayDays - paidLeaveDays);
+  /* Every category is listed even at zero — this is an account of the cycle's
+     days, and "no paid leave" is an answer the reader wants, not a row to hide.
+     Dropping the empties made the table change shape between employees. */
+  const dayRows = [
+    { label: 'Present',       days: presentOnly,   paid: true },
+    { label: 'Weekly offs',   days: weekOffDays,   paid: true },
+    { label: 'Holidays',      days: holidayDays,   paid: true },
+    { label: 'Paid leave',    days: paidLeaveDays, paid: true },
+    { label: 'Loss of Pay (Absent / unpaid leave)', days: lopDays, paid: false },
+  ];
+  const dayTotal = dayRows.reduce((t, r) => t + r.days, 0);
   const stats = [
     { label: 'Working days', value: b.working_days },
     { label: 'Paid days',    value: activeDays > 0 ? paidCalendarDays : b.paid_days },
@@ -5275,6 +5297,39 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
               <tr className="is-earn">
                 <td>Monthly Gross<em>Basic + allowances, as per the salary structure</em></td>
                 <td>{fmtMoney(monthlyFull)}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* What the days on the books were made of.
+              The cycle card beside this one says how many days were paid; it
+              could not say WHY — a week-off and an absence both just vanished
+              into a total. Counts only, no dates and no money: the arithmetic
+              is the other card's job, this one only accounts for the days. */}
+          <div className="ep-fnf-bd-card-head is-earn" style={{ marginTop: 14 }}>
+            <span className="ep-fnf-bd-dot" /> DAYS — HOW THE CYCLE BREAKS DOWN
+          </div>
+          <table className="ep-fnf-bd-table ep-fnf-days">
+            <tbody>
+              {dayRows.map(r => (
+                <tr key={r.label}>
+                  <td>{r.label}</td>
+                  {/* Its own column rather than a caption under the label: the
+                      paid/unpaid verdict is the thing being scanned down, and
+                      as a sub-line it read as a description of the row instead
+                      of a value in it. */}
+                  <td className={`ep-fnf-days-tag${r.paid ? '' : ' is-unpaid'}`}>
+                    {r.paid ? 'Paid' : 'Unpaid'}
+                  </td>
+                  <td>{nDays(r.days)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="is-earn">
+                <td>Total days on the books<em>Employed this cycle</em></td>
+                <td />
+                <td>{nDays(dayTotal)}</td>
               </tr>
             </tfoot>
           </table>

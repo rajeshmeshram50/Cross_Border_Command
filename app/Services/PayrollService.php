@@ -606,6 +606,7 @@ class PayrollService
                 'present_days'      => (float) ($slip['present_days'] ?? 0),
                 'paid_days'         => (float) ($slip['paid_days'] ?? 0),
                 'weekoff_days'      => (float) ($slip['weekoff_days'] ?? 0),
+                'holiday_days'      => (float) ($slip['holiday_days'] ?? 0),
                 'lop_days'          => (float) ($slip['lop_days'] ?? 0),
                 'paid_leave_days'   => (float) ($slip['paid_leave_days'] ?? 0),
                 'unpaid_leave_days' => (float) ($slip['unpaid_leave_days'] ?? 0),
@@ -2068,6 +2069,10 @@ class PayrollService
             'present_days'   => $presentDays,
             'paid_days'      => $paidDays,
             'weekoff_days'   => $weekOffDays,
+            /* Computed since the holiday rules landed but never emitted, so no
+               reader could tell a paid holiday from any other paid day. The F&F
+               day breakdown needs it to say WHY a day was paid. */
+            'holiday_days'   => $holidayDays,
             'lop_days'       => $lopDays,
             'paid_leave_days'   => $paidLeaveDays,
             'unpaid_leave_days' => $unpaidLeaveDays,
