@@ -1814,7 +1814,25 @@ class PayrollService
         $cycleEarnings = round($proratedGross + $overtimeAmount + $bonusAmount, 2);
 
         $pf  = 0;
-        if ($pfApplicable && $employee->pf_eligible && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+        /* $pfApplicable is ALREADY the resolved answer.
+         *
+         * resolveCompensation() reads it off the salary structure when the
+         * employee has one, and falls back to employees.pf_eligible only when
+         * they do not. This line used to AND it with employees.pf_eligible a
+         * second time, which is not a stricter version of the same question —
+         * it is a different one. The two flags are meant to be mirrors, kept in
+         * step by SalaryStructureController::store() and EmployeeController::
+         * update(), but any path that writes one without the other (onboarding,
+         * imports, seeded and legacy rows, a partial employee save that never
+         * submits the field) leaves them disagreeing. Where they disagreed as
+         * structure=yes / employee=no, PF was silently dropped: no deduction, no
+         * line on the slip, and no note saying why — the Salary Structure showed
+         * PF configured and the payslip simply did not have it. (QA #97)
+         *
+         * Removing the second gate can only ever ADD PF where the structure says
+         * it applies; every other combination resolves exactly as before, since
+         * structure=no already produced no PF whatever the employee flag said. */
+        if ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
             $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
                 ? $earnedBasic
                 : min($earnedBasic, self::PF_WAGE_CEILING);
@@ -1830,6 +1848,20 @@ class PayrollService
                         . 'Set Employment Type on the employee record to confirm.'
                 );
             }
+        } elseif ($pfApplicable && !$this->isPfEligibleType($employee)) {
+            /* Configured, then withheld by the employment type — the other way
+             * this ticket's symptom appears. PF is a full-time head, so an
+             * intern / contractor / consultant is skipped deliberately; saying
+             * so is the difference between a policy and a missing deduction.
+             * Warning, because someone ticked PF on the structure and is not
+             * getting it, which is worth a look before the run is approved. */
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'PF is applicable on the salary structure but not deducted — employment type is "'
+                    . ($employee->employee_type ?: $employee->work_type)
+                    . '", and PF applies to full-time employees only.'
+            );
         }
         // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
         // the amount in the salary breakup); fall back to the statutory 0.75%
