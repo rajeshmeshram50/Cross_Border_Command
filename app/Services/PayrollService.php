@@ -1879,6 +1879,21 @@ class PayrollService
                         . 'Set Employment Type on the employee record to confirm.'
                 );
             }
+            /* The basic could not be identified on the structure, so half the
+             * gross was assumed for it. PF rides on that number, so an
+             * assumption here is a real deduction taken off a guess — the slip
+             * has to say so rather than print a confident figure. Warning, not
+             * info: naming an earning row "Basic" is a one-line fix and until
+             * it is done the PF is very likely wrong. */
+            if ($structure && $structure->basicIsAssumed()) {
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'warning',
+                    'No "Basic" earning row on the salary structure — PF was charged on 50% of gross '
+                        . '(₹' . number_format($basic, 2) . ') as an assumed basic. '
+                        . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
+                );
+            }
         } elseif ($pfApplicable && !$this->isPfEligibleType($employee)) {
             /* Configured, then withheld by the employment type — the other way
              * this ticket's symptom appears. PF is a full-time head, so an

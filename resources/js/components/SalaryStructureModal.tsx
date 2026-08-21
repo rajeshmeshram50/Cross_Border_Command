@@ -42,6 +42,13 @@ interface Props {
 
 const fmtINR = (n: number) => new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(n);
 const todayISO = () => new Date().toISOString().slice(0, 10);
+/** Upper bound for "Effective From" — twin of the one-year horizon the API
+ *  enforces in SalaryStructureController::store(). (QA #87) */
+const oneYearAheadISO = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+};
 
 // A standard 50 / 30 / 20 split derived from a monthly gross.
 const splitFromGross = (gross: number): SalaryComponent[] => {
@@ -422,10 +429,17 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                     purpose (activeStructure resolves the version in force on a
                     given date, so a revision dated next month leaves the
                     current cycle alone), and capping would break that. */}
+                {/* Upper bound too. Not "today" — a forward-dated revision is
+                    supported on purpose, per the note above — but a year ahead,
+                    which stops a mistyped year (2062 for 2026) reaching the
+                    server while leaving every genuine revision room. The API
+                    enforces the same two bounds, since a picker is a
+                    convenience and the endpoint is callable without it. */}
                 <MasterDatePicker
                   value={effectiveFrom}
                   onChange={setEffectiveFrom}
                   minDate={employee.date_of_joining || undefined}
+                  maxDate={oneYearAheadISO()}
                   placeholder="Select date"
                 />
               </div>
