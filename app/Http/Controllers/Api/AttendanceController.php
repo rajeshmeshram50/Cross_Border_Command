@@ -1193,7 +1193,14 @@ class AttendanceController extends Controller
             if ($leaveInfo) {
                 $leaveKind    = strcasecmp((string) ($leaveInfo['paid'] ?? 'Paid'), 'Unpaid') === 0 ? 'Unpaid' : 'Paid';
                 $leavePortion = (string) ($leaveInfo['portion'] ?? 'full');
-                if (strcasecmp((string) $status, 'Absent') === 0) {
+                /* A bare "Leave" counts here too, not just "Absent".
+                   The leave-approval flow writes 'Leave' onto the attendance
+                   row, so a day with a row (rather than a synthesised absent)
+                   kept that generic status and the log read "Full day Leave" —
+                   with no way to tell paid from unpaid (QA #67). Both readings
+                   mean the same thing: the employee did not work and there is
+                   approved leave covering the day. */
+                if (in_array(strtolower((string) $status), ['absent', 'leave'], true)) {
                     $status = $leaveKind === 'Unpaid' ? 'Unpaid Leave' : 'Paid Leave';
                 }
             }
