@@ -1174,6 +1174,7 @@ class EmployeeController extends Controller
         $this->authorize($request, 'can_add');
         $data = $this->validatePayload($request);
         $data = $this->mirrorAncillaryRoles($data);
+        $data = $this->syncNoticePeriodDays($data);
         [$dbClientId] = $this->resolveOwnership($request);
         $this->assertAssetsNotDoubleBooked($data, null, $dbClientId);
 
@@ -1385,6 +1386,7 @@ class EmployeeController extends Controller
 
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
+        $data = $this->syncNoticePeriodDays($data);
         // Scope from the row being saved, not the acting user — a super_admin
         // has no client of their own and would otherwise scan every tenant.
         $this->assertAssetsNotDoubleBooked($data, $row->id, $row->client_id);
@@ -2628,6 +2630,39 @@ class EmployeeController extends Controller
      * If only the legacy single id arrives (older client), expand it
      * into a one-item array so the new code path stays the source of truth.
      */
+    /**
+     * Keep `notice_period_days` in step with the `notice_period` LABEL.
+     *
+     * The employee form only ever sends the label ("15 Days") — the integer
+     * column is written at onboarding and then never again, so the two drift
+     * the moment HR changes the notice period on an existing employee. Every
+     * reader (ExitController::noticePeriodDays, ExitNoticePaymentController,
+     * NoticePeriodGuard, the SPA) prefers the integer and falls back to parsing
+     * the label, which is right when the integer is NULL and wrong when it is
+     * STALE: an employee showing "15 Days" on their record was still being
+     * charged a 30-day notice period on their exit.
+     *
+     * Derived here rather than in each reader so there is one source of truth
+     * and the columns cannot disagree. An explicit `notice_period_days` in the
+     * request still wins — this only fills the gap the form leaves.
+     */
+    private function syncNoticePeriodDays(array $data): array
+    {
+        if (!array_key_exists('notice_period', $data)) return $data;
+        if (array_key_exists('notice_period_days', $data) && $data['notice_period_days'] !== null) return $data;
+
+        $label = (string) ($data['notice_period'] ?? '');
+        // "No Notice Period" and friends mean zero, not "unparseable".
+        if ($label !== '' && preg_match('/no\s*notice/i', $label)) {
+            $data['notice_period_days'] = 0;
+            return $data;
+        }
+        if (preg_match('/(\d+)/', $label, $m)) {
+            $data['notice_period_days'] = min(365, max(0, (int) $m[1]));
+        }
+        return $data;
+    }
+
     private function mirrorAncillaryRoles(array $data): array
     {
         if (array_key_exists('ancillary_role_ids', $data)) {

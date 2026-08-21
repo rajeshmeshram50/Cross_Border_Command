@@ -6796,15 +6796,6 @@
 }
 .ep-fnf-in::placeholder { color: var(--vz-secondary-color); opacity: 0.65; font-weight: 600; }
 
-/* "Editable" tag on the label — the explicit answer to "is this free input?",
-   for anyone reading the labels rather than the boxes. */
-.ep-fnf-tag {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800;
-  letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;
-  background: rgba(109,40,217,0.12); border: 1px solid rgba(109,40,217,0.30); color: #6d28d9;
-}
-.ep-fnf-tag > i { font-size: 10px; }
 .ep-fnf-net {
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px; background: linear-gradient(135deg, #4c1d95, #6d28d9);
@@ -6956,9 +6947,6 @@
 [data-bs-theme="dark"] .ep-fnf-field:hover { border-color: rgba(167,139,250,0.80); }
 [data-bs-theme="dark"] .ep-fnf-field:focus-within {
   border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,0.22);
-}
-[data-bs-theme="dark"] .ep-fnf-tag {
-  background: rgba(167,139,250,0.16); border-color: rgba(167,139,250,0.36); color: #c4b5fd;
 }
 [data-bs-theme="dark"] .ep-settle.is-due .ep-settle-band { background: rgba(245,158,11,0.10); }
 [data-bs-theme="dark"] .ep-settle.is-ok  .ep-settle-band { background: rgba(16,185,129,0.10); }
