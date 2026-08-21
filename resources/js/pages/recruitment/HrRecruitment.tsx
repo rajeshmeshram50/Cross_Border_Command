@@ -85,11 +85,6 @@ function apiToRow(api: any): RecruitmentRow {
   const dept = api?.department?.name || '';
   const desig = api?.designation?.name || '';
   const role = api?.primary_role?.name || '';
-
-  // Resolve the manager/HR plus their availability state so the edit form can
-  // flag a person who has since been disabled (removed) or gone inactive
-  // (resigned/etc) — they're no longer pickable but the recruitment still
-  // points at them.
   const stateOf = (emp: any): 'ok' | 'disabled' | 'inactive' | 'missing' => {
     if (!emp) return 'missing';
     if (emp.deleted_at) return 'disabled';
@@ -157,28 +152,6 @@ function formatDate(raw: any): string {
   return `${dd}-${MONTH_ABBR[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-/**
- * Capitalise the first character, leave the rest of the string exactly as
- * typed (PHP's ucfirst, not a title-caser) — so "compliance associate" becomes
- * "Compliance associate" and an intentional "iOS Engineer" is never mangled.
- *
- * Applied when the form is SAVED and when an existing record is loaded for
- * edit — never on keystroke.
- *
- * It used to run on every keystroke, and the "the length never changes so the
- * caret is safe" reasoning behind that was wrong. React only restores the caret
- * when the value it renders matches what the DOM already has. Retype the FIRST
- * letter of an existing title — put the caret at position 0 of "enior
- * Accountant" and type "s" — and the state becomes "Senior…" while the input
- * holds "senior…". React rewrites the whole value, the browser drops the caret
- * at the END, and the next keystrokes land there: "Senior Accountant" turns
- * into things like "ANior Accountantsd". Capitalising once, at save, gives the
- * same stored result with no cursor to fight.
- *
- * Leading whitespace is skipped rather than blocking the capital: a value that
- * starts with a space or newline capitalises its first real character instead
- * of silently doing nothing.
- */
 const ucFirst = (s: string): string => {
   const i = s.search(/\S/);
   if (i < 0) return s;                       // empty or all-whitespace
@@ -187,16 +160,6 @@ const ucFirst = (s: string): string => {
   if (c === upper) return s;                 // already capital / not a letter
   return s.slice(0, i) + upper + s.slice(i + 1);
 };
-
-/**
- * Compress a Laravel 422 message into the same terse vocabulary the local
- * validators use ("The job title field is required." -> "Required").
- *
- * Server messages are written as full sentences naming the column, which is
- * right for an API consumer but wraps to three lines in the narrow .rec-error
- * strip under a form field. The toast still shows the server's original text,
- * so nothing is lost — only the inline strip is shortened.
- */
 const shortenServerError = (msg: string): string => {
   const m = msg.toLowerCase();
   if (m.includes('required'))                                   return 'Required';
@@ -209,8 +172,7 @@ const shortenServerError = (msg: string): string => {
   if (m.includes('not be greater') || m.includes('max'))        return 'Value is too long';
   if (m.includes('at least') || m.includes('min'))              return 'Value is too short';
   if (m.includes('valid'))                                      return 'Not valid';
-  // Nothing matched — fall back to the server's own first sentence rather than
-  // inventing a message, but keep it to one clause so it still fits.
+
   return msg.split(/[.;]/)[0].trim() || 'Invalid';
 };
 
@@ -392,8 +354,6 @@ export default function HrRecruitment() {
     selected: 0, offered: 0, rejected: 0, on_hold: 0,
   };
   const [candidateStats, setCandidateStats] = useState<CandidateStats>(ZERO_STATS);
-  // Hiring requests power the "Hiring Requests" + "Converted to Recruitment"
-  // KPIs. Drafts are excluded (they aren't submitted requests yet).
   const [hiringRequests, setHiringRequests] = useState<HiringRequestRow[]>([]);
 
   const fetchRecruitments = async () => {
@@ -425,16 +385,6 @@ export default function HrRecruitment() {
     const completed  = recruitments.filter(r => r.status === 'Completed').length;
     const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
     const expired    = recruitments.filter(r => r.status === 'Expired').length;
-
-    // KPIs track the recruitment lifecycle: a Hiring Request is raised, then
-    // (optionally) converted into a Recruitment, which then runs and finishes
-    // as Completed or Cancelled. Each card maps to one clear stage.
-    //
-    //   Hiring Request ──convert──▶ Recruitment ──▶ Active/Completed/Cancelled
-    //
-    // Converted = recruitments that were created from a hiring request, counted
-    // by distinct source request id so two recruitments off one request (rare)
-    // don't double-count. Drafts are excluded from the Hiring Requests count.
     const submittedRequests = hiringRequests.filter(r => r.status !== 'Draft').length;
     const convertedRequestIds = new Set(
       recruitments.map(r => r.hiringRequestId).filter((id): id is number => id != null),
@@ -442,11 +392,8 @@ export default function HrRecruitment() {
 
     return {
       total,
-      // Open requisitions still actively hiring.
       active:         inProgress,
-      // Submitted hiring requests (Drafts excluded).
       hiringRequests: submittedRequests,
-      // Hiring requests promoted into a recruitment.
       converted:      convertedRequestIds.size,
       completed,
       cancelled,
@@ -481,10 +428,6 @@ export default function HrRecruitment() {
   const [candidatesTarget, setCandidatesTarget]     = useState<RecruitmentRow | null>(null);
   const [hiringRefreshKey, setHiringRefreshKey]     = useState(0);
   const [createPrefillFromHr, setCreatePrefillFromHr] = useState<any | null>(null);
-
-  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     4+6+13+8+9+8+5+6+7+6+11+10+7 = 100 — Start Date and Deadline share the
-     remaining space. */
   const columns = useMemo<DataTableColumn<RecruitmentRow>[]>(() => [
     {
       header: 'REC ID',
@@ -580,8 +523,7 @@ export default function HrRecruitment() {
       },
     },
     {
-      /* Both date columns sort on the raw value so the order is chronological,
-         not alphabetical on the dd-Mon-yyyy label. */
+     
       header: 'Start Date',
       accessorKey: 'startDate',
       meta: { width: '6%', align: 'center' },
@@ -602,9 +544,6 @@ export default function HrRecruitment() {
         const r = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center align-items-center">
-            {/* Status blocks are facts about the ROW (hard-disabled); the
-                permission block is about the USER, so it stays clickable and
-                explains itself. */}
             <ActionBtn
               title={
                 r.status === 'Cancelled' ? 'Cannot edit — recruitment is cancelled'
@@ -658,8 +597,6 @@ export default function HrRecruitment() {
         );
       },
     },
-    // perm.* so the action cells re-render when a grant refresh lands.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [navigate, perm.canEdit]);
 
   return (
@@ -683,8 +620,6 @@ export default function HrRecruitment() {
                 </div>
               </div>
               <div className="rec-hero-actions d-flex align-items-center gap-2 flex-wrap flex-shrink-0">
-                {/* Greyed without Add, but still clickable so the toast can
-                    name the missing permission. */}
                 <button
                   type="button"
                   className="rec-btn-primary"
@@ -726,9 +661,6 @@ export default function HrRecruitment() {
               ))}
             </Row>
 
-            {/* Shared list table (components/ui/DataTable) — status tabs,
-                search, sortable headers, the rows-per-page pager and the
-                fit-to-viewport sizing all live in the component now. */}
             <DataTable<RecruitmentRow>
               data={filtered}
               columns={columns}
@@ -775,9 +707,6 @@ export default function HrRecruitment() {
         isOpen={requestsOpen}
         refreshKey={hiringRefreshKey}
         onClose={() => setRequestsOpen(false)}
-        /* Both "Create Recruitment" buttons inside the requests modal (the row
-           action and the detail footer) funnel through here, so one guard
-           covers both — it still creates a recruitment, hence can_add. */
         onCreateRecruitment={(req) => perm.guard('add', () => {
           setRequestsOpen(false);
           setCreateMode('add');
@@ -937,11 +866,6 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
 
   const validate = (): RaiseErrors => {
     const e: RaiseErrors = {};
-    /* Messages are deliberately terse — they render in a one-line .rec-error
-       strip under a field that is a third of the form wide, so a sentence wraps
-       to two or three lines and shoves the rest of the form down. The label
-       above already names the field, so the message only has to say what is
-       wrong with it: "Required", "Min 20 characters", "Max 20 skills". */
     const titleRe = /^[A-Za-z0-9 .,\-\/]+$/;
     const titleMsg = 'No special characters';
     if (!title.trim())          e.title          = 'Required';
@@ -971,30 +895,16 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
       else if (dr.length > 3000) e.dailyResp = 'Max 3000 characters';
     }
 
-    /* Separators: comma, semicolon, newline and bullet (CBC #58).
-       Only comma and newline were accepted before, so skills typed the way
-       people actually type them — "React; Node; AWS", or one per bullet, or a
-       pasted paragraph — collapsed into a SINGLE entry. The user had plainly
-       added several skills and was still told to "add at least 2", which is
-       why the message read as wrong: the count was wrong, not the rule.
-
-       Space is deliberately NOT a separator — "Spring Boot" and "Machine
-       Learning" are one skill each, and splitting on space would turn every
-       two-word skill into two. */
     const skillList = requiredSkills.split(/[\n,;•|]+/).map(s => s.trim()).filter(Boolean);
     const TOO_LONG = skillList.find(s => s.length > 100);
 
     if (skillList.length === 0) {
       e.requiredSkills = 'Required';
     } else if (skillList.length < 2) {
-      // State the rule, not just the target — the previous wording never
-      // explained that the separator is what the count depends on.
       e.requiredSkills = 'Separate each skill with a comma — at least 2 required';
     } else if (skillList.length > 20) {
       e.requiredSkills = 'Max 20 skills';
     } else if (TOO_LONG) {
-      // A pasted paragraph parses as one very long "skill". Say that, rather
-      // than letting it through as a valid entry.
       e.requiredSkills = 'Each skill must be 100 characters or less — enter skills, not a description';
     }
 
@@ -1004,8 +914,6 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
     if (!rq)                  e.requiredQual = 'Required';
     else if (rq.length < 2)   e.requiredQual = 'Min 2 characters';
     else if (rq.length > 255) e.requiredQual = 'Max 255 characters';
-    // Must contain at least one letter and only qualification-safe characters —
-    // rejects special-character junk like "@#$%" (bug #32).
     else if (!/[A-Za-z]/.test(rq))
       e.requiredQual = 'Must contain letters';
     else if (!/^[A-Za-z0-9 .,/&()+\-]+$/.test(rq))
@@ -1076,8 +984,6 @@ export function RaiseHiringRequestModal({ isOpen, onClose, onSubmit, editing, zI
           if (ui) mapped[ui] = shortenServerError(raw);
         }
         setErrors(mapped);
-        // Inline strip gets the short form; the toast keeps the server's full
-        // sentence, which is where there is actually room for it.
         toast.error('Validation failed', firstRaw || 'Please fix the highlighted fields.');
       } else {
         const raw = String(err?.response?.data?.message || '');
