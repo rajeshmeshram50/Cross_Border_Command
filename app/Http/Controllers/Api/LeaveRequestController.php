@@ -1436,7 +1436,29 @@ class LeaveRequestController extends Controller
         foreach ($rows as $r) {
             if (!$r->date) continue;
             $d = Carbon::parse($r->date);
-            if ($r->is_recurring) $d = Carbon::create($start->year, $d->month, $d->day);
+
+            if ($r->is_recurring) {
+                /* Anchor to EVERY year the window touches, not just the start
+                 * year. Callers pad this window by SandwichPolicy::LOOKAROUND_DAYS
+                 * on both sides, so a leave in late December is looked up across
+                 * a range that ends in January — and anchoring a recurring 1 Jan
+                 * to the START year produced last January's date, which then
+                 * failed the range test and was dropped. New Year read as an
+                 * ordinary working day, which both truncated the off-run being
+                 * walked and broke the flanking test beside it.
+                 *
+                 * PayrollService::holidayDateSet() has always anchored this way,
+                 * so the leave screen and the payslip were sizing the same leave
+                 * off different calendars across a year boundary. */
+                foreach (range($start->year, $end->year) as $year) {
+                    $anchored = Carbon::create($year, $d->month, $d->day);
+                    if ($anchored->gte($start) && $anchored->lte($end)) {
+                        $out[$anchored->toDateString()] = true;
+                    }
+                }
+                continue;
+            }
+
             if ($d->lt($start) || $d->gt($end)) continue;
             $out[$d->toDateString()] = true;
         }

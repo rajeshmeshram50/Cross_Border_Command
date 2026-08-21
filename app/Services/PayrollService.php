@@ -1571,7 +1571,20 @@ class PayrollService
                 ? "{$lateMarks} late mark(s) — under this branch's threshold of {$latePolicy['count']}, no pay deducted."
                 : "{$lateMarks} late mark(s) — this branch does not deduct pay for late marks.");
         }
-        $lopDays = min($effectiveWorkingDays, $lopDays);
+        /* Ceiling: you cannot lose more days than the cycle can charge for.
+         *
+         * That is the working days PLUS any sandwiched off-days — the one thing
+         * in here that is deliberately charged from OUTSIDE the working-day
+         * denominator (see $sandwichLop above). Pinning the ceiling to working
+         * days alone silently cancelled it in exactly the case it costs the
+         * most: an employee on unpaid leave across every working day of a
+         * stretch already has LOP at the ceiling, so the flanking weekends the
+         * policy exists to charge were added and then clipped straight back off.
+         * The policy read as applied on the slip and was worth nothing.
+         *
+         * The money is separately capped at the pro-rated basic / gross below,
+         * so a larger day count cannot overdraw the payslip. */
+        $lopDays = min($effectiveWorkingDays + $sandwichLop, $lopDays);
         $paidDays = max(0, round($effectiveWorkingDays - $lopDays, 2));
 
         // Unpaid-leave vs LOP sanity — an employee on unpaid leave should be
@@ -2721,16 +2734,34 @@ class PayrollService
      * given only "days" and "sandwich days" cannot tell whether to add them or
      * not, and read "4 days deducted (+2 off-days)" as six.
      *
-     * @return array{working: float, sandwich: float}
+     * `dates` carries the actual Y-m-d the sandwich charges, because a caller
+     * working one payroll month at a time cannot use the count alone: a leave
+     * straddling a month boundary can sandwich days on either side of it, and
+     * only the dates say which month each belongs to.
+     *
+     * @return array{working: float, sandwich: float, dates: string[]}
      */
     public function sandwichBreakdown(Employee $employee, $leave): array
     {
         if (!\App\Support\SandwichPolicy::appliesTo($employee)) {
-            return ['working' => 0.0, 'sandwich' => 0.0];
+            return ['working' => 0.0, 'sandwich' => 0.0, 'dates' => []];
         }
 
         $from = Carbon::parse($leave->from_date);
         $to   = Carbon::parse($leave->to_date);
+
+        /* A half-day request never sandwiches.
+         *
+         * LeaveRequestController::computeLeaveDays() returns 0.5 and stops
+         * before the sandwich scan for exactly this shape, so charging one here
+         * would put the two sizing sites in disagreement — the thing this whole
+         * class exists to prevent. It bit hardest on an UNPAID half-day: the
+         * leave was recorded as 0.5 days while payroll added the flanking
+         * weekend to loss of pay, and because the review list keys off
+         * leave_requests.days it never appeared there to be waived. */
+        if (($leave->day_type ?? 'full') !== 'full' && $from->isSameDay($to)) {
+            return ['working' => 0.5, 'sandwich' => 0.0, 'dates' => []];
+        }
 
         // Padded: the scan steps outside the leave on both sides, and an
         // off-run adjacent to it can sit wholly beyond the dates.
@@ -2754,11 +2785,12 @@ class PayrollService
             if (!$isOff($d)) $working += 1.0;
         }
 
+        $dates = \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave);
+
         return [
             'working'  => $working,
-            'sandwich' => (float) count(
-                \App\Support\SandwichPolicy::chargeableOffDays($from, $to, $isOff, $isLeave)
-            ),
+            'sandwich' => (float) count($dates),
+            'dates'    => $dates,
         ];
     }
 
@@ -2901,7 +2933,21 @@ class PayrollService
                 // Waived by HR on the payroll review — the same flag the paid
                 // side honours, so one decision covers both.
                 if ($sandwichOn && $employee && !$r->sandwich_waived) {
-                    $sandwichLop += (float) $this->sandwichBreakdown($employee, $r)['sandwich'];
+                    /* Charged by DATE, clipped to this cycle — not by count.
+                     *
+                     * sandwichBreakdown() scans the leave's whole span, and this
+                     * loop runs for every cycle the leave overlaps. A leave
+                     * running 28 Jan – 3 Feb was therefore scanned twice, and
+                     * both times contributed its full sandwich count: the
+                     * February off-days were charged as loss of pay in January
+                     * and then again in February. Only the dates can say which
+                     * cycle each off-day belongs to, so the count is rebuilt
+                     * from the ones falling inside this window. */
+                    foreach ($this->sandwichBreakdown($employee, $r)['dates'] as $sw) {
+                        if ($sw >= $windowStart && $sw <= $windowEnd) {
+                            $sandwichLop += 1.0;
+                        }
+                    }
                 }
             } else {
                 $paid += $span;

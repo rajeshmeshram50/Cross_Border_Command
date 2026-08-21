@@ -470,6 +470,10 @@ class PayrollController extends Controller
             if (!\App\Support\SandwichPolicy::appliesTo($employee)) continue;
 
             $leaves = \App\Models\LeaveRequest::query()
+                // paid_unpaid decides whether the sandwich lands on the leave
+                // balance or straight on loss of pay, which the listing gate
+                // below turns on — eager-loaded so it is not one query per leave.
+                ->with('leaveType:id,paid_unpaid')
                 ->where('employee_id', $employee->id)
                 ->where('status', 'Approved')
                 ->whereDate('from_date', '<=', $end->toDateString())
@@ -497,7 +501,28 @@ class PayrollController extends Controller
                 $policyTotal = $bd['working'] + $extra;
                 $alreadyCharged = (float) $leave->days >= $policyTotal - 0.001;
 
-                if (!$leave->sandwich_waived && ($extra <= 0 || !$alreadyCharged)) continue;
+                /* …with one exception: an UNPAID leave.
+                 *
+                 * The "already charged" test reads leave_requests.days, which is
+                 * the right question for a PAID leave — there the sandwich is
+                 * charged to the leave balance, and a leave approved before the
+                 * branch switch was turned on never had it folded in, so nothing
+                 * is being deducted.
+                 *
+                 * An unpaid leave has no balance to burn, so PayrollService
+                 * charges its sandwiched off-days straight to loss of pay, and it
+                 * derives them live from the calendar rather than from `days`.
+                 * That charge exists whatever `days` happens to say — so the
+                 * exact rows this gate dropped as "a charge that does not exist"
+                 * were, for unpaid leave, real money coming off the payslip with
+                 * no way to see or waive it from the run screen. */
+                $unpaidLeave = in_array(
+                    strtolower((string) ($leave->leaveType->paid_unpaid ?? 'paid')),
+                    ['unpaid', 'lwp', 'loss of pay', 'loss_of_pay'],
+                    true,
+                );
+
+                if (!$leave->sandwich_waived && ($extra <= 0 || (!$alreadyCharged && !$unpaidLeave))) continue;
 
                 $items[] = [
                     'leave_id'       => $leave->id,
@@ -508,11 +533,33 @@ class PayrollController extends Controller
                     'from_date'      => Carbon::parse($leave->from_date)->toDateString(),
                     'to_date'        => Carbon::parse($leave->to_date)->toDateString(),
                     'days'           => (float) $leave->days,
+                    /* Working days the leave actually covers, sandwich excluded.
+                     * On an LOP charge the screen shows this instead of `days`:
+                     * an unpaid leave raised while the policy was on has the
+                     * off-days folded into `days` AND docked again through loss
+                     * of pay (payroll derives that from the calendar, not from
+                     * `days`), so printing "3 days deducted + 1 off-day" over a
+                     * 2-working-day leave reads as four. */
+                    'working_days'   => $bd['working'],
                     'sandwich_days'  => $extra,
                     // What the leave costs with the policy fully applied. The
                     // screen compares this against `days` to know whether the
                     // off-days are ALREADY counted or still pending.
                     'days_with_policy' => $bd['working'] + $extra,
+                    /* WHERE the sandwich is charged, which is not the same
+                     * question as how much.
+                     *
+                     * 'balance' — folded into leave_requests.days: entitlement is
+                     *   burnt, and pay only follows once the balance runs out.
+                     * 'lop'     — an unpaid leave, so there is no balance to burn
+                     *   and PayrollService puts the off-days straight on loss of
+                     *   pay, on top of `days`.
+                     *
+                     * The screen needs it because the two read differently: the
+                     * first is "3 days deducted, 2 of them off-days", the second
+                     * is "1 day deducted PLUS 2 off-days docked". Printing the
+                     * balance wording over an LOP charge understates it. */
+                    'charged_via'    => $unpaidLeave ? 'lop' : 'balance',
                     'waived'         => (bool) $leave->sandwich_waived,
                     'waiver_reason'  => $leave->sandwich_waiver_reason,
                 ];

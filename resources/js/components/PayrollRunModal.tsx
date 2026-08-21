@@ -39,12 +39,20 @@ export interface PayrollSandwichItem {
   to_date: string;
   /** Total days charged, sandwich included. */
   days: number;
+  /** Working days the leave covers, sandwich excluded — what the leave itself
+   *  costs when the off-days are charged separately through loss of pay. */
+  working_days?: number;
   /** How many off-days the policy charges for this leave. */
   sandwich_days: number;
   /** What the leave costs with the policy fully applied. Compared against
    *  `days` to tell whether those off-days are ALREADY counted or still to
    *  come — `days` alone cannot say. */
   days_with_policy?: number;
+  /** Where the off-days are charged: 'balance' means they are already inside
+   *  `days` (leave entitlement burnt), 'lop' means they are docked from pay on
+   *  top of `days` — an unpaid leave has no balance to burn. The row reads
+   *  differently for each, so it is never inferred. */
+  charged_via?: 'balance' | 'lop';
   waived: boolean;
   waiver_reason?: string | null;
 }
@@ -158,6 +166,10 @@ function SandwichRow({ item, busy, onWaive }: {
      waived=false and "No" is waived=true. Stated once here rather than at each
      call site, where the double negative is what invites an inverted click. */
   const applied = !item.waived;
+  /* Charged straight to loss of pay rather than to the leave balance — an
+     unpaid leave has no balance to burn. Waiving hides the distinction, since
+     nothing is charged either way. */
+  const isLop = !item.waived && item.charged_via === 'lop';
   const set = (nextApplied: boolean) => {
     if (busy || !onWaive || nextApplied === applied) return;
     onWaive([item], !nextApplied);
@@ -165,10 +177,21 @@ function SandwichRow({ item, busy, onWaive }: {
   return (
     <div className="prm-sw-row">
       <span className="prm-sw-date">{shortRange(item.from_date, item.to_date)}</span>
+      {/* Two shapes, and they must not be printed in each other's wording.
+          · balance — the off-days are inside `days`: "3 days deducted, 2 of
+            them off-days".
+          · lop — an unpaid leave, so they are docked from pay ON TOP of the
+            working days: "1 day deducted + 2 off-days as loss of pay". `days`
+            is not used there, because it may also carry the off-days and the
+            row would then read as double what is actually charged. */}
       <span className="prm-sw-text">
-        <b>{d(item.days)}</b> deducted
+        <b>{d(isLop ? (item.working_days ?? item.days) : item.days)}</b> deducted
         <span className={`prm-sw-chip${item.waived ? ' is-off' : ''}`}>
-          {item.waived ? `${od(item.sandwich_days)} excused` : `incl. ${od(item.sandwich_days)}`}
+          {item.waived
+            ? `${od(item.sandwich_days)} excused`
+            : isLop
+              ? `+ ${od(item.sandwich_days)} as loss of pay`
+              : `incl. ${od(item.sandwich_days)}`}
         </span>
       </span>
       {/* A two-way switch, not a one-way button.
