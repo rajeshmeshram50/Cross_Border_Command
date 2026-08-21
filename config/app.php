@@ -43,6 +43,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Request Timing Headers
+    |--------------------------------------------------------------------------
+    |
+    | When true, every API response carries X-Profile-Total-Ms,
+    | X-Profile-Query-Ms and X-Profile-Queries. Aggregates only — no SQL and no
+    | bindings — so it is safe to switch on briefly in production to find out
+    | whether a slow endpoint is slow in the database or slow before it.
+    |
+    */
+
+    'profile_timing' => (bool) env('PROFILE_TIMING', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application URL
     |--------------------------------------------------------------------------
     |

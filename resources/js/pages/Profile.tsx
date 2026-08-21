@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardBody, Col, Row, Input, Label, Spinner, Form } from 'reactstrap';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import api from '../api';
 import { validatePhone } from '../utils/validatePhone';
 import { resolveFileUrl } from '../utils/resolveFileUrl';
+import StagedFileField, { storedFileName } from '../components/ui/StagedFileField';
 import { ShimmerProfile } from '../components/ui/Shimmer';
 import ImageCropperModal from '../components/ui/ImageCropperModal';
 
@@ -35,6 +36,10 @@ export default function Profile() {
   // Cropper modal state — the data URL the user just picked + open flag.
   const [cropOpen, setCropOpen] = useState(false);
   const [cropSrc,  setCropSrc]  = useState<string | null>(null);
+  // The name of the file the user actually picked. The cropper replaces it
+  // with a generated square JPEG, so without this the field would show
+  // "profile-1755764812345.jpg" instead of what they chose.
+  const [profilePhotoPickedName, setProfilePhotoPickedName] = useState('');
 
   // ── Branding section (logo + colors) — tenant users only ──
   const [brandPrimary,   setBrandPrimary]   = useState<string>('#4F46E5');
@@ -42,11 +47,6 @@ export default function Profile() {
   const [brandLogoFile,  setBrandLogoFile]  = useState<File | null>(null);
   const [brandLogoPreview, setBrandLogoPreview] = useState<string | null>(null);
   const [savingBrand, setSavingBrand] = useState(false);
-  // Refs to the file inputs so we can reset their `.value` after a rejected
-  // upload — otherwise the browser keeps showing the filename and the user
-  // thinks the file is queued for save.
-  const brandLogoInputRef = useRef<HTMLInputElement | null>(null);
-  const profilePhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Initialize the branding form from the current /me values once we know
   // them. Re-syncs whenever the user object changes (e.g. after refresh()).
@@ -132,29 +132,30 @@ export default function Profile() {
   const handleProfilePhotoChange = (file: File | null) => {
     if (!file) {
       setProfilePhotoFile(null);
+      setProfilePhotoPickedName('');
       restoreSavedProfilePhoto();
       return;
     }
     const err = validateProfilePhoto(file);
     if (err) {
       toast.error('Invalid Photo', err);
-      if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
       return;
     }
+    setProfilePhotoPickedName(file.name);
     const r = new FileReader();
     r.onload = ev => {
       setCropSrc(ev.target?.result as string);
       setCropOpen(true);
     };
     r.readAsDataURL(file);
-    // Don't keep the original filename in the input — once the cropper
-    // confirms, we replace with a synthetic .jpg anyway. Resetting here
-    // also lets the user re-pick the same file to re-open the cropper.
-    if (profilePhotoInputRef.current) profilePhotoInputRef.current.value = '';
   };
 
   const handleCropConfirm = (blob: Blob) => {
-    const file = new File([blob], `profile-${Date.now()}.jpg`, { type: 'image/jpeg' });
+    /* Name the cropped JPEG after the file the user picked. The server keeps
+       the uploaded name, so this is what the field will show as the current
+       photo once it is saved — "passport-photo.jpg" rather than a timestamp. */
+    const base = profilePhotoPickedName.replace(/\.[^.]+$/, '').trim() || 'profile';
+    const file = new File([blob], `${base}.jpg`, { type: 'image/jpeg' });
     setProfilePhotoFile(file);
     const r = new FileReader();
     r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
@@ -225,9 +226,6 @@ export default function Profile() {
     const err = await validateLogo(file);
     if (err) {
       toast.error('Invalid Logo', err);
-      // Wipe the file input so the rejected filename doesn't linger and
-      // mislead the user into thinking the file is queued for save.
-      if (brandLogoInputRef.current) brandLogoInputRef.current.value = '';
       return;
     }
     setBrandLogoFile(file);
@@ -254,6 +252,23 @@ export default function Profile() {
     }
   };
 
+  /* What is already stored for each upload field: where to fetch it and what
+     to call it. Uploads keep the file name the user picked, so the basename of
+     the stored path is a meaningful label. A staged (not yet saved) file wins
+     over it until Save or Cancel. */
+  const savedBrandLogoPath = user?.branch_logo || user?.client_logo || null;
+  const savedBrandLogo = savedBrandLogoPath
+    ? { url: resolveFileUrl(savedBrandLogoPath), name: storedFileName(savedBrandLogoPath) }
+    : null;
+
+  const savedProfilePhotoPath = user?.employee_profile_photo
+    || user?.branch_profile_photo
+    || user?.client_profile_photo
+    || user?.user_profile_photo
+    || null;
+  const savedProfilePhoto = savedProfilePhotoPath
+    ? { url: resolveFileUrl(savedProfilePhotoPath), name: storedFileName(savedProfilePhotoPath) }
+    : null;
   const roleLabels: Record<string, string> = {
     super_admin: 'Super Administrator',
     client_admin: 'Client Administrator',
@@ -651,12 +666,14 @@ export default function Profile() {
               )}
               <div className="flex-grow-1 min-w-0">
                 <Label className="pf-label mb-1">Profile Photo</Label>
-                <Input
-                  innerRef={profilePhotoInputRef}
-                  type="file"
+                <StagedFileField
                   accept="image/jpeg,image/png,image/webp"
-                  onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null)}
-                  style={{ fontSize: 12 }}
+                  staged={profilePhotoFile}
+                  stagedName={profilePhotoPickedName}
+                  saved={savedProfilePhoto}
+                  onPick={file => handleProfilePhotoChange(file)}
+                  onClear={() => handleProfilePhotoChange(null)}
+                  fontSize={12}
                 />
                 <small className="text-muted" style={{ fontSize: 11 }}>
                   JPG, PNG, WebP — Max 4MB · you'll be able to crop &amp; zoom after picking
@@ -1120,8 +1137,14 @@ export default function Profile() {
                         )}
                       </div>
                       <div className="flex-grow-1 min-w-0">
-                        <Input innerRef={brandLogoInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" style={{ fontSize: 12 }}
-                          onChange={e => handleBrandLogoChange(e.target.files?.[0] || null)} />
+                        <StagedFileField
+                          accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                          staged={brandLogoFile}
+                          saved={savedBrandLogo}
+                          onPick={file => handleBrandLogoChange(file)}
+                          onClear={() => handleBrandLogoChange(null)}
+                          fontSize={12}
+                        />
                         <small className="text-muted d-block mt-1" style={{ fontSize: 10.5 }}>
                           PNG, JPG, SVG — max 2MB · recommended 600×200 (horizontal, ~3:1)
                         </small>

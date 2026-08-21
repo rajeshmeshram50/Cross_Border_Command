@@ -76,9 +76,6 @@ interface AttendanceEmployee {
   presentDays: number;
   lateMarks: number;
   missingPunch: number;
-  /* null when the month held no tracked working days for this employee — see
-     AttendanceController. A percentage is withheld rather than invented. */
-  compliancePct: number | null;
   logs: AttendanceLog[];
 }
 
@@ -618,15 +615,11 @@ export default function HrAttendance() {
                   </div>
                 </div>
 
-                <Row className="g-2 mb-3 align-items-stretch row-cols-xl-4 row-cols-md-2 row-cols-2">
+                <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
                   {([
                     { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
                     { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
                     { key: 'miss', label: 'Missing Punches',sub: 'This month',     value: selected.missingPunch,       icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
-                    { key: 'comp', label: 'Compliance',
-                      sub: selected.compliancePct === null ? 'No working days yet' : 'Attendance rate',
-                      value: selected.compliancePct === null ? '—' : `${selected.compliancePct}%`,
-                      icon: 'ri-shield-check-line',    gradient: 'linear-gradient(135deg,#0d9488,#14b8a6)', deep: '#0d9488' },
                   ] as const).map(k => (
                     <Col key={k.key}>
                       <div className="rec-kpi-card h-100">

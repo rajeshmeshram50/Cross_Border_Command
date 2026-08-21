@@ -527,6 +527,12 @@ export default function DataTable<T extends object>({
             </div>
           )}
 
+          {/* Search first, then Filter. The button reads as an action ON the
+              search results, so it belongs after the field it narrows — and
+              with the search elastic, leading with the button left it stranded
+              in the middle of the row. */}
+          {searchInToolbar && searchBox}
+
           {onFilterClick && (
             <button
               type="button"
@@ -538,8 +544,6 @@ export default function DataTable<T extends object>({
               {activeFilterCount > 0 && <span className="dt-filter-badge">{activeFilterCount}</span>}
             </button>
           )}
-
-          {searchInToolbar && searchBox}
 
           {toolbarActions && <div className="dt-toolbar-actions">{toolbarActions}</div>}
         </div>

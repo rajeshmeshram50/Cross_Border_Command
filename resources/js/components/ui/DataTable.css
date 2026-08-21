@@ -280,11 +280,11 @@
   /* Shrink factor 8 (vs the tab rail's 1): when the toolbar line is over-full
      the search gives up its width FIRST, so the tab rail keeps its tabs on a
      single line instead of wrapping one onto a second row inside the rail.
-     Basis/cap widened to ~600 so the search stretches out to about the Profile
-     column on wide tables (Onboarding / Employees); the high shrink factor
-     still collapses it to min-width on crowded toolbars (e.g. Document Template
-     Management) so nothing wraps. */
-  flex: 0 8 600px; min-width: 140px; max-width: 600px;
+     Basis/cap 420 (was 600): a 600px field ate the width a wide tab rail needs,
+     so a 5-tab table (Leave Management) wrapped its tabs onto a second row while
+     the search sat half empty. 420 still shows a full query; the high shrink
+     factor collapses it to min-width on crowded toolbars so nothing wraps. */
+  flex: 0 8 420px; min-width: 140px; max-width: 420px;
   /* Exactly the selected tab pill's height (.dt-tab = 40px) so the search box
      and the highlighted tab line up as one strip. */
   height: 40px;
@@ -300,8 +300,8 @@
    `.dt-toolbar-actions` is what normally claims the right edge via
    margin-left:auto; with no actions present nothing did, so the search sat
    glued to the tabs with a wide dead band after it. The search takes that role
-   instead: pinned right, at a fixed width rather than stretched, because a
-   search field gains nothing from being 600px wide. */
+   instead — and since the Filter button now follows it, the auto margin on the
+   search pushes the whole search + Filter pair right as one group. */
 .dt-toolbar:not(:has(.dt-toolbar-actions)) .dt-search {
   margin-left: auto;
 }

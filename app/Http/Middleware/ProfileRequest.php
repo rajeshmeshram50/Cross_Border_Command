@@ -47,7 +47,26 @@ class ProfileRequest
 
     public function handle(Request $request, Closure $next): Response
     {
-        if ($request->header('X-Profile') !== '1' || !app()->environment(['local', 'staging'])) {
+        $full = $request->header('X-Profile') === '1'
+            && app()->environment(['local', 'staging']);
+
+        /* Lightweight mode — safe anywhere, including production.
+         *
+         * Enabled with PROFILE_TIMING=true in .env. Emits three numbers and no
+         * SQL: total time, database time, statement count. That is enough to
+         * separate the two possible answers —
+         *
+         *   query time high              → the SQL is the problem
+         *   query time low, total high   → the SQL is NOT the problem; the cost
+         *                                  is per-request overhead (no config /
+         *                                  route cache, no OPcache, cold
+         *                                  autoloader, APP_DEBUG on)
+         *
+         * No statement list, no bindings, nothing cached — so no customer data
+         * leaves the process and memory stays flat. */
+        $timing = !$full && config('app.profile_timing');
+
+        if (!$full && !$timing) {
             return $next($request);
         }
 
@@ -82,6 +101,19 @@ class ProfileRequest
         $queryMs = 0.0;
         foreach ($log as $entry) {
             $queryMs += (float) ($entry['time'] ?? 0);
+        }
+
+        if ($timing) {
+            /* Aggregates only. Deliberately no X-Profile-Id: there is nothing
+               parked to fetch, and offering an id that resolves to nothing
+               would be worse than offering none. */
+            $response->headers->add([
+                'X-Profile-Total-Ms' => round($totalMs, 1),
+                'X-Profile-Query-Ms' => round($queryMs, 1),
+                'X-Profile-Queries'  => count($log),
+                'X-Profile-Mode'     => 'timing',
+            ]);
+            return $response;
         }
 
         // Park the full statement list for the drill-down view.

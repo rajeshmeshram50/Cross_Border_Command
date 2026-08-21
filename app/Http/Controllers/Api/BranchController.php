@@ -288,13 +288,13 @@ class BranchController extends Controller
                 // Store relative path so it resolves correctly across local and
                 // Azure disks. URL is generated at read time via file_url().
                 if ($request->hasFile('logo')) {
-                    $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                    $logoPath = $request->file('logo')->storeAs("branches/logos/{$branch->id}", $this->uploadFileName($request->file('logo')), 'public');
                     $branch->update(['logo' => $logoPath]);
                     \App\Services\LogoDarkVariantGenerator::generate($logoPath);
                 }
                 if ($request->hasFile('profile_photo')) {
                     $branch->update([
-                        'profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public'),
+                        'profile_photo' => $request->file('profile_photo')->storeAs("branches/profile-photos/{$branch->id}", $this->uploadFileName($request->file('profile_photo')), 'public'),
                     ]);
                 }
                 // Authorised-signatory image — used by the Quotation/PI PDF's
@@ -302,7 +302,7 @@ class BranchController extends Controller
                 // best because the stamp + signature sit on the branded footer.
                 if ($request->hasFile('signature_path')) {
                     $branch->update([
-                        'signature_path' => $request->file('signature_path')->store('branches/signatures', 'public'),
+                        'signature_path' => $request->file('signature_path')->storeAs("branches/signatures/{$branch->id}", $this->uploadFileName($request->file('signature_path')), 'public'),
                     ]);
                 }
 
@@ -707,7 +707,7 @@ class BranchController extends Controller
                         \App\Services\LogoDarkVariantGenerator::delete($this->relativePath($branch->logo));
                         Storage::disk('public')->delete($this->relativePath($branch->logo));
                     }
-                    $logoPath = $request->file('logo')->store('branches/logos', 'public');
+                    $logoPath = $request->file('logo')->storeAs("branches/logos/{$branch->id}", $this->uploadFileName($request->file('logo')), 'public');
                     $branch->update(['logo' => $logoPath]);
                     \App\Services\LogoDarkVariantGenerator::generate($logoPath);
                 }
@@ -715,7 +715,7 @@ class BranchController extends Controller
                     if ($branch->profile_photo) {
                         Storage::disk('public')->delete($this->relativePath($branch->profile_photo));
                     }
-                    $branch->update(['profile_photo' => $request->file('profile_photo')->store('branches/profile-photos', 'public')]);
+                    $branch->update(['profile_photo' => $request->file('profile_photo')->storeAs("branches/profile-photos/{$branch->id}", $this->uploadFileName($request->file('profile_photo')), 'public')]);
                 }
                 // Replace the signature image when a new file comes in;
                 // the old one is deleted from storage so we don't leak files.
@@ -723,7 +723,7 @@ class BranchController extends Controller
                     if ($branch->signature_path) {
                         Storage::disk('public')->delete($this->relativePath($branch->signature_path));
                     }
-                    $branch->update(['signature_path' => $request->file('signature_path')->store('branches/signatures', 'public')]);
+                    $branch->update(['signature_path' => $request->file('signature_path')->storeAs("branches/signatures/{$branch->id}", $this->uploadFileName($request->file('signature_path')), 'public')]);
                 }
 
                 if ($statusBecomingInactive) {
@@ -994,6 +994,31 @@ class BranchController extends Controller
     }
 
 
+    /**
+     * Filename to store an uploaded branch asset under. Keeps the name the
+     * user actually picked (slugged, so nothing odd reaches the filesystem)
+     * so the branch form can show the current file name on reopen instead of
+     * the browser's "No file chosen". The caller stores it under a per-branch
+     * subfolder, so two branches uploading "logo.png" can never collide.
+     */
+    private function uploadFileName(\Illuminate\Http\UploadedFile $file): string
+    {
+        $slug = \Illuminate\Support\Str::slug(
+            pathinfo($file->getClientOriginalName(), PATHINFO_FILENAME)
+        );
+        if ($slug === '') {
+            $slug = 'file';
+        }
+        $slug = substr($slug, 0, 60);
+
+        $ext = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'png');
+
+        return $slug . '.' . $ext;
+    }
+
+    /**
+     * Normalize a stored value to a disk-relative path for Storage::delete().
+     */
     private function relativePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {

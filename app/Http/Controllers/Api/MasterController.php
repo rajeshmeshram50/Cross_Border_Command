@@ -90,13 +90,18 @@ class MasterController extends Controller
         'bank_accounts' => ['fields' => [['n' => 'bank_name', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Bank Name may only contain letters (no numbers or special characters).'], ['n' => 'account_holder', 't' => 'text', 'r' => true, 'pattern' => "/^[A-Za-z][A-Za-z .,&'()\\-]*$/", 'patternMessage' => 'Account Holder may only contain letters.'], ['n' => 'account_number', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{9,18}$/', 'patternMessage' => 'Account Number must be 9 to 18 digits.'], ['n' => 'ifsc_code', 't' => 'text', 'r' => true, 'normalize' => 'upper', 'pattern' => '/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/', 'patternMessage' => 'Enter a valid 11-character IFSC code.'], ['n' => 'branch_name', 't' => 'text'], ['n' => 'city', 't' => 'text'], ['n' => 'swift_code', 't' => 'text', 'r' => true], ['n' => 'ad_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{14}$/', 'patternMessage' => 'AD Code must be exactly 14 digits.'], ['n' => 'is_primary', 't' => 'select', 'opts' => ['No', 'Yes']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['account_number', 'ifsc_code']],
         // `uEach` — department name and code each independently unique.
         'departments' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'parent_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'head', 't' => 'select'], ['n' => 'email', 't' => 'email'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code'], 'tenantScoped' => true],
+        // A role name is unique per (role type + department), NOT across the whole
+        // master: "Manager" may exist as a Primary role in Sales and again in HR,
+        // and Primary/Ancillary are separate vocabularies. A single global name
+        // check blocked adding "Manager" as a Primary role because it existed as
+        // an Ancillary one, with nothing on the Primary tab to explain it (QA #68).
         // `dupContext` — role names are unique across the whole master, but the
         // Role Master page splits into Primary / Ancillary tabs by role_type.
         // A bare "already registered" therefore contradicted the (filtered)
         // list on screen: "Manager" held as an Ancillary role blocked adding it
         // from the Primary tab with nothing visible to explain it (QA #68).
         // Quoting the clashing row's type + code points the user at it.
-        'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name'], 'dupContext' => ['role_type', 'code']],
+        'roles' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'role_type', 't' => 'select', 'r' => true, 'opts' => ['Primary', 'Ancillary']], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'role_category', 't' => 'select', 'opts' => ['Technical', 'Management', 'Operational', 'Support', 'Sales', 'Compliance', 'Finance', 'HR']], ['n' => 'description', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name', 'role_type', 'department_id'], 'dupContext' => ['code']],
         'designations' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text'], ['n' => 'department_id', 't' => 'select', 'ref' => 'departments'], ['n' => 'level', 't' => 'select', 'r' => true, 'opts' => ['Director / CEO', 'Head of Department (HOD)', 'Team Leader', 'Executive', 'Employee', 'Intern / Trainee']], ['n' => 'reports_to_id', 't' => 'select', 'ref' => 'designations'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         'kpis' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'description', 't' => 'textarea'], ['n' => 'role_id', 't' => 'select', 'r' => true, 'ref' => 'roles'], ['n' => 'target_type', 't' => 'select', 'r' => true, 'opts' => ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating']], ['n' => 'priority', 't' => 'select', 'r' => true, 'opts' => ['Critical', 'High', 'Medium', 'Low']], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['name']],
         // `uEach` (not `uFields`) — entity_name and CIN must EACH be
@@ -953,6 +958,27 @@ class MasterController extends Controller
         return [null, null];
     }
 
+    /**
+     * Human label for a value used in a duplicate-row message. Reference
+     * columns hold an id, so "Department: 3" tells the user nothing — resolve
+     * it to the referenced row's name when we can, and fall back to the raw
+     * value when we can't (unknown ref, deleted row, non-ref column).
+     */
+    private function refLabelFor(?string $refSlug, $value): string
+    {
+        if ($refSlug === null || $value === null || $value === '') {
+            return (string) $value;
+        }
+        try {
+            $refModel = $this->resolveModel($refSlug);
+            $row = $refModel::find($value);
+            $label = $row?->name ?? $row?->title ?? null;
+            return $label !== null ? (string) $label : (string) $value;
+        } catch (\Throwable $e) {
+            return (string) $value;
+        }
+    }
+
     private function validatePayload(Request $request, string $slug, $id = null): array
     {
         $schema = self::SCHEMAS[$slug] ?? ['fields' => [], 'uFields' => []];
@@ -1220,8 +1246,15 @@ class MasterController extends Controller
             $query = $modelClass::query();
             foreach ($uFields as $col) {
                 $val = $validated[$col] ?? null;
-                if ($isTextField($col)) {
-                    $query->whereRaw('LOWER(' . $col . ') = LOWER(?)', [(string) ($val ?? '')]);
+                if ($val === '') $val = null;
+                // An optional column left blank is its own bucket, not a
+                // wildcard: `where(col, null)` compiles to `col = NULL`, which
+                // matches nothing, so two rows that are identical except for
+                // both having no department slipped through as non-duplicates.
+                if ($val === null) {
+                    $query->whereNull($col);
+                } elseif ($isTextField($col)) {
+                    $query->whereRaw('LOWER(' . $col . ') = LOWER(?)', [(string) $val]);
                 } else {
                     $query->where($col, $val);
                 }
@@ -1235,8 +1268,21 @@ class MasterController extends Controller
                 : $query->where('branch_id', $tenantBranchId);
             if ($query->exists()) {
                 $first = $uFields[0];
+                // Spell out the combination that clashed — "already exists"
+                // alone sends the user hunting through a list that is sliced
+                // by exactly these columns.
+                $human = fn (string $c) => ucfirst(str_replace('_', ' ', preg_replace('/_id$/', '', $c)));
+                $ctx = [];
+                foreach (array_slice($uFields, 1) as $col) {
+                    $val = $validated[$col] ?? null;
+                    $ctx[] = $human($col) . ': ' . ($val === null || $val === ''
+                        ? '—'
+                        : $this->refLabelFor($fieldTypeMap[$col]['ref'] ?? null, $val));
+                }
+                $suffix = $ctx ? ' (' . implode(', ', $ctx) . ')' : '';
                 throw ValidationException::withMessages([
-                    $first => 'A record with this combination of ' . implode(' + ', $uFields) . ' already exists.',
+                    $first => $human($first) . ' "' . ($validated[$first] ?? '') . '" already exists'
+                        . $suffix . '. Change one of them.',
                 ]);
             }
         }

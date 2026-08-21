@@ -13,6 +13,7 @@ import InlineSublist from '../../components/ui/InlineSublist';
 import { MasterDatePicker } from '../../components/ui/MasterDatePicker';
 import { MasterTimePicker } from '../../components/ui/MasterTimePicker';
 import { validatePhone } from '../../utils/validatePhone';
+import StagedFileField, { storedFileName, type SavedUpload } from '../../components/ui/StagedFileField';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { readBranchFormBundle, writeBranchFormBundle } from './branchFormBundleCache';
@@ -458,6 +459,13 @@ export default function BranchForm({ onBack, editId }: Props) {
   // a new file is staged, or the saved /storage/... URL when editing.
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  /* What the branch already has on the server, per upload field: the URL to
+     download it from and the file name to show. Kept separate from the staged
+     File so the field can display the current file on reopen, and so Cancel
+     can fall back to it instead of blanking the preview. */
+  const [savedLogo, setSavedLogo] = useState<SavedUpload>(null);
+  const [savedProfilePhoto, setSavedProfilePhoto] = useState<SavedUpload>(null);
+  const [savedSignature, setSavedSignature] = useState<SavedUpload>(null);
   // Branch-defined work shifts (repeater) — each { name, start, end }. These
   // feed the Employee form's Shift dropdown, so each branch runs its own shifts.
   type Shift = { name: string; start: string; end: string };
@@ -590,7 +598,7 @@ export default function BranchForm({ onBack, editId }: Props) {
       r.onload = ev => setLogoPreview(ev.target?.result as string);
       r.readAsDataURL(file);
     } else {
-      setLogoPreview(null);
+      setLogoPreview(savedLogo?.url || null);
     }
   };
 
@@ -614,7 +622,7 @@ export default function BranchForm({ onBack, editId }: Props) {
       r.onload = ev => setProfilePhotoPreview(ev.target?.result as string);
       r.readAsDataURL(file);
     } else {
-      setProfilePhotoPreview(null);
+      setProfilePhotoPreview(savedProfilePhoto?.url || null);
     }
   };
 
@@ -638,7 +646,7 @@ export default function BranchForm({ onBack, editId }: Props) {
       r.onload = ev => setSignaturePreview(ev.target?.result as string);
       r.readAsDataURL(file);
     } else {
-      setSignaturePreview(null);
+      setSignaturePreview(savedSignature?.url || null);
     }
   };
 
@@ -883,9 +891,24 @@ export default function BranchForm({ onBack, editId }: Props) {
       // Prefer the `logo_url` accessor (resolves to a public Storage URL)
       // over the raw `logo` path — otherwise the <img> tries to load
       // "branches/logos/foo.png" relative to the SPA root and 404s.
-      if (b.logo_url || b.logo) setLogoPreview(b.logo_url || b.logo);
-      if (b.profile_photo_url || b.profile_photo) setProfilePhotoPreview(b.profile_photo_url || b.profile_photo);
-      if (b.signature_path_url || b.signature_path) setSignaturePreview(b.signature_path_url || b.signature_path);
+      const savedLogoUrl  = b.logo_url || b.logo || '';
+      const savedPhotoUrl = b.profile_photo_url || b.profile_photo || '';
+      // The model appends `signature_url` (not `signature_path_url`) — reading
+      // the wrong key fell through to the raw relative path and 404'd the
+      // preview. Keep the old key as a fallback for any older payload shape.
+      const savedSignUrl  = b.signature_url || b.signature_path_url || b.signature_path || '';
+      if (savedLogoUrl) {
+        setLogoPreview(savedLogoUrl);
+        setSavedLogo({ url: savedLogoUrl, name: storedFileName(b.logo || savedLogoUrl) });
+      }
+      if (savedPhotoUrl) {
+        setProfilePhotoPreview(savedPhotoUrl);
+        setSavedProfilePhoto({ url: savedPhotoUrl, name: storedFileName(b.profile_photo || savedPhotoUrl) });
+      }
+      if (savedSignUrl) {
+        setSignaturePreview(savedSignUrl);
+        setSavedSignature({ url: savedSignUrl, name: storedFileName(b.signature_path || savedSignUrl) });
+      }
     }).catch(() => {}).finally(() => setLoadingData(false));
   }, [editId]);
 
@@ -1063,7 +1086,7 @@ export default function BranchForm({ onBack, editId }: Props) {
 
   const handleReset = () => {
     setForm(empty); setValidationErrors({}); touchedRef.current = {};
-    setLogoFile(null); setLogoPreview(null);
+    setLogoFile(null); setLogoPreview(null); setSavedLogo(null);
     setShifts([blankShift()]); setShiftErrors({});
   };
 
@@ -1829,7 +1852,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Branch Logo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {logoPreview && <img src={logoPreview} alt="logo" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp,image/svg+xml" onChange={e => handleLogoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <StagedFileField accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                    staged={logoFile} saved={savedLogo}
+                    onPick={handleLogoChange} onClear={() => handleLogoChange(null)} />
                 </div>
                 <small style={css.small}>PNG, JPG, WebP, SVG &middot; Recommended 200&times;400 px &middot; Max 2 MB &middot; Falls back to client logo if blank</small>
               </Col>
@@ -1837,7 +1862,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Profile Photo</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {profilePhotoPreview && <img src={profilePhotoPreview} alt="profile" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '50%', border: '1px solid rgba(128,128,128,0.2)', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png" onChange={e => handleProfilePhotoChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <StagedFileField accept="image/jpeg,image/png"
+                    staged={profilePhotoFile} saved={savedProfilePhoto}
+                    onPick={handleProfilePhotoChange} onClear={() => handleProfilePhotoChange(null)} />
                 </div>
                 <small style={css.small}>JPG, PNG &middot; Square 200&times;200 px recommended &middot; Max 2 MB</small>
               </Col>
@@ -1845,7 +1872,9 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <Lbl>Authorized Signatory (Stamp &amp; Signature)</Lbl>
                 <div className="d-flex gap-2 align-items-center">
                   {signaturePreview && <img src={signaturePreview} alt="signature" style={{ width: 60, height: 40, objectFit: 'contain', borderRadius: '6px', border: '1px solid rgba(128,128,128,0.2)', background: '#ffffff', padding: '2px', flexShrink: 0 }} />}
-                  <Input style={{ fontSize: '11.5px' }} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => handleSignatureChange(e.target.files?.[0] || null, e.target as HTMLInputElement)} />
+                  <StagedFileField accept="image/jpeg,image/png,image/webp"
+                    staged={signatureFile} saved={savedSignature}
+                    onPick={handleSignatureChange} onClear={() => handleSignatureChange(null)} />
                 </div>
                 <small style={css.small}>PNG (transparent bg) preferred &middot; Appears on signed Quotation / PI PDFs &middot; Max 2 MB</small>
               </Col>

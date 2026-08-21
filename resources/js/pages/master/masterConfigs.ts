@@ -354,11 +354,15 @@ const C: Record<string, MasterConfig> = {
     ],
     cols: ['code', 'name', 'role_type', 'department_id', 'role_category', 'status'],
     colL: ['Code', 'Role Name', 'Role Type', 'Department', 'Category', 'Status'],
-    uFields: ['name'],
-    // Role names are unique across the whole master, but the page is split into
-    // Primary / Ancillary tabs by role_type — so quote the clashing row's type
-    // and code, or the message contradicts the (filtered) list on screen.
-    uContext: ['role_type', 'code'],
+    /* A role name is unique per (Role Type + Department), not across the whole
+       master. "Manager" can be a Primary role in Sales and again in HR, and
+       Primary / Ancillary are separate vocabularies. Checking the name alone
+       rejected "Manager" as a Primary role because an Ancillary "Manager"
+       existed — while the Primary tab the user was looking at showed no such
+       row (QA #68). Department is optional; a blank one is its own bucket, so
+       two department-less Primary "Manager" rows still clash. */
+    uFields: ['name', 'role_type', 'department_id'],
+    uContext: ['code'],
     data: [
       { id: 1, name: 'Admin',         code: 'ROL-01', role_type: 'Administrative', role_category: 'Management',  status: 'Active' },
       { id: 2, name: 'HR',            code: 'ROL-02', role_type: 'Functional',     role_category: 'HR',          status: 'Active' },
@@ -429,7 +433,10 @@ const C: Record<string, MasterConfig> = {
     cat: 'Identity & Entity',
     fields: [
       { n: 'name', l: 'KPI Name', t: 'text', r: true, p: 'e.g. Monthly Sales Target, Revenue Growth, Task Completion Rate…' },
-      { n: 'role_id', l: 'Role', t: 'select', r: true, ref: 'roles', refL: 'name', p: '— Select from Role Master —' },
+      // Role names repeat across role types / departments now that role
+      // uniqueness is scoped that way, so show the type alongside the name —
+      // otherwise this dropdown lists two indistinguishable "Manager" rows.
+      { n: 'role_id', l: 'Role', t: 'select', r: true, ref: 'roles', refL: 'name', refLFmt: '{name} ({role_type})', p: '— Select from Role Master —' },
       { n: 'target_type', l: 'Target Type', t: 'select', r: true, p: 'Please Select KPI target', opts: ['Numeric', 'Percentage', 'Currency', 'Boolean', 'Date-based', 'Rating'] },
       { n: 'priority', l: 'Priority', t: 'select', r: true, p: 'Select priority…', opts: ['Critical', 'High', 'Medium', 'Low'] },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },

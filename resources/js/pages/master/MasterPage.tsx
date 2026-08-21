@@ -837,14 +837,29 @@ function MasterPageInner({
         // flagged e.g. module_scope as a duplicate whenever ANY row used the same
         // scope, so every option errored (bug #29).
         const vals = cfg.uFields.map(u => String(fd.get(u) ?? '').trim());
-        if (vals.every(v => v !== '')) {
-          const dup = records.some(r => {
+        /* Only the FIRST column has to be filled in. An optional column left
+           blank (roles' Department) is its own bucket, not a wildcard —
+           requiring every column to be non-empty skipped the check entirely
+           and let two identical department-less rows through. */
+        if (vals[0] !== '') {
+          const dup = records.find(r => {
             if (editingId != null && r.id === editingId) return false;
             return cfg.uFields!.every((u, i) => String(r[u] ?? '').trim().toLowerCase() === vals[i].toLowerCase());
           });
           if (dup) {
             const first = cfg.uFields[0];
-            errs[first] = `A record with this ${cfg.uFields.map(labelOf).join(' + ')} combination already exists — change one of them.`;
+            /* Name the values that clashed, not just the column names — the
+               list is usually sliced by exactly these columns, so "this
+               combination already exists" leaves the user hunting. */
+            const ctx = cfg.uFields.slice(1).map((u, i) => {
+              const f = cfg.fields.find(ff => ff.n === u);
+              const raw = vals[i + 1];
+              const shown = raw ? (f?.ref ? resolveRefLabel(f.ref, f.refL, raw) : raw) : '—';
+              return `${labelOf(u)}: ${shown}`;
+            });
+            errs[first] = ctx.length
+              ? `${labelOf(first)} "${vals[0]}" already exists (${ctx.join(', ')}) — change one of them.`
+              : `${labelOf(first)} "${vals[0]}" already exists — change one of them.`;
           }
         }
       } else {
