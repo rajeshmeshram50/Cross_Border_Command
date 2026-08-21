@@ -510,6 +510,9 @@ class PermissionController extends Controller
         // put there by a previous run of this very method, and re-seeding from
         // it would walk the matrix a second hop (see ModuleDependencies).
         $seedSlugs = [];
+        // Seeds that carry can_edit — only those hand write access down to the
+        // feeders listed in ModuleDependencies::WRITE_MAP.
+        $editSeedSlugs = [];
         $byModuleId = [];
         foreach ($payload as $perm) {
             $moduleId = (int) ($perm['module_id'] ?? 0);
@@ -524,6 +527,9 @@ class PermissionController extends Controller
                     break;
                 }
             }
+            if (filter_var($perm['can_edit'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                $editSeedSlugs[] = $slug;
+            }
         }
 
         $granterPerms = ($granter === null || $granter->isSuperAdmin())
@@ -534,6 +540,9 @@ class PermissionController extends Controller
         // fall through to the cleanup below — returning early here would strand
         // the feeders of the module that was just unticked.
         $required = $seedSlugs === [] ? [] : ModuleDependencies::resolve($seedSlugs);
+        $writable = $editSeedSlugs === []
+            ? []
+            : array_flip(ModuleDependencies::resolveWritable($editSeedSlugs));
 
         $autoGranted = [];
         foreach ($required as $depSlug) {
@@ -552,6 +561,13 @@ class PermissionController extends Controller
 
             $row = $existing ?? ['module_id' => $depId];
             $row['can_view'] = true;
+            // Write-capable feeder (WRITE_MAP): the owning screen saves THROUGH
+            // this module, so view-only would leave its form frozen. Same
+            // delegation cap as above — the granter must hold edit themselves.
+            if (isset($writable[$depSlug])
+                && ($granterPerms === null || $granterPerms->get($depId)?->can_edit)) {
+                $row['can_edit'] = true;
+            }
             $row['is_auto'] = true;
             $byModuleId[$depId] = $row;
             $autoGranted[] = $depSlug;

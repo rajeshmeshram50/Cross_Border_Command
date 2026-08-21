@@ -48,9 +48,15 @@ class ModuleDependencies
             'master.leave_type', 'master.leave_plan',
             'master.assets', 'master.asset_categories', 'master.overtime_rates',
         ],
+        // Custom Field + Trigger Point are here for the same reason they are on
+        // hr.doc_templates: the exit screens render the tenant's custom fields
+        // and fire template triggers (exit letter, FnF statement) off the
+        // trigger-point master. Without them the exit form drops its custom
+        // section and the trigger dropdown comes back empty.
         'hr.exit' => [
             'hr.employee', 'hr.onboarding', 'hr.payroll', 'hr.doc_templates',
             'hr.attendance', 'hr.expense',
+            'hr.custom_fields', 'master.trigger_point',
             'master.countries', 'master.departments', 'master.designations', 'master.roles',
             'master.leave_type', 'master.leave_plan', 'master.overtime_rates',
         ],
@@ -89,6 +95,30 @@ class ModuleDependencies
         'hr.doc_templates' => [
             'hr.employee', 'hr.custom_fields', 'master.trigger_point',
         ],
+    ];
+
+    /**
+     * The exceptions to "a dependency only ever gets can_view".
+     *
+     * seed slug => dependency slugs that also get can_edit when the seed itself
+     * was granted can_edit.
+     *
+     * Onboarding is the case that forced this. Every stage of the onboarding
+     * wizard writes to /employees/{id} — the profile, the documents, the salary
+     * — so the grant that decides whether any of it can be SAVED is
+     * hr.employee's, not hr.onboarding's (see
+     * HrEmployeeOnboarding.tsx: `readOnly = !empPerm.canEdit`). With a view-only
+     * feeder grant, a user given full Onboarding access opened the employee form
+     * inside the wizard and found every field frozen: they could look at the
+     * employee dependency data and never correct it. Read access is not enough
+     * for a feeder the owning screen writes through.
+     *
+     * Keep this list short and justified — it is a deliberate hole in the
+     * view-only rule, not a general escalation path. can_add / can_delete are
+     * NOT propagated: the wizard updates an employee that already exists.
+     */
+    public const WRITE_MAP = [
+        'hr.onboarding' => ['hr.employee'],
     ];
 
     /**
@@ -142,5 +172,34 @@ class ModuleDependencies
         }
 
         return array_keys($required);
+    }
+
+    /**
+     * Of the dependencies pulled in by $editSlugs, the ones that must also get
+     * can_edit (see WRITE_MAP).
+     *
+     * Pass ONLY the explicitly ticked slugs that carry can_edit themselves — a
+     * module granted view-only never hands write access to its feeders. Same
+     * one-hop, seeds-excluded contract as resolve().
+     *
+     * @param  iterable<string>  $editSlugs  explicitly granted slugs holding can_edit
+     * @return string[]
+     */
+    public static function resolveWritable(iterable $editSlugs): array
+    {
+        $seeds = [];
+        foreach ($editSlugs as $slug) {
+            $seeds[$slug] = true;
+        }
+
+        $writable = [];
+        foreach (array_keys($seeds) as $seed) {
+            foreach (self::WRITE_MAP[$seed] ?? [] as $dep) {
+                if (isset($seeds[$dep])) continue;
+                $writable[$dep] = true;
+            }
+        }
+
+        return array_keys($writable);
     }
 }
