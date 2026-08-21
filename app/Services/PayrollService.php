@@ -1154,37 +1154,23 @@ class PayrollService
     {
         $exceptions = [];
 
-        /* PAY-01 — probation does NOT withhold salary. A probationer is paid on
-         * the same rules as a confirmed employee (joining proration, LOP, late
-         * marks); the only tenure-based carve-out in payroll is the early exit
-         * (≤ ProbationGuard::EARLY_EXIT_DAYS, handled in eligibleEmployees()).
+        /* PAY-01 — probation does NOT withhold salary, and payroll no longer
+         * says anything about it.
          *
-         * Stated on the slip as an info line rather than left implicit: the
-         * scenario's failure mode is a probationer being silently mishandled,
-         * and "paid, and here is the probation status that was considered" is
-         * the only way a reviewer can tell the rule was applied on purpose.
-         * Evaluated at PERIOD END, so an employee who completes probation
-         * mid-cycle (PAY-03) reads as completed rather than still serving. */
-        $probationEnd = ProbationGuard::endDate($employee);
-        if ($probationEnd) {
-            $periodStart = Carbon::parse($period->period_start)->startOfDay();
-            $periodEnd   = Carbon::parse($period->period_end)->startOfDay();
-            if (ProbationGuard::isOnProbation($employee, $periodEnd)) {
-                $exceptions = $this->withException(
-                    $exceptions,
-                    'info',
-                    'On probation until ' . $probationEnd->format('j M Y')
-                        . ' — paid in full for this cycle; probation does not withhold salary.'
-                );
-            } elseif ($probationEnd->gte($periodStart)) {
-                $exceptions = $this->withException(
-                    $exceptions,
-                    'info',
-                    'Probation completed on ' . $probationEnd->format('j M Y')
-                        . ' (inside this cycle) — paid in full for the whole cycle.'
-                );
-            }
-        }
+         * Two info lines used to be raised here — "on probation until X" and
+         * "probation completed on X" — so a reviewer could see the rule had been
+         * applied deliberately. In practice they fired for every probationer in
+         * every cycle and led the reason list on the run screen, pushing the
+         * things that DO need checking (missing punches, late-mark LOP) below a
+         * note that never varies and never asks for anything.
+         *
+         * Nothing is lost from the calculation: probation was never an input to
+         * it. A probationer is paid on exactly the same rules as a confirmed
+         * employee — joining proration, LOP, late marks — and the only
+         * tenure-based carve-out in payroll is the early exit
+         * (≤ ProbationGuard::EARLY_EXIT_DAYS), which lives in
+         * eligibleEmployees() and reports itself through the exclusions panel.
+         * Probation status is on the employee record for anyone who wants it. */
 
         $deptName = $nameCache['departments'][$employee->department_id] ?? null;
         $desigName = $nameCache['designations'][$employee->designation_id] ?? null;

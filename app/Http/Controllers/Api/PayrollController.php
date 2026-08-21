@@ -569,6 +569,27 @@ class PayrollController extends Controller
         return response()->json(['data' => $items]);
     }
 
+    /**
+     * A payslip's exceptions, minus the probation notes.
+     *
+     * PayrollService no longer raises them, but every payslip generated before
+     * that has them stored in its `exceptions` JSON — and an open cycle is not
+     * re-run just because the text changed. Without this the note would sit on
+     * the run screen for months, on exactly the cycles HR is working through
+     * now. Dropped on READ so nothing already generated has to be rewritten,
+     * and the filter simply stops matching once those cycles age out.
+     *
+     * Matched on the "probation" keyword rather than on an exact string: the
+     * wording went through several revisions and all of them are in the data.
+     */
+    private function visibleExceptions($payslip): array
+    {
+        return collect((array) ($payslip->exceptions ?? []))
+            ->reject(fn ($e) => stripos((string) ($e['reason'] ?? ''), 'probation') !== false)
+            ->values()
+            ->all();
+    }
+
     public function preflight(Request $request)
     {
         [$month, $year] = $this->resolveMonthYear($request);
@@ -590,7 +611,7 @@ class PayrollController extends Controller
         $blockedAmount = 0;
         $atRiskAmount = 0;
         foreach ($slips as $s) {
-            $ex = (array) ($s->exceptions ?? []);
+            $ex = $this->visibleExceptions($s);
             if (empty($ex)) continue;
             $type = collect($ex)->contains(fn ($e) => $e['type'] === 'blocking') ? 'blocking' : 'warning';
             if ($type === 'blocking') $blockedAmount += (float) $s->net_pay;
@@ -1542,7 +1563,7 @@ class PayrollController extends Controller
             'holdReason'  => $p->hold_reason,
             // Real server-computed reasons (blocking + warning) so the Run
             // modal shows the actual issues instead of guessing.
-            'reasons'     => collect((array) ($p->exceptions ?? []))->pluck('reason')->filter()->values()->all(),
+            'reasons'     => collect($this->visibleExceptions($p))->pluck('reason')->filter()->values()->all(),
             'bankVerified' => (bool) $p->bank_verified,
         ];
 
@@ -1615,7 +1636,7 @@ class PayrollController extends Controller
                     $row['overtimeDetectedDays']  = (int) $detected['days'];
                 }
             }
-            $row['exceptions']        = $p->exceptions ?: [];
+            $row['exceptions']        = $this->visibleExceptions($p);
             $row['paidDays']          = (float) $p->paid_days;
             /* Weekly offs in the period. Not part of paid_days and not meant to
              * be — working_days already excludes them, so the salary is built
