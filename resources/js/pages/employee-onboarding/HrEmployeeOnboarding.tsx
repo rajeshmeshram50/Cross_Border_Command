@@ -21,6 +21,7 @@ import HeaderFooterPanel, {
 import DocGenerateModal from '../hrms/doc-templates/DocGenerateModal';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import DeleteConfirmModal from '../../components/ui/DeleteConfirmModal';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
@@ -398,25 +399,6 @@ const ONBOARD_STATUS_COLOR: Record<OnboardStatus, 'success' | 'danger' | 'warnin
   'Orientation':      'primary',
   'Completed':        'success',
 };
-
-// Animated count-up number (mirrors AdminDashboard's AnimatedNumber)
-function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let start = 0;
-    const end = value;
-    const duration = 1200;
-    const step = Math.max(1, Math.floor(end / 60));
-    const interval = duration / (end / step || 1);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) { setDisplay(end); clearInterval(timer); }
-      else setDisplay(start);
-    }, interval);
-    return () => clearInterval(timer);
-  }, [value]);
-  return <>{prefix}{display.toLocaleString()}{suffix}</>;
-}
 
 // Five KPI cards on top — colored top strip + subtle icon tile
 const KPI_CARDS = [
