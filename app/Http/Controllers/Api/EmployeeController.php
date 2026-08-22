@@ -772,6 +772,18 @@ class EmployeeController extends Controller
         // Lets the Set/Reset Password modal say what state this login is in
         // rather than presenting an identical empty form either way.
         $row->setAttribute('password_status', $this->passwordStatusFor($row));
+        /* Is an exit under way? (QA #105)
+         *
+         * Not derivable on the client: employees.status stays 'Active' until the
+         * exit is completed, so the edit form had no way to know the salary is
+         * frozen and rendered the Compensation step fully editable. The server
+         * refuses the change either way (assertSalaryNotLockedByExit), but a
+         * field that accepts input and then fails on save is a worse experience
+         * than one that says up front why it is locked. */
+        $row->setAttribute(
+            'exit_in_progress',
+            in_array((int) $row->id, \App\Support\ExitInProgress::employeeIds(null, [(int) $row->id]), true),
+        );
         return response()->json($row);
     }
 
@@ -1696,6 +1708,88 @@ class EmployeeController extends Controller
      *  UPDATE / DESTROY
      * ───────────────────────────────────────────────────────────────── */
 
+    /**
+     * Salary is frozen while an exit is in progress (QA #105).
+     *
+     * Payroll's Salary Setup already refuses to touch an exiting employee, but
+     * the Employee Edit wizard's Compensation step wrote the very same columns
+     * with no such guard — so the lock was only ever a property of one screen
+     * rather than of the employee. Anyone could raise a leaver's CTC from the
+     * other form, and because an accepted change cascades into
+     * recomputeEmployeePayslips() and into the active salary structure, it would
+     * silently re-price their final month and their Full & Final settlement.
+     *
+     * Only an ACTUAL CHANGE is refused, never mere presence of the fields. The
+     * wizard PUTs its whole step every time it saves, so rejecting on presence
+     * would make an exiting employee's Compensation step un-saveable — the user
+     * could not correct a phone number without first being told, wrongly, that
+     * they were changing the salary. Comparing values keeps every unrelated edit
+     * working and blocks exactly the thing the ticket is about.
+     *
+     * Deliberately NOT covered: `status`, which the exit flow itself must be
+     * able to move, and `enable_payroll`, which is how HR takes a leaver out of
+     * the run — neither is a change to what the employee is paid.
+     */
+    private function assertSalaryNotLockedByExit(Employee $row, array $data): void
+    {
+        // Money-defining columns only. pf/esi applicability is included because
+        // both feed the deduction the payslip and the F&F are priced on.
+        $guarded = [
+            'annual_salary',
+            'salary_effective_from',
+            'salary_frequency',
+            'salary_structure',
+            'pay_group',
+            'bonus_in_annual',
+            'tax_regime',
+            'pf_eligible',
+            'pf_type',
+            'esi_applicable',
+        ];
+
+        $changing = [];
+        foreach ($guarded as $field) {
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            if ($this->salaryValueChanged($row->{$field}, $data[$field])) {
+                $changing[] = $field;
+            }
+        }
+        if (empty($changing)) {
+            return;
+        }
+
+        // Only ask the exit question when something is actually being changed —
+        // an extra query on every employee save would be pure waste.
+        if (!in_array((int) $row->id, \App\Support\ExitInProgress::employeeIds(null, [(int) $row->id]), true)) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            'annual_salary' => 'This employee has an exit in progress, so their salary is locked. '
+                . 'Dues are settled through the Full & Final settlement in Exit Management — '
+                . 'changing the salary here would re-price their final month and the settlement.',
+        ]);
+    }
+
+    /**
+     * Has a salary field actually moved? Compares loosely on purpose: the form
+     * posts "450000" where the column holds 450000.00, and a cleared field
+     * arrives as '' against a null column. Treating either as a change would
+     * block saves that change nothing.
+     */
+    private function salaryValueChanged(mixed $current, mixed $incoming): bool
+    {
+        $norm = static function (mixed $v): ?string {
+            if ($v === null || $v === '') return null;
+            if (is_bool($v)) return $v ? '1' : '0';
+            if (is_numeric($v)) return rtrim(rtrim(number_format((float) $v, 4, '.', ''), '0'), '.');
+            return trim((string) $v);
+        };
+        return $norm($current) !== $norm($incoming);
+    }
+
     public function update(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');
@@ -1733,6 +1827,8 @@ class EmployeeController extends Controller
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
         $data = $this->syncNoticePeriodDays($data);
+        // Salary is frozen once an exit is under way (QA #105).
+        $this->assertSalaryNotLockedByExit($row, $data);
         // Scope from the row being saved, not the acting user — a super_admin
         // has no client of their own and would otherwise scan every tenant.
         $this->assertAssetsNotDoubleBooked($data, $row->id, $row->client_id);
