@@ -39,8 +39,8 @@ use Illuminate\Support\Facades\DB;
  */
 class BulkEmployeeSeeder extends Seeder
 {
-    private const CLIENT_ID = 1;
-    private const BRANCH_ID = 3;
+    private const CLIENT_ID = 16;
+    private const BRANCH_ID = 52;
     private const ONBOARDED = 200;
 
     /** Marks every row this seeder owns — the delete filter on a re-run. */
@@ -54,8 +54,16 @@ class BulkEmployeeSeeder extends Seeder
        tenant's row, or nothing at all. Resolved once in run(), and the run
        aborts if a name cannot be found rather than writing bad foreign keys. */
     private const DEPARTMENT_NAMES = [
-        'Sales', 'Human Resources', 'Accounts', 'Logistics', 'Purchase',
-        'IT', 'Legal', 'Warehouse', 'Quality Control', 'Export-Import',
+        'Sales',
+        'Human Resources',
+        'Accounts',
+        'Logistics',
+        'Purchase',
+        'IT',
+        'Legal',
+        'Warehouse',
+        'Quality Control',
+        'Export-Import',
     ];
 
     /* One rung of the department chain, top downwards. The shape of each
@@ -111,16 +119,65 @@ class BulkEmployeeSeeder extends Seeder
     private ?string $regularLeavePlan = null;
 
     private const FIRST_NAMES = [
-        'Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Reyansh', 'Krishna',
-        'Ishaan', 'Rohan', 'Kabir', 'Dhruv', 'Aryan', 'Yash', 'Karan', 'Nikhil',
-        'Ananya', 'Diya', 'Aadhya', 'Saanvi', 'Meera', 'Riya', 'Isha', 'Kavya',
-        'Neha', 'Pooja', 'Sneha', 'Trupti', 'Ritika', 'Shreya', 'Priya', 'Nisha',
+        'Aarav',
+        'Vivaan',
+        'Aditya',
+        'Vihaan',
+        'Arjun',
+        'Sai',
+        'Reyansh',
+        'Krishna',
+        'Ishaan',
+        'Rohan',
+        'Kabir',
+        'Dhruv',
+        'Aryan',
+        'Yash',
+        'Karan',
+        'Nikhil',
+        'Ananya',
+        'Diya',
+        'Aadhya',
+        'Saanvi',
+        'Meera',
+        'Riya',
+        'Isha',
+        'Kavya',
+        'Neha',
+        'Pooja',
+        'Sneha',
+        'Trupti',
+        'Ritika',
+        'Shreya',
+        'Priya',
+        'Nisha',
     ];
     private const MIDDLE_NAMES = ['Kumar', 'Raj', 'Devi', 'Prasad', 'Anand', 'Bala'];
     private const LAST_NAMES = [
-        'Sharma', 'Patel', 'Reddy', 'Nair', 'Kumar', 'Singh', 'Verma', 'Joshi',
-        'Iyer', 'Menon', 'Desai', 'Kulkarni', 'Deshmukh', 'Chavan', 'Pawar', 'Jadhav',
-        'Gupta', 'Malhotra', 'Bose', 'Mehta', 'Shah', 'Rao', 'Naik', 'Kale',
+        'Sharma',
+        'Patel',
+        'Reddy',
+        'Nair',
+        'Kumar',
+        'Singh',
+        'Verma',
+        'Joshi',
+        'Iyer',
+        'Menon',
+        'Desai',
+        'Kulkarni',
+        'Deshmukh',
+        'Chavan',
+        'Pawar',
+        'Jadhav',
+        'Gupta',
+        'Malhotra',
+        'Bose',
+        'Mehta',
+        'Shah',
+        'Rao',
+        'Naik',
+        'Kale',
     ];
 
     public function run(): void
@@ -193,7 +250,7 @@ class BulkEmployeeSeeder extends Seeder
 
         $this->stateId = DB::table('master_states')
             ->where('name', self::STATE_NAME)
-            ->when($this->countryId, fn ($q) => $q->where('country_id', $this->countryId))
+            ->when($this->countryId, fn($q) => $q->where('country_id', $this->countryId))
             ->value('id');
         if (!$this->stateId) $missing[] = 'state "' . self::STATE_NAME . '"';
 
@@ -234,8 +291,8 @@ class BulkEmployeeSeeder extends Seeder
         if ($missing) {
             throw new \RuntimeException(
                 'BulkEmployeeSeeder cannot run — these master records are missing from this database: '
-                . implode(', ', $missing)
-                . '. Seed the masters first (MasterDataSeeder / GeographySeeder), then re-run.'
+                    . implode(', ', $missing)
+                    . '. Seed the masters first (MasterDataSeeder / GeographySeeder), then re-run.'
             );
         }
     }
@@ -263,7 +320,7 @@ class BulkEmployeeSeeder extends Seeder
         $existing = Employee::withTrashed()
             ->where('branch_id', self::BRANCH_ID)
             ->pluck('emp_code')
-            ->map(fn ($c) => (int) preg_replace('/\D/', '', (string) $c))
+            ->map(fn($c) => (int) preg_replace('/\D/', '', (string) $c))
             ->filter()
             ->all();
 
