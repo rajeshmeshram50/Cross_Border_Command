@@ -388,8 +388,16 @@ export default function PayrollRunModal({
                 <i className="ri-alert-fill" />
               </span>
               <div className="flex-grow-1 min-w-0">
+                {/* The cycle is named in the heading. Without it the dialog gave
+                    no clue WHICH month was being run — the page behind it is
+                    covered by the overlay, and the modal can be opened from a
+                    cycle strip where the selected month is not the current one,
+                    so there was nothing on screen to check against. */}
                 <h5 className="mb-1 fw-bold" style={{ fontSize: 16, letterSpacing: '-0.01em' }}>
                   Payroll Execution Blocked
+                  {cycleLabel && (
+                    <span className="fw-semibold" style={{ color: 'var(--vz-secondary-color)' }}> — {cycleLabel}</span>
+                  )}
                 </h5>
                 <div style={{ fontSize: 12 }}>
                   <span className="fw-semibold" style={{ color: '#b1401d' }}>{blocking.length} blocking issue{blocking.length === 1 ? '' : 's'} must be resolved</span>
