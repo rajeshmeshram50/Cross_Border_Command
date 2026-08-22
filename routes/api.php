@@ -682,6 +682,10 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get   ('/employees/managers',          [EmployeeController::class, 'managers']);
     // Ahead of apiResource below — otherwise "stats" is read as an {employee} id.
     Route::get   ('/employees/stats',             [EmployeeController::class, 'stats']);
+    // Exit Management's KPI tiles + tab badges. Ahead of apiResource for the
+    // same reason as stats(), and separate from the list because the list is
+    // paginated — one page cannot count the roster.
+    Route::get   ('/employees/exit-stats',        [EmployeeController::class, 'exitStats']);
     Route::get   ('/employees/department-tree/{departmentId}', [EmployeeController::class, 'departmentOrgTree'])->whereNumber('departmentId');
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
 

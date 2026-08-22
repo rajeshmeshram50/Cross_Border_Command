@@ -74,21 +74,47 @@ class EmployeeController extends Controller
      * being sent to every user who can open the employee list.
      */
     private const LIST_COLUMNS = [
-        'id', 'client_id', 'branch_id', 'user_id', 'deleted_at',
-        'emp_code', 'first_name', 'middle_name', 'last_name', 'display_name', 'email',
-        'status', 'onboarding_stage_completed', 'wizard_step_completed',
-        'department_id', 'designation_id', 'primary_role_id',
-        'ancillary_role_id', 'ancillary_role_ids',
-        'reporting_manager_id', 'reporting_manager_user_id',
+        'id',
+        'client_id',
+        'branch_id',
+        'user_id',
+        'deleted_at',
+        'emp_code',
+        'first_name',
+        'middle_name',
+        'last_name',
+        'display_name',
+        'email',
+        'status',
+        'onboarding_stage_completed',
+        'wizard_step_completed',
+        'department_id',
+        'designation_id',
+        'primary_role_id',
+        'ancillary_role_id',
+        'ancillary_role_ids',
+        'reporting_manager_id',
+        'reporting_manager_user_id',
         // Read by the profile_completion accessor (the "Profile %" meter).
-        'gender', 'date_of_birth', 'work_country_id', 'nationality_country_id',
-        'mobile', 'address_line1', 'city', 'state_id', 'country_id', 'pincode',
+        'gender',
+        'date_of_birth',
+        'work_country_id',
+        'nationality_country_id',
+        'mobile',
+        'address_line1',
+        'city',
+        'state_id',
+        'country_id',
+        'pincode',
         'date_of_joining',
         // face_registered checks both; face_descriptor is $hidden, so it is read
         // but never serialised.
-        'face_registered_at', 'face_descriptor',
+        'face_registered_at',
+        'face_descriptor',
         // Prefill for the Assign Assets dialog, which opens straight off a row.
-        'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids',
+        'laptop_master_asset_id',
+        'mobile_master_asset_id',
+        'other_master_asset_ids',
     ];
 
     /**
@@ -97,6 +123,90 @@ class EmployeeController extends Controller
      * Management ever render — both of which fetch their own record.
      */
     private const LIST_DROP_APPENDS = ['other_assets_resolved', 'ancillary_roles_resolved'];
+
+
+    private const EXIT_WITH = [
+        'department:id,name',
+        'designation:id,name',
+        'primaryRole:id,name',
+        'ancillaryRole:id,name',
+        'reportingManager:id,display_name,first_name,last_name',
+        'reportingManagerUser:id,name',
+        'photoDocument:id,employee_id,document_key,file_path',
+        'laptopAsset:id,asset_name,code,asset_number',
+        'mobileAsset:id,asset_name,code,asset_number',
+        'exit:id,employee_id,notice_date,last_working_day,exit_type,exit_case_status,completed_at,current_stage,rehired_at,blacklisted',
+    ];
+
+    private const EXIT_COLUMNS = [
+        'id',
+        'client_id',
+        'branch_id',
+        'deleted_at',
+        'emp_code',
+        'first_name',
+        'last_name',
+        'display_name',
+        'email',
+        'status',
+        'onboarding_stage_completed',
+        'department_id',
+        'designation_id',
+        'primary_role_id',
+        'ancillary_role_id',
+        'ancillary_role_ids',
+        'reporting_manager_id',
+        'reporting_manager_user_id',
+        'notice_period',
+        'notice_period_days',
+        'annual_salary',
+        'date_of_joining',
+        'probation_end_date',
+        'laptop_master_asset_id',
+        'mobile_master_asset_id',
+        'other_master_asset_ids',
+    ];
+
+    /**
+     * Date columns the exit view serves as RAW STRINGS instead of Carbon.
+     *
+     * A 'date' cast doesn't just format — it builds a Carbon instance per
+     * value, then re-serialises it. Across a 326-row page that is ~1,500
+     * Carbon objects for the employee dates and the four on each exit row,
+     * and it measured as 62% of the whole response time: 852 ms → 320 ms with
+     * the casts off, for byte-identical information.
+     *
+     * Safe because of what the reader does with them. Every consumer in
+     * HrExitManagement.tsx either truthiness-checks the value (completed_at,
+     * rehired_at, deleted_at) or runs String(v).slice(0, 10) to get a
+     * yyyy-mm-dd back out of it — so the ISO instant the cast produced was
+     * being thrown away on arrival. Postgres already hands us '2026-06-13'
+     * for a date column, which is exactly what slice(0, 10) was digging for.
+     *
+     * deleted_at is deliberately NOT in here: it is null on all but a handful
+     * of rows (a null never builds a Carbon, so it costs nothing), and it is
+     * the SoftDeletes column — leaving its cast alone keeps trashed() honest.
+     */
+    private const EXIT_DATE_CASTS = [
+        'date_of_joining'    => 'string',
+        'probation_end_date' => 'string',
+    ];
+
+    /** Same, for the four date columns selected on the exit row. */
+    private const EXIT_ROW_DATE_CASTS = [
+        'notice_date'      => 'string',
+        'last_working_day' => 'string',
+        'completed_at'     => 'string',
+        'rehired_at'       => 'string',
+    ];
+
+    private const EXIT_DROP_APPENDS = [
+        'face_registered',
+        'encrypted_id',
+        'profile_completion',
+        'other_assets_resolved',
+        'ancillary_roles_resolved',
+    ];
 
     private const WITH = [
         'client:id,org_name',
@@ -178,14 +288,19 @@ class EmployeeController extends Controller
         // Employees" tab can render them. The toggle on each row uses
         // DELETE /employees/{id} which soft-deletes — without this the
         // disabled employees would silently disappear from the list.
-        /* ?view=list trims the payload to what the HR Employees table renders.
-           Opt-in for the same reason pagination is: ten other screens read this
-           endpoint and several of them need fields the list has no use for. */
-        $listView = $request->query('view') === 'list';
+        $view     = (string) $request->query('view');
+        $listView = $view === 'list';
+        $exitView = $view === 'exit';
 
-        $q = Employee::query()->withTrashed()->with($listView ? self::LIST_WITH : self::WITH);
+        $q = Employee::query()->withTrashed()->with(match (true) {
+            $listView => self::LIST_WITH,
+            $exitView => self::EXIT_WITH,
+            default   => self::WITH,
+        });
         if ($listView) {
             $q->select(self::LIST_COLUMNS);
+        } elseif ($exitView) {
+            $q->select(self::EXIT_COLUMNS);
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
@@ -213,7 +328,7 @@ class EmployeeController extends Controller
             // entirely. The SPA reads a missing status as Active, so this does
             // the same.
             $st = DB::raw("COALESCE(LOWER(status), 'active')");
-            $q->where(fn ($w) => $request->boolean('enabled')
+            $q->where(fn($w) => $request->boolean('enabled')
                 ? $w->whereNull('deleted_at')->whereNotIn($st, $off)
                 : $w->whereNotNull('deleted_at')->orWhereIn($st, $off));
         }
@@ -225,8 +340,13 @@ class EmployeeController extends Controller
         // onboarding. Mirrors the gate used by managers() and Exit Management.
         if ($request->boolean('onboarded_only')) {
             $q->whereNull('deleted_at')
-              ->where('status', 'Active')
-              ->where('onboarding_stage_completed', '>=', 6);
+                ->where('status', 'Active')
+                ->where('onboarding_stage_completed', '>=', 6);
+        }
+
+        if ($exitView) {
+            $this->applyExitVisibility($q);
+            $this->applyExitStatusFilter($q, $request->query('exit_status'));
         }
 
         $q->orderByDesc('id');
@@ -235,8 +355,8 @@ class EmployeeController extends Controller
            default and every other caller still wants all of it. Applied to the
            rows after they are fetched because setAppends() is per-instance —
            there is no query-level switch for it. */
-        $trimAppends = function ($rows) use ($listView) {
-            if (!$listView) return $rows;
+        $trimAppends = function ($rows) use ($listView, $exitView) {
+            if (!$listView && !$exitView) return $rows;
 
             /* ->items(), not the paginator itself: collect() on a paginator
                wraps its ARRAY form — current_page, data, links — so mapping over
@@ -245,7 +365,8 @@ class EmployeeController extends Controller
                 ? $rows->items()
                 : $rows;
 
-            $keep = array_values(array_diff((new Employee)->getAppends(), self::LIST_DROP_APPENDS));
+            $drop = $listView ? self::LIST_DROP_APPENDS : self::EXIT_DROP_APPENDS;
+            $keep = array_values(array_diff((new Employee)->getAppends(), $drop));
             foreach ($items as $row) {
                 $row->setAppends($keep);
 
@@ -254,38 +375,20 @@ class EmployeeController extends Controller
                    photo_url (an employee_documents lookup) and
                    ancillary_roles_resolved (a master_roles lookup) once per
                    manager — 50 queries on a 25-row page — to fill a cell that
-                   prints a name. Nothing on this screen reads anything else
-                   off the manager, so it keeps no accessors at all. */
+                   prints a name. Neither screen reads anything else off the
+                   manager, so it keeps no accessors at all. */
                 if ($row->relationLoaded('reportingManager')) {
                     $row->getRelation('reportingManager')?->setAppends([]);
                 }
             }
 
-            /* ancillary_roles_resolved is dropped above and rebuilt here from a
-               single query instead. As an accessor it issued one SELECT per row
-               — 25 of them for a page — to turn a JSON array of ids into names
-               for the "Ancillary Role" chips. Written straight onto the model,
-               so it serialises exactly as the accessor's output did.
-
-               The id order is the user's pick order and is preserved: the chip
-               row reads left to right and re-sorting it would silently reorder
-               what someone chose. */
-            $idsFor = function ($row): array {
-                $ids = (array) ($row->ancillary_role_ids ?: []);
-                if (!$ids && $row->ancillary_role_id) $ids = [$row->ancillary_role_id];
-                return $ids;
-            };
-
-            $wanted = collect($items)->flatMap($idsFor)->unique()->values();
-            $byId = $wanted->isEmpty()
-                ? collect()
-                : \App\Models\Masters\Roles::query()->whereIn('id', $wanted)->get(['id', 'name'])->keyBy('id');
-
-            foreach ($items as $row) {
-                $row->setAttribute(
-                    'ancillary_roles_resolved',
-                    collect($idsFor($row))->map(fn ($id) => $byId->get($id))->filter()->values(),
-                );
+            /* Both views drop the "resolved" accessors above; these rebuild
+               them from one query each. The HR list doesn't render the assets,
+               so it stops after the roles. */
+            $this->batchAncillaryRoles($items);
+            if ($exitView) {
+                $this->batchOtherAssets($items);
+                $this->stringifyExitDates($items);
             }
 
             return $rows;
@@ -338,6 +441,216 @@ class EmployeeController extends Controller
      * either side changes, the cards stop agreeing with the rows beneath them.
      */
     /**
+     * Rebuild `ancillary_roles_resolved` for a page of employees with ONE
+     * query, replacing the accessor's one-per-row.
+     *
+     * As an accessor it issued a SELECT per row — 25 of them for a page — to
+     * turn a JSON array of ids into names for the "Ancillary Role" chips.
+     * Written straight onto the model, so it serialises exactly as the
+     * accessor's output did and no caller can tell the difference.
+     *
+     * The id order is the user's pick order and is preserved: the chip row
+     * reads left to right, and re-sorting it would silently reorder what
+     * someone chose.
+     *
+     * @param  iterable<\App\Models\Employee>  $items
+     */
+    private function batchAncillaryRoles(iterable $items): void
+    {
+        $idsFor = function ($row): array {
+            $ids = (array) ($row->ancillary_role_ids ?: []);
+            if (!$ids && $row->ancillary_role_id) $ids = [$row->ancillary_role_id];
+            return $ids;
+        };
+
+        $wanted = collect($items)->flatMap($idsFor)->unique()->values();
+        $byId = $wanted->isEmpty()
+            ? collect()
+            : \App\Models\Masters\Roles::query()->whereIn('id', $wanted)->get(['id', 'name'])->keyBy('id');
+
+        foreach ($items as $row) {
+            $row->setAttribute(
+                'ancillary_roles_resolved',
+                collect($idsFor($row))->map(fn($id) => $byId->get($id))->filter()->values(),
+            );
+        }
+    }
+
+    /**
+     * Same treatment for `other_assets_resolved`, for the same reason.
+     *
+     * Exit Management can't simply drop this one the way the HR list does —
+     * the asset-recovery stage lists every piece of company property the
+     * leaver holds, and the third bucket of it lives in a JSON array of master
+     * asset ids. Left as an accessor that is a master_assets SELECT per
+     * employee, on top of the ancillary-role one, i.e. two extra queries for
+     * every row on screen.
+     *
+     * @param  iterable<\App\Models\Employee>  $items
+     */
+    private function batchOtherAssets(iterable $items): void
+    {
+        $idsFor = fn($row): array => array_values(
+            array_filter((array) ($row->other_master_asset_ids ?: []))
+        );
+
+        $wanted = collect($items)->flatMap($idsFor)->unique()->values();
+        $byId = $wanted->isEmpty()
+            ? collect()
+            : \App\Models\Masters\Assets::query()
+            ->whereIn('id', $wanted)
+            ->get(['id', 'asset_name', 'code', 'asset_number'])
+            ->keyBy('id');
+
+        foreach ($items as $row) {
+            $row->setAttribute(
+                'other_assets_resolved',
+                collect($idsFor($row))->map(fn($id) => $byId->get($id))->filter()->values(),
+            );
+        }
+    }
+
+    private function stringifyExitDates(iterable $items): void
+    {
+        foreach ($items as $row) {
+            $row->mergeCasts(self::EXIT_DATE_CASTS);
+
+            $row->makeHidden('photoDocument');
+
+            if ($row->relationLoaded('exit')) {
+                $row->getRelation('exit')?->mergeCasts(self::EXIT_ROW_DATE_CASTS);
+            }
+        }
+    }
+
+    /* ── Exit Management: status derived in SQL ─────────────────────────
+     * A mirror of apiToExitRow() in HrExitManagement.tsx. Needed because the
+     * page is paginated: the browser holds 25 rows, so it can no longer sort
+     * employees into tabs by scanning the roster, nor count the tab badges.
+     * IF EITHER SIDE CHANGES, BOTH MUST — the frontend holds the documented
+     * copy of these rules.
+     * ─────────────────────────────────────────────────────────────────── */
+
+    /** A live exit case: one that exists and was not spent by a rehire. */
+    private function sqlLiveExit(string $extra = ''): string
+    {
+        return 'EXISTS (SELECT 1 FROM employee_exits x'
+            . ' WHERE x.employee_id = employees.id AND x.rehired_at IS NULL'
+            . ($extra ? " AND ({$extra})" : '') . ')';
+    }
+
+    /** `exitInitiated`. COALESCE on exit_type — JS reads '' as falsy, SQL doesn't. */
+    private function sqlExitInitiated(): string
+    {
+        return $this->sqlLiveExit(
+            "COALESCE(x.exit_type, '') <> ''"
+            . ' OR x.last_working_day IS NOT NULL'
+            . ' OR x.notice_date IS NOT NULL'
+            . ' OR COALESCE(x.current_stage, 0) >= 1'
+        );
+    }
+
+    /** `status === 'Exited'`. Both halves require the case: disabled is not exited. */
+    private function sqlExited(): string
+    {
+        return '(('
+            . $this->sqlLiveExit("x.exit_case_status = 'Closed' OR x.completed_at IS NOT NULL")
+            . ') OR (('
+            . $this->sqlLiveExit()
+            . ") AND status IN ('Resigned', 'Terminated', 'Inactive')))";
+    }
+
+    /** `status === 'Exit In Progress'` — only reached when NOT exited. */
+    private function sqlInProgress(): string
+    {
+        return '((' . $this->sqlExitInitiated() . ") OR status = 'Notice Period')";
+    }
+
+    /** `status === 'Missing Details'` — only reached when neither above. */
+    private function sqlMissingDetails(): string
+    {
+        return "(COALESCE(email, '') = '' OR department_id IS NULL OR designation_id IS NULL)";
+    }
+
+    /**
+     * Who the page can see at all: fully onboarded, and either not disabled or
+     * carrying a real exit. This was a deliberate superset while the browser
+     * held every row and made the exact call itself; paginating removed that
+     * option, since a superset would put rows on a page the browser then
+     * deleted and a page of 25 would render 23.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $q
+     */
+    private function applyExitVisibility($q): void
+    {
+        $q->where('onboarding_stage_completed', '>=', 6)
+            ->whereRaw('(deleted_at IS NULL OR (' . $this->sqlExitInitiated() . ') OR ' . $this->sqlExited() . ')');
+    }
+
+    /**
+     * Narrow to one tab. Written as an if/else CHAIN like the frontend's: a
+     * closed case can still carry a last_working_day, so "in progress" has to
+     * mean in-progress AND NOT exited. The Active tab covers Active AND
+     * Missing Details — one tab on screen, split only by a badge.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder  $q
+     */
+    private function applyExitStatusFilter($q, ?string $tab): void
+    {
+        $exited = $this->sqlExited();
+        $prog   = $this->sqlInProgress();
+
+        match ($tab) {
+            'exited'      => $q->whereRaw($exited),
+            'in-progress' => $q->whereRaw("NOT {$exited} AND {$prog}"),
+            'active'      => $q->whereRaw("NOT {$exited} AND NOT {$prog}"),
+            default       => null,
+        };
+    }
+
+    /**
+     * KPI tiles + tab badges for Exit Management. Separate from the list for
+     * the same reason stats() is: they describe the whole roster, not the 25
+     * rows on screen. Search narrows them so the badges agree with the rows
+     * beneath; the tab deliberately does not, since these tiles are the
+     * breakdown the tabs are cut from.
+     */
+    public function exitStats(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $q = Employee::query()->withTrashed();
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+        $this->applySearch($q, $request->query('search'));
+        $this->applyExitVisibility($q);
+
+        $exited  = $this->sqlExited();
+        $prog    = $this->sqlInProgress();
+        $missing = $this->sqlMissingDetails();
+
+        // One pass, not five COUNTs that each re-scan the table.
+        $row = $q->selectRaw("
+            COUNT(*)                                                    AS total,
+            SUM(CASE WHEN {$exited} THEN 1 ELSE 0 END)                  AS exited,
+            SUM(CASE WHEN NOT {$exited} AND {$prog} THEN 1 ELSE 0 END)  AS in_progress,
+            SUM(CASE WHEN NOT {$exited} AND NOT {$prog} AND {$missing}
+                     THEN 1 ELSE 0 END)                                 AS missing,
+            SUM(CASE WHEN NOT {$exited} AND NOT {$prog} AND NOT {$missing}
+                     THEN 1 ELSE 0 END)                                 AS active
+        ")->first();
+
+        // SUM() is a string on Postgres and null on an empty tenant; these feed
+        // a counter animation that expects numbers.
+        return response()->json([
+            'total'      => (int) ($row->total ?? 0),
+            'active'     => (int) ($row->active ?? 0),
+            'inProgress' => (int) ($row->in_progress ?? 0),
+            'exited'     => (int) ($row->exited ?? 0),
+            'missing'    => (int) ($row->missing ?? 0),
+        ]);
+    }
+
+    /**
      * Free-text filter shared by the list and the counts.
      *
      * Extracted because stats() has to narrow by exactly the same rule as
@@ -362,9 +675,9 @@ class EmployeeController extends Controller
                 // matched on those three; once the list is paginated the browser
                 // only holds one page, so anything the server can't find is
                 // simply unfindable.
-                ->orWhereHas('department', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
-                ->orWhereHas('designation', fn ($d) => $d->where('name', 'ilike', "%{$search}%"))
-                ->orWhereHas('primaryRole', fn ($r) => $r->where('name', 'ilike', "%{$search}%"));
+                ->orWhereHas('department', fn($d) => $d->where('name', 'ilike', "%{$search}%"))
+                ->orWhereHas('designation', fn($d) => $d->where('name', 'ilike', "%{$search}%"))
+                ->orWhereHas('primaryRole', fn($r) => $r->where('name', 'ilike', "%{$search}%"));
         });
     }
 
@@ -539,7 +852,7 @@ class EmployeeController extends Controller
                 }
                 return $arr;
             })
-            ->filter(fn ($h) => (int) substr((string) $h['date'], 0, 4) === $year)
+            ->filter(fn($h) => (int) substr((string) $h['date'], 0, 4) === $year)
             ->sortBy('date')
             ->values();
 
@@ -653,7 +966,7 @@ class EmployeeController extends Controller
             // active staff again. Ignoring rehired_at here barred them from
             // ever being picked as a manager again, since the row is kept
             // rather than deleted.
-            ->whereDoesntHave('exit', fn ($q) => $q->whereNull('rehired_at'));
+            ->whereDoesntHave('exit', fn($q) => $q->whereNull('rehired_at'));
         $this->applyScope($eq, $user, $request->integer('branch_id') ?: null);
         // HOD designation ids so the picker can flag which employees are a
         // department's Head — the reporting-manager rule points a non-HOD hire
@@ -761,7 +1074,7 @@ class EmployeeController extends Controller
             ->where('client_id', $user->client_id)
             ->where('user_type', 'branch_user')
             ->where('status', 'active')
-            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
+            ->when($branchFilter, fn($q) => $q->where('branch_id', $branchFilter))
             ->orderBy('name')
             ->get(['id', 'name']);
 
@@ -770,7 +1083,7 @@ class EmployeeController extends Controller
         $emps = Employee::query()
             ->where('client_id', $user->client_id)
             ->where('department_id', $departmentId)
-            ->when($branchFilter, fn ($q) => $q->where('branch_id', $branchFilter))
+            ->when($branchFilter, fn($q) => $q->where('branch_id', $branchFilter))
             ->with(['designation:id,name', 'photoDocument'])   // photoDocument backs $e->photo_url (passport-size photo)
             ->orderBy('display_name')
             ->get();
@@ -805,13 +1118,17 @@ class EmployeeController extends Controller
             } elseif ($firstDirector) {
                 $pk = $firstDirector;
             }
-            if ($pk) { $childrenOf[$pk][] = $ck; } else { $orphanRoots[] = $ck; }
+            if ($pk) {
+                $childrenOf[$pk][] = $ck;
+            } else {
+                $orphanRoots[] = $ck;
+            }
         }
 
         // Roots = all Directors (each shows even with no reports) + any employee
         // whose manager couldn't be resolved and there was no Director to hang under.
         $rootKeys = array_values(array_unique(array_merge(
-            array_map(fn ($d) => 'u' . $d->id, $directors->all()),
+            array_map(fn($d) => 'u' . $d->id, $directors->all()),
             $orphanRoots
         )));
 
@@ -819,11 +1136,11 @@ class EmployeeController extends Controller
         $build = function ($key, array $seen = []) use (&$build, $byId, $childrenOf) {
             $node = $byId[$key];
             $seen[$key] = true;
-            $kids = array_filter($childrenOf[$key] ?? [], fn ($ck) => empty($seen[$ck]));
-            $node['children'] = array_values(array_map(fn ($ck) => $build($ck, $seen), $kids));
+            $kids = array_filter($childrenOf[$key] ?? [], fn($ck) => empty($seen[$ck]));
+            $node['children'] = array_values(array_map(fn($ck) => $build($ck, $seen), $kids));
             return $node;
         };
-        $roots = array_map(fn ($k) => $build($k), $rootKeys);
+        $roots = array_map(fn($k) => $build($k), $rootKeys);
 
         return response()->json(['status' => true, 'data' => ['roots' => $roots]]);
     }
@@ -954,7 +1271,7 @@ class EmployeeController extends Controller
             // it made `other` exclude ids that were never ours.
             ->when($request->user() && !$request->user()->isSuperAdmin(), function ($q) use ($request) {
                 $cid = $request->user()->client_id;
-                $q->where(fn ($w) => $w->whereNull('client_id')->orWhere('client_id', $cid));
+                $q->where(fn($w) => $w->whereNull('client_id')->orWhere('client_id', $cid));
             })
             ->get(['id', 'name']);
         $laptopCatIds = [];
@@ -991,8 +1308,10 @@ class EmployeeController extends Controller
         $branchId = null;
         if ($excludeEmployeeId) {
             $branchId = Employee::query()
-                ->when($u && !$u->isSuperAdmin() && $u->client_id,
-                    fn ($q) => $q->where('client_id', $u->client_id))
+                ->when(
+                    $u && !$u->isSuperAdmin() && $u->client_id,
+                    fn($q) => $q->where('client_id', $u->client_id)
+                )
                 ->whereKey((int) $excludeEmployeeId)
                 ->value('branch_id');
         }
@@ -1063,12 +1382,14 @@ class EmployeeController extends Controller
                     // SQL drops the row from this scan entirely and every asset
                     // that employee holds silently reads as free.
                     $w->whereNull('status')
-                      ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                        ->orWhereNotIn('status', ['Resigned', 'Terminated']);
                 })
                 // Only this tenant's roster can hold this tenant's assets —
                 // scanning every client's employees was pure waste.
-                ->when($u && !$u->isSuperAdmin() && $u->client_id,
-                    fn ($q) => $q->where('client_id', $u->client_id));
+                ->when(
+                    $u && !$u->isSuperAdmin() && $u->client_id,
+                    fn($q) => $q->where('client_id', $u->client_id)
+                );
             // NOTE: the employee being edited is deliberately NOT excluded from
             // this scan — see the slot-scoped exemption below.
             $rows = $bookingQ->select(['id', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])->get();
@@ -1100,8 +1421,10 @@ class EmployeeController extends Controller
         $ownSlotIds = [];
         if ($excludeEmployeeId) {
             $self = Employee::withTrashed()
-                ->when($u && !$u->isSuperAdmin() && $u->client_id,
-                    fn ($q) => $q->where('client_id', $u->client_id))
+                ->when(
+                    $u && !$u->isSuperAdmin() && $u->client_id,
+                    fn($q) => $q->where('client_id', $u->client_id)
+                )
                 ->whereKey((int) $excludeEmployeeId)
                 ->first(['id', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids']);
             if ($self) {
@@ -1130,12 +1453,12 @@ class EmployeeController extends Controller
          * "Category changed" badge. That is the honest state — the slot is
          * pointing at something that is no longer a laptop — and it lets the
          * admin see what happened and re-pick, instead of staring at an id. */
-        $presentIds = $assets->pluck('id')->map(fn ($i) => (int) $i)->flip();
-        $staleIds = array_values(array_filter($ownSlotIds, fn ($aid) => !$presentIds->has($aid)));
+        $presentIds = $assets->pluck('id')->map(fn($i) => (int) $i)->flip();
+        $staleIds = array_values(array_filter($ownSlotIds, fn($aid) => !$presentIds->has($aid)));
         if (!empty($staleIds)) {
             $stale = \App\Models\Masters\Assets::query()
                 ->when($u && !$u->isSuperAdmin(), function ($w) use ($u) {
-                    $w->where(fn ($q) => $q->whereNull('client_id')->orWhere('client_id', $u->client_id));
+                    $w->where(fn($q) => $q->whereNull('client_id')->orWhere('client_id', $u->client_id));
                 })
                 ->whereIn('id', $staleIds)
                 ->get();
@@ -1552,8 +1875,19 @@ class EmployeeController extends Controller
             }
         }
 
-        $payrollFields = ['annual_salary', 'enable_payroll', 'pf_eligible', 'esi_applicable', 'gender', 'state_id',
-            'date_of_joining', 'status', 'bank_account_number', 'ifsc_code', 'salary_payment_mode'];
+        $payrollFields = [
+            'annual_salary',
+            'enable_payroll',
+            'pf_eligible',
+            'esi_applicable',
+            'gender',
+            'state_id',
+            'date_of_joining',
+            'status',
+            'bank_account_number',
+            'ifsc_code',
+            'salary_payment_mode'
+        ];
         if (!empty(array_intersect($payrollFields, array_keys($data)))) {
             try {
                 app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $row->id);
@@ -1661,7 +1995,7 @@ class EmployeeController extends Controller
     {
         return \App\Models\EmployeeExit::where('employee_id', $employee->id)
             ->whereNull('rehired_at')
-            ->where(fn ($q) => $q->whereNotNull('completed_at')->orWhere('exit_case_status', 'Closed'))
+            ->where(fn($q) => $q->whereNotNull('completed_at')->orWhere('exit_case_status', 'Closed'))
             ->first();
     }
 
@@ -2146,7 +2480,7 @@ class EmployeeController extends Controller
         $hodIds = \App\Models\Masters\Designations::query()
             ->where(function ($q) use ($hodName) {
                 $q->whereRaw('LOWER(name) = ?',  [strtolower($hodName)])
-                  ->orWhereRaw('LOWER(level) = ?', [strtolower($hodName)]);
+                    ->orWhereRaw('LOWER(level) = ?', [strtolower($hodName)]);
             })
             ->pluck('id')
             ->all();
@@ -2154,9 +2488,9 @@ class EmployeeController extends Controller
         $dupe = \App\Models\Employee::query()
             ->where('client_id', $clientId)
             ->where('department_id', $departmentId)
-            ->when($branchScope, fn ($q) => $q->where('branch_id', $branchScope))
+            ->when($branchScope, fn($q) => $q->where('branch_id', $branchScope))
             ->whereIn('designation_id', $hodIds)
-            ->when($excludeEmployeeId, fn ($q) => $q->where('id', '!=', $excludeEmployeeId))
+            ->when($excludeEmployeeId, fn($q) => $q->where('id', '!=', $excludeEmployeeId))
             ->exists();
 
         if ($dupe) {
@@ -2248,10 +2582,10 @@ class EmployeeController extends Controller
             ->where('id', '!=', $employee->id)
             ->where(function ($q) use ($branchUserIds) {
                 $q->whereIn('reporting_manager_user_id', $branchUserIds ?: [0])
-                  ->orWhere(function ($qq) {
-                      $qq->whereNull('reporting_manager_id')
-                         ->whereNull('reporting_manager_user_id');
-                  });
+                    ->orWhere(function ($qq) {
+                        $qq->whereNull('reporting_manager_id')
+                            ->whereNull('reporting_manager_user_id');
+                    });
             })
             ->update([
                 'reporting_manager_id'      => $employee->id,
@@ -2298,7 +2632,7 @@ class EmployeeController extends Controller
                 $request->merge([$emailField => mb_strtolower(trim($request->input($emailField)))]);
             }
         }
-      if ($request->filled('pan_number')) {
+        if ($request->filled('pan_number')) {
             $request->merge(['pan_number' => mb_strtoupper(trim($request->input('pan_number')))]);
         }
         // Tenant the dup checks below run against. This MUST be the client the
@@ -2322,7 +2656,7 @@ class EmployeeController extends Controller
             ? $q->whereNull('client_id')
             : $q->where('client_id', $scopeClientId);
 
-    $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
+        $panRule = ['nullable', 'string', 'regex:/^[A-Za-z]{5}[0-9]{4}[A-Za-z]$/'];
         if ($request->filled('pan_number')) {
             $panRule[] = Rule::unique('employees', 'pan_number')
                 ->whereNull('deleted_at')
@@ -2362,7 +2696,7 @@ class EmployeeController extends Controller
                 ->ignore($employeeId);
         }
 
-        
+
         $isFinalStep   = (int) $request->input('wizard_step_completed', 0) >= 4;
         $payrollOn     = (bool) $request->input('enable_payroll', true);
         $requireSalary = $isFinalStep && $payrollOn;
@@ -2394,11 +2728,11 @@ class EmployeeController extends Controller
         $noTags = ['not_regex:/[<>]/'];
 
         return $request->validate([
-            
+
             'first_name'   => $isUpdate ? 'nullable|string|max:100' : 'required|string|max:100',
             'middle_name'  => 'nullable|string|max:100',
             'last_name'    => 'nullable|string|max:100',
-           
+
             'gender'       => 'nullable|in:Male,Female,Other,Prefer not to say',
             'date_of_birth' => 'nullable|date',
             'blood_group'   => 'nullable|string|max:10',
@@ -2437,7 +2771,8 @@ class EmployeeController extends Controller
             // the user: a super_admin has client_id === null, and passing null into
             // the predicate would match nothing and reject every branch.
             'legal_entity_id' => [
-                'nullable', 'integer',
+                'nullable',
+                'integer',
                 Rule::exists('branches', 'id')->where(function ($q) use ($request) {
                     [$ownerClientId] = $this->resolveOwnership($request);
                     if ($ownerClientId !== null) {
@@ -2767,9 +3102,9 @@ class EmployeeController extends Controller
             ->withTrashed()
             ->where(function ($w) {
                 $w->whereNull('status')
-                  ->orWhereNotIn('status', ['Resigned', 'Terminated']);
+                    ->orWhereNotIn('status', ['Resigned', 'Terminated']);
             })
-            ->when($clientId, fn ($x) => $x->where('client_id', $clientId));
+            ->when($clientId, fn($x) => $x->where('client_id', $clientId));
         if ($employeeId) $q->where('id', '!=', $employeeId);
         $rows = $q->select(['id', 'display_name', 'emp_code', 'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids'])->get();
 

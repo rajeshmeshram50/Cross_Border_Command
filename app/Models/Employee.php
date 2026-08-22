@@ -52,67 +52,134 @@ class Employee extends Model
     }
 
     protected $fillable = [
-        'client_id', 'branch_id', 'created_by', 'user_id',
+        'client_id',
+        'branch_id',
+        'created_by',
+        'user_id',
         'emp_code',
 
-        'first_name', 'middle_name', 'last_name', 'display_name',
-        'gender', 'date_of_birth', 'blood_group',
-        'nationality_country_id', 'work_country_id',
-        'email', 'official_email', 'mobile', 'alt_mobile',
+        'first_name',
+        'middle_name',
+        'last_name',
+        'display_name',
+        'gender',
+        'date_of_birth',
+        'blood_group',
+        'nationality_country_id',
+        'work_country_id',
+        'email',
+        'official_email',
+        'mobile',
+        'alt_mobile',
 
         // Current address
-        'country_id', 'state_id', 'city',
-        'address_line1', 'address_line2', 'pincode',
+        'country_id',
+        'state_id',
+        'city',
+        'address_line1',
+        'address_line2',
+        'pincode',
 
         // Permanent address (added 2026-05-01)
-        'perm_address_line1', 'perm_address_line2', 'perm_city',
-        'perm_state_id', 'perm_country_id', 'perm_pincode',
+        'perm_address_line1',
+        'perm_address_line2',
+        'perm_city',
+        'perm_state_id',
+        'perm_country_id',
+        'perm_pincode',
 
-        'legal_entity_id', 'location',
-        'department_id', 'designation_id',
-        'primary_role_id', 'ancillary_role_id', 'ancillary_role_ids',
+        'legal_entity_id',
+        'location',
+        'department_id',
+        'designation_id',
+        'primary_role_id',
+        'ancillary_role_id',
+        'ancillary_role_ids',
         'work_type',
         // Canonical employment type (Rule 8) — PF eligibility and the payroll
         // export read this in preference to the free-text work_type.
         'employee_type',
-        'reporting_manager_id', 'reporting_manager_user_id', 'has_prior_experience', 'date_of_joining',
+        'reporting_manager_id',
+        'reporting_manager_user_id',
+        'has_prior_experience',
+        'date_of_joining',
 
-        'probation_policy', 'probation_months', 'probation_end_date', 'probation_completion_emailed_at',
-        'notice_period', 'notice_period_days',
+        'probation_policy',
+        'probation_months',
+        'probation_end_date',
+        'probation_completion_emailed_at',
+        'notice_period',
+        'notice_period_days',
 
         // Step 3 — Work Details (added 2026-05-01)
-        'leave_plan', 'holiday_list', 'holiday_group_id', 'attendance_tracking',
-        'shift', 'weekly_off', 'attendance_number',
-        'time_tracking', 'penalization_policy', 'overtime', 'expense_policy',
-        'laptop_assigned', 'laptop_asset_id', 'mobile_device', 'mobile_assigned', 'other_assets',
+        'leave_plan',
+        'holiday_list',
+        'holiday_group_id',
+        'attendance_tracking',
+        'shift',
+        'weekly_off',
+        'attendance_number',
+        'time_tracking',
+        'penalization_policy',
+        'overtime',
+        'expense_policy',
+        'laptop_assigned',
+        'laptop_asset_id',
+        'mobile_device',
+        'mobile_assigned',
+        'other_assets',
 
         // Step 4 — Compensation (added 2026-05-01)
-        'enable_payroll', 'pay_group', 'annual_salary', 'salary_frequency',
-        'salary_effective_from', 'salary_structure', 'tax_regime',
-        'bonus_in_annual', 'pf_eligible', 'detailed_breakup',
+        'enable_payroll',
+        'pay_group',
+        'annual_salary',
+        'salary_frequency',
+        'salary_effective_from',
+        'salary_structure',
+        'tax_regime',
+        'bonus_in_annual',
+        'pf_eligible',
+        'detailed_breakup',
 
         // Stage 1 Step 3 — asset assignments (added 2026-05-03). FKs into
         // master_assets; uniqueness across employees enforced in
         // EmployeeController so the same physical device can't be issued
         // to two people at once.
-        'laptop_master_asset_id', 'mobile_master_asset_id', 'other_master_asset_ids',
+        'laptop_master_asset_id',
+        'mobile_master_asset_id',
+        'other_master_asset_ids',
 
         // Stage 3 — Physical Setup & Identification (added 2026-05-03).
-        'biometric_status', 'desk_workstation_no', 'id_card_status',
+        'biometric_status',
+        'desk_workstation_no',
+        'id_card_status',
         // Face-biometric attendance (added 2026-05-12).
-        'face_descriptor', 'face_registered_at',
-        'face_consent_given_at', 'face_consent_revoked_at',
+        'face_descriptor',
+        'face_registered_at',
+        'face_consent_given_at',
+        'face_consent_revoked_at',
 
         // Stage 4 — Payroll & Finance Setup (added 2026-05-03)
         'salary_payment_mode',
-        'bank_name', 'bank_account_number', 'ifsc_code',
-        'account_holder_name', 'bank_branch', 'bank_account_type',
+        'bank_name',
+        'bank_account_number',
+        'ifsc_code',
+        'account_holder_name',
+        'bank_branch',
+        'bank_account_type',
         'uan_number',
-        'pan_number', 'pf_deduction', 'pf_type', 'esi_applicable',
-        'gratuity_nominee_name', 'agreed_ctc_lpa',
+        'pan_number',
+        'pf_deduction',
+        'pf_type',
+        'esi_applicable',
+        'gratuity_nominee_name',
+        'agreed_ctc_lpa',
         'stage4_completed_at',
 
-        'assets', 'status', 'wizard_step_completed', 'onboarding_stage_completed',
+        'assets',
+        'status',
+        'wizard_step_completed',
+        'onboarding_stage_completed',
     ];
 
     /** Accessors auto-included on every JSON serialization. The
@@ -334,14 +401,26 @@ class Employee extends Model
         // them doesn't unfairly lower the score.
         $fields = [
             // Basic details
-            'first_name', 'last_name', 'gender', 'date_of_birth',
-            'work_country_id', 'nationality_country_id',
+            'first_name',
+            'last_name',
+            'gender',
+            'date_of_birth',
+            'work_country_id',
+            'nationality_country_id',
             // Contact & identity
-            'email', 'mobile',
+            'email',
+            'mobile',
             // Address
-            'address_line1', 'city', 'state_id', 'country_id', 'pincode',
+            'address_line1',
+            'city',
+            'state_id',
+            'country_id',
+            'pincode',
             // Job
-            'department_id', 'designation_id', 'primary_role_id', 'date_of_joining',
+            'department_id',
+            'designation_id',
+            'primary_role_id',
+            'date_of_joining',
         ];
         $hit = 0;
         foreach ($fields as $f) {
@@ -409,14 +488,17 @@ class Employee extends Model
         return $this->belongsTo(\App\Models\Masters\Assets::class, 'mobile_master_asset_id');
     }
 
-    /** Resolve the JSON-array of master_asset ids into full asset rows. */
-    public function getOtherAssetsResolvedAttribute(): \Illuminate\Support\Collection
+    public function getOtherAssetsResolvedAttribute($value = null): \Illuminate\Support\Collection
     {
+        if ($value instanceof \Illuminate\Support\Collection) return $value;
+
         $ids = (array) ($this->other_master_asset_ids ?? []);
         if (empty($ids)) return collect();
         return \App\Models\Masters\Assets::query()
             ->whereIn('id', $ids)
-            ->get(['id', 'asset_name', 'code', 'asset_number']);
+            ->get(['id', 'asset_name', 'code', 'asset_number'])
+            ->sortBy(fn($a) => array_search($a->id, $ids))
+            ->values();
     }
 
     /**
@@ -424,9 +506,16 @@ class Employee extends Model
      * SPA can render the chip + "+N" badge directly. Falls back to the
      * legacy `ancillary_role_id` for rows that haven't been re-saved
      * since the multi-role migration.
+     *
+     * @param  mixed  $value  a pre-resolved collection from
+     *   EmployeeController::batchAncillaryRoles, or null on the normal path.
+     *   See getOtherAssetsResolvedAttribute() for why that short circuit is
+     *   needed rather than nice to have.
      */
-    public function getAncillaryRolesResolvedAttribute(): \Illuminate\Support\Collection
+    public function getAncillaryRolesResolvedAttribute($value = null): \Illuminate\Support\Collection
     {
+        if ($value instanceof \Illuminate\Support\Collection) return $value;
+
         $ids = (array) ($this->ancillary_role_ids ?? []);
         if (empty($ids) && $this->ancillary_role_id) {
             $ids = [$this->ancillary_role_id];
@@ -436,7 +525,7 @@ class Employee extends Model
             ->whereIn('id', $ids)
             ->get(['id', 'name'])
             // Preserve the user's pick order, not the DB's natural order.
-            ->sortBy(fn ($r) => array_search($r->id, $ids))
+            ->sortBy(fn($r) => array_search($r->id, $ids))
             ->values();
     }
 
