@@ -80,6 +80,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const [esiApplicable, setEsiApplicable] = useState(false);
   const [ptApplicable, setPtApplicable] = useState(true);
   const [note, setNote] = useState('');
+  /* Annual CTC this revision agrees (#101). Held as a STRING so the field can be
+     cleared while typing — a number state would snap an empty box back to 0 and
+     re-seed the whole breakup from zero on every keystroke. */
+  const [annualCtc, setAnnualCtc] = useState('');
 
   const grossSeed = useMemo(() => {
     if (!employee) return 0;
@@ -97,6 +101,15 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
        carries no joining date. */
     setEffectiveFrom(employee.date_of_joining || todayISO());
     setNote('');
+    /* Seed the CTC from whatever the employee is on today, so opening the modal
+       and saving without touching it is a no-op rather than a silent change.
+       Falls back to the structure's own annualised gross when the employee
+       record carries no salary (source: 'structure'). */
+    setAnnualCtc(String(
+      employee.annual_salary
+        ? Math.round(employee.annual_salary)
+        : (employee.monthly_gross ? Math.round(employee.monthly_gross * 12) : ''),
+    ));
     // PF / ESI applicability mirror the employee record (set on the Employee
     // form); they're locked here. PT defaults on (no employee-level flag).
     setPfApplicable(!!employee.pf_eligible);
@@ -176,7 +189,23 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   // Net = Gross − PF − fixed deductions. Salary comparison: breakup annualised
   // (gross × 12) vs the employee's annual salary — red over, green at/under.
   const netMonthly = Math.max(0, grossTotal - dedTotal); // PF is now a Fixed Deduction row
-  const salaryAnnual = employee.annual_salary ? Math.round(employee.annual_salary) : 0;
+  /* The target the breakup is measured against is now the Annual CTC FIELD, not
+     the employee record (#101). Previously this read employee.annual_salary,
+     which the modal had no way to change — so the screen could re-split a CTC
+     but never revise it, and an increment was rejected with "raise the salary on
+     the employee record first". A blank / unparseable box means no target, which
+     is the same "nothing to validate against" state the server allows. */
+  const ctcParsed = Number(annualCtc);
+  const salaryAnnual = annualCtc.trim() !== '' && Number.isFinite(ctcParsed) && ctcParsed > 0
+    ? Math.round(ctcParsed)
+    : 0;
+  /* Typed something, but not a usable number (blank, 0, negative, or text the
+     number input let through). Blocks the save with a specific message instead
+     of silently falling back to "no CTC configured". */
+  const ctcInvalid = annualCtc.trim() === '' || !Number.isFinite(ctcParsed) || ctcParsed <= 0;
+  // decimal(14,2) ceiling — the same bound EmployeeController puts on the column.
+  const CTC_MAX = 999999999999.99;
+  const ctcTooLarge = Number.isFinite(ctcParsed) && ctcParsed > CTC_MAX;
   const breakupAnnual = Math.round(grossTotal * 12);
   const salaryDiff = salaryAnnual > 0 ? breakupAnnual - salaryAnnual : 0; // + over, − under
   /* Rounding slack, matching SalaryStructureController::SALARY_ROUNDING_SLACK.
@@ -203,6 +232,60 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
    * (SalaryStructureController::store), and editing the employee mirrors them
    * onto the active structure (EmployeeController::update, #90) — so whichever
    * screen is used, the pair stays consistent. */
+
+  /**
+   * Re-split the earnings 50/30/20 for a newly-typed Annual CTC (#101).
+   *
+   * Typing a CTC alone would only move the target and leave the components
+   * where they were, so the form would immediately report itself as over or
+   * short and refuse to save — the user would have to hand-adjust three rows to
+   * match a figure they just typed. Re-seeding keeps the two sides in step by
+   * default; the rows stay editable afterwards for a non-standard split.
+   *
+   * Only the three DEFAULT components are rewritten. A custom earning HR added
+   * (a fixed allowance, say) is preserved and its amount is honoured — the
+   * remainder after Basic + HRA is what Special absorbs, so the gross still
+   * lands on the CTC exactly. Deductions are untouched: PF re-derives from the
+   * new basic through the existing effect, and ESI / PT are HR's own figures.
+   */
+  const applyCtc = (raw: string) => {
+    setAnnualCtc(raw);
+    const n = Number(raw);
+    if (raw.trim() === '' || !Number.isFinite(n) || n <= 0 || n > CTC_MAX) return;
+
+    const monthly = Math.round(n / 12);
+    const basic = Math.round(monthly * 0.5);
+    const hra = Math.round(monthly * 0.3);
+    setEarnings(prev => {
+      // Nothing to preserve — seed a clean default split.
+      if (!prev.length) return splitFromGross(monthly);
+
+      const isDefault = (c: SalaryComponent) => ['basic', 'hra', 'special'].includes(c.code);
+      const customs = prev.filter(c => !isDefault(c));
+      const customTotal = customs.reduce((s, c) => s + (Number(c.amount) || 0), 0);
+      /* Custom components alone already exceed the CTC — re-splitting would
+         have to make Basic negative. Leave the rows alone and let the
+         over-salary banner report it, which is the honest outcome: the user has
+         to lower a component or raise the CTC, and silently clamping to zero
+         would hide that. */
+      if (customTotal > monthly) return prev;
+
+      const special = Math.max(0, monthly - customTotal - basic - hra);
+      const next = prev.map(c => {
+        if (c.code === 'basic') return { ...c, amount: basic };
+        if (c.code === 'hra') return { ...c, amount: hra };
+        if (c.code === 'special') return { ...c, amount: special };
+        return c;
+      });
+      /* A structure with no 'special' row cannot absorb the remainder, so the
+         gross would fall short of the CTC by exactly that amount. Add the row
+         back rather than leaving the form in a state it reports as invalid. */
+      if (special > 0 && !next.some(c => c.code === 'special')) {
+        next.push({ code: 'special', label: 'Special Allowance', amount: special });
+      }
+      return next;
+    });
+  };
 
   const updateRow = (
     list: SalaryComponent[],
@@ -305,6 +388,19 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     const clean = earnings.filter(c => c.label.trim() && c.amount >= 0);
     if (!clean.length) { toast.error('Add earnings', 'Add at least one earning component.'); return; }
     if (grossTotal <= 0) { toast.error('Invalid salary', 'Total earnings must be greater than zero.'); return; }
+    /* Annual CTC is required and must be a positive number within the column's
+       range (#101). The number input stops most bad entries, but it does not
+       stop an empty box, a pasted negative, or a figure past decimal(14,2) —
+       and the endpoint is callable without the form at all, so the API enforces
+       the identical bounds. */
+    if (ctcInvalid) {
+      toast.error('Annual CTC required', 'Enter the Annual CTC for this revision — it must be greater than 0.');
+      return;
+    }
+    if (ctcTooLarge) {
+      toast.error('Annual CTC too large', 'Annual CTC must be ₹999,999,999,999.99 or less. Check the figure.');
+      return;
+    }
     /* The breakup has to ADD UP to the salary on the employee record — not more
        (#70) and not less (#74). Both were shown in red but neither was
        enforced, so an over-figure saved and got paid, and an under-figure
@@ -314,10 +410,12 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
       toast.error(
         overSalary ? 'Salary exceeds the configured amount' : 'Salary is short of the configured amount',
         `The breakup comes to ₹${fmtINR(breakupAnnual)} a year — ₹${fmtINR(Math.abs(salaryDiff))} `
-        + `${overSalary ? 'more than' : 'short of'} ${employee.name}'s salary of ₹${fmtINR(salaryAnnual)}. `
+        + `${overSalary ? 'more than' : 'short of'} the Annual CTC of ₹${fmtINR(salaryAnnual)}. `
+        // Both remedies are now on THIS form — the CTC field is here, so the old
+        // "change the employee record first" advice no longer applies (#101).
         + (overSalary
-            ? 'Reduce the components, or raise the salary on the employee record first.'
-            : 'Use "Balance to Basic" to put the difference back, or lower the salary on the employee record first.'),
+            ? 'Reduce the components, or raise the Annual CTC above.'
+            : 'Use "Balance to Basic" to put the difference back, or lower the Annual CTC above.'),
       );
       return;
     }
@@ -335,6 +433,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         esi_applicable: esiApplicable,
         pt_applicable: ptApplicable,
         revision_note: note.trim() || undefined,
+        // The CTC this revision agrees — the server validates the breakup
+        // against THIS, then writes it to the employee record (#101).
+        annual_ctc: salaryAnnual,
       });
       toast.success('Salary saved', res.data?.message || `Structure saved for ${employee.name}.`);
       onSaved();
@@ -421,6 +522,41 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         ) : (
           <div style={{ padding: '18px 22px' }}>
             <div className="row g-3 mb-3">
+              {/* Annual CTC (#101). Absent from this modal until now, while the
+                  Edit Employee → Compensation step had it — so the two screens
+                  that write the same column disagreed about whether it was
+                  editable, and this one silently required the breakup to match a
+                  figure it would not show. */}
+              <div className="col-md-4">
+                <label className="form-label fw-semibold" style={{ fontSize: 12 }}>
+                  Annual CTC <span style={{ color: '#dc2626' }}>*</span>
+                </label>
+                <div className="d-flex align-items-center" style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--vz-secondary-color)' }}>₹</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="form-control form-control-sm"
+                    style={{
+                      paddingLeft: 22,
+                      borderColor: (ctcInvalid || ctcTooLarge) ? '#dc2626' : undefined,
+                    }}
+                    placeholder="e.g. 450000"
+                    value={annualCtc}
+                    onChange={e => applyCtc(e.target.value)}
+                  />
+                </div>
+                {ctcTooLarge ? (
+                  <small style={{ fontSize: 10.5, color: '#dc2626', fontWeight: 600 }}>Too large — max ₹999,999,999,999.99.</small>
+                ) : ctcInvalid ? (
+                  <small style={{ fontSize: 10.5, color: '#dc2626', fontWeight: 600 }}>Required — must be greater than 0.</small>
+                ) : (
+                  <small className="text-muted" style={{ fontSize: 10.5 }}>
+                    ≈ ₹{fmtINR(Math.round(salaryAnnual / 12))}/month · editing this re-splits the breakup below.
+                  </small>
+                )}
+              </div>
               <div className="col-md-4">
                 <label className="form-label fw-semibold" style={{ fontSize: 12 }}>Effective From</label>
                 {/* Floored at the joining date — a salary cannot take effect
@@ -443,7 +579,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   placeholder="Select date"
                 />
               </div>
-              <div className="col-md-8">
+              {/* Narrowed from col-md-8 to make room for Annual CTC — the row
+                  is now 4+4+4 and still totals 12. */}
+              <div className="col-md-4">
                 {/* All three behave the same way: tick to apply, untick to
                     remove, and the choice is written back to the employee
                     record on save. */}
@@ -489,7 +627,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                     and both offer the one-click correction. */}
                 {salaryAnnual > 0 && (overSalary || underSalary) && (
                   <div style={{ fontSize: 10.5, fontWeight: 600, color: '#dc2626' }}>
-                    ₹{fmtINR(Math.abs(salaryDiff))} {overSalary ? 'over' : 'short of'} the salary
+                    ₹{fmtINR(Math.abs(salaryDiff))} {overSalary ? 'over' : 'short of'} the Annual CTC
                     {' '}(₹{fmtINR(salaryAnnual)}) — cannot be saved
                     <button
                       type="button"
@@ -507,7 +645,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 {/* Within the rounding slack counts as matching, so the seeded
                     split does not read as "₹4 over". */}
                 {salaryAnnual > 0 && !overSalary && !underSalary && (
-                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the salary amount</div>
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: '#0a8754' }}>Matches the Annual CTC</div>
                 )}
               </div>
             </div>

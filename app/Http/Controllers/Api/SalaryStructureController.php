@@ -234,6 +234,22 @@ class SalaryStructureController extends Controller
             'esi_applicable'  => ['boolean'],
             'pt_applicable'   => ['boolean'],
             'revision_note'   => ['nullable', 'string', 'max:500'],
+            /* The Annual CTC this revision agrees (QA #101).
+             *
+             * Optional, so every existing caller keeps working: when it is
+             * absent the breakup is still checked against whatever is already on
+             * the employee record, exactly as before. When it is present it
+             * REPLACES that figure and the breakup is checked against it — which
+             * is what makes an increment possible from this screen at all.
+             *
+             * Bounds mirror EmployeeController's own annual_salary rule (the
+             * decimal(14,2) column ceiling, and a positive minimum) so the two
+             * entry points to the same column cannot disagree. */
+            'annual_ctc'      => ['nullable', 'numeric', 'min:0.01', 'max:999999999999.99'],
+        ], [
+            'annual_ctc.numeric' => 'Annual CTC must be a valid number.',
+            'annual_ctc.min'     => 'Annual CTC must be greater than 0.',
+            'annual_ctc.max'     => 'Annual CTC must be ≤ 999,999,999,999.99.',
         ]);
 
         $user = $request->user();
@@ -310,7 +326,24 @@ class SalaryStructureController extends Controller
          *
          * No configured salary means there is nothing to validate against —
          * the structure then IS the source of truth, so it is allowed. */
-        $configuredAnnual = (float) ($employee->annual_salary ?? 0);
+        /* WHICH figure the breakup is measured against (QA #101).
+         *
+         * A submitted annual_ctc is the salary being AGREED by this revision and
+         * wins; without one, the employee record's existing figure is the target,
+         * as before.
+         *
+         * This is what unblocked the screen. The rule was "the breakup must equal
+         * employee.annual_salary", and the write-back below then set
+         * annual_salary to the breakup — which, having just passed that check,
+         * could only ever be the same number. So the modal could re-split a CTC
+         * but never change it: an increment 422'd with "raise the salary on the
+         * employee record first", and the button labelled "Revise Salary" could
+         * not revise the salary. The comparison still exists and is still strict;
+         * it now just compares against the figure HR actually typed. */
+        $submittedCtc     = array_key_exists('annual_ctc', $data) && $data['annual_ctc'] !== null
+            ? round((float) $data['annual_ctc'], 2)
+            : null;
+        $configuredAnnual = $submittedCtc ?? (float) ($employee->annual_salary ?? 0);
         if ($configuredAnnual > 0) {
             $annualised = $monthlyGross * 12;
             $diff = $annualised - $configuredAnnual;          // + over, − under
@@ -318,17 +351,27 @@ class SalaryStructureController extends Controller
                 $over = $diff > 0;
                 $gap  = number_format(abs($diff), 2);
                 $name = $employee->first_name ?: 'this employee';
+                /* The remedy differs by which figure is in play. Against a
+                 * submitted CTC the fix is here on this form (adjust one side or
+                 * the other); against the stored one the old advice — go and
+                 * change the employee record — still reads correctly. */
+                $target = $submittedCtc !== null ? 'the Annual CTC entered' : "{$name}'s configured salary";
                 return response()->json([
                     'message' => 'Total earnings come to ₹' . number_format($annualised, 2)
                         . ' a year, which is ₹' . $gap . ($over ? ' more than' : ' short of')
-                        . " {$name}'s configured salary of ₹" . number_format($configuredAnnual, 2)
-                        . '. The breakup has to add up to the salary — '
-                        . ($over
-                            ? 'reduce the components, or raise the salary on the employee record first.'
-                            : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
-                              . 'or lower the salary on the employee record first.'),
+                        . ' ' . $target . ' of ₹' . number_format($configuredAnnual, 2)
+                        . '. The breakup has to add up to the CTC — '
+                        . ($submittedCtc !== null
+                            ? ($over
+                                ? 'reduce the components, or raise the Annual CTC.'
+                                : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                                  . 'or lower the Annual CTC.')
+                            : ($over
+                                ? 'reduce the components, or raise the salary on the employee record first.'
+                                : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                                  . 'or lower the salary on the employee record first.')),
                     'errors' => ['earnings' => [
-                        'Annual total ₹' . number_format($annualised, 2) . ' does not match the configured salary ₹'
+                        'Annual total ₹' . number_format($annualised, 2) . ' does not match ₹'
                         . number_format($configuredAnnual, 2) . '.',
                     ]],
                 ], 422);
@@ -380,9 +423,14 @@ class SalaryStructureController extends Controller
              * The two are meant to be equal — both this modal and the Employee
              * form treat "breakup total == annual salary" as the matching
              * state — so the accepted revision becomes the new agreed figure.
-             * This runs only AFTER the cap check above has passed, so a
-             * revision can still never raise pay beyond the configured salary;
-             * increasing it remains an Employee-record change. */
+             * This runs only AFTER the match check above has passed, so the
+             * breakup and the CTC are already equal to within the rounding
+             * slack — an increment is now made by raising the Annual CTC on this
+             * form (#101), and the two still cannot drift apart.
+             *
+             * The breakup remains what is written, not the typed CTC: the two
+             * agree to within SALARY_ROUNDING_SLACK by the time we get here, and
+             * the components are the figures payroll will actually pay. */
             $employee->update([
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
