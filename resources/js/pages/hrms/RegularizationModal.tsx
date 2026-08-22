@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Modal, ModalBody } from 'reactstrap';
 import { useToast } from '../../contexts/ToastContext';
 import { regularizationApi, type ApiRegularization } from './regularizationApi';
@@ -104,6 +104,12 @@ export default function RegularizationModal({
   const [punchEdits, setPunchEdits] = useState<PunchEdit[]>(initialEdits);
   const [reason, setReason]       = useState('');
   const [submitting, setSubmitting] = useState(false);
+  /* Re-entrancy guard. `submitting` state alone can't stop a fast double-click:
+     the second click runs against the closure captured BEFORE the re-render
+     that disables the button, so it reads submitting === false and fires a
+     second create() — a duplicate request for the same day. A ref flips
+     synchronously, so the second click is dropped. */
+  const inFlight = useRef(false);
   const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches', string>>>({});
 
   /* Mirrors the server's shift bounding so the requester learns their 22:00 will
@@ -162,7 +168,7 @@ export default function RegularizationModal({
   };
 
   const submit = async () => {
-    if (submitting) return;
+    if (inFlight.current || submitting) return;
     const errs: typeof errors = {};
     if (!reason.trim()) errs.reason = 'Reason is required';
     const valid = punchEdits.some(e => e.action !== 'delete');
@@ -183,6 +189,7 @@ export default function RegularizationModal({
       .filter(e => e.action !== 'delete' && e.newIn)
       .map(e => ({ in: e.newIn, out: e.newOut || null }));
 
+    inFlight.current = true;
     setSubmitting(true);
     try {
       const row = await regularizationApi.create({
@@ -219,6 +226,7 @@ export default function RegularizationModal({
       const msg = err?.response?.data?.message || err?.message || 'Could not submit request';
       toast.error('Could not submit request', msg);
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -353,7 +361,10 @@ export default function RegularizationModal({
 
           <div className="att-reg-keka-foot">
             <button type="button" className="att-reg-keka-cancel" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting}>
+            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting} aria-busy={submitting}>
+              {/* Spinner + label, so the in-flight state is legible at a glance
+                  and not just a word swap on an otherwise identical button. */}
+              {submitting && <span className="att-reg-keka-spin" aria-hidden="true" />}
               {submitting ? 'Submitting…' : 'Request'}
             </button>
           </div>

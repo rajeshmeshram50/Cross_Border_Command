@@ -543,6 +543,9 @@ class AttendanceController extends Controller
                 'department:id,name',
                 'designation:id,name',
                 'reportingManager:id,first_name,last_name,display_name',
+                // A manager can also be a BRANCH USER with no Employee row —
+                // loaded here so the Mgr. chip resolves without an N+1.
+                'reportingManagerUser:id,name',
                 'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
             ])
             ->orderBy('display_name');
@@ -900,9 +903,7 @@ class AttendanceController extends Controller
                 'accent'            => '',                            // SPA picks colour from index
                 'department'        => $emp->department?->name ?? '—',
                 'designation'       => $emp->designation?->name ?? '—',
-                'managerName'       => $emp->reportingManager?->display_name
-                    ?? trim((string) ($emp->reportingManager?->first_name ?? '') . ' ' . (string) ($emp->reportingManager?->last_name ?? ''))
-                    ?: '—',
+                'managerName'       => $this->managerDisplayName($emp),
                 // Default office hours fall back to 09:30 – 18:30 (9 h
                 // working window). Employees with a parseable shift string
                 // like "General (09:00 – 18:00)" override this — handled
@@ -1071,6 +1072,28 @@ class AttendanceController extends Controller
         $first = mb_substr($parts[0] ?? '', 0, 1);
         $second = count($parts) > 1 ? mb_substr($parts[count($parts) - 1], 0, 1) : '';
         return strtoupper($first . $second);
+    }
+
+    /**
+     * Reporting-manager name for the roster row / day panel Mgr. chip.
+     *
+     * An employee's manager is EITHER another employee (`reporting_manager_id`)
+     * or a branch user who never got an Employee row of their own
+     * (`reporting_manager_user_id`) — exactly one of the two is populated, and
+     * HOD-level staff are routinely assigned the branch user. Attendance only
+     * ever read the employee link, so every employee reporting to a branch user
+     * showed "—" here even though the manager was assigned (CBC #75).
+     */
+    private function managerDisplayName(Employee $emp): string
+    {
+        $mgr  = $emp->reportingManager;
+        $name = $mgr
+            ? trim((string) ($mgr->display_name ?: trim(((string) $mgr->first_name) . ' ' . ((string) $mgr->last_name))))
+            : '';
+        if ($name === '' && $emp->reporting_manager_user_id) {
+            $name = trim((string) ($emp->reportingManagerUser?->name ?? ''));
+        }
+        return $name !== '' ? $name : '—';
     }
 
     

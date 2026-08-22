@@ -65,7 +65,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [status, setStatus]   = useState<RegularizationStatus | 'All'>('Pending');
-  const [busyId, setBusyId]   = useState<number | null>(null);
+  const [busy, setBusy]       = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
   const [open, setOpen]       = useState(true);
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -118,7 +118,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
       if (!res.isConfirmed) return;
       comment = (res.value || '').trim() || undefined;
     }
-    setBusyId(row.id);
+    setBusy({ id: row.id, action: decision });
     try {
       if (decision === 'approve') await regularizationApi.approve(row.id, comment);
       else                        await regularizationApi.reject(row.id, comment);
@@ -131,7 +131,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
     } catch (err: any) {
       toast.error('Action failed', err?.response?.data?.message || err?.message || 'Could not update request');
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   };
 
@@ -227,6 +227,9 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                     </tr>
                   ) : paged.map(r => {
                     const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
+                    const rowBusy    = busy?.id === r.id;
+                    const approving  = rowBusy && busy?.action === 'approve';
+                    const rejecting  = rowBusy && busy?.action === 'reject';
                     const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out)).join(', ');
                     return (
                       <tr key={r.id}>
@@ -259,35 +262,49 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                             <div className="d-inline-flex align-items-center gap-1">
                               <button
                                 type="button"
-                                data-tooltip="Approve"
+                                data-tooltip={approving ? 'Approving…' : 'Approve'}
                                 data-tooltip-pos="left"
                                 aria-label="Approve"
-                                disabled={busyId === r.id}
+                                aria-busy={approving}
+                                disabled={rowBusy}
                                 onClick={() => act(r, 'approve')}
                                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                                 style={{
                                   width: 28, height: 28, padding: 0,
                                   background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
                                   color: '#fff', border: 'none',
+                                  // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
+                                  // button actually running stays bright and the other one greys out.
+                                  opacity: rejecting ? 0.45 : 1,
+                                  cursor: rowBusy ? 'wait' : 'pointer',
                                 }}
                               >
-                                <i className="ri-check-line" />
+                                {approving
+                                  ? <span className="spinner-border" role="status" aria-hidden="true"
+                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
+                                  : <i className="ri-check-line" />}
                               </button>
                               <button
                                 type="button"
-                                data-tooltip="Reject"
+                                data-tooltip={rejecting ? 'Rejecting…' : 'Reject'}
                                 data-tooltip-pos="left"
                                 aria-label="Reject"
-                                disabled={busyId === r.id}
+                                aria-busy={rejecting}
+                                disabled={rowBusy}
                                 onClick={() => act(r, 'reject')}
                                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                                 style={{
                                   width: 28, height: 28, padding: 0,
                                   background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
                                   color: '#fff', border: 'none',
+                                  opacity: approving ? 0.45 : 1,
+                                  cursor: rowBusy ? 'wait' : 'pointer',
                                 }}
                               >
-                                <i className="ri-close-line" />
+                                {rejecting
+                                  ? <span className="spinner-border" role="status" aria-hidden="true"
+                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
+                                  : <i className="ri-close-line" />}
                               </button>
                             </div>
                           ) : (

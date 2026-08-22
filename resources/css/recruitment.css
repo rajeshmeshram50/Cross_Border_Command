@@ -10903,6 +10903,34 @@
 }
 .att-reg-keka-submit:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(13,148,136,0.40); }
 
+/* Mid-submit state. The buttons already carry `disabled` while the request is
+   in flight, so the CLICK was blocked — but nothing said so: the submit button
+   kept its pointer cursor, full gradient and its hover lift, and Cancel kept
+   its hover background, so "Submitting…" still read as a live, clickable
+   button (CBC #77). Neutralise the hover feedback and dim them instead.
+   `:disabled:hover` outranks the plain `:hover` rules above (and the dark-mode
+   ones below) on specificity, so it holds in both themes. */
+.att-reg-keka-submit:disabled,
+.att-reg-keka-cancel:disabled {
+  cursor: not-allowed;
+  opacity: .62;
+  transform: none;
+}
+.att-reg-keka-submit:disabled:hover {
+  transform: none;
+  box-shadow: 0 4px 10px rgba(13,148,136,0.30);
+}
+.att-reg-keka-cancel:disabled:hover { background: var(--vz-card-bg); }
+.att-reg-keka-submit .att-reg-keka-spin {
+  display: inline-block; width: 13px; height: 13px;
+  margin-right: 7px; vertical-align: -2px;
+  border: 2px solid rgba(255,255,255,0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: att-reg-keka-spin .6s linear infinite;
+}
+@keyframes att-reg-keka-spin { to { transform: rotate(360deg); } }
+
 /* ════════════════════════════════════════════════════════════════════════
    Regularization Requests table (inside Logs & Requests · Requests tab)
    ════════════════════════════════════════════════════════════════════════ */
