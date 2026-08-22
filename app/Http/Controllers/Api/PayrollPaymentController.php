@@ -234,7 +234,22 @@ class PayrollPaymentController extends Controller
         $total = 0; $eligible = 0; $held = 0;
         foreach ($slips as $s) {
             $emp = $bankMap->get($s->employee_id);
-            $bankOk = (bool) ($emp && $emp->bank_account_number && $emp->ifsc_code);
+            /* Validate the SHAPE, exactly as PayrollService::disburseRun does.
+             *
+             * This used to test "non-empty", while disbursement tests the IFSC
+             * and account-number formats (P26). A typo'd IFSC therefore counted
+             * as Ready here — it was included in the eligible headcount, added
+             * into the advice total, and written onto the payment record — and
+             * was then HELD the moment the payment was initiated. Finance signed
+             * off a batch total that could never be paid out.
+             *
+             * The two rules have to be the same rule, or the advice is not an
+             * advice. Kept in App\Support\BankDetails so a third caller cannot
+             * reintroduce the drift. */
+            $bankOk = \App\Support\BankDetails::isValid(
+                $emp->ifsc_code ?? null,
+                $emp->bank_account_number ?? null,
+            );
             $hasOtherBlock = collect((array) $s->exceptions)
                 ->contains(fn ($e) => ($e['type'] ?? null) === 'blocking'
                     && stripos((string) ($e['reason'] ?? ''), 'bank') === false);
@@ -293,11 +308,25 @@ class PayrollPaymentController extends Controller
         ];
     }
 
+    /* Both gates below use STRICT matching: a null client_id on the run or the
+     * payment must not pass for a scoped caller. Reading it as "no client set,
+     * so everyone owns it" is the same null-bypass already closed in
+     * PayrollController::ownsRow and findRun, and here it guards a disbursement
+     * — the row carries every employee's net pay and bank details. Branch is
+     * checked too, so a branch_user cannot reach another branch's batch. */
+
     private function ownsRun(Request $request, PayrollRun $run): bool
     {
         $user = $request->user();
-        if (!$user || $user->user_type === 'super_admin') return true;
-        return !$run->client_id || (int) $run->client_id === (int) $user->client_id;
+        if (!$user) return false;
+        if ($user->user_type === 'super_admin') return true;
+        if ((int) $run->client_id !== (int) $user->client_id) return false;
+        // A branch-pinned user only ever operates their own branch's payroll.
+        if ($user->user_type === 'branch_user' && $user->branch_id
+            && $run->branch_id && (int) $run->branch_id !== (int) $user->branch_id) {
+            return false;
+        }
+        return true;
     }
 
     private function findScoped(Request $request, int $id): ?PayrollPayment
@@ -305,7 +334,13 @@ class PayrollPaymentController extends Controller
         $user = $request->user();
         $p = PayrollPayment::find($id);
         if (!$p) return null;
-        if ($user && $user->client_id && $p->client_id && (int) $p->client_id !== (int) $user->client_id) return null;
+        if (!$user) return null;
+        if ($user->user_type === 'super_admin') return $p;
+        if ((int) $p->client_id !== (int) $user->client_id) return null;
+        if ($user->user_type === 'branch_user' && $user->branch_id
+            && $p->branch_id && (int) $p->branch_id !== (int) $user->branch_id) {
+            return null;
+        }
         return $p;
     }
 
@@ -314,6 +349,9 @@ class PayrollPaymentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
+        // Plain employees never disburse payroll — same rule as
+        // PayrollController::canManage.
+        if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));
     }
@@ -323,6 +361,9 @@ class PayrollPaymentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
+        // The bank file lists every employee's account number — never the
+        // employee tier.
+        if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (bool) ($perm['can_export'] ?? false);
     }

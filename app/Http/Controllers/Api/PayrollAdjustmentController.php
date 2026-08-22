@@ -31,6 +31,13 @@ class PayrollAdjustmentController extends Controller
         $user = $request->user();
         $q = PayrollAdjustment::query()->orderByDesc('id');
         if ($user && $user->client_id) $q->where('client_id', $user->client_id);
+        /* Adjustments carry bonus / incentive / overtime amounts per employee.
+         * This listing was tenant-scoped only, so any logged-in employee could
+         * read what every colleague had been awarded. Pinned to their own rows
+         * — the same self-only rule the payslip endpoints apply (PAY-45). */
+        if ($user && !$this->canManage($request)) {
+            $q->where('employee_id', (int) ($user->employee_id ?? 0));
+        }
         if ($b = $request->integer('branch_id')) $q->where('branch_id', $b);
         if ($e = $request->integer('employee_id')) $q->where('employee_id', $e);
         if ($m = $request->integer('month')) $q->where('month', $m);
@@ -48,6 +55,14 @@ class PayrollAdjustmentController extends Controller
      */
     public function overtimePreview(Request $request)
     {
+        /* The preview returns the employee's OT rate, which is derived from
+         * their basic salary — plus a day-by-day attendance breakdown. It was
+         * tenant-scoped only, so anyone could price any colleague's overtime
+         * and read back their pay rate. Manage-only, like every other endpoint
+         * here. */
+        if (!$this->canManage($request)) {
+            return response()->json(['message' => 'You are not allowed to view overtime pricing.'], 403);
+        }
         $data = $request->validate([
             'employee_id' => ['required', 'integer'],
             'month'       => ['required', 'integer', 'between:1,12'],
@@ -170,9 +185,30 @@ class PayrollAdjustmentController extends Controller
             'approved_at' => now(),
         ]);
         // Approving or rejecting changes payroll inputs — propagate to drafts.
-        $this->payroll->recomputeEmployeePayslips($adj->employee_id);
+        $touched = $this->payroll->recomputeEmployeePayslips($adj->employee_id);
 
-        return response()->json(['message' => "Adjustment {$status}.", 'data' => $this->serialize($adj)]);
+        /* recomputeEmployeePayslips only rewrites payslips in DRAFT/GENERATED
+         * runs — an approved or paid cycle is frozen (Rule 14/15). That is
+         * correct, but it used to happen silently: HR approved a bonus for a
+         * month whose run was already approved, got a plain "Adjustment
+         * approved", and the money never appeared on any payslip. Say so, so
+         * the adjustment is moved to an open cycle or the run is reopened. */
+        $note = '';
+        if ($touched === 0 && $adj->status === 'approved') {
+            $frozen = \App\Models\Payslip::where('employee_id', $adj->employee_id)
+                ->whereHas('period', fn ($q) => $q->where('month', $adj->month)->where('year', $adj->year))
+                ->whereHas('run', fn ($q) => $q->whereIn('status', ['approved', 'paid']))
+                ->exists();
+            $note = $frozen
+                ? " Payroll for {$adj->month}/{$adj->year} is already approved/paid, so this has NOT been"
+                  . ' applied to that payslip — reopen the cycle or post it to the next one.'
+                : ' No draft payslip exists for that cycle yet; it will be picked up on the next run.';
+        }
+
+        return response()->json([
+            'message' => "Adjustment {$status}." . $note,
+            'data'    => $this->serialize($adj),
+        ]);
     }
 
     public function destroy(Request $request, int $id)
@@ -208,6 +244,9 @@ class PayrollAdjustmentController extends Controller
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
+        // Plain employees never manage payroll, even if an hr.payroll grant
+        // leaked onto their record — same rule as PayrollController::canManage.
+        if ($user->user_type === 'employee') return false;
         $perm = $user->permissions['hr.payroll'] ?? null;
         return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));
     }
