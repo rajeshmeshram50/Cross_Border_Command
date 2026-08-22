@@ -140,6 +140,61 @@ class User extends Authenticatable
         return $this->hasOne(UserDetail::class);
     }
 
+    /** The employee record this login belongs to, if any. */
+    public function employee(): HasOne
+    {
+        return $this->hasOne(Employee::class, 'user_id');
+    }
+
+    /**
+     * The id of the employee record behind this login, or null.
+     *
+     * There is NO `employee_id` column on `users` — the link lives the other
+     * way round, on `employees.user_id`. Three call sites nevertheless read
+     * `$user->employee_id` directly, and without this accessor Eloquent simply
+     * returned null for all of them:
+     *
+     *   · PayrollController::ownsRow / employeePayslips / history — the
+     *     employee tier's self-guard compared `$slip->employee_id` against
+     *     `(int) null` = 0, which matches nothing. The guard was written to let
+     *     an employee see their OWN payslip and no one else's; instead it
+     *     locked them out of their own (404 on the payslip, its PDF and the
+     *     email, 403 on the salary history, and an empty payroll history).
+     *   · HrDocumentSignatureController / MyTeamController — same read, same
+     *     silent null. MyTeamController::myTeam had already worked around it
+     *     with an inline `?: Employee::where('user_id', ...)` fallback, which
+     *     is exactly the lookup below.
+     *
+     * Solved on the model so the next call site inherits it rather than having
+     * to remember the workaround. Memoised because the payslip guard runs once
+     * per row on a listing.
+     *
+     * `employee_code` is the secondary route: logins created before the
+     * `user_id` back-link was populated only carry the code.
+     */
+    public function getEmployeeIdAttribute(): ?int
+    {
+        if (array_key_exists('employee_id', $this->attributes)) {
+            return $this->attributes['employee_id'] !== null
+                ? (int) $this->attributes['employee_id']
+                : null;
+        }
+
+        if (!array_key_exists('resolvedEmployeeId', $this->relations)) {
+            $id = Employee::where('user_id', $this->id)->value('id');
+
+            if (!$id && !empty($this->employee_code)) {
+                $id = Employee::where('emp_code', $this->employee_code)
+                    ->when($this->client_id, fn ($q) => $q->where('client_id', $this->client_id))
+                    ->value('id');
+            }
+
+            $this->relations['resolvedEmployeeId'] = $id ? (int) $id : null;
+        }
+
+        return $this->relations['resolvedEmployeeId'];
+    }
+
     public function permissions(): HasMany
     {
         return $this->hasMany(Permission::class);

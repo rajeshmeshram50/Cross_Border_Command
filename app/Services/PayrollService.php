@@ -275,11 +275,12 @@ class PayrollService
                 // P26: don't treat "non-empty" as "valid" — validate the shapes so a
                 // typo'd IFSC / account number is HELD rather than disbursed. IFSC is
                 // 4 letters + 0 + 6 alphanumerics; account no. is 6–18 digits.
-                $ifsc = strtoupper(trim((string) ($emp->ifsc_code ?? '')));
-                $acct = preg_replace('/\s+/', '', (string) ($emp->bank_account_number ?? ''));
-                $bankOk = (bool) ($emp
-                    && preg_match('/^[A-Z]{4}0[A-Z0-9]{6}$/', $ifsc)
-                    && preg_match('/^\d{6,18}$/', $acct));
+                // Shared with the payment advice via App\Support\BankDetails, so
+                // the set the advice calls Ready is exactly the set paid here.
+                $bankOk = (bool) $emp && \App\Support\BankDetails::isValid(
+                    $emp->ifsc_code ?? null,
+                    $emp->bank_account_number ?? null,
+                );
                 $slip->bank_account_number = $emp->bank_account_number ?? $slip->bank_account_number;
                 $slip->ifsc_code = $emp->ifsc_code ?? $slip->ifsc_code;
                 $slip->bank_verified = $bankOk;

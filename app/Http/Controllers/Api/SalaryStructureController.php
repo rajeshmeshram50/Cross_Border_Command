@@ -37,6 +37,7 @@ class SalaryStructureController extends Controller
      */
     public function employees(Request $request)
     {
+        if ($deny = $this->denyUnlessManager($request, 'view')) return $deny;
         $user = $request->user();
         $branch = $request->integer('branch_id') ?: ($user && $user->user_type === 'branch_user' ? $user->branch_id : null);
 
@@ -144,6 +145,14 @@ class SalaryStructureController extends Controller
         if ($user && $user->client_id) {
             $q->where('client_id', $user->client_id);
         }
+        /* The employee tier is pinned to its OWN structure rather than refused
+         * outright: their profile page legitimately reads their own breakup
+         * (EmployeeProfile.tsx), and only the ability to read EVERYONE's was
+         * the problem. A login with no employee record behind it has no own
+         * structure to show, so it matches nothing rather than everything. */
+        if ($user && !$this->canManage($request)) {
+            $q->where('employee_id', (int) ($user->employee_id ?? 0));
+        }
         if ($branch = $request->integer('branch_id')) {
             $q->where('branch_id', $branch);
         }
@@ -161,11 +170,19 @@ class SalaryStructureController extends Controller
     {
         $s = $this->findScoped($request, $id);
         abort_unless($s, 404, 'Salary structure not found.');
+        // Same self-only rule as index() — an employee may read their own
+        // breakup and nobody else's.
+        $user = $request->user();
+        if ($user && !$this->canManage($request)
+            && (int) $s->employee_id !== (int) ($user->employee_id ?? 0)) {
+            abort(403, 'You can only view your own salary structure.');
+        }
         return response()->json(['data' => $this->serialize($s)]);
     }
 
     public function store(Request $request)
     {
+        if ($deny = $this->denyUnlessManager($request, 'change')) return $deny;
         $data = $request->validate([
             'employee_id'     => ['required', 'integer'],
             'effective_from'  => ['required', 'date'],
@@ -346,6 +363,7 @@ class SalaryStructureController extends Controller
 
     public function destroy(Request $request, int $id)
     {
+        if ($deny = $this->denyUnlessManager($request, 'delete')) return $deny;
         $s = $this->findScoped($request, $id);
         abort_unless($s, 404, 'Salary structure not found.');
         if ($s->status === 'active') {
@@ -355,12 +373,58 @@ class SalaryStructureController extends Controller
         return response()->json(['message' => 'Salary structure removed.']);
     }
 
+    /**
+     * Who may READ or WRITE salary structures.
+     *
+     * This controller had NO permission gate at all — every other payroll
+     * controller carries one, and the routes only ever applied `auth:sanctum`.
+     * Any authenticated user in the tenant could therefore:
+     *
+     *   · GET /salary-structures            — read every colleague's full
+     *     salary breakup for the whole client;
+     *   · GET /salary-structures/employees  — pull the entire salary roster;
+     *   · POST /salary-structures           — write a structure for ANY
+     *     employee, including themselves. store() also writes back to the
+     *     employee record (annual_salary, pf_eligible, esi_applicable) and
+     *     immediately recomputes every non-locked payslip, so the change landed
+     *     in payroll without anyone approving it. The breakup-vs-annual-salary
+     *     check bounds the TOTAL, but not the split, and not the PF/ESI/PT
+     *     applicability flags — switching those off is a self-service cut to
+     *     one's own statutory deductions. An employee with no configured
+     *     annual_salary is not bounded at all, because that check only runs
+     *     when one is on file.
+     *
+     * Mirrors PayrollAdjustmentController::canManage() so the two payroll
+     * write surfaces answer the question the same way.
+     */
+    private function canManage(Request $request): bool
+    {
+        $user = $request->user();
+        if (!$user) return false;
+        if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
+        // The employee tier never manages salary, whatever else is granted.
+        if ($user->user_type === 'employee') return false;
+        $perm = $user->permissions['hr.payroll'] ?? null;
+        return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));
+    }
+
+    /** 403 response when the caller may not manage salary, else null. */
+    private function denyUnlessManager(Request $request, string $verb)
+    {
+        return $this->canManage($request)
+            ? null
+            : response()->json(['message' => "You are not allowed to {$verb} salary structures."], 403);
+    }
+
     private function findScoped(Request $request, int $id): ?SalaryStructure
     {
         $user = $request->user();
         $s = SalaryStructure::find($id);
         if (!$s) return null;
-        if ($user && $user->client_id && $s->client_id && (int) $s->client_id !== (int) $user->client_id) {
+        /* Strict tenant match. A structure with a NULL client_id must not pass
+         * for a scoped caller — the same null-bypass that was closed in
+         * PayrollController::ownsRow and findRun. */
+        if ($user && $user->client_id && (int) $s->client_id !== (int) $user->client_id) {
             return null;
         }
         return $s;
