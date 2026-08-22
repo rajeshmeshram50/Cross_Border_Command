@@ -220,7 +220,6 @@ class EmployeeController extends Controller
         // — the HR document-template generator filters its recipient list by
         // designation.level === template.role_type, so it must be selected.
         'designation:id,name,level',
-        'holidayGroup:id,name',
         // role_category / role_type are needed so role-aware pickers (e.g. the
         // Recruitment "Assigned HR" = HR-category only, "Hiring Manager" =
         // exclude HR/Intern) can filter employees by their primary role.
@@ -241,6 +240,10 @@ class EmployeeController extends Controller
         // Manager's designation so the picker can label them by role
         // (e.g. "Anushka Bakde (HOD)") instead of the generic "(Employee)".
         'reportingManager.designation:id,name',
+        /* The manager is a full Employee and carries the photo_url accessor.
+           Without its backing document eager-loaded that accessor falls back to
+           an employee_documents lookup per manager instance. */
+        'reportingManager.photoDocument:id,employee_id,document_key,file_path',
         // Fallback manager — populated when the picker selected a login User
         // (Client/Branch admin) instead of an Employee row. Only one of
         // reportingManager / reportingManagerUser is non-null per employee.
@@ -276,6 +279,24 @@ class EmployeeController extends Controller
         'previousEmployments:id,employee_id,company_name,job_title,start_date,end_date',
     ];
 
+    /**
+     * WITH plus the entries that cannot live in a const because they carry a
+     * closure. Every caller of the full payload goes through this.
+     */
+    private static function fullWith(): array
+    {
+        return array_merge(self::WITH, [
+            /* withCount, NOT HolidayGroup's two counting accessors. Those are in
+               its $appends, so each serialisation ran a COUNT on holidays and
+               another on employees — and a belongsTo eager-load hands the same
+               group instance to every employee pointing at it, so the list paid
+               both once per row. 34 of the 68 queries behind GET /employees
+               were exactly this. */
+            'holidayGroup' => fn ($q) => $q->select('id', 'name')
+                ->withCount(['holidays', 'employees']),
+        ]);
+    }
+
     /* ─────────────────────────────────────────────────────────────────
      *  LIST / SHOW / NEXT-CODE
      * ───────────────────────────────────────────────────────────────── */
@@ -295,7 +316,7 @@ class EmployeeController extends Controller
         $q = Employee::query()->withTrashed()->with(match (true) {
             $listView => self::LIST_WITH,
             $exitView => self::EXIT_WITH,
-            default   => self::WITH,
+            default   => self::fullWith(),
         });
         if ($listView) {
             $q->select(self::LIST_COLUMNS);
@@ -514,8 +535,6 @@ class EmployeeController extends Controller
     {
         foreach ($items as $row) {
             $row->mergeCasts(self::EXIT_DATE_CASTS);
-
-            $row->makeHidden('photoDocument');
 
             if ($row->relationLoaded('exit')) {
                 $row->getRelation('exit')?->mergeCasts(self::EXIT_ROW_DATE_CASTS);
@@ -1627,7 +1646,7 @@ class EmployeeController extends Controller
                 // employees to them and auto-grant the department permissions.
                 $this->applyHodOnboarding($employee, $auth?->id);
 
-                $employee->load(self::WITH);
+                $employee->load(self::fullWith());
 
                 /* Welcome email is intentionally NOT sent here. Step 1
                  * only captures basic identity — sending credentials
@@ -1838,7 +1857,7 @@ class EmployeeController extends Controller
             }
         });
 
-        $row->load(self::WITH);
+        $row->load(self::fullWith());
 
         // Payroll connection — if this edit touched a field the payroll engine
         // reads (salary / PF / gender / state / bank / joining / status), push
@@ -2053,7 +2072,7 @@ class EmployeeController extends Controller
             $row->user?->update(['status' => 'active']);
         });
 
-        $row->load(self::WITH);
+        $row->load(self::fullWith());
         return response()->json([
             'message'  => 'Employee re-enabled.',
             'employee' => $row,
@@ -2281,7 +2300,7 @@ class EmployeeController extends Controller
      *  must all be able to find it. */
     private function resolveRow(Request $request, int $id): Employee
     {
-        $q = Employee::query()->withTrashed()->with(self::WITH);
+        $q = Employee::query()->withTrashed()->with(self::fullWith());
         $this->applyScope($q, $request->user());
         return $q->findOrFail($id);
     }

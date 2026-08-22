@@ -193,7 +193,14 @@ class Employee extends Model
     /** Never ship the raw 128-d descriptor on list/detail responses.
      *  It's biometric data, ~1.5 KB per row, and the only legitimate
      *  reader is the auth flow which fetches it directly from the DB. */
-    protected $hidden = ['face_descriptor'];
+    /* face_descriptor: biometric data, ~1.5 KB per row, and the only legitimate
+       reader is the auth flow which fetches it from the DB directly.
+       photoDocument: eager-loaded on most payloads purely to feed the photo_url
+       accessor without an N+1 — nothing reads the document row itself, so it
+       ships as a duplicate of a field already present. Hidden by RELATION name,
+       which is what getArrayableRelations() filters on; the snake_case
+       'photo_document' it serialises to matches nothing. */
+    protected $hidden = ['face_descriptor', 'photoDocument'];
 
     protected $casts = [
         'date_of_birth'  => 'date',

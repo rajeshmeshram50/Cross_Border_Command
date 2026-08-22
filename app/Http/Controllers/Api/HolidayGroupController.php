@@ -28,7 +28,10 @@ class HolidayGroupController extends Controller
     {
         $this->authorizeAction($request, 'can_view');
 
-        $q = HolidayGroup::query()->with(['creator:id,name']);
+        /* withCount, or the two counting accessors in HolidayGroup::$appends
+           fire a COUNT each per group as the list serialises. */
+        $q = HolidayGroup::query()->with(['creator:id,name'])
+            ->withCount(['holidays', 'employees']);
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
         if ($search = $request->query('search')) {

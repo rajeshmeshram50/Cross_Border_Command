@@ -12,8 +12,14 @@ class HolidayGroup extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'client_id', 'branch_id', 'created_by', 'updated_by',
-        'code', 'name', 'description', 'status',
+        'client_id',
+        'branch_id',
+        'created_by',
+        'updated_by',
+        'code',
+        'name',
+        'description',
+        'status',
     ];
 
     protected $appends = ['holidays_count', 'employees_count'];
@@ -47,7 +53,7 @@ class HolidayGroup extends Model
     /** Number of holidays in this group — drives the count chip in the UI. */
     public function getHolidaysCountAttribute(): int
     {
-        return $this->holidays()->count();
+        return $this->resolveCount('holidays');
     }
 
     /**
@@ -58,6 +64,13 @@ class HolidayGroup extends Model
      */
     public function getEmployeesCountAttribute(): int
     {
-        return $this->employees()->count();
+        return $this->resolveCount('employees');
+    }
+    private function resolveCount(string $relation): int
+    {
+        $key = $relation . '_count';
+        if (array_key_exists($key, $this->attributes)) return (int) $this->attributes[$key];
+        if ($this->relationLoaded($relation)) return $this->{$relation}->count();
+        return $this->{$relation}()->count();
     }
 }
