@@ -104,7 +104,12 @@ class OnboardingController extends Controller
         // is using right now; trailing slash is stripped when composing.
         $url = $this->buildShortUrl($slug, $data['app_origin'] ?? null);
 
-        // Onboarding invite mail — gated by Settings → Notifications → newUser
+        /* Onboarding invite mail — gated by Settings → Notifications → newUser.
+           OnboardingInviteMail is ShouldQueue, so this hands the mail to the
+           queue and returns in milliseconds instead of holding the request
+           open for the whole SMTP conversation. What is caught here is now a
+           QUEUE failure, not a delivery failure — a send that fails at the
+           SMTP end surfaces in `failed_jobs`, not in this catch. */
         if (Settings::shouldSendMail('newUser')) try {
             // Use ?: (not ??) so an empty-string org_name also falls back —
             // otherwise the mail subject would dangle as "Complete your onboarding — ".
@@ -120,7 +125,7 @@ class OnboardingController extends Controller
                 $url,
             ));
         } catch (\Throwable $e) {
-            Log::warning('Onboarding invite mail failed', [
+            Log::warning('Onboarding invite mail could not be queued', [
                 'invite_id' => $invite->id,
                 'email'     => $invite->invitee_email,
                 'error'     => $e->getMessage(),

@@ -3,12 +3,26 @@
 namespace App\Mail;
 
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Mail\Mailable;
 use Illuminate\Mail\Mailables\Content;
 use Illuminate\Mail\Mailables\Envelope;
 use Illuminate\Queue\SerializesModels;
 
-class OnboardingInviteMail extends Mailable
+/**
+ * Queued deliberately.
+ *
+ * Sent inline, this mail put a full Gmail SMTP conversation inside the HTTP
+ * request — TCP, STARTTLS, AUTH, MAIL FROM / RCPT TO / DATA, each its own
+ * round trip — which is ~5s the admin spends staring at a spinner for work
+ * that has nothing to do with their response. The invite row is already
+ * committed by then; the mail is not something the caller needs to wait on.
+ *
+ * REQUIRES A RUNNING QUEUE WORKER (`php artisan queue:work`). Without one the
+ * job sits in the `jobs` table and the candidate never gets the link.
+ * See deploy/queue-supervisor.conf.
+ */
+class OnboardingInviteMail extends Mailable implements ShouldQueue
 {
     use Queueable, SerializesModels;
 
