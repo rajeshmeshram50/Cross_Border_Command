@@ -247,28 +247,55 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
                     <span className="att-today-badge-dot" />
                     {today.status}
                   </span>
-                  <Row className="g-2 mb-2">
-                    <Col xs={6}>
-                      <div className="ep-field-label">First In</div>
-                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_in_at)}</div>
-                    </Col>
-                    <Col xs={6}>
-                      <div className="ep-field-label">Last Out</div>
-                      <div className="ep-field-value font-monospace">{attFmtClock(today.check_out_at)}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Punches</div>
-                      <div className="ep-field-value">{today.punches_count}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Worked</div>
-                      <div className="ep-field-value">{attFmtHM(today.total_worked_seconds)}</div>
-                    </Col>
-                    <Col xs={4}>
-                      <div className="ep-field-label">Expected</div>
-                      <div className="ep-field-value">9h 00m</div>
-                    </Col>
-                  </Row>
+                  {/* QA #193 — the five figures were `ep-field-label` /
+                      `ep-field-value` pairs in a bare 6/6/4/4/4 grid: 11px
+                      labels, body-size values, no separation between them, and
+                      the two clock times sitting at exactly the same weight as
+                      the punch count. Nothing on the card told you what to read
+                      first.
+                      Now two ranks of tiles. IN and OUT are the headline pair
+                      and get the large monospace treatment; the three
+                      supporting figures sit smaller beneath, with Worked
+                      accented because it is the number this card exists to
+                      answer. */}
+                  <div className="att-today-tiles att-today-tiles--2 mb-2">
+                    <div className="att-today-tile att-today-tile--in">
+                      <div className="att-today-tile__label">
+                        <i className="ri-login-circle-line" /> First In
+                      </div>
+                      <div className="att-today-tile__value font-monospace">
+                        {attFmtClock(today.check_in_at)}
+                      </div>
+                    </div>
+                    <div className="att-today-tile att-today-tile--out">
+                      <div className="att-today-tile__label">
+                        <i className="ri-logout-circle-r-line" /> Last Out
+                      </div>
+                      <div className="att-today-tile__value font-monospace">
+                        {attFmtClock(today.check_out_at)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="att-today-tiles att-today-tiles--3">
+                    <div className="att-today-tile att-today-tile--sm">
+                      <div className="att-today-tile__label">Punches</div>
+                      <div className="att-today-tile__value att-today-tile__value--sm">
+                        {today.punches_count}
+                      </div>
+                    </div>
+                    <div className="att-today-tile att-today-tile--sm att-today-tile--worked">
+                      <div className="att-today-tile__label">Worked</div>
+                      <div className="att-today-tile__value att-today-tile__value--sm">
+                        {attFmtHM(today.total_worked_seconds)}
+                      </div>
+                    </div>
+                    <div className="att-today-tile att-today-tile--sm">
+                      <div className="att-today-tile__label">Expected</div>
+                      <div className="att-today-tile__value att-today-tile__value--sm att-today-tile__value--muted">
+                        9h 00m
+                      </div>
+                    </div>
+                  </div>
                 </>
               ) : (
                 <div className="text-center text-muted py-3 ep-fs-13">

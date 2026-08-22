@@ -892,14 +892,55 @@ class HrDocumentTemplateController extends Controller
      *  HrDocumentSignatureController::store() when freezing content_html at
      *  send time; preview/generate flows leave this false to render unsigned
      *  slots as empty strings. */
-    private function resolveTokens(string $html, array $ctx, bool $preserveSignerSlots = false): string
-    {
-        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx, $preserveSignerSlots) {
+    /**
+     * Tokens whose value is MARKUP THIS CONTROLLER BUILT and must therefore
+     * survive substitution unescaped.
+     *
+     * {{CompanyLogo}} resolves to an <img> tag assembled in
+     * buildTokenContext(). Escaping it printed the tag itself into the
+     * document — `<img src="https://…/logo.png" alt="Company logo" …/>` as
+     * visible body text on every downloaded, previewed and sent-for-signature
+     * copy, which is what the letterhead was supposed to be.
+     *
+     * The URL inside that tag is already htmlspecialchars'd where it is built,
+     * so nothing here is trusting an unescaped value — this only stops the
+     * markup being escaped a SECOND time.
+     *
+     * Deliberately a fixed allowlist, never "anything that looks like HTML".
+     * The list must only ever contain names whose value this class produces;
+     * see the $rawHtmlNames note on resolveTokens().
+     */
+    public const RAW_HTML_TOKENS = ['CompanyLogo'];
+
+    /**
+     * @param string[] $rawHtmlNames Tokens to substitute WITHOUT escaping.
+     *   Defaults to RAW_HTML_TOKENS. A caller that overlays operator-supplied
+     *   values onto $ctx must subtract those keys first — otherwise a custom
+     *   field a user happened to name CompanyLogo would be injected into the
+     *   document as live markup. HrDocumentSignatureController::store() does
+     *   exactly that, mirroring HrGeneratedDocumentController::
+     *   rawHtmlTokenNames().
+     */
+    private function resolveTokens(
+        string $html,
+        array $ctx,
+        bool $preserveSignerSlots = false,
+        array $rawHtmlNames = self::RAW_HTML_TOKENS,
+    ): string {
+        $rawSet = array_flip($rawHtmlNames);
+
+        return preg_replace_callback('/\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/', function ($m) use ($ctx, $preserveSignerSlots, $rawSet) {
             $key = $m[1];
             if ($preserveSignerSlots && preg_match('/^Signer\d+(Sign|Date)$/', $key)) {
                 return $m[0];
             }
-            return array_key_exists($key, $ctx) ? htmlspecialchars((string) $ctx[$key], ENT_QUOTES) : $m[0];
+            if (!array_key_exists($key, $ctx)) {
+                return $m[0];
+            }
+            if (isset($rawSet[$key])) {
+                return (string) $ctx[$key];
+            }
+            return htmlspecialchars((string) $ctx[$key], ENT_QUOTES);
         }, $html);
     }
 
@@ -976,6 +1017,139 @@ class HrDocumentTemplateController extends Controller
             $isTemp = true;
             return $tmp;
         } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Turn every <img> in the BODY html into one PhpWord can actually embed,
+     * and hand back the temp files created so the caller can clean up.
+     *
+     * Why this is needed at all: PhpWord's Html parser embeds an <img> only
+     * when its src resolves to a readable LOCAL file. Anything else — a
+     * /storage URL, an Azure blob URL — is dropped **silently**. Not rendered
+     * as a broken image, not left as text: the tag simply disappears, so the
+     * downloaded .docx came out with the letterhead missing and no error
+     * anywhere to explain it. The header logo never had this problem because
+     * it goes through resolveDocxLogo() and addImage() with a real path; the
+     * body went straight to Html::addHtml.
+     *
+     * Three sources, in order:
+     *   1. data: URI      — decode to a temp file.
+     *   2. public-disk    — previewDiskPath() + resolveDocxLogo(), which also
+     *                       pulls Azure blobs local and rasterises WEBP/SVG.
+     *   3. absolute URL   — fetch the bytes. This is the server's case: with
+     *                       FILESYSTEM_DISK=azure, file_url() returns a blob
+     *                       URL that previewDiskPath() deliberately gives up
+     *                       on, so without this the fix would work locally and
+     *                       silently fail in production — the worst shape a
+     *                       fix can have.
+     *
+     * An image that cannot be resolved is left exactly as it was, so it fails
+     * no worse than before.
+     *
+     * @param  string[]  $temps  filled with temp paths to unlink after save
+     */
+    private function localiseImagesForDocx(string $html, array &$temps): string
+    {
+        return preg_replace_callback(
+            '#<img\b([^>]*?)\bsrc=([\'"])(.*?)\2([^>]*?)/?>#i',
+            function (array $m) use (&$temps): string {
+                [$full, $pre, $q, $src, $post] = $m;
+                $src = trim($src);
+                if ($src === '') return $full;
+
+                $local = null;
+
+                if (str_starts_with($src, 'data:')) {
+                    $local = $this->tempFromDataUri($src);
+                } elseif ($path = $this->previewDiskPath($src)) {
+                    $local = $this->resolveDocxLogo($path);
+                } elseif (preg_match('#^https?://#i', $src)) {
+                    $local = $this->tempFromUrl($src);
+                }
+
+                if (!$local || !is_file($local)) return $full;
+
+                /* ONLY register files that genuinely live in the system temp
+                   directory.
+                   resolveDocxLogo() returns the REAL path on disk when the
+                   image is already a local PNG/JPG — it only makes a copy for
+                   Azure blobs and for WEBP/SVG conversions. Registering its
+                   return value unconditionally meant the cleanup loop below
+                   deleted the tenant's actual stored logo the first time
+                   anyone downloaded a DOCX, and every screen that renders that
+                   logo went blank. A leaked temp file is a cost; deleting a
+                   customer's uploaded file is data loss. */
+                if ($this->isTempPath($local)) {
+                    $temps[] = $local;
+                }
+
+                /* Backslashes are legal in a Windows path and illegal in the
+                   XML attribute PhpWord parses; forward slashes work on both
+                   platforms. */
+                $safe = htmlspecialchars(str_replace('\\', '/', $local), ENT_QUOTES);
+                return '<img' . $pre . 'src=' . $q . $safe . $q . $post . '/>';
+            },
+            $html,
+        ) ?? $html;
+    }
+
+    /**
+     * Is this path a scratch file we may delete?
+     *
+     * The guard on the cleanup loop, and the reason it is strict: the same
+     * helper hands back both throwaway copies and real stored files, and the
+     * two are indistinguishable by name. Anything not resolvably inside the
+     * system temp directory is treated as somebody's real file and left alone.
+     * realpath() on both sides so a symlinked or relative temp dir cannot slip
+     * a storage path past a string comparison.
+     */
+    private function isTempPath(string $path): bool
+    {
+        $tmpDir = realpath(sys_get_temp_dir());
+        $real   = realpath($path);
+        if ($tmpDir === false || $real === false) return false;
+
+        $norm = fn (string $p) => rtrim(str_replace('\\', '/', $p), '/') . '/';
+
+        return str_starts_with($norm($real), $norm($tmpDir));
+    }
+
+    /** data: URI → temp file, or null when it is not decodable image data. */
+    private function tempFromDataUri(string $src): ?string
+    {
+        if (!preg_match('#^data:image/([a-z0-9.+-]+);base64,(.*)$#i', $src, $m)) return null;
+        $bytes = base64_decode($m[2], true);
+        if ($bytes === false || $bytes === '') return null;
+        $ext = strtolower($m[1]) === 'jpeg' ? 'jpg' : strtolower($m[1]);
+        $tmp = tempnam(sys_get_temp_dir(), 'docximg_') . '.' . $ext;
+        return file_put_contents($tmp, $bytes) !== false ? $tmp : null;
+    }
+
+    /**
+     * Absolute URL → temp file. Used for blob-storage logos on the server.
+     * Any failure returns null and the <img> is left untouched — a letterhead
+     * is never worth failing a document download over.
+     */
+    private function tempFromUrl(string $src): ?string
+    {
+        try {
+            $res = \Illuminate\Support\Facades\Http::timeout(10)->get($src);
+            if (!$res->successful()) return null;
+            $bytes = $res->body();
+            if ($bytes === '') return null;
+
+            $ext = strtolower(pathinfo(parse_url($src, PHP_URL_PATH) ?: '', PATHINFO_EXTENSION));
+            if (!in_array($ext, ['png', 'jpg', 'jpeg', 'gif', 'bmp'], true)) $ext = 'png';
+
+            $tmp = tempnam(sys_get_temp_dir(), 'docximg_') . '.' . $ext;
+            return file_put_contents($tmp, $bytes) !== false ? $tmp : null;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('DOCX body image could not be fetched; leaving it out', [
+                'src'   => $src,
+                'error' => $e->getMessage(),
+            ]);
             return null;
         }
     }
@@ -1159,6 +1333,10 @@ class HrDocumentTemplateController extends Controller
         // follows. Self-close them before handing off.
         $html = preg_replace('/<br\s*>/i',  '<br/>',  $html);
         $html = preg_replace('/<hr\s*>/i',  '<hr/>',  $html);
+        /* Point every body <img> at a local file BEFORE self-closing them —
+           PhpWord drops any it cannot read off disk, silently. */
+        $imgTemps = [];
+        $html = $this->localiseImagesForDocx($html, $imgTemps);
         $html = preg_replace('/<img([^>]*[^\/])>/i', '<img$1/>', $html);
         $wrapped = '<html><body>' . $html . '</body></html>';
         try {
@@ -1170,6 +1348,13 @@ class HrDocumentTemplateController extends Controller
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $tmp = tempnam(sys_get_temp_dir(), 'tpl_') . '.docx';
         $writer->save($tmp);
+        /* save() has copied the bytes into the archive by now, so the sources
+           can go. Left behind, one temp per image per download quietly fills
+           the system temp directory on a server that generates documents all
+           day. */
+        foreach ($imgTemps as $t) {
+            if (is_file($t)) @unlink($t);
+        }
         return $tmp;
     }
 

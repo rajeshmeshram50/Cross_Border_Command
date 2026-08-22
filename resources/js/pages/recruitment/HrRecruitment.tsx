@@ -356,66 +356,107 @@ export default function HrRecruitment() {
   const [candidateStats, setCandidateStats] = useState<CandidateStats>(ZERO_STATS);
   const [hiringRequests, setHiringRequests] = useState<HiringRequestRow[]>([]);
 
+  /* Paging, the status tab and search are the SERVER's job.
+     The page used to pull every recruitment and sort them into tabs in the
+     browser, which meant serialising the whole table on each load and grew
+     with the tenant. RecruitmentController::index answers one page and
+     ::stats answers the counts. */
+  const [page, setPage]       = useState(0);
+  const [total, setTotal]     = useState(0);
+  /* Starts at 10 — the value minAutoRows floors the auto-fit to, so the first
+     request and the post-measure request usually agree and no second fetch
+     goes out. Same pairing as Exit Management and HR Employees. */
+  const [perPage, setPerPage] = useState(10);
+
+  /* Typing is not a request. Without the debounce every letter fires a page-1
+     fetch and the answers arrive out of order. */
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  /* Roster-wide counts, fetched alongside the page. Search-aware so the tab
+     badges never contradict the rows beneath them; NOT tab-aware, since the
+     badges are the breakdown the tabs are cut from. */
+  const ZERO_REC_STATS = { total: 0, inProgress: 0, completed: 0, cancelled: 0, expired: 0, converted: 0 };
+  const [recStats, setRecStats] = useState(ZERO_REC_STATS);
+
   const fetchRecruitments = async () => {
     try {
-      const [listRes, statsRes, hrRes] = await Promise.all([
-        api.get('/recruitments'),
+      const [listRes, recStatsRes, statsRes, hrRes] = await Promise.all([
+        api.get('/recruitments', {
+          params: {
+            page: page + 1,          // the API counts from 1, DataTable from 0
+            per_page: perPage,
+            status: tab,
+            ...(debouncedQ ? { search: debouncedQ } : {}),
+          },
+        }),
+        api.get('/recruitments/stats', {
+          params: { ...(debouncedQ ? { search: debouncedQ } : {}) },
+        }).catch(() => ({ data: ZERO_REC_STATS })),
         api.get('/candidates/stats').catch(() => ({ data: ZERO_STATS })),
         api.get('/hiring-requests').catch(() => ({ data: [] })),
       ]);
-      const rows: any[] = Array.isArray(listRes.data) ? listRes.data : [];
+      /* Paginated now, so the rows arrive under .data with the envelope around
+         them. The Array.isArray fallback keeps this working if the request
+         ever goes out without page params. */
+      const body: any = listRes.data;
+      const rows: any[] = Array.isArray(body) ? body : (body?.data ?? []);
       setRecruitments(rows.map(apiToRow));
+      setTotal(Number(body?.total ?? rows.length));
+      setRecStats({ ...ZERO_REC_STATS, ...(recStatsRes.data || {}) });
       setCandidateStats({ ...ZERO_STATS, ...(statsRes.data || {}) });
       const hrRows: any[] = Array.isArray(hrRes.data) ? hrRes.data : [];
       setHiringRequests(hrRows.map(apiToHiringRequestRow));
     } catch (err: any) {
       toast.error('Could not load recruitments', err?.response?.data?.message || 'Please try again.');
       setRecruitments([]);
+      setTotal(0);
+      setRecStats(ZERO_REC_STATS);
       setCandidateStats(ZERO_STATS);
       setHiringRequests([]);
     } finally {
       setLoadingRecruitments(false);
     }
   };
-  useEffect(() => { fetchRecruitments();  }, []);
+  useEffect(() => { fetchRecruitments(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ },
+    [page, perPage, tab, debouncedQ]);
 
+  /* A narrowed result set can leave you past the last page — searching on
+     page 4 of 5 otherwise shows an empty table rather than the matches. */
+  useEffect(() => { setPage(0); }, [tab, debouncedQ]);
+
+  /* Counts come from /recruitments/stats, NOT from the rows on screen.
+     Deriving them from `recruitments` only worked while the endpoint returned
+     every row; against one page it would report "Total Recruitments 10" on a
+     tenant of 50. Hiring requests stay browser-side — that endpoint is
+     unpaginated and the list is short. */
   const counts = useMemo(() => {
-    const total = recruitments.length;
-    const inProgress = recruitments.filter(r => r.status === 'In Progress').length;
-    const completed  = recruitments.filter(r => r.status === 'Completed').length;
-    const cancelled  = recruitments.filter(r => r.status === 'Cancelled').length;
-    const expired    = recruitments.filter(r => r.status === 'Expired').length;
     const submittedRequests = hiringRequests.filter(r => r.status !== 'Draft').length;
-    const convertedRequestIds = new Set(
-      recruitments.map(r => r.hiringRequestId).filter((id): id is number => id != null),
-    );
 
     return {
-      total,
-      active:         inProgress,
+      total:          recStats.total,
+      active:         recStats.inProgress,
       hiringRequests: submittedRequests,
-      converted:      convertedRequestIds.size,
-      completed,
-      cancelled,
-      tabs: { 'In Progress': inProgress, Completed: completed, Cancelled: cancelled, Expired: expired },
+      converted:      recStats.converted,
+      completed:      recStats.completed,
+      cancelled:      recStats.cancelled,
+      tabs: {
+        'In Progress': recStats.inProgress,
+        Completed:     recStats.completed,
+        Cancelled:     recStats.cancelled,
+        Expired:       recStats.expired,
+      },
     };
-  }, [recruitments, candidateStats, hiringRequests]);
+  }, [recStats, hiringRequests]);
 
-  const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
-    return recruitments.filter(r => r.status === tab)
-      .filter(r => {
-        if (!needle) return true;
-        return (
-          String(r.id).toLowerCase().includes(needle) ||
-          (r.code || '').toLowerCase().includes(needle) ||
-          r.jobTitle.toLowerCase().includes(needle) ||
-          (r.department || '').toLowerCase().includes(needle) ||
-          (r.assignedHrName || '').toLowerCase().includes(needle) ||
-          (r.hiringManagerName || '').toLowerCase().includes(needle)
-        );
-      });
-  }, [recruitments, tab, q]);
+  /* The server already applied the status tab and the search, so the page it
+     returned IS the filtered set. Filtering again here would be a second,
+     narrower pass over one page — which is how a paginated list ends up
+     showing four rows out of a page of ten and calling it a match. */
+  const filtered = recruitments;
 
 
   const [createOpen, setCreateOpen]                 = useState(false);
@@ -669,6 +710,20 @@ export default function HrRecruitment() {
               minWidth={1800}
               fitToViewport
               autoFitRows
+              /* Floor the fit at 10 rows, matching Exit Management and HR
+                 Employees. minAutoRows defaults to 2, which on a short
+                 viewport served a two-row page. */
+              minAutoRows={10}
+              /* The rows are one page fetched by fetchRecruitments; the table
+                 stops slicing and reports page moves back here instead.
+                 onPageSizeChange covers autoFitRows re-measuring on resize as
+                 well as the rows-per-page picker. */
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               loading={loadingRecruitments}
               searchValue={q}
               onSearchChange={setQ}
@@ -1292,17 +1347,20 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
     let cancelled = false;
     (async () => {
       try {
-        const [reqRes, recRes] = await Promise.all([
+        const [reqRes, linkedRes] = await Promise.all([
           api.get('/hiring-requests'),
-          api.get('/recruitments').catch(() => ({ data: [] })),
+          /* Just the ids. This used to be a full GET /recruitments — every row
+             with every eager-loaded relation, 118 kB and ~1.8s, to build a Set
+             of integers the server can produce in one DISTINCT pluck. */
+          api.get('/recruitments/linked-hiring-requests').catch(() => ({ data: [] })),
         ]);
         if (cancelled) return;
         const rows: any[] = Array.isArray(reqRes.data) ? reqRes.data : [];
         setRequests(rows.map(apiToHiringRequestRow).filter(r => r.status !== 'Draft'));
-        const recs: any[] = Array.isArray(recRes.data) ? recRes.data : [];
+        const linked: any[] = Array.isArray(linkedRes.data) ? linkedRes.data : [];
         const ids = new Set<number>();
-        for (const r of recs) {
-          const id = Number(r?.hiring_request_id);
+        for (const v of linked) {
+          const id = Number(v);
           if (id) ids.add(id);
         }
         setLinkedHrIds(ids);
@@ -1538,7 +1596,12 @@ export function HiringRequestsListModal({ isOpen, onClose, onCreateRecruitment, 
           serial={{ width: 52 }}
           accent="violet"
           minWidth={1150}
-          pageSize={8}
+          /* 10, the same page size as HR Employees, Exit Management and the
+             Recruitment list behind this modal. Still a FIXED size rather than
+             autoFitRows — auto-fit measures from the card top to the viewport
+             bottom, which inside a modal body asks for more rows than the
+             modal can show. */
+          pageSize={10}
           disableSorting
           searchValue={q}
           onSearchChange={setQ}

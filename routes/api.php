@@ -745,6 +745,13 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/previous-employments/{prev}',               [PreviousEmploymentController::class, 'destroy']);
 
     Route::get   ('/recruitments/next-code', [RecruitmentController::class, 'nextCode']);
+    /* Roster-wide KPI tiles + tab badges. Declared BEFORE the apiResource so
+       'stats' is not swallowed by /recruitments/{recruitment}. */
+    Route::get   ('/recruitments/stats',     [RecruitmentController::class, 'stats']);
+    /* Ids of hiring requests already converted — the Hiring Requests modal's
+       Pending / Created split. Its own route so the modal stops downloading
+       the whole recruitments list to pluck one column. */
+    Route::get   ('/recruitments/linked-hiring-requests', [RecruitmentController::class, 'linkedHiringRequests']);
     Route::apiResource('recruitments', RecruitmentController::class);
 
    

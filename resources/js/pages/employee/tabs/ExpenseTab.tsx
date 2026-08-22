@@ -7,6 +7,7 @@ import WorklistPager from '../../../components/ui/WorklistPager';
 import DraftListView from './DraftListView';
 import { useToast } from '../../../contexts/ToastContext';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { ShimmerStatCards, ShimmerTable } from '../../../components/ui/Shimmer';
 import { draftFilesKey, deleteDraftFiles } from '../../../utils/draftFileStore';
 
 type ExpenseFilter = 'all' | 'approved' | 'rejected' | 'pending' | 'draft';
@@ -70,6 +71,21 @@ export default function ExpenseTab() {
   const pageStart   = (safePage - 1) * pageSize;
   const visibleAdvances = filteredAdvances.slice(pageStart, pageStart + pageSize);
   const visibleExpenses = filteredExpenses.slice(pageStart, pageStart + pageSize);
+
+  /* QA #191 — skeleton while claims/advances load.
+     The tab used to render its KPI band and an empty table immediately, so
+     "nothing has arrived yet" and "you have no expenses" looked identical.
+     Keyed to whichever list the active sub-tab is showing, so switching
+     between Expense and Advance shows the skeleton for the one being
+     fetched. Placed after every hook above. */
+  if (isAdvance ? loadingAdvances : loadingClaims) {
+    return (
+      <div className="d-flex flex-column gap-3">
+        <ShimmerStatCards count={4} />
+        <ShimmerTable rows={6} cols={7} />
+      </div>
+    );
+  }
 
   return (
       <>

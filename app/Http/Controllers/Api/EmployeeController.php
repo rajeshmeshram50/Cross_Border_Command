@@ -855,14 +855,34 @@ class EmployeeController extends Controller
             'bank_name'           => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
             // PAN-style account numbers can include letters (NRE/NRO), so we
             // don't enforce digits-only — same rule as the onboarding wizard.
-            'bank_account_number' => 'nullable|string|max:30',
+            /* QA #187 — 8 to 18 digits, nothing else.
+               This replaces an earlier "account numbers can include letters
+               (e.g. NRE/NRO)" exemption. NRE and NRO name an account TYPE, not
+               an alphanumeric format: Indian bank account numbers are numeric,
+               and all 425 accounts on file already satisfy this, so the
+               exemption was protecting a case that does not exist while
+               letting "1234@#$%" through. */
+            'bank_account_number' => ['nullable', 'string', 'regex:/^\d{8,18}$/'],
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
             'ifsc_code'           => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
             'account_holder_name' => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
-            'bank_branch'         => 'nullable|string|max:150',
+            /* QA #186 — the branch was the one bank field with no shape rule,
+               so "@#$%^" saved happily next to a bank name and account holder
+               that both refuse anything but letters.
+               NOT letters-only like those two, though: real branch names carry
+               digits and punctuation — "Sector 17", "M.G. Road", "Andheri
+               (East)", "Nagar Road & Kalyani", "Branch No. 2". Rejecting those
+               would swap a validation gap for a validation obstacle. The
+               lookahead demands at least one letter, so "123" and "---" are
+               still refused. */
+            'bank_branch'         => ['nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
             'bank_account_type'   => 'nullable|string|max:30',
         ], [
             'ifsc_code.regex' => 'Enter a valid IFSC code (e.g. HDFC0001234).',
+            'bank_account_number.regex' => 'Account Number must be 8 to 18 digits, with no spaces or symbols.',
+            // Names what IS allowed, not just what failed — "invalid format"
+            // leaves the user guessing which character to remove.
+            'bank_branch.regex' => 'Branch can contain letters, numbers, spaces and . , - / ( ) & only.',
         ]);
 
         // Store IFSC uppercased, the way the onboarding wizard persists it.
@@ -3036,13 +3056,18 @@ class EmployeeController extends Controller
             // Stage 4 — Payroll & Finance Setup
             'salary_payment_mode'   => 'nullable|in:bank,cheque,cash',
             'bank_name'             => 'nullable|string|max:150',
-            // PAN-style account number can include letters (e.g. NRE/NRO),
-            // so we don't enforce digits-only.
-            'bank_account_number'   => 'nullable|string|max:30',
+            // QA #187 — 8 to 18 digits. Same rule as updateBankDetails(); this
+            // form writes the same column, so a rule on only one of the two is
+            // not a rule. (Replaces the old NRE/NRO letters exemption — see the
+            // note there.)
+            'bank_account_number'   => ['nullable', 'string', 'regex:/^\d{8,18}$/'],
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
             'ifsc_code'             => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
             'account_holder_name'   => 'nullable|string|max:150',
-            'bank_branch'           => 'nullable|string|max:150',
+            // QA #186 — same rule as updateBankDetails(). Applied here too
+            // because the main employee form writes the very same column, and
+            // a rule enforced on only one of two doors is not enforced.
+            'bank_branch'           => ['nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
             'bank_account_type'     => 'nullable|string|max:30',
             // UAN: exactly 12 digits when present.
             'uan_number'            => 'nullable|string|regex:/^\d{12}$/',
@@ -3090,6 +3115,10 @@ class EmployeeController extends Controller
             'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
             'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
             'location.not_regex'           => 'Location cannot contain < or > characters.',
+            // Same wording as updateBankDetails so the field reads identically
+            // whichever form the user reached it through (QA #186).
+            'bank_branch.regex'            => 'Branch can contain letters, numbers, spaces and . , - / ( ) & only.',
+            'bank_account_number.regex'    => 'Account Number must be 8 to 18 digits, with no spaces or symbols.',
             // Email is the login ID and is unique system-wide (across every
             // branch/client) — it can't be branch-scoped without making login
             // ambiguous. Spell that out so an admin who can only see their own

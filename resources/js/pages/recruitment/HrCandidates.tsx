@@ -530,6 +530,10 @@ export default function HrCandidates() {
               minWidth={1500}
               fitToViewport
               autoFitRows
+              /* Floor the fit at 10 rows, matching Exit Management and HR
+                 Employees. minAutoRows defaults to 2, which on a short
+                 viewport served a two-row page. */
+              minAutoRows={10}
               loading={loading}
               searchValue={search}
               onSearchChange={setSearch}

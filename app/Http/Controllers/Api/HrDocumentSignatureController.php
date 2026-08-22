@@ -330,7 +330,21 @@ class HrDocumentSignatureController extends Controller
                     $ctx[(string) $k] = (string) $v;
                 }
             }
-            $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx, true);
+            /* {{CompanyLogo}} resolves to an <img> the template controller
+               built, so it must NOT be escaped — escaping it froze the literal
+               tag into content_html as body text, and because this copy is
+               frozen at send time the tag then appeared on the signing screen,
+               the signed PDF and the download alike.
+
+               Any token the operator supplied a value for is struck off the
+               raw list first: a custom field someone named CompanyLogo would
+               otherwise be written into the document as live markup. Same
+               guard as HrGeneratedDocumentController::rawHtmlTokenNames(). */
+            $rawHtmlNames = array_values(array_diff(
+                HrDocumentTemplateController::RAW_HTML_TOKENS,
+                array_keys($customValues),
+            ));
+            $frozenHtml = $resolve->invoke($hrTplController, (string) $tpl->content_html, $ctx, true, $rawHtmlNames);
 
             $row = HrDocumentSignature::create([
                 'client_id'      => $emp->client_id,
