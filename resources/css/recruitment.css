@@ -8569,6 +8569,54 @@
   background: rgba(var(--atl-a-rgb), 0.12);
 }
 
+/* Requested / original punches — one chip per punch pair.
+   A correction that splits the day into nine slots used to render as a single
+   nowrap comma-list, which stretched the column until Reason, Status and
+   Action were shoved off the right edge of the table (CBC #77). Chips wrap
+   inside a bounded column instead, and anything past the first few sits behind
+   a "+N more" toggle. */
+.reg-punch-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; }
+.reg-punch-chip {
+  display: inline-flex; align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--atl-a-rgb), 0.22);
+  background: color-mix(in srgb, var(--atl-a-50) 70%, #ffffff);
+  color: var(--atl-a-700);
+  font-size: 11px; font-weight: 600; line-height: 1.7;
+  white-space: nowrap;
+}
+.reg-punch-chip.is-muted {
+  border-color: var(--vz-border-color);
+  background: var(--vz-light, #f5f6f8);
+  color: var(--vz-secondary-color, #6b7280);
+}
+.reg-punch-more {
+  border: 1px dashed rgba(var(--atl-a-rgb), 0.45);
+  background: transparent;
+  color: var(--atl-a-700);
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 10.5px; font-weight: 800; line-height: 1.8;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.reg-punch-more:hover { background: rgba(var(--atl-a-rgb), 0.10); }
+[data-bs-theme="dark"] .reg-punch-chip,
+[data-layout-mode="dark"] .reg-punch-chip {
+  background: rgba(var(--atl-a-rgb), 0.16);
+  border-color: rgba(var(--atl-a-rgb), 0.35);
+  color: #5eead4;
+}
+[data-bs-theme="dark"] .reg-punch-chip.is-muted,
+[data-layout-mode="dark"] .reg-punch-chip.is-muted {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.12);
+  color: var(--vz-secondary-color, #9ca3af);
+}
+[data-bs-theme="dark"] .reg-punch-more,
+[data-layout-mode="dark"] .reg-punch-more { color: #5eead4; }
+
 /* WorklistPager footer — retheme from the shared violet to this page's teal
    accent so the pager matches the rest of the (teal) Attendance UI instead of
    reading as a stray purple band. Scoped to .att-logs-card so the shared pager
@@ -9115,10 +9163,14 @@
 }
 .att-cal-cell.is-out { background: #fafafa; opacity: 0.5; }
 .att-cal-cell.is-future { background: #ffffff; opacity: 0.40; cursor: not-allowed; }
+/* Before the employee joined — same "not a day of theirs" treatment as a
+   future cell, so the month reads as blank there instead of absent (CBC #74). */
+.att-cal-cell.is-prejoin { background: #ffffff; opacity: 0.40; cursor: not-allowed; }
 .att-cal-cell.is-today { border-width: 2px; box-shadow: 0 2px 6px rgba(13,148,136,0.18); }
 .att-cal-cell:disabled { cursor: not-allowed; }
 [data-bs-theme="dark"] .att-cal-cell { background: var(--vz-card-bg); border-color: var(--vz-border-color); }
 [data-bs-theme="dark"] .att-cal-cell.is-out { background: rgba(255,255,255,0.02); }
+[data-bs-theme="dark"] .att-cal-cell.is-prejoin { background: rgba(255,255,255,0.02); }
 .att-cal-day { font-size: 12px; font-weight: 700; color: var(--vz-body-color); }
 [data-bs-theme="dark"] .att-cal-day { color: #ffffff; }
 .att-cal-cell.is-out .att-cal-day { color: #9ca3af; }

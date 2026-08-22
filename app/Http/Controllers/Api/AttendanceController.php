@@ -380,6 +380,9 @@ class AttendanceController extends Controller
                 'face_registered' => !empty($emp->face_descriptor) && $emp->face_registered_at !== null,
                 'shift_start'     => $shiftStart,
                 'shift_end'       => $shiftEnd,
+                // Calendar cells before this date are not attendance days
+                // (CBC #74) — the SPA needs the date to blank them out.
+                'date_of_joining' => $this->joiningIso($emp),
             ],
             'month' => $monthQ,
             'stats' => [
@@ -407,8 +410,10 @@ class AttendanceController extends Controller
                 $start->toDateString(),
                 $end->toDateString(),
                 $empHolidaySet,
-                $leaveDaySet
+                $leaveDaySet,
+                $this->joiningIso($emp)
             ),
+            'date_of_joining'  => $this->joiningIso($emp),
         ]);
     }
 
@@ -756,7 +761,18 @@ class AttendanceController extends Controller
             $todayPunches = $today ? $today->punches->sortBy('punched_at')->values() : collect();
 
             // Determine status for the selected date.
+            $joinIso     = $this->joiningIso($emp);
             $statusToday = $this->resolveDayStatus($today, $isWeeklyOff, $shiftStart, $date);
+            /* Selected date sits BEFORE this employee joined → the day is out of
+               scope for them, not an absence. Reading it as "Absent" put people
+               in the Absent tab and the Absent KPI for months they had not been
+               hired in (CBC #74). A stored row still wins — if a punch really
+               exists on a pre-joining date, HR needs to see it, not a label
+               that hides it. Weekly-off is deliberately overridden too: a
+               Sunday before joining is not this employee's weekly off yet. */
+            if ($joinIso !== null && $date < $joinIso && !$today) {
+                $statusToday = 'Not Joined';
+            }
             // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
@@ -891,7 +907,8 @@ class AttendanceController extends Controller
                 $logs  = $this->buildHistoryLogs(
                     $hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffLabel, $histStart, $histEnd,
                     $holidayByGroupLog[$emp->holiday_group_id] ?? [],
-                    $leaveLogByEmp[$emp->id] ?? []
+                    $leaveLogByEmp[$emp->id] ?? [],
+                    $joinIso
                 );
             }
 
@@ -904,6 +921,9 @@ class AttendanceController extends Controller
                 'department'        => $emp->department?->name ?? '—',
                 'designation'       => $emp->designation?->name ?? '—',
                 'managerName'       => $this->managerDisplayName($emp),
+                // Lets the SPA blank out calendar cells before the employee
+                // joined instead of painting them as attendance days (CBC #74).
+                'dateOfJoining'     => $joinIso,
                 // Default office hours fall back to 09:30 – 18:30 (9 h
                 // working window). Employees with a parseable shift string
                 // like "General (09:00 – 18:00)" override this — handled
@@ -1084,6 +1104,22 @@ class AttendanceController extends Controller
      * ever read the employee link, so every employee reporting to a branch user
      * showed "—" here even though the manager was assigned (CBC #75).
      */
+    /**
+     * The employee's joining date as a Y-m-d string, or null when unset.
+     *
+     * Nothing before this date is an attendance day at all: the person was not
+     * on the payroll, so those days are neither Present nor Absent — they are
+     * out of scope. facePunch() has refused pre-joining punches since bug #19;
+     * the READ paths never learned the same rule and kept synthesising "Absent"
+     * rows for them (CBC #74).
+     */
+    private function joiningIso(Employee $emp): ?string
+    {
+        return $emp->date_of_joining
+            ? \Carbon\Carbon::parse($emp->date_of_joining)->toDateString()
+            : null;
+    }
+
     private function managerDisplayName(Employee $emp): string
     {
         $mgr  = $emp->reportingManager;
@@ -1141,7 +1177,7 @@ class AttendanceController extends Controller
     }
 
   
-    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, ?string $weeklyOffLabel, string $from, string $to, array $holidaySet = [], array $leaveDaySet = []): array
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, ?string $weeklyOffLabel, string $from, string $to, array $holidaySet = [], array $leaveDaySet = [], ?string $joinIso = null): array
     {
         // Index real Attendance rows by ISO date for O(1) lookup as we
         // walk through the window day-by-day.
@@ -1172,6 +1208,14 @@ class AttendanceController extends Controller
             // come. The calendar flags future cells on its own, so hiding them
             // from the log list is safe.
             if ($iso > $todayLocal) { $cursor->subDay(); continue; }
+            /* Days BEFORE the employee joined are not attendance days either —
+               same reasoning as future days, from the other end of the window.
+               The employee did not exist to the company yet, so synthesising an
+               "Absent" row for them was wrong on the log, wrong on the calendar
+               and wrong in every count derived from either (CBC #74). A real
+               punch row somehow dated before joining is still emitted rather
+               than hidden — that is a data problem HR needs to see. */
+            if ($joinIso !== null && $iso < $joinIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
             $r   = $byIso[$iso] ?? null;
             $isWO = \App\Support\WeekOff::isOff($weeklyOffLabel, $cursor);
             $isHoliday = isset($holidaySet[$iso]);

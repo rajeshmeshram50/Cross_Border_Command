@@ -179,6 +179,8 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     shiftEnd:   data.shift_end   || data.employee.shift_end   || '18:30',
     weeklyOff:  data.weekly_off || '',
     logs:       data.logs || [],
+    // Blanks out calendar cells from before the employee joined (CBC #74).
+    dateOfJoining: data.date_of_joining || data.employee?.date_of_joining || null,
   } : null;
   const recForIso = (iso: string): AttendancePanelRecord | null => {
     if (today && today.attendance_date.slice(0, 10) === iso) return today;
