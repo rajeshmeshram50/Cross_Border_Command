@@ -62,12 +62,22 @@ class DevToolsProfileTargets
                         'key' => 'list', 'label' => 'List view',
                         'component' => 'resources/js/pages/hrms/HrEmployees.tsx',
                         'actions' => [
+                            /* These have to be the parameters HrEmployees.tsx really
+                               sends. `list_view=1` was not one of them — the controller
+                               reads ?view=, so the profiler was measuring the full
+                               untrimmed payload (417 rows, 1.6 MB, 68 queries) and
+                               calling it the list view, which no user has ever loaded. */
                             ['key' => 'load', 'label' => 'Open page', 'kind' => 'read', 'requests' => array_merge(
-                                [$r('/employees?list_view=1', 'Employee list')], $masters,
+                                [
+                                    $r('/employees?view=list&page=1&per_page=10', 'Employee list'),
+                                    $r('/employees/stats', 'KPI cards + tab badges'),
+                                ], $masters,
                             )],
                             ['key' => 'search', 'label' => 'Search / filter', 'kind' => 'read', 'requests' => [
-                                $r('/employees?list_view=1&search=a', 'Search "a"'),
-                                $r('/employees?list_view=1&status=active', 'Filter: active'),
+                                $r('/employees?view=list&page=1&per_page=10&search=a', 'Search "a"'),
+                                $r('/employees/stats?search=a', 'Counts for that search'),
+                                // The Active/Disabled tab is ?enabled=, not ?status=.
+                                $r('/employees?view=list&page=1&per_page=10&enabled=1', 'Tab: active'),
                             ]],
                             ['key' => 'detail', 'label' => 'Open a row', 'kind' => 'read', 'requests' => array_values(array_filter([
                                 $empId ? $r("/employees/{$empId}", 'Employee detail') : null,
@@ -160,7 +170,11 @@ class DevToolsProfileTargets
                     'component' => 'resources/js/pages/employee-onboarding/HrEmployeeOnboarding.tsx',
                     'actions' => [['key' => 'load', 'label' => 'Open page', 'kind' => 'read', 'requests' => [
                         $r('/onboarding-invites', 'Onboarding invites'),
-                        $r('/employees?list_view=1', 'Employee list'),
+                        /* Genuinely unfiltered — HrEmployeeOnboarding.tsx calls
+                           api.get('/employees') with no view, so this really is the
+                           full payload for every employee. It is the heaviest read
+                           left in HR and the obvious next candidate for a ?view=. */
+                        $r('/employees', 'Employee list (FULL payload)'),
                     ]]],
                 ]],
             ],
@@ -171,7 +185,8 @@ class DevToolsProfileTargets
                     'component' => 'resources/js/pages/hrms/HrExitManagement.tsx',
                     'actions' => array_values(array_filter([
                         ['key' => 'load', 'label' => 'Open page', 'kind' => 'read', 'requests' => [
-                            $r('/employees?list_view=1', 'Employee list'),
+                            $r('/employees?view=exit&page=1&per_page=10&exit_status=active', 'Employee list'),
+                            $r('/employees/exit-stats', 'KPI cards + tab badges'),
                         ]],
                         $empId ? ['key' => 'case', 'label' => 'Open an exit case', 'kind' => 'read', 'requests' => [
                             $r("/employees/{$empId}/exit", 'Exit case'),

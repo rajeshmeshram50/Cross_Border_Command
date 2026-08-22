@@ -66,14 +66,9 @@ class ExitController extends Controller
      */
     private function employeeIdsExiting(?int $clientId): array
     {
-        return EmployeeExit::query()
-            ->when($clientId !== null, fn($q) => $q->where('client_id', $clientId))
-            ->whereNotNull('exit_type')
-            ->where('exit_case_status', 'Open')
-            ->whereNull('rehired_at')
-            ->pluck('employee_id')
-            ->map(fn($v) => (int) $v)
-            ->all();
+        // Payroll and Salary Setup gate on the same set — the definition lives in
+        // one place so the three screens cannot drift apart again.
+        return \App\Support\ExitInProgress::employeeIds($clientId);
     }
 
     /**
@@ -129,9 +124,9 @@ class ExitController extends Controller
                current one, with no way to clear it from this screen. Only the
                finished half: an exit still Open means the person is on the
                books today and their reporting line still has to go somewhere. */
-            ->whereDoesntHave('exit', fn ($q) => $q
+            ->whereDoesntHave('exit', fn($q) => $q
                 ->whereNull('rehired_at')
-                ->where(fn ($w) => $w
+                ->where(fn($w) => $w
                     ->where('exit_case_status', 'Closed')
                     ->orWhere('final_employee_status', 'Exited')))
             ->with(['department:id,name', 'designation:id,name'])
@@ -550,6 +545,19 @@ class ExitController extends Controller
 
         $reports = $this->activeDirectReports($employee);
 
+        if ($request->boolean('count_only')) {
+            return response()->json([
+                'employee_id' => $employee->id,
+                'reports'     => $reports->map(fn($e) => [
+                    'id'       => $e->id,
+                    'name'     => $e->display_name ?: trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')),
+                    'emp_code' => $e->emp_code,
+                ])->values(),
+                'managers'    => [],
+                'login_users' => [],
+            ]);
+        }
+
         /* Replacement pool — active employees of the same client, minus the
            person being exited. Deliberately NOT filtered by branch: an HOD's
            reports may need to move to a manager in another branch when the
@@ -580,9 +588,9 @@ class ExitController extends Controller
              * A REHIRED exit is spent history: the person is active staff
              * again, so `rehired_at` takes the row out of consideration. Same
              * rule as EmployeeController::managers(). */
-            ->whereDoesntHave('exit', fn ($q) => $q
+            ->whereDoesntHave('exit', fn($q) => $q
                 ->whereNull('rehired_at')
-                ->where(fn ($w) => $w
+                ->where(fn($w) => $w
                     ->where('exit_case_status', 'Closed')
                     ->orWhere('final_employee_status', 'Exited')))
             /* FULLY ONBOARDED ONLY — the same gate the employee master's

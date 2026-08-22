@@ -7,18 +7,14 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import DocGenerateModal from './doc-templates/DocGenerateModal';
 import ReportingManagerDependencyModal from './exit/ReportingManagerDependencyModal';
 import { isOnProbation, probationEndLabel, isEarlyResignation, tenureDays, EARLY_EXIT_DAYS } from '../../utils/probation';
-/* Every file URL on this page goes through resolveFileUrl, like the rest of the
-   app. The API returns Storage::url() paths — bare "/storage/…" strings — which
-   a browser resolves against the SPA's own origin, not the API's. Wherever those
-   differ (Vite dev server vs. artisan serve, or a split host in production) the
-   link 404s. resolveFileUrl re-bases them on VITE_API_URL and leaves absolute
-   Azure/CDN URLs alone. */
+
 import { resolveFileUrl } from '../../utils/resolveFileUrl';
 import '../../../css/recruitment.css';
 
@@ -51,32 +47,16 @@ interface EmployeeRow {
   managerAccent: string;
   exitReadiness: number;
   status: ExitStatus;
-  /** Switched off in HR > Employees (soft-deleted, login dead). Independent of
-   *  the exit status — a disabled employee may still have an exit in progress,
-   *  in which case they show in BOTH lists. */
   disabled: boolean;
   exitInitiated: boolean;
-  /** Exit type already on file, if any. Empty means the type question hasn't
-   *  been answered yet — so even "Continue" has to go through the picker,
-   *  since the wizard's stage list is derived from it. */
   exitType: string;
   noticeStartIso: string;
-  /** Last working day on the exit — the fallback "as at" date for probation. */
   lastWorkingIso: string;
-  /** Whether the employee was blacklisted as part of the exit case */
   blacklisted?: boolean;
-  // Notice period set on the employee at hire (e.g. "30 Days" + 30). Used to
-  // auto-derive the Notice Period End Date in the exit form.
   noticePeriodDays: number | null;
   noticePeriodLabel: string;
-  /** Monthly BASIC (annual ÷ 12 × 50%) when the list payload carries it — the
-   *  basis the notice-period settlement is priced on. HR can override it. */
   monthlySalary: number | null;
-  // Probation end date. While it's in the future the notice period does NOT
-  // apply — the exit is immediate (see ProbationGuard on the backend).
   probationEndIso: string | null;
-  // Joining date. Resigning within 15 days of it also waives the notice period
-  // (and keeps the employee out of payroll) — see ProbationGuard::EARLY_EXIT_DAYS.
   dateOfJoiningIso: string | null;
   laptopAsset:  AssetMini | null;
   mobileAsset:  AssetMini | null;
@@ -98,24 +78,19 @@ interface ChecklistStage {
   items: ChecklistItem[];
 }
 
+/** Rows-per-page this viewport settled on, remembered per browser. */
+const PER_PAGE_KEY = 'cbc.hr.exit.perPage';
+
 export default function HrExitManagement() {
   const toast = useToast();
   const { user } = useAuth();
-  /* NOBODY RUNS THEIR OWN EXIT. Exit Management access is module-wide, so an HR
-     executive who can process every colleague's exit could equally open their
-     own case — and that case decides their notice recovery, their Full & Final
-     figures, whether they are blacklisted and whether they stay rehireable.
-     Someone else with the same access has to run it. Mirrored server-side by
-     ExitController::guardNotSelf() so a direct API call is refused too. */
   const selfEmployeeId = user?.employee_id ?? null;
   const selfEmployeeCode = (user?.employee_code ?? '').trim().toLowerCase();
   const isSelf = useCallback((e: EmployeeRow) => (
     (selfEmployeeId != null && Number(e.id) === Number(selfEmployeeId))
     || (!!selfEmployeeCode && e.empId.trim().toLowerCase() === selfEmployeeCode)
   ), [selfEmployeeId, selfEmployeeCode]);
-  /* Per-action grants for Exit Management. Initiating a case is an ADD (a new
-     exit record); continuing / rehiring edits one. View-only therefore reads
-     the list and opens the evidence vault, and nothing else. */
+ 
   const perm = useModulePermission('hr.exit', 'exit records');
 
   const SELF_EXIT_MSG = 'You cannot run your own exit process. Ask another user with Exit Management access to process your exit.';
@@ -134,8 +109,29 @@ export default function HrExitManagement() {
      rows, and it grew with the tenant. The server derives the same statuses in
      SQL (EmployeeController::sqlExited & friends) and answers one page. */
   const [page, setPage]       = useState(0);
-  const [perPage, setPerPage] = useState(25);
   const [total, setTotal]     = useState(0);
+  /* ROWS PER PAGE — why the STARTING value matters.
+     <DataTable autoFitRows> measures the viewport only after `loading` drops,
+     i.e. after the first fetch has already gone out, so that request always
+     uses whatever we start with. If the measurement then disagrees it reports a
+     new size and we fetch again — which is why the network tab showed
+     per_page=25 followed by per_page=2 for a single screen.
+     Starting at 10, the same value minAutoRows floors the fit to, means the
+     measurement usually agrees: setPerPage() is handed the number it already
+     holds, React bails out, and no second request happens. Zoom out far enough
+     to fit more rows and it does correct itself once, which is the point.
+     Remembered per browser so the next visit opens at the settled size. */
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;   // private mode / storage disabled
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
 
   /* Typing is not a request. Without this every letter fires a page-1 fetch and
      the answers arrive out of order — the response for "nai" landing after the
@@ -155,6 +151,11 @@ export default function HrExitManagement() {
      whole roster, not the page — counting the 25 rows on screen would report
      "Total Employees 25" on a tenant of 500. */
   const [counts, setCounts] = useState({ total: 0, active: 0, inProgress: 0, exited: 0, missing: 0 });
+  /* The tiles shimmer on their OWN request, not the table's. They come from
+     /employees/exit-stats now, which lands independently of the list — tying
+     the shimmer to the list meant the cards showed a real-looking 0 until the
+     counts arrived, and then jumped. */
+  const [countsLoading, setCountsLoading] = useState(true);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [processing, setProcessing] = useState<EmployeeRow | null>(null);
   /* "Initiate Exit" opens the exit-TYPE picker first — the wizard is only
@@ -219,6 +220,7 @@ export default function HrExitManagement() {
   const countsReqRef = useRef(0);
   const loadCounts = useCallback(() => {
     const token = ++countsReqRef.current;
+    setCountsLoading(true);
     api.get('/employees/exit-stats', {
       params: debouncedSearch ? { search: debouncedSearch } : undefined,
     })
@@ -232,7 +234,8 @@ export default function HrExitManagement() {
           missing:    Number(data?.missing ?? 0),
         });
       })
-      .catch(() => { /* tiles keep their last good values */ });
+      .catch(() => { /* tiles keep their last good values */ })
+      .finally(() => { if (token === countsReqRef.current) setCountsLoading(false); });
   }, [debouncedSearch]);
   useEffect(() => { loadCounts(); }, [loadCounts]);
 
@@ -660,9 +663,9 @@ export default function HrExitManagement() {
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      {listLoading
+                      {countsLoading
                         ? <Shimmer height={28} width={56} style={{ marginTop: 4 }} />
-                        : <span className="rec-kpi-num">{k.value}</span>}
+                        : <span className="rec-kpi-num"><AnimatedNumber value={k.value} /></span>}
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />
@@ -698,11 +701,8 @@ export default function HrExitManagement() {
               loading={listLoading}
               searchValue={search}
               onSearchChange={setSearch}
-              searchPlaceholder="Search name, ID, department…"
-              /* One page at a time — see loadEmployees. `total` is the count
-                 for the CURRENT tab, which is what the pager's "x–y of z" and
-                 its arrows have to read; the tab badges come from the separate
-                 counts endpoint. */
+              searchPlaceholder="Search name, ID, designation, department…"
+              minAutoRows={10}
               serverPagination={{
                 total,
                 pageIndex: page,
@@ -1721,6 +1721,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     signers?: TplSigner[] | string | null;
     trigger_point?: { module_name?: string | null } | null;
   };
+  /* WHICH employee's exit record is in hand.
+     GET /employees/{id}/exit is the one request that fills the fields you can
+     actually see, so it has to go first. React fires effects in DECLARATION
+     order and the three document lookups below are declared above it, so they
+     were issued first; with six connections open against a slow API the exit
+     record landed last, at 7.5 s, and the form sat blank until then. Each of
+     the three now waits for this to match the employee on screen.
+     An id, not a boolean. On an employee change a "loading" flag would still
+     read false during the render that precedes /exit's own effect, and the
+     document effects — running earlier in that same pass — would fire anyway.
+     The previous id cannot match the new employee, so the gate holds. */
+  const [exitLoadedFor, setExitLoadedFor] = useState<number | null>(null);
+  const exitLoading = !employee || exitLoadedFor !== employee.id;
+
   const [exitTemplates, setExitTemplates] = useState<ExitTemplate[]>([]);
   const [exitTplLoading, setExitTplLoading] = useState(false);
   type ExitMatchMeta = {
@@ -1732,6 +1746,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const [exitMatchMeta, setExitMatchMeta] = useState<ExitMatchMeta | null>(null);
   useEffect(() => {
     if (!employee) { setExitTemplates([]); setExitMatchMeta(null); return; }
+    if (exitLoading) return;          // behind the exit record — see exitLoadedFor
     let cancelled = false;
     setExitTplLoading(true);
     api.get('/hr-document-templates/match', {
@@ -1750,7 +1765,7 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       .catch(() => { if (!cancelled) { setExitTemplates([]); setExitMatchMeta(null); } })
       .finally(() => { if (!cancelled) setExitTplLoading(false); });
     return () => { cancelled = true; };
-  }, [employee?.id]);
+  }, [employee?.id, exitLoading]);
 
   const toast = useToast();
   type SignerState = {
@@ -1780,8 +1795,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
   useEffect(() => {
     if (!employee) { setRuns([]); return; }
+    if (exitLoading) return;          // behind the exit record — see exitLoadedFor
     fetchRuns();
-  }, [employee?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id, exitLoading]);
   const runByTemplateId = useMemo(() => {
     const m = new Map<number, SignatureRun>();
     for (const r of runs) {
@@ -1804,8 +1821,10 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
   useEffect(() => {
     if (!employee) { setGeneratedTplIds(new Set()); return; }
+    if (exitLoading) return;          // behind the exit record — see exitLoadedFor
     fetchGenerated();
-  }, [employee?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee?.id, exitLoading]);
 
   const [previewOpen, setPreviewOpen]     = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -2100,8 +2119,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         // The type is answered BEFORE this modal opens (the list routes both
         // Initiate and Continue through the picker when it's missing), so the
         // wizard never has to pop a question over itself.
+
+        exitBaselineArmedRef.current = true;
       })
-      .catch(() => {  });
+      .catch(() => {  })
+      /* Opens the gate: the skeleton comes down and the document lookups,
+         the signature runs and the direct-report count all go out now.
+         In .finally so a failed load still releases them — a 500 here must not
+         leave the wizard stuck on a skeleton forever. */
+      .finally(() => { if (!cancelled) setExitLoadedFor(employee.id); });
     return () => { cancelled = true; };
   }, [employee?.id]);
 
@@ -2195,13 +2221,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lwdReached, lwd, reportingManagerDisabled, directReportCount, employee, assetReturns, exitTemplates, runByTemplateId, clearances, validation, hrSignOff, effSettleStatus, settlement, settle.amount, fnfMeta.approval, fnfPaid, fnfNothingToSettle, noSettlementDue, blacklistApplies, blacklisted, blacklistReason]);
 
-  /* Direct-report count, refreshed whenever the wizard opens and after each
+  /* Direct-report COUNT, refreshed whenever the wizard opens and after each
      reassignment. Loaded up-front rather than on the closure stage so the
      blocker appears in the pending list from the start — HR can clear it while
-     working through the earlier stages instead of discovering it at the gate. */
+     working through the earlier stages instead of discovering it at the gate.
+
+     count_only, because up-front is exactly where the full payload hurt: the
+     unfiltered call builds a replacement-manager pool out of every employee in
+     the tenant (~37 KB, seconds on a real roster) and this caller reads a single
+     number off it. The pool belongs to ReportingManagerDependencyModal, which
+     only mounts on the closure stage — so the expensive half now happens there
+     and nowhere else. */
   const loadDirectReports = useCallback(() => {
     if (!employee) return;
-    api.get(`/employees/${employee.id}/exit/direct-reports`)
+    api.get(`/employees/${employee.id}/exit/direct-reports`, { params: { count_only: 1 } })
       .then(({ data }) => setDirectReportCount(Array.isArray(data?.reports) ? data.reports.length : 0))
       .catch(() => setDirectReportCount(0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2209,7 +2242,11 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
 
   // Also clears the sitting's confirmation state — a different employee's exit
   // must not open showing the previous one's reassignments.
-  useEffect(() => { setRmReassigned(false); loadDirectReports(); }, [loadDirectReports]);
+  useEffect(() => {
+    setRmReassigned(false);
+    if (exitLoading) return;          // behind the exit record — see exitLoadedFor
+    loadDirectReports();
+  }, [loadDirectReports, exitLoading]);
 
   /* Payments the EMPLOYEE submitted from their own Payroll Details tab, loaded
      when the recovery stage is opened. MUST stay above the early return below —
@@ -2228,6 +2265,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   useEffect(() => {
     if (currentKey === 'notice_payment') loadEmployeePayments();
   }, [currentKey, loadEmployeePayments]);
+
+  const savedExitRef = useRef<Record<string, any> | null>(null);
+  const exitBaselineArmedRef = useRef(false);
+ 
+  const buildExitPayloadRef = useRef<() => Record<string, any>>(() => ({}));
+
+  useEffect(() => {
+    if (!exitBaselineArmedRef.current || exitLoading) return;
+    const t = setTimeout(() => {
+      savedExitRef.current = buildExitPayloadRef.current();
+      exitBaselineArmedRef.current = false;
+    }, 0);
+    return () => clearTimeout(t);
+  });
 
   if (!employee) return null;
 
@@ -2488,11 +2539,72 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                                 ...(fnf?.attachment ? { attachment: fnf.attachment } : {}) },
   });
 
+  buildExitPayloadRef.current = buildExitPayload;
+  /* What counts as "HR changed something on this stage" — and what does not.
+     Everything stripped here moves on its own, with nobody typing.
+
+     current_stage / stage_status are wizard PROGRESS. They sit in the payload
+     and change on every Next, so diffing them made every stage look edited and
+     the skip could never fire — which is why stages 2-5 still saved. (Same
+     reason the employee form leaves wizard_step_completed out of its diff.)
+     Progress still rides along on any save that does happen; a stage nobody
+     touched has no progress worth recording.
+
+     The notice_* figures and the fnf aggregates are RECOMPUTED, never typed:
+     buildExitPayload derives them from the Stage-1 dates and the monthly basic,
+     and that basic is itself prefilled FROM THE SERVER a beat after the record
+     loads. They therefore shift once, on their own, just after the baseline is
+     taken — which is what made merely opening Full & Final ask for a save.
+     Their inputs are all still diffed, so a genuine edit saves and refreshes
+     them; nothing is lost by ignoring the outputs.
+
+     fnf.lines.basic is the exit-month salary the payroll engine computes, and
+     its field is rendered read-only — it can never be an HR edit either. */
+  const diffableExit = (p: Record<string, any>): Record<string, any> => {
+    const {
+      current_stage: _stage, stage_status: _status,
+      notice_days_required: _req, notice_days_served: _srv, notice_days_unserved: _uns,
+      notice_per_day_rate: _rate, notice_settlement_amount: _amt, notice_settlement_basis: _basis,
+      fnf, ...rest
+    } = p;
+    if (!fnf || typeof fnf !== 'object') return rest;
+    const { net: _net, earn: _earn, ded: _ded, monthly: _monthly, lines, ...fnfRest } = fnf as any;
+    const { basic: _computed, ...linesRest } = (lines ?? {}) as Record<string, any>;
+    return { ...rest, fnf: { ...fnfRest, lines: linesRest } };
+  };
+
+  /* Keys whose value differs from the baseline. JSON per key because several
+     of them are objects or arrays (clearances, asset_returns, fnf, …) that a
+     === would call different on every render. */
+  const changedExitKeys = (base: Record<string, any>, next: Record<string, any>): string[] =>
+    Object.keys(next).filter(k => JSON.stringify(base[k]) !== JSON.stringify(next[k]));
+
+  /** True when this payload carries nothing HR actually changed. */
+  const isExitUnchanged = (payload: Record<string, any>): boolean => {
+    const base = savedExitRef.current;
+    // No baseline yet — never skip. An unknown server state must be written.
+    if (!base) return false;
+    return changedExitKeys(diffableExit(base), diffableExit(payload)).length === 0;
+  };
+
+  /** Record what the server now holds, for the next diff. */
+  const commitExitBaseline = (payload: Record<string, any>) => {
+    savedExitRef.current = { ...(savedExitRef.current ?? {}), ...payload };
+  };
+
   const persistDraft = async (opts?: { silent?: boolean }): Promise<boolean> => {
     if (!employee || draftSaving) return false;
+    const payload = buildExitPayload();
+
+    if (isExitUnchanged(payload)) {
+      if (!opts?.silent) toast.info('Nothing to save', 'No changes were made on this stage.');
+      return true;
+    }
+
     setDraftSaving(true);
     try {
-      await api.put(`/employees/${employee.id}/exit`, buildExitPayload());
+      await api.put(`/employees/${employee.id}/exit`, payload);
+      commitExitBaseline(payload);
       if (!opts?.silent) toast.success('Draft saved', 'Your progress on this stage was saved.');
       return true;
     } catch (err: any) {
@@ -2654,19 +2766,34 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
       );
       return false;
     }
+    const stage1Payload = {
+      exit_type:            exitType || null,
+      notice_payment_choice: noticeChoice,
+      reason_for_exit:      reasonForExit.trim() || null,
+      notice_date:          noticeDate || null,
+      last_working_day:     lwd || null,
+      reporting_manager_id: reportingManagerId,
+      comments:             comments.trim() || null,
+      business_impact:      businessImpact || null,
+      replacement_required: replacementNeeded || null,
+    };
+
+    /* Untouched — every validation above has already passed, so the stage is
+       both valid and identical to what the server holds. Advance without the
+       round trip. The commit below still runs: it is local progress state, and
+       at this point it can only be re-setting the values it already has.
+
+       Diffed against the same baseline as persistDraft but on THESE keys only,
+       so an edit made on a later stage cannot make Stage 1 look dirty. */
+    if (isExitUnchanged(stage1Payload)) {
+      setCommittedS1({ reason: reasonForExit.trim(), notice: noticeDate, lwd });
+      return true;
+    }
+
     setStage1Saving(true);
     try {
-      await api.put(`/employees/${employee.id}/exit`, {
-        exit_type:            exitType || null,
-        notice_payment_choice: noticeChoice,
-        reason_for_exit:      reasonForExit.trim() || null,
-        notice_date:          noticeDate || null,
-        last_working_day:     lwd || null,
-        reporting_manager_id: reportingManagerId,
-        comments:             comments.trim() || null,
-        business_impact:      businessImpact || null,
-        replacement_required: replacementNeeded || null,
-      });
+      await api.put(`/employees/${employee.id}/exit`, stage1Payload);
+      commitExitBaseline(stage1Payload);
       /* Only now does Stage 1's progress move. Everything above this line is a
          gate: required fields, the reporting-manager check and the date rules
          all return early, so an invalid form can never reach here — which is
@@ -2908,13 +3035,19 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     setSettleSaving(true);
     try {
-      await api.put(`/employees/${employee.id}/exit`, {
+      /* Built once and reused as the new baseline — this is a deliberate write,
+         never skipped, but what it sends IS what the server holds afterwards.
+         Leaving the baseline stale here would make the next Next Stage think
+         the F&F block still differs and save it again for nothing. */
+      const paidPayload = {
         ...buildExitPayload(),
         ...(settlesNotice ? { notice_settlement_status: 'Settled' } : {}),
         fnf: { lines: fnfLines, meta: { ...fnfMeta, payStatus: 'Paid' }, net: fnfNet,
                earn: fnfTotals.earn, ded: fnfTotals.ded, monthly: settle.monthly,
                ...(fnf?.attachment ? { attachment: fnf.attachment } : {}) },
-      });
+      };
+      await api.put(`/employees/${employee.id}/exit`, paidPayload);
+      commitExitBaseline(paidPayload);
         // Record that the settlement was explicitly marked paid.
         setFnfMarkedPaid(true);
       toast.success('Settlement recorded', settlesNotice
@@ -3003,6 +3136,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           </aside>
 
           <section className="ep-content">
+            {exitLoading && <ExitFormSkeleton />}
+            {!exitLoading && (<>
 
             {currentKey === 'initiation' && (
               <>
@@ -4512,6 +4647,8 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                 )}
               </>
             )}
+
+            </>)}
           </section>
         </div>
 
@@ -5584,6 +5721,29 @@ function EpApprovalCard({ icon, title, children }: { icon: string; title: string
     </div>
   );
 }
+function ExitFormSkeleton() {
+  const Field = () => (
+    <Col md={6}>
+      <Shimmer height={10} width="38%" />
+      <div style={{ marginTop: 8 }}><Shimmer height={38} /></div>
+    </Col>
+  );
+  return (
+    <div aria-hidden>
+      {[0, 1].map(card => (
+        <div key={card}>
+          <div className="ep-section-label"><Shimmer height={11} width={128} /></div>
+          <div className="ep-approval-card ep-details-card mb-2">
+            <Row className="g-2">
+              {Array.from({ length: 4 }, (_, i) => <Field key={i} />)}
+            </Row>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function MiniProgressRing({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value));
   const RADIUS = 16;
@@ -5640,33 +5800,7 @@ function apiToExitRow(e: any): EmployeeRow {
   const ex        = rawExit?.rehired_at ? null : rawExit;
   const noticeRaw = ex?.notice_date ? String(ex.notice_date).slice(0, 10) : '';
   const caseClosed   = (ex?.exit_case_status === 'Closed') || !!ex?.completed_at;
-  /* Inactive is grouped with Resigned/Terminated as a non-active status
-     (completing an exit flips employees.status to one of these and kills the
-     login — see ExitController::complete). Such staff must NOT appear in the
-     Active Employees list; they belong in the Exited bucket (bug #34).
-
-     DISABLED IS NOT EXITED. `trashed` used to be lumped in here, which sent
-     anyone switched off in HR > Employees straight to the Exited tab even
-     though no exit ever happened — nobody resigned, no notice was served, no
-     F&F was settled. Being disabled is now carried separately (`disabled`
-     below) and decides nothing about the exit status:
-
-       · disabled, no exit case      → dropped from this page entirely; they
-                                       show in Employees > Disabled only.
-       · disabled, exit in progress  → stays in Exit In Progress, and is also
-                                       in the Disabled list — both, by design.
-       · disabled, exit completed    → Exited, as any completed exit is.
-
-     The drop for the first case happens on the server now
-     (EmployeeController::applyExitVisibility), which is the only
-     place that can remove a row rather than re-label it.
-
-     The terminal-status test is GATED ON THERE BEING AN EXIT CASE for the same
-     reason. `Inactive` is not only set by completing an exit — HR can pick it
-     straight off the employee edit form — and on its own it made a plain
-     switched-off employee, who never resigned and has no exit row, show up
-     under Exited Employees. An exit is the case, not the status column; the
-     status only corroborates one. */
+ 
   const hasExitCase  = !!ex;
   const statusExited = hasExitCase && ['Resigned', 'Terminated', 'Inactive'].includes(rawStatus);
   const statusNotice = rawStatus === 'Notice Period';

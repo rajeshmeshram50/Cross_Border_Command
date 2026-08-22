@@ -728,7 +728,28 @@ class PayrollService
         $ids     = $employees->pluck('id')->all();
         $exits   = $this->exitMap($ids);
         $resigns = $this->resignationMap($ids);
-        return $employees->reject(function (Employee $e) use ($exits, $resigns, $period) {
+        /* An OPEN exit case takes the employee out of regular payroll entirely,
+         * whatever their last working day says.
+         *
+         * The last-working-day test below only fires once a date has been agreed
+         * AND that date falls inside the cycle. That left two holes an exit could
+         * walk through: a case with no last working day yet (notice raised, date
+         * still being settled) and a case whose date lands in a later month. Both
+         * kept generating ordinary payslips, and because employees.status stays
+         * 'Active' right up to ExitController::complete(), nothing on the payroll
+         * screen said an exit was under way.
+         *
+         * The dangerous one is the undated case: HR completes the exit later with
+         * a back-dated last working day, the F&F prices that same month, and the
+         * month is paid twice — once by the run, once by the settlement. Money
+         * owed to a leaver is settled through Exit Management's F&F, which is the
+         * one place that reconciles it. They are reported by payrollExclusions()
+         * so the omission is visible rather than silent. */
+        $openExits = \App\Support\ExitInProgress::employeeIds(null, $ids);
+        return $employees->reject(function (Employee $e) use ($exits, $resigns, $period, $openExits) {
+            if (in_array((int) $e->id, $openExits, true)) {
+                return true;
+            }
             $lwd = $exits[$e->id] ?? null;
             if ($lwd && Carbon::parse($lwd)->lte($period->period_end)) {
                 return true;
@@ -778,6 +799,9 @@ class PayrollService
         $exits     = $this->exitMap($ids);
         $resigns   = $this->resignationMap($ids);
         $paidLast  = $this->paidInPreviousPeriod($period, $ids);
+        // Open exit cases — excluded from the run by eligibleEmployees() and
+        // reported here so the omission is visible.
+        $openExits = \App\Support\ExitInProgress::employeeIds(null, $ids);
         $out       = [];
 
         foreach ($employees as $e) {
@@ -812,6 +836,13 @@ class PayrollService
             $exitedInCycle = $lwd
                 && Carbon::parse($lwd)->lte($period->period_end)
                 && Carbon::parse($lwd)->gte($period->period_start);
+
+            /* Exit case still OPEN — eligibleEmployees() holds them out of the
+             * run regardless of dates. Reported only when no dated-exit branch
+             * already explains them: "left on 14 Jul, settled in F&F" says more
+             * than "an exit is under way" does. What this branch is really for is
+             * the UNDATED open case, which nothing else here can see. */
+            $exitInProgress = in_array((int) $e->id, $openExits, true);
 
             /* PAY-04 — onboarding never finished, so eligibleEmployees()' stage
                gate keeps them out of the run. Reported only when nothing
@@ -848,7 +879,7 @@ class PayrollService
                keeps every long-disabled record out of every future panel. */
             $disabledNoExit = !$lwd && $e->trashed() && in_array($e->id, $paidLast, true);
 
-            if (!$earlyExit && !$exitedInCycle && !$halfOnboarded && !$payrollOff && !$statusGone && !$disabledNoExit) {
+            if (!$earlyExit && !$exitedInCycle && !$exitInProgress && !$halfOnboarded && !$payrollOff && !$statusGone && !$disabledNoExit) {
                 continue;
             }
 
@@ -922,6 +953,9 @@ class PayrollService
                  * an explanatory panel must never be what breaks a payroll
                  * screen. */
                 'fnf_amount'       => $fnfAmount,
+                // Exit case still open — lets the panel badge the row rather
+                // than making the reader parse the sentence.
+                'exit_in_progress' => $exitInProgress,
                 // Early exit is the stronger statement (no payroll at all), so
                 // it wins when both apply.
                 'reason'           => ($earlyExit
@@ -934,7 +968,12 @@ class PayrollService
                         . ($fnfAmount !== null
                             ? ' (earned this cycle: ₹' . number_format($fnfAmount, 2) . ').'
                             : '.')
-                        : ($halfOnboarded
+                        : ($exitInProgress
+                            ? 'Exit in progress'
+                            . ($lwd ? ' — last working day ' . Carbon::parse($lwd)->format('j M Y') : ' — last working day not agreed yet')
+                            . '. Excluded from payroll processing; salary and dues are settled'
+                            . ' through the Full & Final settlement in Exit Management.'
+                            : ($halfOnboarded
                             ? 'Onboarding incomplete (stage ' . (int) $e->onboarding_stage_completed
                             . ' of 6) — excluded from payroll until onboarding is completed.'
                             : ($payrollOff
@@ -945,7 +984,7 @@ class PayrollService
                                     . ' settled manually or through Exit Management.'
                                     : 'Employee status is ' . $e->status . ' — paid last cycle, not this one.'
                                     . ' No exit record with a last working day exists, so any dues must be'
-                                    . ' settled manually or through Exit Management.')))))
+                                    . ' settled manually or through Exit Management.'))))))
                     . ($probationLeaver
                         ? ' Left before completing probation (probation ran to '
                         . $probationEnd->format('j M Y') . ') — notice period was not applicable.'
@@ -1864,7 +1903,25 @@ class PayrollService
          * Removing the second gate can only ever ADD PF where the structure says
          * it applies; every other combination resolves exactly as before, since
          * structure=no already produced no PF whatever the employee flag said. */
-        if ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+        /* A MANUAL 'pf' line on the salary structure wins, exactly as it does for
+         * ESI, PT and TDS below.
+         *
+         * PF was the one head with no such lookup: the computed 12% branch was
+         * the only way a payslip could ever carry PF, and the "other fixed
+         * deductions" sweep further down explicitly skips code 'pf'. So a
+         * structure carrying a real PF row — anything written outside the Salary
+         * Setup modal, which strips its own preview row before posting: imports,
+         * seeded rows, API clients, legacy structures — was dropped on BOTH
+         * branches whenever pf_applicable had not also been set. The Salary
+         * Structure screen showed Provident Fund with an amount and the payslip
+         * had no PF line and no deduction. (QA #97)
+         *
+         * Deducted as entered, not scaled by the earned share — same rule the
+         * business set for the other flat structure deductions. */
+        $pfManual = $this->structureDeduction($structDeductions, 'pf');
+        if ($pfManual > 0 && $this->isPfEligibleType($employee)) {
+            $pf = $pfManual;
+        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
             $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
                 ? $earnedBasic
                 : min($earnedBasic, self::PF_WAGE_CEILING);
@@ -1895,7 +1952,18 @@ class PayrollService
                         . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
                 );
             }
-        } elseif ($pfApplicable && !$this->isPfEligibleType($employee)) {
+        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic <= 0 && $earnedGross > 0) {
+            /* Paid for the month, PF ticked, and still no PF — the base came out
+             * zero. That is a structure problem (no basic, or a zero one), not a
+             * policy, and it presents to the employee as exactly this ticket:
+             * "PF is configured but nothing was deducted". Say so on the slip. */
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'PF is applicable but no PF was deducted — the basic pay for this cycle worked out to zero. '
+                    . 'Check the earning components on the salary structure.'
+            );
+        } elseif (($pfApplicable || $pfManual > 0) && !$this->isPfEligibleType($employee)) {
             /* Configured, then withheld by the employment type — the other way
              * this ticket's symptom appears. PF is a full-time head, so an
              * intern / contractor / consultant is skipped deliberately; saying

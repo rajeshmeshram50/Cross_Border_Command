@@ -1698,11 +1698,18 @@ export default function HrPayroll() {
         </div>
         <div className="d-flex align-items-center gap-2 flex-wrap pay-hero-actions">
           <div className="pay-hero-select" style={{ minWidth: 170 }}>
+            {/* Frozen while a run is in flight. Switching cycle mid-run
+                re-pointed the whole screen at another month while the request
+                for THIS one was still outstanding — its response then landed on
+                the newly-selected cycle, so the totals, the row list and the
+                post-run modal could all describe a month the user was no longer
+                looking at. The cycle strip below is frozen for the same reason. */}
             <MasterSelect
               value={cycleKey}
-              onChange={(v) => setCycleKey(String(v))}
+              onChange={(v) => { if (!busy) setCycleKey(String(v)); }}
               options={monthOptions}
               placeholder="Select cycle"
+              disabled={busy}
             />
           </div>
           <Button
@@ -1831,11 +1838,15 @@ export default function HrPayroll() {
             <div className="d-flex align-items-center gap-2">
               <span className="text-muted text-uppercase fw-semibold" style={{ fontSize: 10.5, letterSpacing: '0.06em' }}>Year</span>
               <div style={{ minWidth: 104 }}>
+                {/* Also frozen during a run: selectYear() re-points cycleKey at
+                    a month in the chosen year, so it is another way to move the
+                    selection out from under an in-flight request. */}
                 <MasterSelect
                   value={String(selectedYear)}
-                  onChange={(v) => selectYear(Number(v))}
+                  onChange={(v) => { if (!busy) selectYear(Number(v)); }}
                   options={yearOptions}
                   placeholder="Year"
+                  disabled={busy}
                 />
               </div>
               <button
@@ -1887,29 +1898,39 @@ export default function HrPayroll() {
                   // cycle stays selectable (HR must be able to look at it) but
                   // says what is blocking it; the Run button is disabled.
                   const frozen = !!m.is_future;
+                  /* A run in flight freezes the whole strip too — same reason
+                     the cycle dropdown is disabled: the in-flight request is for
+                     the CURRENTLY selected month, and letting the selection move
+                     under it lands the result on the wrong cycle. The selected
+                     chip stays legible so it is still clear which month is
+                     running. */
+                  const heldByRun = busy && !on;
+                  const locked = frozen || heldByRun;
                   const t = frozen
                     ? { bg: '#eef2f6', fg: '#878a99', dot: '#b6bcc8' }
                     : CYCLE_TONES[m.status];
                   const title = frozen
                     ? `${m.label} hasn't started yet — future cycles are locked.`
-                    : m.blocked_by
-                      ? `Complete the ${m.blocked_by} payroll first — cycles run in order.`
-                      : undefined;
+                    : heldByRun
+                      ? `${cycle.label} payroll is running — wait for it to finish before switching cycle.`
+                      : m.blocked_by
+                        ? `Complete the ${m.blocked_by} payroll first — cycles run in order.`
+                        : undefined;
                   return (
                     <button
                       key={m.key}
                       type="button"
-                      onClick={() => { if (!frozen) setCycleKey(m.key); }}
-                      disabled={frozen}
+                      onClick={() => { if (!locked) setCycleKey(m.key); }}
+                      disabled={locked}
                       title={title}
-                      aria-disabled={frozen}
+                      aria-disabled={locked}
                       className={`text-start flex-shrink-0 pay-cycle-chip${on ? ' is-selected' : ''}`}
                       style={{
                         minWidth: 138,
                         padding: '10px 12px',
                         borderRadius: 12,
-                        cursor: frozen ? 'not-allowed' : 'pointer',
-                        opacity: frozen ? 0.55 : 1,
+                        cursor: locked ? 'not-allowed' : 'pointer',
+                        opacity: frozen ? 0.55 : (heldByRun ? 0.5 : 1),
                         transition: 'all .15s ease',
                       }}
                     >

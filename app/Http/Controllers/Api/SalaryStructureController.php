@@ -35,11 +35,43 @@ class SalaryStructureController extends Controller
      * configured (and who falls back to annual_salary / nothing) before running
      * payroll. Tenant + branch scoped.
      */
+    /**
+     * Branch filter for the salary roster.
+     *
+     * Branch-tier logins (branch_user AND employee — an employee with the HRMS
+     * permission reaches this tab too) are pinned to their OWN branch and the
+     * request's branch_id is ignored; otherwise an employee of one branch saw
+     * every branch's staff in Salary Setup.
+     *
+     * Client-tier logins may use the branch switcher, but only for a branch that
+     * belongs to their own client — same validation EmployeeController does
+     * before honouring a switcher branch.
+     */
+    private function rosterBranchFilter(Request $request, $user): ?int
+    {
+        if (! $user) return null;
+
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            return $user->branch_id ?: null;
+        }
+
+        $requested = $request->integer('branch_id') ?: null;
+        if (! $requested) return null;
+
+        if ($user->user_type === 'super_admin') return $requested;
+
+        $belongs = \App\Models\Branch::where('id', $requested)
+            ->where('client_id', $user->client_id)
+            ->exists();
+
+        return $belongs ? $requested : null;
+    }
+
     public function employees(Request $request)
     {
         if ($deny = $this->denyUnlessManager($request, 'view')) return $deny;
         $user = $request->user();
-        $branch = $request->integer('branch_id') ?: ($user && $user->user_type === 'branch_user' ? $user->branch_id : null);
+        $branch = $this->rosterBranchFilter($request, $user);
 
         $eq = Employee::query()
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
@@ -61,26 +93,30 @@ class SalaryStructureController extends Controller
         $employees = $eq->get();
         $ids = $employees->pluck('id')->all();
 
-        /* Employees with a LIVE exit case. The status column alone does not
-         * catch them: an exit that is under way leaves employees.status on
-         * 'Active' until it is finalised, so someone mid-exit sat in this list
-         * as an ordinary row offering "Revise" with nothing to say they were
-         * leaving.
+        /* Employees with a LIVE exit case are REMOVED from Salary Setup, not
+         * flagged in it.
          *
-         * They are flagged rather than hidden. Payroll still has to pay them up
-         * to their last working day and settle the F&F, so a missing structure
-         * still matters — dropping the row would make the list read as "everyone
-         * is set up" while an exiting employee had nothing configured.
+         * The status column cannot catch them on its own: an exit under way
+         * leaves employees.status on 'Active' until ExitController::complete(),
+         * so without this they sat here as ordinary rows.
          *
-         * A rehired exit is spent history, not a live case (same rule as
-         * EmployeeController's reporting-manager picker). */
-        $liveExits = [];
-        if (!empty($ids) && \Illuminate\Support\Facades\Schema::hasTable('employee_exits')) {
-            $liveExits = \App\Models\EmployeeExit::whereIn('employee_id', $ids)
-                ->whereNull('rehired_at')
-                ->get(['employee_id', 'last_working_day', 'exit_case_status'])
-                ->keyBy('employee_id')
-                ->all();
+         * They used to be kept and badged, on the reasoning that payroll still
+         * had to pay them to their last working day so a missing structure still
+         * mattered. That reasoning no longer holds — an open exit case now takes
+         * the employee out of regular payroll entirely
+         * (PayrollService::eligibleEmployees) and their dues are settled by the
+         * Full & Final in Exit Management, which prices off the structure already
+         * in force. There is nothing left to set up here, and leaving the row
+         * only offered an action that would never be used.
+         *
+         * "Live" is ExitInProgress' reading — exit_type set, case Open, not
+         * rehired. The old query here matched ANY non-rehired exit row, so
+         * completed and closed exits were badged "Exit in progress" too, which is
+         * why tenants with historic exits saw the badge on nearly every row. */
+        $exiting = \App\Support\ExitInProgress::employeeIds(null, $ids);
+        if (!empty($exiting)) {
+            $employees = $employees->reject(fn (Employee $e) => in_array((int) $e->id, $exiting, true))->values();
+            $ids = $employees->pluck('id')->all();
         }
 
         // Active structure per employee (one query).
@@ -92,16 +128,16 @@ class SalaryStructureController extends Controller
         $deptNames = $this->masterNames('master_departments');
         $desigNames = $this->masterNames('master_designations');
 
-        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames, $liveExits) {
+        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames) {
             $s = $active->get($e->id);
-            $exit = $liveExits[$e->id] ?? null;
             return [
-                // Exit under way — the row stays, but the screen marks it and
-                // does not offer a revision.
-                'exit_in_progress'  => (bool) $exit,
-                'exit_last_working_day' => $exit?->last_working_day
-                    ? \Carbon\Carbon::parse($exit->last_working_day)->toDateString()
-                    : null,
+                /* Always false now that exiting employees are dropped above.
+                 * Kept in the payload so the existing badge / disabled-"Exiting"
+                 * button in HrPayroll.tsx keep compiling and stay correct if the
+                 * exclusion is ever relaxed — the screen does not need a change
+                 * to benefit from this one. */
+                'exit_in_progress'  => false,
+                'exit_last_working_day' => null,
                 'employee_id'   => $e->id,
                 'emp_code'      => $e->emp_code,
                 'name'          => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,
@@ -153,7 +189,7 @@ class SalaryStructureController extends Controller
         if ($user && !$this->canManage($request)) {
             $q->where('employee_id', (int) ($user->employee_id ?? 0));
         }
-        if ($branch = $request->integer('branch_id')) {
+        if ($branch = $this->rosterBranchFilter($request, $user)) {
             $q->where('branch_id', $branch);
         }
         if ($employeeId = $request->integer('employee_id')) {
@@ -198,6 +234,22 @@ class SalaryStructureController extends Controller
             'esi_applicable'  => ['boolean'],
             'pt_applicable'   => ['boolean'],
             'revision_note'   => ['nullable', 'string', 'max:500'],
+            /* The Annual CTC this revision agrees (QA #101).
+             *
+             * Optional, so every existing caller keeps working: when it is
+             * absent the breakup is still checked against whatever is already on
+             * the employee record, exactly as before. When it is present it
+             * REPLACES that figure and the breakup is checked against it — which
+             * is what makes an increment possible from this screen at all.
+             *
+             * Bounds mirror EmployeeController's own annual_salary rule (the
+             * decimal(14,2) column ceiling, and a positive minimum) so the two
+             * entry points to the same column cannot disagree. */
+            'annual_ctc'      => ['nullable', 'numeric', 'min:0.01', 'max:999999999999.99'],
+        ], [
+            'annual_ctc.numeric' => 'Annual CTC must be a valid number.',
+            'annual_ctc.min'     => 'Annual CTC must be greater than 0.',
+            'annual_ctc.max'     => 'Annual CTC must be ≤ 999,999,999,999.99.',
         ]);
 
         $user = $request->user();
@@ -206,6 +258,13 @@ class SalaryStructureController extends Controller
         abort_unless($employee, 422, 'Employee not found.');
         if ($user && $user->client_id && (int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'Employee belongs to another tenant.');
+        }
+        /* Branch-tier managers configure their own branch only — the roster no
+         * longer lists other branches, and the write path has to agree or the
+         * same reach is still available by posting an employee_id directly. */
+        if ($user && in_array($user->user_type, ['branch_user', 'employee'], true)
+            && $user->branch_id && (int) $employee->branch_id !== (int) $user->branch_id) {
+            abort(403, 'Employee belongs to another branch.');
         }
 
         /* Bound the effective date. (QA #87)
@@ -267,7 +326,24 @@ class SalaryStructureController extends Controller
          *
          * No configured salary means there is nothing to validate against —
          * the structure then IS the source of truth, so it is allowed. */
-        $configuredAnnual = (float) ($employee->annual_salary ?? 0);
+        /* WHICH figure the breakup is measured against (QA #101).
+         *
+         * A submitted annual_ctc is the salary being AGREED by this revision and
+         * wins; without one, the employee record's existing figure is the target,
+         * as before.
+         *
+         * This is what unblocked the screen. The rule was "the breakup must equal
+         * employee.annual_salary", and the write-back below then set
+         * annual_salary to the breakup — which, having just passed that check,
+         * could only ever be the same number. So the modal could re-split a CTC
+         * but never change it: an increment 422'd with "raise the salary on the
+         * employee record first", and the button labelled "Revise Salary" could
+         * not revise the salary. The comparison still exists and is still strict;
+         * it now just compares against the figure HR actually typed. */
+        $submittedCtc     = array_key_exists('annual_ctc', $data) && $data['annual_ctc'] !== null
+            ? round((float) $data['annual_ctc'], 2)
+            : null;
+        $configuredAnnual = $submittedCtc ?? (float) ($employee->annual_salary ?? 0);
         if ($configuredAnnual > 0) {
             $annualised = $monthlyGross * 12;
             $diff = $annualised - $configuredAnnual;          // + over, − under
@@ -275,17 +351,27 @@ class SalaryStructureController extends Controller
                 $over = $diff > 0;
                 $gap  = number_format(abs($diff), 2);
                 $name = $employee->first_name ?: 'this employee';
+                /* The remedy differs by which figure is in play. Against a
+                 * submitted CTC the fix is here on this form (adjust one side or
+                 * the other); against the stored one the old advice — go and
+                 * change the employee record — still reads correctly. */
+                $target = $submittedCtc !== null ? 'the Annual CTC entered' : "{$name}'s configured salary";
                 return response()->json([
                     'message' => 'Total earnings come to ₹' . number_format($annualised, 2)
                         . ' a year, which is ₹' . $gap . ($over ? ' more than' : ' short of')
-                        . " {$name}'s configured salary of ₹" . number_format($configuredAnnual, 2)
-                        . '. The breakup has to add up to the salary — '
-                        . ($over
-                            ? 'reduce the components, or raise the salary on the employee record first.'
-                            : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
-                              . 'or lower the salary on the employee record first.'),
+                        . ' ' . $target . ' of ₹' . number_format($configuredAnnual, 2)
+                        . '. The breakup has to add up to the CTC — '
+                        . ($submittedCtc !== null
+                            ? ($over
+                                ? 'reduce the components, or raise the Annual CTC.'
+                                : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                                  . 'or lower the Annual CTC.')
+                            : ($over
+                                ? 'reduce the components, or raise the salary on the employee record first.'
+                                : 'add the ₹' . $gap . ' back (Basic Salary usually carries the balance), '
+                                  . 'or lower the salary on the employee record first.')),
                     'errors' => ['earnings' => [
-                        'Annual total ₹' . number_format($annualised, 2) . ' does not match the configured salary ₹'
+                        'Annual total ₹' . number_format($annualised, 2) . ' does not match ₹'
                         . number_format($configuredAnnual, 2) . '.',
                     ]],
                 ], 422);
@@ -337,9 +423,14 @@ class SalaryStructureController extends Controller
              * The two are meant to be equal — both this modal and the Employee
              * form treat "breakup total == annual salary" as the matching
              * state — so the accepted revision becomes the new agreed figure.
-             * This runs only AFTER the cap check above has passed, so a
-             * revision can still never raise pay beyond the configured salary;
-             * increasing it remains an Employee-record change. */
+             * This runs only AFTER the match check above has passed, so the
+             * breakup and the CTC are already equal to within the rounding
+             * slack — an increment is now made by raising the Annual CTC on this
+             * form (#101), and the two still cannot drift apart.
+             *
+             * The breakup remains what is written, not the typed CTC: the two
+             * agree to within SALARY_ROUNDING_SLACK by the time we get here, and
+             * the components are the figures payroll will actually pay. */
             $employee->update([
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
@@ -354,9 +445,31 @@ class SalaryStructureController extends Controller
         // without a manual re-run (approved/paid runs stay frozen).
         $recomputed = app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employee->id);
 
+        /* Say so when a payslip could NOT follow the revision.
+         *
+         * recomputeEmployeePayslips() only touches draft/generated runs —
+         * approved and paid runs are frozen by Rule 14/15, and a locked period
+         * is skipped too. That is correct, but it used to be silent: enabling PF
+         * (or any change) reported "Salary structure saved" while the payslip
+         * the reviewer was looking at kept the old figures, which reads as the
+         * revision simply not working. Naming the frozen run turns it into a
+         * known state with an obvious next step — run a fresh cycle. (QA #97) */
+        $frozen = \App\Models\Payslip::where('employee_id', $employee->id)
+            ->whereHas('run', fn ($q) => $q->whereNotIn('status', ['draft', 'generated']))
+            ->with('run.period')
+            ->get()
+            ->map(fn ($s) => $s->run?->period?->label)
+            ->filter()
+            ->unique()
+            ->values();
+
         return response()->json([
             'message' => 'Salary structure saved (version ' . $structure->version . ').'
-                . ($recomputed > 0 ? " {$recomputed} draft payslip(s) updated." : ''),
+                . ($recomputed > 0 ? " {$recomputed} draft payslip(s) updated." : '')
+                . ($frozen->isNotEmpty()
+                    ? ' Already-approved payroll (' . $frozen->implode(', ') . ') keeps its original figures'
+                        . ' — the revision applies from the next run.'
+                    : ''),
             'data'    => $this->serialize($structure),
         ], 201);
     }
