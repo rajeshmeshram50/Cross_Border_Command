@@ -352,6 +352,27 @@ class PayrollController extends Controller
             ->orderBy('employee_name')
             ->get();
 
+        /* Employees with an OPEN exit case are out of regular payroll
+         * (PayrollService::eligibleEmployees). A regenerate drops them, but the
+         * rows this cycle already holds would keep them on screen until someone
+         * re-ran it — and these rows feed Payroll Processing, Biometric Input
+         * AND Salary Report alike, so a mid-exit employee stayed visible, and
+         * actionable, in all three tabs.
+         *
+         * An already-PAID payslip is kept. That money has left the building and
+         * the cycle is locked; erasing it from the salary report would hide a
+         * real disbursement, which is a worse fault than the one this fixes.
+         * Only unpaid, still-provisional rows are withheld. */
+        $openExits = \App\Support\ExitInProgress::employeeIds(
+            null,
+            $slips->pluck('employee_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all(),
+        );
+        if (!empty($openExits)) {
+            $slips = $slips->reject(
+                fn ($s) => in_array((int) $s->employee_id, $openExits, true) && $s->status !== 'Paid',
+            )->values();
+        }
+
         // A cycle still in progress can only be judged on the days that have
         // actually happened — see elapsedWorkingDaysMap().
         $elapsed = $this->elapsedWorkingDaysMap($period, $slips);

@@ -93,26 +93,30 @@ class SalaryStructureController extends Controller
         $employees = $eq->get();
         $ids = $employees->pluck('id')->all();
 
-        /* Employees with a LIVE exit case. The status column alone does not
-         * catch them: an exit that is under way leaves employees.status on
-         * 'Active' until it is finalised, so someone mid-exit sat in this list
-         * as an ordinary row offering "Revise" with nothing to say they were
-         * leaving.
+        /* Employees with a LIVE exit case are REMOVED from Salary Setup, not
+         * flagged in it.
          *
-         * They are flagged rather than hidden. Payroll still has to pay them up
-         * to their last working day and settle the F&F, so a missing structure
-         * still matters — dropping the row would make the list read as "everyone
-         * is set up" while an exiting employee had nothing configured.
+         * The status column cannot catch them on its own: an exit under way
+         * leaves employees.status on 'Active' until ExitController::complete(),
+         * so without this they sat here as ordinary rows.
          *
-         * A rehired exit is spent history, not a live case (same rule as
-         * EmployeeController's reporting-manager picker). */
-        $liveExits = [];
-        if (!empty($ids) && \Illuminate\Support\Facades\Schema::hasTable('employee_exits')) {
-            $liveExits = \App\Models\EmployeeExit::whereIn('employee_id', $ids)
-                ->whereNull('rehired_at')
-                ->get(['employee_id', 'last_working_day', 'exit_case_status'])
-                ->keyBy('employee_id')
-                ->all();
+         * They used to be kept and badged, on the reasoning that payroll still
+         * had to pay them to their last working day so a missing structure still
+         * mattered. That reasoning no longer holds — an open exit case now takes
+         * the employee out of regular payroll entirely
+         * (PayrollService::eligibleEmployees) and their dues are settled by the
+         * Full & Final in Exit Management, which prices off the structure already
+         * in force. There is nothing left to set up here, and leaving the row
+         * only offered an action that would never be used.
+         *
+         * "Live" is ExitInProgress' reading — exit_type set, case Open, not
+         * rehired. The old query here matched ANY non-rehired exit row, so
+         * completed and closed exits were badged "Exit in progress" too, which is
+         * why tenants with historic exits saw the badge on nearly every row. */
+        $exiting = \App\Support\ExitInProgress::employeeIds(null, $ids);
+        if (!empty($exiting)) {
+            $employees = $employees->reject(fn (Employee $e) => in_array((int) $e->id, $exiting, true))->values();
+            $ids = $employees->pluck('id')->all();
         }
 
         // Active structure per employee (one query).
@@ -124,16 +128,16 @@ class SalaryStructureController extends Controller
         $deptNames = $this->masterNames('master_departments');
         $desigNames = $this->masterNames('master_designations');
 
-        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames, $liveExits) {
+        $rows = $employees->map(function (Employee $e) use ($active, $deptNames, $desigNames) {
             $s = $active->get($e->id);
-            $exit = $liveExits[$e->id] ?? null;
             return [
-                // Exit under way — the row stays, but the screen marks it and
-                // does not offer a revision.
-                'exit_in_progress'  => (bool) $exit,
-                'exit_last_working_day' => $exit?->last_working_day
-                    ? \Carbon\Carbon::parse($exit->last_working_day)->toDateString()
-                    : null,
+                /* Always false now that exiting employees are dropped above.
+                 * Kept in the payload so the existing badge / disabled-"Exiting"
+                 * button in HrPayroll.tsx keep compiling and stay correct if the
+                 * exclusion is ever relaxed — the screen does not need a change
+                 * to benefit from this one. */
+                'exit_in_progress'  => false,
+                'exit_last_working_day' => null,
                 'employee_id'   => $e->id,
                 'emp_code'      => $e->emp_code,
                 'name'          => trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: $e->display_name,

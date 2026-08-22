@@ -66,14 +66,9 @@ class ExitController extends Controller
      */
     private function employeeIdsExiting(?int $clientId): array
     {
-        return EmployeeExit::query()
-            ->when($clientId !== null, fn($q) => $q->where('client_id', $clientId))
-            ->whereNotNull('exit_type')
-            ->where('exit_case_status', 'Open')
-            ->whereNull('rehired_at')
-            ->pluck('employee_id')
-            ->map(fn($v) => (int) $v)
-            ->all();
+        // Payroll and Salary Setup gate on the same set — the definition lives in
+        // one place so the three screens cannot drift apart again.
+        return \App\Support\ExitInProgress::employeeIds($clientId);
     }
 
     /**
