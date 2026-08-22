@@ -127,7 +127,34 @@ export default function HrExitManagement() {
   const [listLoading, setListLoading] = useState(true);
   const [tab, setTab]             = useState<'active' | 'in-progress' | 'exited'>('active');
   const [search, setSearch]       = useState('');
-  /* Paging lives in <DataTable> now. */
+
+  /* Paging, tabs and search are the SERVER's job now. The page used to fetch
+     every employee and sort them into tabs in the browser, which meant
+     serialising the whole roster on each load — measured at ~320 ms for 326
+     rows, and it grew with the tenant. The server derives the same statuses in
+     SQL (EmployeeController::sqlExited & friends) and answers one page. */
+  const [page, setPage]       = useState(0);
+  const [perPage, setPerPage] = useState(25);
+  const [total, setTotal]     = useState(0);
+
+  /* Typing is not a request. Without this every letter fires a page-1 fetch and
+     the answers arrive out of order — the response for "nai" landing after the
+     response for "nair". */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Any change to what is being asked for goes back to page one. Staying on
+     page 4 while narrowing to three results shows an empty table under a pager
+     insisting there are four pages. */
+  useEffect(() => { setPage(0); }, [debouncedSearch, tab]);
+
+  /* KPI tiles + tab badges. Separate from the list because they describe the
+     whole roster, not the page — counting the 25 rows on screen would report
+     "Total Employees 25" on a tenant of 500. */
+  const [counts, setCounts] = useState({ total: 0, active: 0, inProgress: 0, exited: 0, missing: 0 });
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [processing, setProcessing] = useState<EmployeeRow | null>(null);
   /* "Initiate Exit" opens the exit-TYPE picker first — the wizard is only
@@ -150,66 +177,78 @@ export default function HrExitManagement() {
   const listReqRef = useRef(0);
   const loadEmployees = useCallback((silent = false) => {
     const token = ++listReqRef.current;
+    /* Every fetch, not just the first. Paging and searching were instant while
+       they happened in the browser, so the table never needed to say it was
+       working; now they are requests, and without this the old rows sit there
+       looking like the click did nothing. */
     if (!silent) setListLoading(true);
-    api.get('/employees')
+    /* view=exit — the module's slice of /employees. Unnamed, this endpoint
+       answers with the profile payload: the client, the branch and its shifts,
+       the login user, the legal entity, six country/state pairs and the whole
+       banking block, none of which this page renders. The two row filters this
+       used to apply in the browser (fully onboarded; disabled-without-an-exit
+       dropped) are now applyExitVisibility() on the server, which has to be
+       exact rather than a superset — a page of 25 that the browser then
+       filtered would render 23. */
+    api.get('/employees', {
+      params: {
+        view: 'exit',
+        page: page + 1,              // the API counts from 1, DataTable from 0
+        per_page: perPage,
+        exit_status: tab,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })
       .then(({ data }) => {
         if (token !== listReqRef.current) return;
-        const rows = (Array.isArray(data) ? data : [])
-          .filter(e => Number((e as any)?.onboarding_stage_completed ?? 0) >= 6)
-          .map(apiToExitRow)
-          /* A DISABLED employee with no exit case has nothing to do with this
-             page: switching someone off in HR > Employees is not an exit, so
-             they appear in Employees > Disabled and nowhere here — not under
-             Active (their login is dead) and not under Exited (they never
-             exited). Disabled employees who ARE mid-exit are deliberately kept,
-             so they show in both the Disabled list and Exit In Progress. */
-          .filter(r => !r.disabled || r.exitInitiated || r.status === 'Exited');
-        setEmployees(rows);
+        // `?? data` keeps this working if the envelope ever goes away — the
+        // endpoint only paginates for callers that ask.
+        const body: any = data ?? {};
+        const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
+        setEmployees(list.map(apiToExitRow));
+        setTotal(Number(body.total ?? list.length) || 0);
       })
-      .catch(() => { if (token === listReqRef.current) setEmployees([]); })
+      .catch(() => { if (token === listReqRef.current) { setEmployees([]); setTotal(0); } })
       .finally(() => { if (token === listReqRef.current) setListLoading(false); });
-  }, []);
+  }, [page, perPage, tab, debouncedSearch]);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
 
-
-  /* The one search predicate, shared with `filtered` below.
-     It lived only inside the table's filter, so the KPI tiles and the tab
-     badges counted the whole roster however narrow the search was — type a name
-     and the cards still read the company total (CBC #103). */
-  const matchesSearch = useCallback((e: EmployeeRow) => {
-    const needle = search.trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      e.name.toLowerCase().includes(needle) ||
-      e.empId.toLowerCase().includes(needle) ||
-      e.department.toLowerCase().includes(needle) ||
-      e.designation.toLowerCase().includes(needle)
-    );
-  }, [search]);
-
-  const counts = useMemo(() => {
-    /* Search narrows the cards; the TAB deliberately does not. These tiles are
-       the status breakdown the tabs themselves are cut from — filter them by
-       tab and the tab you are on holds the total while every other tile reads
-       0, which is a breakdown that no longer breaks anything down. */
-    const rows        = employees.filter(matchesSearch);
-    const total       = rows.length;
-    const active      = rows.filter(e => e.status === 'Active').length;
-    const inProgress  = rows.filter(e => e.status === 'Exit In Progress').length;
-    const exited      = rows.filter(e => e.status === 'Exited').length;
-    const missing     = rows.filter(e => e.status === 'Missing Details').length;
-    return { total, active, inProgress, exited, missing };
-  }, [employees, matchesSearch]);
-
-  const filtered = useMemo(() => employees
-    .filter(e => {
-      if (tab === 'active')      return e.status === 'Active' || e.status === 'Missing Details';
-      if (tab === 'in-progress') return e.status === 'Exit In Progress';
-      if (tab === 'exited')      return e.status === 'Exited';
-      return true;
+  /* Counts follow the search but NOT the tab — these tiles are the breakdown
+     the tabs are cut from, and filtering them by tab would leave the current
+     tab holding the total while every other tile read 0. */
+  const countsReqRef = useRef(0);
+  const loadCounts = useCallback(() => {
+    const token = ++countsReqRef.current;
+    api.get('/employees/exit-stats', {
+      params: debouncedSearch ? { search: debouncedSearch } : undefined,
     })
-    .filter(matchesSearch),
-  [employees, tab, matchesSearch]);
+      .then(({ data }) => {
+        if (token !== countsReqRef.current) return;
+        setCounts({
+          total:      Number(data?.total ?? 0),
+          active:     Number(data?.active ?? 0),
+          inProgress: Number(data?.inProgress ?? 0),
+          exited:     Number(data?.exited ?? 0),
+          missing:    Number(data?.missing ?? 0),
+        });
+      })
+      .catch(() => { /* tiles keep their last good values */ });
+  }, [debouncedSearch]);
+  useEffect(() => { loadCounts(); }, [loadCounts]);
+
+  /* Processing an exit moves the row to another tab, so the rows AND every
+     tile are stale together. Counts are not refreshed on plain paging — the
+     roster doesn't change because you turned a page — so they are refetched
+     here rather than inside loadEmployees. */
+  const reload = useCallback(() => { loadEmployees(true); loadCounts(); }, [loadEmployees, loadCounts]);
+
+
+  /* `employees` IS the current page: the server has already applied the tab
+     (applyExitStatusFilter) and the search (applySearch), so there is nothing
+     left to filter here. Re-filtering in the browser would only be able to
+     remove rows from a page of 25, leaving the pager and the tab badge
+     describing a row count the table no longer shows. */
+  const filtered = employees;
 
   /* Employee names clip to a hard character count rather than to whatever the
      column happens to be — the full name is always one hover away, and a fixed
@@ -660,6 +699,16 @@ export default function HrExitManagement() {
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search name, ID, department…"
+              /* One page at a time — see loadEmployees. `total` is the count
+                 for the CURRENT tab, which is what the pager's "x–y of z" and
+                 its arrows have to read; the tab badges come from the separate
+                 counts endpoint. */
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               tabs={[
                 { key: 'active',      label: 'Active Employees', icon: 'ri-user-line',            count: counts.active + counts.missing },
                 { key: 'in-progress', label: 'Exit In Progress', icon: 'ri-time-line',            count: counts.inProgress },
@@ -710,13 +759,13 @@ export default function HrExitManagement() {
 
       <ExitProcessModal
         employee={processing}
-        onClose={() => { setProcessing(null); loadEmployees(true); }}
-        onCompleted={() => loadEmployees(true)}
+        onClose={() => { setProcessing(null); reload(); }}
+        onCompleted={() => reload()}
       />
       <RehireModal
         employee={rehiring}
         onClose={() => setRehiring(null)}
-        onDone={() => { setRehiring(null); loadEmployees(true); }}
+        onDone={() => { setRehiring(null); reload(); }}
       />
 
       {/* The shared vault (components/EvidenceVaultModal) — the same modal HR >
@@ -5608,7 +5657,8 @@ function apiToExitRow(e: any): EmployeeRow {
                                        in the Disabled list — both, by design.
        · disabled, exit completed    → Exited, as any completed exit is.
 
-     The drop for the first case happens in loadEmployees(), which is the only
+     The drop for the first case happens on the server now
+     (EmployeeController::applyExitVisibility), which is the only
      place that can remove a row rather than re-label it.
 
      The terminal-status test is GATED ON THERE BEING AN EXIT CASE for the same

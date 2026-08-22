@@ -430,7 +430,13 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
                     const noEntries = isAbsent
                       && (!l.workSegments || l.workSegments.length === 0)
                       && (!l.firstIn || l.firstIn === '—');
-                    const tone = STATUS_TONE[l.status];
+                    /* Prefer the leave KIND over a generic "Leave" status: the
+                       server now upgrades it, but a row that still arrives as
+                       plain "Leave" carries `leaveKind`, and "Full day Leave"
+                       hides whether it is paid (QA #67). */
+                    const tone = (l.status === 'Leave' && l.leaveKind)
+                      ? leaveToneOf(l)
+                      : STATUS_TONE[l.status];
 
                     if (isOff) {
                       return (
@@ -781,6 +787,23 @@ function CalendarMonthGrid({
         {cells.map((c, i) => {
           const tone = c.status ? STATUS_TONE[c.status] : null;
           const isToday = c.iso === TODAY_ISO;
+          /* Half-day leave on the calendar (QA #68).
+             The month summary counts a half-day as 0.5, so a month can total
+             2.5 leave days — but the cell only ever printed the day's status,
+             so the half read exactly like a whole day and the calendar and the
+             summary disagreed. Two shapes to cover:
+               · the day IS the leave (no punches) → say "Half Day Paid Leave";
+               · the employee worked the other half → the cell keeps its worked
+                 status and carries a small ½ chip, which is the only place that
+                 leave is visible at all. */
+          const halfLeave = c.leavePortion === 'first_half' || c.leavePortion === 'second_half';
+          const leaveLike = c.status === 'Leave' || c.status === 'Paid Leave' || c.status === 'Unpaid Leave';
+          const cellLabel = tone ? (halfLeave && leaveLike ? `Half Day ${tone.label}` : tone.label) : '';
+          const cellTitle = tone
+            ? (halfLeave
+                ? `${c.day} — ${LEAVE_PORTION_LABEL[c.leavePortion!]} ${leaveLike ? tone.label : 'leave'}`
+                : `${c.day} — ${tone.label}`)
+            : `${c.day}`;
           return (
             <button
               key={i}
@@ -788,14 +811,23 @@ function CalendarMonthGrid({
               className={`att-cal-cell ${c.inMonth ? '' : 'is-out'} ${c.future ? 'is-future' : ''} ${isToday ? 'is-today' : ''}`}
               disabled={c.future || !c.inMonth}
               onClick={() => onPickDate(c.iso)}
-              title={tone ? `${c.day} — ${tone.label}` : `${c.day}`}
+              title={cellTitle}
               style={tone ? { borderColor: tone.dot } : undefined}
             >
               <span className="att-cal-day">{c.day}</span>
               {tone && (
                 <span className="att-cal-status att-tone-pill" data-status={c.status} style={{ color: tone.fg, background: tone.bg }}>
                   <span className="att-cal-status-dot" style={{ background: tone.dot }} />
-                  {tone.label}
+                  {cellLabel}
+                </span>
+              )}
+              {halfLeave && !leaveLike && (
+                <span
+                  className="att-tone-pill"
+                  title={`${LEAVE_PORTION_LABEL[c.leavePortion!]} leave`}
+                  style={{ marginTop: 2, color: '#0a716a', background: '#d3f0ee', fontSize: 9, fontWeight: 800, letterSpacing: '.02em' }}
+                >
+                  ½ DAY LEAVE
                 </span>
               )}
             </button>
