@@ -30,6 +30,9 @@ export default function PayrollTab() {
     employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
     salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setBreakdownOpen, setBreakdownRowId,
+    // Whose profile is on screen — decides whether identity numbers are
+    // masked at all. See sensitiveDisplay() below. (QA #109)
+    isOwnProfile,
   } = useEmployeeProfile();
   const toast = useToast();
 
@@ -247,12 +250,55 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
     }
   };
 
-  // Mask a sensitive number, keeping the last `visible` characters.
+  /**
+   * Mask a sensitive number, keeping the last `visible` characters.
+   *
+   * The mask now always has EXACTLY as many characters as the value it hides
+   * (QA #109). The `Math.max(4, …)` floor used to pad short values up to a
+   * minimum of four X's, so the output could be LONGER than the input and
+   * implied digits that were never there: a 6-digit "123456" rendered as
+   * "XXXX3456" — eight characters, reading as an 8-digit number ending 3456.
+   * That misdescribed bank account numbers as much as anything else. A mask may
+   * hide a value; it must not misstate its shape.
+   */
   const mask = (val: any, visible = 4): string => {
     const s = String(val ?? '').replace(/\s+/g, '');
     if (!s) return '—';
     if (s.length <= visible) return s;
-    return 'X'.repeat(Math.max(4, s.length - visible)) + s.slice(-visible);
+    return 'X'.repeat(s.length - visible) + s.slice(-visible);
+  };
+
+  /**
+   * PAN / bank account number as shown on this screen (QA #109).
+   *
+   * Masking was applied unconditionally, so an employee opening their OWN
+   * payroll details saw "XXXXXX234R" for their PAN and an equally unreadable
+   * account number. That defeats the only reason those fields are on a payroll
+   * page — they exist to be CHECKED:
+   *
+   *  · PAN is what the employer files TDS against. A wrong character surfaces
+   *    months later as a 26AS mismatch the employee has to unpick with the tax
+   *    department.
+   *  · The account number is where the salary is actually sent. A wrong digit
+   *    is a failed or misdirected payment, and the employee is the only person
+   *    who can check it against their own passbook.
+   *
+   * Neither can be verified against a row of X's, and hiding someone's own
+   * identifiers from them protects nobody — they are the one person already
+   * entitled to see them.
+   *
+   * Still masked when an HR user views somebody ELSE's profile, where a
+   * shoulder-surfing risk genuinely exists.
+   *
+   * NOT used for Aadhaar, deliberately: UIDAI's convention is to show only the
+   * last four digits, and there is nothing on a payroll screen an employee
+   * needs to reconcile their Aadhaar against, so the argument above does not
+   * carry over to it.
+   */
+  const sensitiveDisplay = (val: any): string => {
+    const s = String(val ?? '').replace(/\s+/g, '').toUpperCase();
+    if (!s) return '—';
+    return isOwnProfile ? s : mask(s);
   };
   // Aadhaar is optional on the employee record. When it is missing the field is
   // dropped entirely instead of rendering a dash — a labelled "Aadhaar Number —"
@@ -383,7 +429,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                         <Col md={6}><div className="ep-field-label">Bank Name</div><div className="ep-field-value">{empDetail?.bank_name || '—'}</div></Col>
                         <Col md={6}>
                           <div className="ep-field-label">Account Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.bank_account_number)}</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{sensitiveDisplay(empDetail?.bank_account_number)}</span>
                         </Col>
                         <Col md={6}>
                           <div className="ep-field-label">IFSC Code</div>
@@ -417,7 +463,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                       <Row className="g-3 mb-3">
                         <Col md={3}>
                           <div className="ep-field-label">PAN Number</div>
-                          <span className="font-monospace fw-semibold pyt-mono-chip">{mask(empDetail?.pan_number)}</span>
+                          <span className="font-monospace fw-semibold pyt-mono-chip">{sensitiveDisplay(empDetail?.pan_number)}</span>
                         </Col>
                         <Col md={3}><div className="ep-field-label">Name</div><div className="ep-field-value">{empDetail?.account_holder_name || employee?.name || '—'}</div></Col>
                         <Col md={3}><div className="ep-field-label">Date of Birth</div><div className="ep-field-value font-monospace">{fmtDate(empDetail?.date_of_birth)}</div></Col>
@@ -494,7 +540,7 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                         Statutory IDs
                       </span>
                       <Row className="g-3">
-                        <Col md={6}><div className="ep-field-label">PAN Number</div><div className="ep-field-value font-monospace">{mask(empDetail?.pan_number)}</div></Col>
+                        <Col md={6}><div className="ep-field-label">PAN Number</div><div className="ep-field-value font-monospace">{sensitiveDisplay(empDetail?.pan_number)}</div></Col>
                         <Col md={6}><div className="ep-field-label">UAN Number</div><div className="ep-field-value font-monospace">{empDetail?.uan_number || '—'}</div></Col>
                         <Col md={6}><div className="ep-field-label">PF Eligible</div><div className="ep-field-value">{empDetail?.pf_eligible ? 'Yes' : 'No'}</div></Col>
                         <Col md={6}><div className="ep-field-label">ESI Applicable</div><div className="ep-field-value">{empDetail?.esi_applicable || '—'}</div></Col>
