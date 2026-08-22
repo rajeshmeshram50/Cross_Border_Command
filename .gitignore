@@ -23,3 +23,17 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Laravel Telescope — local debugging only, never deployed.
+# Telescope is a --dev dependency (composer install --no-dev leaves it out on
+# the server), and AppServiceProvider::register() only registers it when the
+# env is local AND the package is present — so none of these files are
+# referenced by anything that ships. Keeping them out of git means the server
+# never creates telescope_entries and never exposes the dashboard, which
+# displays raw request payloads including auth tokens.
+# NOTE: composer.json / composer.lock ARE committed. They must be, or the
+# server cannot install anything — `--dev` is what keeps Telescope off it.
+/app/Providers/TelescopeServiceProvider.php
+/config/telescope.php
+/database/migrations/*_create_telescope_entries_table.php
+/public/vendor/telescope

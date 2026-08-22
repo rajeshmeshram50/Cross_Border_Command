@@ -11,7 +11,32 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        /* Telescope — local only, and only if actually installed.
+         *
+         * It is a `--dev` dependency, so `composer install --no-dev` on the
+         * server leaves no vendor/laravel/telescope at all. Both guards
+         * matter and neither is redundant:
+         *
+         *   environment('local')  → never exposes the dashboard (which shows
+         *                           request payloads, including auth tokens)
+         *                           on a deployed environment, even if a dev
+         *                           dependency did get installed there.
+         *   class_exists(...)     → keeps this line harmless when the package
+         *                           is missing. It also stops PHP ever
+         *                           autoloading App\Providers\
+         *                           TelescopeServiceProvider, which extends a
+         *                           vendor class and would fatal on its own —
+         *                           that is what makes the provider file safe
+         *                           to leave out of git entirely.
+         *
+         * Registered here rather than in bootstrap/providers.php because that
+         * file is committed and deployed; a hard reference there takes the
+         * whole app down on a server without the package.
+         */
+        if ($this->app->environment('local') && class_exists(\Laravel\Telescope\Telescope::class)) {
+            $this->app->register(\Laravel\Telescope\TelescopeServiceProvider::class);
+            $this->app->register(TelescopeServiceProvider::class);
+        }
     }
 
     public function boot(): void
