@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef, type ReactElement } from 'react';
 import { Badge, Button, CardBody, Input, Spinner } from 'reactstrap';
-import { resolveDependencies, resolveWritableDependencies } from '../utils/moduleDependencies';
+import { resolveDependencies } from '../utils/moduleDependencies';
 
 export interface PermModule {
   id: number;
@@ -215,47 +215,22 @@ export default function PermissionMatrix({
   }, [leaves, matrix, bySlug, tree]);
 
   /**
-   * Module ids whose auto-grant carries Edit as well as View (WRITE_DEPENDENCIES
-   * — currently Onboarding → Employee). Used only for the badge wording, so the
-   * matrix doesn't say "Auto-granted View" next to a ticked Edit box.
-   */
-  const writableDependencyIds = useMemo(() => {
-    const editSlugs: string[] = [];
-    leaves.forEach(m => {
-      const row = matrix[m.id];
-      if (!row || row.is_auto) return;
-      if (row.can_edit) editSlugs.push(m.slug);
-    });
-    const ids = new Set<number>();
-    resolveWritableDependencies(editSlugs).forEach(slug => {
-      const mod = bySlug.get(slug);
-      if (mod && isLeaf(mod) && isPermAllowed(mod.slug, 'can_edit')) ids.add(mod.id);
-    });
-    return ids;
-  }, [leaves, matrix, bySlug, tree]);
-
-  /**
    * Force can_view on for every module the ticked ones depend on (HRMS
    * dependency matrix). Only view is implied — a feeder screen never inherits
-   * action flags, except for the WRITE_DEPENDENCIES rows, whose owning screen
-   * saves through them (Onboarding → Employee) and would otherwise render a
-   * frozen form. Anything the granter can't grant is skipped, same as every
-   * other cell.
+   * action flags — and anything the granter can't grant is skipped, same as
+   * every other cell.
    */
   const withDependencyViews = (
     next: Record<number, PermRow>
   ): Record<number, PermRow> => {
     const explicitSlugs: string[] = [];
-    const explicitEditSlugs: string[] = [];
     leaves.forEach(m => {
       const row = next[m.id];
       if (!row || row.is_auto) return;
       if (PERMS.some(p => row[p.key])) explicitSlugs.push(m.slug);
-      if (row.can_edit) explicitEditSlugs.push(m.slug);
     });
 
     const required = new Set(Object.keys(resolveDependencies(explicitSlugs)));
-    const writable = resolveWritableDependencies(explicitEditSlugs);
     const out = { ...next };
 
     required.forEach(slug => {
@@ -266,13 +241,7 @@ export default function PermissionMatrix({
       // An explicit grant outranks an implied one — don't demote it to auto,
       // or its action flags would be swept away by the cleanup below.
       if (existing && existing.is_auto === false && PERMS.some(p => existing[p.key])) return;
-      const canWrite = writable.has(mod.slug) && isPermAllowed(mod.slug, 'can_edit');
-      out[mod.id] = {
-        ...(existing || emptyPerms()),
-        can_view: true,
-        ...(canWrite ? { can_edit: true } : {}),
-        is_auto: true,
-      };
+      out[mod.id] = { ...(existing || emptyPerms()), can_view: true, is_auto: true };
     });
 
     // Release auto rows nothing requires any more, so unticking the module that
@@ -540,7 +509,7 @@ export default function PermissionMatrix({
                   pill
                   color="warning"
                   className="ms-1 fw-normal"
-                  title={`Auto-granted ${writableDependencyIds.has(mod.id) ? 'View + Edit' : 'View'} because it is required by: ${requiredBy.join(', ')}`}
+                  title={`Auto-granted View because it is required by: ${requiredBy.join(', ')}`}
                 >
                   Required by {requiredBy.length === 1 ? requiredBy[0] : `${requiredBy.length} modules`}
                 </Badge>
