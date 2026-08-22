@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useModulePermission } from '../../hooks/useModulePermission';
 import { AncillaryRolesChip } from '../../components/AncillaryRolesChip';
 import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import DataTable, { ChipCell, TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
 import Tooltip from '../../components/ui/Tooltip';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
@@ -150,6 +151,11 @@ export default function HrExitManagement() {
      whole roster, not the page — counting the 25 rows on screen would report
      "Total Employees 25" on a tenant of 500. */
   const [counts, setCounts] = useState({ total: 0, active: 0, inProgress: 0, exited: 0, missing: 0 });
+  /* The tiles shimmer on their OWN request, not the table's. They come from
+     /employees/exit-stats now, which lands independently of the list — tying
+     the shimmer to the list meant the cards showed a real-looking 0 until the
+     counts arrived, and then jumped. */
+  const [countsLoading, setCountsLoading] = useState(true);
   const [checklistOpen, setChecklistOpen] = useState(false);
   const [processing, setProcessing] = useState<EmployeeRow | null>(null);
   /* "Initiate Exit" opens the exit-TYPE picker first — the wizard is only
@@ -214,6 +220,7 @@ export default function HrExitManagement() {
   const countsReqRef = useRef(0);
   const loadCounts = useCallback(() => {
     const token = ++countsReqRef.current;
+    setCountsLoading(true);
     api.get('/employees/exit-stats', {
       params: debouncedSearch ? { search: debouncedSearch } : undefined,
     })
@@ -227,7 +234,8 @@ export default function HrExitManagement() {
           missing:    Number(data?.missing ?? 0),
         });
       })
-      .catch(() => { /* tiles keep their last good values */ });
+      .catch(() => { /* tiles keep their last good values */ })
+      .finally(() => { if (token === countsReqRef.current) setCountsLoading(false); });
   }, [debouncedSearch]);
   useEffect(() => { loadCounts(); }, [loadCounts]);
 
@@ -655,9 +663,9 @@ export default function HrExitManagement() {
                     <span className="rec-kpi-strip" style={{ background: k.gradient }} />
                     <div className="rec-kpi-text">
                       <span className="rec-kpi-label">{k.label}</span>
-                      {listLoading
+                      {countsLoading
                         ? <Shimmer height={28} width={56} style={{ marginTop: 4 }} />
-                        : <span className="rec-kpi-num">{k.value}</span>}
+                        : <span className="rec-kpi-num"><AnimatedNumber value={k.value} /></span>}
                     </div>
                     <span className="rec-kpi-icon" style={{ background: k.gradient }}>
                       <i className={k.icon} />

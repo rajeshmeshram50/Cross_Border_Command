@@ -21,6 +21,7 @@ import * as XLSX from 'xlsx';
 import FaceRegistrationModal from '../../components/FaceRegistrationModal';
 import EvidenceVaultModal from '../../components/EvidenceVaultModal';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
+import AnimatedNumber from '../../components/ui/AnimatedNumber';
 import { Shimmer } from '../../components/ui/Shimmer';
 import { leavePlansApi } from './leavePlansApi';
 /* Breakup rules live in one place now — onboarding Stage 1 edits the same CTC
@@ -5831,25 +5832,6 @@ function ActionBtn({
    so ten roles stacked into four rows and pushed the field out of the form
    grid). The replacement landed but the original was left behind — 122 lines
    that nothing in the codebase referenced. Deleted. */
-
-function AnimatedNumber({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) {
-  const [display, setDisplay] = useState(0);
-  useEffect(() => {
-    let start = 0;
-    const end = value;
-    if (!end) { setDisplay(0); return; }
-    const duration = 1200;
-    const step = Math.max(1, Math.floor(end / 60));
-    const interval = duration / (end / step || 1);
-    const timer = setInterval(() => {
-      start += step;
-      if (start >= end) { setDisplay(end); clearInterval(timer); }
-      else setDisplay(start);
-    }, interval);
-    return () => clearInterval(timer);
-  }, [value]);
-  return <>{prefix}{display.toLocaleString()}{suffix}</>;
-}
 
 function ToggleSwitch({
   initial,
