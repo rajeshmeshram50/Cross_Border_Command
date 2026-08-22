@@ -1388,6 +1388,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     }
   };
   const [eEnablePayroll, setEEnablePayroll] = useState(true);
+  /* Exit under way ⇒ salary is frozen (QA #105). Payroll's Salary Setup already
+     refuses to touch an exiting employee; this step wrote the same columns with
+     nothing stopping it, so the lock belonged to one screen instead of to the
+     employee. Cannot be read off `status` — that stays 'Active' until the exit
+     is completed — so it comes from the server on load. The API enforces it
+     regardless (EmployeeController::assertSalaryNotLockedByExit); this just
+     stops the form inviting an edit it is going to reject. */
+  const [eSalaryLocked, setESalaryLocked] = useState(false);
   const [ePayGroup, setEPayGroup] = useState('');
   const [eAnnualSalary, setEAnnualSalary] = useState('');
   const [eSalaryFreq, setESalaryFreq] = useState('Per annum'); // salary is always entered per annum (frequency picker removed)
@@ -1446,6 +1454,8 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     setELaptopMasterAssetId(''); setEMobileAssigned('No'); setEMobileMasterAssetId(''); setEOtherMasterAssetIds([]);
     setEAadharFile(null); setEPanFile(null); setEPhotoFile(null);
     setEExistingDocs({}); setEDocBusy({});
+    // Unlocked by default — a fresh/new employee has no exit case (#105).
+    setESalaryLocked(false);
     setEEnablePayroll(true); setEPayGroup('');
     setEAnnualSalary(''); setESalaryFreq('Per annum'); setESalaryFrom('');
     // Reset restores the DEFAULT, which is open — not `false`. Leaving this at
@@ -2268,6 +2278,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
         ? raw.other_master_asset_ids.map((n: any) => String(n))
         : []);
 
+      // #105 — server-computed, since employees.status stays 'Active' for the
+      // whole notice period and cannot answer this.
+      setESalaryLocked(!!raw.exit_in_progress);
       if (raw.enable_payroll !== undefined && raw.enable_payroll !== null) setEEnablePayroll(!!raw.enable_payroll);
       if (raw.pay_group !== undefined && raw.pay_group !== null) setEPayGroup(raw.pay_group);
       /* The column carries two decimals, so a whole-rupee CTC comes back as
@@ -5109,17 +5122,43 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                     <div className="emp-section-title">
                       <i className="ri-money-dollar-circle-line" /> Payroll Configuration
                     </div>
+                    {/* #105 — salary frozen while the exit runs. Payroll's Salary
+                        Setup already refused to touch these employees; this step
+                        wrote the same columns unguarded, so a leaver's CTC could
+                        be raised here and would silently re-price both their
+                        final month and their Full & Final. The server rejects it
+                        either way; this says so before the user types. */}
+                    {eSalaryLocked && (
+                      <div
+                        className="d-flex align-items-start gap-2 mb-3"
+                        style={{
+                          padding: '10px 14px', borderRadius: 10,
+                          background: '#fff4e5', border: '1px solid #f0c48a',
+                          color: '#7a3d00', fontSize: 12.5, lineHeight: 1.5,
+                        }}
+                      >
+                        <i className="ri-lock-line" style={{ fontSize: 15, marginTop: 1 }} />
+                        <span>
+                          <strong>Salary is locked — an exit is in progress.</strong> Dues are settled
+                          through the Full &amp; Final settlement in Exit Management. Other details on
+                          this page can still be edited.
+                        </span>
+                      </div>
+                    )}
                     <div
                       className="emp-payroll-banner d-flex align-items-center gap-2 mb-3"
                       style={{
                         padding: '10px 14px',
                         borderRadius: 10,
+                        opacity: eSalaryLocked ? 0.55 : 1,
                       }}
                     >
                       <button
                         type="button"
                         aria-pressed={eEnablePayroll}
-                        onClick={() => setEEnablePayroll(v => !v)}
+                        disabled={eSalaryLocked}
+                        title={eSalaryLocked ? 'Locked — an exit is in progress for this employee.' : undefined}
+                        onClick={() => { if (!eSalaryLocked) setEEnablePayroll(v => !v); }}
                         className="btn p-0 border-0 d-inline-flex align-items-center"
                         style={{
                           width: 36, height: 20, borderRadius: 999,
@@ -5182,8 +5221,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                                lands, so a CTC typed during the fetch was silently
                                thrown away a moment later — the one point in this
                                form where the server can actually outrun the user. */
-                            disabled={eBreakupLoading}
+                            /* …and while an exit is in progress (#105) — the
+                               server refuses the change, so the field must not
+                               invite one. */
+                            disabled={eBreakupLoading || eSalaryLocked}
+                            title={eSalaryLocked ? 'Locked — an exit is in progress for this employee.' : undefined}
                             onChange={e => {
+                              if (eSalaryLocked) return;
                               const raw = e.target.value;
                               if (raw === '') { setEAnnualSalary(''); setBreakupRecalcing(false); clearEErr('annual_salary'); return; }
                               // Whole rupees only — a CTC is never quoted in paise,
@@ -5194,7 +5238,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                               if (eDetailedBreakup) setBreakupRecalcing(true);
                               clearEErr('annual_salary');
                             }}
-                            style={{ width: '100%', paddingLeft: 25, cursor: eBreakupLoading ? 'not-allowed' : undefined }}
+                            style={{ width: '100%', paddingLeft: 25, cursor: (eBreakupLoading || eSalaryLocked) ? 'not-allowed' : undefined }}
                           />
                         </div>
                         {eBreakupLoading && (

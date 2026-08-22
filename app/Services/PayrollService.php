@@ -802,6 +802,10 @@ class PayrollService
         // Open exit cases — excluded from the run by eligibleEmployees() and
         // reported here so the omission is visible.
         $openExits = \App\Support\ExitInProgress::employeeIds(null, $ids);
+        /* Already paid this month by ANOTHER period of the same client — the
+         * Rule 13 cross-level dedup in generate(). See the reason branch below
+         * for why this has to be reported. (PAY-104) */
+        $coveredElsewhere = $this->coveredBySiblingPeriod($period, $ids);
         $out       = [];
 
         foreach ($employees as $e) {
@@ -844,6 +848,22 @@ class PayrollService
              * the UNDATED open case, which nothing else here can see. */
             $exitInProgress = in_array((int) $e->id, $openExits, true);
 
+            /* PAY-104 — already covered by a SIBLING period for this same month.
+             *
+             * generate() refuses to pay anyone twice in one month, so when a
+             * branch-level run has already produced a payslip for an employee, a
+             * later client-wide run for the same month skips them (and the other
+             * way round). That guard is right, but it was the one exclusion with
+             * nothing behind it: eligibleEmployees() still returns the employee,
+             * so this panel never looked at them, and the drop happened silently
+             * inside generate().
+             *
+             * The result reads as a missing employee with no explanation at all —
+             * reported as "joined in July but does not appear in August payroll,
+             * and is not exiting". Every other reason on this screen answers
+             * itself; this one had to be guessed at. */
+            $paidElsewhere = in_array((int) $e->id, $coveredElsewhere['ids'], true);
+
             /* PAY-04 — onboarding never finished, so eligibleEmployees()' stage
                gate keeps them out of the run. Reported only when nothing
                stronger applies: an exit says more about why they are missing
@@ -879,7 +899,8 @@ class PayrollService
                keeps every long-disabled record out of every future panel. */
             $disabledNoExit = !$lwd && $e->trashed() && in_array($e->id, $paidLast, true);
 
-            if (!$earlyExit && !$exitedInCycle && !$exitInProgress && !$halfOnboarded && !$payrollOff && !$statusGone && !$disabledNoExit) {
+            if (!$earlyExit && !$exitedInCycle && !$exitInProgress && !$halfOnboarded
+                && !$payrollOff && !$statusGone && !$disabledNoExit && !$paidElsewhere) {
                 continue;
             }
 
@@ -956,6 +977,13 @@ class PayrollService
                 // Exit case still open — lets the panel badge the row rather
                 // than making the reader parse the sentence.
                 'exit_in_progress' => $exitInProgress,
+                /* Paid by a sibling cycle for this month, and WHICH one — the
+                 * panel can then point the reader straight at the cycle holding
+                 * the payslip instead of leaving them to find it. (PAY-104) */
+                'paid_elsewhere'   => $paidElsewhere,
+                'paid_in_cycle'    => $paidElsewhere
+                    ? ($coveredElsewhere['labels'][(int) $e->id] ?? null)
+                    : null,
                 // Early exit is the stronger statement (no payroll at all), so
                 // it wins when both apply.
                 'reason'           => ($earlyExit
@@ -968,7 +996,12 @@ class PayrollService
                         . ($fnfAmount !== null
                             ? ' (earned this cycle: ₹' . number_format($fnfAmount, 2) . ').'
                             : '.')
-                        : ($exitInProgress
+                        : ($paidElsewhere
+                            ? 'Already included in the ' . $period->label . ' payroll for '
+                            . ($coveredElsewhere['labels'][(int) $e->id] ?? 'another payroll cycle')
+                            . ' — an employee is only paid once per month, so this run skips them.'
+                            . ' Open that cycle to see their payslip.'
+                            : ($exitInProgress
                             ? 'Exit in progress'
                             . ($lwd ? ' — last working day ' . Carbon::parse($lwd)->format('j M Y') : ' — last working day not agreed yet')
                             . '. Excluded from payroll processing; salary and dues are settled'
@@ -984,7 +1017,7 @@ class PayrollService
                                     . ' settled manually or through Exit Management.'
                                     : 'Employee status is ' . $e->status . ' — paid last cycle, not this one.'
                                     . ' No exit record with a last working day exists, so any dues must be'
-                                    . ' settled manually or through Exit Management.'))))))
+                                    . ' settled manually or through Exit Management.')))))))
                     . ($probationLeaver
                         ? ' Left before completing probation (probation ran to '
                         . $probationEnd->format('j M Y') . ') — notice period was not applicable.'
@@ -993,6 +1026,62 @@ class PayrollService
         }
 
         return $out;
+    }
+
+    /**
+     * Who, among $employeeIds, already has a payslip in a DIFFERENT period of
+     * the same client for this same month/year — and which cycle holds it.
+     *
+     * This is the read-side twin of the Rule 13 cross-level guard in generate():
+     * that guard decides who to skip, this reports who was skipped and where to
+     * find their payslip. Keeping the two in one shape means the panel can never
+     * claim someone was paid elsewhere when the run would still have paid them.
+     *
+     * Returns ['ids' => int[], 'labels' => employee_id => cycle label]. A branch
+     * name is preferred over the bare month label, since "the Aug 2026 payroll
+     * for Pune Branch" is the sentence a reader actually needs; the period label
+     * is the fallback when the sibling is a client-wide cycle with no branch.
+     */
+    private function coveredBySiblingPeriod(PayrollPeriod $period, array $employeeIds): array
+    {
+        $empty = ['ids' => [], 'labels' => []];
+        if (empty($employeeIds) || !$this->hasTable('payslips') || !$period->client_id) {
+            return $empty;
+        }
+
+        $siblings = PayrollPeriod::where('client_id', $period->client_id)
+            ->where('month', $period->month)
+            ->where('year', $period->year)
+            ->where('id', '!=', $period->id)
+            ->get(['id', 'label', 'branch_id']);
+        if ($siblings->isEmpty()) {
+            return $empty;
+        }
+
+        $branchNames = [];
+        $branchIds = $siblings->pluck('branch_id')->filter()->unique()->values()->all();
+        if (!empty($branchIds) && $this->hasTable('branches')) {
+            $branchNames = DB::table('branches')->whereIn('id', $branchIds)
+                ->pluck('name', 'id')->all();
+        }
+
+        $rows = Payslip::whereIn('payroll_period_id', $siblings->pluck('id'))
+            ->whereIn('employee_id', $employeeIds)
+            ->get(['employee_id', 'payroll_period_id']);
+
+        $byPeriod = $siblings->keyBy('id');
+        $ids = [];
+        $labels = [];
+        foreach ($rows as $r) {
+            $eid = (int) $r->employee_id;
+            $ids[$eid] = $eid;
+            $sib = $byPeriod->get($r->payroll_period_id);
+            $labels[$eid] = $sib && $sib->branch_id && isset($branchNames[$sib->branch_id])
+                ? $branchNames[$sib->branch_id]
+                : ($sib->label ?? 'another cycle');
+        }
+
+        return ['ids' => array_values($ids), 'labels' => $labels];
     }
 
     /**
