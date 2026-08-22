@@ -686,6 +686,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // same reason as stats(), and separate from the list because the list is
     // paginated — one page cannot count the roster.
     Route::get   ('/employees/exit-stats',        [EmployeeController::class, 'exitStats']);
+    Route::get   ('/employees/onboarding-stats',  [EmployeeController::class, 'onboardingStats']);
+    // One round trip for the Initiate Onboarding form's non-master lookups.
+    Route::get   ('/employees/onboarding-form-bootstrap', [EmployeeController::class, 'onboardingFormBootstrap']);
     Route::get   ('/employees/department-tree/{departmentId}', [EmployeeController::class, 'departmentOrgTree'])->whereNumber('departmentId');
     Route::get   ('/employees/available-assets',  [EmployeeController::class, 'availableAssets']);
 

@@ -47,6 +47,39 @@ const fmtDate = (iso: string) => {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
+/** How many punch chips show before the rest collapse behind "+N more". */
+const PUNCH_PREVIEW = 3;
+
+/** One chip per punch pair.
+ *  A correction that splits the day into nine slots used to print as a single
+ *  nowrap comma-list, which stretched the column until Reason / Status /
+ *  Action were pushed off the right edge of the table (CBC #77). Chips wrap
+ *  inside a bounded column, and the tail collapses behind a "+N more" toggle —
+ *  the full list is also on the cell's title for a hover read. */
+function PunchChips({ pairs, muted = false }: { pairs: string[]; muted?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!pairs.length) return <span className="text-muted">—</span>;
+  const shown = open ? pairs : pairs.slice(0, PUNCH_PREVIEW);
+  const hidden = pairs.length - shown.length;
+  return (
+    <div className="reg-punch-wrap" title={pairs.join(', ')}>
+      {shown.map((p, i) => (
+        <span key={i} className={`reg-punch-chip${muted ? ' is-muted' : ''}`}>{p}</span>
+      ))}
+      {hidden > 0 && (
+        <button type="button" className="reg-punch-more" onClick={() => setOpen(true)}>
+          +{hidden} more
+        </button>
+      )}
+      {open && pairs.length > PUNCH_PREVIEW && (
+        <button type="button" className="reg-punch-more" onClick={() => setOpen(false)}>
+          Show less
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   /** Bumped by the parent when a NEW request is raised elsewhere on the page,
    *  so this list picks it up instead of waiting for a manual page refresh. */
@@ -65,7 +98,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState<string | null>(null);
   const [status, setStatus]   = useState<RegularizationStatus | 'All'>('Pending');
-  const [busyId, setBusyId]   = useState<number | null>(null);
+  const [busy, setBusy]       = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
   const [open, setOpen]       = useState(true);
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -118,7 +151,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
       if (!res.isConfirmed) return;
       comment = (res.value || '').trim() || undefined;
     }
-    setBusyId(row.id);
+    setBusy({ id: row.id, action: decision });
     try {
       if (decision === 'approve') await regularizationApi.approve(row.id, comment);
       else                        await regularizationApi.reject(row.id, comment);
@@ -131,7 +164,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
     } catch (err: any) {
       toast.error('Action failed', err?.response?.data?.message || err?.message || 'Could not update request');
     } finally {
-      setBusyId(null);
+      setBusy(null);
     }
   };
 
@@ -227,7 +260,19 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                     </tr>
                   ) : paged.map(r => {
                     const tone = STATUS_TONE[r.status] || STATUS_TONE.Cancelled;
-                    const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out)).join(', ');
+                    const rowBusy    = busy?.id === r.id;
+                    const approving  = rowBusy && busy?.action === 'approve';
+                    const rejecting  = rowBusy && busy?.action === 'reject';
+                    const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out));
+                    /* `original_display` is a single "first in – last out" span
+                       for a live day, but a frozen pre-approval snapshot can
+                       carry every pair, comma-separated. Split it so both read
+                       as the same chips. Prose like "No punches (absent)" has
+                       no comma and simply becomes one muted chip. */
+                    const originals = to12h(r.original_display)
+                      .split(',')
+                      .map(t => t.trim())
+                      .filter(Boolean);
                     return (
                       <tr key={r.id}>
                         <td className="fw-semibold">{empName(r)}</td>
@@ -236,11 +281,13 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                           <span className="text-muted ep-fs-12">{r.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}</span>
                           {r.type && <div className="ep-fs-11 text-muted">{r.type}</div>}
                         </td>
-                        <td className="font-monospace ep-fs-12 text-muted" style={{ whiteSpace: 'nowrap' }}>
-                          {r.mode === 'exempt' ? '—' : to12h(r.original_display)}
+                        {/* Both punch columns are width-capped so a long
+                            correction wraps instead of stretching the table. */}
+                        <td style={{ maxWidth: 210, whiteSpace: 'normal' }}>
+                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={originals} muted />}
                         </td>
-                        <td className="font-monospace ep-fs-12" style={{ whiteSpace: 'nowrap' }}>
-                          {r.mode === 'exempt' ? '—' : (punches || '—')}
+                        <td style={{ maxWidth: 260, whiteSpace: 'normal' }}>
+                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={punches} />}
                         </td>
                         <td className="ep-fs-12" style={{ maxWidth: 220 }}>{r.reason || '—'}</td>
                         <td>
@@ -259,35 +306,49 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                             <div className="d-inline-flex align-items-center gap-1">
                               <button
                                 type="button"
-                                data-tooltip="Approve"
+                                data-tooltip={approving ? 'Approving…' : 'Approve'}
                                 data-tooltip-pos="left"
                                 aria-label="Approve"
-                                disabled={busyId === r.id}
+                                aria-busy={approving}
+                                disabled={rowBusy}
                                 onClick={() => act(r, 'approve')}
                                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                                 style={{
                                   width: 28, height: 28, padding: 0,
                                   background: 'linear-gradient(135deg,#0ab39c,#02c8a7)',
                                   color: '#fff', border: 'none',
+                                  // Inline opacity beats Bootstrap's .btn:disabled dimming, so the
+                                  // button actually running stays bright and the other one greys out.
+                                  opacity: rejecting ? 0.45 : 1,
+                                  cursor: rowBusy ? 'wait' : 'pointer',
                                 }}
                               >
-                                <i className="ri-check-line" />
+                                {approving
+                                  ? <span className="spinner-border" role="status" aria-hidden="true"
+                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
+                                  : <i className="ri-check-line" />}
                               </button>
                               <button
                                 type="button"
-                                data-tooltip="Reject"
+                                data-tooltip={rejecting ? 'Rejecting…' : 'Reject'}
                                 data-tooltip-pos="left"
                                 aria-label="Reject"
-                                disabled={busyId === r.id}
+                                aria-busy={rejecting}
+                                disabled={rowBusy}
                                 onClick={() => act(r, 'reject')}
                                 className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-pill"
                                 style={{
                                   width: 28, height: 28, padding: 0,
                                   background: 'linear-gradient(135deg,#f06548,#ff7a5c)',
                                   color: '#fff', border: 'none',
+                                  opacity: approving ? 0.45 : 1,
+                                  cursor: rowBusy ? 'wait' : 'pointer',
                                 }}
                               >
-                                <i className="ri-close-line" />
+                                {rejecting
+                                  ? <span className="spinner-border" role="status" aria-hidden="true"
+                                          style={{ width: 13, height: 13, borderWidth: 2 }} />
+                                  : <i className="ri-close-line" />}
                               </button>
                             </div>
                           ) : (

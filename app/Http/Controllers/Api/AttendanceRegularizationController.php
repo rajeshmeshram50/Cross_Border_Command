@@ -13,18 +13,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 
-/**
- * Attendance regularization workflow — an employee asks to correct a past
- * day's attendance (adjust punches, or exempt the day from penalty policy),
- * which is routed to the reporting manager / HR for approval.
- *
- * The approval model mirrors LeaveRequestController but is deliberately
- * simpler: a single Reporting-Manager level (HR/admin may act from the HR
- * Attendance screen). There is no leave-plan / quota machinery here.
- *
- * Tenant safety: every single-row endpoint passes through findScopedOrFail so
- * a user in client X can't read or act on a request belonging to client Y.
- */
 class AttendanceRegularizationController extends Controller
 {
     /** Tenant-facing timezone used to resolve "today" for date guards. The app
@@ -109,29 +97,19 @@ class AttendanceRegularizationController extends Controller
         }
 
         // Tenant guard on the resolved employee.
-        if ($user->user_type !== 'super_admin'
+        if (
+            $user->user_type !== 'super_admin'
             && $user->client_id
-            && (int) $employee->client_id !== (int) $user->client_id) {
+            && (int) $employee->client_id !== (int) $user->client_id
+        ) {
             abort(403, 'You cannot file a regularization for an employee outside your tenant.');
         }
 
-        // Self-service rule — an employee regularizes their OWN attendance.
-        // Filing on behalf of someone else is an HR/admin capability. Use the
-        // shared ADMIN_TYPES (which includes branch_user) so this matches the
-        // index / approve / cancel checks — a branch-level HR admin could
-        // otherwise view and approve regularizations but not create one on
-        // behalf of an employee, getting "You can only raise a regularization
-        // request for yourself" (bug #15).
-        $isAdmin  = in_array($user->user_type, self::ADMIN_TYPES, true);
+
         $isSelf   = (int) ($employee->user_id ?? 0) === (int) $user->id;
-        /* Filing on behalf: an Attendance grant plus the target being somewhere
-           below this login in the reporting chain. Tenant-wide filing stays
-           with the admin tiers — the grant lets a manager fix their own team's
-           logs, not everybody's. */
-        $onBehalf = !$isSelf && $this->hasAttendanceGrant($user)
-            && ($isAdmin || $this->managesEmployee($user, $employee));
-        if (!$isAdmin && !$isSelf && !$onBehalf) {
-            abort(403, 'You can only raise a regularization request for yourself, or for someone who reports to you with the Attendance permission.');
+        $onBehalf = !$isSelf && $this->hasAttendanceGrant($user);
+        if (!$isSelf && !$onBehalf) {
+            abort(403, 'You can only raise a regularization request for yourself — filing on behalf of another employee needs the Attendance permission.');
         }
 
         // Date guard — regularization is for a PAST or current day, never a
@@ -297,7 +275,13 @@ class AttendanceRegularizationController extends Controller
             $q->where('status', $status);
         }
 
-        $isAdminScope = in_array($user->user_type, self::ADMIN_TYPES, true);
+        /* Who sees the WHOLE queue is decided by the Attendance grant, not by
+         * user_type. An employee login holding hr.attendance is acting as HR
+         * on this screen, so they see every request in the tenant — including
+         * ones a branch user raised — exactly as a branch user does. Logins
+         * without the grant keep the narrow "mine + my direct reports" view
+         * built below. */
+        $isAdminScope = $this->hasAttendanceGrant($user, 'can_view');
         $myEmployeeId = null;
         if (!$isAdminScope) {
             $myEmployeeId = Employee::where('user_id', $user->id)->value('id');
@@ -311,8 +295,10 @@ class AttendanceRegularizationController extends Controller
              * is a plain login user with no employee row of their own hit the
              * same wall from the other side, via the early return that used to
              * sit here. */
-            if (!$myEmployeeId
-                && !Employee::where('reporting_manager_user_id', $user->id)->exists()) {
+            if (
+                !$myEmployeeId
+                && !Employee::where('reporting_manager_user_id', $user->id)->exists()
+            ) {
                 return response()->json(['data' => []]);
             }
 
@@ -320,9 +306,9 @@ class AttendanceRegularizationController extends Controller
             $q->where(function ($w) use ($myEmployeeId, $user) {
                 if ($myEmployeeId) {
                     $w->where('employee_id', $myEmployeeId)
-                      ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
-                          $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
-                      });
+                        ->orWhereIn('employee_id', function ($sub) use ($myEmployeeId) {
+                            $sub->select('id')->from('employees')->where('reporting_manager_id', $myEmployeeId);
+                        });
                 }
                 $w->orWhereIn('employee_id', function ($sub) use ($user) {
                     $sub->select('id')->from('employees')->where('reporting_manager_user_id', $user->id);
@@ -333,8 +319,15 @@ class AttendanceRegularizationController extends Controller
             $q->where('client_id', $user->client_id);
         }
 
+        /* Branch filter. Rows carrying NO branch are deliberately kept: the
+         * column is nullable (it is copied from the employee, who may have no
+         * branch), while the Axios interceptor puts a branch_id on every GET.
+         * A plain where() therefore hid those requests from the one queue
+         * whose whole job is to show everything. */
         if ($branchId = $request->integer('branch_id')) {
-            $q->where('branch_id', $branchId);
+            $q->where(function ($w) use ($branchId) {
+                $w->where('branch_id', $branchId)->orWhereNull('branch_id');
+            });
         }
         if ($search = trim((string) $request->input('search', ''))) {
             $like = '%' . $search . '%';
@@ -342,21 +335,26 @@ class AttendanceRegularizationController extends Controller
                 $sub->select('id')->from('employees')
                     ->where(function ($w) use ($like) {
                         $w->where('first_name', 'ilike', $like)
-                          ->orWhere('last_name', 'ilike', $like)
-                          ->orWhere('display_name', 'ilike', $like)
-                          ->orWhere('emp_code', 'ilike', $like);
+                            ->orWhere('last_name', 'ilike', $like)
+                            ->orWhere('display_name', 'ilike', $like)
+                            ->orWhere('emp_code', 'ilike', $like);
                     });
             });
         }
 
         $rows = $q->get();
 
-        // Per-row "can the viewer act on this RIGHT NOW?" flag — Pending AND
-        // (admin scope OR the requester's reporting manager). This is what the
-        // UI uses to show Approve/Reject vs. a View-only row.
-        $rows->each(function (AttendanceRegularization $row) use ($user, $isAdminScope) {
+        /* Per-row "can the viewer act on this RIGHT NOW?" flag — Pending AND
+         * (Attendance edit grant OR the requester's reporting manager). This
+         * is what the UI uses to show Approve/Reject vs. a View-only row.
+         *
+         * Asked with can_edit, NOT the can_view scope that filled the list: a
+         * view-only grant must not light up buttons that setStatus() would
+         * then 403 the moment they are clicked. */
+        $canActScope = $this->hasAttendanceGrant($user, 'can_edit');
+        $rows->each(function (AttendanceRegularization $row) use ($user, $canActScope) {
             $row->can_act_now = $row->status === 'Pending'
-                && ($isAdminScope || $this->isReportingManager($user, $row));
+                && ($canActScope || $this->isReportingManager($user, $row));
         });
 
         $this->attachOriginalPunches($rows);
@@ -377,15 +375,15 @@ class AttendanceRegularizationController extends Controller
      */
     private function attachOriginalPunches($rows): void
     {
-        $pending = $rows->filter(fn ($r) => empty($r->original_punches));
+        $pending = $rows->filter(fn($r) => empty($r->original_punches));
         if ($pending->isEmpty()) {
-            $rows->each(fn ($r) => $r->original_display = $r->original_summary);
+            $rows->each(fn($r) => $r->original_display = $r->original_summary);
             return;
         }
 
         // (employee_id, date) pairs still needing a live read.
         $empIds = $pending->pluck('employee_id')->unique()->values()->all();
-        $dates  = $pending->map(fn ($r) => Carbon::parse((string) $r->regularization_date)->toDateString())
+        $dates  = $pending->map(fn($r) => Carbon::parse((string) $r->regularization_date)->toDateString())
             ->unique()->values()->all();
 
         $punchesByKey = [];
@@ -407,7 +405,7 @@ class AttendanceRegularizationController extends Controller
                 $key = $p->employee_id . '|' . Carbon::parse($p->attendance_date)->toDateString();
                 $punchesByKey[$key][] = [
                     'time'      => Carbon::parse($p->punched_at, 'UTC')
-                                        ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
+                        ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
                     'direction' => $p->direction,
                     'label'     => $p->label,
                     'method'    => $p->method,
@@ -450,9 +448,11 @@ class AttendanceRegularizationController extends Controller
         if (!$user) abort(401);
         $row = $this->findScopedOrFail($id, $user);
 
-        // Only the requester (or HR/admin) can cancel a pending request.
+        // Only the requester, or an Attendance grant holder, can cancel a
+        // pending request. Same grant test as approve/reject, so the three
+        // actions on one row are never available in odd combinations.
         $isOwner = Employee::where('id', $row->employee_id)->where('user_id', $user->id)->exists();
-        if (!$isOwner && !in_array($user->user_type, self::ADMIN_TYPES, true)) {
+        if (!$isOwner && !$this->hasAttendanceGrant($user, 'can_edit')) {
             abort(403, 'You can only cancel your own regularization requests.');
         }
         if ($row->status !== 'Pending') {
@@ -482,19 +482,25 @@ class AttendanceRegularizationController extends Controller
             abort(403, 'You cannot act on this regularization request — only the reporting manager or HR can.');
         }
 
-        /* No one may APPROVE their own request — not even via the admin scope.
+        /* Separation of duties applies to a plain REPORTING MANAGER only.
          *
-         * TWO ways it is theirs, and only the first was checked. The obvious
-         * one is being the SUBJECT. The other is having RAISED it: now that a
-         * manager with the Attendance grant can file on an employee's behalf,
-         * raising and approving would be one uninterrupted action by one
-         * person, which is the whole point of having an approval step. */
-        $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
-        if ($next === 'Approved' && $ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
-            abort(403, 'You cannot approve your own regularization request.');
-        }
-        if ($next === 'Approved' && $row->created_by && (int) $row->created_by === (int) $user->id) {
-            abort(403, 'You raised this request, so someone else has to approve it.');
+         * A holder of the Attendance grant is the attendance authority for the
+         * tenant: they may approve a request they are the subject of, and one
+         * they raised themselves. That is deliberate — with a single
+         * branch-level approver there is frequently nobody else who could act,
+         * and blocking it stranded those requests as Pending forever.
+         *
+         * A manager acting purely off the org chart holds no such authority,
+         * so for them "their own request" stays unapprovable, both ways it can
+         * be theirs: being the SUBJECT, and having RAISED it. */
+        if (!$isAdminScope && $next === 'Approved') {
+            $ownEmployeeId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
+            if ($ownEmployeeId && (int) $row->employee_id === $ownEmployeeId) {
+                abort(403, 'You cannot approve your own regularization request.');
+            }
+            if ($row->created_by && (int) $row->created_by === (int) $user->id) {
+                abort(403, 'You raised this request, so someone else has to approve it.');
+            }
         }
 
         /* Payroll gate, re-checked at DECISION time.
@@ -602,7 +608,7 @@ class AttendanceRegularizationController extends Controller
 
         return \App\Models\PayrollPeriod::query()
             ->where('client_id', $employee->client_id)
-            ->where(fn ($w) => $bId
+            ->where(fn($w) => $bId
                 ? $w->where('branch_id', $bId)->orWhereNull('branch_id')
                 : $w->whereNull('branch_id'))
             ->where('month', (int) $when->month)
@@ -698,7 +704,9 @@ class AttendanceRegularizationController extends Controller
         // re-checks rather than trusting the earlier answer.
         if ($this->payrollLocked($employee, $dateStr)) {
             Log::warning('[regularization] apply skipped — payroll locked for the period', [
-                'request_id' => $row->id, 'employee_id' => $employee->id, 'date' => $dateStr,
+                'request_id' => $row->id,
+                'employee_id' => $employee->id,
+                'date' => $dateStr,
             ]);
             return;
         }
@@ -712,13 +720,16 @@ class AttendanceRegularizationController extends Controller
             $bounded = $this->boundPunchesToShift($punches, $employee);
             if (empty($bounded['punches'])) {
                 Log::warning('[regularization] apply skipped — punches fall entirely outside the shift', [
-                    'request_id' => $row->id, 'employee_id' => $employee->id, 'window' => $bounded['window'],
+                    'request_id' => $row->id,
+                    'employee_id' => $employee->id,
+                    'window' => $bounded['window'],
                 ]);
                 return;
             }
             if ($bounded['trimmed']) {
                 Log::info('[regularization] punches trimmed to shift window on apply', [
-                    'request_id' => $row->id, 'window' => $bounded['window'],
+                    'request_id' => $row->id,
+                    'window' => $bounded['window'],
                 ]);
             }
             $punches = $bounded['punches'];
@@ -728,7 +739,7 @@ class AttendanceRegularizationController extends Controller
         // takes its own short path and then shares the payslip refresh below.
         if ($isExempt) {
             try {
-                DB::transaction(fn () => $this->applyApprovedExemption($row, $employee, $dateStr));
+                DB::transaction(fn() => $this->applyApprovedExemption($row, $employee, $dateStr));
             } catch (\Throwable $e) {
                 Log::warning('[regularization] apply-exemption failed', [
                     'request_id' => $row->id,
@@ -789,9 +800,9 @@ class AttendanceRegularizationController extends Controller
                 if (empty($row->original_punches)) {
                     $existing = AttendancePunch::where('attendance_id', $attendance->id)
                         ->orderBy('punched_at')->get();
-                    $snapshot = $existing->map(fn ($p) => [
+                    $snapshot = $existing->map(fn($p) => [
                         'time'      => Carbon::parse($p->punched_at, 'UTC')
-                                            ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
+                            ->setTimezone(self::DISPLAY_TZ)->format('H:i'),
                         'direction' => $p->direction,
                         'label'     => $p->label,
                         'method'    => $p->method,
@@ -829,8 +840,10 @@ class AttendanceRegularizationController extends Controller
                         $t = trim((string) ($p[$dir] ?? ''));
                         if ($t === '' || !preg_match('/^\d{1,2}:\d{2}$/', $t)) continue;
                         $at = Carbon::parse("$dateStr $t", self::DISPLAY_TZ);
-                        if ($overnight
-                            && ($this->nearestToWindow($this->toMinutes($t), $sMin, $eMin) ?? 0) >= 1440) {
+                        if (
+                            $overnight
+                            && ($this->nearestToWindow($this->toMinutes($t), $sMin, $eMin) ?? 0) >= 1440
+                        ) {
                             $at->addDay();
                         }
                         $events[] = [
@@ -839,7 +852,7 @@ class AttendanceRegularizationController extends Controller
                         ];
                     }
                 }
-                usort($events, fn ($a, $b) => $a['ts']->getTimestamp() <=> $b['ts']->getTimestamp());
+                usort($events, fn($a, $b) => $a['ts']->getTimestamp() <=> $b['ts']->getTimestamp());
 
                 // Index of the chronologically last "out" → labelled Check Out.
                 $lastOutIdx = -1;
@@ -963,7 +976,7 @@ class AttendanceRegularizationController extends Controller
                 'acted_at'    => $entry['acted_at'] ?? null,
                 'comment'     => $entry['comment'] ?? null,
                 'is_current'  => ($i + 1) === (int) ($row->current_approval_level ?? 1)
-                                 && $row->status === 'Pending',
+                    && $row->status === 'Pending',
             ];
         }
 
@@ -1024,7 +1037,7 @@ class AttendanceRegularizationController extends Controller
         if ($min === null) {
             return null;
         }
-        $distance = fn (int $v) => $v < $sMin ? $sMin - $v : ($v > $eMin ? $v - $eMin : 0);
+        $distance = fn(int $v) => $v < $sMin ? $sMin - $v : ($v > $eMin ? $v - $eMin : 0);
 
         return $distance($min + 1440) < $distance($min) ? $min + 1440 : $min;
     }
@@ -1193,8 +1206,6 @@ class AttendanceRegularizationController extends Controller
         return count($chain) + 1;
     }
 
-    /** Is the signed-in user the reporting manager of the request's employee?
-     *  Matches both an Employee-row RM and a login-User RM (admin manager). */
     /**
      * Does this login hold the Attendance module grant?
      *
@@ -1222,24 +1233,8 @@ class AttendanceRegularizationController extends Controller
             ->exists();
     }
 
-    /** Is $employee somewhere BELOW this login in the reporting chain? */
-    private function managesEmployee($user, Employee $employee): bool
-    {
-        $myEmpId = (int) (Employee::where('user_id', $user->id)->value('id') ?? 0);
-        $seen = [];
-        $cursor = $employee;
-        // Walk upward. The depth cap is a backstop against a reporting loop
-        // that already exists in the data, the same guard ExitController uses.
-        for ($i = 0; $i < 20 && $cursor; $i++) {
-            if (isset($seen[$cursor->id])) break;
-            $seen[$cursor->id] = true;
-            if ($cursor->reporting_manager_user_id && (int) $cursor->reporting_manager_user_id === (int) $user->id) return true;
-            if ($myEmpId && $cursor->reporting_manager_id && (int) $cursor->reporting_manager_id === $myEmpId) return true;
-            $cursor = $cursor->reporting_manager_id ? Employee::find($cursor->reporting_manager_id) : null;
-        }
-        return false;
-    }
-
+    /** Is the signed-in user the reporting manager of the request's employee?
+     *  Matches both an Employee-row RM and a login-User RM (admin manager). */
     private function isReportingManager($user, AttendanceRegularization $row): bool
     {
         $emp = Employee::find($row->employee_id);
@@ -1258,9 +1253,11 @@ class AttendanceRegularizationController extends Controller
     private function findScopedOrFail(int $id, $user): AttendanceRegularization
     {
         $row = AttendanceRegularization::findOrFail($id);
-        if ($user->user_type !== 'super_admin'
+        if (
+            $user->user_type !== 'super_admin'
             && $user->client_id
-            && (int) $row->client_id !== (int) $user->client_id) {
+            && (int) $row->client_id !== (int) $user->client_id
+        ) {
             abort(404);
         }
         return $row;

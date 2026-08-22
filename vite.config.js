@@ -31,6 +31,32 @@ export default defineConfig({
         tailwindcss(),
         react(),
     ],
+    /* Declared browser support floor (QA #108).
+     *
+     * There was no `target` and no browserslist anywhere, so Vite fell back to
+     * its default ('modules' — roughly Chrome 87 / Safari 14 / Firefox 78) for
+     * the JAVASCRIPT while Tailwind 4 was emitting CSS that needs far newer
+     * engines: the built app stylesheet carries 69 `@property` rules, 206
+     * `color-mix()` calls and 63 `oklch()` colours, none of which exist below
+     * Safari 16.4 / Chrome 111 / Firefox 128.
+     *
+     * The two floors disagreeing is what made the failure so confusing to
+     * report: on a browser in that gap the scripts load and run perfectly, so
+     * the app is fully interactive, but every custom property resolves to
+     * nothing — elements render with no colour, no spacing and no shadow. It
+     * reads as "some elements are not displayed correctly" rather than as an
+     * unsupported browser, which is exactly how it was filed.
+     *
+     * Setting the JS target to the SAME floor Tailwind already imposes makes
+     * the boundary a single, honest line instead of two invisible ones. It also
+     * lets esbuild stop down-levelling syntax these engines support natively.
+     *
+     * Keep this in step with browserslist in package.json and with
+     * MIN_BROWSERS in resources/js/utils/browserSupport.ts — all three describe
+     * the same floor and are meant to be changed together. */
+    build: {
+        target: ['chrome111', 'edge111', 'firefox128', 'safari16.4'],
+    },
     server: {
         watch: {
             ignored: ['**/storage/framework/views/**'],

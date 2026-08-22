@@ -19,7 +19,10 @@ const toISO    = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padSt
 
 export type DayStatus =
   | 'Present' | 'Late' | 'Half Day' | 'Missing In' | 'Missing Out'
-  | 'Weekly Off' | 'Holiday' | 'On Duty' | 'Work From Home' | 'Absent' | 'Leave' | 'Paid Leave' | 'Unpaid Leave' | 'Corrected';
+  | 'Weekly Off' | 'Holiday' | 'On Duty' | 'Work From Home' | 'Absent' | 'Leave' | 'Paid Leave' | 'Unpaid Leave' | 'Corrected'
+  /* Date falls before the employee's joining date — out of scope, not an
+     absence (CBC #74). */
+  | 'Not Joined';
 
 export interface AttLog {
   iso?: string;
@@ -54,6 +57,8 @@ export interface AttLogsEmployee {
   shiftEnd: string;
   weeklyOff: string;
   logs: AttLog[];
+  /** 'YYYY-MM-DD' — nothing before this is an attendance day (CBC #74). */
+  dateOfJoining?: string | null;
 }
 
 const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; label: string }> = {
@@ -71,6 +76,8 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   'Paid Leave':      { fg: '#0a716a', bg: '#d3f0ee', dot: '#0ab39c', label: 'Paid Leave' },
   'Unpaid Leave':    { fg: '#a4661c', bg: '#fde8c4', dot: '#f59e0b', label: 'Unpaid Leave' },
   'Corrected':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Corrected' },
+  // Neutral slate — neither a good nor a bad day, just not one of theirs.
+  'Not Joined':      { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Not Joined' },
 };
 
 /** Non-working day bands shown across the visual bar when there are no work
@@ -722,8 +729,14 @@ function CalendarMonthGrid({
     const map: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
     if (map[key] !== undefined) weeklyOffDays.add(map[key]);
   }
+  /* Out of scope before the joining date, exactly as future days are. The
+     backend drops those days from `logs`, but the weekly-off fallback below
+     would still paint every pre-joining Sunday as "Weekly Off" (CBC #74). */
+  const joinedIso = employee.dateOfJoining || null;
+  const preJoin = (iso: string) => !!joinedIso && iso < joinedIso;
   const statusFor = (iso: string): DayStatus | null => {
     if (iso > TODAY_ISO) return null;
+    if (preJoin(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
     const d = parseISO(iso);
@@ -731,24 +744,24 @@ function CalendarMonthGrid({
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
     if (cells.length >= 42) break;
   }
 
@@ -803,13 +816,13 @@ function CalendarMonthGrid({
             ? (halfLeave
                 ? `${c.day} — ${LEAVE_PORTION_LABEL[c.leavePortion!]} ${leaveLike ? tone.label : 'leave'}`
                 : `${c.day} — ${tone.label}`)
-            : `${c.day}`;
+            : c.preJoin ? `${c.day} — before joining date` : `${c.day}`;
           return (
             <button
               key={i}
               type="button"
-              className={`att-cal-cell ${c.inMonth ? '' : 'is-out'} ${c.future ? 'is-future' : ''} ${isToday ? 'is-today' : ''}`}
-              disabled={c.future || !c.inMonth}
+              className={`att-cal-cell ${c.inMonth ? '' : 'is-out'} ${c.future ? 'is-future' : ''} ${c.preJoin ? 'is-prejoin' : ''} ${isToday ? 'is-today' : ''}`}
+              disabled={c.future || c.preJoin || !c.inMonth}
               onClick={() => onPickDate(c.iso)}
               title={cellTitle}
               style={tone ? { borderColor: tone.dot } : undefined}

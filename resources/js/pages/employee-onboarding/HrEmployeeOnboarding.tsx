@@ -579,6 +579,67 @@ const EMPLOYEE_TYPES = [
 ] as const;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
+/* Remembered rows-per-page, so the next visit opens at the size that settled
+   last time rather than re-measuring from a default every load. Namespaced per
+   screen — Exit Management keeps its own under cbc.hr.exit.perPage. */
+const PER_PAGE_KEY = 'cbc.hr.onboarding.perPage';
+
+
+function OnboardFormSkeleton() {
+  const Field = () => (
+    <Col md={4}>
+      <Shimmer height={10} width="42%" />
+      <div style={{ marginTop: 8 }}><Shimmer height={38} /></div>
+    </Col>
+  );
+  return (
+    <div aria-hidden>
+      {[0, 1].map(section => (
+        <div className="onb-init-section" key={section}>
+          <div className="onb-init-section-head">
+            <Shimmer width={28} height={28} radius={8} />
+            <div className="min-w-0 flex-grow-1">
+              <Shimmer height={13} width={160} />
+              <div style={{ marginTop: 6 }}><Shimmer height={10} width={240} /></div>
+            </div>
+            <Shimmer width={92} height={20} radius={999} />
+          </div>
+          <div className="onb-init-section-body">
+            <Row className="g-3">
+              {Array.from({ length: 6 }, (_, i) => <Field key={i} />)}
+            </Row>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Available-asset rows -> picker options.
+ *
+ * Shared by the bootstrap fetch and the picker's onOpen refresh, which read the
+ * same list through two different endpoints. Two copies is two chances for a
+ * refresh to render an option differently from the one the form opened with.
+ */
+const toAssetOpts = (rows: any[]): AssetOpt[] =>
+  (rows ?? []).map((a: any) => ({
+    value: String(a.id),
+    label: a.label || a.asset_name,
+    /* Device still linked to this slot but re-categorised in the Asset master
+       since (Laptop → Mobile). Without this row the select had no option
+       matching the saved id and fell back to printing the raw id. */
+    ...(a.stale_category
+      ? { badge: { text: 'Category changed', tone: 'red' as const } }
+      : {}),
+  }));
+
+const toOvertimeRateOpts = (rows: any[]): { value: string; label: string }[] =>
+  rows
+    .filter((o: any) => String(o.status ?? 'Active').toLowerCase() === 'active')
+    .map((o: any) => { const n = String(o.name ?? o.rate_name ?? '').trim(); return { value: n, label: n }; })
+    .filter((o: { value: string }) => o.value !== '');
+
 export default function HrEmployeeOnboarding() {
   // Redirects to /hr/employees with a hint so the destination page can
   // open the full 4-step wizard for the chosen row.
@@ -612,44 +673,94 @@ export default function HrEmployeeOnboarding() {
   // True until the first /employees response settles — drives the
   // shimmer skeleton on the onboarding table.
   const [loadingRows, setLoadingRows] = useState(true);
-  const reloadApiRows = () => {
-    api.get('/employees')
-      .then(r => {
-        // Drop soft-deleted (disabled) employees. The /employees endpoint
-        // returns trashed rows by default so the HR Employees "Disabled"
-        // tab can render them — but the Onboarding page is strictly a
-        // forward-motion surface, so showing a disabled employee here
-        // led to the admin clicking "Initiate Onboarding" on an account
-        // that can't even sign in. Filter at the boundary so every
-        // downstream guard (button visibility, stats, vault counts) is
-        // automatically correct.
-        //
-        // ALSO drop EXITED / INACTIVE employees. Completing an exit flips
-        // employees.status to Resigned/Terminated (and disables the login)
-        // WITHOUT soft-deleting the row, so a !deleted_at filter alone let
-        // exited people reappear in the onboarding queue. An exited employee
-        // belongs only in the Disabled tab, never in onboarding.
-        const EXCLUDED_STATUSES = ['Resigned', 'Terminated', 'Inactive'];
-        const list = (Array.isArray(r.data) ? r.data : [])
-          .filter((e: any) => !e?.deleted_at)
-          .filter((e: any) => !EXCLUDED_STATUSES.includes(String(e?.status ?? '')));
+  const [page, setPage]       = useState(0);   // DataTable counts from 0, the API from 1
+  /* Starts at 10, which is also the minAutoRows floor handed to <DataTable>.
+     That agreement is the point: autoFitRows measures the viewport only AFTER
+     `loading` drops — i.e. after the first fetch has already gone out — so that
+     request always uses whatever we start with. Start at 8 and the measurement
+     disagrees on a normal screen, reports a new size, and the page fetches
+     twice on every load (per_page=8 followed by per_page=10 in the network
+     tab). Starting at the floor means setPerPage() is usually handed the number
+     it already holds, React bails out, and no second request happens.
+
+     Zoom out (Ctrl+-) and more rows fit, so it does correct itself once and
+     pulls a bigger page — which is the whole point of fitting to the viewport. */
+  const [perPage, setPerPage] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;   // private mode / storage disabled
+    }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
+  const [total, setTotal]     = useState(0);
+
+  /* Bumped by reloadApiRows(); both the list and the KPI fetches watch it,
+     so closing the wizard refreshes the table AND the tiles together — they
+     read the same rows and must not disagree about them. */
+  const [dataVersion, setDataVersion] = useState(0);
+
+  /* Typing is not a request. Without this every letter fires a page-1 fetch
+     and the answers arrive out of order — the response for "san" landing
+     after the response for "sanj". */
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  /* Any change to WHAT is being asked for goes back to page one. Staying on
+     page 12 while narrowing to three results shows an empty table under a
+     pager insisting there are sixteen pages. */
+  useEffect(() => { setPage(0); }, [debouncedQ, tab]);
+  /* Callers just ask for a refresh; the effect below owns the request. */
+  const reloadApiRows = useCallback(() => setDataVersion(v => v + 1), []);
+
+  const listReqRef = useRef(0);
+  useEffect(() => {
+    const token = ++listReqRef.current;
+    setLoadingRows(true);
+    /* view=onboarding — the module's slice of /employees. Unnamed, this
+       endpoint answers with the full profile payload: the client, the branch
+       and its shifts, the login user, the legal entity, six country/state
+       pairs and the whole banking block, none of which this table renders —
+       for every employee in the tenant, unpaginated.
+
+       The two row filters this used to apply in the browser are now
+       applyOnboardingVisibility() on the server: drop disabled logins, and
+       drop people whose exit completed (which flips status to
+       Resigned/Terminated WITHOUT soft-deleting, so a !deleted_at check
+       alone let leavers back into the queue). Server-side they have to be
+       exact rather than a superset — a page of eight that the browser then
+       filtered would render six. */
+    api.get('/employees', {
+      params: {
+        view: 'onboarding',
+        onboarding_status: tab,
+        page: page + 1,
+        per_page: perPage,
+        ...(debouncedQ ? { search: debouncedQ } : {}),
+      },
+    })
+      .then(({ data }) => {
+        if (token !== listReqRef.current) return;
+        // `?? data` keeps this working if the envelope ever goes away — the
+        // endpoint only paginates for callers that ask.
+        const body: any = data ?? {};
+        const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
         setApiRows(list.map(apiToOnboardRow));
+        setTotal(Number(body.total ?? list.length) || 0);
       })
-      .catch(() => setApiRows([]))
-      .finally(() => setLoadingRows(false));
-  };
-  useEffect(() => { reloadApiRows(); }, []);
+      .catch(() => { if (token === listReqRef.current) { setApiRows([]); setTotal(0); } })
+      .finally(() => { if (token === listReqRef.current) setLoadingRows(false); });
+  }, [tab, page, perPage, debouncedQ, dataVersion]);
   // Split by status pill so the Pending tab keeps showing only employees
   // who still need attention; Completed tab shows fully-onboarded rows.
-  const liveSplit = useMemo(() => {
-    const pending: OnboardRow[]   = [];
-    const completed: OnboardRow[] = [];
-    for (const row of apiRows) {
-      if (row.status === 'Completed') completed.push(row);
-      else pending.push(row);
-    }
-    return { pending, completed };
-  }, [apiRows]);
+  /* The pending / completed split moved to the server (?onboarding_status),
+     because splitting in the browser needs every row in the browser. */
 
   // Evidence Vault modal — opened from the Action column on the Completed tab
   const [vaultOpen, setVaultOpen] = useState(false);
@@ -718,49 +829,45 @@ export default function HrEmployeeOnboarding() {
      It was written out only inside the table's filter, so the KPI tiles and the
      tab badges counted the whole roster no matter what was typed — search for
      one person and the cards still read the company total (CBC #118). */
-  const matchesQuery = useCallback((r: OnboardRow) => {
-    const needle = q.trim().toLowerCase();
-    if (!needle) return true;
-    return (
-      r.name.toLowerCase().includes(needle)         ||
-      r.empId.toLowerCase().includes(needle)        ||
-      r.department.toLowerCase().includes(needle)   ||
-      r.designation.toLowerCase().includes(needle)  ||
-      r.primaryRole.toLowerCase().includes(needle)  ||
-      r.managerName.toLowerCase().includes(needle)
-    );
-  }, [q]);
 
-  const counts = useMemo(() => {
-    /* Search and department narrow the cards; the STATUS filter deliberately
-       does not. These tiles are the status breakdown — In Progress, Not
-       Started, Completed — so filtering them by status would leave the tile you
-       picked holding the total and every other tile reading 0, which is a
-       breakdown that no longer breaks anything down. Search and department are
-       different: they change WHO is being counted, which is exactly what the
-       cards are meant to report. */
-    const keep = (r: OnboardRow) =>
-      (deptFilter === 'All' || r.department === deptFilter) && matchesQuery(r);
-    const pendingRows   = liveSplit.pending.filter(keep);
-    const completedRows = liveSplit.completed.filter(keep);
-    const all = [...pendingRows, ...completedRows];
-    return {
-      total:     all.length,
-      progress:  pendingRows.filter(r => r.status === 'In Progress' || r.status === 'IT Setup' || r.status === 'Orientation' || r.status === 'Document Pending').length,
-      completed: completedRows.length,
-      notStart:  pendingRows.filter(r => r.status === 'Not Started').length,
-      missing:   pendingRows.filter(r => r.profile < 60).length,
-      pending:   pendingRows.length,
-    };
-  }, [liveSplit, deptFilter, matchesQuery]);
+  /* KPI tiles + tab badges. Separate from the list because they describe the
+     whole roster, not the page — counting the eight rows on screen would
+     report "Total Employees 8" on a tenant of 365.
 
-  const rows = tab === 'pending' ? liveSplit.pending : liveSplit.completed;
+     Follows the search, which changes WHO is being counted, but NOT the tab:
+     the tabs are cut from this very breakdown, so filtering by tab would
+     leave the open tab holding the total and every other tile reading 0. */
+  const [counts, setCounts] = useState({ total: 0, progress: 0, completed: 0, notStart: 0, missing: 0, pending: 0 });
+  const countsReqRef = useRef(0);
+  useEffect(() => {
+    const token = ++countsReqRef.current;
+    api.get('/employees/onboarding-stats', { params: debouncedQ ? { search: debouncedQ } : undefined })
+      .then(({ data }) => {
+        if (token !== countsReqRef.current) return;
+        setCounts({
+          total:     Number(data?.total ?? 0),
+          progress:  Number(data?.inProgress ?? 0),
+          completed: Number(data?.completed ?? 0),
+          notStart:  Number(data?.notStarted ?? 0),
+          missing:   Number(data?.missing ?? 0),
+          pending:   Number(data?.pending ?? 0),
+        });
+      })
+      .catch(() => { /* tiles keep their last good values */ });
+  }, [debouncedQ, dataVersion]);
 
+  // Already the requested tab's page, already searched, straight from the API.
+  const rows = apiRows;
+
+  /* deptFilter / statusFilter have no control bound to them on this page —
+     both are permanently 'All'. Left in place rather than ripped out, but
+     note they can only ever narrow the CURRENT page now that paging is
+     server-side; wiring a real control to either means sending it to the
+     API the way ?search and ?onboarding_status already go. */
   const filtered = useMemo(() => rows
     .filter(r => deptFilter === 'All' || r.department === deptFilter)
-    .filter(r => statusFilter === 'All' || r.status === statusFilter)
-    .filter(matchesQuery),
-  [rows, deptFilter, statusFilter, matchesQuery]);
+    .filter(r => statusFilter === 'All' || r.status === statusFilter),
+  [rows, deptFilter, statusFilter]);
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
      4+18+8+9+10+8+7+11+9+8+8. */
@@ -1074,6 +1181,13 @@ export default function HrEmployeeOnboarding() {
         searchValue={q}
         onSearchChange={setQ}
         searchPlaceholder="Search name, ID, department…"
+        minAutoRows={10}
+        serverPagination={{
+          total,
+          pageIndex: page,
+          onPageChange: setPage,
+          onPageSizeChange: setPerPage,
+        }}
         tabs={[
           { key: 'pending',   label: 'Onboarding Pending (New Joiners)', icon: 'ri-time-line',            count: counts.pending },
           { key: 'completed', label: 'Onboarding Completed',             icon: 'ri-checkbox-circle-line', count: counts.completed },
@@ -1972,9 +2086,27 @@ function InitiateOnboardingModal({
      before the fetch resolves, or after it fails, the wizard was treating an
      unknown as a pass and letting HR complete onboarding on the strength of
      data it had never loaded. Nothing may be judged done until this is true. */
+  /* True once the two PRIORITY requests have both answered: the master bulk
+     and the form bootstrap. Every other lookup this modal makes waits on it.
+
+     Ordering matters more than it looks. The document-template match, the
+     signature list, the salary structure and the document list fill nothing
+     the user can see on Stage 1, but they were firing FIRST — from effects
+     declared earlier in the file — so the fields the form actually opens on
+     sat behind them. With a server that answers one request at a time (which
+     is what `php artisan serve` does), that is the whole difference between
+     the form being usable immediately and several seconds later.
+
+     DECLARED HERE, above the first effect that reads it: an effect's dependency
+     array is evaluated during render, so a `const` declared further down the
+     component throws "Cannot access 'coreReady' before initialization" the
+     moment the modal mounts. Neither tsc nor the bundler catches that — it is
+     a temporal-dead-zone error, and it only shows up at runtime. */
+  const [coreReady, setCoreReady] = useState(false);
   const [stage5Loaded, setStage5Loaded] = useState(false);
   useEffect(() => {
     if (!isOpen || !emp?.dbId) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); return; }
+    if (!coreReady) return;   // priority requests first — see coreReady
     let cancelled = false;
     (async () => {
       try {
@@ -2004,7 +2136,7 @@ function InitiateOnboardingModal({
       } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); } }
     })();
     return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, coreReady]);
 
   /* Live override for the snapshot above. The effect only re-runs when the
      modal opens, so signing a document mid-session left the sidebar at 0%
@@ -2055,24 +2187,15 @@ function InitiateOnboardingModal({
   /* Re-readable so the picker's onOpen can refresh it — an edit in
      Master › Overtime (OT) then shows up without a page reload. Only ACTIVE
      rows are ever offered. `isStale` lets the mount-time effect abort. */
+  /* Only the picker's onOpen calls this now — an edit in Master › Overtime (OT)
+     then shows up without a page reload. The mount-time load rides the bulk
+     call below instead. Mapping is shared via toOvertimeRateOpts so a refresh
+     can never disagree with what the form opened with. */
   const reloadOvertimeRates = useCallback((isStale: () => boolean = () => false) =>
     api.get('/master/overtime_rates').then(r => {
       if (isStale()) return;
       const rows = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-      setOvertimeRateOpts(
-        rows
-          .filter((o: any) => String(o.status).toLowerCase() === 'active')
-          /* `name` first, `rate_name` second.
-             The list arrives from /master/bulk?fields=id,name, which projects the
-             master's label column AS `name` — master_overtime_rates spells it
-             `rate_name`, so reading only that key produced a dropdown of
-             "undefined" for every option. Both keys are accepted so a full master
-             row (which carries rate_name) still renders if this is ever fed from
-             the unslimmed endpoint. The VALUE stays the rate name either way:
-             `employees.overtime` stores the label, not the id. */
-          .map((o: any) => { const n = String(o.name ?? o.rate_name ?? '').trim(); return { value: n, label: n }; })
-          .filter((o: { value: string }) => o.value !== ''),
-      );
+      setOvertimeRateOpts(toOvertimeRateOpts(rows));
     }).catch(() => { if (!isStale()) setOvertimeRateOpts([]); }), []);
   // Explicit Yes/No toggle. Derived from the saved `overtime` value on
   // hydrate (a stored rate ⇒ Yes) but kept as its own state so toggling to
@@ -2098,69 +2221,147 @@ function InitiateOnboardingModal({
     if (!isOpen) return;
     let cancelled = false;
     setMastersLoading(true);
-    Promise.allSettled([
-      api.get('/master/countries').then(r => {
+    setCoreReady(false);
+    /* Loaded in TWO STAGES, deliberately.
+
+       Everything used to go out at once, so the five master lists queued
+       behind a dozen unrelated lookups competing for the browser's six
+       connections — and the master lists are the ones the form cannot paint
+       without. Stage 1 is the masters alone; stage 2 starts once they land. */
+    const masters =
+      /* One request for the five MasterController lists, instead of five.
+         Opening this form fired countries, departments, designations, roles and
+         overtime_rates as separate round trips, each queued behind the browser's
+         connection limit along with the dozen non-master lookups this modal also
+         makes — the network tab showed them landing at 3.2s, 3.9s, 4.4s and 5.1s
+         for ~13 KB of dropdown data that changes monthly. The payload was never
+         the problem; the request count was. Same call the Add/Edit Employee form
+         already makes.
+
+         ?fields — without it /master/countries alone ships 104 KB of ownership
+         metadata for 249 rows. `status` is requested on top of the employee
+         page's id,name because the Overtime picker offers ACTIVE rates only, and
+         a projection missing that column would make every rate look active.
+
+         Per-key rather than all-or-nothing: bulk() omits a master the caller may
+         not view rather than failing the whole call, so one missing grant cannot
+         blank the other four. */
+      api.get('/master/bulk', {
+        params: {
+          keys: 'departments,designations,roles,overtime_rates,countries',
+          fields: 'id,name,status',
+        },
+      }).then(r => {
         if (cancelled) return;
-        setMCountries(Array.isArray(r.data) ? [...r.data].sort((a: any, b: any) => a.name.localeCompare(b.name)) : []);
-      }),
-      api.get('/master/departments').then(r => { if (!cancelled) setMDepts(Array.isArray(r.data) ? r.data : []); }),
-      api.get('/master/designations').then(r => { if (!cancelled) setMDesignations(Array.isArray(r.data) ? r.data : []); }),
-      api.get('/master/roles').then(r => { if (!cancelled) setMRoles(Array.isArray(r.data) ? r.data : []); }),
-      // Branches, not the legal-entities master — see the mLegalEntities note.
-      api.get('/branch-legal-entities')
-        .then(r => { if (!cancelled) setMLegalEntities(Array.isArray(r.data?.legal_entities) ? r.data.legal_entities : []); })
-        .catch(() => { if (!cancelled) setMLegalEntities([]); }),
-      api.get('/employees/managers').then(r => {
+        const d = r.data?.data ?? {};
+        const rows = (k: string): any[] => {
+          const v = d[k];
+          return Array.isArray(v) ? v : Array.isArray(v?.data) ? v.data : [];
+        };
+        setMDepts(rows('departments'));
+        setMDesignations(rows('designations'));
+        setMRoles(rows('roles'));
+        setMCountries(
+          [...rows('countries')].sort((a: any, b: any) => String(a.name).localeCompare(String(b.name))),
+        );
+        setOvertimeRateOpts(toOvertimeRateOpts(rows('overtime_rates')));
+      }).catch(() => {
         if (cancelled) return;
-        const merged = [
-          ...((r?.data?.employees   ?? []) as any[]),
-          ...((r?.data?.login_users ?? []) as any[]),
-        ];
-        // Strip the row currently being onboarded out of the manager
-        // list — an employee can never report to themselves. Matches
-        // by kind+id so we don't accidentally remove a login_user
-        // that happens to share a numeric id with this employee.
-        const selfId = emp?.dbId ?? null;
-        const filtered = selfId
-          ? merged.filter(m => !(m.kind === 'employee' && Number(m.id) === Number(selfId)))
-          : merged;
-        setManagerOpts(filtered.map(m => ({ value: `${m.kind}:${m.id}`, label: m.label, deptId: m.department_id != null ? String(m.department_id) : undefined, isHod: !!m.is_hod })));
-      }).catch(() => { if (!cancelled) setManagerOpts([]); }),
-      /* Leave plans are Leave-module data — not fetched at all without a grant
-         there, so the dropdown can't offer plans the user has no access to
-         (QA #13). Same rule as the Add/Edit Employee form. */
-      (leavePerm.canView
-        ? api.get('/leave-plans').then(r => {
-            if (cancelled) return;
-            const plans = Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : []);
-            // Only surface plans whose quota setup is fully complete — draft /
-            // unconfigured plans must not be assignable to an employee.
-            setLeavePlanOpts(
-              plans
-                .filter((p: any) => p.setup_complete)
-                .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
-            );
-          }).catch(() => { if (!cancelled) setLeavePlanOpts([]); })
-        : Promise.resolve(setLeavePlanOpts([]))),
-      // Overtime (OT) Master — active rate names for the Overtime picker.
-      reloadOvertimeRates(() => cancelled),
-      api.get('/holiday-groups')
-        .then(r => { if (!cancelled) setMHolidayGroups(Array.isArray(r.data) ? r.data : []); })
-        .catch(() => { if (!cancelled) setMHolidayGroups([]); }),
-      api.get('/branch-shifts')
-        .then(r => {
-          if (cancelled) return;
-          const list = Array.isArray(r.data?.shifts) ? r.data.shifts : [];
-          setBranchShiftOpts(list
-            .filter((s: any) => s?.name)
-            .map((s: any) => ({
-              value: s.name,
-              // Timing beside the name so the picker is self-explanatory.
-              label: s.start && s.end ? `${s.name} (${s.start}–${s.end})` : s.name,
-            })));
-        })
-        .catch(() => { if (!cancelled) setBranchShiftOpts([]); }),
-    ]).then(() => { if (!cancelled) setMastersLoading(false); });
+        setMDepts([]); setMDesignations([]); setMRoles([]);
+        setMCountries([]); setOvertimeRateOpts([]);
+      });
+
+    /* Stage 2 — everything that is not a master list, in ONE request.
+     *
+     * This was nine: branch-legal-entities, managers, leave-plans,
+     * holiday-groups, branch-shifts and the three available-assets categories,
+     * plus salary-structures. Measured server-side, they cost 1-17 ms EACH —
+     * about 50 ms for all of them — yet the form took six seconds to fill,
+     * because nine requests each pay for boot, auth and a round trip before
+     * their handler runs. The handlers were never the problem.
+     *
+     * /employees/onboarding-form-bootstrap delegates to those same endpoints
+     * server-side and returns each one's payload verbatim under its own key, so
+     * the parsing below is unchanged from when each had its own call.
+     *
+     * `skipped` rather than a failure: a caller without the Leave grant gets no
+     * leave_plans key and keeps the other eight, which is exactly the rule the
+     * old per-call `leavePerm.canView` guard enforced. */
+    const loadRest = () => api.get('/employees/onboarding-form-bootstrap', {
+      params: emp?.dbId ? { employee_id: emp.dbId } : {},
+    }).then(r => {
+      if (cancelled) return;
+      const d = r.data?.data ?? {};
+
+      setMLegalEntities(Array.isArray(d.legal_entities?.legal_entities) ? d.legal_entities.legal_entities : []);
+
+      const merged = [
+        ...((d.managers?.employees   ?? []) as any[]),
+        ...((d.managers?.login_users ?? []) as any[]),
+      ];
+      /* Strip the row currently being onboarded out of the manager list — an
+         employee can never report to themselves. Matches by kind+id so we don't
+         accidentally remove a login_user that happens to share a numeric id
+         with this employee. */
+      const selfId = emp?.dbId ?? null;
+      const filteredMgrs = selfId
+        ? merged.filter(m => !(m.kind === 'employee' && Number(m.id) === Number(selfId)))
+        : merged;
+      setManagerOpts(filteredMgrs.map(m => ({
+        value: `${m.kind}:${m.id}`,
+        label: m.label,
+        deptId: m.department_id != null ? String(m.department_id) : undefined,
+        isHod: !!m.is_hod,
+      })));
+
+      /* Leave plans are Leave-module data — the server omits the key entirely
+         without a grant there, so the dropdown can't offer plans the user has
+         no access to (QA #13). Only plans whose quota setup is complete are
+         assignable; a draft plan must never reach an employee. */
+      const plans = Array.isArray(d.leave_plans) ? d.leave_plans
+        : (Array.isArray(d.leave_plans?.data) ? d.leave_plans.data : []);
+      setLeavePlanOpts(
+        plans
+          .filter((p: any) => p.setup_complete)
+          .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
+      );
+
+      setMHolidayGroups(Array.isArray(d.holiday_groups) ? d.holiday_groups : []);
+
+      const shifts = Array.isArray(d.branch_shifts?.shifts) ? d.branch_shifts.shifts : [];
+      setBranchShiftOpts(shifts
+        .filter((s: any) => s?.name)
+        .map((s: any) => ({
+          value: s.name,
+          label: s.start && s.end ? `${s.name} (${s.start}–${s.end})` : s.name,
+        })));
+
+      // Asset pools — present only when an employee id was sent.
+      if (emp?.dbId) {
+        setLaptopAssets(toAssetOpts(d.assets_laptop));
+        setMobileAssets(toAssetOpts(d.assets_mobile));
+        setOtherAssets(toAssetOpts(d.assets_other));
+        setAssetsLoading(false);
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      setMLegalEntities([]); setManagerOpts([]); setLeavePlanOpts([]);
+      setMHolidayGroups([]); setBranchShiftOpts([]);
+      setLaptopAssets([]); setMobileAssets([]); setOtherAssets([]);
+      setAssetsLoading(false);
+    });
+    /* The skeleton clears when BOTH stages are done, not when the masters
+       are. Managers, leave plans, holiday groups and shifts fill their own
+       dropdowns, and a control that has stopped shimmering but has nothing
+       in it reads as "no options" rather than "still loading". */
+    masters
+      .then(() => (cancelled ? undefined : loadRest()))
+      .then(() => {
+        if (cancelled) return;
+        setMastersLoading(false);
+        // Releases every other lookup in this modal — see coreReady.
+        setCoreReady(true);
+      });
     return () => { cancelled = true; };
   }, [isOpen]);
 
@@ -2214,21 +2415,16 @@ function InitiateOnboardingModal({
      and failing on save is a bad way to find out. The pickers call this on
      open so the list is current at the moment of choosing.
      `isStale` lets the mount-time effect abort a superseded fetch. */
+  /* Only the pickers' onOpen calls this now — a device booked by someone else
+     since the form opened has to disappear from the list at the moment of
+     choosing. The initial load rides the bootstrap request instead of costing
+     three more round trips. */
   const reloadAssets = useCallback((isStale: () => boolean = () => false) => {
     if (!emp?.dbId) return Promise.resolve();
     setAssetsLoading(true);
     const url = (cat: string) => `/employees/available-assets?category=${cat}&exclude_employee_id=${emp.dbId}`;
     const put = (setter: (o: AssetOpt[]) => void) => (r: any) => {
-      if (!isStale()) setter((r.data ?? []).map((a: any) => ({
-        value: String(a.id),
-        label: a.label || a.asset_name,
-        /* Device still linked to this slot but re-categorised in the Asset
-           master since (Laptop → Mobile). Without this row the select had no
-           option matching the saved id and fell back to printing the raw id. */
-        ...(a.stale_category
-          ? { badge: { text: 'Category changed', tone: 'red' as const } }
-          : {}),
-      })));
+      if (!isStale()) setter(toAssetOpts(r.data));
     };
     return Promise.allSettled([
       api.get(url('laptop')).then(put(setLaptopAssets)),
@@ -2236,13 +2432,6 @@ function InitiateOnboardingModal({
       api.get(url('other')).then(put(setOtherAssets)),
     ]).then(() => { if (!isStale()) setAssetsLoading(false); });
   }, [emp?.dbId]);
-
-  useEffect(() => {
-    if (!isOpen || !emp?.dbId) return;
-    let cancelled = false;
-    reloadAssets(() => cancelled);
-    return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId, reloadAssets]);
 
   // ── Stage 1 form state — every field that maps to a column on
   //    /api/employees lives here. Hydrated from `emp.raw` whenever the
@@ -2346,6 +2535,7 @@ function InitiateOnboardingModal({
 
   useEffect(() => {
     if (!isOpen || !emp?.dbId) { obLoadedForRef.current = null; return; }
+    if (!coreReady) return;   // priority requests first — see coreReady
     if (obLoadedForRef.current === emp.dbId) return;   // already loaded for this employee
     obLoadedForRef.current = emp.dbId;
     let cancelled = false;
@@ -2393,7 +2583,7 @@ function InitiateOnboardingModal({
       });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, coreReady]);
 
   /* Re-split on a CTC change, debounced so it doesn't run per keystroke.
      HR's own components survive; the three derived ones are rebuilt, and
@@ -3314,12 +3504,13 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
   const [stage2Docs, setStage2Docs] = useState<{ document_key: string; status: string }[]>([]);
   useEffect(() => {
     if (!isOpen || !emp?.dbId) return;
+    if (!coreReady) return;   // priority requests first — see coreReady
     let cancelled = false;
     api.get(`/employees/${emp.dbId}/documents`)
       .then(r => { if (!cancelled) setStage2Docs(Array.isArray(r.data) ? r.data : []); })
       .catch(() => { if (!cancelled) setStage2Docs([]); });
     return () => { cancelled = true; };
-  }, [isOpen, emp?.dbId]);
+  }, [isOpen, emp?.dbId, coreReady]);
 
   // ── Stage 4 — Payroll & Finance Setup state (lifted to modal so the
   //    sidebar progress + footer gating + Save Draft button can read it).
@@ -4320,7 +4511,8 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
             )}
             {activeStage === 6 && <Stage6Verify emp={emp} stagesView={stagesView} profilePct={profilePct} onActivated={onSaved} />}
 
-            {activeStage === 1 && (
+            {activeStage === 1 && mastersLoading && <OnboardFormSkeleton />}
+            {activeStage === 1 && !mastersLoading && (
             <>
             {/* ── Step 1 — Basic Details ── */}
             <div className="onb-init-section">

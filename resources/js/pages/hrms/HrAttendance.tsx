@@ -37,7 +37,10 @@ type DayStatus =
   | 'Leave'
   | 'Paid Leave'
   | 'Unpaid Leave'
-  | 'Corrected';
+  | 'Corrected'
+  /* Selected date falls before the employee's joining date — the day is out of
+     scope for them, NOT an absence (CBC #74). */
+  | 'Not Joined';
 
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
 
@@ -50,6 +53,8 @@ interface AttendanceEmployee {
   department: string;
   designation: string;
   managerName: string;
+  /** 'YYYY-MM-DD' — nothing before this is an attendance day (CBC #74). */
+  dateOfJoining?: string | null;
   shift: string;
   shiftStart: string;
   shiftEnd: string;
@@ -147,6 +152,8 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   'Paid Leave':      { fg: '#0a716a', bg: '#d3f0ee', dot: '#0ab39c', label: 'Paid Leave' },
   'Unpaid Leave':    { fg: '#a4661c', bg: '#fde8c4', dot: '#f59e0b', label: 'Unpaid Leave' },
   'Corrected':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Corrected' },
+  // Neutral slate on purpose — it must not read as a good or a bad day.
+  'Not Joined':      { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Not Joined' },
 };
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e', '#a855f7'];
@@ -257,10 +264,64 @@ const renderTime = (t?: string | null, hour24 = false): ReactNode => {
   return <>{`${String(h12).padStart(2,'0')}:${mm}`}<span className="att-tile-am">{ampm}</span></>;
 };
 
+/* The detail-panel skeletons.
+ *
+ * Used by BOTH the first page load and every employee switch. They were
+ * duplicated before — the switch dropped a plain block where the first load
+ * drew a structured skeleton, so the same wait looked like two different
+ * states of the app. One definition each, referenced twice. */
+function EmployeeBarShimmer() {
+  return (
+    <div className="d-flex align-items-center gap-3 mb-3">
+      <Shimmer width={48} height={48} radius={999} />
+      <div className="flex-grow-1 d-flex flex-column gap-2">
+        <Shimmer height={16} width={200} />
+        <Shimmer height={12} width={320} />
+      </div>
+    </div>
+  );
+}
+
+/* Three tiles, laid out on the same grid as the real KPI row it stands in for
+   — the first-load skeleton used to draw four on a four-up grid, so the page
+   visibly reflowed the moment the data arrived. */
+function KpiRowShimmer() {
+  return (
+    <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Col key={i}><Shimmer height={84} radius={12} /></Col>
+      ))}
+    </Row>
+  );
+}
+
+function DetailPanesShimmer() {
+  return (
+    <Row className="g-2">
+      <Col xl={7} lg={12}><Shimmer height={230} radius={14} /></Col>
+      <Col xl={5} lg={12}><Shimmer height={230} radius={14} /></Col>
+    </Row>
+  );
+}
+
+function LogsShimmer() {
+  return (
+    <>
+      <Shimmer height={48} radius={12} style={{ marginBottom: 12 }} />
+      <ShimmerTable rows={6} cols={6} />
+    </>
+  );
+}
+
 export default function HrAttendance() {
   const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState<boolean>(true);
   const [employeesError, setEmployeesError] = useState<string | null>(null);
+  // The selected employee's own record — punches + 90-day log. Fetched apart
+  // from the roster so opening this screen no longer pays for the full history
+  // of every employee in the branch when only one of them is ever on screen.
+  const [detail, setDetail] = useState<AttendanceEmployee | null>(null);
+  const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [filter, setFilter]       = useState<'all' | 'on_time' | 'late' | 'missing' | 'absent' | 'wfh' | 'leave'>('all');
   const [search, setSearch]       = useState('');
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -311,6 +372,30 @@ export default function HrAttendance() {
     return () => { cancelled = true; };
   }, [viewDate, attVersion]);
 
+  /* One employee's full record. Re-runs when the user picks a different name,
+     moves to another date, or an approved regularization rewrites the day
+     (attVersion). The roster call above deliberately returns none of this. */
+  useEffect(() => {
+    if (selectedId == null) { setDetail(null); return; }
+    let cancelled = false;
+    setDetailLoading(true);
+    api.get('/attendance/daily-view', { params: { date: viewDate, employee_id: selectedId } })
+      .then((res) => {
+        if (cancelled) return;
+        const row: AttendanceEmployee | undefined = Array.isArray(res.data) ? res.data[0] : undefined;
+        setDetail(row
+          ? {
+              ...row,
+              punches: Array.isArray(row.punches) ? row.punches : [],
+              logs:    Array.isArray(row.logs)    ? row.logs    : [],
+            }
+          : null);
+      })
+      .catch(() => { if (!cancelled) setDetail(null); })
+      .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedId, viewDate, attVersion]);
+
   const counts = useMemo(() => ({
     all:     employees.length,
     on_time: employees.filter(e => e.status === 'Present').length,
@@ -335,10 +420,25 @@ export default function HrAttendance() {
     });
   }, [employees, filter, search]);
 
-  const selected = useMemo(
+  const listEntry = useMemo(
     () => employees.find(e => e.id === selectedId) || employees[0],
     [employees, selectedId]
   );
+
+  /* While the detail request is in flight `detail` still holds the PREVIOUS
+     employee, so readiness is an id match — not merely "not loading". Without
+     that check, clicking a second name paints the first one's punches under
+     the second one's header for as long as the request takes. */
+  const detailReady = !!listEntry && !!detail && detail.id === listEntry.id;
+
+  /* Merged so every panel keeps taking one employee object. `accent` and
+     `correction` are client-side — the avatar colour is assigned by list index
+     and the correction pill is set optimistically after filing — and the
+     server payload carries an empty accent that would otherwise clobber it. */
+  const selected = useMemo(() => {
+    if (!listEntry || !detail || detail.id !== listEntry.id) return listEntry;
+    return { ...listEntry, ...detail, accent: listEntry.accent, correction: listEntry.correction };
+  }, [listEntry, detail]);
   const onRegularizationSubmitted = (row: ApiRegularization) => {
     const firstPunch = (row.punches ?? [])[0];
     const newReq: CorrectionRequest = {
@@ -358,6 +458,20 @@ export default function HrAttendance() {
     setRegVersion(v => v + 1);
     setAttVersion(v => v + 1);
   };
+  /* Shown in place of a detail panel until its data lands: the same skeleton
+     the first page load draws, so switching employee and opening the screen
+     look like one behaviour. Distinguishes "still loading" from "the request
+     failed" — gating on detailReady alone would leave a skeleton animating
+     forever on an error. */
+  const detailFallback = (skeleton: ReactNode) => (
+    detailLoading ? skeleton : (
+      <div style={{ minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--vz-secondary-color)', fontSize: 13 }}>
+        <i className="ri-error-warning-line" style={{ color: '#f06548' }} />
+        <span>Could not load these records.</span>
+      </div>
+    )
+  );
+
   const openRegularizeFor = (iso: string) => {
     const log = selected?.logs?.find(l => l.iso === iso);
     // Rebuild prefill punches from the row's work segments (decimal hours →
@@ -421,30 +535,14 @@ export default function HrAttendance() {
                 </Col>
 
                 <Col xl={9} lg={8} md={7} xs={12}>
-                  <div className="d-flex align-items-center gap-3 mb-3">
-                    <Shimmer width={48} height={48} radius={999} />
-                    <div className="flex-grow-1 d-flex flex-column gap-2">
-                      <Shimmer height={16} width={200} />
-                      <Shimmer height={12} width={320} />
-                    </div>
-                  </div>
-
-                  <Row className="g-2 mb-2 row-cols-xl-4 row-cols-md-2 row-cols-2">
-                    {Array.from({ length: 4 }).map((_, i) => (
-                      <Col key={i}><Shimmer height={84} radius={12} /></Col>
-                    ))}
-                  </Row>
-
-                  <Row className="g-2">
-                    <Col xl={7} lg={12}><Shimmer height={230} radius={14} /></Col>
-                    <Col xl={5} lg={12}><Shimmer height={230} radius={14} /></Col>
-                  </Row>
+                  <EmployeeBarShimmer />
+                  <KpiRowShimmer />
+                  <DetailPanesShimmer />
                 </Col>
               </Row>
 
               <div className="mt-3">
-                <Shimmer height={48} radius={12} style={{ marginBottom: 12 }} />
-                <ShimmerTable rows={6} cols={6} />
+                <LogsShimmer />
               </div>
             </div>
         </Row>
@@ -587,85 +685,87 @@ export default function HrAttendance() {
               </Col>
 
               <Col xl={9} lg={8} md={7} xs={12}>
-                <div className="att-emp-bar">
-                  <span className="att-emp-bar-avatar" style={{ background: selected.accent }}>{selected.initials.slice(0, 2).toUpperCase()}</span>
-                  <div className="att-emp-bar-info">
-                    <div className="att-emp-bar-name">{selected.name}</div>
-                    <div className="att-emp-bar-meta">
-                      {selected.empCode} · {selected.designation} · {selected.department}
+                {detailReady ? (
+                  <>
+                  <div className="att-emp-bar">
+                    <span className="att-emp-bar-avatar" style={{ background: selected.accent }}>{selected.initials.slice(0, 2).toUpperCase()}</span>
+                    <div className="att-emp-bar-info">
+                      <div className="att-emp-bar-name">{selected.name}</div>
+                      <div className="att-emp-bar-meta">
+                        {selected.empCode} · {selected.designation} · {selected.department}
+                      </div>
+                    </div>
+                    <div className="att-emp-bar-chips">
+                     
+                      <span className="att-chip">
+                        <i className="ri-time-line" />
+                        {selected.shift}
+                        {selected.shiftStart && selected.shiftEnd && (
+                          <span className="att-chip-sub">{fmt12h(selected.shiftStart)} – {fmt12h(selected.shiftEnd)}</span>
+                        )}
+                      </span>
+                      <span className="att-chip"><i className="ri-calendar-2-line" />Off: {selected.weeklyOff}</span>
+                      <span className="att-chip"><i className="ri-fingerprint-line" />{selected.attendanceNumber}</span>
+                      <span className="att-chip"><i className="ri-user-star-line" />Mgr: {selected.managerName}</span>
                     </div>
                   </div>
-                  <div className="att-emp-bar-chips">
-                    {/* Shift NAME + the window it resolves to. The name alone
-                        ("Evening Shift") told HR nothing about when the day
-                        actually starts, and the window is what every late /
-                        effective-hours reading on this screen is measured
-                        against — it comes from the branch's Shift Details via
-                        Employee::resolveShiftWindow(). */}
-                    <span className="att-chip">
-                      <i className="ri-time-line" />
-                      {selected.shift}
-                      {selected.shiftStart && selected.shiftEnd && (
-                        <span className="att-chip-sub">{fmt12h(selected.shiftStart)} – {fmt12h(selected.shiftEnd)}</span>
-                      )}
-                    </span>
-                    <span className="att-chip"><i className="ri-calendar-2-line" />Off: {selected.weeklyOff}</span>
-                    <span className="att-chip"><i className="ri-fingerprint-line" />{selected.attendanceNumber}</span>
-                    <span className="att-chip"><i className="ri-user-star-line" />Mgr: {selected.managerName}</span>
-                  </div>
-                </div>
 
-                <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
-                  {([
-                    { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
-                    { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
-                    { key: 'miss', label: 'Missing Punches',sub: 'This month',     value: selected.missingPunch,       icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
-                  ] as const).map(k => (
-                    <Col key={k.key}>
-                      <div className="rec-kpi-card h-100">
-                        <span className="rec-kpi-strip" style={{ background: k.gradient }} />
-                        <div className="rec-kpi-text">
-                          <span className="rec-kpi-label">{k.label}</span>
-                          <span className="rec-kpi-num">{k.value}</span>
-                          <span className="att-kpi-sub">{k.sub}</span>
+                  <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
+                    {([
+                      { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
+                      { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
+                      { key: 'miss', label: 'Missing Punches',sub: 'This month',     value: selected.missingPunch,       icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
+                    ] as const).map(k => (
+                      <Col key={k.key}>
+                        <div className="rec-kpi-card h-100">
+                          <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+                          <div className="rec-kpi-text">
+                            <span className="rec-kpi-label">{k.label}</span>
+                            <span className="rec-kpi-num">{k.value}</span>
+                            <span className="att-kpi-sub">{k.sub}</span>
+                          </div>
+                          <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                            <i className={k.icon} />
+                          </span>
                         </div>
-                        <span className="rec-kpi-icon" style={{ background: k.gradient }}>
-                          <i className={k.icon} />
-                        </span>
-                      </div>
-                    </Col>
-                  ))}
-                </Row>
+                      </Col>
+                    ))}
+                  </Row>
 
-                <div className="att-section-head">
-                  <span className="att-section-label">{isToday ? "TODAY'S RECORD" : 'DAY RECORD'}</span>
-                  <span className="att-section-date">{fmtLong(viewDate)}</span>
-                </div>
-                <Row className="g-2 align-items-stretch">
-                  <Col xl={7} lg={12}>
-                    <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} hour24={hour24} />
-                  </Col>
-                  <Col xl={5} lg={12}>
-                    <PunchTimelineCard employee={selected} />
-                  </Col>
-                </Row>
+                
+                  <Row className="g-2 align-items-stretch">
+                    <Col xl={7} lg={12}>
+                      <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} hour24={hour24} />
+                    </Col>
+                    <Col xl={5} lg={12}>
+                      <PunchTimelineCard employee={selected} />
+                    </Col>
+                  </Row>
+                  </>
+                ) : detailFallback(
+                  <>
+                    <EmployeeBarShimmer />
+                    <KpiRowShimmer />
+                    <DetailPanesShimmer />
+                  </>
+                )}
               </Col>
             </Row>
 
             <div className="mt-2">
-              <LogsRequestsCard
-                employee={selected}
-                tab={logTab} setTab={setLogTab}
-                calMonth={calMonth} setCalMonth={setCalMonth}
-                onPickDate={(iso) => setViewDate(iso)}
-                onRegularize={openRegularizeFor}
-                hour24={hour24}
-              />
+              {detailReady ? (
+                <LogsRequestsCard
+                  employee={selected}
+                  tab={logTab} setTab={setLogTab}
+                  calMonth={calMonth} setCalMonth={setCalMonth}
+                  onPickDate={(iso) => setViewDate(iso)}
+                  onRegularize={openRegularizeFor}
+                  hour24={hour24}
+                />
+              ) : detailFallback(<LogsShimmer />)}
             </div>
 
-            {/* onActed refetches the attendance above: approving a correction
-                rewrites that day's punches, and the timeline was still showing
-                the pre-approval times until the page was manually refreshed. */}
+           
             <RegularizationApprovals
               refreshKey={regVersion}
               onActed={() => setAttVersion(v => v + 1)}
@@ -755,7 +855,7 @@ function TodayRecordCard({
         <div className="att-today-titlebar">
           <div className="d-flex align-items-center gap-2 min-w-0">
             <span className="att-today-titlebar-icon"><i className="ri-time-line" /></span>
-            <div className="att-today-titlebar-text">Today's Updated Record</div>
+            <div className="att-today-titlebar-text">Updated Record</div>
             <span className="att-today-status-pill att-tone-pill" data-status={effectiveStatus} style={{ color: tone.fg, background: tone.bg }}>
               <span className="att-today-status-dot" style={{ background: tone.dot }} />
               {tone.label}
@@ -855,7 +955,7 @@ function PunchTimelineCard({ employee }: { employee: AttendanceEmployee }) {
             <span className="att-timeline-icon"><i className="ri-pulse-line" /></span>
             <div className="att-timeline-title">Intraday Punch Timeline</div>
           </div>
-          <span className="att-timeline-count">{punchCount} punches today</span>
+          <span className="att-timeline-count">{punchCount} {punchCount === 1 ? 'punch' : 'punches'}</span>
         </div>
 
         <div className="att-h-timeline">
@@ -1417,8 +1517,15 @@ function CalendarMonthGrid({
     const map: Record<string, number> = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
     if (map[key] !== undefined) weeklyOffDays.add(map[key]);
   }
+  /* Everything before the joining date is out of scope — the same way future
+     days are. The backend already drops those days from `logs`, but the
+     weekly-off fallback below would still have painted every pre-joining
+     Sunday as "Weekly Off", so the gate has to live here too (CBC #74). */
+  const joinedIso = employee.dateOfJoining || null;
+  const preJoin = (iso: string) => !!joinedIso && iso < joinedIso;
   const statusFor = (iso: string): DayStatus | null => {
     if (iso > TODAY_ISO) return null;
+    if (preJoin(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
     const d = parseISO(iso);
@@ -1426,24 +1533,24 @@ function CalendarMonthGrid({
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
     if (cells.length >= 42) break;
   }
 
@@ -1498,13 +1605,15 @@ function CalendarMonthGrid({
             ? (halfLeave
                 ? `${c.day} — ${LEAVE_PORTION_LABEL[c.leavePortion!]} ${leaveLike ? tone.label : 'leave'}`
                 : `${c.day} — ${tone.label}`)
-            : `${c.day}`;
+            : c.preJoin ? `${c.day} — before joining date` : `${c.day}`;
           return (
             <button
               key={i}
               type="button"
-              className={`att-cal-cell ${c.inMonth ? '' : 'is-out'} ${c.future ? 'is-future' : ''} ${isToday ? 'is-today' : ''}`}
-              disabled={c.future || !c.inMonth}
+              className={`att-cal-cell ${c.inMonth ? '' : 'is-out'} ${c.future ? 'is-future' : ''} ${c.preJoin ? 'is-prejoin' : ''} ${isToday ? 'is-today' : ''}`}
+              /* Pre-joining days aren't clickable either — picking one would
+                 open a day panel for a date the employee did not work. */
+              disabled={c.future || c.preJoin || !c.inMonth}
               onClick={() => onPickDate(c.iso)}
               title={cellTitle}
               style={tone ? { borderColor: tone.dot } : undefined}
