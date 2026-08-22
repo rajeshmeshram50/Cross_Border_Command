@@ -35,11 +35,43 @@ class SalaryStructureController extends Controller
      * configured (and who falls back to annual_salary / nothing) before running
      * payroll. Tenant + branch scoped.
      */
+    /**
+     * Branch filter for the salary roster.
+     *
+     * Branch-tier logins (branch_user AND employee — an employee with the HRMS
+     * permission reaches this tab too) are pinned to their OWN branch and the
+     * request's branch_id is ignored; otherwise an employee of one branch saw
+     * every branch's staff in Salary Setup.
+     *
+     * Client-tier logins may use the branch switcher, but only for a branch that
+     * belongs to their own client — same validation EmployeeController does
+     * before honouring a switcher branch.
+     */
+    private function rosterBranchFilter(Request $request, $user): ?int
+    {
+        if (! $user) return null;
+
+        if (in_array($user->user_type, ['branch_user', 'employee'], true)) {
+            return $user->branch_id ?: null;
+        }
+
+        $requested = $request->integer('branch_id') ?: null;
+        if (! $requested) return null;
+
+        if ($user->user_type === 'super_admin') return $requested;
+
+        $belongs = \App\Models\Branch::where('id', $requested)
+            ->where('client_id', $user->client_id)
+            ->exists();
+
+        return $belongs ? $requested : null;
+    }
+
     public function employees(Request $request)
     {
         if ($deny = $this->denyUnlessManager($request, 'view')) return $deny;
         $user = $request->user();
-        $branch = $request->integer('branch_id') ?: ($user && $user->user_type === 'branch_user' ? $user->branch_id : null);
+        $branch = $this->rosterBranchFilter($request, $user);
 
         $eq = Employee::query()
             ->whereNotIn('status', ['Inactive', 'Resigned', 'Terminated'])
@@ -153,7 +185,7 @@ class SalaryStructureController extends Controller
         if ($user && !$this->canManage($request)) {
             $q->where('employee_id', (int) ($user->employee_id ?? 0));
         }
-        if ($branch = $request->integer('branch_id')) {
+        if ($branch = $this->rosterBranchFilter($request, $user)) {
             $q->where('branch_id', $branch);
         }
         if ($employeeId = $request->integer('employee_id')) {
@@ -206,6 +238,13 @@ class SalaryStructureController extends Controller
         abort_unless($employee, 422, 'Employee not found.');
         if ($user && $user->client_id && (int) $employee->client_id !== (int) $user->client_id) {
             abort(403, 'Employee belongs to another tenant.');
+        }
+        /* Branch-tier managers configure their own branch only — the roster no
+         * longer lists other branches, and the write path has to agree or the
+         * same reach is still available by posting an employee_id directly. */
+        if ($user && in_array($user->user_type, ['branch_user', 'employee'], true)
+            && $user->branch_id && (int) $employee->branch_id !== (int) $user->branch_id) {
+            abort(403, 'Employee belongs to another branch.');
         }
 
         /* Bound the effective date. (QA #87)
