@@ -430,6 +430,29 @@ class EmployeeController extends Controller
          * unclamped one would let a caller request the entire table back, which
          * is the thing paginating is here to prevent.
          */
+        /* Stamp the edit-freeze flag onto every row the caller gets back.
+         *
+         * One query per page, not one per row — and applied to ALL views, not
+         * just the exit view: the HR Employees list is where people click Edit,
+         * and a button that only discovers it is frozen by taking a 422 is a
+         * worse screen than one that never offers the click. Written straight
+         * onto the model like batchAncillaryRoles() does, so it serialises as a
+         * plain boolean the SPA can read. */
+        $stampExitFreeze = function ($rows) {
+            $items = $rows instanceof \Illuminate\Pagination\AbstractPaginator
+                ? $rows->items()
+                : $rows;
+
+            $ids    = collect($items)->pluck('id')->filter()->map(fn($v) => (int) $v)->all();
+            $frozen = \App\Support\ExitInProgress::initiatedIds($ids);
+
+            foreach ($items as $row) {
+                $row->exit_in_progress = in_array((int) $row->id, $frozen, true);
+            }
+
+            return $rows;
+        };
+
         if ($request->has('per_page') || $request->has('page')) {
             // A junk or non-positive per_page falls back to the DEFAULT, not to
             // the floor: max(1, (int) 'abc') is 1, which would answer a
@@ -440,10 +463,10 @@ class EmployeeController extends Controller
                 ? min(self::MAX_PER_PAGE, (int) $requested)
                 : self::DEFAULT_PER_PAGE;
 
-            return response()->json($trimAppends($q->paginate($perPage)));
+            return response()->json($stampExitFreeze($trimAppends($q->paginate($perPage))));
         }
 
-        return response()->json($trimAppends($q->get()));
+        return response()->json($stampExitFreeze($trimAppends($q->get())));
     }
 
     /**
@@ -772,6 +795,10 @@ class EmployeeController extends Controller
         // Lets the Set/Reset Password modal say what state this login is in
         // rather than presenting an identical empty form either way.
         $row->setAttribute('password_status', $this->passwordStatusFor($row));
+        // Same edit-freeze flag the list carries, so the profile can present
+        // itself as locked instead of discovering it on save. See
+        // assertExitNotInitiated().
+        $row->setAttribute('exit_in_progress', \App\Support\ExitInProgress::initiatedFor((int) $row->id) !== null);
         return response()->json($row);
     }
 
@@ -804,6 +831,12 @@ class EmployeeController extends Controller
                 'message' => 'This employee is disabled — restore/re-activate them before editing bank details.',
             ], 422);
         }
+
+        /* NOT frozen during an exit, unlike update(). Deliberate: the Full &
+           Final is paid into this account, and an exit is exactly when a wrong
+           account number surfaces and has to be corrected. Freezing it would
+           block the settlement rather than protect it. Nothing here feeds the
+           exit calculation — only where the money lands. */
 
         $data = $request->validate([
             'salary_payment_mode' => 'nullable|in:bank,cheque,cash',
@@ -1730,6 +1763,8 @@ class EmployeeController extends Controller
             ], 422);
         }
 
+        $this->assertExitNotInitiated($row);
+
         $data = $this->validatePayload($request, $row->id);
         $data = $this->mirrorAncillaryRoles($data);
         $data = $this->syncNoticePeriodDays($data);
@@ -2034,6 +2069,45 @@ class EmployeeController extends Controller
      * The reverse does NOT hold: an ordinary disabled employee has no exit case
      * and is re-enabled here as normal. Only an exit is an exit.
      */
+    /**
+     * Freeze the employee record once an exit has been initiated against it.
+     *
+     * An exit case is built from the profile as it stood when notice was
+     * given: notice period drives the last working day, salary drives the F&F,
+     * department and reporting manager drive the handover. Editing any of that
+     * mid-case silently rewrites the basis of a settlement that is already
+     * being calculated — and because `employees.status` stays 'Active' until
+     * ExitController::complete(), nothing else on the employee row hints that
+     * a case is open. This is the only thing standing between an open exit and
+     * a changed notice period.
+     *
+     * Covers every write that lands on PUT /employees/{id} — the Edit form,
+     * the onboarding wizard's step saves, and asset assignment, which all post
+     * here. The Exit module's own endpoints (/exit, /exit/complete, /rehire,
+     * /notice-payment, F&F) are separate controllers and are deliberately
+     * untouched: freezing those would freeze the exit itself.
+     *
+     * Lifts on its own. Complete the exit (the employee becomes disabled, and
+     * the isDisabled() guard above takes over with its Reactivate message) or
+     * rehire them (`rehired_at` set, the case stops being live) and editing
+     * returns to normal — there is no separate unfreeze to remember.
+     */
+    private function assertExitNotInitiated(Employee $employee): void
+    {
+        $exit = \App\Support\ExitInProgress::initiatedFor((int) $employee->id);
+        if (!$exit) {
+            return;
+        }
+
+        $lwd = $exit->last_working_day
+            ? ' (last working day ' . \Illuminate\Support\Carbon::parse($exit->last_working_day)->format('d M Y') . ')'
+            : '';
+
+        abort(422, "This employee's exit has been initiated{$lwd}, so their profile is locked. "
+            . 'Changes here would alter the notice period, salary and reporting line the exit case '
+            . 'is being settled on. Edit the case in HR > Exit Management, or cancel the exit there first.');
+    }
+
     private function assertNotExited(Employee $employee, string $action): void
     {
         if (!$this->completedExitFor($employee)) {

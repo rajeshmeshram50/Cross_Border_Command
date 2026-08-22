@@ -102,6 +102,11 @@ interface EmployeeRow {
   onboarding: 'Completed' | 'In Progress' | 'Pending';
   status: 'active' | 'on_leave' | 'high_attention' | 'probation' | 'inactive';
   enabled: boolean;
+  /* An exit case is open against this person, so PUT /employees/{id} refuses.
+     Comes from the API rather than being derived here: `status` stays 'Active'
+     right up until the exit is completed, so nothing else on the row shows it.
+     Mirrors EmployeeController::assertExitNotInitiated(). */
+  exitInProgress: boolean;
 }
 
 interface ApiEmployee {
@@ -218,6 +223,7 @@ const apiToRow = (e: ApiEmployee): EmployeeRow => {
     status: statusMap[e.status || 'Active'] || 'active',
     enabled,
     faceRegistered: !!e.face_registered,
+    exitInProgress: !!(e as any).exit_in_progress,
     _dbId: e.id,
     _raw: e,
   } as any;
@@ -3379,6 +3385,21 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       cell: info => {
         const e = info.row.original;
         const rowDisabled = !e.enabled;
+        /* An open exit case freezes the profile. Distinct from `exited` below:
+           this fires while the person is still Active and still working out
+           their notice, which is precisely the window in which an edit would
+           move the ground under a settlement already being calculated. */
+        const exitFrozen = !!e.exitInProgress;
+        /* Frozen buttons stay CLICKABLE and answer with a toast, following the
+           same principle as `locked`: a dead button explains nothing, and the
+           tooltip only reaches a mouse. Saying why out loud also points at the
+           screen that can actually do something about it. */
+        const sayExitFrozen = () => toast.warning(
+          'Profile locked — exit initiated',
+          `An exit has been initiated for ${e.name}, so their profile can no longer be edited. `
+          + 'The notice period, salary and reporting line are being used to settle the exit. '
+          + 'Manage the case in HR > Exit Management.',
+        );
         // An employee must not edit their OWN record from this list — freeze
         // Edit and Permissions on the logged-in user's own row (QA #150). Match
         // by linked user id, falling back to the linked employee id.
@@ -3411,26 +3432,42 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                 false — so the first click was denied and only the second, once
                 the response landed, opened the dialog. Showing it as pending is
                 honest; refusing a permission we have not checked is not. */}
+            {/* A third rule joins the two above: exitFrozen → a fact about the
+                CASE. An open exit locks the profile server-side
+                (EmployeeController::assertExitNotInitiated), because the
+                notice period, salary and reporting line it holds are what the
+                F&F is being settled on. Disabled rather than locked, since no
+                permission unlocks it — completing or cancelling the exit
+                does. Without this the button opens a full form that only
+                fails on Save. */}
             <ActionBtn
               title={!perm.ready
                 ? 'Checking your permissions…'
                 : isSelf
                   ? "You can't edit your own record"
-                  : (perm.lockedTitle('edit') ?? 'Edit')}
+                  : exitFrozen
+                    ? 'Exit initiated — profile locked. Manage it in HR > Exit Management.'
+                    : (perm.lockedTitle('edit') ?? 'Edit')}
               icon="ri-pencil-line" color="info"
-              onClick={() => perm.guard('edit', () => openEditEmployee(e))}
+              onClick={() => exitFrozen
+                ? sayExitFrozen()
+                : perm.guard('edit', () => openEditEmployee(e))}
               disabled={rowDisabled || isSelf || !perm.ready}
-              locked={perm.ready && !perm.canEdit}
+              locked={(perm.ready && !perm.canEdit) || exitFrozen}
             />
             {/* Asset assignment saves through PUT /employees/{id}, which the
                 API gates on can_edit — so a view-only user would otherwise
                 fill the whole panel only to meet a raw 403 on save. */}
             <ActionBtn
-              title={perm.lockedTitle('edit') ?? 'Asset'}
+              title={exitFrozen
+                ? 'Exit initiated — profile locked. Recover assets from HR > Exit Management.'
+                : (perm.lockedTitle('edit') ?? 'Asset')}
               icon="ri-computer-line" color="primary"
-              onClick={() => perm.guard('edit', () => openAssignAssets(e))}
+              onClick={() => exitFrozen
+                ? sayExitFrozen()
+                : perm.guard('edit', () => openAssignAssets(e))}
               disabled={rowDisabled}
-              locked={!perm.canEdit}
+              locked={!perm.canEdit || exitFrozen}
             />
             {/* Enrolling someone's face writes a biometric to their record —
                 a change to the employee, so it follows can_edit. (A user
