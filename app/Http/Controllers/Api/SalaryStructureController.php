@@ -393,9 +393,31 @@ class SalaryStructureController extends Controller
         // without a manual re-run (approved/paid runs stay frozen).
         $recomputed = app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employee->id);
 
+        /* Say so when a payslip could NOT follow the revision.
+         *
+         * recomputeEmployeePayslips() only touches draft/generated runs —
+         * approved and paid runs are frozen by Rule 14/15, and a locked period
+         * is skipped too. That is correct, but it used to be silent: enabling PF
+         * (or any change) reported "Salary structure saved" while the payslip
+         * the reviewer was looking at kept the old figures, which reads as the
+         * revision simply not working. Naming the frozen run turns it into a
+         * known state with an obvious next step — run a fresh cycle. (QA #97) */
+        $frozen = \App\Models\Payslip::where('employee_id', $employee->id)
+            ->whereHas('run', fn ($q) => $q->whereNotIn('status', ['draft', 'generated']))
+            ->with('run.period')
+            ->get()
+            ->map(fn ($s) => $s->run?->period?->label)
+            ->filter()
+            ->unique()
+            ->values();
+
         return response()->json([
             'message' => 'Salary structure saved (version ' . $structure->version . ').'
-                . ($recomputed > 0 ? " {$recomputed} draft payslip(s) updated." : ''),
+                . ($recomputed > 0 ? " {$recomputed} draft payslip(s) updated." : '')
+                . ($frozen->isNotEmpty()
+                    ? ' Already-approved payroll (' . $frozen->implode(', ') . ') keeps its original figures'
+                        . ' — the revision applies from the next run.'
+                    : ''),
             'data'    => $this->serialize($structure),
         ], 201);
     }

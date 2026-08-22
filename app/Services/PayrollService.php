@@ -1864,7 +1864,25 @@ class PayrollService
          * Removing the second gate can only ever ADD PF where the structure says
          * it applies; every other combination resolves exactly as before, since
          * structure=no already produced no PF whatever the employee flag said. */
-        if ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+        /* A MANUAL 'pf' line on the salary structure wins, exactly as it does for
+         * ESI, PT and TDS below.
+         *
+         * PF was the one head with no such lookup: the computed 12% branch was
+         * the only way a payslip could ever carry PF, and the "other fixed
+         * deductions" sweep further down explicitly skips code 'pf'. So a
+         * structure carrying a real PF row — anything written outside the Salary
+         * Setup modal, which strips its own preview row before posting: imports,
+         * seeded rows, API clients, legacy structures — was dropped on BOTH
+         * branches whenever pf_applicable had not also been set. The Salary
+         * Structure screen showed Provident Fund with an amount and the payslip
+         * had no PF line and no deduction. (QA #97)
+         *
+         * Deducted as entered, not scaled by the earned share — same rule the
+         * business set for the other flat structure deductions. */
+        $pfManual = $this->structureDeduction($structDeductions, 'pf');
+        if ($pfManual > 0 && $this->isPfEligibleType($employee)) {
+            $pf = $pfManual;
+        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
             $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
                 ? $earnedBasic
                 : min($earnedBasic, self::PF_WAGE_CEILING);
@@ -1895,7 +1913,18 @@ class PayrollService
                         . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
                 );
             }
-        } elseif ($pfApplicable && !$this->isPfEligibleType($employee)) {
+        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic <= 0 && $earnedGross > 0) {
+            /* Paid for the month, PF ticked, and still no PF — the base came out
+             * zero. That is a structure problem (no basic, or a zero one), not a
+             * policy, and it presents to the employee as exactly this ticket:
+             * "PF is configured but nothing was deducted". Say so on the slip. */
+            $exceptions = $this->withException(
+                $exceptions,
+                'warning',
+                'PF is applicable but no PF was deducted — the basic pay for this cycle worked out to zero. '
+                    . 'Check the earning components on the salary structure.'
+            );
+        } elseif (($pfApplicable || $pfManual > 0) && !$this->isPfEligibleType($employee)) {
             /* Configured, then withheld by the employment type — the other way
              * this ticket's symptom appears. PF is a full-time head, so an
              * intern / contractor / consultant is skipped deliberately; saying
