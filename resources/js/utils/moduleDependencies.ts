@@ -35,13 +35,9 @@ export const MODULE_DEPENDENCIES: Record<string, string[]> = {
     'master.leave_type', 'master.leave_plan',
     'master.assets', 'master.asset_categories', 'master.overtime_rates',
   ],
-  // Custom Field + Trigger Point are here for the same reason they sit on
-  // hr.doc_templates: the exit screens render the tenant's custom fields and
-  // fire the exit-letter / FnF templates off the trigger-point master.
   'hr.exit': [
     'hr.employee', 'hr.onboarding', 'hr.payroll', 'hr.doc_templates',
     'hr.attendance', 'hr.expense',
-    'hr.custom_fields', 'master.trigger_point',
     'master.countries', 'master.departments', 'master.designations', 'master.roles',
     'master.leave_type', 'master.leave_plan', 'master.overtime_rates',
   ],
@@ -75,40 +71,6 @@ export const MODULE_DEPENDENCIES: Record<string, string[]> = {
   'hr.broadcast': ['hr.employee', 'hr.onboarding'],
   'hr.doc_templates': ['hr.employee', 'hr.custom_fields', 'master.trigger_point'],
 };
-
-/**
- * The exceptions to "a dependency only ever gets View".
- *
- * seed slug → dependency slugs that also get Edit when the seed holds Edit.
- *
- * Onboarding is the case that forced this: every stage of the onboarding wizard
- * saves through /employees/{id}, so `readOnly` there is decided by hr.employee's
- * Edit flag. A view-only feeder grant meant a user with full Onboarding access
- * could read the employee dependency data in the wizard and never correct it.
- *
- * Keep this short — it is a deliberate hole in the view-only rule. Add/Delete
- * are not propagated; the wizard edits an employee that already exists.
- * Mirrors ModuleDependencies::WRITE_MAP.
- */
-export const WRITE_DEPENDENCIES: Record<string, string[]> = {
-  'hr.onboarding': ['hr.employee'],
-};
-
-/**
- * Of the dependencies pulled in by the ticked modules, those that must also get
- * Edit. Pass only the explicitly ticked slugs that carry Edit themselves.
- */
-export function resolveWritableDependencies(editSlugs: Iterable<string>): Set<string> {
-  const seeds = new Set(editSlugs);
-  const writable = new Set<string>();
-  seeds.forEach((seed) => {
-    for (const dep of WRITE_DEPENDENCIES[seed] || []) {
-      if (seeds.has(dep)) continue;
-      writable.add(dep);
-    }
-  });
-  return writable;
-}
 
 /** Human-readable module names for the "required by" tooltip, filled by callers. */
 export type SlugNameMap = Record<string, string>;
