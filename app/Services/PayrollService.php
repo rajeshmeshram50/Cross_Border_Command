@@ -2011,9 +2011,46 @@ class PayrollService
         if ($pfManual > 0 && $this->isPfEligibleType($employee)) {
             $pf = $pfManual;
         } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
-            $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
+            /* PF WAGES ARE MEASURED ON WORKING DAYS, NOT PAID CALENDAR DAYS.
+             *
+             * Everything else on the payslip pro-rates on calendar days —
+             * $proration is activeDays/calDays, so a 6-day exit window out of
+             * 31 pays 6/31 of gross, weekly offs included, because a monthly
+             * salary buys the whole month including its Sundays. PF alone is
+             * now charged on the days the employee was actually due to work
+             * (business decision, Aug 2026).
+             *
+             * The ratio is working days OVER working days — paid working days
+             * in the window ÷ working days in the whole month — NOT working
+             * days over calendar days. That distinction is the entire safety
+             * of this change:
+             *
+             *   4/21  = 0.1905  → a part month charges PF on its worked share
+             *   21/21 = 1.0000  → a FULL month is completely unaffected
+             *
+             * Dividing 4 working days by 31 calendar days would have looked
+             * superficially similar on an exit row (0.129) while quietly
+             * charging every full-month payslip on 21/31 of basic — a 32%
+             * under-deduction across the entire payroll. Numerator and
+             * denominator must count the same kind of day.
+             *
+             * Capped at 1 so a cycle with more paid days than the month's
+             * working days (public holidays credited as paid, sandwich rules)
+             * can never charge PF on more than the full basic.
+             *
+             * Falls back to $earnedBasic when the month has no working days on
+             * file at all — a zero denominator must not silently zero someone's
+             * PF. */
+            $pfDayBasis = $empWorkingDays > 0
+                ? min(1, max(0, $paidDays) / $empWorkingDays)
+                : null;
+            $pfEarnedBasic = $pfDayBasis === null
                 ? $earnedBasic
-                : min($earnedBasic, self::PF_WAGE_CEILING);
+                : round($basic * $pfDayBasis, 2);
+
+            $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
+                ? $pfEarnedBasic
+                : min($pfEarnedBasic, self::PF_WAGE_CEILING);
             $pf = round(max(0, $pfBase) * self::PF_RATE, 2);
             // PF was charged on an assumption, not a recorded employment type.
             // Info rather than warning: it is the correct default and holding

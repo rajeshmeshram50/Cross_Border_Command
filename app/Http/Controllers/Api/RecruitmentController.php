@@ -15,7 +15,12 @@ use Illuminate\Validation\ValidationException;
 
 class RecruitmentController extends Controller
 {
-    
+    /* Page size when a caller asks to paginate without naming one, and the
+       ceiling on what it may name. Same values /employees uses, so the two
+       lists cannot drift apart. */
+    private const DEFAULT_PER_PAGE = 25;
+    private const MAX_PER_PAGE     = 200;
+
     private const WITH = [
         'client:id,org_name',
         'branch:id,name',
@@ -72,7 +77,122 @@ class RecruitmentController extends Controller
             $q->where('employment_type', $empType);
         }
 
-        return response()->json($q->orderByDesc('id')->get());
+        $q->orderByDesc('id');
+
+        /* Pagination is OPT-IN, exactly as it is on /employees.
+         *
+         * Three screens read this endpoint and only one of them shows a table:
+         * the Recruitment list (paged), the "convert a hiring request" picker
+         * further down this page, and the Employee profile's recruitment
+         * lookup. The last two treat the body as a plain array and iterate it,
+         * so returning the {data, total, …} envelope unconditionally would
+         * empty both. Only a caller that asks for a page gets one.
+         *
+         * per_page is clamped rather than trusted — the list sizes its page to
+         * the viewport, so the number is whatever happens to fit, and an
+         * unclamped one would let a caller pull the whole table back, which is
+         * the thing paginating is here to prevent. A junk value falls back to
+         * the default rather than to the floor: max(1, (int) 'abc') is 1, which
+         * would answer a typo with 50 single-row pages. */
+        if ($request->has('per_page') || $request->has('page')) {
+            $requested = $request->query('per_page');
+            $perPage = is_numeric($requested) && (int) $requested > 0
+                ? min(self::MAX_PER_PAGE, (int) $requested)
+                : self::DEFAULT_PER_PAGE;
+
+            return response()->json($q->paginate($perPage));
+        }
+
+        return response()->json($q->get());
+    }
+
+    /**
+     * KPI tiles + tab badges for the Recruitment list.
+     *
+     * Separate from index() for the reason every paginated list needs it: the
+     * browser used to count these off the full array, which only worked while
+     * index() returned every row. Once the list answers one page, counting it
+     * reports "Total Recruitments 10" on a tenant of 50.
+     *
+     * Narrowed by ?search but NOT by ?status — the badges are the breakdown
+     * the status tabs are cut FROM, so filtering them by the active tab would
+     * leave every tab reading its own count and zero for the others. Search is
+     * applied so the badges agree with the rows underneath them; a search that
+     * narrowed the table but left the tabs at their full totals is a screen
+     * contradicting itself.
+     */
+    public function stats(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $branchFilter = $request->integer('branch_id') ?: null;
+        // Same lazy expiry the list does, so a stale 'In Progress' is not
+        // counted as active in the tiles while the rows below call it Expired.
+        $this->expireOverdue($request->user(), $branchFilter);
+
+        $q = Recruitment::query();
+        $this->applyScope($q, $request->user(), $branchFilter);
+
+        if ($search = $request->query('search')) {
+            $q->where(function ($w) use ($search) {
+                $w->where('job_title', 'ilike', "%{$search}%")
+                  ->orWhere('code', 'ilike', "%{$search}%");
+            });
+        }
+
+        // One pass, not five COUNTs that each re-scan the table.
+        $row = $q->selectRaw("
+            COUNT(*)                                                          AS total,
+            SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END)           AS in_progress,
+            SUM(CASE WHEN status = 'Completed'   THEN 1 ELSE 0 END)           AS completed,
+            SUM(CASE WHEN status = 'Cancelled'   THEN 1 ELSE 0 END)           AS cancelled,
+            SUM(CASE WHEN status = 'Expired'     THEN 1 ELSE 0 END)           AS expired,
+            COUNT(DISTINCT hiring_request_id)                                 AS converted
+        ")->first();
+
+        /* SUM() comes back as a string on Postgres and null on an empty
+           tenant; these feed a counter animation that expects numbers. */
+        return response()->json([
+            'total'      => (int) ($row->total ?? 0),
+            'inProgress' => (int) ($row->in_progress ?? 0),
+            'completed'  => (int) ($row->completed ?? 0),
+            'cancelled'  => (int) ($row->cancelled ?? 0),
+            'expired'    => (int) ($row->expired ?? 0),
+            // COUNT(DISTINCT col) already skips NULLs, which is exactly the
+            // browser's old `.filter(id => id != null)` then Set().
+            'converted'  => (int) ($row->converted ?? 0),
+        ]);
+    }
+
+    /**
+     * Ids of the hiring requests that have already become a recruitment.
+     *
+     * The Hiring Requests modal needs exactly this set — to split its rows
+     * into Pending / Recruitment Created and to decide whether "Create
+     * Recruitment" is offered. It used to get it by fetching the ENTIRE
+     * recruitments list, with every eager-loaded relation attached, and
+     * plucking one integer column out of it in the browser: 118 kB and ~1.8s
+     * to build a Set of numbers.
+     *
+     * Deliberately not folded into stats(): that endpoint is narrowed by
+     * ?search so its badges agree with the rows on screen, whereas this set
+     * classifies hiring requests and must cover the whole tenant regardless of
+     * what anyone has typed. Same reason it does not take a status filter — a
+     * cancelled recruitment still means that request was converted.
+     */
+    public function linkedHiringRequests(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $q = Recruitment::query()->whereNotNull('hiring_request_id');
+        $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+
+        return response()->json(
+            $q->distinct()
+                ->pluck('hiring_request_id')
+                ->map(fn ($v) => (int) $v)
+                ->values(),
+        );
     }
 
     public function show(Request $request, $id)

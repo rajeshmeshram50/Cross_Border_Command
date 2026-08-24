@@ -7,6 +7,7 @@ import {
 import { MasterSelect } from '../../../components/ui/MasterSelect';
 import { MasterDatePicker } from '../../../components/ui/MasterDatePicker';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { ShimmerForm } from '../../../components/ui/Shimmer';
 import { useToast } from '../../../contexts/ToastContext';
 import api from '../../../api';
 
@@ -27,7 +28,7 @@ function fileIcon(name: string): string {
 
 export default function PayrollTab() {
   const {
-    employee, fmtRupee, fmtDate, empDetail, setEmpDetail, payrollTab, setPayrollTab,
+    employee, fmtRupee, fmtDate, empDetail, empDetailLoading, setEmpDetail, payrollTab, setPayrollTab,
     salaryStruct, realMonthlyGross, realAnnualCtc, realTimeline,
     openLatestPayslip, setBreakdownOpen, setBreakdownRowId,
     // Whose profile is on screen — decides whether identity numbers are
@@ -211,6 +212,30 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
           errs[k] = `${label} can contain letters and spaces only`;
         }
       });
+    /* Branch — QA #186. Looser than the two name fields on purpose: real
+       branch names carry digits and punctuation ("Sector 17", "M.G. Road",
+       "Andheri (East)"), so this blocks the symbol junk rather than every
+       non-letter. Mirrors the server rule in
+       EmployeeController::updateBankDetails; checked on save as well as on
+       input so a bad value stored before this existed has to be corrected
+       instead of silently re-saved. */
+    if (!errs.bank_branch) {
+      const v = String(f.bank_branch ?? '').trim();
+      if (v && !/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-/()&']+$/.test(v)) {
+        errs.bank_branch = 'Branch can contain letters, numbers, spaces and . , - / ( ) & only';
+      }
+    }
+    /* Account number — QA #187. The onChange filter above stops symbols being
+       typed, but it cannot enforce the LENGTH, and it does not touch a short
+       or malformed value that was stored before the filter existed and gets
+       hydrated straight back into the form. Checked here so Save has to see a
+       real account number. */
+    if (!errs.bank_account_number) {
+      const v = String(f.bank_account_number ?? '').trim();
+      if (v && !/^\d{8,18}$/.test(v)) {
+        errs.bank_account_number = 'Account Number must be 8 to 18 digits';
+      }
+    }
     // Mirror the server-side IFSC rule so the user gets instant feedback.
     if (!errs.ifsc_code && !/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/.test(String(f.ifsc_code ?? '').trim())) {
       errs.ifsc_code = 'Enter a valid IFSC code (e.g. HDFC0001234).';
@@ -309,6 +334,12 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
   const paymentMode = empDetail?.salary_payment_mode === 'bank' ? 'Bank Transfer'
     : empDetail?.salary_payment_mode ? String(empDetail.salary_payment_mode) : '—';
 
+  /* QA #190 — skeleton while the payroll details load. After every hook
+     above, so the hook order stays identical between renders. */
+  if (empDetailLoading) {
+    return <ShimmerForm header={false} sections={3} cols={4} fieldsPerSection={8} />;
+  }
+
   return (
         <div className="ep-tab-fill">
           {/* Sub-tab pill — Payroll Summary (indigo) | Payment Details (green).
@@ -328,7 +359,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                       key={t.key}
                       type="button"
                       onClick={() => setPayrollTab(t.key)}
-                      className="btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold pyt-subtab-btn"
+                      /* The active state needs to be a CLASS, not just the
+                         inline custom properties below: the hover rules live
+                         in CSS and have to tell the two states apart, and a
+                         stylesheet cannot read an inline variable. */
+                      className={`btn flex-grow-1 d-inline-flex align-items-center justify-content-center gap-2 fw-semibold pyt-subtab-btn${on ? ' pyt-subtab-btn--on' : ''}`}
                       style={{
                         ['--pyt-tab-bg' as any]: on ? t.activeBg : 'transparent',
                         ['--pyt-tab-color' as any]: on ? '#fff' : 'var(--vz-secondary-color)',
@@ -1022,9 +1057,13 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                     <Label className="ep-field-label">Account Number <span className="text-danger">*</span></Label>
                     <Input className={`ep-input${bankInv('bank_account_number')}`}
                       value={bankForm.bank_account_number || ''}
-                      maxLength={30}
-                      onChange={e => setBankField('bank_account_number', e.target.value)}
-                      placeholder="Account number"
+                      /* 18, not 30 — the rule's upper bound. A field that lets
+                         you type 30 characters and then rejects 19 of them on
+                         Save is the field arguing with itself. */
+                      maxLength={18}
+                      inputMode="numeric"
+                      onChange={e => setBankField('bank_account_number', e.target.value.replace(/\D/g, ''))}
+                      placeholder="8 to 18 digits"
                     />
                     {bankErr('bank_account_number')}
                   </FormGroup>
@@ -1060,7 +1099,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                     <Input className={`ep-input${bankInv('bank_branch')}`}
                       value={bankForm.bank_branch || ''}
                       maxLength={150}
-                      onChange={e => setBankField('bank_branch', e.target.value)}
+                      /* Strip disallowed symbols as they are typed, the same
+                         way Bank Name does — the character never appears, so
+                         there is nothing to explain after the fact. Digits and
+                         . , - / ( ) & survive because branch names use them. */
+                      onChange={e => setBankField('bank_branch', e.target.value.replace(/[^A-Za-z0-9 .,\-/()&']/g, ''))}
                       placeholder="Branch name"
                     />
                     {bankErr('bank_branch')}

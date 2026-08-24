@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Col, Row } from 'reactstrap';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
+import { ShimmerForm } from '../../../components/ui/Shimmer';
 import { AncillaryRolesChip } from '../../../components/AncillaryRolesChip';
 import { leavePlansApi } from '../../hrms/leavePlansApi';
 
@@ -17,7 +18,7 @@ const fmtShiftTime = (hhmm?: string | null): string => {
 };
 
 export default function JobTab() {
-  const { empDetail, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
+  const { empDetail, empDetailLoading, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
 
   /* "General (09:30 AM – 06:30 PM)".
    *
@@ -52,6 +53,13 @@ export default function JobTab() {
       .catch(() => {});
     return () => { alive = false; };
   }, [empDetail?.leave_plan]);
+
+  /* QA #189 — skeleton while the job details load. Placed AFTER the effects
+     above: an early return before a hook changes the hook order between
+     renders, which React treats as an error. */
+  if (empDetailLoading) {
+    return <ShimmerForm header={false} sections={3} cols={4} fieldsPerSection={8} />;
+  }
 
   return (
         <>

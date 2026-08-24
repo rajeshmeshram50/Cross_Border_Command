@@ -48,7 +48,16 @@ export const STATIC_PLACEHOLDER_GROUPS: PlaceholderGroup[] = [
   { id: 'org', label: 'Organization', fields: [
     { label: 'Company Name',   token: '{{CompanyName}}' },
     { label: 'Company Address',token: '{{CompanyAddress}}' },
-    { label: 'Logo',           token: '{{CompanyLogo}}' },
+    /* Logo — {{CompanyLogo}} — is deliberately NOT offered here.
+       The letterhead is set through the header zone (Edit Header) on the
+       preview above, which is where authors expect to manage it and which
+       controls placement and sizing; a second route to the same image in the
+       body only duplicated it.
+       HIDDEN, NOT REMOVED: the token still resolves everywhere it is used —
+       preview, PDF, DOCX and the frozen signature copy — so the templates that
+       already contain it keep rendering their logo. Deleting the resolver
+       would blank the letterhead on every one of them. Restore this line to
+       offer it again. */
   ]},
 ];
 

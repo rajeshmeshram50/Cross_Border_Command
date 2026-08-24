@@ -294,7 +294,12 @@ const KPI_CARDS = [
 type ExpiryDays = 3 | 7 | 15;
 
 /* Per-screen so other tables can adopt the same pattern without colliding. */
-const PER_PAGE_KEY = 'cbc.hr.employees.perPage';
+/* .v2 — the default moved from 5 to 10 (matching Exit Management). The old key
+   holds a 5 for everyone who has already opened this page, and a remembered
+   size always beats the default, so without a new key the change would reach
+   nobody who had ever used the screen. Versioning costs one deliberate
+   rows-per-page choice, once. */
+const PER_PAGE_KEY = 'cbc.hr.employees.perPage.v2';
 
 /* How long the step skeleton stands in while a panel is swapped.
    Long enough to read as a transition, short enough not to read as a stall —
@@ -373,9 +378,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   const [perPage, setPerPage] = useState<number>(() => {
     try {
       const saved = Number(localStorage.getItem(PER_PAGE_KEY));
-      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 5;
+      return Number.isFinite(saved) && saved > 0 && saved <= 200 ? saved : 10;
     } catch {
-      return 5;
+      return 10;
     }
   });
 
@@ -3652,6 +3657,15 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
               minWidth={1500}
               fitToViewport
               autoFitRows
+              /* Floor the auto-fit at 10, matching Exit Management. Without it
+                 minAutoRows defaults to 2, so a laptop viewport (or any zoom
+                 level that leaves the table short) served a two-row page —
+                 which reads as a broken list rather than a fitted one, and
+                 makes the same tenant look different on every machine. Paired
+                 with the perPage initial value above: both are 10, so the
+                 first request and the post-measure request usually agree and
+                 no second fetch goes out. */
+              minAutoRows={10}
               loading={loadingEmployees || tabSwitching}
               /* The rows are one page fetched by reloadEmployees; the table
                  stops slicing and reports page moves back here instead.

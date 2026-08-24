@@ -47,6 +47,39 @@ const fmtDate = (iso: string) => {
   return isNaN(d.getTime()) ? iso : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
+/** How many punch chips show before the rest collapse behind "+N more". */
+const PUNCH_PREVIEW = 3;
+
+/** One chip per punch pair.
+ *  A correction that splits the day into nine slots used to print as a single
+ *  nowrap comma-list, which stretched the column until Reason / Status /
+ *  Action were pushed off the right edge of the table (CBC #77). Chips wrap
+ *  inside a bounded column, and the tail collapses behind a "+N more" toggle —
+ *  the full list is also on the cell's title for a hover read. */
+function PunchChips({ pairs, muted = false }: { pairs: string[]; muted?: boolean }) {
+  const [open, setOpen] = useState(false);
+  if (!pairs.length) return <span className="text-muted">—</span>;
+  const shown = open ? pairs : pairs.slice(0, PUNCH_PREVIEW);
+  const hidden = pairs.length - shown.length;
+  return (
+    <div className="reg-punch-wrap" title={pairs.join(', ')}>
+      {shown.map((p, i) => (
+        <span key={i} className={`reg-punch-chip${muted ? ' is-muted' : ''}`}>{p}</span>
+      ))}
+      {hidden > 0 && (
+        <button type="button" className="reg-punch-more" onClick={() => setOpen(true)}>
+          +{hidden} more
+        </button>
+      )}
+      {open && pairs.length > PUNCH_PREVIEW && (
+        <button type="button" className="reg-punch-more" onClick={() => setOpen(false)}>
+          Show less
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   /** Bumped by the parent when a NEW request is raised elsewhere on the page,
    *  so this list picks it up instead of waiting for a manual page refresh. */
@@ -230,7 +263,16 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                     const rowBusy    = busy?.id === r.id;
                     const approving  = rowBusy && busy?.action === 'approve';
                     const rejecting  = rowBusy && busy?.action === 'reject';
-                    const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out)).join(', ');
+                    const punches = (r.punches ?? []).map(p => punchPair12h(p.in, p.out));
+                    /* `original_display` is a single "first in – last out" span
+                       for a live day, but a frozen pre-approval snapshot can
+                       carry every pair, comma-separated. Split it so both read
+                       as the same chips. Prose like "No punches (absent)" has
+                       no comma and simply becomes one muted chip. */
+                    const originals = to12h(r.original_display)
+                      .split(',')
+                      .map(t => t.trim())
+                      .filter(Boolean);
                     return (
                       <tr key={r.id}>
                         <td className="fw-semibold">{empName(r)}</td>
@@ -239,11 +281,13 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                           <span className="text-muted ep-fs-12">{r.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}</span>
                           {r.type && <div className="ep-fs-11 text-muted">{r.type}</div>}
                         </td>
-                        <td className="font-monospace ep-fs-12 text-muted" style={{ whiteSpace: 'nowrap' }}>
-                          {r.mode === 'exempt' ? '—' : to12h(r.original_display)}
+                        {/* Both punch columns are width-capped so a long
+                            correction wraps instead of stretching the table. */}
+                        <td style={{ maxWidth: 210, whiteSpace: 'normal' }}>
+                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={originals} muted />}
                         </td>
-                        <td className="font-monospace ep-fs-12" style={{ whiteSpace: 'nowrap' }}>
-                          {r.mode === 'exempt' ? '—' : (punches || '—')}
+                        <td style={{ maxWidth: 260, whiteSpace: 'normal' }}>
+                          {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={punches} />}
                         </td>
                         <td className="ep-fs-12" style={{ maxWidth: 220 }}>{r.reason || '—'}</td>
                         <td>

@@ -208,6 +208,62 @@ class EmployeeController extends Controller
         'ancillary_roles_resolved',
     ];
 
+    private const ONBOARDING_WITH = [
+        'department:id,name',
+        'designation:id,name',
+        'primaryRole:id,name',
+        'ancillaryRole:id,name',
+        'reportingManager:id,display_name,first_name,last_name',
+        'reportingManagerUser:id,name',
+        // Feeds the photo_url accessor without an N+1; hidden from the payload.
+        'photoDocument:id,employee_id,document_key,file_path',
+    ];
+
+
+    private const ONBOARDING_COLUMNS = [
+        // identity + scope
+        'id',
+        'client_id',
+        'branch_id',
+        'deleted_at',
+        'emp_code',
+        'first_name',
+        'last_name',
+        'display_name',
+        // status / progress — drives the Status pill and the tab split
+        'status',
+        'onboarding_stage_completed',
+        'wizard_step_completed',
+        // the table's remaining columns
+        'department_id',
+        'designation_id',
+        'primary_role_id',
+        'ancillary_role_id',
+        'ancillary_role_ids',
+        'reporting_manager_id',
+        'reporting_manager_user_id',
+        'date_of_joining',
+        // profile_completion inputs (beyond those already listed above)
+        'gender',
+        'date_of_birth',
+        'work_country_id',
+        'nationality_country_id',
+        'email',
+        'mobile',
+        'address_line1',
+        'city',
+        'state_id',
+        'country_id',
+        'pincode',
+    ];
+
+    private const ONBOARDING_DROP_APPENDS = [
+        'face_registered',
+        'encrypted_id',
+        'other_assets_resolved',
+        'ancillary_roles_resolved',
+    ];
+
     private const WITH = [
         'client:id,org_name',
         // `shifts` is needed by Employee::resolveShiftWindow() — without it the
@@ -312,16 +368,20 @@ class EmployeeController extends Controller
         $view     = (string) $request->query('view');
         $listView = $view === 'list';
         $exitView = $view === 'exit';
+        $onbView  = $view === 'onboarding';
 
         $q = Employee::query()->withTrashed()->with(match (true) {
             $listView => self::LIST_WITH,
             $exitView => self::EXIT_WITH,
+            $onbView  => self::ONBOARDING_WITH,
             default   => self::fullWith(),
         });
         if ($listView) {
             $q->select(self::LIST_COLUMNS);
         } elseif ($exitView) {
             $q->select(self::EXIT_COLUMNS);
+        } elseif ($onbView) {
+            $q->select(self::ONBOARDING_COLUMNS);
         }
         $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
 
@@ -370,14 +430,19 @@ class EmployeeController extends Controller
             $this->applyExitStatusFilter($q, $request->query('exit_status'));
         }
 
+        if ($onbView) {
+            $this->applyOnboardingVisibility($q);
+            $this->applyOnboardingTabFilter($q, $request->query('onboarding_status'));
+        }
+
         $q->orderByDesc('id');
 
         /* Accessors are opt-OUT rather than opt-in: $appends is the model's
            default and every other caller still wants all of it. Applied to the
            rows after they are fetched because setAppends() is per-instance —
            there is no query-level switch for it. */
-        $trimAppends = function ($rows) use ($listView, $exitView) {
-            if (!$listView && !$exitView) return $rows;
+        $trimAppends = function ($rows) use ($listView, $exitView, $onbView) {
+            if (!$listView && !$exitView && !$onbView) return $rows;
 
             /* ->items(), not the paginator itself: collect() on a paginator
                wraps its ARRAY form — current_page, data, links — so mapping over
@@ -386,7 +451,11 @@ class EmployeeController extends Controller
                 ? $rows->items()
                 : $rows;
 
-            $drop = $listView ? self::LIST_DROP_APPENDS : self::EXIT_DROP_APPENDS;
+            $drop = match (true) {
+                $listView => self::LIST_DROP_APPENDS,
+                $exitView => self::EXIT_DROP_APPENDS,
+                default   => self::ONBOARDING_DROP_APPENDS,
+            };
             $keep = array_values(array_diff((new Employee)->getAppends(), $drop));
             foreach ($items as $row) {
                 $row->setAppends($keep);
@@ -657,6 +726,180 @@ class EmployeeController extends Controller
      * beneath; the tab deliberately does not, since these tiles are the
      * breakdown the tabs are cut from.
      */
+    /**
+     * Who belongs on the Onboarding Hub at all.
+     *
+     * Both rules used to run in the browser, over the full unpaginated array.
+     * Once the list is a page of eight they have to be exact rather than a
+     * superset, or a page of eight arrives and renders six.
+     *
+     * Soft-deleted rows are dropped because the Hub is a forward-motion
+     * surface — offering "Initiate Onboarding" on a disabled account that
+     * cannot even sign in. Exited people are dropped for the same reason and
+     * are NOT soft-deleted: completing an exit flips status to
+     * Resigned/Terminated and disables the login while leaving the row live,
+     * so a deleted_at check alone let leavers reappear in the queue.
+     */
+    private function applyOnboardingVisibility($q): void
+    {
+        // COALESCE for the same reason applyScope's enabled-filter uses it: the
+        // column is nullable and `NULL NOT IN (…)` is NULL, which would drop
+        // every status-less row off the screen. A missing status reads Active.
+        $st = DB::raw("COALESCE(LOWER(status), 'active')");
+        $q->whereNull('deleted_at')
+            ->whereNotIn($st, ['resigned', 'terminated', 'inactive']);
+    }
+
+    /**
+     * "Completed" as the Hub's status pill defines it — all six HR stages done
+     * AND the person Active. Expressed once, here, because the tab filter and
+     * every count in onboardingStats() have to agree with each other and with
+     * the pill the row renders.
+     */
+    private function sqlOnboardingCompleted(): string
+    {
+        return "(COALESCE(onboarding_stage_completed, 0) >= 6"
+            . " AND COALESCE(LOWER(status), 'active') = 'active')";
+    }
+
+    /** Has HR moved this record at all? Separates In Progress from Not Started. */
+    private function sqlOnboardingStarted(): string
+    {
+        return "(COALESCE(onboarding_stage_completed, 0) > 0"
+            . " OR COALESCE(wizard_step_completed, 0) > 0)";
+    }
+
+    private function applyOnboardingTabFilter($q, ?string $tab): void
+    {
+        $completed = $this->sqlOnboardingCompleted();
+        if ($tab === 'completed') {
+            $q->whereRaw($completed);
+        } elseif ($tab === 'pending') {
+            $q->whereRaw("NOT {$completed}");
+        }
+    }
+
+    /**
+     * The five KPI tiles and the two tab badges on the Onboarding Hub.
+     *
+     * Separate from index() for the same reason exitStats() is: the list is
+     * paginated, so counting the rows the browser holds would report "Total
+     * Employees 8" on a tenant of 365.
+     *
+     * Follows ?search — the tiles describe whoever is being looked at — but
+     * NOT the tab, since the tabs are cut from this very breakdown.
+     */
+
+    public function onboardingFormBootstrap(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $employeeId = $request->query('employee_id');
+        $out = [];
+        $skipped = [];
+
+        $take = function (string $key, callable $fn) use (&$out, &$skipped) {
+            try {
+                $res = $fn();
+                $out[$key] = $res instanceof \Illuminate\Http\JsonResponse ? $res->getData(true) : $res;
+            } catch (\Throwable $e) {
+                $skipped[$key] = $e instanceof \Symfony\Component\HttpKernel\Exception\HttpException
+                    ? $e->getStatusCode()
+                    : 500;
+            }
+        };
+
+        /* Sub-request carrying this caller's identity and branch, because the
+           delegated handlers read their filters off the Request. Built rather
+           than mutating $request so one key's parameters cannot leak into the
+           next key's call. */
+        $sub = function (array $params) use ($request) {
+            $r = Request::create('/api/internal', 'GET', $params + array_filter([
+                'branch_id' => $request->query('branch_id'),
+            ], fn($v) => $v !== null));
+            $r->setUserResolver(fn() => $request->user());
+            return $r;
+        };
+
+        $branch = app(\App\Http\Controllers\Api\BranchController::class);
+
+        $take('managers',       fn() => $this->managers($sub([])));
+        $take('legal_entities', fn() => $branch->legalEntityOptions($sub([])));
+        $take('branch_shifts',  fn() => $branch->shiftOptions($sub([])));
+        $take('leave_plans',    fn() => app(\App\Http\Controllers\Api\LeavePlanController::class)->index($sub([])));
+        $take('holiday_groups', fn() => app(\App\Http\Controllers\Api\HolidayGroupController::class)->index($sub([])));
+
+        /* Employee-scoped keys. Skipped entirely without an id — the form only
+           asks for them once it has a saved employee to exclude from the
+           available-asset pools. */
+        if ($employeeId) {
+            foreach (['laptop', 'mobile', 'other'] as $cat) {
+                $take("assets_{$cat}", fn() => $this->availableAssets($sub([
+                    'category' => $cat,
+                    'exclude_employee_id' => $employeeId,
+                ])));
+            }
+            $take('salary_structures', fn() => app(\App\Http\Controllers\Api\SalaryStructureController::class)
+                ->index($sub(['employee_id' => $employeeId, 'active_only' => 1])));
+        }
+
+        return response()->json(['data' => $out, 'skipped' => $skipped]);
+    }
+
+    public function onboardingStats(Request $request)
+    {
+        $this->authorize($request, 'can_view');
+
+        $base = function () use ($request) {
+            $q = Employee::query()->withTrashed();
+            $this->applyScope($q, $request->user(), $request->integer('branch_id') ?: null);
+            $this->applySearch($q, $request->query('search'));
+            $this->applyOnboardingVisibility($q);
+            return $q;
+        };
+
+        $completed = $this->sqlOnboardingCompleted();
+        $started   = $this->sqlOnboardingStarted();
+
+        // One pass, not four COUNTs that each re-scan the table.
+        $row = $base()->selectRaw("
+            COUNT(*)                                                        AS total,
+            SUM(CASE WHEN {$completed} THEN 1 ELSE 0 END)                   AS completed,
+            SUM(CASE WHEN NOT {$completed} AND {$started} THEN 1 ELSE 0 END) AS in_progress,
+            SUM(CASE WHEN NOT {$completed} AND NOT {$started}
+                     THEN 1 ELSE 0 END)                                     AS not_started
+        ")->first();
+
+        /* "Missing Profile Details" is profile_completion < 60, and
+           profile_completion is a PHP accessor blending seventeen fields with
+           the stage. Re-expressing that in SQL would put one rule in two
+           places and let them drift silently — the tile would disagree with the
+           bar printed on the row. So the pending rows are streamed with only
+           the columns that accessor reads and counted here instead. */
+        $missing = 0;
+        foreach (
+            $base()->whereRaw("NOT {$completed}")
+                ->select(self::ONBOARDING_COLUMNS)
+                ->cursor() as $emp
+        ) {
+            if ($emp->profile_completion < 60) $missing++;
+        }
+
+        // SUM() is a string on Postgres and null on an empty tenant; these feed
+        // a counter animation that expects numbers.
+        $total     = (int) ($row->total ?? 0);
+        $completedN = (int) ($row->completed ?? 0);
+
+        return response()->json([
+            'total'      => $total,
+            'completed'  => $completedN,
+            'inProgress' => (int) ($row->in_progress ?? 0),
+            'notStarted' => (int) ($row->not_started ?? 0),
+            'missing'    => $missing,
+            'pending'    => $total - $completedN,
+        ]);
+    }
+
     public function exitStats(Request $request)
     {
         $this->authorize($request, 'can_view');
@@ -855,14 +1098,34 @@ class EmployeeController extends Controller
             'bank_name'           => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
             // PAN-style account numbers can include letters (NRE/NRO), so we
             // don't enforce digits-only — same rule as the onboarding wizard.
-            'bank_account_number' => 'nullable|string|max:30',
+            /* QA #187 — 8 to 18 digits, nothing else.
+               This replaces an earlier "account numbers can include letters
+               (e.g. NRE/NRO)" exemption. NRE and NRO name an account TYPE, not
+               an alphanumeric format: Indian bank account numbers are numeric,
+               and all 425 accounts on file already satisfy this, so the
+               exemption was protecting a case that does not exist while
+               letting "1234@#$%" through. */
+            'bank_account_number' => ['nullable', 'string', 'regex:/^\d{8,18}$/'],
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
             'ifsc_code'           => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
             'account_holder_name' => ['nullable', 'string', 'max:150', 'regex:/^[A-Za-z ]+$/'],
-            'bank_branch'         => 'nullable|string|max:150',
+            /* QA #186 — the branch was the one bank field with no shape rule,
+               so "@#$%^" saved happily next to a bank name and account holder
+               that both refuse anything but letters.
+               NOT letters-only like those two, though: real branch names carry
+               digits and punctuation — "Sector 17", "M.G. Road", "Andheri
+               (East)", "Nagar Road & Kalyani", "Branch No. 2". Rejecting those
+               would swap a validation gap for a validation obstacle. The
+               lookahead demands at least one letter, so "123" and "---" are
+               still refused. */
+            'bank_branch'         => ['nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
             'bank_account_type'   => 'nullable|string|max:30',
         ], [
             'ifsc_code.regex' => 'Enter a valid IFSC code (e.g. HDFC0001234).',
+            'bank_account_number.regex' => 'Account Number must be 8 to 18 digits, with no spaces or symbols.',
+            // Names what IS allowed, not just what failed — "invalid format"
+            // leaves the user guessing which character to remove.
+            'bank_branch.regex' => 'Branch can contain letters, numbers, spaces and . , - / ( ) & only.',
         ]);
 
         // Store IFSC uppercased, the way the onboarding wizard persists it.
@@ -3036,13 +3299,18 @@ class EmployeeController extends Controller
             // Stage 4 — Payroll & Finance Setup
             'salary_payment_mode'   => 'nullable|in:bank,cheque,cash',
             'bank_name'             => 'nullable|string|max:150',
-            // PAN-style account number can include letters (e.g. NRE/NRO),
-            // so we don't enforce digits-only.
-            'bank_account_number'   => 'nullable|string|max:30',
+            // QA #187 — 8 to 18 digits. Same rule as updateBankDetails(); this
+            // form writes the same column, so a rule on only one of the two is
+            // not a rule. (Replaces the old NRE/NRO letters exemption — see the
+            // note there.)
+            'bank_account_number'   => ['nullable', 'string', 'regex:/^\d{8,18}$/'],
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
             'ifsc_code'             => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
             'account_holder_name'   => 'nullable|string|max:150',
-            'bank_branch'           => 'nullable|string|max:150',
+            // QA #186 — same rule as updateBankDetails(). Applied here too
+            // because the main employee form writes the very same column, and
+            // a rule enforced on only one of two doors is not enforced.
+            'bank_branch'           => ['nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
             'bank_account_type'     => 'nullable|string|max:30',
             // UAN: exactly 12 digits when present.
             'uan_number'            => 'nullable|string|regex:/^\d{12}$/',
@@ -3090,6 +3358,10 @@ class EmployeeController extends Controller
             'perm_address_line1.not_regex' => 'Address cannot contain < or > characters.',
             'perm_address_line2.not_regex' => 'Address cannot contain < or > characters.',
             'location.not_regex'           => 'Location cannot contain < or > characters.',
+            // Same wording as updateBankDetails so the field reads identically
+            // whichever form the user reached it through (QA #186).
+            'bank_branch.regex'            => 'Branch can contain letters, numbers, spaces and . , - / ( ) & only.',
+            'bank_account_number.regex'    => 'Account Number must be 8 to 18 digits, with no spaces or symbols.',
             // Email is the login ID and is unique system-wide (across every
             // branch/client) — it can't be branch-scoped without making login
             // ambiguous. Spell that out so an admin who can only see their own

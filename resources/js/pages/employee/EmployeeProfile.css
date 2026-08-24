@@ -2970,6 +2970,42 @@
   border: none;
   box-shadow: var(--pyt-tab-shadow);
 }
+/* QA #194 — these buttons carry Bootstrap's `.btn` with no `btn-*` variant,
+   so the only :hover rule reaching them was Bootstrap's base one, which paints
+   a near-black fill. On a transparent inactive tab that read as the tab going
+   black on hover. Both states get an explicit hover below, so nothing falls
+   through to the framework default again. */
+.pyt-subtab-btn:hover,
+.pyt-subtab-btn:focus-visible {
+  /* Inactive: lift to the card surface — white in the light theme — and keep
+     the body text colour so the label stays readable. */
+  background: var(--vz-card-bg, #fff);
+  color: var(--vz-body-color);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+/* Active: hold its own gradient. Declared AFTER the rule above — same
+   specificity, so source order decides — otherwise hovering the selected tab
+   would wash it out to plain white and lose the selection entirely. */
+.pyt-subtab-btn--on:hover,
+.pyt-subtab-btn--on:focus-visible {
+  background: var(--pyt-tab-bg);
+  color: #fff;
+  box-shadow: var(--pyt-tab-shadow);
+}
+/* Dark theme: --vz-card-bg is already dark there, but it sits at the same
+   value as the strap behind it, so the hover would be invisible. A translucent
+   white lift reads on both. */
+[data-bs-theme="dark"] .pyt-subtab-btn:hover,
+[data-bs-theme="dark"] .pyt-subtab-btn:focus-visible {
+  background: rgba(255, 255, 255, 0.10);
+  color: var(--vz-body-color);
+}
+[data-bs-theme="dark"] .pyt-subtab-btn--on:hover,
+[data-bs-theme="dark"] .pyt-subtab-btn--on:focus-visible {
+  background: var(--pyt-tab-bg);
+  color: #fff;
+}
+
 .pyt-icon-12 { font-size: 12px; }
 .pyt-hero-card { border-radius: 14px; overflow: hidden; }
 .pyt-hero-banner {
@@ -3425,11 +3461,80 @@
   gap: 12px;
 }
 .att-today-badge {
-  font-size: 11px;
-  padding: 2px 8px;
+  /* QA #193 — the status pill was 11px with 2px of padding, so the one piece
+     of state on the card was also the smallest thing on it. */
+  font-size: 12px;
+  padding: 4px 12px;
   border-radius: 999px;
   background: #d6f4e3;
   color: #108548;
+  letter-spacing: 0.01em;
+}
+
+/* ── Today's Record tiles (QA #193) ─────────────────────────────────────
+   Two ranks: the IN / OUT pair, then the three supporting figures. Grid
+   rather than Bootstrap columns so the tiles share a gutter and stretch to
+   equal height without a wrapper per cell. */
+.att-today-tiles {
+  display: grid;
+  gap: 10px;
+}
+.att-today-tiles--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.att-today-tiles--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.att-today-tile {
+  background: var(--vz-light);
+  border: 1px solid var(--vz-border-color);
+  border-radius: 10px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+.att-today-tile__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  /* Uppercase + tracking so the label reads as a caption rather than
+     competing with the value under it. */
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vz-secondary-color);
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+.att-today-tile__label i { font-size: 12px; }
+
+.att-today-tile__value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--vz-heading-color, var(--vz-body-color));
+  /* The times can wrap to "--:--" or a long locale string; keep the tile from
+     stretching the grid. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.att-today-tile__value--sm { font-size: 15px; font-weight: 600; }
+.att-today-tile__value--muted { color: var(--vz-secondary-color); font-weight: 600; }
+
+/* Colour carries the meaning: in = emerald, out = rose, worked = the figure
+   the card exists to answer. Only the left edge is tinted so three tinted
+   tiles in a row never turn the card into a paint chart. */
+.att-today-tile--in     { border-left: 3px solid #10b981; }
+.att-today-tile--out    { border-left: 3px solid #f43f5e; }
+.att-today-tile--worked { border-left: 3px solid #6366f1; }
+.att-today-tile--worked .att-today-tile__value { color: #4338ca; }
+
+[data-bs-theme="dark"] .att-today-tile {
+  background: rgba(255, 255, 255, 0.04);
+}
+[data-bs-theme="dark"] .att-today-tile--worked .att-today-tile__value { color: #a5b4fc; }
+
+@media (max-width: 575.98px) {
+  /* Three 15px values plus their captions do not survive a phone width —
+     drop to two columns and let the third wrap. */
+  .att-today-tiles--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .att-today-badge-dot {
   width: 5px;

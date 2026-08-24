@@ -2,7 +2,7 @@
 // photo uploader and the account-security card. Extracted from
 // EmployeeProfile.tsx; shared state is read via useEmployeeProfile().
 import { Button, Col, Row } from 'reactstrap';
-import { Shimmer } from '../../../components/ui/Shimmer';
+import { Shimmer, ShimmerForm } from '../../../components/ui/Shimmer';
 import { useEmployeeProfile } from '../EmployeeProfileContext';
 
 export default function ProfileTab() {
@@ -12,6 +12,16 @@ export default function ProfileTab() {
     handleProfilePhotoChange, handleSaveProfilePhoto, restoreSavedProfilePhoto,
     profilePhotoInputRef, setFaceRegOpen, setPwOpen, resetPwForm,
   } = useEmployeeProfile();
+
+  /* QA #189 — skeleton while the profile is being fetched.
+     Only the Personal Information block shimmered before; every other section
+     rendered its real card with an em dash in each field, so a loading page
+     was indistinguishable from an empty one. The whole tab is replaced while
+     the fetch is in flight, matching the hero band above, which already
+     shimmers. */
+  if (empDetailLoading) {
+    return <ShimmerForm header={false} sections={4} cols={4} fieldsPerSection={8} />;
+  }
 
   return (
         <>
