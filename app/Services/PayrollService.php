@@ -2119,14 +2119,31 @@ class PayrollService
             }
         }
 
-        // Other fixed deductions from the structure (anything not pf/esi/pt/tds)
-        // — scaled to earned pay so they don't apply to an unpaid month.
+        /* Other fixed deductions from the structure (anything not pf/esi/pt/tds)
+         * — scaled to earned pay so they don't apply to an unpaid month.
+         *
+         * The statutory test has to match structureDeduction() exactly, by CODE
+         * or by LABEL (QA #97). Excluding on code alone meant a row labelled
+         * "Provident Fund" but coded comp_5 was picked up as PF above AND swept
+         * in here, deducting it twice — once in full on its own line and again,
+         * pro-rated, inside Other Deductions. Before the label match existed it
+         * was only ever counted here, which is the fault as reported; adding the
+         * match without widening this filter would have replaced a missing
+         * deduction with a doubled one. */
+        $statutoryCodes = ['pf', 'esi', 'pt', 'tds'];
         $other = 0;
         foreach ($structDeductions as $d) {
-            $code = strtolower($d['code'] ?? '');
-            if (!in_array($code, ['pf', 'esi', 'pt', 'tds'], true)) {
-                $other += round(((float) ($d['amount'] ?? 0)) * $earnedFactor, 2);
+            $code = strtolower(trim((string) ($d['code'] ?? '')));
+            if (in_array($code, $statutoryCodes, true)) {
+                continue;
             }
+            $label = (string) ($d['label'] ?? '');
+            foreach ($statutoryCodes as $sc) {
+                if (self::deductionLabelMatches($label, $sc)) {
+                    continue 2;
+                }
+            }
+            $other += round(((float) ($d['amount'] ?? 0)) * $earnedFactor, 2);
         }
         // Approved one-off deduction adjustments (not pro-rated — they're
         // explicit amounts HR entered for this cycle).
@@ -2539,13 +2556,36 @@ class PayrollService
     private function resolveCompensation(Employee $employee, ?SalaryStructure $structure, array &$exceptions): array
     {
         if ($structure) {
+            /* PF / ESI applicability is the OR of the structure and the EMPLOYEE
+             * record — the employee is the master, the structure a cache of it.
+             *
+             * Reading the structure alone made payroll the last holdout of a
+             * rule the rest of the app had already settled. Salary Setup resolves
+             * the checkbox as `structure.pf_applicable || employee.pf_eligible`
+             * (QA #89) and EmployeeController mirrors the flag onto the active
+             * structure on save (QA #90) — but that mirror only runs for edits
+             * made through that form, and only since it was added. Anything else
+             * that ever set pf_eligible — imports, seeders, direct updates, or
+             * simply an employee edited before the mirror existed — leaves the
+             * structure's copy stale at false, and payroll then deducted no PF
+             * while every screen showed PF as applicable. Silently: a missing
+             * deduction has nothing to render, so there was no line to question.
+             *
+             * OR-ing here makes the read path agree with the write path, and
+             * repairs those existing rows without a migration. It can only ever
+             * ENABLE a statutory deduction the employee record already claims, so
+             * it cannot quietly stop one being taken.
+             *
+             * The ESI gross ceiling is applied where ESI is computed, so widening
+             * applicability here does not bypass it. */
             return [
                 (float) $structure->monthly_gross,
                 (float) $structure->basicAmount(),
                 (array) $structure->earnings,
                 (array) $structure->deductions,
-                (bool) $structure->pf_applicable,
-                (bool) $structure->esi_applicable,
+                (bool) $structure->pf_applicable || (bool) $employee->pf_eligible,
+                (bool) $structure->esi_applicable
+                    || strtolower((string) ($employee->esi_applicable ?? '')) === 'yes',
                 (bool) $structure->pt_applicable,
             ];
         }
@@ -2582,14 +2622,92 @@ class PayrollService
         ];
     }
 
+    /**
+     * A statutory deduction's amount from the structure — matched by CODE first,
+     * then by LABEL. (QA #97)
+     *
+     * Code-only matching was silently wrong for any row not created by the
+     * Salary Setup checkbox. That modal codes its own rows 'pf' / 'esi' / 'pt'
+     * — and then strips the PF row before POSTing, because payroll recomputes
+     * it. So a PF row that actually PERSISTS got there another way: HR pressed
+     * "+ Add" and typed "Provident Fund" (addRow codes those comp_1, comp_2 …),
+     * or it arrived from an import, a seeder or an API client.
+     *
+     * Those rows failed the code test and fell through to the "other fixed
+     * deductions" sweep below, which produced exactly the reported fault twice
+     * over: the payslip showed no PF line at all — the money vanished into a
+     * generic "Other Deductions" total — and the amount was pro-rated by the
+     * earned share, so a ₹1,800 PF came out ₹1,074.19 in a month carrying loss
+     * of pay. Statutory heads are deducted in full by design; only "other" rows
+     * scale.
+     *
+     * Same Code → Label resolution SalaryStructure::basicAmount() uses for the
+     * basic component, and for the same reason: the code is an implementation
+     * detail of whichever screen wrote the row, the label is what a human typed
+     * and what the payslip shows.
+     */
     private function structureDeduction(array $deductions, string $code): float
     {
         foreach ($deductions as $d) {
-            if (strtolower($d['code'] ?? '') === $code) {
+            if (strtolower(trim((string) ($d['code'] ?? ''))) === $code) {
+                return round((float) ($d['amount'] ?? 0), 2);
+            }
+        }
+        foreach ($deductions as $d) {
+            if (self::deductionLabelMatches((string) ($d['label'] ?? ''), $code)) {
                 return round((float) ($d['amount'] ?? 0), 2);
             }
         }
         return 0;
+    }
+
+    /**
+     * Does this hand-typed deduction label name the statutory head $code?
+     *
+     * Deliberately tight. These patterns decide that a row is PF/ESI/PT/TDS —
+     * which moves it out of the pro-rated "other" bucket and onto its own
+     * payslip line — so a false positive silently reclassifies one of HR's own
+     * deductions. Anchored word matches only: "PF Loan Recovery" is a loan, not
+     * PF, and must keep behaving like one.
+     */
+    private static function deductionLabelMatches(string $label, string $code): bool
+    {
+        $l = strtolower(trim($label));
+        if ($l === '') {
+            return false;
+        }
+
+        /* Qualifiers people routinely append to a statutory head's name, none of
+         * which change WHICH head it is: "PF Employee", "ESI — Employee Share",
+         * "Provident Fund Contribution", "PF (12%)". Stripped before matching so
+         * the patterns below stay readable and stay anchored. */
+        $l = preg_replace('/\s*\((?:[^()]*)\)\s*$/', '', $l);                    // trailing "( … )"
+        $l = preg_replace(
+            '/\s*[-–—:]?\s*(employee(\'s)?)?\s*(share|contribution|deduction)?\s*$/',
+            '',
+            $l,
+        );
+        $l = preg_replace('/\s*[-–—:]?\s*employee(\'s)?\s*$/', '', $l);          // bare "… Employee"
+        /* Leading form too — "Employee's PF", "Employee ESI". Matched as the
+         * whole word "employee" so "Employer PF" is untouched: the employer's
+         * contribution is not the employee's deduction and must never be taken
+         * off their salary. */
+        $l = preg_replace('/^employee(\'s)?\s+/', '', (string) $l);
+        $l = trim((string) $l);
+
+        return match ($code) {
+            /* "PF", "EPF", "Provident Fund" and the qualified forms above — but
+             * never "PF Loan" / "PF Advance", which are recoveries against a
+             * loan and must keep behaving like ordinary other-deductions. */
+            'pf'  => (bool) preg_match('/^(e?pf|provident\s*fund)$/', $l)
+                     || (bool) preg_match('/^(e?pf|provident\s*fund)\s+(e?pf|provident\s*fund)$/', $l),
+            // "state insurance" is the residue of "Employee State Insurance"
+            // once the leading-qualifier strip above has removed "Employee".
+            'esi' => (bool) preg_match('/^(esic?|(employee\s+)?state\s+insurance)$/', $l),
+            'pt'  => (bool) preg_match('/^(pt|professional\s*tax|prof\.?\s*tax)$/', $l),
+            'tds' => (bool) preg_match('/^(tds|income\s*tax)$/', $l),
+            default => false,
+        };
     }
 
     /**

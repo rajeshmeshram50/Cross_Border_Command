@@ -89,10 +89,21 @@ export const statutoryPt = (monthlyGross: number, gender: string): number => {
 };
 
 /** PF at 12% of basic — Statutory caps the basic at the ₹15,000 EPF wage
- *  ceiling (max ₹1,800/month), Standard uses the full basic. */
+ *  ceiling (max ₹1,800/month), Standard uses the full basic.
+ *
+ *  The type is matched case-INSENSITIVELY so this agrees with payroll, which
+ *  reads it as `strtolower($employee->pf_type) === 'standard'`. The old exact
+ *  `=== 'Standard'` comparison only lined up because the Employee form happens
+ *  to write the value capitalised; a row stored as "standard" by an import, a
+ *  seeder or an API client fell through to the capped branch here while payroll
+ *  took the uncapped one. On a basic above ₹15,000 that is the screen quoting
+ *  ₹1,800 against a payslip deducting 12% of the whole basic — the two
+ *  disagreeing about the same employee, with nothing on either to explain it. */
 export const pfDeduction = (basic: number, pfType: string, eligible: boolean): number => {
   if (!eligible) return 0;
-  const base = pfType === 'Standard' ? basic : Math.min(basic, 15000);
+  const base = String(pfType ?? '').trim().toLowerCase() === 'standard'
+    ? basic
+    : Math.min(basic, 15000);
   return Math.round(Math.max(0, base) * 0.12);
 };
 
