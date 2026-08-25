@@ -1134,8 +1134,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   };
 
   const next = () => {
-    // Read-only: navigate through the stages to review, never persist/generate.
-    if (roMode) { if (stage < 4) setStage(s => s + 1); return; }
+    // Read-only: page through the stages to review, never persist/generate. On
+    // the LAST stage there is nothing further to review, so the button closes the
+    // wizard and hands the user back to the PO list — it used to sit there
+    // disabled, leaving the footer with no way out but the header X.
+    if (roMode) { if (stage < 4) setStage(s => s + 1); else onClose(savedPoId); return; }
     if (stage === 1 && !validateStage1()) return;
     // Product stage (and any later persist) needs at least one product AND no
     // segment mismatch before it can be left.
@@ -1688,9 +1691,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           <div className="p2pj-footer__dots">{[1, 2, 3, 4].map(i => <div key={i} className={`p2pj-fdot ${i < stage ? 'is-done' : (i === stage ? 'is-active' : '')}`} />)}</div>
           <div className="p2pj-footer__btns">
             <button className="p2pj-fbtn p2pj-fbtn--ghost" onClick={back}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> {stage === 1 ? 'Change Link' : 'Back'}</button>
-            <button className={`p2pj-fbtn ${!roMode && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving || (roMode && stage === 4)} onClick={next}>
+            <button className={`p2pj-fbtn ${!roMode && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving} onClick={next}>
               {saving ? (<><Spin s={14} /> {stage === 4 ? (isEdit ? 'Updating…' : 'Generating…') : 'Please wait…'}</>)
-                : roMode ? (stage === 4 ? (<>View Only</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
+                : roMode ? (stage === 4 ? (<><XIco /> Close</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
                 : stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                 : stage === 4 ? (<>{isEdit ? 'Update Purchase Order' : 'Generate Purchase Order'} <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                   : (<>Save &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)}
