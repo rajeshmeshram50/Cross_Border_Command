@@ -398,30 +398,42 @@ export default function DataTable<T extends object>({
     const el = rootRef.current;
     if (!el || !fitToViewport) return;
 
-    /* A rows-per-page the user picked themselves owns the height from then on.
+    /* A rows-per-page the user picked themselves decides how TALL the rows area
+     * needs to be — but the viewport still decides the SHORTEST the card may be.
      *
-     * fitToViewport pins the card to whatever space is left below it, and the
-     * rows area scrolls inside that. On a page carrying a lot above the table
-     * that space is only a couple of rows tall — so choosing "10" set the page
-     * size to 10 correctly, but eight of those rows sat behind an inner
-     * scrollbar and the table still looked like it was showing 2. The setting
-     * appeared to do nothing.
+     * Under the automatic fit the card is pinned exactly to the space left
+     * below it and the rows scroll inside it. That is right there: the row
+     * count was measured to fill exactly that space.
      *
-     * Releasing the pin lets the card grow to the rows that were asked for and
-     * the PAGE scroll instead, which is what picking a row count means. The
-     * automatic fit still owns the height until someone overrides it. */
-    if (manualSize !== null) {
-      el.style.flex = '';
-      el.style.height = '';
-      el.style.maxHeight = '';
-      return;
-    }
-
+     * A manual pick has to work in BOTH directions, and dropping the pin
+     * outright only handled one of them:
+     *   · picked MORE rows than fit (10 under a tall KPI strip) — the card must
+     *     be free to grow past the viewport and let the PAGE scroll, or eight
+     *     of those ten rows hide behind an inner scrollbar and the setting
+     *     looks like it did nothing;
+     *   · picked FEWER rows than fit (10 where 20 would fit) — the card
+     *     collapsed to its content and left a screen-tall dead gap between the
+     *     pager and the page footer. (QA #59)
+     *
+     * A MIN height satisfies both: it is the floor the viewport imposes, and
+     * content taller than the floor simply pushes past it. Leftover space lands
+     * inside .dt-scroll (flex:1), so the body and the pager run down to the
+     * footer instead of stopping mid-page — and it stays plain whitespace, not
+     * the filler rows deliberately removed from <tbody> below. */
     const size = () => {
       const top = el.getBoundingClientRect().top;
       const h = `${Math.max(240, window.innerHeight - top - bottomReserve())}px`;
-      if (el.style.height === h) return;
+      if (manualSize !== null) {
+        if (el.style.minHeight === h && !el.style.height) return;
+        el.style.flex = 'none';
+        el.style.height = '';
+        el.style.maxHeight = '';
+        el.style.minHeight = h;
+        return;
+      }
+      if (el.style.height === h && !el.style.minHeight) return;
       el.style.flex = 'none';
+      el.style.minHeight = '';
       el.style.height = h;
       el.style.maxHeight = h;
     };

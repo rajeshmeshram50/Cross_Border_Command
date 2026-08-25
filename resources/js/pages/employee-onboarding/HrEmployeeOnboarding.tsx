@@ -776,7 +776,36 @@ export default function HrEmployeeOnboarding() {
   // Initiate Onboarding form — multi-stage flow (6 stages, Stage 1 has 4 steps)
   const [initiateOpen, setInitiateOpen] = useState(false);
   const [initiateRow,  setInitiateRow]  = useState<OnboardRow | null>(null);
-  const openInitiate = (row: OnboardRow) => { setInitiateRow(row); setInitiateOpen(true); };
+  /* Open on the LIST row, then swap in the FULL record.
+   *
+   * The list runs on a trimmed projection — EmployeeController::ONBOARDING_COLUMNS,
+   * 30 columns of identity + progress + the profile_completion inputs. That is
+   * right for a 10-row table, but it carries none of the Stage 1 detail: leave
+   * plan, holiday group, shift, weekly off, attendance number, time tracking,
+   * overtime, expense policy, assets, probation, notice period, location, legal
+   * entity, and the whole payroll/bank/PAN block are all absent.
+   *
+   * Hydrating the form straight off that row therefore rendered every one of
+   * those fields EMPTY — not because the fetch failed, but because the value was
+   * never in the payload. Most of them are required, so HR had to retype data
+   * that was already saved, and saving then wrote the retyped values over the
+   * real ones. A record could lose its salary or bank details by being opened.
+   *
+   * Opening on the list row first keeps the modal instant; the full row lands a
+   * moment later and re-hydrates. Same endpoint and mapper the post-save refresh
+   * below already uses, so the trimmed list stays fast and untouched. */
+  const openInitiate = (row: OnboardRow) => {
+    setInitiateRow(row);
+    setInitiateOpen(true);
+    if (!row.dbId) return;
+    api.get(`/employees/${row.dbId}`).then(r => {
+      const full = apiToOnboardRow(r.data);
+      // Only if this is still the employee on screen — a fast A-then-B click
+      // must not drop A's late response into B's open form.
+      setInitiateRow(prev => (prev && prev.empId === full.empId ? full : prev));
+      setApiRows(prev => prev.map(x => (x.empId === full.empId ? full : x)));
+    }).catch(() => { /* keep the list row — a blank-but-open form beats none */ });
+  };
   const closeInitiate = () => {
     setInitiateOpen(false);
     setInitiateRow(null);
@@ -2181,6 +2210,10 @@ function InitiateOnboardingModal({
   // ["Leave Policy"] list would leave the onboarding dropdown blank for
   // every employee assigned a real plan.
   const [leavePlanOpts, setLeavePlanOpts] = useState<{ value: string; label: string }[]>([]);
+  /* EVERY plan the server returned, including the ones filtered out of the
+     dropdown for incomplete setup. Needed only to LABEL an employee's existing
+     assignment when that plan is no longer offered — see leavePlanSelectOpts. */
+  const [leavePlanAll, setLeavePlanAll] = useState<{ value: string; label: string }[]>([]);
   // Overtime rate options sourced from the Overtime (OT) Master. Only Active
   // rates are offered; the picker appears once "Overtime Applicable" = Yes.
   const [overtimeRateOpts, setOvertimeRateOpts] = useState<{ value: string; label: string }[]>([]);
@@ -2320,11 +2353,9 @@ function InitiateOnboardingModal({
          assignable; a draft plan must never reach an employee. */
       const plans = Array.isArray(d.leave_plans) ? d.leave_plans
         : (Array.isArray(d.leave_plans?.data) ? d.leave_plans.data : []);
-      setLeavePlanOpts(
-        plans
-          .filter((p: any) => p.setup_complete)
-          .map((p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` })),
-      );
+      const planOpt = (p: any) => ({ value: String(p.id), label: p.plan_name || p.name || `Plan ${p.id}` });
+      setLeavePlanOpts(plans.filter((p: any) => p.setup_complete).map(planOpt));
+      setLeavePlanAll(plans.map(planOpt));
 
       setMHolidayGroups(Array.isArray(d.holiday_groups) ? d.holiday_groups : []);
 
@@ -2813,6 +2844,32 @@ function InitiateOnboardingModal({
   const shiftPlaceholder = branchShiftOpts.length === 0
     ? 'No shifts configured for this branch'
     : 'Select shift';
+
+  /* Leave Plan options as rendered — the same rule Shift, Holiday List and
+     Overtime Rate above already follow, and the only master-backed picker here
+     that was missing it.
+
+     Only plans whose quota wizard is FINISHED are assignable (setup_complete),
+     which is right for a NEW assignment: nobody should be able to put an
+     employee on a half-configured plan. But the filter was also erasing an
+     assignment already on the record — an employee saved against a plan that is
+     still mid-setup had the field render EMPTY, because the value the API sent
+     ("1") matched no remaining option. Leave Plan is a required field, so HR
+     could not save Stage 1 without re-picking, and the only thing left to pick
+     was a different plan. A configuration state in HR › Leave was silently
+     rewriting people's leave entitlement. (QA — Rohan / EMP-824)
+
+     Keeping the saved plan pinned at the top, flagged, fixes both halves: the
+     existing assignment survives, and it is still never offered to anyone new. */
+  const leavePlanSelectOpts = (() => {
+    const saved = String(s1.leave_plan ?? '').trim();
+    if (!saved || leavePlanOpts.some(o => o.value === saved)) return leavePlanOpts;
+    const known = leavePlanAll.find(o => o.value === saved);
+    return [
+      { value: saved, label: `${known?.label ?? `Plan ${saved}`} (current — setup incomplete)` },
+      ...leavePlanOpts,
+    ];
+  })();
 
   /* Overtime rate options as rendered. Only ACTIVE rows from the Overtime (OT)
      Master are offered — same rule as every other master-backed picker here.
@@ -4865,7 +4922,7 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                       it, `invalid` for the red border, and the message below.
                       Without it a blocked Next Stage showed only a toast and
                       left the operator hunting for which field it meant. */}
-                  <Col md={4} data-field="leave_plan"><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanOpts} loading={mastersLoading} value={s1.leave_plan} invalid={!!s1Errors.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => { setS1(p => ({ ...p, leave_plan: v })); setS1Errors(p => ({ ...p, leave_plan: '' })); }} />{s1Errors.leave_plan && <div className="onb-error-msg">{s1Errors.leave_plan}</div>}</Col>
+                  <Col md={4} data-field="leave_plan"><label className="onb-init-label">Leave Plan<span className="req">*</span></label><MasterSelect options={leavePlanSelectOpts} loading={mastersLoading} value={s1.leave_plan} invalid={!!s1Errors.leave_plan} disabled={!leavePerm.canView} placeholder={!leavePerm.canView ? 'Requires Leave module access' : (leavePlanOpts.length ? 'Select a leave plan' : 'No configured leave plan — finish its setup in HR > Leave')} onChange={(v) => { setS1(p => ({ ...p, leave_plan: v })); setS1Errors(p => ({ ...p, leave_plan: '' })); }} />{s1Errors.leave_plan && <div className="onb-error-msg">{s1Errors.leave_plan}</div>}</Col>
                   <Col md={4} data-field="holiday_list"><label className="onb-init-label">Holiday List<span className="req">*</span></label><MasterSelect options={holidayGroupSelectOpts} loading={mastersLoading} value={s1.holiday_list} invalid={!!s1Errors.holiday_list} placeholder={holidayGroupOpts.length ? 'Select holiday group' : 'No groups — create in HR › Holiday › Groups'} onChange={(v) => { setS1(p => ({ ...p, holiday_list: v })); setS1Errors(p => ({ ...p, holiday_list: '' })); }} />{s1Errors.holiday_list && <div className="onb-error-msg">{s1Errors.holiday_list}</div>}</Col>
                   <Col md={4} data-field="shift"><label className="onb-init-label">Shift<span className="req">*</span></label><MasterSelect options={shiftSelectOpts} loading={mastersLoading} value={s1.shift} invalid={!!s1Errors.shift} placeholder={shiftPlaceholder} onChange={(v) => { setS1(p => ({ ...p, shift: v })); setS1Errors(p => ({ ...p, shift: '' })); }} />{s1Errors.shift && <div className="onb-error-msg">{s1Errors.shift}</div>}</Col>
                   <Col md={4} data-field="weekly_off"><label className="onb-init-label">Weekly Off<span className="req">*</span></label><MasterSelect options={ONB_WEEKLY_OFF} value={s1.weekly_off} invalid={!!s1Errors.weekly_off} placeholder="Select weekly off" onChange={(v) => { setS1(p => ({ ...p, weekly_off: v })); setS1Errors(p => ({ ...p, weekly_off: '' })); }} />{s1Errors.weekly_off && <div className="onb-error-msg">{s1Errors.weekly_off}</div>}</Col>

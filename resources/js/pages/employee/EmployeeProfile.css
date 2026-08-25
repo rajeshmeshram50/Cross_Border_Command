@@ -3298,8 +3298,11 @@
      sets `color: var(--bs-btn-hover-color)`, a variable the base `.btn` never
      defines. The declaration is invalid at computed-value time, so colour falls
      back to the inherited body colour — hovering the active "Advance Requests"
-     tab turned its white label dark grey on the near-black indigo gradient and
-     it vanished. `.btn:hover` also outranks this selector, so redeclaring
+     tab turned its white label dark grey on its dark violet gradient and it
+     vanished. (That gradient was near-black indigo when this was first hit;
+     QA #161 moved it into the purple family, and the trap is unchanged either
+     way — any dark active fill needs this.) `.btn:hover` also outranks this
+     selector, so redeclaring
      `color` here loses. Point Bootstrap's own variables at our value instead. */
   --bs-btn-color: var(--ext-sw-color);
   --bs-btn-hover-color: var(--ext-sw-color);

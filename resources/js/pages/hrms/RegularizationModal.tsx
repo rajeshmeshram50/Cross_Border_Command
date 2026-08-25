@@ -111,6 +111,11 @@ export default function RegularizationModal({
      synchronously, so the second click is dropped. */
   const inFlight = useRef(false);
   const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches', string>>>({});
+  /* A request already live for this day. The server refuses a second one
+     (AttendanceRegularizationController::store), but finding that out only on
+     submit means retyping punches and a reason first. Looked up as the modal
+     opens so the answer is on screen before any of that. null = still checking. */
+  const [existing, setExisting] = useState<ApiRegularization | null | undefined>(undefined);
 
   /* Mirrors the server's shift bounding so the requester learns their 22:00 will
      be trimmed BEFORE they submit, rather than discovering it on the approved
@@ -140,13 +145,65 @@ export default function RegularizationModal({
     });
   }, [punchEdits, shiftStart, shiftEnd]);
 
+  /* Nothing has actually been changed.
+   *
+   * The form opens PREFILLED with the day's punches, so the untouched state is a
+   * request whose "after" equals its "before". Those were accepted, routed and
+   * approved, and the reviewer saw identical times on both rows with no way to
+   * tell it from a real correction. Warned live here and refused on submit; the
+   * server enforces the same rule so a direct POST can't slip past. (QA)
+   *
+   * The button is deliberately NOT disabled — this state is true the instant the
+   * modal opens, and a Request button that starts greyed out reads as broken
+   * rather than as "you haven't changed anything yet". */
+  const unchanged = useMemo(() => {
+    const sig = (edits: PunchEdit[]) => edits
+      .filter(e => e.action !== 'delete' && e.newIn)
+      .map(e => `${e.newIn}|${e.newOut || ''}`)
+      .join(',');
+    const before = sig(initialEdits);
+    return before !== '' && before === sig(punchEdits);
+  }, [initialEdits, punchEdits]);
+
+  /* The same clock-in entered on two rows. Mirrors the server rule: keyed on
+   * the IN time, compared as text so a night shift crossing midnight is safe.
+   * Returns the offending time so the message can name it. */
+  const duplicateIn = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of punchEdits) {
+      if (e.action === 'delete') continue;
+      const t = (e.newIn || '').trim();
+      if (!t) continue;
+      if (seen.has(t)) return t;
+      seen.add(t);
+    }
+    return null;
+  }, [punchEdits]);
+
   useEffect(() => { setPunchEdits(initialEdits); }, [initialEdits]);
   // Reset transient fields each time the modal (re)opens for a fresh day.
   useEffect(() => {
     if (!open) return;
     setReason('');
     setErrors({});
-  }, [open, dateIso]);
+
+    /* Pending OR Approved blocks a new request; Rejected / Cancelled do not —
+       being turned down is exactly when the day gets re-filed. Same rule as the
+       server, so the two can't disagree. (QA #79) */
+    let stale = false;
+    setExisting(undefined);
+    regularizationApi.list({ employee_id: employeeId })
+      .then(rows => {
+        if (stale) return;
+        const day = (v: string) => (/^(d{4}-d{2}-d{2})/.exec(v || '')?.[1]) ?? '';
+        const hit = rows.find(r => day(r.regularization_date) === day(dateIso)
+          && (r.status === 'Pending' || r.status === 'Approved'));
+        setExisting(hit ?? null);
+      })
+      // A failed lookup must not block filing — the server still guards it.
+      .catch(() => { if (!stale) setExisting(null); });
+    return () => { stale = true; };
+  }, [open, dateIso, employeeId]);
 
   const updateEdit = (idx: number, patch: Partial<PunchEdit>) => {
     setPunchEdits(prev => prev.map((e, i) => {
@@ -169,7 +226,18 @@ export default function RegularizationModal({
 
   const submit = async () => {
     if (inFlight.current || submitting) return;
+    if (existing) {
+      toast.error('Already regularized', existing.status === 'Pending'
+        ? 'A request for this date is already pending approval.'
+        : 'This date has already been regularized and approved.');
+      return;
+    }
     const errs: typeof errors = {};
+    if (unchanged) {
+      setErrors({ punches: 'These are the same times already recorded for this day — change a punch to raise a correction.' });
+      toast.error('Nothing to correct', 'The times you have entered match the day’s existing punches.');
+      return;
+    }
     if (!reason.trim()) errs.reason = 'Reason is required';
     const valid = punchEdits.some(e => e.action !== 'delete');
     const allOk = punchEdits.every(e =>
@@ -178,6 +246,7 @@ export default function RegularizationModal({
     );
     if (!valid) errs.punches = 'Add at least one punch entry';
     else if (!allOk) errs.punches = 'All punch entries need a valid HH:MM time';
+    else if (duplicateIn) errs.punches = `Two rows both start at ${duplicateIn} — remove the duplicate or change its start time.`;
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error('Validation', 'Fix the highlighted fields');
@@ -336,7 +405,19 @@ export default function RegularizationModal({
                   )}
                 </div>
                 {errors.punches && <small className="att-reg-keka-error">{errors.punches}</small>}
-                {outOfShift && !errors.punches && (
+                {duplicateIn && !errors.punches && (
+                  <small className="att-reg-keka-error">
+                    <i className="ri-error-warning-line me-1" />
+                    Two rows both start at {duplicateIn} — remove the duplicate or change its start time.
+                  </small>
+                )}
+                {unchanged && !duplicateIn && !errors.punches && (
+                  <small className="att-reg-keka-error" style={{ color: '#d98c00' }}>
+                    <i className="ri-error-warning-line me-1" />
+                    These match the day’s existing punches — edit a time to raise a correction.
+                  </small>
+                )}
+                {outOfShift && !unchanged && !duplicateIn && !errors.punches && (
                   <small className="att-reg-keka-error" style={{ color: '#d98c00' }}>
                     <i className="ri-error-warning-line me-1" />
                     Some times fall outside the shift{shiftStart && shiftEnd ? ` (${fmt12h(shiftStart)} - ${fmt12h(shiftEnd)})` : ''}.
@@ -359,9 +440,24 @@ export default function RegularizationModal({
             </div>
           </div>
 
+          {existing && (
+            <div
+              className="att-reg-keka-error d-flex align-items-start gap-2 mb-2"
+              role="alert"
+              style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', color: '#b91c1c' }}
+            >
+              <i className="ri-error-warning-line" style={{ marginTop: 1 }} />
+              <span>
+                {existing.status === 'Pending'
+                  ? 'A regularization request for this date is already pending approval. Act on that one before raising another.'
+                  : 'This date has already been regularized and the correction was approved. Ask HR to reverse it before filing again.'}
+              </span>
+            </div>
+          )}
+
           <div className="att-reg-keka-foot">
             <button type="button" className="att-reg-keka-cancel" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting} aria-busy={submitting}>
+            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting || !!existing} aria-busy={submitting}>
               {/* Spinner + label, so the in-flight state is legible at a glance
                   and not just a word swap on an otherwise identical button. */}
               {submitting && <span className="att-reg-keka-spin" aria-hidden="true" />}

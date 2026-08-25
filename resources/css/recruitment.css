@@ -8575,6 +8575,41 @@
    Action were shoved off the right edge of the table (CBC #77). Chips wrap
    inside a bounded column instead, and anything past the first few sits behind
    a "+N more" toggle. */
+/* Regularization detail popup. Radius lives here rather than on a utility class
+   because .modal-content carries Bootstrap's own radius token and overflow:hidden
+   is what actually clips the gradient header into the corners — the same pairing
+   every other dialog in this file uses (.emp-modal-wide, .ep-pay-modal, …). */
+.reg-detail-modal .modal-content {
+  border: none;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(18, 38, 63, 0.18);
+}
+
+/* Reason cell — clamped to two lines so one essay-length reason cannot set the
+   height of every row in the table. The full text is on the cell's title for a
+   hover read, and "Read more" expands it in place for a click. (QA #80) */
+.reg-reason { max-width: 100%; }
+.reg-reason-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.reg-reason-text.is-clamped { -webkit-line-clamp: 2; }
+.reg-reason-more {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin-top: 2px;
+  color: var(--atl-a-700, #6d28d9);
+  font-size: 10.5px; font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.reg-reason-more:hover { opacity: 0.8; }
+
 .reg-punch-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: 100%; }
 .reg-punch-chip {
   display: inline-flex; align-items: center;
@@ -13433,11 +13468,15 @@
     overflow: visible !important;
     padding: 8px 8px 0;
   }
-  /* The card shell no longer needs a viewport height either. */
+  /* The card shell no longer needs a viewport height either — min-height
+     included. On a desktop fitToViewport pins a viewport-tall FLOOR on the card
+     once the user picks their own rows-per-page, so the body fills down to the
+     footer instead of leaving a dead gap (QA #59). In card mode that floor is
+     meaningless and would stretch a two-card list over a whole screen. */
   .recruit-page .dt-root, .cand-page .dt-root, .rec-req-modal .dt-root,
   .hr-employees-surface .dt-root, .exit-page .dt-root, .leave-page .dt-root,
   .bcast-page .dt-root, .biodev-page .dt-root, .cf-page .dt-root,
-  .pay-page .dt-root { height: auto !important; max-height: none !important; }
+  .pay-page .dt-root { height: auto !important; max-height: none !important; min-height: 0 !important; }
 
   /* The empty-state row must not be dressed as a card. */
   .dt-table tbody tr.dt-empty-row { border: 0 !important; box-shadow: none !important; background: transparent !important; }

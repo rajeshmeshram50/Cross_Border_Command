@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Card, CardBody } from 'reactstrap';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Card, CardBody, Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
 import WorklistPager from '../../components/ui/WorklistPager';
-import { regularizationApi, type ApiRegularization, type RegularizationStatus } from './regularizationApi';
+import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
 import { to12h, punchPair12h } from '../../utils/timeFormat';
 
 /* 12-hour clock, to match the attendance tables this screen sits under — those
@@ -80,6 +80,50 @@ function PunchChips({ pairs, muted = false }: { pairs: string[]; muted?: boolean
   );
 }
 
+/** Reason text, clamped to two lines with a "Read more" toggle.
+ *
+ *  A reason is free text with no length limit, so a single long one used to set
+ *  the height of the whole row and push the Status / Action columns around —
+ *  and there was no way to read past what fitted. The full text is always on the
+ *  cell's title (hover), and the toggle expands it in place for a click, which
+ *  is the same bargain PunchChips above already makes with "+N more". (QA #80) */
+function ReasonCell({ text }: { text: string | null }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [clipped, setClipped] = useState(false);
+
+  /* Measured, not guessed from a character count: whether two lines are enough
+     depends on the column's rendered width, so a 90-character reason can fit on
+     one screen and overflow on another. scrollHeight > clientHeight is the only
+     honest answer, and it is re-taken on resize. */
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setClipped(el.scrollHeight - el.clientHeight > 1);
+    measure();
+    window.addEventListener('resize', measure);
+    let ro: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(measure);
+      ro.observe(el);
+    }
+    return () => { window.removeEventListener('resize', measure); ro?.disconnect(); };
+  }, [text]);
+
+  if (!text) return <span className="text-muted">—</span>;
+
+  return (
+    <div className="reg-reason" title={text}>
+      <div ref={ref} className={`reg-reason-text${open ? '' : ' is-clamped'}`}>{text}</div>
+      {(clipped || open) && (
+        <button type="button" className="reg-reason-more" onClick={() => setOpen(o => !o)}>
+          {open ? 'Show less' : 'Read more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface Props {
   /** Bumped by the parent when a NEW request is raised elsewhere on the page,
    *  so this list picks it up instead of waiting for a manual page refresh. */
@@ -99,6 +143,8 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const [error, setError]     = useState<string | null>(null);
   const [status, setStatus]   = useState<RegularizationStatus | 'All'>('Pending');
   const [busy, setBusy]       = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
+  /** Row whose details are open in the read-only popup (QA #78). */
+  const [detail, setDetail]   = useState<ApiRegularization | null>(null);
   const [open, setOpen]       = useState(true);
   const [page, setPage]       = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -289,7 +335,9 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                         <td style={{ maxWidth: 260, whiteSpace: 'normal' }}>
                           {r.mode === 'exempt' ? <span className="text-muted">—</span> : <PunchChips pairs={punches} />}
                         </td>
-                        <td className="ep-fs-12" style={{ maxWidth: 220 }}>{r.reason || '—'}</td>
+                        <td className="ep-fs-12" style={{ maxWidth: 220, whiteSpace: 'normal' }}>
+                          <ReasonCell text={r.reason} />
+                        </td>
                         <td>
                           <span
                             className="d-inline-flex align-items-center fw-semibold ep-fs-11 px-2 py-1 rounded"
@@ -352,7 +400,17 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
                               </button>
                             </div>
                           ) : (
-                            <span className="text-muted ep-fs-11">{r.status === 'Pending' ? 'Awaiting manager' : 'View only'}</span>
+                            /* A DECIDED row (Approved / Rejected / Cancelled) used to read
+                               "View only" as bare text — it looked like a greyed-out control
+                               and offered no way to see what had actually been requested.
+                               That text is now the button. (QA #78)
+
+                               A row still awaiting someone else's decision keeps its plain
+                               "Awaiting manager" label: it is a status, not an action, and
+                               there is nothing settled to review yet. */
+                            r.status === 'Pending'
+                              ? <span className="text-muted ep-fs-11">Awaiting manager</span>
+                              : <ViewButton row={r} onOpen={setDetail} />
                           )}
                         </td>
                       </tr>
@@ -373,6 +431,203 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
         </div>
       )}
       </CardBody>
+      <RegularizationDetailModal row={detail} onClose={() => setDetail(null)} />
     </Card>
+  );
+}
+
+
+/* ── Action-column "View" button ──────────────────────────────────────────────
+   Shown on DECIDED rows only — Approved / Rejected / Cancelled — in place of the
+   old "View only" text. A row that is still pending shows either its Approve /
+   Reject pills (if this user is the one to act) or an "Awaiting manager" label,
+   so the column always carries exactly one meaning: the action available now.
+   Styled as a pill to match the Approve / Reject pills it replaces. */
+function ViewButton({ row, onOpen }: { row: ApiRegularization; onOpen: (r: ApiRegularization) => void }) {
+  return (
+    <button
+      type="button"
+      data-tooltip="View details"
+      data-tooltip-pos="left"
+      aria-label="View regularization details"
+      onClick={() => onOpen(row)}
+      className="btn btn-sm d-inline-flex align-items-center gap-1 rounded-pill fw-semibold ep-fs-11"
+      style={{
+        height: 28, padding: '0 11px',
+        background: '#eef2ff', color: '#4338ca',
+        border: '1px solid #c7d2fe', cursor: 'pointer',
+      }}
+    >
+      <i className="ri-eye-line" />View
+    </button>
+  );
+}
+
+/* ── Read-only detail popup ───────────────────────────────────────────────────
+   Built to the same shape as the other confirm/detail dialogs in the app: a
+   gradient header carrying an icon chip, title and subtitle, then a summary
+   panel, then only the fields that actually say something.
+
+   Deliberately NOT shown: a "Status" row (the header pill already carries it)
+   and a standalone "Approved by" line (the approval chain below states who
+   acted, and duplicating it printed an em dash whenever the approver relation
+   came back unresolved). Empty values are dropped rather than rendered as "—". */
+function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | null; onClose: () => void }) {
+  const [chain, setChain] = useState<ApiRegularizationApprover[] | null>(null);
+  const [chainError, setChainError] = useState(false);
+
+  useEffect(() => {
+    if (!row) { setChain(null); setChainError(false); return; }
+    let stale = false;
+    setChain(null);
+    setChainError(false);
+    regularizationApi.approvers(row.id)
+      .then(rows => { if (!stale) setChain(rows); })
+      // Everything else is already on screen from the list row, so a failed
+      // chain fetch degrades to a note rather than an empty dialog.
+      .catch(() => { if (!stale) setChainError(true); });
+    return () => { stale = true; };
+  }, [row]);
+
+  if (!row) return null;
+
+  const tone      = STATUS_TONE[row.status] || STATUS_TONE.Cancelled;
+  const requested = (row.punches ?? []).map(p => punchPair12h(p.in, p.out));
+  const originals = to12h(row.original_display).split(',').map(t => t.trim()).filter(Boolean);
+
+  /* Who actually decided it. `row.approver` comes back null on rows approved
+     through the chain, which rendered as a bare "—" next to a real date — the
+     screenshot bug. The chain records the name, so read it from there before
+     giving up on the line entirely. */
+  const acted = chain ? [...chain].reverse().find(a => a.status === 'Approved' || a.status === 'Rejected') : null;
+  const decidedBy = row.approver?.name || acted?.name || null;
+
+  const LABEL: React.CSSProperties = {
+    fontSize: 10.5, fontWeight: 800, letterSpacing: '0.08em',
+    textTransform: 'uppercase', color: 'var(--vz-secondary-color)',
+  };
+  const PANEL: React.CSSProperties = {
+    background: 'var(--vz-secondary-bg)',
+    border: '1px solid var(--vz-border-color)',
+    borderRadius: 12, padding: '12px 14px',
+  };
+
+  return (
+    <Modal isOpen centered toggle={onClose} className="reg-detail-modal" style={{ maxWidth: 620 }}>
+      <ModalBody className="p-0">
+        {/* Header — purple kept, swept the same way as the app's other dialog
+            headers (dark on the left, light on the right). */}
+        <div
+          className="d-flex align-items-center gap-3 px-3 py-3"
+          style={{ background: 'linear-gradient(135deg,#5b21b6 0%,#7c3aed 55%,#a78bfa 100%)', color: '#fff' }}
+        >
+          <span
+            className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+            style={{ width: 40, height: 40, borderRadius: 12, background: 'rgba(255,255,255,0.20)', border: '1px solid rgba(255,255,255,0.28)' }}
+          >
+            <i className="ri-calendar-check-line" style={{ fontSize: 19 }} />
+          </span>
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-bold" style={{ fontSize: 15, lineHeight: 1.25 }}>{empName(row)}</div>
+            <div style={{ fontSize: 11.5, opacity: 0.86 }}>
+              {row.mode === 'exempt' ? 'Exempt day' : 'Adjust log'}{row.type ? ' · ' + row.type : ''}
+            </div>
+          </div>
+          <span
+            className="fw-semibold flex-shrink-0"
+            style={{ background: tone.bg, color: tone.fg, fontSize: 11, padding: '4px 10px', borderRadius: 999 }}
+          >
+            {row.status}
+          </span>
+          <button
+            type="button" aria-label="Close" onClick={onClose}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+            style={{ width: 30, height: 30, padding: 0, background: 'rgba(255,255,255,0.20)', color: '#fff', border: 'none' }}
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        <div className="d-flex flex-column gap-3 p-3">
+          {/* Summary panel — the day being corrected, and when it was asked for. */}
+          <div style={PANEL}>
+            <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+              <div className="fw-bold" style={{ fontSize: 14 }}>{fmtDate(row.regularization_date)}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
+                Raised {fmtDate(row.created_at)}
+              </div>
+            </div>
+            {!!row.work_locations?.length && (
+              <div className="mt-1" style={{ fontSize: 12 }}>
+                <i className="ri-map-pin-line me-1" style={{ color: 'var(--vz-secondary-color)' }} />
+                {row.work_locations.join(', ')}
+              </div>
+            )}
+          </div>
+
+          {/* The correction itself — before above, after below, so the two rows
+              of chips line up and read as one change rather than two lists. */}
+          {row.mode !== 'exempt' && (
+            <div className="d-flex flex-column gap-2">
+              <div style={LABEL}>The correction</div>
+              <div className="d-flex align-items-baseline gap-2">
+                <span className="flex-shrink-0" style={{ ...LABEL, width: 64, letterSpacing: 0 }}>Before</span>
+                {originals.length ? <PunchChips pairs={originals} muted /> : <span className="text-muted ep-fs-12">No punches</span>}
+              </div>
+              <div className="d-flex align-items-baseline gap-2">
+                <span className="flex-shrink-0" style={{ ...LABEL, width: 64, letterSpacing: 0, color: '#6d28d9' }}>After</span>
+                {requested.length ? <PunchChips pairs={requested} /> : <span className="text-muted ep-fs-12">No punches</span>}
+              </div>
+            </div>
+          )}
+
+          {/* Reason — a callout, because it is the one free-text field and the
+              only thing on here written by a person. */}
+          <div style={{ ...PANEL, background: 'rgba(124,58,237,0.06)', border: '1px solid rgba(124,58,237,0.18)' }}>
+            <div className="d-flex gap-2">
+              <i className="ri-chat-quote-line flex-shrink-0" style={{ color: '#6d28d9', marginTop: 1 }} />
+              <div className="min-w-0">
+                <div style={{ ...LABEL, color: '#6d28d9' }}>Reason</div>
+                <div className="mt-1" style={{ fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{row.reason || 'No reason given'}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Decision + chain, as one block — they are the same story. */}
+          <div className="d-flex flex-column gap-2">
+            <div style={LABEL}>Approval</div>
+            {decidedBy && (
+              <div style={{ fontSize: 12.5 }}>
+                <span className="fw-semibold">{row.status === 'Rejected' ? 'Rejected' : 'Approved'} by {decidedBy}</span>
+                {row.approved_at && <span style={{ color: 'var(--vz-secondary-color)' }}> · {fmtDate(row.approved_at)}</span>}
+              </div>
+            )}
+            {row.approver_comment && (
+              <div style={{ fontSize: 12, color: 'var(--vz-secondary-color)', fontStyle: 'italic' }}>“{row.approver_comment}”</div>
+            )}
+            {chainError ? <div className="text-muted ep-fs-12">Could not load the approval chain.</div>
+              : chain === null ? <div className="text-muted ep-fs-12">Loading…</div>
+              : chain.length === 0 ? <div className="text-muted ep-fs-12">No approver assigned — auto-approved.</div>
+              : (
+                <div className="d-flex flex-column gap-1">
+                  {chain.map(a => {
+                    const t = STATUS_TONE[a.status] || STATUS_TONE.Cancelled;
+                    return (
+                      <div key={a.level} className="d-flex align-items-center gap-2 flex-wrap" style={{ fontSize: 12 }}>
+                        <span className="fw-semibold">{a.name || 'Unassigned'}</span>
+                        <span style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>{a.role}</span>
+                        <span className="fw-semibold" style={{ background: t.bg, color: t.fg, fontSize: 10.5, padding: '2px 8px', borderRadius: 999 }}>
+                          {a.status}{a.is_current ? ' · current' : ''}
+                        </span>
+                        {a.comment && <span style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>— {a.comment}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+          </div>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }

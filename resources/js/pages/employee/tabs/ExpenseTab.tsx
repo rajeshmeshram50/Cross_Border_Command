@@ -168,9 +168,15 @@ export default function ExpenseTab() {
           <Row className="g-2 mb-3">
             <Col xs={12}>
               <div className="d-flex ext-switcher">
+                {/* Both modules stay in the app's PURPLE family — Expense the
+                    lighter pair, Advance the darker one. Advance used to borrow
+                    the hero's darkest stops (#1e1b4b → #4338ca): indigo-950 is
+                    near-black, so the selected tab read as a black slab beside
+                    a lilac one and looked like a broken hover state rather than
+                    a theme. (QA #161) */}
                 {[
                   { key: 'expense' as const, label: 'Expense Claims',    icon: 'ri-file-list-3-line',         activeBg: 'linear-gradient(135deg,#a855f7,#c084fc)', shadow: 'rgba(168,85,247,0.22)' },
-                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#1e1b4b,#4338ca)', shadow: 'rgba(67,56,202,0.22)' },
+                  { key: 'advance' as const, label: 'Advance Requests',  icon: 'ri-money-dollar-circle-line', activeBg: 'linear-gradient(135deg,#6d28d9,#8b5cf6)', shadow: 'rgba(109,40,217,0.22)' },
                 ].map(t => {
                   const on = expenseModuleTab === t.key;
                   return (
@@ -199,23 +205,23 @@ export default function ExpenseTab() {
               Raise New Claim, table) stays consistent. */}
           <div
             className="ep-section-card-flat ep-section-card mb-3 ext-section-card"
-            style={{ ['--ext-section-border-top' as any]: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #4338ca' }}
+            style={{ ['--ext-section-border-top' as any]: expenseModuleTab === 'expense' ? '3px solid #a855f7' : '3px solid #6d28d9' }}
           >
             <div
               className="d-flex align-items-center justify-content-between gap-3 py-2 flex-wrap ext-section-header"
               style={{
                 ['--ext-section-header-border' as any]: expenseModuleTab === 'expense'
                   ? '1px solid rgba(168,85,247,0.18)'
-                  : '1px solid rgba(67,56,202,0.18)',
+                  : '1px solid rgba(109,40,217,0.18)',
                 ['--ext-section-header-bg' as any]: expenseModuleTab === 'expense'
                   ? 'linear-gradient(135deg, rgba(168,85,247,0.14) 0%, rgba(168,85,247,0.04) 60%, rgba(168,85,247,0.01) 100%)'
-                  : 'linear-gradient(135deg, rgba(67,56,202,0.14) 0%, rgba(67,56,202,0.04) 60%, rgba(67,56,202,0.01) 100%)',
+                  : 'linear-gradient(135deg, rgba(109,40,217,0.14) 0%, rgba(109,40,217,0.04) 60%, rgba(109,40,217,0.01) 100%)',
               }}
             >
               <div className="d-flex align-items-center gap-2">
                 <span className="ep-section-icon ext-section-icon" style={{
-                  ['--ext-section-icon-bg' as any]: expenseModuleTab === 'expense' ? 'rgba(168,85,247,0.18)' : 'rgba(67,56,202,0.18)',
-                  ['--ext-section-icon-color' as any]: expenseModuleTab === 'expense' ? '#7c3aed' : '#4338ca',
+                  ['--ext-section-icon-bg' as any]: expenseModuleTab === 'expense' ? 'rgba(168,85,247,0.18)' : 'rgba(109,40,217,0.18)',
+                  ['--ext-section-icon-color' as any]: expenseModuleTab === 'expense' ? '#7c3aed' : '#6d28d9',
                 }}>
                   <i className={expenseModuleTab === 'expense' ? 'ri-file-list-3-line' : 'ri-money-dollar-circle-line'} />
                 </span>
@@ -261,8 +267,11 @@ export default function ExpenseTab() {
                     ).map(t => {
                       const currentSub = expenseModuleTab === 'advance' ? advanceSubTab : expenseSubTab;
                       const on = currentSub === t.key;
-                      const activeAccent = expenseModuleTab === 'advance' ? '#4338ca' : '#7c3aed';
-                      const activeWash   = expenseModuleTab === 'advance' ? 'rgba(67,56,202,0.12)' : 'rgba(124,58,237,0.12)';
+                      /* Advance = the app's DARKER violet, Expense = the lighter one.
+                         Both stay in the purple family the rest of the app uses
+                         (--dt-a-700 / --dt-a-500 in DataTable.css). See QA #161. */
+                      const activeAccent = expenseModuleTab === 'advance' ? '#6d28d9' : '#7c3aed';
+                      const activeWash   = expenseModuleTab === 'advance' ? 'rgba(109,40,217,0.12)' : 'rgba(124,58,237,0.12)';
                       return (
                         <button
                           key={t.key}

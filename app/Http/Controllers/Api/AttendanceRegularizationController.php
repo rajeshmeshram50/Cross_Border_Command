@@ -141,6 +141,32 @@ class AttendanceRegularizationController extends Controller
             abort(422, 'Add at least one punch entry (an in or out time) to adjust the attendance log.');
         }
 
+        /* Two rows claiming the same clock-in.
+         *
+         * Nothing stopped the same time being entered twice, so a day could be
+         * filed with "10:00–10:05" listed two or three times over. The approver
+         * saw the duplicate chips side by side with no way to tell whether it was
+         * a real second visit or a slip, and on approval each pair was written to
+         * the ledger — producing two in-punches at the same instant, which is the
+         * one thing the alternating in/out invariant cannot represent.
+         *
+         * Keyed on the IN time alone, and by string, not by clock arithmetic:
+         * an employee cannot start two stretches at the same moment whatever the
+         * OUT says, and comparing text keeps this safe for a night shift crossing
+         * midnight — where minute maths would need the shift window to read the
+         * times correctly. Checked BEFORE the shift bounding below so the message
+         * quotes what was actually typed. (QA) */
+        $seenIn = [];
+        foreach ($punches as $p) {
+            $in = trim((string) ($p['in'] ?? ''));
+            if ($in === '') continue;
+            if (isset($seenIn[$in])) {
+                abort(422, "Two punch rows both start at {$in}. Each entry has to be a"
+                    . " separate stretch of the day — remove the duplicate or change its start time.");
+            }
+            $seenIn[$in] = true;
+        }
+
         /* Overtime may not be created by regularization — bound every requested
          * punch to the assigned shift before it is stored. Done at filing time
          * (not only on approval) so the requester sees the trim immediately and
@@ -160,13 +186,60 @@ class AttendanceRegularizationController extends Controller
             $punches = $bounded['punches'];
         }
 
-        // One open request per (employee, date) — block stacking duplicates.
+        /* One LIVE request per (employee, date).
+         *
+         * This tested status = 'Pending' ONLY, so the guard fell away the moment
+         * the first request was decided: a second request for the same day was
+         * accepted, routed, and approved on its own merits — and
+         * applyApprovedAdjustment() then rewrote that day's punch ledger a
+         * SECOND time, stacking one correction on top of another.
+         *
+         * It was trivially reachable rather than a race. An employee with no
+         * reporting manager auto-approves at creation (see $autoApproved below),
+         * so the very next request for that date never met a Pending row at all
+         * and both ended up Approved. (QA #79)
+         *
+         * Rejected / Cancelled deliberately do NOT block — being turned down is
+         * precisely when someone needs to correct the request and file it again. */
         $dup = AttendanceRegularization::where('employee_id', $employee->id)
             ->where('regularization_date', $dateStr)
-            ->where('status', 'Pending')
+            ->whereIn('status', ['Pending', 'Approved'])
+            // Report the Pending one first when both somehow exist: it is the
+            // one the user can still act on.
+            ->orderByRaw("CASE WHEN status = 'Pending' THEN 0 ELSE 1 END")
             ->first();
         if ($dup) {
-            abort(422, "There is already a Pending regularization request for {$dateStr}. Act on it before raising another.");
+            $day = Carbon::parse($dateStr)->format('d M Y');
+            abort(422, $dup->status === 'Pending'
+                ? "A regularization request for {$day} is already pending approval. Act on that one before raising another."
+                : "{$day} has already been regularized and the correction was approved. Ask HR to reverse it before filing a new request for this date.");
+        }
+
+        /* A correction that corrects nothing.
+         *
+         * The modal opens PREFILLED with the day's existing punches, so pressing
+         * Request without editing anything filed a request whose "after" was
+         * character-for-character its "before". Those went through the whole
+         * approval chain and were approved, and the detail popup then showed the
+         * same times on both rows — a reviewer had no way to tell it apart from a
+         * real correction, and applyApprovedAdjustment() rewrote the ledger with
+         * the values already in it.
+         *
+         * Compared AFTER the shift bounding above, so what is checked is what
+         * would actually be stored: times trimmed back onto the existing ones
+         * count as unchanged too. Only for 'adjust' — an exempt-day request
+         * carries no punches and is a statement about the day, not the times. */
+        if ($data['mode'] === 'adjust') {
+            $existing = $this->existingPunchPairs($employee, $dateStr);
+            $norm = fn (array $ps) => json_encode(array_map(
+                fn ($p) => [trim((string) ($p['in'] ?? '')), trim((string) ($p['out'] ?? ''))],
+                $ps,
+            ));
+            if (!empty($existing) && $norm($existing) === $norm($punches)) {
+                abort(422, 'These are the same punch times already recorded for '
+                    . Carbon::parse($dateStr)->format('d M Y')
+                    . ' — there is nothing to correct. Change a time, or close the form.');
+            }
         }
 
         // Link the day's attendance row when one exists.
@@ -373,6 +446,40 @@ class AttendanceRegularizationController extends Controller
      *
      * One query for the whole page rather than one per row.
      */
+    /** The day's punches as ordered in/out PAIRS in display time — the same shape
+     *  a request stores its `punches` in, so the two can be compared directly to
+     *  tell a real correction from a no-op. An unmatched punch keeps its side of
+     *  the pair and leaves the other null, so a half-open day still compares
+     *  honestly instead of silently dropping out. */
+    private function existingPunchPairs(Employee $employee, string $dateStr): array
+    {
+        $rows = AttendancePunch::query()
+            ->join('attendances', 'attendances.id', '=', 'attendance_punches.attendance_id')
+            ->where('attendances.employee_id', $employee->id)
+            ->whereDate('attendances.attendance_date', $dateStr)
+            ->whereNull('attendance_punches.deleted_at')
+            ->orderBy('attendance_punches.punched_at')
+            ->get(['attendance_punches.punched_at', 'attendance_punches.direction']);
+
+        $pairs = [];
+        $open  = null;
+        foreach ($rows as $r) {
+            $t = Carbon::parse($r->punched_at, 'UTC')->setTimezone(self::DISPLAY_TZ)->format('H:i');
+            if ($r->direction === 'in') {
+                // Two ins in a row — close the first as open-ended rather than
+                // dropping it, so the comparison sees every punch on the day.
+                if ($open !== null) $pairs[] = ['in' => $open, 'out' => null];
+                $open = $t;
+            } else {
+                $pairs[] = ['in' => $open, 'out' => $t];
+                $open = null;
+            }
+        }
+        if ($open !== null) $pairs[] = ['in' => $open, 'out' => null];
+
+        return $pairs;
+    }
+
     private function attachOriginalPunches($rows): void
     {
         $pending = $rows->filter(fn($r) => empty($r->original_punches));
