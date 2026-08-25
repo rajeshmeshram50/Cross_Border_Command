@@ -126,11 +126,21 @@ class BranchController extends Controller
                     ->whereNull('deleted_at'),
             ],
             'code' => 'nullable|string|max:50',
+            // Required: the branch email is what quotations, invoices and
+            // onboarding invites are sent from and replied to, so a branch
+            // without one silently breaks those flows.
             // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            'email' => ['nullable', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
-            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
+            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
+            // Required: this is the number that goes onto quotations and
+            // invoices, so a branch without one prints a blank contact.
+            //
+            // The lookahead counts DIGITS, 7 to 13. The old {7,20} counted
+            // characters, so "+91 (0)-  -" passed on punctuation alone while a
+            // real 13-digit number with spaces could fail on length.
+            'phone' => ['required', 'string', 'max:20', 'regex:/^(?=(?:\D*\d){7,13}\D*$)[+\d\s\-()]+$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
-            'contact_person' => 'nullable|string|max:255',
+            // Optional, but a single letter is a typo rather than a contact.
+            'contact_person' => 'nullable|string|min:2|max:255',
             'branch_type' => 'nullable|string|max:50',
             // Mandatory: an admin must state the branch's sandwich stance
             // rather than inherit a silent default, because the answer changes
@@ -211,7 +221,9 @@ class BranchController extends Controller
             'secondary_color' => 'nullable|string|max:7',
 
             // Branch user login credentials
-            'user_name' => 'required|string|max:255',
+            // Letters and spaces only — matches the employee form's name rule.
+            // Without it digits and punctuation went through untouched.
+            'user_name' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z ]+$/'],
             // Email is unique PER TENANT — scope the dup check to THIS branch's
             // client so the same email used in a different client doesn't block
             // creation here. Matches the users_email_client_unique DB index.
@@ -231,6 +243,9 @@ class BranchController extends Controller
 
         // At least one bank account — see assertHasBankAccount().
         $this->assertHasBankAccount($request);
+
+        // …and at least one complete shift — see assertHasShift().
+        $this->assertHasShift($request);
 
         try {
             return DB::transaction(function () use ($request, $clientId, $user) {
@@ -485,11 +500,21 @@ class BranchController extends Controller
         $request->validate([
             'name' => $nameRules,
             'code' => 'nullable|string|max:50',
+            // Required: the branch email is what quotations, invoices and
+            // onboarding invites are sent from and replied to, so a branch
+            // without one silently breaks those flows.
             // `email` alone would accept test@mailinator — see EMAIL_REGEX.
-            'email' => ['nullable', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
-            'phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
+            'email' => ['required', 'email', 'max:255', 'regex:' . self::EMAIL_REGEX],
+            // Required: this is the number that goes onto quotations and
+            // invoices, so a branch without one prints a blank contact.
+            //
+            // The lookahead counts DIGITS, 7 to 13. The old {7,20} counted
+            // characters, so "+91 (0)-  -" passed on punctuation alone while a
+            // real 13-digit number with spaces could fail on length.
+            'phone' => ['required', 'string', 'max:20', 'regex:/^(?=(?:\D*\d){7,13}\D*$)[+\d\s\-()]+$/'],
             'website' => ['nullable', 'string', 'max:500', 'regex:/^(https?:\/\/)?(www\.)?([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}(\/[^\s]*)?$/i'],
-            'contact_person' => 'nullable|string|max:255',
+            // Optional, but a single letter is a typo rather than a contact.
+            'contact_person' => 'nullable|string|min:2|max:255',
             'branch_type' => 'nullable|string|max:50',
             // Mandatory: an admin must state the branch's sandwich stance
             // rather than inherit a silent default, because the answer changes
@@ -563,7 +588,9 @@ class BranchController extends Controller
             'signature_path' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
             'primary_color' => 'nullable|string|max:7',
             'secondary_color' => 'nullable|string|max:7',
-            'user_name' => 'nullable|string|max:255',
+            // Letters and spaces only — matches the employee form's name rule.
+            // Without it digits and punctuation went through untouched.
+            'user_name' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z ]+$/'],
             'user_email' => ['nullable', 'email', 'regex:' . self::EMAIL_REGEX, Rule::unique('users', 'email')->ignore($branchUser?->id)->where(fn($q) => $q->where('client_id', $branch->client_id))->whereNull('deleted_at')],
             'user_phone' => ['nullable', 'string', 'max:20', 'regex:/^[+\d\s\-()]{7,20}$/'],
             'user_designation' => 'nullable|string|max:100',
@@ -581,6 +608,7 @@ class BranchController extends Controller
         // Only when the payload carries the repeater — a partial save that
         // leaves bank_accounts out keeps whatever the branch already has.
         $this->assertHasBankAccount($request, true);
+        $this->assertHasShift($request, true);
 
         try {
             return DB::transaction(function () use ($request, $branch, $branchUser) {
@@ -1182,6 +1210,42 @@ class BranchController extends Controller
      *                             partial save and leaves the stored accounts
      *                             alone, so there is nothing to require.
      */
+    /**
+     * At least one COMPLETE work shift is required on a branch.
+     *
+     * The form marks Shift Name, Start Time and End Time with a red asterisk,
+     * but a branch saved with the repeater left untouched went through: the
+     * client skipped rows nobody had typed in, and the server only ever had
+     * `shifts => nullable`. Three required fields that can all be left empty
+     * is not a validation rule, it is decoration.
+     *
+     * "Complete" means all three, not just a name — normalizeShifts() already
+     * drops nameless rows, but it keeps a named row with no times, and a shift
+     * without times is useless to the Employee form's Shift dropdown and to
+     * payroll's late-mark maths, which are the two things that read this.
+     *
+     * Can't be a validation rule for the same reason the bank guard can't: the
+     * repeater arrives as a JSON STRING on multipart uploads.
+     *
+     * @param bool $onlyIfPresent  On update, a payload that omits the key is a
+     *                             partial save and leaves the stored shifts
+     *                             alone, so there is nothing to require.
+     */
+    private function assertHasShift(Request $request, bool $onlyIfPresent = false): void
+    {
+        if ($onlyIfPresent && !$request->has('shifts')) {
+            return;
+        }
+        $complete = collect($this->normalizeShifts($request->input('shifts')))
+            ->contains(fn ($row) => $row['start'] !== '' && $row['end'] !== '');
+
+        if (!$complete) {
+            throw ValidationException::withMessages([
+                'shifts' => ['Add at least one shift with a name, start time and end time.'],
+            ]);
+        }
+    }
+
     private function assertHasBankAccount(Request $request, bool $onlyIfPresent = false): void
     {
         if ($onlyIfPresent && !$request->has('bank_accounts')) {

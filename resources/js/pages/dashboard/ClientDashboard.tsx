@@ -329,6 +329,29 @@ export default function ClientDashboard() {
         [data-layout-mode="dark"] .cd-list-row:hover {
           background: rgba(255, 255, 255, 0.04);
         }
+        /* Access & Permissions runs TWO users per line. One user per
+           full-width line meant a 40-character name and a 6px bar had ~1400px
+           to fill, so whatever the bar was given — 168px, 42%, the whole
+           middle — the row still read as mostly nothing. Two columns let the
+           content set the width instead of stretching to meet it.
+           gap:1px over a border-coloured background draws every separator,
+           horizontal AND vertical, without per-cell border bookkeeping. */
+        .cd-access-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1px;
+          background: #f1f3f9;
+        }
+        @media (min-width: 992px) {
+          .cd-access-grid { grid-template-columns: 1fr 1fr; }
+        }
+        .cd-access-grid > .cd-list-row { background: var(--vz-card-bg); }
+        /* The list-row rule above adds its own top border; inside the grid the
+           gap already is the line, so cancel it or every seam doubles. */
+        .cd-access-grid > .cd-list-row + .cd-list-row { border-top: none; }
+        [data-bs-theme="dark"] .cd-access-grid,
+        [data-layout-mode="dark"] .cd-access-grid { background: rgba(255,255,255,0.06); }
+
         .cd-list-row + .cd-list-row { border-top: 1px solid #f1f3f9; }
         [data-bs-theme="dark"] .cd-list-row + .cd-list-row,
         [data-layout-mode="dark"] .cd-list-row + .cd-list-row { border-top-color: rgba(255,255,255,0.06); }
@@ -671,7 +694,7 @@ export default function ClientDashboard() {
           view for the client admin: high access = redder bar (a nudge to
           review over-privileged accounts). */}
       {access.users.length > 0 && (() => {
-        const pageSize = 5;
+        const pageSize = 6;   // 3 lines of 2 — see .cd-access-grid
         const totalPages = Math.ceil(access.users.length / pageSize);
         const page = Math.min(accessPage, totalPages - 1);
         const start = page * pageSize;
@@ -687,9 +710,10 @@ export default function ClientDashboard() {
                     Manage Permissions <i className="ri-arrow-right-line" style={{ fontSize: 14 }} />
                   </button>
                 )} />
-              {/* Fixed height = 5 rows so the card stays the same size on every
-                  page (no height jump when the last page has fewer rows). */}
-              <CardBody style={{ padding: 0, minHeight: 275 }}>
+              {/* Fixed height = 3 grid lines so the card stays the same size on
+                  every page (no height jump when the last page is short). */}
+              <CardBody style={{ padding: 0, minHeight: 222 }}>
+                <div className="cd-access-grid">
                 {pageUsers.map((u: any, j: number) => {
                   const i = start + j;
                   const total = access.total_modules || 1;
@@ -703,30 +727,39 @@ export default function ClientDashboard() {
                     <div key={i} className="cd-list-row"
                       onClick={() => navigate(u.user_id ? `/permissions?user=${u.user_id}` : '/permissions')}
                       title={`Edit ${u.name}'s permissions`}
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 18px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontWeight: 700, fontSize: 13, flexShrink: 0, border: '1px solid var(--vz-border-color)' }}>{initial}</div>
-                        <div style={{ minWidth: 0 }}>
+                      style={{ padding: '11px 16px' }}>
+                      {/* Line 1 — who, and the headline count. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--vz-light)', color: 'var(--vz-secondary-color)', fontWeight: 700, fontSize: 12.5, flexShrink: 0, border: '1px solid var(--vz-border-color)' }}>{initial}</div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--vz-heading-color, var(--vz-body-color))', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.name}</div>
                           <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{roleLabel(u.role)}{u.branch ? ` · ${u.branch}` : ''}</div>
                         </div>
-                      </div>
-                      <div style={{ flexShrink: 0, textAlign: 'right', minWidth: 168 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--vz-secondary-color)' }}>
-                          <span style={{ fontSize: 15, fontWeight: 800, color: accent }}>{u.modules}</span> of {total} modules
-                          {pct >= 80 && <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 700, color: '#dc2626', background: '#dc262615', border: '1px solid #dc262633', borderRadius: 5, padding: '1px 5px' }}>HIGH</span>}
+                        <div style={{ flexShrink: 0, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <span style={{ fontSize: 15, fontWeight: 800, color: accent }}>{u.modules}</span>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--vz-secondary-color)' }}> / {total}</span>
+                          {pct >= 80 && <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: '#dc2626', background: '#dc262615', border: '1px solid #dc262633', borderRadius: 5, padding: '1px 5px' }}>HIGH</span>}
                         </div>
-                        <div style={{ width: '100%', height: 6, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden', margin: '5px 0 4px' }}>
+                      </div>
+                      {/* Line 2 — how much of the whole, then what kind of
+                          access. Under the name rather than beside it: at half
+                          the card's width there is no room for four columns,
+                          and stacking is what keeps the bar a readable length
+                          instead of a 700px rule with nothing on it. */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 7 }}>
+                        <div style={{ flex: 1, height: 6, background: 'var(--vz-border-color)', borderRadius: 999, overflow: 'hidden', minWidth: 60 }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: barGrad, borderRadius: 999 }} />
                         </div>
-                        <div style={{ fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600, display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                          <span title="Modules this user can edit"><i className="ri-edit-2-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_edit ?? 0} edit</span>
-                          <span title="Modules this user can approve"><i className="ri-checkbox-circle-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_approve ?? 0} approve</span>
-                        </div>
+                        <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 800, color: accent }}>{pct}%</span>
+                        <span style={{ flexShrink: 0, fontSize: 10.5, color: 'var(--vz-secondary-color)', fontWeight: 600, display: 'flex', gap: 9 }}>
+                          <span title="Modules this user can edit"><i className="ri-edit-2-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_edit ?? 0}</span>
+                          <span title="Modules this user can approve"><i className="ri-checkbox-circle-line" style={{ fontSize: 11, verticalAlign: '-1px' }} /> {u.can_approve ?? 0}</span>
+                        </span>
                       </div>
                     </div>
                   );
                 })}
+                </div>
               </CardBody>
               {totalPages > 1 && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 18px', borderTop: '1px solid var(--vz-border-color)' }}>

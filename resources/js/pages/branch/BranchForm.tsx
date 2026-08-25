@@ -91,6 +91,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: 'Branch Name',
   sandwich_policy: 'Sandwich Leave Policy',
   email: 'Branch Email',
+  contact_person: 'Contact Person',
   phone: 'Branch Phone',
   website: 'Website',
   pincode: 'Pincode',
@@ -208,7 +209,11 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
   }
 
   // ── Branch email ──
-  if (form.email) {
+  // Required, not just validated-when-present: this address is what quotations,
+  // invoices and onboarding invites are sent from and replied to.
+  if (!form.email?.trim()) {
+    e.email = 'Branch email is required';
+  } else if (form.email) {
     if (!EMAIL_RE.test(form.email.trim())) {
       e.email = 'Enter a valid email like: branch@company.com (a domain ending such as .com is required)';
     } else if (form.email.length > 100) {
@@ -216,10 +221,35 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
     }
   }
 
-  // ── Branch phone ── (country-aware)
-  if (form.phone) {
-    const err = validatePhone(form.phone, form.country, 'Phone');
-    if (err) e.phone = err;
+  // ── Contact person ── (optional, but a real name when given)
+  // A single letter is a typo, not a contact — the same floor Branch Name uses.
+  if (form.contact_person?.trim()) {
+    const cp = form.contact_person.trim();
+    if (cp.length < 2) {
+      e.contact_person = 'Contact person must be at least 2 characters';
+    } else if (cp.length > 255) {
+      e.contact_person = 'Contact person cannot exceed 255 characters';
+    }
+  }
+
+  // ── Branch phone ──
+  // Required: this is the number printed on quotations and invoices, so a
+  // branch without one goes out on paper with a blank contact.
+  //
+  // A flat 7–13 digit range rather than validatePhone()'s country rules: a
+  // branch office is reached on a landline as often as a mobile, and the
+  // country table only describes mobiles (India = exactly 10, starting 6-9),
+  // which rejected perfectly good landline numbers. The character check is
+  // kept — a range says nothing about what the characters may be.
+  if (!form.phone?.trim()) {
+    e.phone = 'Branch phone is required';
+  } else if (!/^[+\d\s\-()]+$/.test(form.phone)) {
+    e.phone = 'Phone may only contain digits, spaces, +, -, ( and )';
+  } else {
+    const digits = form.phone.replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 13) {
+      e.phone = `Phone must be 7–13 digits (you entered ${digits.length})`;
+    }
   }
 
   // ── Website ──
@@ -347,10 +377,19 @@ function validateBranchForm(form: FormState, isEdit: boolean, stateGstCode?: str
 
   // ── Remaining branch admin fields (only when creating a new branch) ──
   if (!isEdit) {
+    /* Letters and spaces only — the same rule the employee form applies to
+       first / middle / last name, so a person's name is written the same way
+       whichever screen creates them. It had no character rule at all here, so
+       digits and punctuation went straight through. */
+    const NAME_RE = /^[A-Za-z ]+$/;
     if (!form.user_name?.trim()) {
       e.user_name = 'Admin user name is required';
+    } else if (!NAME_RE.test(form.user_name.trim())) {
+      e.user_name = 'Full name may contain letters and spaces only';
     } else if (form.user_name.trim().length < 2) {
       e.user_name = 'Admin name must be at least 2 characters';
+    } else if (form.user_name.trim().length > 100) {
+      e.user_name = 'Admin name cannot exceed 100 characters';
     }
 
     if (!form.user_password) {
@@ -556,6 +595,19 @@ export default function BranchForm({ onBack, editId }: Props) {
       if (!s.end)         e.end = true;
       if (e.name || e.start || e.end) errs[i] = e;
     });
+    /* …and one row has to actually be filled in. Skipping untouched rows made
+       every shift optional, so a branch saved with the repeater never opened
+       went straight through while all three fields carried a red asterisk.
+       Complete means name + start + end: a named shift with no times is not
+       something the Employee form's Shift dropdown or payroll can use. */
+    if (!shifts.some(s => s.name.trim() && s.start && s.end)) {
+      const first = shifts[0];
+      errs[0] = {
+        name:  !first?.name.trim(),
+        start: !first?.start,
+        end:   !first?.end,
+      };
+    }
     return errs;
   };
   /* Bank accounts (Legal & Registration) — the same repeatable block the Legal
@@ -943,7 +995,13 @@ export default function BranchForm({ onBack, editId }: Props) {
     const shErrs = validateShifts();
     if (Object.keys(shErrs).length) {
       setShiftErrors(shErrs);
-      toast.error('Incomplete shift', 'Each shift needs a name, start time and end time.');
+      const noneAtAll = !shifts.some(s => s.name.trim() || s.start || s.end);
+      toast.error(
+        noneAtAll ? 'Shift required' : 'Incomplete shift',
+        noneAtAll
+          ? 'Every branch needs at least one shift — add a name, start time and end time.'
+          : 'Each shift needs a name, start time and end time.',
+      );
       return;
     }
     setShiftErrors({});
@@ -1772,8 +1830,11 @@ export default function BranchForm({ onBack, editId }: Props) {
               </Col>
               <Col md={4}>
                 <Lbl>Contact Person</Lbl>
-                <Input style={css.input} value={form.contact_person} onChange={e => set('contact_person', e.target.value)}
+                <Input name="contact_person" style={css.input} value={form.contact_person}
+                  invalid={fieldInvalid('contact_person')}
+                  onChange={e => set('contact_person', e.target.value)} onBlur={() => touch('contact_person')}
                   placeholder="Name of contact person" />
+                <FormFeedback style={css.formFeedback}>{fieldError('contact_person')}</FormFeedback>
               </Col>
               <Col md={4}>
                 <Lbl>Status</Lbl>
@@ -1810,7 +1871,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 )}
               </Col>
               <Col md={4}>
-                <Lbl>Email</Lbl>
+                <Lbl>Email <span className="text-danger">*</span></Lbl>
                 {/* Lower-cased as typed (QA #3) — same treatment GST/PAN get in
                     the opposite direction. Emails are stored lowercase because
                     both the duplicate check and login look them up with an
@@ -1822,7 +1883,7 @@ export default function BranchForm({ onBack, editId }: Props) {
                 <FormFeedback style={css.formFeedback}>{fieldError('email')}</FormFeedback>
               </Col>
               <Col md={4}>
-                <Lbl>Phone</Lbl>
+                <Lbl>Phone <span className="text-danger">*</span></Lbl>
                 <Input name="phone" style={css.input} type="tel" value={form.phone} invalid={fieldInvalid('phone')}
                   onChange={e => set('phone', e.target.value)} onBlur={() => touch('phone')}
                   placeholder="+91 9876543210" />

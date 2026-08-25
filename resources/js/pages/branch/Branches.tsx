@@ -390,6 +390,16 @@ export default function Branches({ onNavigate }: Props) {
     <>
       <style>{`
         .branches-surface { background: #ffffff; }
+        /* .dt-root ships 0 8px 28px in the accent colour: offset 8 with a
+           28px blur still bleeds 20px UPWARD, so the violet haze covered the
+           entire 8px channel between the KPI strip and the table and the two
+           blocks read as one. Kept as a real lift, just shorter than the gap. */
+        .branches-surface .dt-root {
+          box-shadow:
+            0 2px 0 rgba(255, 255, 255, .85) inset,
+            0 2px 6px rgba(var(--dt-a-rgb), .12),
+            0 1px 3px rgba(0, 0, 0, .05);
+        }
         [data-bs-theme="dark"] .branches-surface { background: #1c2531; }
 
         /* Header strip — same shape/parts as the Customers (.smc-cstrip)
@@ -478,6 +488,13 @@ export default function Branches({ onNavigate }: Props) {
            on hover instead of sitting flat. Transform + layered shadow
            only — no layout change so the row never reflows. */
         .branches-kpi {
+          /* Fills its column. Without this the tile is only as tall as its own
+             content while the column stretches to the tallest one, so the row's
+             bottom margin was measured from the COLUMN's edge — a few invisible
+             pixels below the tile people actually see. The gap under the KPI
+             strip then read wider than the 8px between the tiles even though
+             both numbers were 8. */
+          height: 100%;
           transition:
             transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1),
             box-shadow 220ms ease,
@@ -557,7 +574,7 @@ export default function Branches({ onNavigate }: Props) {
           {/* Header strip — same shape as the Customers (smc-cstrip) header:
               rounded container + left accent strip + violet icon + gradient
               "Add" button — on a plain white surface (no violet wash). */}
-          <div className="br-cstrip mb-3">
+          <div className="br-cstrip mb-2">
             <span className="br-cstrip-accent" />
             <div className="br-cstrip-left">
               <div className="br-cstrip-icon"><i className="ri-git-branch-line" /></div>
@@ -598,7 +615,7 @@ export default function Branches({ onNavigate }: Props) {
               KPI / dark-mode styles are scoped to it) with no card chrome. */}
           <div className="branches-surface" style={{ background: 'transparent' }}>
             {/* ── KPI cards ── */}
-            <Row className="g-3 mb-3 align-items-stretch">
+            <Row className="g-2 mb-2 align-items-stretch">
               {KPI_CARDS.map(k => (
                 <Col key={k.label} md={3} sm={6} xs={12}>
                   <div
@@ -606,7 +623,11 @@ export default function Branches({ onNavigate }: Props) {
                     style={{
                       borderRadius: 14,
                       border: '1px solid var(--vz-border-color)',
-                      boxShadow: '0 2px 10px rgba(0,0,0,0.04)',
+                      // Blur stays under the 8px gutter above. A 10px blur in an
+                      // 8px channel means both neighbours' shadows meet in the
+                      // middle and the page colour never shows through, so the
+                      // tiles read as joined however exact the gap is.
+                      boxShadow: '0 1px 5px rgba(0,0,0,0.05)',
                       padding: '16px 18px',
                       position: 'relative',
                       overflow: 'hidden',
