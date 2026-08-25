@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../../../../api';
 import { useToast } from '../../../../contexts/ToastContext';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
@@ -45,7 +45,7 @@ const I = {
   tabAgr: (<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>),
 };
 
-export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, productIds, buildPreview, onSignActive }: { po?: string; poId?: number | null; supplierId?: number | null; productIds?: number[]; buildPreview?: () => Record<string, unknown>; onSignActive?: (active: boolean) => void }) {
+export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId, productIds, buildPreview, onSignActive, onPoLocked }: { po?: string; poId?: number | null; supplierId?: number | null; productIds?: number[]; buildPreview?: () => Record<string, unknown>; onSignActive?: (active: boolean) => void; onPoLocked?: () => void }) {
   const toast = useToast();
   const [docs, setDocs] = useState<TradeDoc[]>(() => makeConstants(po));
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -104,16 +104,43 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // True when a BULK send bundles the PO PDF alongside CLM trade docs in one
   // Zoho request (the PO row was checked with ≥1 real trade document).
   const [bundlePoActive, setBundlePoActive] = useState(false);
-  useEffect(() => {
-    if (!supplierId) { setParty(null); setPartyLoading(false); return; }
-    let cancelled = false;
+  /* The in-flight supplier fetch, kept so a click that lands BEFORE it settles
+   * can await it instead of being turned away. */
+  const partyReq = useRef<Promise<Party | null> | null>(null);
+  const fetchParty = useCallback((id: number): Promise<Party | null> => {
     setPartyLoading(true);
-    api.get(`/p2p/purchase-orders/suppliers/${supplierId}`).then(r => {
-      const d = r.data?.data; if (cancelled || !d) return;
-      setParty({ id: d.code || 'S-001', db_id: supplierId, company: d.name || 'Supplier', contact: d.contact || undefined, email: d.email || undefined });
-    }).catch(() => {}).finally(() => { if (!cancelled) setPartyLoading(false); });
-    return () => { cancelled = true; };
-  }, [supplierId]);
+    const req = api.get(`/p2p/purchase-orders/suppliers/${id}`)
+      .then(r => {
+        const d = r.data?.data; if (!d) return null;
+        const next: Party = { id: d.code || 'S-001', db_id: id, company: d.name || 'Supplier', contact: d.contact || undefined, email: d.email || undefined };
+        setParty(next);
+        return next;
+      })
+      .catch(() => null)
+      // A failed attempt must not be cached — the next click retries instead of
+      // inheriting the failure.
+      .then(v => { if (!v && partyReq.current === req) partyReq.current = null; return v; })
+      .finally(() => setPartyLoading(false));
+    partyReq.current = req;
+    return req;
+  }, []);
+  useEffect(() => {
+    if (!supplierId) { setParty(null); setPartyLoading(false); partyReq.current = null; return; }
+    void fetchParty(supplierId);
+  }, [supplierId, fetchParty]);
+  /* Resolve the supplier before a send / preview runs. The actions used to bail
+   * with a "Loading supplier…" toast whenever this fetch hadn't landed yet, so
+   * the FIRST click on Stage 4 did nothing and only the second one opened the
+   * modal (QA #43). Now the click waits on the fetch — the button spins for as
+   * long as it takes — and the modal opens on its own once the supplier is
+   * there. Returns null only when there is genuinely no supplier, or the fetch
+   * failed; a failed earlier attempt is retried rather than held against the
+   * click. */
+  const ensureParty = useCallback(async (): Promise<Party | null> => {
+    if (party?.db_id) return party;
+    if (!supplierId) return null;
+    return await (partyReq.current ?? fetchParty(supplierId));
+  }, [party, supplierId, fetchParty]);
   /* ── Live signature status ────────────────────────────────────────────────
    * The same party-scoped poll the Evidence Vault / Stage-5 tabs use: one list
    * call with sync=1, which round-trips Zoho so an in-progress request flips to
@@ -129,7 +156,13 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
    * 'agreement-<libId>'). Splitting on document_type matters: a trade doc and an
    * agreement can share a numeric library id, so a flat map would overlay one
    * onto the other (the same trap ClmSignatureController::index documents). */
-  type SigInfo = { id: number; status: string; reminderCount: number; lastReminderAt: string | null };
+  type SigInfo = {
+    id: number; status: string; reminderCount: number; lastReminderAt: string | null;
+    /* Names of the signed PDFs Zoho returned, in the SAME order as the request's
+     * file indexes — what `/view-file/{index}` addresses. Needed because a bulk
+     * send bundles several documents behind one request. */
+    docs: string[];
+  };
   const [sigByRow, setSigByRow] = useState<Record<string, SigInfo>>({});
   // Bumped after a send / reminder so the next poll runs at once, not up to 20s later.
   const [sigTick, setSigTick] = useState(0);
@@ -153,8 +186,21 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     onSignActive?.(Array.isArray(sendDocIds) || poSign || !!trackSig);
   }, [sendDocIds, poSign, trackSig, onSignActive]);
 
+  /* False until the FIRST signature poll for this (supplier, PO) has landed.
+   * Leaving stage 4 unmounts this table, so coming back re-mounts it with an
+   * empty map — the rows would read "Pending / Send for Sign" for the second or
+   * two the Zoho-sync fetch takes, even for a PO that is already signed (QA
+   * #50). While this is false the row shows a "Checking…" loader instead, the
+   * same guard the Sales Matrix stage-5 PI tab uses. Only a supplier/PO change
+   * resets it — the 20s background poll must never re-flash the loader. */
+  const [sigLoaded, setSigLoaded] = useState(false);
   useEffect(() => {
-    if (!supplierId) { setSigByRow({}); return; }
+    setSigLoaded(false);
+    setSigByRow({});
+  }, [supplierId, poId]);
+
+  useEffect(() => {
+    if (!supplierId) { setSigByRow({}); setSigLoaded(true); return; }
     let alive = true;
     const load = async () => {
       try {
@@ -174,6 +220,9 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
             // Agreements popup — kept live on the poll tick.
             reminderCount: Number(row.reminder_count ?? 0) || 0,
             lastReminderAt: (row.last_reminder_sent_at ?? null) as string | null,
+            docs: Array.isArray(row.signed_document_paths)
+              ? row.signed_document_paths.map((e: any) => String(e?.document_name ?? ''))
+              : [],
           };
           if (!map[key] || info.id > map[key].id) map[key] = info;
         };
@@ -202,11 +251,23 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         });
         setSigByRow(map);
       } catch { /* best-effort — signature status never blocks the table */ }
+      finally { if (alive) setSigLoaded(true); }
     };
     void load();
-    const t = setInterval(load, 20000);
+    const t = setInterval(load, 10000);
     return () => { alive = false; clearInterval(t); };
   }, [supplierId, poId, sigTick]);
+
+  /* The moment this PO is out for signature its content is frozen server-side
+   * ("Sent for Sign" / signed → 422 on any update, PurchaseOrderController).
+   * Tell the host wizard so it switches to read-only there and then, instead of
+   * still offering "Update Purchase Order" and only discovering the lock when
+   * the save is rejected (QA #49). Any request counts — including a declined or
+   * recalled one, because the PO's own status stays "Sent for Sign" either way,
+   * which is exactly what the backend gate reads. */
+  useEffect(() => {
+    if (sigByRow['po']) onPoLocked?.();
+  }, [sigByRow, onPoLocked]);
 
   /* Effective row status. The poll is authoritative once it has seen the row;
    * `d.status` only covers the optimistic window right after a send, before the
@@ -268,9 +329,10 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
 
   const toggleDoc = (id: string, on: boolean) => setSel(s => { const n = { ...s }; if (on) n[id] = true; else delete n[id]; return n; });
   const toggleAll = (on: boolean) => setSel(s => { const n = { ...s }; visible.forEach(d => { if (stateOf(d) === 'pending') { if (on) n[d.id] = true; else delete n[d.id]; } }); return n; });
-  const launchSign = (rowIds: string[]) => {
+  const launchSign = async (rowIds: string[]) => {
     if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to send documents for signature.'); return; }
-    if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return; }
+    const p = await ensureParty();
+    if (!p?.db_id) { toast.error('Could not load supplier', 'The supplier details could not be fetched. Please try again.'); return; }
     const parsed = rowIds.map(parseRow).filter(Boolean) as Array<{ libId: number; kind: 'trade' | 'agreement' }>;
     const wantsPo = rowIds.includes('po') && !!poId;   // bundle the PO PDF into this request
     if (!parsed.length) {
@@ -289,20 +351,30 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
   // shared sign modal in raw-PDF mode (needs a SAVED po id + a supplier). Falls
   // back to the plain PDF preview when the PO hasn't been saved yet.
   const sendDoc = (id: string) => {
+    if (isBusy(`send:${id}`)) return;
     if (id === 'po') {
       // The wizard persists the PO only on the final "Generate Purchase Order",
       // so during creation there's no saved id to raise a Zoho request against —
       // show the draft PO preview instead of blocking. Once the PO is saved
       // (edit mode / after generate), open the full sign modal.
-      if (!poId) { runBusy('send:po', openPoPdf(false)); return; }
+      if (!poId) { runBusy('send:po', openPoPdf()); return; }
       if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to send the PO for signature.'); return; }
-      if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return; }
-      setPoSign(true);
+      // Spin the row's own button while the supplier resolves, then hand over to
+      // the sign modal — which shows its own loader until the preview PDF has
+      // rendered (QA #43).
+      runBusy(`send:${id}`, ensureParty().then(p => {
+        if (!p?.db_id) { toast.error('Could not load supplier', 'The supplier details could not be fetched. Please try again.'); return; }
+        setPoSign(true);
+      }));
       return;
     }
-    launchSign([id]);
+    runBusy(`send:${id}`, launchSign([id]));
   };
-  const sendSelected = () => { const ids = visible.filter(d => stateOf(d) === 'pending' && sel[d.id]).map(d => d.id); if (ids.length) launchSign(ids); };
+  const sendSelected = () => {
+    if (isBusy('send:bulk')) return;
+    const ids = visible.filter(d => stateOf(d) === 'pending' && sel[d.id]).map(d => d.id);
+    if (ids.length) runBusy('send:bulk', launchSign(ids));
+  };
   const onSigSent = () => {
     setDocs(ds => ds.map(x => sentBatch.includes(x.id) ? { ...x, status: 'sent' } : x));
     setSel(s => { const n = { ...s }; sentBatch.forEach(id => delete n[id]); return n; });
@@ -311,20 +383,25 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     toast.success('Sent for signature via Zoho Sign');
   };
 
-  // Open the PO PDF. In Edit (saved) mode → GET the stored PO's PDF; in Add
-  // (unsaved) mode → POST the current form data to render a live preview.
-  // Only the "Purchase Order" constant row maps to the PO document.
-  const openPoPdf = (withSignature: boolean): Promise<void> => {
+  /* Open the PO PDF — the DRAFT app render, always. In Edit (saved) mode → GET
+   * the stored PO's PDF; in Add (unsaved) mode → POST the current form data for
+   * a live preview. Only the "Purchase Order" constant row maps to it.
+   *
+   * There is deliberately no "signed" mode here: `?signature=1` only stamps our
+   * own static signatory block on the template, which is not the supplier's
+   * signature. The signed copy is Zoho's executed PDF and comes from
+   * openSignedPdf (QA #45). */
+  const openPoPdf = (): Promise<void> => {
     const w = window.open('', '_blank');
-    toast.info(`Preparing PO PDF${withSignature ? ' (signed)' : ' (draft)'}…`);
+    toast.info('Preparing PO PDF (draft)…');
     const done = (blob: Blob) => { const url = URL.createObjectURL(blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); };
     const fail = () => { if (w) w.close(); toast.error('Could not open PO PDF', 'Please try again.'); };
     if (poId) {
-      return api.get(`/p2p/purchase-orders/${poId}/pdf`, { params: { signature: withSignature ? 1 : 0 }, responseType: 'blob' })
+      return api.get(`/p2p/purchase-orders/${poId}/pdf`, { params: { signature: 0 }, responseType: 'blob' })
         .then(res => done(res.data as Blob)).catch(fail);
     }
     if (buildPreview) {
-      return api.post('/p2p/purchase-orders/preview-pdf', { ...buildPreview(), signature: withSignature ? 1 : 0 }, { responseType: 'blob' })
+      return api.post('/p2p/purchase-orders/preview-pdf', { ...buildPreview(), signature: 0 }, { responseType: 'blob' })
         .then(res => done(res.data as Blob)).catch(fail);
     }
     if (w) w.close();
@@ -340,24 +417,60 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
     const parsed = parseRow(d.id);
     if (!parsed) { toast.info(`Viewing ${d.name} (draft)`); return Promise.resolve(); }
     if (!supplierId) { toast.error('Supplier required', 'Select a supplier first to preview this document.'); return Promise.resolve(); }
-    if (!party?.db_id) { toast.info('Loading supplier…', 'Supplier details are still loading — please try again in a moment.'); return Promise.resolve(); }
-    const w = window.open('', '_blank');
-    toast.info(`Preparing ${d.name} preview…`);
-    const body = parsed.kind === 'agreement'
-      ? { agreement_id: parsed.libId, party_id: party.db_id, model_name: 'Vendor' }
-      : { trade_doc_id: parsed.libId, party_id: party.db_id, model_name: 'Vendor' };
-    return api.post('/clm/signature-requests/preview', body, { responseType: 'blob' })
-      .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
-      .catch(() => { if (w) w.close(); toast.error('Preview failed', 'Could not render the document. Check the draft content.'); });
+    return ensureParty().then(p => {
+      if (!p?.db_id) { toast.error('Could not load supplier', 'The supplier details could not be fetched. Please try again.'); return; }
+      const w = window.open('', '_blank');
+      toast.info(`Preparing ${d.name} preview…`);
+      const body = parsed.kind === 'agreement'
+        ? { agreement_id: parsed.libId, party_id: p.db_id, model_name: 'Vendor' }
+        : { trade_doc_id: parsed.libId, party_id: p.db_id, model_name: 'Vendor' };
+      return api.post('/clm/signature-requests/preview', body, { responseType: 'blob' })
+        .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
+        .catch(() => { if (w) w.close(); toast.error('Preview failed', 'Could not render the document. Check the draft content.'); });
+    });
   };
-  // Draft (no signature) / signed view. The "Purchase Order" row maps to the PO
-  // PDF; other rows are CLM library docs previewed via openDraftPreview. The
-  // signed view for library docs stays a placeholder (fetched from Zoho later).
+  /* Which file inside the signature request belongs to this row. A bulk send
+   * bundles several documents behind ONE Zoho request, so a hardcoded index 0
+   * would hand every row the first PDF. Zoho keeps the files in upload order and
+   * each carries the `document_name` we sent ("<code> <name>", or "Purchase
+   * Order <code>" for the PO), so match on that — falling back to the first
+   * file, which is always the right one for a single-document request. */
+  const slugOf = (v: string) => v.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  const signedFileIndex = (d: TradeDoc, sig: SigInfo): number => {
+    if (sig.docs.length < 2) return 0;
+    const want = slugOf(d.id === 'po' ? po : d.name);
+    if (!want) return 0;
+    const hit = sig.docs.findIndex(n => { const s = slugOf(n); return !!s && (s.includes(want) || want.includes(s)); });
+    return hit >= 0 ? hit : 0;
+  };
+  /* The ACTUAL Zoho-executed PDF for a signed row. This is what "View signed
+   * PDF" means — previously a CLM row only toasted "Viewing … (signed)" and
+   * opened nothing, while the PO row served the app-rendered template carrying
+   * our own static signatory block instead of the supplier's real signature
+   * (QA #45). */
+  const openSignedPdf = (d: TradeDoc): Promise<void> => {
+    const sig = sigByRow[d.id];
+    if (!sig?.id) {
+      toast.warning('Not signed yet', `${d.name} has no completed signature request — the signed copy appears once signing is complete.`);
+      return Promise.resolve();
+    }
+    const w = window.open('', '_blank');
+    toast.info(`Opening signed ${d.name}…`);
+    return api.get(`/clm/signature-requests/${sig.id}/view-file/${signedFileIndex(d, sig)}`, { responseType: 'blob' })
+      .then(res => {
+        const url = URL.createObjectURL(new Blob([res.data as BlobPart], { type: 'application/pdf' }));
+        if (w) w.location.href = url; else window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      })
+      .catch(() => { if (w) w.close(); toast.error('Signed copy unavailable', 'The signed PDF could not be fetched from Zoho Sign. Please try again in a moment.'); });
+  };
+  // Draft (no signature) / signed view. Signed → always the Zoho copy; draft →
+  // the PO row renders the app PDF, CLM library docs go through openDraftPreview.
   const viewDoc = (d: TradeDoc, withSignature: boolean) => {
     const key = `view:${d.id}:${withSignature ? 's' : 'd'}`;
     if (isBusy(key)) return;
-    if (d.id === 'po') { runBusy(key, openPoPdf(withSignature)); return; }
-    if (withSignature) { toast.info(`Viewing ${d.name} (signed)`); return; }
+    if (withSignature) { runBusy(key, openSignedPdf(d)); return; }
+    if (d.id === 'po') { runBusy(key, openPoPdf()); return; }
     runBusy(key, openDraftPreview(d));
   };
 
@@ -420,9 +533,9 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
           const rawSig = sig?.status;
           const chip = rawSig === 'declined' ? 'declined' : rawSig === 'recalled' ? 'recalled' : st;
           const checked = !!sel[d.id];
-          const signing = d.id === 'po'
-            ? (poSign || isBusy('send:po'))
-            : (!!sendDocIds && sentBatch.includes(d.id));
+          const signing = isBusy(`send:${d.id}`) || (d.id === 'po'
+            ? poSign
+            : (!!sendDocIds && sentBatch.includes(d.id)));
           return (
             <tr key={d.id} className={checked ? 'cptd-rowsel' : ''}>
               <td className="cptd-cbcol"><input type="checkbox" className="cptd-check" checked={checked} disabled={sent} onChange={e => toggleDoc(d.id, e.target.checked)} aria-label={`Select ${d.name}`} /></td>
@@ -448,9 +561,18 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
                   /* Busy from the click until the row's send finishes: either the
                      unsaved-PO draft PDF request, or the Zoho sign modal this row
                      opened (still open = still sending). */
+                  !sigLoaded ? (
+                    /* Status not known yet — a disabled loader rather than a
+                       "Send for Sign" that could fire a duplicate request against
+                       an already-signed document (QA #50). */
+                    <button className="cptd-send is-busy" type="button" disabled style={{ cursor: 'wait' }} title="Checking the latest Zoho Sign status…">
+                      {I.spinSm} Checking…
+                    </button>
+                  ) : (
                   <button className={`cptd-send${signing ? ' is-busy' : ''}${(chip === 'declined' || chip === 'recalled') ? ' cptd-send--resend' : ''}`} type="button" disabled={sent || signing} onClick={() => sendDoc(d.id)}>
                     {signing ? I.spinSm : I.send} {sent ? 'Sent' : signing ? 'Sending…' : (chip === 'declined' || chip === 'recalled') ? 'Resend for Sign' : 'Send for Sign'}
                   </button>
+                  )
                 )}
                 {/* Draft view — always available (unsigned PO PDF). Icon-only,
                     styled like the compact action buttons (e.g. Email). */}
@@ -507,7 +629,7 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
 
       <div className="cptd-bulk">
         <span className="cptd-bulk__cnt">{selCount ? <><strong>{selCount}</strong> document{selCount > 1 ? 's' : ''} selected</> : (pendingCount ? 'Select documents to send for signature together' : 'All documents have been sent')}</span>
-        <button className="cptd-bulk__btn" type="button" disabled={!selCount} onClick={sendSelected}>{I.send}<span>Send Selected for Sign{selCount ? ` (${selCount})` : ''}</span></button>
+        <button className="cptd-bulk__btn" type="button" disabled={!selCount || !sigLoaded || isBusy('send:bulk')} onClick={sendSelected}>{isBusy('send:bulk') ? I.spinSm : I.send}<span>{isBusy('send:bulk') ? 'Opening…' : `Send Selected for Sign${selCount ? ` (${selCount})` : ''}`}</span></button>
       </div>
 
       <SalesCustomerSendForSignatureModal

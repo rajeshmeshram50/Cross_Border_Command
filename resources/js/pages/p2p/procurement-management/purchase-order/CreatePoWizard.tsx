@@ -10,22 +10,6 @@ import TradeDocsTable from './TradeDocsTable';
 import PoPaymentModal from './PoPaymentModal';
 import SupplierEvidenceVaultModal from '../../p2p-master-management/supplier-management/SupplierEvidenceVaultModal';
 
-/* ─────────────────────────────────────────────────────────────────────────
- * Create Purchase Order — choice modal + full-page 4-stage wizard.
- *
- * Faithful React port of the prototype's Create-PO flow (openCreatePO →
- * cpoOpenForm). Frontend-only, static demo data.
- *
- *   Choice modal → With / Without Shipment ID (+ shipment picker)
- *   Stage 1  Link Supplier Details  — PO basics + supplier auto-fill + legal score
- *   Stage 2  PO Product Details     — editable PI-vs-PO table, live tax, charges, missing qty
- *   Stage 3  Terms & Conditions     — free-text terms
- *   Stage 4  Trade Documents        — Zoho-Sign style doc table (select / send)
- *
- * On "Generate Purchase Order" it hands a new PoRow back to the list.
- * Heavy side-integrations (PO Payment, Evidence Vault, real Zoho) are stubbed
- * with toasts, matching the list view's approach.
- * ───────────────────────────────────────────────────────────────────────── */
 
 type PoRow = {
   id?: number; po: string; date: string; type: string; doc: string; ship?: string;
@@ -147,6 +131,17 @@ const numOnly = (v: string): string => {
   return dot === -1 ? s : s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '');
 };
 
+/* Trim anything past `max` decimal places as it is typed. Used by the PO
+ * quantity fields: the column is decimal(14,4), so the DB would accept more —
+ * this is the business rule that a PO quantity is quoted to 2 decimals. Applied
+ * on input (rather than rounding at save) so what the user sees is what gets
+ * stored, and a stray third digit is simply refused instead of silently
+ * changing the number afterwards. */
+const capDecimals = (v: string, max = 2): string => {
+  const dot = v.indexOf('.');
+  return dot === -1 ? v : v.slice(0, dot + 1 + max);
+};
+
 const capQty = (v: string, piQty: string): string => {
   if (piQty === '' || v === '') return v;
   const cap = num(piQty);
@@ -198,7 +193,13 @@ const num = (v: unknown) => { const n = parseFloat(String(v)); return isNaN(n) ?
 const money2 = (n: number) => '₹' + (Math.round((n + Number.EPSILON) * 100) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money0 = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
-const emptySup = (): SupplierRec => ({ code: '', type: '', name: '', legal: '', addr: '', country: 'India', state: 'Maharashtra', stateCode: '', city: '', contact: '', desig: '', phone: '', email: '', scrutiny: '', gstNo: '', gstStatus: 'Active', filing: '', remarks: '', web: '' });
+/* The "no supplier selected" record — EVERY field is blank so the read-only
+ * supplier cards render "—" until a supplier is actually picked. Country /
+ * State / GST Status used to carry India / Maharashtra / Active here, which
+ * read as real supplier data on an empty form (QA #33) — and a supplier from
+ * any other state or country would have been contradicted by it. The real
+ * values all come from mapDetailToSup once a supplier is chosen. */
+const emptySup = (): SupplierRec => ({ code: '', type: '', name: '', legal: '', addr: '', country: '', state: '', stateCode: '', city: '', contact: '', desig: '', phone: '', email: '', scrutiny: '', gstNo: '', gstStatus: '', filing: '', remarks: '', web: '' });
 
 /* ── icons ────────────────────────────────────────────────────────────── */
 const Chev = ({ c = 'pof-dd__chev' }: { c?: string }) => (<svg className={c} width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>);
@@ -215,14 +216,19 @@ const docHd = (<svg width="22" height="22" viewBox="0 0 24 24" fill="none" strok
 // `name` overrides the raw option value for display — used by the supplier
 // field, whose option VALUE is the unique code (names can duplicate) but which
 // still shows the human name via meta.
-type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean; disabledLabel?: string };
+type DdOptMeta = { code?: string; name?: string; badge?: string; badgeTone?: 'own' | 'third'; disabled?: boolean };
+/* An out-of-segment option used to carry a red "Segment not mapped" chip here.
+ * It was dropped: in a narrow cell (the Stage-2 product picker) it collided with
+ * the segment badge and both ended up clipped mid-word. A frozen option still
+ * reads as frozen — `.is-disabled` dims the row and blocks the click — and the
+ * click still explains itself with the "Segment not mapped to the supplier"
+ * toast, which has room for the full reason. */
 const DdOptLabel = ({ o, meta }: { o: string; meta?: DdOptMeta }) => (
   meta ? (
     <span className="pof-dd__optlbl">
       {meta.code && <span className="pof-dd__optcode">{meta.code}:</span>}
       <span className="pof-dd__optname">{meta.name ?? o}</span>
       {meta.badge && <span className={`pof-dd__optbadge pof-dd__optbadge--${meta.badgeTone || 'own'}`}>{meta.badge}</span>}
-      {meta.disabled && <span className="pof-dd__optlock">{meta.disabledLabel ?? 'Segment not mapped'}</span>}
     </span>
   ) : <span>{o}</span>
 );
@@ -420,7 +426,11 @@ const mapDetailToSup = (s: Record<string, unknown>): SupplierRec => ({
   segments: Array.isArray(s.segments) ? (s.segments as unknown[]).map(String).filter(Boolean) : [],
 });
 
-export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onSaved }: { editRow: PoRow | null; viewOnly?: boolean; onClose: () => void; onSaved: () => void }) {
+/* `onClose` reports the PO id when one was actually persisted during this
+ * session. The PO is created on leaving stage 3, so closing from stage 4 with
+ * the X leaves a real PO behind that the list would otherwise not know about
+ * until a manual refresh (QA #47). */
+export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onSaved }: { editRow: PoRow | null; viewOnly?: boolean; onClose: (savedId?: number | null) => void; onSaved: () => void }) {
   const toast = useToast();
   const isEdit = !!editRow;
   const editId = editRow?.id ?? null;
@@ -453,7 +463,15 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   const [tdsLocked, setTdsLocked] = useState(false);
   // Whole-wizard read-only: opened as view-only (e.g. a PO that already has an
   // SPI mapped / is synced / signed), OR once its TDS has been deducted.
-  const locked = viewOnly || tdsLocked;
+  /* Set once this PO is out for e-signature (reported by the stage-4 table).
+   * From that point the backend refuses every update, so the wizard drops into
+   * the same read-only mode the list uses when it opens an already-sent PO —
+   * rather than offering a save that can only fail (QA #49). */
+  const [signLocked, setSignLocked] = useState(false);
+  // Read-only for any reason the PO's CONTENT is frozen (opened view-only, or
+  // frozen mid-session by a signature send).
+  const roMode = viewOnly || signLocked;
+  const locked = roMode || tdsLocked;
   // Stage-1 data-load shimmer: the lookup masters (dropdowns) load on mount and,
   // when editing, the PO detail loads too. Show a shimmer over the Stage-1 fields
   // (supplier + the rest) until both settle so the form fills in instead of
@@ -591,11 +609,14 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     return m;
   }, [suppliers]);
   // Pull a vendor's real 5-parameter compliance breakdown for the legal-status card.
-  const loadSupplierLegal = (vendorId: number) => {
-    setSupLegal(null);
+  // `silent` keeps the current figures on screen while re-fetching (used after the
+  // user uploads inside the Evidence Vault) instead of flashing the skeleton — and
+  // leaves them untouched if that refresh fails.
+  const loadSupplierLegal = (vendorId: number, silent = false) => {
+    if (!silent) setSupLegal(null);
     api.get(`/segment-uploads/supplier/${vendorId}/vault`).then(r => {
       const v = r.data?.data; if (v) setSupLegal(buildLegalFromVault(v));
-    }).catch(() => setSupLegal(null));
+    }).catch(() => { if (!silent) setSupLegal(null); });
   };
   // `val` is the supplier CODE for real suppliers, or the demo name for the
   // built-in fallback. Resolve by code first (unique), then demo name.
@@ -773,14 +794,21 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     const sgstP = intra ? gst / 2 : 0;
     const igstP = intra ? 0 : gst;
     const cgstA = base * cgstP / 100, sgstA = base * sgstP / 100, igstA = base * igstP / 100;
-    return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base + cgstA + sgstA + igstA, miss: r.piQty === '' ? 0 : Math.max(0, num(r.piQty) - num(r.qty)) };
+    // Product Cost is the line's TAXABLE value — quantity × rate, GST EXCLUDED.
+    // The tax sits in its own %/amount columns and in the Total CGST/SGST/IGST
+    // lines, so the totals stack reads without double-counting:
+    //   Total Product Cost + tax + Additional Charges = Grand Total
+    // (the same pre-tax "Sub Total" convention the PO PDF and the PI already use).
+    return { cgstP, sgstP, igstP, base, cgstA, sgstA, igstA, cost: base, miss: r.piQty === '' ? 0 : Math.max(0, num(r.piQty) - num(r.qty)) };
   };
   const summary = useMemo(() => {
     let prod = 0, cg = 0, sg = 0, ig = 0;
     rows.forEach(r => { const c = compute(r); prod += c.cost; cg += c.cgstA; sg += c.sgstA; ig += c.igstA; });
     const ship = num(charges.ship), pack = num(charges.pack), other = num(charges.other);
     const addl = ship + pack + other;
-    return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + addl };
+    // `prod` is now pre-tax, so the tax has to be added back here — Grand Total
+    // itself is unchanged (and still matches the saved PO's grand_total).
+    return { prod, cgst: cg, sgst: sg, igst: ig, addl, grand: prod + cg + sg + ig + addl };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, charges, sup.stateCode]);
   // Stage-1 shimmer while the dropdown masters (and, when editing, the PO
@@ -828,6 +856,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     } else { lineId.current = 1; setRows([blankLine(1)]); proceed(); }
   };
   const backToChoice = () => { setPhase('choice'); setChoiceOpen(true); };
+  // Stable identity — the stage-4 table calls this from an effect.
+  const onPoLocked = useCallback(() => { setSignLocked(true); setPoView(true); }, []);
 
   // Supplier Legal Status is driven ONLY by the selected supplier's real
   // Evidence Vault (loadSupplierLegal → supLegal). No demo/hardcoded fallback:
@@ -862,7 +892,10 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   // them and learns why they can't be picked (QA: PO / SPI segment gating).
   const prodMeta = useMemo(() => {
     const m: Record<string, DdOptMeta> = {};
-    prodOpts.forEach(o => { m[o.name] = { code: o.code || undefined, badge: o.segment || undefined, disabled: prodDisabled(o) }; });
+    // Codes go through formatProductCode so the picker reads P-021, matching the
+    // Product master and this table's own Product Code column (the raw DB code is
+    // 2-digit: P-21).
+    prodOpts.forEach(o => { m[o.name] = { code: formatProductCode(o.code) || undefined, badge: o.segment || undefined, disabled: prodDisabled(o) }; });
     return m;
   }, [prodOpts, prodDisabled]);
   // Resolve a PI row's product segment from the product master (PI rows carry no
@@ -1101,8 +1134,8 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
   };
 
   const next = () => {
-    // View-only: navigate through the stages to review, never persist/generate.
-    if (viewOnly) { if (stage < 4) setStage(s => s + 1); return; }
+    // Read-only: navigate through the stages to review, never persist/generate.
+    if (roMode) { if (stage < 4) setStage(s => s + 1); return; }
     if (stage === 1 && !validateStage1()) return;
     // Product stage (and any later persist) needs at least one product AND no
     // segment mismatch before it can be left.
@@ -1112,7 +1145,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // Stage 2 must be "saved" (Save Details) before advancing so the buyer has
     // reviewed the missing-quantity check. Edit/view auto-reveals it, so only a
     // fresh create is actually gated here (QA #11).
-    if (stage === 2 && !showMissing) {
+    // WITH-SHIPMENT ONLY: without a shipment there are no PI quantities to fall
+    // short of, so there is no Missing Product Details card to review and no
+    // Save Details button to press — gating on it would dead-end the stage
+    // (QA #38).
+    if (stage === 2 && withShip && !showMissing) {
       toast.warning('Review product details', 'Click “Save Details” to check missing product quantities before continuing to the next stage.');
       return;
     }
@@ -1171,12 +1208,12 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     );
     return (
       <div className="pom">
-        <div className={`cpo-ov ${choiceOpen ? 'is-open' : ''}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className={`cpo-ov ${choiceOpen ? 'is-open' : ''}`} onMouseDown={e => { if (e.target === e.currentTarget) onClose(savedPoId); }}>
           <div className="cpo-modal">
             <div className="cpo-hd">
               <div className="cpo-hd__ico">{docHd}</div>
               <div className="cpo-hd__mid"><div className="cpo-hd__t">Create Purchase Order</div><div className="cpo-hd__s">Choose how to link this PO to your procurement workflow.</div></div>
-              <Tooltip label="Close" themed zIndex={2999999}><button type="button" className="cpo-hd__x" onClick={onClose} aria-label="Close"><XIco /></button></Tooltip>
+              <Tooltip label="Close" themed zIndex={2999999}><button type="button" className="cpo-hd__x" onClick={() => onClose(savedPoId)} aria-label="Close"><XIco /></button></Tooltip>
             </div>
             <div className="cpo-bd">
               <div className="cpo-sec">Link to procurement workflow</div>
@@ -1195,7 +1232,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
               <div className="cpo-ft">
                 <span className="cpo-ft__note"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg> All POs are audit-tracked</span>
                 <div className="cpo-ft__b">
-                  <button type="button" className="cpo-btn cpo-btn--g" onClick={onClose}>Cancel</button>
+                  <button type="button" className="cpo-btn cpo-btn--g" onClick={() => onClose(savedPoId)}>Cancel</button>
                   <button type="button" className="cpo-btn cpo-btn--p" disabled={!poMode || confirming} onClick={confirmChoice}>{confirming ? <><Spin s={13} /> Loading…</> : <>Confirm & Continue <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>}</button>
                 </div>
               </div>
@@ -1244,7 +1281,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                 <span className="cstrip__divider" />
                 <button type="button" className="cpo-paysum-btn" onClick={() => savedPoId ? setPayOpen(true) : toast.warning('Save the PO first', 'Create or save this purchase order before recording a payment.')}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></svg> PO Payment</button>
                 <span className="cstrip__divider" />
-                <button type="button" className="cstrip__back-btn" onClick={onClose}><span className="cstrip__back-btn-sheen" /><XIco /> Close</button>
+                <button type="button" className="cstrip__back-btn" onClick={() => onClose(savedPoId)}><span className="cstrip__back-btn-sheen" /><XIco /> Close</button>
               </div>
             </div>
             <div className="p2pj-steps-row">
@@ -1330,7 +1367,13 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         <Frozen label="PO Date" req value={po.poDate ? formatDmy(po.poDate) : todayDisp} />
                         <DateField label="Expected Delivery Date" req err={errs.edd} value={po.edd} onChange={v => setPoF('edd', v)} minDate={isEdit ? undefined : todayIso} />
                         <Dd label="Delivery Location" req err={errs.deliveryLoc} optMeta={whMeta} value={po.deliveryLoc || DELIVERY_PLACEHOLDER} options={[DELIVERY_PLACEHOLDER, ...(warehouses.length ? warehouses.map(w => w.name) : WAREHOUSE_FALLBACK)]} onChange={v => { setPoF('deliveryLoc', v === DELIVERY_PLACEHOLDER ? '' : v); setWarehouseId(warehouses.find(w => w.name === v)?.id ?? null); }} />
-                        <Dd label="Payment Type" value={po.payType} options={PAY_TYPES} onChange={v => setPoF('payType', v)} />
+                        {/* Mandatory like its neighbours — the PO always carries a
+                            payment type. There is no validateStage1 check because the
+                            field CANNOT be empty: it defaults to PAY_TYPES[0] and the
+                            dropdown has no blank placeholder, so a check would be dead
+                            code. Same reasoning as PO Date, which is auto-filled and
+                            still shows the star (QA #52). */}
+                        <Dd label="Payment Type" req value={po.payType} options={PAY_TYPES} onChange={v => setPoF('payType', v)} />
                         <Toggle label="Physical Inspection Required" on={po.inspection} onToggle={() => setPoF('inspection', !po.inspection)} />
                         {po.docType === 'International' && (<>
                           <Dd label="Currency" value={po.currency} options={currencies.length ? currencies.map(c => c.code) : CURRENCIES} onChange={v => { setPoF('currency', v); setCurrencyId(currencies.find(c => c.code === v)?.id ?? null); }} />
@@ -1497,7 +1540,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                                 : <Tooltip label={r.piName} disabled={!r.piName} zIndex={2999999}><span className="cpd-name__txt">{r.piName || '—'}</span></Tooltip>}</td>
                               <td className="cpd-c">{r.piQty || 0}</td>
                               <td><input className="cpd-in cpd-in--name" disabled={poView || mismatch} value={r.name} onChange={e => setLine(r.id, { name: e.target.value })} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(numOnly(e.target.value), r.piQty) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capQty(capDecimals(numOnly(e.target.value)), r.piQty) })} /></td>
                               <td className={`cpd-c cpd-miss ${c.miss > 0 ? 'is-short' : ''}`}>{c.miss}</td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} intl={isIntlPo} />
@@ -1509,7 +1552,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                               <td className="cpd-c">{i + 1}</td>
                               <td className="cpd-c"><span className="cpd-code" style={mismatch ? { color: '#dc2626' } : undefined}>{formatProductCode(r.code) || '—'}</span></td>
                               <td className="cpd-prodcell"><Dd tooltip value={r.name || PRODUCT_PLACEHOLDER} optMeta={prodMeta} options={[PRODUCT_PLACEHOLDER, ...prodOpts.filter(o => o.id === r.productId || !rows.some(x => x.id !== r.id && x.productId === o.id)).map(o => o.name)]} onChange={poView ? () => {} : name => pickProduct(r.id, name)} onDisabledSelect={(name) => { const o = prodOpts.find(x => x.name === name); toast.error('Segment not mapped to the supplier', `“${name}”${o?.segment ? ` (${o.segment})` : ''} isn't in this supplier's segment — map the supplier to this segment first.`); }} /></td>
-                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: numOnly(e.target.value) })} /></td>
+                              <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.qty} onChange={e => setLine(r.id, { qty: capDecimals(numOnly(e.target.value)) })} /></td>
                               <td><input className="cpd-in cpd-in--num" disabled={poView || mismatch} type="text" inputMode="decimal" value={r.rate} onChange={e => setLine(r.id, { rate: numOnly(e.target.value) })} /></td>
                               <TaxBodyCells c={c} intra={intra} intl={isIntlPo} />
                               <td className="cpd-r cpd-cost">{money2(c.cost)}</td>
@@ -1550,6 +1593,15 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       <div className="cpd-totrow cpd-totrow--grand"><div className="cpd-totrow__k">Grand Total</div><div className="cpd-totrow__v">{money2(summary.grand)}</div></div>
                     </div>
                   </div>
+                  {/* Save Details exists to run the missing-quantity check against
+                      the PI — so it is a WITH-SHIPMENT control only. In the
+                      Without-Shipment flow there is no PI to compare against, so
+                      the button had nothing to reveal and (on a fresh PO, where
+                      savedPoId is still null until stage 3) nothing to persist
+                      either: it just toasted "saved" and looked broken (QA #38).
+                      Those product rows are persisted by Submit PO & Next on
+                      leaving stage 3, exactly as before. */}
+                  {withShip && (
                   <div className="cpd-saverow">
                     {/* Save Details used to just wait 500ms and toast "saved"
                         without calling the API, so edited rows/charges stayed
@@ -1581,6 +1633,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                         : <><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg> Save Details</>}
                     </button>
                   </div>
+                  )}
                 </Box>
                 {withShip && (
                 <Box label="Products" title="Missing Product Details" sub="PI quantities not fully covered by the purchase order" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>}
@@ -1619,7 +1672,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
               {stage === 4 && (
                 <Box label="Documents" title="Post PO Trade Document Management" sub="Generate, e-sign & track documents via Zoho Sign" ico={<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>}
                   extra={<button type="button" className="cptd-vault-btn" onClick={e => { e.stopPropagation(); setVaultOpen(true); }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" /></svg><span>Supplier Legal Status</span></button>}>
-                  <TradeDocsTable po={poCode || undefined} poId={savedPoId} supplierId={vendorId} productIds={rows.map(r => r.productId).filter((x): x is number => x != null)} buildPreview={buildPayload} onSignActive={setSignActive} />
+                  <TradeDocsTable po={poCode || undefined} poId={savedPoId} supplierId={vendorId} productIds={rows.map(r => r.productId).filter((x): x is number => x != null)} buildPreview={buildPayload} onSignActive={setSignActive} onPoLocked={onPoLocked} />
                 </Box>
               )}
             </div>
@@ -1635,9 +1688,9 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           <div className="p2pj-footer__dots">{[1, 2, 3, 4].map(i => <div key={i} className={`p2pj-fdot ${i < stage ? 'is-done' : (i === stage ? 'is-active' : '')}`} />)}</div>
           <div className="p2pj-footer__btns">
             <button className="p2pj-fbtn p2pj-fbtn--ghost" onClick={back}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> {stage === 1 ? 'Change Link' : 'Back'}</button>
-            <button className={`p2pj-fbtn ${!viewOnly && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving || (viewOnly && stage === 4)} onClick={next}>
+            <button className={`p2pj-fbtn ${!roMode && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving || (roMode && stage === 4)} onClick={next}>
               {saving ? (<><Spin s={14} /> {stage === 4 ? (isEdit ? 'Updating…' : 'Generating…') : 'Please wait…'}</>)
-                : viewOnly ? (stage === 4 ? (<>View Only</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
+                : roMode ? (stage === 4 ? (<>View Only</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
                 : stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                 : stage === 4 ? (<>{isEdit ? 'Update Purchase Order' : 'Generate Purchase Order'} <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)
                   : (<>Save &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)}
@@ -1658,6 +1711,11 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           email: sup.email && sup.email !== '—' ? sup.email : undefined,
           risk: 'Compliant',
         }}
+        /* A document uploaded inside the vault changes the very numbers this
+           form's Supplier Legal Status card shows, so re-read them the moment
+           the vault refreshes — previously the card kept the pre-upload
+           percentage until the page was reloaded. */
+        onVaultChange={() => { if (vendorId != null) loadSupplierLegal(vendorId, true); }}
         onClose={() => setVaultOpen(false)}
       />
 
