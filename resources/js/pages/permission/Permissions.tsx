@@ -329,7 +329,7 @@ export default function Permissions() {
       <Row>
         <Col xs={12}>
           {/* Header strip — matches the Clients / Branches module headers. */}
-          <div className="pm-cstrip mb-3">
+          <div className="pm-cstrip mb-2">
             <span className="pm-cstrip-accent" />
             <div className="pm-cstrip-left">
               <div className="pm-cstrip-icon"><i className="ri-shield-keyhole-line" /></div>
@@ -350,10 +350,10 @@ export default function Permissions() {
 
       <Row>
         <Col xs={12}>
-          <Card className="shadow-sm">
+          <Card className="shadow-sm mb-2">
             <CardHeader className="bg-light-subtle border-bottom">
               {showDeptTab && (
-                <div className="d-inline-flex mb-3 p-1 rounded-pill" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.20)' }}>
+                <div className="d-inline-flex mb-2 p-1 rounded-pill" style={{ background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.20)' }}>
                   {(['employee', 'department'] as const).map(m => (
                     <button key={m} type="button" onClick={() => setMode(m)}
                       className="btn btn-sm rounded-pill px-3 fw-semibold border-0"
@@ -367,11 +367,14 @@ export default function Permissions() {
               {/* Picker + Save come off entirely when there is nobody to
                   configure — an empty dropdown next to a dead button reads as
                   a broken page. The empty state below explains it instead. */}
+              {/* align-items-end, not -center: the left column is a label
+                  stacked on a select, so centring floated Save halfway up the
+                  label. Bottom-aligned it sits on the select's own line. */}
               {!noTargets && (
-              <Row className="align-items-center gy-3">
+              <Row className="align-items-end gy-2">
                 {mode === 'employee' && (
                 <Col md={7}>
-                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
+                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-2">
                     <i className="ri-user-settings-line me-1"></i>
                     {targetLabel}
                   </label>
@@ -542,7 +545,7 @@ export default function Permissions() {
                 )}
                 {mode === 'department' && (
                 <Col md={7}>
-                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-1">
+                  <label className="form-label text-muted fs-11 fw-bold text-uppercase mb-2">
                     <i className="ri-building-line me-1"></i>
                     Department
                   </label>
@@ -570,12 +573,13 @@ export default function Permissions() {
                 </Col>
                 )}
                 <Col md={5} className="text-md-end">
-                  {/* Column, not inline: the Button carries Bootstrap's
-                      .d-inline-flex, which is defined AFTER .d-block in the
-                      utilities sheet and therefore wins any display override
-                      put on the button itself — the note ended up sitting
-                      beside it. Stacking is enforced by the parent instead. */}
-                  <div className="d-flex flex-column align-items-start align-items-md-end gap-2">
+                  {/* One line, ending flush with the select opposite it: the
+                      note reads as a small pill sitting beside Save rather than
+                      a banner stacked on top of it, which is what made this
+                      corner twice as tall as the control it belongs to.
+                      flex-wrap keeps the pill dropping under the button on a
+                      narrow viewport instead of squeezing it. */}
+                  <div className="d-flex flex-wrap align-items-center justify-content-start justify-content-md-end gap-2">
                   {/* Delegation note — sits directly above Save, in both
                       Employee and Department modes, so the limit is read at the
                       moment of saving rather than skimmed past at the top of
@@ -583,7 +587,7 @@ export default function Permissions() {
                       will actually store, not neutral information. */}
                   {!isSuperAdmin && (
                     <div
-                      className="d-flex align-items-center gap-2 px-3 py-2 text-start"
+                      className="d-inline-flex align-items-center gap-1 px-2 py-1 rounded-pill text-start flex-shrink-0"
                       /* Long form on hover — the visible line stays one row. */
                       title={isEmployee
                         ? 'This list shows only the employees who report to you. You can grant them any access you hold yourself — disabled checkboxes are permissions you don\'t have.'
@@ -591,17 +595,17 @@ export default function Permissions() {
                       style={{
                         background: 'rgba(245,158,11,0.10)',
                         border: '1px solid rgba(245,158,11,0.40)',
-                        borderRadius: 12,
                         color: '#92400e',
-                        fontSize: 11.5,
-                        lineHeight: 1.5,
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        lineHeight: 1.4,
                         /* One row: the copy below is trimmed to fit, and nowrap
                            keeps a narrow viewport from folding it into three
                            lines the way the full sentence did. */
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      <i className="ri-alert-line flex-shrink-0" style={{ fontSize: 13 }} />
+                      <i className="ri-alert-line flex-shrink-0" style={{ fontSize: 11 }} />
                       <span>
                         {isEmployee
                           ? 'You can grant only access you hold, and only to your reports.'
@@ -618,7 +622,8 @@ export default function Permissions() {
                       background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
                       border: 'none',
                       boxShadow: '0 4px 12px rgba(30,64,175,0.30)',
-                      minWidth: 180,
+                      minWidth: 168,
+                      flexShrink: 0,
                       justifyContent: 'center',
                     }}
                   >

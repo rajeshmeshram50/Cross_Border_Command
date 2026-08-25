@@ -368,40 +368,69 @@ export default function PurchaseOrder() {
   // completed request wins. Returns null when the PO isn't e-signed yet.
   const resolveSignedSigId = async (r: PoRow): Promise<number | null> => {
     if (!r.id || !r.vendor_id) return null;
-    try {
-      const res = await api.get('/clm/signature-requests', { params: { party_id: r.vendor_id, model_name: 'Vendor', sync: 1 } });
-      const list: Array<Record<string, any>> = Array.isArray(res.data?.data) ? res.data.data : [];
-      const match = list
-        .filter(row => String(row.status ?? '').toLowerCase() === 'completed'
-          && ((String(row.document_type) === 'purchase_order' && Number(row.trade_doc_id) === Number(r.id))
-            || Number(row.metadata?.purchase_order_id) === Number(r.id)))
-        .sort((a, b) => Number(b.id) - Number(a.id))[0];
-      return match ? Number(match.id) : null;
-    } catch { return null; }
+    // NOTE: errors are deliberately NOT swallowed here. This resolution is what
+    // decides whether a "with signature" copy may be served at all, so a failed
+    // lookup must read as "couldn't check", never as "not signed" (QA #39/#42).
+    const res = await api.get('/clm/signature-requests', { params: { party_id: r.vendor_id, model_name: 'Vendor', sync: 1 } });
+    const list: Array<Record<string, any>> = Array.isArray(res.data?.data) ? res.data.data : [];
+    const match = list
+      .filter(row => String(row.status ?? '').toLowerCase() === 'completed'
+        && ((String(row.document_type) === 'purchase_order' && Number(row.trade_doc_id) === Number(r.id))
+          || Number(row.metadata?.purchase_order_id) === Number(r.id)))
+      .sort((a, b) => Number(b.id) - Number(a.id))[0];
+    return match ? Number(match.id) : null;
   };
 
-  // For "With Signature" on an e-signed PO, serve the ACTUAL Zoho-executed PDF
-  // (the one with the supplier's real signature) instead of re-rendering the
-  // app template. Falls back to the app render when not signed / unavailable.
-  const poPdfResolved = async (r: PoRow, withSign: boolean): Promise<Blob> => {
-    if (withSign && r.is_signed) {
-      const sigId = await resolveSignedSigId(r);
-      if (sigId) {
+  /* "With Signature" means the ACTUAL Zoho-executed PDF — the one carrying the
+   * supplier's real signature — and nothing else. It used to fall back to the
+   * app render when the PO wasn't signed, which handed the user a document
+   * bearing our static signatory block for a PO nobody had signed (QA #39 view /
+   * #42 download). Now the signed copy is served only when Zoho actually has
+   * one; otherwise nothing opens and the toast says why.
+   *
+   * Eligibility is resolved live (resolveSignedSigId syncs with Zoho) rather
+   * than from the row's `is_signed`, which is only as fresh as the last list
+   * load — so a PO signed minutes ago still serves its signed copy.
+   *
+   * Returns null when the request was refused; the caller stays silent because
+   * the reason has already been surfaced here. `verb` only shapes the wording. */
+  const poPdfResolved = async (r: PoRow, withSign: boolean, verb: 'view' | 'download'): Promise<Blob | null> => {
+    const doing = verb === 'download' ? 'Downloading' : 'Preparing';
+    if (withSign) {
+      let sigId: number | null;
+      try {
+        sigId = await resolveSignedSigId(r);
+      } catch {
+        toast.error('Could not verify signature', `The Zoho Sign status for ${r.po} could not be checked. Please try again in a moment.`);
+        return null;
+      }
+      if (!sigId) {
+        toast.warning('Not signed yet', `${r.po} has no completed Zoho Sign request — the signed copy becomes available once signing is complete. Use “Without Signature” to see the draft.`);
+        return null;
+      }
+      toast.info(`${doing} signed PO PDF…`);
+      try {
         const res = await api.get(`/clm/signature-requests/${sigId}/view-file/0`, { responseType: 'blob' });
         return new Blob([res.data as BlobPart], { type: 'application/pdf' });
+      } catch {
+        toast.error('Signed copy unavailable', 'The signed PDF could not be fetched from Zoho Sign. Please try again in a moment.');
+        return null;
       }
     }
-    const res = await poPdfBlob(r.id!, withSign);
+    toast.info(`${doing} PO PDF (without signature)…`);
+    const res = await poPdfBlob(r.id!, false);
     return res.data as Blob;
   };
 
   const viewPoPdf = async (withSign: boolean) => {
     const r = rows.find(x => x.po === more?.po); setMore(null);
     if (!r?.id) return;
+    // Opened up-front (inside the click) so the popup blocker lets it through;
+    // closed again if the signature check refuses the request.
     const w = window.open('', '_blank');
-    toast.info(`Preparing PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
     try {
-      const blob = await poPdfResolved(r, withSign);
+      const blob = await poPdfResolved(r, withSign, 'view');
+      if (!blob) { if (w) w.close(); return; }
       const url = URL.createObjectURL(blob);
       if (w) w.location.href = url; else window.open(url, '_blank');
       setTimeout(() => URL.revokeObjectURL(url), 60000);
@@ -410,9 +439,9 @@ export default function PurchaseOrder() {
   const downloadPoPdf = async (withSign: boolean) => {
     const r = rows.find(x => x.po === more?.po); setMore(null);
     if (!r?.id) return;
-    toast.info(`Downloading PO PDF${withSign ? ' (signed)' : ' (without signature)'}…`);
     try {
-      const blob = await poPdfResolved(r, withSign);
+      const blob = await poPdfResolved(r, withSign, 'download');
+      if (!blob) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -778,7 +807,18 @@ export default function PurchaseOrder() {
 
       {/* ── CREATE / EDIT PO WIZARD ──────────────────────────────────── */}
       {wizard && (
-        <CreatePoWizard editRow={wizard.editRow} viewOnly={wizard.viewOnly} onClose={() => setWizard(null)} onSaved={handleSaved} />
+        <CreatePoWizard
+          editRow={wizard.editRow}
+          viewOnly={wizard.viewOnly}
+          /* The PO is created on leaving stage 3, so closing from stage 4 with
+             the X (instead of "Generate Purchase Order") still leaves a real PO
+             behind — the list used to keep showing the pre-create page until a
+             manual refresh (QA #47). Reload on every close; jump to page 1 only
+             when something was actually created, so simply reviewing a PO on
+             page 3 doesn't bounce the user back to the top. */
+          onClose={(savedId) => { setWizard(null); if (savedId) setPage(1); reload(); }}
+          onSaved={handleSaved}
+        />
       )}
 
       {/* ── TRADE DOCUMENTS & AGREEMENTS MODAL ───────────────────────── */}

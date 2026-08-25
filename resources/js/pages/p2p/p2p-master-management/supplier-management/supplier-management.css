@@ -13,8 +13,11 @@
    "What We Are Doing Here" box (bref), and the purple supplier table (sl-*).
    ──────────────────────────────────────────────────────────────────────── */
 
-.sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:6px;margin:-6px 0 0;min-width:0;}
-@media(max-width:640px){.sup-fig{margin:-2px 0 0;}}
+/* 8px, the app-wide page gap (.page-content sets the same 8px on the other
+   three sides). The stack was 6px with a -6px pull on top, so the strip sat
+   2px under the menu while the page edges were 8px away. */
+.sup-fig{font-family: var(--font-sans);display:flex;flex-direction:column;gap:8px;margin:0;min-width:0;}
+@media(max-width:640px){.sup-fig{margin:0;}}
 
 /* HEADER STRIP */
 .sup-fig .cstrip{position:relative;overflow:hidden;display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 20px;border:1px solid #c4b5fd;border-radius:16px;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 25%,#ede9fe 55%,#ddd6fe 85%,#c4b5fd 100%);box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.2),0 2px 8px rgba(0,0,0,.06);}
@@ -46,14 +49,69 @@
 .sup-fig .bref-box__header-sep{width:1px;height:13px;background:#C4B5FD;flex-shrink:0;}
 .sup-fig .bref-box__header-title{font-size:11px;font-weight:600;color:#3b0764;letter-spacing:-.2px;line-height:1;white-space:nowrap;}
 .sup-fig .bref-box__header-sub{font-size:9.5px;font-weight:500;color:#6d28d9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* Scope tabs on the strip (All / Domestic / International) — ported from the
+   Sourcing Tracker header in the P2P prototype (.c2c-scope), recoloured from
+   its cyan into the violet this page runs on. Sits left of the collapse
+   chevron, inside .bref-box__header-right. */
+.sup-fig .sup-scope{display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
+.sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:10.5px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:transparent;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
+.sup-fig .sup-scope__tab i{font-size:12px;flex-shrink:0;}
+.sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.12);}
+.sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed 60%,#5b21b6);box-shadow:0 3px 9px -3px rgba(91,33,182,.6),0 1px 0 rgba(255,255,255,.25) inset;}
+.sup-fig .sup-scope__tab.is-active:hover{color:#fff;}
+@media(max-width:1200px){.sup-fig .sup-scope__tab{padding:6px 9px;font-size:9.5px;}}
+/* Below this the strip's own text already wraps; the labels lose their nouns
+   rather than the group losing its place. */
+@media(max-width:900px){.sup-fig .sup-scope__tab{padding:6px 8px;}}
+/* Below this the strip's own title and the tab group stop fitting on one line.
+   They were sharing it anyway — .bref-box__header-mid is flex:1 while the tab
+   group is flex-shrink:0, so on a phone the group kept its width and simply
+   sat ON TOP of "…What We Are Doing Here".
+   Wrapping the header and giving the right-hand block a full-width line of its
+   own puts the tabs under the title instead of over it; the collapse chevron
+   rides along and ends up at the far right of that line, which is where a
+   thumb expects it. */
+@media(max-width:820px){
+  .sup-fig .bref-box__header{flex-wrap:wrap;row-gap:8px;}
+  .sup-fig .bref-box__header-mid{min-width:0;}
+  .sup-fig .bref-box__header-right{flex:1 1 100%;justify-content:space-between;width:100%;}
+  .sup-fig .sup-scope{flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;}
+  .sup-fig .sup-scope::-webkit-scrollbar{display:none;}
+  .sup-fig .sup-scope__tab{flex:1 1 auto;justify-content:center;}
+}
+/* "Domestic Suppliers" / "International Suppliers" do not both fit a 390px
+   phone. The noun is the same on both tabs and the adjective is the whole
+   distinction, so the noun is what goes. */
+@media(max-width:560px){
+  .sup-fig .sup-scope__word{display:none;}
+  .sup-fig .bref-box__header-sub{display:none;}
+  /* "Supplier Management │ What We Are Doing Here" is a desktop breadcrumb:
+     the left half repeats the page header sitting directly above it, and the
+     separator only earns its keep when both halves fit comfortably. On a
+     phone the two together left neither readable, so the repeat goes and the
+     heading gets the row to itself. */
+  .sup-fig .bref-box__header-label,
+  .sup-fig .bref-box__header-sep{display:none;}
+  .sup-fig .bref-box__header{gap:10px;padding:8px 10px;min-height:0;}
+  .sup-fig .bref-box__header-ico{width:32px;height:32px;border-radius:9px;}
+  .sup-fig .bref-box__header-title{font-size:12.5px;}
+  /* Breathing room between the two tabs and the collapse chevron — they were
+     touching, which read as one control. */
+  .sup-fig .bref-box__header-right{gap:10px;}
+  .sup-fig .sup-scope{margin:0;}
+  .sup-fig .sup-scope__tab{padding:8px 10px;font-size:10.5px;}
+}
+[data-bs-theme="dark"] .sup-fig .sup-scope,
+[data-layout-mode="dark"] .sup-fig .sup-scope{background:rgba(255,255,255,.06);border-color:rgba(167,139,250,.34);}
+[data-bs-theme="dark"] .sup-fig .sup-scope__tab,
+[data-layout-mode="dark"] .sup-fig .sup-scope__tab{color:#c4b5fd;}
+
 .sup-fig .bref-box__header-right{flex-shrink:0;display:flex;align-items:center;gap:6px;position:relative;z-index:1;}
 .sup-fig .bref-box__toggle{width:26px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.75);border:1.5px solid rgba(124,58,237,.22);color:#7c3aed;transition:transform .24s cubic-bezier(.22,1,.36,1);box-shadow:0 1px 4px rgba(124,58,237,.10),inset 0 1px 0 rgba(255,255,255,.9);}
 .sup-fig .bref-box.is-collapsed .bref-box__toggle{transform:rotate(-90deg);}
-.sup-fig .bref-box__body{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));background:linear-gradient(180deg,#F7F4FF 0%,#F8FAFC 100%);gap:0;overflow:hidden;max-height:320px;transition:max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s;opacity:1;}
-.sup-fig .bref-box.is-collapsed .bref-box__body{max-height:0;opacity:0;}
-.sup-fig .bref-item{position:relative;padding:10px 11px 11px;background:#fff;margin:7px 5px;border-radius:11px;border:1.5px solid #ECE7F8;transition:box-shadow .18s,border-color .18s,transform .18s;cursor:default;display:flex;flex-direction:column;gap:0;overflow:hidden;box-shadow:0 1px 4px rgba(15,23,42,.04);}
-.sup-fig .bref-item:first-child{margin-left:7px;}
-.sup-fig .bref-item:last-child{margin-right:7px;}
+.sup-fig .bref-box__body{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));background:linear-gradient(180deg,#F7F4FF 0%,#F8FAFC 100%);gap:8px;padding:8px;overflow:hidden;max-height:320px;transition:max-height .3s cubic-bezier(.22,1,.36,1),opacity .22s;opacity:1;}
+.sup-fig .bref-box.is-collapsed .bref-box__body{max-height:0;padding-top:0;padding-bottom:0;opacity:0;}
+.sup-fig .bref-item{position:relative;padding:10px 11px 11px;background:#fff;margin:0;border-radius:11px;border:1.5px solid #ECE7F8;transition:box-shadow .18s,border-color .18s,transform .18s;cursor:default;display:flex;flex-direction:column;gap:0;overflow:hidden;box-shadow:0 1px 4px rgba(15,23,42,.04);}
 .sup-fig .bref-item:hover{border-color:#C4B5FD;box-shadow:0 6px 18px rgba(124,58,237,.14),0 1px 4px rgba(15,23,42,.04);transform:translateY(-2px);}
 .sup-fig .bref-item::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;border-radius:11px 11px 0 0;background:linear-gradient(90deg,#8b5cf6,#7c3aed);}
 .sup-fig .bref-item__top{display:flex;align-items:center;gap:6px;margin-bottom:0;}
@@ -421,6 +479,40 @@
      collide with their count badges. */
   .sup-fig .sl-tab { flex-shrink: 0; }
   .sup-fig .cstrip { flex-direction: column; align-items: flex-start; gap: 10px; }
+}
+
+/* Below this the page scrolls normally instead of fitting itself to the
+   viewport — see the recompute() bail-out in Vendors.tsx. The card must be
+   free to be as tall as its rows, so nothing here may cap or stretch it. */
+@media (max-width: 820px) {
+  .sup-fig .sl-table-scroll { min-height: 0 !important; }
+  /* Only the auto margin goes. With a content-height card there is no bottom
+     for margin-top:auto to push the pager to, so it just opened a gap after
+     the last row.
+     `position: sticky; left: 0` STAYS. The pager lives inside the
+     horizontally-scrolling table box, and sticky-left is the only thing
+     holding it against the card's left edge while the table is swiped
+     sideways — dropping it let the pager ride along with the columns and
+     tear out past the card's rounded edge. */
+  .sup-fig .sl-table-scroll > .wl-pager { margin-top: 0; }
+  /* "Showing 1-10 of 21" + "Rows per page" + the page pill + two arrows is
+     more than a 390px card can hold on one line. .wl-pager already sets
+     flex-wrap, but its two halves are single flex children with nothing
+     forcing them onto separate lines, so the right half simply overflowed the
+     card's rounded edge instead of dropping below.
+     Each half takes a full row here, centred, and the right half is allowed to
+     wrap within itself for the narrowest phones. */
+  .sup-fig .wl-pager { justify-content: center; padding: 10px 12px; }
+  .sup-fig .wl-pager > .tc-wl-info { flex: 1 1 100%; text-align: center; }
+  .sup-fig .wl-pager > .tc-wl-right {
+    flex: 1 1 100%;
+    display: flex; flex-wrap: wrap;
+    align-items: center; justify-content: center; gap: 8px;
+  }
+  /* The step guide is four cards of prose above the list. On a phone it costs
+     most of the first screen before a single supplier is visible — collapsed
+     by default there, still one tap away. */
+  .sup-fig .bref-box__body { grid-template-columns: 1fr; }
 }
 
 /* ───── Dark mode for the purple Figma supplier list ─────

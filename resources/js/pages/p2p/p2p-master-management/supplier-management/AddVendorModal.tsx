@@ -140,6 +140,8 @@ export type VendorPayload = {
   stateCode: string;
   city: string;
   pincode: string;
+  /** Google Maps link for the premises — domestic and international alike. */
+  googleLocation: string;
   // Primary contact
   contactName: string;
   designation: string;
@@ -359,10 +361,16 @@ export default function AddVendorModal(props: {
    *  straight onto Step 4 instead of replaying Step 1. Ignored in
    *  create mode (no vendorId) so we never skip past required setup. */
   initialStep?: StepKey;
+  /** Which scope the user picked in SupplierScopeGate before this opened.
+   *  Create mode only — in edit mode the supplier's country already says
+   *  which it is, so the gate is skipped and this arrives undefined.
+   *  Step 2 of this work reads it to decide what Country may offer:
+   *  domestic → India only, international → every country except India. */
+  scope?: 'domestic' | 'international';
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
-  const { onClose, onSubmit, vendorId: initialVendorId, initialStep } = props;
+  const { onClose, onSubmit, vendorId: initialVendorId, initialStep, scope } = props;
   const toast = useToast();
   const confirm = useConfirm();
   const isEdit = !!initialVendorId;
@@ -619,10 +627,15 @@ export default function AddVendorModal(props: {
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, expiryDate?: string) => {
     const ownerId = vendorId || initialVendorId || null;
     if (!ownerId) {
-      // Vendor row needs to exist before /segment-uploads/supplier/{id}
-      // can write. The supplier form posts on Step 1 save so this only
-      // bites if the user uploads before saving Step 1.
-      return;
+      // Vendor row needs to exist before /segment-uploads/supplier/{id} can
+      // write. Said out loud rather than returning quietly: the row already
+      // shows the file by this point, so a silent return leaves the user
+      // looking at an upload that was never sent anywhere.
+      toast.error(
+        'Save Step 1 first',
+        'The supplier has to exist before documents can be attached to it. Save Supplier Legal Identity, then upload.',
+      );
+      throw new Error('vendor not saved');
     }
     const [sub, doc_code] = refKey.split('::');
     const category = SUB_TO_CAT_V[sub];
@@ -650,8 +663,33 @@ export default function AddVendorModal(props: {
           };
         });
       }
-    } catch {
-      // Silent — keep blob URL in state so the user still sees the upload
+    } catch (e: any) {
+      /* This used to swallow the error and keep the blob URL, so the row went
+         on showing the file while segment_doc_uploads had never received it —
+         which is exactly why an upload made here could be missing from the
+         Evidence Vault later with no sign anything had gone wrong. The vault
+         reads the table, not this component's state.
+         Now the reason is shown and the optimistic row is thrown away, so what
+         is on screen and what is stored agree again. */
+      const status = e?.response?.status;
+      const body   = e?.response?.data;
+      const detail = body?.errors
+        ? Object.values(body.errors as Record<string, string[]>).flat()[0]
+        : body?.message;
+      toast.error(
+        status === 403 ? 'Not allowed' : 'Upload failed',
+        detail || 'The document could not be saved. Please try again.',
+      );
+      setSegmentRefUploads(prev => {
+        const existing = prev[refKey];
+        if (existing?.url && existing.url.startsWith('blob:')) {
+          try { URL.revokeObjectURL(existing.url); } catch {}
+        }
+        const next = { ...prev };
+        delete next[refKey];
+        return next;
+      });
+      throw e;
     }
   };
 
@@ -675,6 +713,16 @@ export default function AddVendorModal(props: {
   );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
+  /* A pasted Google Maps link. An address line does not locate a supplier —
+     plot numbers repeat across industrial estates and an overseas address is
+     unverifiable from text — so procurement and audit navigate by this. */
+  const [googleLocation, setGoogleLocation] = useState('');
+  /* Scheme-checked only. Google hands out three different shapes for the same
+     place — a share link (maps.app.goo.gl/…), a copied browser URL
+     (/maps/place/…/@lat,lng,17z/data=…) and a coordinate query (?q=lat,lng) —
+     so matching one pattern would reject the other two. What this has to catch
+     is someone pasting an address instead of a link. */
+  const mapsLinkOk = /^https?:\/\/[^\s]+$/i.test(googleLocation.trim());
 
   /* State dropdown options. Source is master_states (the full per-
      country list), filtered by the selected Country. Country is the
@@ -690,6 +738,66 @@ export default function AddVendorModal(props: {
       .map(r => ({ value: r.id, label: r.name }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [stateRows, country]);
+  /* ── Country, narrowed by the scope chosen in SupplierScopeGate ──────────
+     The gate already asked whether this is a domestic or an international
+     supplier, so the Country dropdown must not go on offering the other
+     answer — a "domestic" supplier sitting on Germany, or an "international"
+     one on India, is a contradiction the rest of the form then has to cope
+     with (GST applicability, State Code, the segment document_type below are
+     all derived from this one field).
+
+     EDIT mode keeps the full list: the gate is skipped there because the
+     supplier's country is already on record, and hiding options would make an
+     existing row unsavable if its country fell outside the filter. */
+  /* The supplier's scope, whether it came from the gate (create) or from the
+     country already on record (edit).
+     Deriving it from the CURRENT value is what makes filtering safe in edit
+     mode: the list is built from the very value the field holds, so that value
+     is always in it. Filtering off the gate's answer instead would drop an
+     existing supplier's own country out of its dropdown, leaving the field
+     blank and the required-check impossible to pass. */
+  const effectiveScope: 'domestic' | 'international' | null = useMemo(() => {
+    const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim().toLowerCase();
+    if (name) return name === 'india' ? 'domestic' : 'international';
+    return scope ?? null;   // create mode, before a country has been chosen
+  }, [country, countryOpts, scope]);
+
+  /* Domestic means India and nothing else, so there is nothing to choose. */
+  const countryScopeLocked = effectiveScope === 'domestic';
+
+  const scopedCountryOpts = useMemo<Opt[]>(() => {
+    if (!effectiveScope) return countryOpts;
+    const isIndia = (o: Opt) => String(o.label).trim().toLowerCase() === 'india';
+    return effectiveScope === 'domestic'
+      ? countryOpts.filter(isIndia)
+      : countryOpts.filter(o => !isIndia(o));
+  }, [countryOpts, effectiveScope]);
+
+  /* Domestic means India, so fill it in rather than making someone pick the
+     only option there is. Runs once the country master has actually loaded —
+     on a cold masters cache this effect fires first with an empty list, and
+     `countryOpts` is in the deps so it comes back when the rows arrive.
+     Guarded on `!country` so it never overwrites a real choice. */
+  useEffect(() => {
+    if (isEdit || scope !== 'domestic' || country || countryOpts.length === 0) return;
+    const india = countryOpts.find(o => String(o.label).trim().toLowerCase() === 'india');
+    if (!india) return;
+    setCountry(india.value);
+    setState('');
+    setStateCode('');
+  }, [scope, isEdit, countryOpts, country]);
+
+  /* Country is not a free field once the supplier has one: GST applicability,
+     the State Code requirement and which segment documents apply are all
+     derived from it, so changing it silently rewrites three other parts of
+     this form. Said out loud rather than just greying the field out. */
+  const scopeLockToast = () => toast.info(
+    'Country is fixed',
+    isEdit
+      ? 'This is a domestic supplier — GST and State Code are tied to India. Changing the country would change which documents apply, so it is set at creation.'
+      : 'You chose Domestic, so this supplier is registered in India. Close and add them as an International supplier to pick another country.',
+  );
+
   /* Supplier trade type — India → domestic, any other country → international.
    * `country` holds the master_countries id, so resolve to the name first.
    * Drives the segment-rule document_type fetch and the segment validation. */
@@ -1485,6 +1593,7 @@ export default function AddVendorModal(props: {
           setStateCode(pa.state_code ?? '');
           setCity(pa.city ?? '');
           setPincode(pa.pincode ?? '');
+          setGoogleLocation(pa.google_location ?? '');
           setContactName(pa.contact_name ?? '');
           setDesignation(pa.designation ?? '');
           setContactNo(pa.contact_no ?? '');
@@ -1659,6 +1768,7 @@ export default function AddVendorModal(props: {
     registeredOffice: 'Registered Office Address', country: 'Country', state: 'State',
     stateCode: 'State Code', city: 'City', contactName: 'Contact Person Name',
     designation: 'Designation', contactNo: 'Contact No', email: 'Email', pincode: 'Pincode',
+    googleLocation: 'Google Location',
   };
 
   /* Set the field errors, name them in the toast, and scroll the first bad
@@ -1718,6 +1828,14 @@ export default function AddVendorModal(props: {
     // now blocks on the frontend and never wastes a /vendors/step/identity call.
     if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                 errs.country          = 'Country is required';
+    /* Optional, but a half-pasted value is worse than an empty one: it reads
+       as answered while leading nowhere. Scheme-checked rather than matched
+       against one Google URL shape — a share link (maps.app.goo.gl), a copied
+       browser URL (/maps/place/...) and a coordinate query (?q=lat,lng) are
+       all legitimate, and pinning the pattern to one rejects the other two. */
+    if (googleLocation.trim() && !mapsLinkOk) {
+      errs.googleLocation = 'Enter a full link starting with https://';
+    }
     // State + State Code are GST (Indian) constructs — required only for a domestic
     // supplier. An international (non-India) supplier has neither, so skip them.
     if (supplierDocType === 'domestic') {
@@ -1761,6 +1879,7 @@ export default function AddVendorModal(props: {
           state_code: stateCode || null,
           city: city || null,
           pincode: pincode || null,
+          google_location: googleLocation.trim() || null,
         },
       };
 
@@ -1839,6 +1958,14 @@ export default function AddVendorModal(props: {
     const errs: Record<string, string> = {};
     if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                  errs.country          = 'Country is required';
+    /* Optional, but a half-pasted value is worse than an empty one: it reads
+       as answered while leading nowhere. Scheme-checked rather than matched
+       against one Google URL shape — a share link (maps.app.goo.gl), a copied
+       browser URL (/maps/place/...) and a coordinate query (?q=lat,lng) are
+       all legitimate, and pinning the pattern to one rejects the other two. */
+    if (googleLocation.trim() && !mapsLinkOk) {
+      errs.googleLocation = 'Enter a full link starting with https://';
+    }
     // State + State Code are Indian GST constructs — domestic-only (see identity validation).
     if (supplierDocType === 'domestic') {
       if (!state)            errs.state     = 'State is required';
@@ -1870,6 +1997,7 @@ export default function AddVendorModal(props: {
         state_code: stateCode,
         city,
         pincode: pincode || '',
+        google_location: googleLocation.trim(),
         contact_name: contactName,
         designation,
         contact_no: contactNo,
@@ -2131,7 +2259,7 @@ export default function AddVendorModal(props: {
     onSubmit({
       companyName, legalName, vendorType, website, gstApplicable, gstNumber, riskLevel,
       vendorBehaviour, segment, complianceBehaviour,
-      registeredOffice, country, state, stateCode, city, pincode,
+      registeredOffice, country, state, stateCode, city, pincode, googleLocation,
       contactName, designation, contactNo, email, whatsappEnabled,
       dueDiligence: ddRows,
       ownerKyc: ownerRows,
@@ -2952,7 +3080,7 @@ export default function AddVendorModal(props: {
     fd.append('contact_name', contactDraft.name);
     fd.append('designation', contactDraft.designation || '');
     fd.append('contact_no', contactDraft.phone || '');
-    fd.append('email', contactDraft.email || '');
+    fd.append('email', emailNorm);
     fd.append('whatsapp_enabled', contactDraft.whatsapp ? '1' : '0');
     if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
     else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
@@ -3060,7 +3188,7 @@ export default function AddVendorModal(props: {
               disabled={!vendorId}
               title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
             >
-              <i className="ri-price-tag-line" /> Map Product
+              <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product</span>
             </button>
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -3143,6 +3271,7 @@ export default function AddVendorModal(props: {
                   ],
                   [
                     { label: 'Registered Office Address', value: registeredOffice || '—' },
+                    { label: 'Google Location', value: googleLocation || '—' },
                     { label: 'Country',             value: labelFor(country, countryOpts) || '—' },
                     { label: 'State',               value: labelFor(state, stateOpts) || '—' },
                     { label: 'City',                value: city || '—' },
@@ -3421,13 +3550,16 @@ export default function AddVendorModal(props: {
                   </div>
                   <div className="avm-grid-4">
                     <Field label="Country" required addNew onAdd={() => setQuickAdd('countries')} error={fieldErrors.country}>
-                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                      <LockField
+                        locked={stateLocked || countryScopeLocked}
+                        onLockClick={stateLocked ? lockToast : scopeLockToast}
+                      >
                         <SelectInput
                           value={country}
                           onChange={(v) => { setCountry(v); setState(''); setStateCode(''); clearFieldError('country'); }}
-                          placeholder="Select Country"
-                          options={countryOpts}
-                          disabled={stateLocked}
+                          placeholder={scope === 'international' ? 'Select Country (outside India)' : 'Select Country'}
+                          options={scopedCountryOpts}
+                          disabled={stateLocked || countryScopeLocked}
                         />
                       </LockField>
                     </Field>
@@ -3455,7 +3587,10 @@ export default function AddVendorModal(props: {
                     {/* State Code is an Indian GST construct (2-digit GST state code).
                         Shown for every supplier, but for a non-India (international)
                         one it's disabled with a "Not applicable" placeholder + a toast
-                        on click. The State field itself stays available. */}
+                        on click. Kept visible rather than removed so the address row
+                        keeps the same four fields in the same places whichever scope
+                        the supplier is — the field explains why it is empty, which a
+                        missing field cannot. */}
                     <Field label="State Code" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.stateCode}>
                       {/* Derived from the selected State — read-only so it can't drift
                           out of sync with the State (GST state code is fixed per state). */}
@@ -3484,13 +3619,31 @@ export default function AddVendorModal(props: {
                       />
                     </Field>
                   </div>
-                  {/* GST Number lives with the address because its first 2 digits
-                      ARE the state code — derived purely from the country (India →
-                      applies), so it only appears for a domestic (Indian) supplier
-                      and stays hidden for an international one. No separate "GST
-                      Applicable" toggle (mirrors the Customer master). */}
-                  {gstApplicable === 'Yes' && (
-                    <div className="avm-grid-4">
+                  {/* Google Location + GST Number share a row.
+                      GST Number is 15 fixed characters, so it never needed the
+                      half-width it was getting in its own 4-up grid, and the
+                      Maps link is the one field on this card that benefits from
+                      the space. On an international supplier GST does not apply,
+                      the row drops to one column and the link takes it all.
+                      Google Location is shown for BOTH scopes: an address line
+                      locates neither, and the overseas one is the harder of the
+                      two to verify from text alone. */}
+                  <div className={gstApplicable === 'Yes' ? 'avm-grid-2' : 'avm-grid-1'}>
+                    <Field label="Google Location" error={fieldErrors.googleLocation}>
+                      <input
+                        className="avm-input"
+                        placeholder="Paste the Google Maps link — e.g. https://maps.app.goo.gl/…"
+                        value={googleLocation}
+                        maxLength={1000}
+                        onChange={e => { setGoogleLocation(e.target.value); clearFieldError('googleLocation'); }}
+                      />
+                    </Field>
+                    {/* GST Number sits with the address because its first 2 digits
+                        ARE the state code. Derived purely from the country (India →
+                        applies), so it only appears for a domestic supplier — there
+                        is no separate "GST Applicable" toggle (mirrors the Customer
+                        master). */}
+                    {gstApplicable === 'Yes' && (
                       <Field label="GST Number" required error={fieldErrors.gstNumber}>
                         <LockField locked={stateLocked} onLockClick={lockToast}>
                           <input
@@ -3506,8 +3659,8 @@ export default function AddVendorModal(props: {
                           />
                         </LockField>
                       </Field>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </SectionCard>
               )}
 
@@ -3551,7 +3704,14 @@ export default function AddVendorModal(props: {
                         />
                       </Field>
                       <Field label="Email" required error={fieldErrors.email}>
-                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value); clearFieldError('email'); }} />
+                        {/* Lower-cased as it is typed. The domain half of an address
+                            is case-INSENSITIVE, so Gmail@gmail.com and gmail@gmail.com
+                            are the same mailbox — but stored as typed they are two
+                            different strings, and every duplicate check here already
+                            compares lower-cased. That mismatch is what let the same
+                            contact be added twice. Normalising at the input keeps what
+                            is shown, what is compared and what is stored identical. */}
+                        <input className="avm-input" placeholder="rahul@abclogistics.com" value={email} readOnly={primaryLocked} onChange={e => { setEmail(e.target.value.toLowerCase()); clearFieldError('email'); }} />
                       </Field>
                     </div>
                     <div className="avm-grid-2">
@@ -4447,7 +4607,9 @@ function ContactAddPopup(props: {
               />
             </Field>
             <Field label="Email" required error={errors.email}>
-              <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => { set('email', e.target.value); setErrors(prev => ({ ...prev, email: undefined })); }} />
+              {/* Lower-cased on entry — same reason as the primary contact's
+                  email field above: the uniqueness check compares lower-cased. */}
+              <input className="avm-input" placeholder="Enter email" value={draft.email} onChange={e => { set('email', e.target.value.toLowerCase()); setErrors(prev => ({ ...prev, email: undefined })); }} />
             </Field>
           </div>
 
@@ -4967,8 +5129,14 @@ function SupplierSegmentRefTable(props: {
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name, expiry: expiryDate || undefined } };
     });
     // Awaited (not fire-and-forget) so the popup's Save button spinner tracks
-    // the real upload before the popup closes.
-    await persistUpload(refKey, f, row.name, expiryDate);
+    // the real upload before the popup closes. A throw means the server did
+    // not take it — report false so the popup stays open on the failed row
+    // rather than closing as though the document were filed.
+    try {
+      await persistUpload(refKey, f, row.name, expiryDate);
+    } catch {
+      return false;
+    }
     return true;
   };
   const [q, setQ] = useState('');
@@ -6714,22 +6882,45 @@ export const SCOPED_CSS = `
 }
 .avm-backdrop {
   position: fixed; inset: 0; z-index: 1090;
+  /* 100dvh, not the implicit height of inset:0. On mobile Safari the URL bar
+     is counted OUT of dvh but IN of vh/layout height, so a dialog sized off
+     vh comes out taller than the screen actually is — which is what pushed
+     the "Add Supplier" header above the top of the phone. Same reason the app
+     shell uses dvh (velzon/Layouts/index.tsx). vh first as the fallback for
+     browsers without dvh. */
+  height: 100vh;
+  height: 100dvh;
   background: rgba(40, 44, 52, .42);
   backdrop-filter: blur(7px) saturate(118%);
   -webkit-backdrop-filter: blur(7px) saturate(118%);
-  display: flex; align-items: flex-start; justify-content: center;
+  display: flex; align-items: center; justify-content: center;
   padding: 24px 20px;
   overflow-y: auto;
   font-family: var(--font-sans);
 }
 .avm-modal {
   width: 100%; max-width: 1200px;
-  /* FIXED height so the dialog never resizes when you switch tabs/steps with
-     different amounts of content — the body (.avm-body) scrolls internally
-     instead. (Shrink-to-fit was jarring: the popup visibly grew/shrank per
-     tab.) */
-  height: calc(100vh - 48px);
-  margin: auto;
+  /* Sized to its content between a floor and the viewport.
+     It used to be a flat height of calc(100vh - 48px) — full height, always.
+     That was chosen so the dialog would not resize when you switch tabs, and
+     it holds on a laptop where every tab overflows anyway. On a tall monitor
+     it does not: Step 1 ends around two-thirds down and the rest of the
+     dialog is empty lavender, which is what makes the popup look broken on
+     the server and fine locally.
+     The floor is what keeps the anti-jump property that fixed height was
+     protecting — every tab with a normal amount of content lands on it, so
+     switching between them still moves nothing. Only a genuinely long tab
+     grows, and it stops at the viewport and scrolls inside (.avm-body). */
+  height: auto;
+  /* No margin:auto here. Auto margins absorb free space in both directions and
+     override align-items — including NEGATIVE free space, so the moment the
+     dialog is taller than the backdrop its top is pushed out of the scroll
+     range and cannot be reached. The backdrop centres it instead (safe now
+     that max-height keeps it inside the viewport). */
+  min-height: min(660px, calc(100vh - 48px));
+  min-height: min(660px, calc(100dvh - 48px));
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
   /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
      white section cards read as elevated, not flat on plain white. */
   background:
@@ -6746,6 +6937,71 @@ export const SCOPED_CSS = `
   color: #1e1b4b;
 }
 .avm-modal *, .avm-modal *::before, .avm-modal *::after { box-sizing: border-box; }
+
+/* ── Narrow screens ───────────────────────────────────────────────────────
+   The dialog is a desktop wizard — a header carrying two buttons, a two-across
+   stepper, a tab strip of full-sentence labels, and 4-up field grids — all
+   sized against ~1200px. Two tiers below that, each giving up the row that
+   stops fitting.
+
+   Rule followed throughout: nothing that a user must be able to REACH is
+   allowed to wrap or scroll out of view. The close button therefore never
+   leaves the title row; the Map Product button loses its words instead. */
+@media (max-width: 820px) {
+  .avm-backdrop { padding: 10px; }
+  .avm-modal { max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); border-radius: 18px; }
+  /* One step per row. Side by side these got ~150px each, which is narrower
+     than "Supplier Legal Identity" can wrap into. min-width has to be cleared
+     with them or the column itself overflows a 360px phone. */
+  .avm-stepper { flex-direction: column; gap: 8px; }
+  .avm-step { min-width: 0; }
+  .avm-stepper-wrap { padding: 10px 12px 2px; }
+  /* Both tab labels are full sentences. Let the strip swipe rather than clip
+     the second one. flex-start, not centre: a centred overflowing flex row
+     spills out of BOTH ends and the leading one cannot be scrolled back to. */
+  .avm-tabs { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .avm-tabs::-webkit-scrollbar { display: none; }
+  .avm-tab { flex: 0 0 auto; padding: 8px 10px; font-size: 11.5px; }
+}
+
+@media (max-width: 700px) {
+  .avm-backdrop { padding: 6px; }
+  .avm-modal {
+    /* No floor on a phone. The 660px minimum exists to stop the dialog
+       jumping between DESKTOP tabs; here it only forces empty space under a
+       short form. */
+    min-height: 0;
+    max-height: calc(100vh - 12px);
+    max-height: calc(100dvh - 12px);
+    border-radius: 14px;
+  }
+  .avm-head { padding: 10px 12px; gap: 8px; }
+  .avm-head-left { min-width: 0; flex: 1; }
+  .avm-head-icon { width: 32px; height: 32px; border-radius: 9px; }
+  .avm-title { font-size: 15px; }
+  .avm-sub { display: none; }
+  /* Words go, icon stays — the button keeps working and the close button
+     keeps its place. Wrapping the whole group onto a second row instead would
+     push the only way out of the dialog below the fold on a short screen. */
+  .avm-map-btn-label { display: none; }
+  .avm-map-btn { padding: 0 9px; }
+  .avm-body { padding: 10px 12px 12px; overflow-x: hidden; }
+  /* Full-width stacked buttons — a 13px label in a 90px button is a miss on
+     a thumb. */
+  .avm-foot { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
+  .avm-foot > * { flex: 1 1 100%; }
+  .avm-foot-right { display: flex; gap: 8px; }
+  .avm-foot-right > * { flex: 1; justify-content: center; }
+}
+
+/* Anything below this is a small phone in portrait. */
+@media (max-width: 420px) {
+  .avm-title { font-size: 14px; }
+  .avm-tab { padding: 7px 8px; font-size: 11px; }
+  .avm-step { padding: 10px 12px; gap: 10px; }
+  .avm-step-title { font-size: 12.5px; }
+  .avm-step-sub { font-size: 10px; }
+}
 
 /* Header — purple gradient bar (.sf-head spec from the Figma) with a
    subtle white hairline border so the bar reads as a framed strip. */

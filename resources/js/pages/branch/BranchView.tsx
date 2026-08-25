@@ -40,6 +40,17 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   ];
   const filled = completionFields.filter(Boolean).length;
   const completionPct = Math.round((filled / completionFields.length) * 100);
+  /* The meter was fixed on danger, so a 93%-complete branch was painted the
+     same red as a 10% one — the colour said "something is wrong" about a
+     profile that is nearly finished. Tiered like the Profile % meter on the HR
+     Employees list, so the colour and the number agree. */
+  const completionTone: 'success' | 'info' | 'warning' | 'danger' =
+    completionPct >= 90 ? 'success'
+      : completionPct >= 75 ? 'info'
+        : completionPct >= 60 ? 'warning'
+          : 'danger';
+  // Resolved after the GRAD_* constants below are declared — see completionGrad
+  // where the meter is rendered.
 
   const location = [branch.city, branch.state, branch.country].filter(Boolean).join(', ');
   const initials = `${branch.name.charAt(0)}${branch.name.split(' ')[1]?.charAt(0) || ''}`.toUpperCase();
@@ -50,7 +61,12 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   const cardStyle: React.CSSProperties = {
     borderRadius: 20,
     border: '1px solid var(--vz-border-color)',
-    boxShadow: '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)',
+    // Blur must stay UNDER the 8px gutter. At the old `0 4px 24px` each card
+    // threw a 24px haze into an 8px channel, so both shadows covered the whole
+    // gap and met in the middle — the background never showed through and the
+    // cards read as one joined slab however exactly the 8px was measured.
+    // 6px of blur leaves clean page colour down the centre of every channel.
+    boxShadow: '0 4px 14px rgba(64,81,137,0.10), 0 1px 3px rgba(64,81,137,0.06)',
     background: 'var(--vz-card-bg)',
     overflow: 'hidden',
     transition: 'transform .18s ease, box-shadow .18s ease',
@@ -58,20 +74,28 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
   const onCardEnter = (e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.currentTarget as HTMLDivElement;
     el.style.transform = 'translateY(-2px)';
-    el.style.boxShadow = '0 10px 32px rgba(64,81,137,0.12), 0 2px 4px rgba(64,81,137,0.06)';
+    el.style.boxShadow = '0 10px 26px rgba(64,81,137,0.16), 0 2px 6px rgba(64,81,137,0.08)';
   };
   const onCardLeave = (e: React.MouseEvent<HTMLDivElement>) => {
     const el = e.currentTarget as HTMLDivElement;
     el.style.transform = 'translateY(0)';
-    el.style.boxShadow = '0 4px 24px rgba(64,81,137,0.08), 0 1px 2px rgba(64,81,137,0.04)';
+    el.style.boxShadow = '0 4px 14px rgba(64,81,137,0.10), 0 1px 3px rgba(64,81,137,0.06)';
   };
 
-  const GRAD_PRIMARY = 'linear-gradient(135deg, #405189 0%, #6691e7 100%)';
+  // Violet: the app's accent, and now the hero's. Navy here left the two
+  // largest surfaces on the page disagreeing about what colour this product is.
+  const GRAD_PRIMARY = 'linear-gradient(135deg, #5a3fd1 0%, #7c5cfc 100%)';
   const GRAD_SUCCESS = 'linear-gradient(135deg, #0ab39c 0%, #30d5b5 100%)';
   const GRAD_DANGER  = 'linear-gradient(135deg, #f06548 0%, #ff9e7c 100%)';
   const GRAD_WARNING = 'linear-gradient(135deg, #f7b84b 0%, #ffd47a 100%)';
   const GRAD_INFO    = 'linear-gradient(135deg, #299cdb 0%, #5fc8ff 100%)';
   const GRAD_PURPLE  = 'linear-gradient(135deg, #6a5acd 0%, #a78bfa 100%)';
+
+  const completionGrad =
+    completionTone === 'success' ? GRAD_SUCCESS
+      : completionTone === 'info' ? GRAD_INFO
+        : completionTone === 'warning' ? GRAD_WARNING
+          : GRAD_DANGER;
 
   const SectionHeader = ({ title, gradient, icon, action }: { title: string; gradient: string; icon: string; action?: React.ReactNode }) => (
     <div className="d-flex align-items-center gap-2 mb-2">
@@ -119,42 +143,95 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
         [data-layout-mode="dark"] .bv-info-table th {
           color: rgba(255, 255, 255, 0.94) !important;
         }
+
+        /* ── Card grid ────────────────────────────────────────────────────
+           TWO things were fighting the gap here, which is why raising the
+           number from 8 to 12 to 20 changed nothing visible.
+
+           1. Three separate .row elements. The space between two rows is not a
+              gutter at all — Bootstrap gives a .row margin-top of -(gutter-y)
+              and each column +(gutter-y), so stacked rows cancel to ZERO.
+              All six cards are now columns of ONE wrapping row, so the gap
+              between the Profile/About line and the Info/Contact/Address line
+              is the same gutter that separates cards side by side.
+
+           2. app.css zeroes the gutters on any .row that is a DIRECT child of
+              .container-fluid, to let full-width list pages sit flush:
+                .page-content > .container-fluid > .row { margin: 0 !important }
+                .page-content > .container-fluid > .row > [class*=col]
+                                                   { padding: 0 !important }
+              This page's row IS such a direct child, so the column padding —
+              the thing that actually MAKES a horizontal gutter — was being
+              deleted, whatever --bs-gutter-x said. Those selectors are (0,3,0)
+              and (0,4,0) with !important, so a bare .bv-grid could never win.
+              Adding .bv-grid onto the same chain outranks them.
+
+           Row is pulled out by half the gutter and the padding put back on the
+           columns, so the OUTER card edges line up exactly with the header
+           strip and the hero above — Bootstrap's own arrangement, restored.
+           Change the 8px pair (and the two 4px halves, which must stay at
+           half the gutter) to move every gap on the page together; nothing
+           else here sets spacing. */
+        .page-content > .container-fluid > .row.bv-grid {
+          --bs-gutter-x: 8px;
+          --bs-gutter-y: 8px;
+          margin: 0 -4px !important;
+        }
+        .page-content > .container-fluid > .row.bv-grid > [class*="col"] {
+          padding-left: 4px !important;
+          padding-right: 4px !important;
+          margin-top: 8px !important;
+        }
+
+        /* The three tiles inside the About card. Nested, so app.css's
+           direct-child rule never reached them and plain gutters work. */
+        .bv-grid {
+          --bs-gutter-x: 8px;
+          --bs-gutter-y: 8px;
+          margin-top: 0 !important;
+          margin-bottom: 0 !important;
+        }
       `}</style>
 
       {/* ── Page title + back + Edit ── */}
-      <Row>
-        <Col xs={12}>
-          <div className="page-title-box d-sm-flex align-items-center justify-content-between">
-            <h4 className="mb-sm-0 d-flex align-items-center gap-2">
-              <button
-                className="btn btn-sm btn-soft-secondary rounded-circle d-inline-flex align-items-center justify-content-center"
-                style={{ width: 32, height: 32 }}
-                onClick={onBack}
-              >
-                <i className="ri-arrow-left-line"></i>
-              </button>
-              Branch Profile
-            </h4>
-            <div className="page-title-right">
-              <Button
-                color="secondary"
-                className="btn-label waves-effect waves-light rounded-pill"
-                onClick={() => onNavigate('branch-form', { editId: branchId })}
-              >
-                <i className="ri-pencil-line label-icon align-middle rounded-pill fs-16 me-2"></i>
-                Edit Profile
-              </Button>
-            </div>
+      {/* The house header strip (.frm-cstrip, app.css) — the same opening the
+          Branches, Employees and Customers screens use. This page had a plain
+          page-title-box, which is why it read as a different product from the
+          list it is reached from. */}
+      <div className="frm-cstrip mb-2">
+        <span className="frm-cstrip-accent" />
+        <div className="frm-cstrip-left">
+          <div className="frm-cstrip-icon"><i className="ri-git-branch-line" /></div>
+          <div className="min-w-0">
+            <div className="frm-cstrip-title">Branch Profile</div>
+            <div className="frm-cstrip-sub">Contact details, address, users and operations for this branch</div>
           </div>
-        </Col>
-      </Row>
+        </div>
+        <div className="d-flex align-items-center gap-2 flex-shrink-0">
+          <Button
+            color="secondary"
+            className="btn-label waves-effect waves-light rounded-pill"
+            onClick={() => onNavigate('branch-form', { editId: branchId })}
+          >
+            <i className="ri-pencil-line label-icon align-middle rounded-pill fs-16 me-2"></i>
+            Edit Profile
+          </Button>
+          <button type="button" className="frm-cstrip-back" onClick={onBack}>
+            <i className="ri-arrow-left-line" />
+            Back
+          </button>
+        </div>
+      </div>
 
       {/* ── Hero banner ── */}
       <Card className="overflow-hidden mb-0 border-0" style={{ borderRadius: 20 }}>
         <div
           className="position-relative overflow-hidden"
           style={{
-            background: 'linear-gradient(135deg, #405189 0%, #4a63a8 45%, #6691e7 100%)',
+            // Violet, not navy — the app's accent runs through the topbar, the table
+            // headers and every primary button, and this banner was the one
+            // large surface still on the old blue.
+            background: 'linear-gradient(135deg, #5a3fd1 0%, #7c5cfc 55%, #a78bfa 100%)',
             padding: '32px 32px 28px',
           }}
         >
@@ -265,13 +342,13 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
       </Card>
 
       {/* ── ROW 1 — Complete Profile (narrow) + About (wide) ── */}
-      <Row className="mt-2 g-2 align-items-stretch">
+      <Row className="bv-grid align-items-stretch pb-2">
         <Col xxl={4} lg={5}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
               <SectionHeader
                 title="Complete Branch Profile"
-                gradient={GRAD_DANGER}
+                gradient={completionGrad}
                 icon="ri-git-branch-line"
                 action={(
                   <button
@@ -285,7 +362,7 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
               />
               <Progress
                 value={completionPct}
-                color="danger"
+                color={completionTone}
                 className="animated-progess custom-progress progress-label"
               >
                 <div className="label">{completionPct}%</div>
@@ -303,14 +380,14 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
               <SectionHeader title="About" gradient={GRAD_PRIMARY} icon="ri-information-line" />
-              <p className="text-muted mb-3">
+              <p className="text-muted mb-0">
                 <strong>{branch.name}</strong> is a {branch.branch_type || 'branch'}
                 {branch.industry && <> operating in the <strong>{branch.industry}</strong> sector</>}
                 {location && <> based in <strong>{location}</strong></>}.
                 Manage contact details, branch user, address and operations from this page.
               </p>
 
-              <Row className="g-3">
+              <Row className="bv-grid">
                 <Col xs={12} md={4}>
                   <div className="d-flex align-items-center p-3 h-100" style={{ borderRadius: 14, background: 'linear-gradient(135deg, rgba(64,81,137,0.06), rgba(102,145,231,0.04))', border: '1px solid var(--vz-border-color)' }}>
                     <div className="flex-shrink-0 me-3">
@@ -354,10 +431,10 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
             </CardBody>
           </Card>
         </Col>
-      </Row>
 
-      {/* ── ROW 2 — Info + Contact + Address ── */}
-      <Row className="g-2 mt-2 align-items-stretch">
+
+
+      {/* ── Info + Contact + Address ── */}
         <Col xxl={4} lg={4} md={6}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>
@@ -514,10 +591,10 @@ export default function BranchView({ branchId, onBack, onNavigate }: Props) {
             </CardBody>
           </Card>
         </Col>
-      </Row>
 
-      {/* ── ROW 3 — Branch User + Description ── */}
-      <Row className="mb-3 g-2 mt-2 align-items-stretch">
+
+
+      {/* ── Branch User + Description ── */}
         <Col xxl={4} lg={5} md={12}>
           <Card className="mb-0 h-100" style={cardStyle} onMouseEnter={onCardEnter} onMouseLeave={onCardLeave}>
             <CardBody>

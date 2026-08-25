@@ -172,6 +172,11 @@ interface Props {
   /* When true the vault is opened purely to review (e.g. from a With-PO SPI where
    * the supplier's legal status is inherited from the PO). Upload/Re-upload is hidden. */
   viewOnly?: boolean;
+  /* Fired after the vault re-fetches itself following a change made INSIDE it
+   * (document upload / re-upload). Lets a host screen — e.g. the Create-PO
+   * wizard's Supplier Legal Status card — refresh its own copy of the same
+   * compliance figures instead of staying stale until a page reload. */
+  onVaultChange?: () => void;
 }
 
 /* Lets the deeply-nested row actions hide their Upload button without prop drilling. */
@@ -249,7 +254,7 @@ function buildDemoVault(supplier: SupplierVaultTarget): VaultData {
   };
 }
 
-export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data, viewOnly = false }: Props) {
+export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data, viewOnly = false, onVaultChange }: Props) {
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
@@ -327,13 +332,24 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, supplier?.db_id]);
 
+  /* Always-current `onVaultChange` in a ref — keeps `reloadVault` stable. */
+  const onVaultChangeRef = useRef(onVaultChange);
+  onVaultChangeRef.current = onVaultChange;
+
   /* Re-fetch helper — invoked by the Actions column after a successful
    * re-upload so the row's attachment_url refreshes in place. */
   const reloadVault = useCallback(() => {
     if (!supplier?.db_id) return Promise.resolve();
     setLoading(true);
     return api.get(`/segment-uploads/supplier/${supplier.db_id}/vault`)
-      .then(r => { setVaultLive((r.data?.data ?? null) as VaultData | null); })
+      .then(r => {
+        setVaultLive((r.data?.data ?? null) as VaultData | null);
+        // Tell the host screen the vault moved so its own compliance figures
+        // (e.g. the PO wizard's Supplier Legal Status card) re-read the same
+        // endpoint — read through a ref so adding the callback never changes
+        // this function's identity, which is threaded into every row action.
+        onVaultChangeRef.current?.();
+      })
       .catch(() => { /* keep prior state on transient errors */ })
       .finally(() => setLoading(false));
   }, [supplier?.db_id]);
