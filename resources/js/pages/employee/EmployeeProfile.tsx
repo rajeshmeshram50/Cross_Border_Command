@@ -407,11 +407,34 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [empDetail?.id]);
 
-  // Load a payslip's full breakup into the shared viewer.
+  /* Load a payslip's full breakup into the shared viewer.
+   *
+   * QA #85 — the viewer used to be rendered with whatever `viewSlip` currently
+   * held while this request was still in flight, and every figure it draws
+   * comes from that object. On first open it was null, so the modal fell back
+   * to its own defaults and showed "March", empty earnings and deductions, and
+   * zeroed day counts — then swapped to the real month, salary, PF and
+   * professional tax a moment later. Switching months from Recent Payslips was
+   * worse: the PREVIOUS month's figures stayed on screen under the new month's
+   * heading until the fetch landed.
+   *
+   * PayslipViewerModal already had a `loading` prop for exactly this (added for
+   * QA #94, and passed by the HR-side caller in HrPayroll) — this caller simply
+   * never passed it, so the guard was dead code on the employee-login path.
+   *
+   * `payslipReq` is a race guard: Recent Payslips lets a second month be
+   * clicked while the first is still loading, and without it a slow earlier
+   * response can land last and leave the wrong month's money on screen. Only
+   * the newest request is allowed to write state or clear the spinner. */
+  const [slipLoading, setSlipLoading] = useState(false);
+  const payslipReq = useRef(0);
   const loadSlip = (payslipId?: number, label?: string) => {
     if (!payslipId) return;
+    const reqId = ++payslipReq.current;
+    setSlipLoading(true);
     api.get(`/payroll/payslip/${payslipId}`)
       .then(res => {
+        if (reqId !== payslipReq.current) return;   // superseded — drop it
         const d = res.data?.data ?? {};
         const [mAbbr, y] = String(label || '').split(' ');
         setViewSlip({
@@ -425,7 +448,12 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           working: d.totalMonthDays ?? d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
         });
       })
-      .catch(() => { /* keep prior */ });
+      .catch(() => { /* keep prior */ })
+      .finally(() => {
+        // Only the newest request clears the spinner — an outdated one finishing
+        // late must not uncover a body the current request has not filled yet.
+        if (reqId === payslipReq.current) setSlipLoading(false);
+      });
   };
   const openLatestPayslip = () => {
     if (!payslipHistory.length) { toast.error('No payslip yet', 'No payroll has been processed for this employee.'); return; }
@@ -3156,6 +3184,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         paidDays={viewSlip?.paid}
         lossOfPay={viewSlip?.lop}
         isFinal={viewSlip?.isFinal}
+        /* #85 — hold the body until the breakup arrives. Without this the modal
+           renders its own fallbacks (March, empty earnings/deductions, zero
+           days) and then replaces them with the real figures. */
+        loading={slipLoading || (paySlipOpen && !viewSlip)}
         payslipId={viewSlip?.id}
         recentMonths={payslipHistory.map((s: any, i: number) => ({ label: s.label, now: i === 0, payslipId: s.payslip_id, status: s.status }))}
         onSelectRecent={(e: any) => loadSlip(e.payslipId, e.label)}
