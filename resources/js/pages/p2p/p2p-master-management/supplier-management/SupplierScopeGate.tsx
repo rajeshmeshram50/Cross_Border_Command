@@ -6,10 +6,10 @@ import { useEffect } from 'react';
  *
  * Ported from the P2P prototype's "Create New Procurement" gate
  * (`smtOpenProcurementGate` in P2P_Main_Journey.html) — same structure and
- * motion, recoloured into the violet family the Supplier page already runs
- * on. The prototype's cyan header and amber card were the only things on
- * this screen not in that family. The two choices stay distinguishable by
- * moving along the family (violet vs indigo) instead of leaving it.
+ * motion, restyled onto the Supplier page's own surfaces: the header is the
+ * glassy lavender strip (.cstrip) the page wears, not a solid dark bar, and
+ * the two choices stay distinguishable by moving along the violet family
+ * (violet vs indigo) rather than leaving it for the prototype's amber.
  *
  * It exists because the answer changes the FORM, not just a label — a domestic
  * supplier is an India/GST entity and an international one is explicitly not,
@@ -43,62 +43,70 @@ const SCOPED_CSS = `
 .ssg-box {
   width: 780px; max-width: 96vw;
   background: #fff; border-radius: 22px; overflow: hidden;
+  border: 1px solid #c4b5fd;
   box-shadow: 0 1px 0 rgba(255,255,255,.7) inset,
-              0 50px 110px -25px rgba(46,16,101,.55),
-              0 0 0 1px rgba(46,16,101,.06);
+              0 40px 90px -25px rgba(46,16,101,.5),
+              0 8px 28px rgba(139,92,246,.20);
   animation: ssgUp .3s cubic-bezier(.16,1,.3,1) both;
 }
 
-/* ── Header ── */
+/* ── Header ──
+   Solid and dark, and it STAYS dark across the whole bar. Two earlier goes
+   both failed at the right-hand end: the first gradient ran out to #a78bfa
+   and the last third went pale under the white title and close button, and
+   the light glassy version had no weight at all — the dialog stopped reading
+   as something placed over the page.
+   This ramp ends on #7c3aed, which is still a saturated violet, so the bar has
+   the same depth at both ends. Texture and highlight are layered on top for
+   depth instead of lightening the colour to fake it. */
 .ssg-head {
   position: relative; overflow: hidden;
   display: flex; align-items: center; gap: 14px;
-  padding: 13px 20px; color: #fff;
-  /* The exact header gradient the Add Supplier form uses (.avm-head). This
-     gate opens that form, so the two are seen one after the other — a
-     different violet ramp between them reads as two different products.
-     The old ramp also ended on #a78bfa, which is pale enough that the
-     white close button and the title lost their contrast on the right
-     third of the bar. This one tops out at #8b5cf6 and holds. */
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  padding: 14px 20px;
+  color: #fff;
+  background: linear-gradient(115deg, #3b0764 0%, #5b21b6 34%, #6d28d9 68%, #7c3aed 100%);
 }
+/* Fine dot grid, faded in from the left so it never competes with the title. */
 .ssg-head::before {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background-image: radial-gradient(rgba(255,255,255,.16) 1px, transparent 1.4px);
-  background-size: 18px 18px; opacity: .45;
-  -webkit-mask-image: linear-gradient(105deg, transparent 40%, #000 100%);
-  mask-image: linear-gradient(105deg, transparent 40%, #000 100%);
+  background-size: 16px 16px; opacity: .5;
+  -webkit-mask-image: linear-gradient(105deg, transparent 35%, #000 100%);
+  mask-image: linear-gradient(105deg, transparent 35%, #000 100%);
 }
+/* One soft highlight off the top-right corner — depth without a pale patch. */
 .ssg-head::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: radial-gradient(circle at 92% -60%, rgba(255,255,255,.4), transparent 50%);
+  background:
+    radial-gradient(circle at 88% -40%, rgba(196,181,253,.38), transparent 55%),
+    linear-gradient(180deg, rgba(255,255,255,.14), transparent 45%);
 }
 .ssg-accent {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 3px; opacity: .9;
-  background: linear-gradient(90deg,#a78bfa,#c4b5fd 45%,#ddd6fe 100%);
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: linear-gradient(90deg,#c4b5fd,#a78bfa 35%,#8b5cf6 70%,#ddd6fe);
 }
 .ssg-head-ico {
   position: relative; z-index: 1; width: 40px; height: 40px; border-radius: 13px;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  font-size: 18px;
-  background: linear-gradient(145deg, rgba(255,255,255,.28), rgba(255,255,255,.1));
-  box-shadow: 0 0 0 1px rgba(255,255,255,.3) inset, 0 8px 20px rgba(0,0,0,.2);
+  font-size: 18px; color: #fff;
+  background: linear-gradient(145deg, rgba(255,255,255,.30), rgba(255,255,255,.10));
+  box-shadow: 0 0 0 1px rgba(255,255,255,.32) inset, 0 8px 20px rgba(0,0,0,.22);
 }
 .ssg-head-txt { position: relative; z-index: 1; min-width: 0; flex: 1; }
 .ssg-eyebrow {
   font-size: 9.5px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
-  color: rgba(255,255,255,.65); margin-bottom: 3px;
+  color: rgba(221,214,254,.85); margin-bottom: 3px;
 }
-.ssg-title { font-size: 17px; font-weight: 800; letter-spacing: -.3px; }
-.ssg-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.82); margin-top: 3px; }
+.ssg-title { font-size: 17px; font-weight: 800; letter-spacing: -.3px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.22); }
+.ssg-sub { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.84); margin-top: 3px; }
 .ssg-cl {
   position: relative; z-index: 1; width: 30px; height: 30px; border-radius: 9px;
-  border: 1.5px solid rgba(255,255,255,.3); background: rgba(255,255,255,.14);
+  border: 1.5px solid rgba(255,255,255,.34); background: rgba(255,255,255,.16);
   color: #fff; cursor: pointer; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; font-size: 14px;
   transition: all .18s;
 }
-.ssg-cl:hover { background: rgba(255,255,255,.26); transform: rotate(90deg); }
+.ssg-cl:hover { background: rgba(255,255,255,.3); transform: rotate(90deg); }
 
 /* ── The two choices ── */
 .ssg-body {
@@ -249,7 +257,12 @@ export default function SupplierScopeGate({ onChoose, onClose }: Props) {
   return (
     <>
       <style>{SCOPED_CSS}</style>
-      <div className="ssg-bd" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      {/* No click-outside-to-close. This gate is a fork in a flow, not an
+          overlay you glance at — a stray click on the page behind it dropped
+          you back to the list with nothing said, and the Add Supplier form it
+          leads to does not dismiss that way either. The cross and Cancel are
+          the two ways out (Escape too, which is the keyboard's Cancel). */}
+      <div className="ssg-bd">
         <div className="ssg-box" role="dialog" aria-modal="true" aria-label="Choose supplier scope">
           <div className="ssg-head">
             <div className="ssg-head-ico"><i className="ri-add-line" /></div>
