@@ -89,6 +89,10 @@ const CANDIDATE_STATUS_COLOR: Record<CandidateStatus, 'success' | 'danger' | 'wa
    none` — the click still has to reach the handler that raises the toast. */
 const LOCKED_STYLE = { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.7)' } as const;
 
+/* Remembered rows-per-page, so the next visit opens at the size that settled
+   here last time instead of snapping back to the default. */
+const PER_PAGE_KEY = 'cbc.candidates.perPage';
+
 export default function HrCandidates() {
   const { id: recruitmentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -119,60 +123,117 @@ export default function HrCandidates() {
 
   const [confirming, setConfirming] = useState<{ row: CandidateRow; mode: 'select' | 'reject' } | null>(null);
 
-  const fetchAll = async () => {
-    if (!recruitmentId) return;
+  /* ── Paging ────────────────────────────────────────────────────────────
+     The list is one page deep now: the tab, the search box and the pager all
+     go back to /candidates. A pipeline with a few hundred applicants used to
+     arrive as one unpaginated array and be sliced in the browser. */
+  const [page, setPage] = useState(0);   // DataTable counts from 0, the API from 1
+  /* Starts at 10, which is also the minAutoRows floor handed to <DataTable>.
+     That agreement is the point: autoFitRows measures the viewport only AFTER
+     `loading` drops — i.e. after the first fetch is already out — so that
+     request always uses whatever we start with. Start lower and the
+     measurement disagrees on a normal screen and every load fetches twice. */
+  const [perPage, setPerPage] = useState<number>(() => {
     try {
-      setLoading(true);
-      const [sumRes, listRes] = await Promise.all([
-        api.get(`/recruitments/${recruitmentId}/candidates/summary`),
-        api.get(`/candidates?recruitment_id=${recruitmentId}`),
-      ]);
-      setRecruitment(sumRes.data?.recruitment || null);
-      setCandidates(Array.isArray(listRes.data) ? listRes.data : []);
-    } catch (err: any) {
-      toast.error('Could not load candidates', err?.response?.data?.message || 'Please try again.');
-      setRecruitment(null);
-      setCandidates([]);
-    } finally {
-      setLoading(false);
+      const saved = Number(localStorage.getItem(PER_PAGE_KEY));
+      return Number.isFinite(saved) && saved >= 1 && saved <= 200 ? saved : 10;
+    } catch {
+      return 10;   // private mode / storage disabled
     }
-  };
-  useEffect(() => { fetchAll();  }, [recruitmentId]);
+  });
+  useEffect(() => {
+    try { localStorage.setItem(PER_PAGE_KEY, String(perPage)); } catch { /* private mode */ }
+  }, [perPage]);
+  const [total, setTotal] = useState(0);
 
-  const totals = useMemo(() => {
-    const t = candidates.length;
-    const applied = candidates.filter(c => c.status === 'Applied' || c.status === 'Shortlisted').length;
-    const inInterview = candidates.filter(c => c.status === 'In Interview' || c.status === 'Final Interview').length;
-    const selected = candidates.filter(c => c.status === 'Selected').length;
-    const rejected = candidates.filter(c => c.status === 'Rejected').length;
-    const offered = candidates.filter(c => c.status === 'Offered').length;
-    const active = candidates.filter(c =>
-      c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected'
-    ).length;
-    const finalRound = candidates.filter(c => c.status === 'Final Interview').length;
-    return { total: t, applied, inInterview, selected, rejected, offered, active, finalRound };
-  }, [candidates]);
+  /* Bumped by reload(); the list and the KPI counts both watch it, so a status
+     change refreshes the rows AND the tiles together — they read the same
+     records and must not disagree about them. */
+  const [dataVersion, setDataVersion] = useState(0);
+  const reload = () => setDataVersion(v => v + 1);
 
-  const filtered = useMemo(() => {
-    const needle = search.trim().toLowerCase();
-    return candidates
-      .filter(c => {
-        if (tab === 'all')      return c.status !== 'Selected' && c.status !== 'Offered' && c.status !== 'Rejected';
-        if (tab === 'final')    return c.status === 'Final Interview';
-        if (tab === 'selected') return c.status === 'Selected' || c.status === 'Offered';
-        if (tab === 'rejected') return c.status === 'Rejected';
-        return true;
+  /* Typing is not a request. Without this every letter fires a page-1 fetch
+     and the answers arrive out of order — the response for "pri" landing
+     after the response for "priy". */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  /* Any change to WHAT is being asked for goes back to page one. Staying on
+     page 12 while narrowing to three results shows an empty table under a
+     pager insisting there are sixteen pages. */
+  useEffect(() => { setPage(0); }, [debouncedSearch, tab]);
+
+  // The context card above the list — one fetch per recruitment, not per page.
+  useEffect(() => {
+    if (!recruitmentId) return;
+    let alive = true;
+    api.get(`/recruitments/${recruitmentId}/candidates/summary`)
+      .then(({ data }) => { if (alive) setRecruitment(data?.recruitment || null); })
+      .catch(() => { if (alive) setRecruitment(null); });
+    return () => { alive = false; };
+  }, [recruitmentId]);
+
+  const listReqRef = useRef(0);
+  useEffect(() => {
+    if (!recruitmentId) return;
+    const token = ++listReqRef.current;
+    setLoading(true);
+    api.get('/candidates', {
+      params: {
+        recruitment_id: recruitmentId,
+        status_group: tab,
+        page: page + 1,
+        per_page: perPage,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      },
+    })
+      .then(({ data }) => {
+        if (token !== listReqRef.current) return;
+        // `?? data` keeps this working if the envelope ever goes away — the
+        // endpoint only paginates for callers that ask.
+        const body: any = data ?? {};
+        const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
+        setCandidates(list);
+        setTotal(Number(body.total ?? list.length) || 0);
       })
-      .filter(c => {
-        if (!needle) return true;
-        return (
-          c.name.toLowerCase().includes(needle) ||
-          (c.email || '').toLowerCase().includes(needle) ||
-          (c.mobile || '').toLowerCase().includes(needle) ||
-          (c.recruitment_code || '').toLowerCase().includes(needle)
-        );
-      });
-  }, [candidates, tab, search]);
+      .catch((err: any) => {
+        if (token !== listReqRef.current) return;
+        toast.error('Could not load candidates', err?.response?.data?.message || 'Please try again.');
+        setCandidates([]);
+        setTotal(0);
+      })
+      .finally(() => { if (token === listReqRef.current) setLoading(false); });
+  }, [recruitmentId, tab, page, perPage, debouncedSearch, dataVersion]);
+
+  /* KPI tiles and tab counts describe the whole pipeline, not the page — so
+     they come from the aggregate endpoint rather than from counting the ten
+     rows on screen. */
+  const [totals, setTotals] = useState({
+    total: 0, applied: 0, inInterview: 0, selected: 0, rejected: 0, offered: 0, active: 0, finalRound: 0,
+  });
+  useEffect(() => {
+    if (!recruitmentId) return;
+    let alive = true;
+    api.get('/candidates/stats', { params: { recruitment_id: recruitmentId } })
+      .then(({ data }) => {
+        if (!alive) return;
+        const n = (k: string) => Number(data?.[k] ?? 0) || 0;
+        const selected = n('selected'), offered = n('offered'), rejected = n('rejected');
+        setTotals({
+          total:       n('total'),
+          applied:     n('applied') + n('shortlisted'),
+          inInterview: n('in_interview') + n('final_interview'),
+          selected, offered, rejected,
+          active:      n('total') - selected - offered - rejected,
+          finalRound:  n('final_interview'),
+        });
+      })
+      .catch(() => { /* tiles stay at zero; the table still renders */ });
+    return () => { alive = false; };
+  }, [recruitmentId, dataVersion]);
 
   const recClosed = ['Cancelled', 'Completed', 'Expired'].includes(recruitment?.status || '');
   const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
@@ -368,6 +429,10 @@ export default function HrCandidates() {
     try {
       const { data } = await api.patch(`/candidates/${c.id}/status`, payload);
       setCandidates(prev => prev.map(r => r.id === c.id ? data : r));
+      /* Selecting or rejecting moves the row out of the tab it was on and
+         changes every count above it — refetch rather than let the page and
+         the tiles drift apart. */
+      reload();
       toast.success(next, `${data.name} → ${next}`);
     } catch (err: any) {
       const fieldErr = err?.response?.data?.errors?.status?.[0];
@@ -523,7 +588,7 @@ export default function HrCandidates() {
                 sortable headers, the rows-per-page pager and the fit-to-viewport
                 sizing all live in the component now. */}
             <DataTable<CandidateRow>
-              data={filtered}
+              data={candidates}
               columns={columns}
               serial
               accent="violet"
@@ -538,6 +603,15 @@ export default function HrCandidates() {
               searchValue={search}
               onSearchChange={setSearch}
               searchPlaceholder="Search name, email, mobile…"
+              /* One page in, one page out — the arrows and the "showing x–y
+                 of z" read the server's total, and autoFitRows reports the
+                 measured row count back through onPageSizeChange. */
+              serverPagination={{
+                total,
+                pageIndex: page,
+                onPageChange: setPage,
+                onPageSizeChange: setPerPage,
+              }}
               tabs={[
                 { key: 'final',    label: 'Final Round Selected', icon: 'ri-user-search-line',     count: totals.finalRound },
                 { key: 'selected', label: 'Selected Candidates',  icon: 'ri-checkbox-circle-line', count: totals.selected + totals.offered },
@@ -563,15 +637,13 @@ export default function HrCandidates() {
         recruitmentId={recruitmentId ? Number(recruitmentId) : null}
         onClose={() => { setModalOpen(false); setEditing(null); setViewOnly(false); }}
         onSaved={(row) => {
-          setCandidates(prev => {
-            const idx = prev.findIndex(r => r.id === row.id);
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = row;
-              return next;
-            }
-            return [row, ...prev];
-          });
+          /* An edit can be patched in place — the row is on this page by
+             definition. A new candidate cannot: it belongs wherever the
+             server's ordering and the current tab put it, which may not be
+             this page at all, so ask for the page again. */
+          const known = candidates.some(r => r.id === row.id);
+          if (known) setCandidates(prev => prev.map(r => (r.id === row.id ? row : r)));
+          reload();
           setModalOpen(false);
           setEditing(null);
         }}
@@ -601,7 +673,7 @@ export default function HrCandidates() {
 
             if (created > 0) {
               toast.success('Import complete', `${created} candidate${created === 1 ? '' : 's'} added${skipped ? ` · ${skipped} skipped` : ''}.`);
-              fetchAll();
+              reload();
             } else {
               toast.error('Nothing imported', skipped > 0 ? `${skipped} row${skipped === 1 ? '' : 's'} skipped — see errors below.` : 'No valid rows found in the file.');
             }
@@ -621,19 +693,23 @@ export default function HrCandidates() {
 
       <ExportCandidatesModal
         open={exportOpen}
-        totalCount={candidates.length}
-        filteredCount={filtered.length}
+        totalCount={totals.total}
+        filteredCount={total}
         onClose={() => setExportOpen(false)}
         onExport={async (scope: 'all' | 'view') => {
           const params: Record<string, string> = {};
           if (recruitmentId) params.recruitment_id = String(recruitmentId);
+          /* "Current view" is the tab + search, NOT the page. Sending the
+             visible ids would export ten rows out of a filtered set of two
+             hundred, so send the filters and let the server select. */
           if (scope === 'view') {
-            params.ids = filtered.map(c => c.id).join(',');
+            params.status_group = tab;
+            if (debouncedSearch) params.search = debouncedSearch;
           }
           try {
             const res = await api.get('/candidates/export', { params, responseType: 'blob' });
             triggerBlobDownload(res.data, 'candidates_export.csv');
-            const count = scope === 'view' ? filtered.length : candidates.length;
+            const count = scope === 'view' ? total : totals.total;
             toast.success('Export ready', `${count} candidate${count === 1 ? '' : 's'} downloaded`);
             setExportOpen(false);
           } catch (err: any) {

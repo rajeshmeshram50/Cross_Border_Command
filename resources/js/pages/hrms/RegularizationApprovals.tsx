@@ -3,6 +3,7 @@ import { Card, CardBody, Modal, ModalBody } from 'reactstrap';
 import Swal from 'sweetalert2';
 import { useToast } from '../../contexts/ToastContext';
 import { Shimmer } from '../../components/ui/Shimmer';
+import BusyOverlay from '../../components/ui/BusyOverlay';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { regularizationApi, type ApiRegularization, type ApiRegularizationApprover, type RegularizationStatus } from './regularizationApi';
 import { to12h, punchPair12h } from '../../utils/timeFormat';
@@ -140,6 +141,9 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
   const toast = useToast();
   const [rows, setRows]       = useState<ApiRegularization[]>([]);
   const [loading, setLoading] = useState(true);
+  /* Separates "never loaded" from "loading again": the first wait draws a
+     skeleton, every one after it blurs the table already on screen. */
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError]     = useState<string | null>(null);
   const [status, setStatus]   = useState<RegularizationStatus | 'All'>('Pending');
   const [busy, setBusy]       = useState<{ id: number; action: 'approve' | 'reject' } | null>(null);
@@ -158,7 +162,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
     regularizationApi.approvals({ status: 'All' })
       .then(setRows)
       .catch((err: any) => setError(err?.response?.data?.message || 'Failed to load regularization requests.'))
-      .finally(() => setLoading(false));
+      .finally(() => { setLoading(false); setHasLoaded(true); });
   }, []);
 
   // `load` is a stable useCallback([]), so refreshKey is what actually re-runs
@@ -266,12 +270,16 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
 
       {open && (
         <div>
-          {loading ? (
+          {/* First load has nothing to stand over, so it keeps the skeleton.
+              Every REFRESH after that — approving a row, a request filed from
+              the panel above — blurs the table it already has instead of
+              replacing it with a grey block. */}
+          {loading && !hasLoaded ? (
             <Shimmer height={120} radius={10} />
           ) : error ? (
             <div className="text-center text-muted ep-fs-13 py-3"><i className="ri-error-warning-line me-1" />{error}</div>
           ) : (
-            <>
+            <BusyOverlay busy={loading} label="Refreshing requests…">
             <div className="table-responsive att-tablebox">
               {/* No .table-sm — its compressed cell padding is what made this
                   table read tighter than every other HRMS list. No .table-light
@@ -426,7 +434,7 @@ export default function RegularizationApprovals({ refreshKey = 0, onActed }: Pro
               onPage={setPage}
               onPageSize={(n) => { setPageSize(n); setPage(1); }}
             />
-            </>
+            </BusyOverlay>
           )}
         </div>
       )}

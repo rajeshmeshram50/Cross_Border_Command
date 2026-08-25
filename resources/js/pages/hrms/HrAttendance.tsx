@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Card, CardBody, Col, Row, Input, Popover, PopoverBody } from 'reactstrap';
 import { MasterFormStyles, MasterDatePicker } from '../master/masterFormKit';
 import { useToast } from '../../contexts/ToastContext';
@@ -9,9 +9,16 @@ import RegularizationApprovals from './RegularizationApprovals';
 import type { ApiRegularization } from './regularizationApi';
 import WorklistPager from '../../components/ui/WorklistPager';
 import { Shimmer, ShimmerTable } from '../../components/ui/Shimmer';
+import BusyOverlay from '../../components/ui/BusyOverlay';
 import '../../../css/recruitment.css';
 
 const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+/* How often today's view re-checks the server for punches that landed while it
+   was open — a biometric push, or a colleague clocking in. 45s is under the
+   eSSL default push cycle, so a punch shows up within about a minute without
+   the roster fetch becoming chatty. */
+const LIVE_POLL_MS = 45000;
 const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const WEEK_LABELS  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
@@ -304,6 +311,76 @@ function DetailPanesShimmer() {
   );
 }
 
+/* The right-hand detail panel: identity bar, month KPIs, today's record and
+   the punch timeline. Lifted out of the page body so it can be handed EITHER
+   the selected employee or, mid-switch, the one being replaced — the blurred
+   panel under the spinner is this same markup, not a second rendition of it. */
+function EmployeeDetailPanel({
+  employee, viewDate, isPast, hour24,
+}: {
+  employee: AttendanceEmployee;
+  viewDate: string;
+  isPast: boolean;
+  hour24: boolean;
+}) {
+  return (
+    <>
+      <div className="att-emp-bar">
+        <span className="att-emp-bar-avatar" style={{ background: employee.accent }}>{employee.initials.slice(0, 2).toUpperCase()}</span>
+        <div className="att-emp-bar-info">
+          <div className="att-emp-bar-name">{employee.name}</div>
+          <div className="att-emp-bar-meta">
+            {employee.empCode} · {employee.designation} · {employee.department}
+          </div>
+        </div>
+        <div className="att-emp-bar-chips">
+          <span className="att-chip">
+            <i className="ri-time-line" />
+            {employee.shift}
+            {employee.shiftStart && employee.shiftEnd && (
+              <span className="att-chip-sub">{fmt12h(employee.shiftStart)} – {fmt12h(employee.shiftEnd)}</span>
+            )}
+          </span>
+          <span className="att-chip"><i className="ri-calendar-2-line" />Off: {employee.weeklyOff}</span>
+          <span className="att-chip"><i className="ri-fingerprint-line" />{employee.attendanceNumber}</span>
+          <span className="att-chip"><i className="ri-user-star-line" />Mgr: {employee.managerName}</span>
+        </div>
+      </div>
+
+      <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
+        {([
+          { key: 'pres', label: 'Present Days',   sub: 'This month', value: employee.presentDays,  icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
+          { key: 'late', label: 'Late Marks',     sub: 'This month', value: employee.lateMarks,    icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
+          { key: 'miss', label: 'Missing Punches',sub: 'This month', value: employee.missingPunch, icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
+        ] as const).map(k => (
+          <Col key={k.key}>
+            <div className="rec-kpi-card h-100">
+              <span className="rec-kpi-strip" style={{ background: k.gradient }} />
+              <div className="rec-kpi-text">
+                <span className="rec-kpi-label">{k.label}</span>
+                <span className="rec-kpi-num">{k.value}</span>
+                <span className="att-kpi-sub">{k.sub}</span>
+              </div>
+              <span className="rec-kpi-icon" style={{ background: k.gradient }}>
+                <i className={k.icon} />
+              </span>
+            </div>
+          </Col>
+        ))}
+      </Row>
+
+      <Row className="g-2 align-items-stretch">
+        <Col xl={7} lg={12}>
+          <TodayRecordCard employee={employee} viewDate={viewDate} isPast={isPast} hour24={hour24} />
+        </Col>
+        <Col xl={5} lg={12}>
+          <PunchTimelineCard employee={employee} />
+        </Col>
+      </Row>
+    </>
+  );
+}
+
 function LogsShimmer() {
   return (
     <>
@@ -316,6 +393,9 @@ function LogsShimmer() {
 export default function HrAttendance() {
   const [employees, setEmployees] = useState<AttendanceEmployee[]>([]);
   const [employeesLoading, setEmployeesLoading] = useState<boolean>(true);
+  /* "Never loaded" vs "loading again" — the first roster fetch draws the
+     full-page skeleton, every later one blurs what is already on screen. */
+  const [rosterLoaded, setRosterLoaded] = useState<boolean>(false);
   const [employeesError, setEmployeesError] = useState<string | null>(null);
   // The selected employee's own record — punches + 90-day log. Fetched apart
   // from the roster so opening this screen no longer pays for the full history
@@ -343,13 +423,20 @@ export default function HrAttendance() {
     setCalMonth((prev) => (prev === wantedMonth ? prev : wantedMonth));
   }, [viewDate]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setEmployeesLoading(true);
-    setEmployeesError(null);
-    api.get('/attendance/daily-view', { params: { date: viewDate } })
+  /* The roster behind the left-hand list and the status tabs.
+     `silent` skips the loading flags: a background poll must not blur the list
+     the user is reading, and a failed poll must not replace a good roster with
+     an error. */
+  const rosterReqRef = useRef(0);
+  const loadRoster = useCallback((silent = false) => {
+    const token = ++rosterReqRef.current;
+    if (!silent) {
+      setEmployeesLoading(true);
+      setEmployeesError(null);
+    }
+    return api.get('/attendance/daily-view', { params: { date: viewDate } })
       .then((res) => {
-        if (cancelled) return;
+        if (token !== rosterReqRef.current) return;
         const rows: AttendanceEmployee[] = Array.isArray(res.data) ? res.data : [];
         const hydrated = rows.map((e, i) => ({
           ...e,
@@ -357,44 +444,100 @@ export default function HrAttendance() {
           punches: Array.isArray(e.punches) ? e.punches : [],
           logs:    Array.isArray(e.logs)    ? e.logs    : [],
         }));
-        setEmployees(hydrated);
+        setEmployees(prev => hydrated.map(e => {
+          // `correction` is set optimistically after filing and the roster
+          // payload doesn't carry it — a refresh must not wipe the pill.
+          const had = prev.find(p => p.id === e.id);
+          return had?.correction ? { ...e, correction: had.correction } : e;
+        }));
         setSelectedId((prev) => {
           if (prev != null && hydrated.some((e) => e.id === prev)) return prev;
           return hydrated[0]?.id ?? null;
         });
       })
       .catch((err) => {
-        if (cancelled) return;
+        if (token !== rosterReqRef.current || silent) return;
         setEmployeesError(err?.response?.data?.message || 'Failed to load attendance for this date.');
         setEmployees([]);
       })
-      .finally(() => { if (!cancelled) setEmployeesLoading(false); });
-    return () => { cancelled = true; };
-  }, [viewDate, attVersion]);
+      .finally(() => {
+        if (token !== rosterReqRef.current) return;
+        if (!silent) setEmployeesLoading(false);
+        setRosterLoaded(true);
+      });
+  }, [viewDate]);
+
+  useEffect(() => { loadRoster(); }, [loadRoster, attVersion]);
 
   /* One employee's full record. Re-runs when the user picks a different name,
      moves to another date, or an approved regularization rewrites the day
      (attVersion). The roster call above deliberately returns none of this. */
-  useEffect(() => {
-    if (selectedId == null) { setDetail(null); return; }
-    let cancelled = false;
-    setDetailLoading(true);
-    api.get('/attendance/daily-view', { params: { date: viewDate, employee_id: selectedId } })
+  const detailReqRef = useRef(0);
+  const loadDetail = useCallback((silent = false) => {
+    if (selectedId == null) { setDetail(null); return Promise.resolve(); }
+    const token = ++detailReqRef.current;
+    if (!silent) setDetailLoading(true);
+    return api.get('/attendance/daily-view', { params: { date: viewDate, employee_id: selectedId } })
       .then((res) => {
-        if (cancelled) return;
+        if (token !== detailReqRef.current) return;
         const row: AttendanceEmployee | undefined = Array.isArray(res.data) ? res.data[0] : undefined;
-        setDetail(row
+        const hydrated = row
           ? {
               ...row,
               punches: Array.isArray(row.punches) ? row.punches : [],
               logs:    Array.isArray(row.logs)    ? row.logs    : [],
             }
-          : null);
+          : null;
+        setDetail(hydrated);
+
+        /* Keep the LIST row in step with the panel.
+         *
+         * The two are separate fetches, and only this one re-runs when an
+         * employee is selected — so a punch that arrived from the biometric
+         * device after the page loaded showed up in the panel while the row on
+         * the left still read "Absent", and the tab counts with it. The detail
+         * payload is the same shape as a roster row, so the day's summary is
+         * already here; copy it across rather than refetch 219 employees. */
+        if (hydrated) {
+          setEmployees(prev => prev.map(e => (e.id === hydrated.id
+            ? {
+                ...e,
+                status:                 hydrated.status,
+                firstIn:                hydrated.firstIn,
+                lastOut:                hydrated.lastOut,
+                workedMinutes:          hydrated.workedMinutes,
+                workedSeconds:          hydrated.workedSeconds,
+                workedCompletedSeconds: hydrated.workedCompletedSeconds,
+                openInAt:               hydrated.openInAt,
+                overtimeSeconds:        hydrated.overtimeSeconds,
+              }
+            : e)));
+        }
       })
-      .catch(() => { if (!cancelled) setDetail(null); })
-      .finally(() => { if (!cancelled) setDetailLoading(false); });
-    return () => { cancelled = true; };
-  }, [selectedId, viewDate, attVersion]);
+      .catch(() => { if (token === detailReqRef.current && !silent) setDetail(null); })
+      .finally(() => { if (token === detailReqRef.current && !silent) setDetailLoading(false); });
+  }, [selectedId, viewDate]);
+
+  /* One employee's full record. Re-runs when the user picks a different name,
+     moves to another date, or an approved regularization rewrites the day
+     (attVersion). The roster call above deliberately returns none of this. */
+  useEffect(() => { loadDetail(); }, [loadDetail, attVersion]);
+
+  /* Punches arrive on their own — from the biometric terminal pushing to
+     /iclock, or from someone clocking in elsewhere in the app — so today's view
+     goes stale while it sits open. Poll quietly for TODAY only: any other date
+     is settled history and nothing will change under the user. Skipped while
+     the tab is hidden, so a screen left open overnight isn't fetching 219
+     employees a minute for nobody. */
+  useEffect(() => {
+    if (viewDate !== TODAY_ISO) return;
+    const id = window.setInterval(() => {
+      if (document.hidden) return;
+      loadRoster(true);
+      loadDetail(true);
+    }, LIVE_POLL_MS);
+    return () => window.clearInterval(id);
+  }, [viewDate, loadRoster, loadDetail]);
 
   const counts = useMemo(() => ({
     all:     employees.length,
@@ -439,6 +582,35 @@ export default function HrAttendance() {
     if (!listEntry || !detail || detail.id !== listEntry.id) return listEntry;
     return { ...listEntry, ...detail, accent: listEntry.accent, correction: listEntry.correction };
   }, [listEntry, detail]);
+  /* What the right-hand side actually draws.
+     Switching employee used to tear the whole panel down to skeletons, which
+     made a 300ms refresh look like a page rebuild. Instead the panel that is
+     already laid out stays put — blurred, inert, under a spinner — until the
+     new record lands. `lastShownRef` is what makes that possible: it holds the
+     last fully-loaded employee, because `selected` degrades to the roster row
+     (no punches, no logs) the moment the ids stop matching. */
+  const lastShownRef = useRef<AttendanceEmployee | null>(null);
+  if (detailReady) lastShownRef.current = selected;
+  /* Falling back to `selected` (the roster row) matters on the FIRST load:
+     the roster has already told us who is selected, their name, code and
+     department, so there is a real panel to blur and the screen never shows a
+     second stage of skeletons after the list has painted. On a later switch
+     the previous employee is the better stand-in — its cards are populated, so
+     the layout underneath the blur doesn't collapse and re-expand. */
+  const shown = detailReady ? selected : (lastShownRef.current ?? selected);
+  /* Blur only over a panel that is standing in for another one. The first ever
+     load has nothing to blur, so it keeps the skeletons. */
+  /* True for BOTH kinds of replacement: a different employee (ids stop
+     matching) and a different date for the same employee (ids still match, but
+     the punches on screen belong to the day being navigated away from). */
+  const detailBusy = detailLoading;
+  /* The roster is re-fetched by the same date change, so the left list is
+     standing in for its next self too. */
+  const rosterBusy = employeesLoading && rosterLoaded;
+  const switchingLabel = listEntry && !detailReady
+    ? `Loading ${listEntry.name}…`
+    : 'Loading…';
+
   const onRegularizationSubmitted = (row: ApiRegularization) => {
     const firstPunch = (row.punches ?? [])[0];
     const newReq: CorrectionRequest = {
@@ -458,18 +630,15 @@ export default function HrAttendance() {
     setRegVersion(v => v + 1);
     setAttVersion(v => v + 1);
   };
-  /* Shown in place of a detail panel until its data lands: the same skeleton
-     the first page load draws, so switching employee and opening the screen
-     look like one behaviour. Distinguishes "still loading" from "the request
-     failed" — gating on detailReady alone would leave a skeleton animating
-     forever on an error. */
-  const detailFallback = (skeleton: ReactNode) => (
-    detailLoading ? skeleton : (
-      <div style={{ minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--vz-secondary-color)', fontSize: 13 }}>
-        <i className="ri-error-warning-line" style={{ color: '#f06548' }} />
-        <span>Could not load these records.</span>
-      </div>
-    )
+  /* The detail request finished without producing a record for this employee.
+     Kept distinct from "still loading": a stale panel under a spinner is a
+     promise that data is coming, and it must not stand in for a request that
+     already failed — that would spin forever over someone else's punches. */
+  const detailError = (
+    <div style={{ minHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--vz-secondary-color)', fontSize: 13 }}>
+      <i className="ri-error-warning-line" style={{ color: '#f06548' }} />
+      <span>Could not load these records.</span>
+    </div>
   );
 
   const openRegularizeFor = (iso: string) => {
@@ -492,7 +661,12 @@ export default function HrAttendance() {
     setRegOpen(true);
   };
 
-  if (employeesLoading) {
+  /* Only the FIRST roster load takes the whole page down to skeletons. The
+     same effect re-runs on every date change and after every approval, and it
+     used to blank the entire screen — header, roster and all — for a refresh
+     of data the user was already looking at. Later refreshes keep the page and
+     blur the parts that are actually being replaced. */
+  if (employeesLoading && !rosterLoaded) {
     return (
       <>
         <MasterFormStyles />
@@ -651,6 +825,7 @@ export default function HrAttendance() {
                     <span>{filteredEmployees.length} of {employees.length} employees</span>
                   </div>
 
+                  <BusyOverlay busy={rosterBusy} className="att-emplist-busy">
                   <div className="att-emplist-scroll">
                     {filteredEmployees.map(e => {
                       const tone = STATUS_TONE[e.status];
@@ -681,88 +856,35 @@ export default function HrAttendance() {
                       </div>
                     )}
                   </div>
+                  </BusyOverlay>
                 </div>
               </Col>
 
               <Col xl={9} lg={8} md={7} xs={12}>
-                {detailReady ? (
-                  <>
-                  <div className="att-emp-bar">
-                    <span className="att-emp-bar-avatar" style={{ background: selected.accent }}>{selected.initials.slice(0, 2).toUpperCase()}</span>
-                    <div className="att-emp-bar-info">
-                      <div className="att-emp-bar-name">{selected.name}</div>
-                      <div className="att-emp-bar-meta">
-                        {selected.empCode} · {selected.designation} · {selected.department}
-                      </div>
-                    </div>
-                    <div className="att-emp-bar-chips">
-                     
-                      <span className="att-chip">
-                        <i className="ri-time-line" />
-                        {selected.shift}
-                        {selected.shiftStart && selected.shiftEnd && (
-                          <span className="att-chip-sub">{fmt12h(selected.shiftStart)} – {fmt12h(selected.shiftEnd)}</span>
-                        )}
-                      </span>
-                      <span className="att-chip"><i className="ri-calendar-2-line" />Off: {selected.weeklyOff}</span>
-                      <span className="att-chip"><i className="ri-fingerprint-line" />{selected.attendanceNumber}</span>
-                      <span className="att-chip"><i className="ri-user-star-line" />Mgr: {selected.managerName}</span>
-                    </div>
-                  </div>
-
-                  <Row className="g-2 mb-3 align-items-stretch row-cols-xl-3 row-cols-md-3 row-cols-2">
-                    {([
-                      { key: 'pres', label: 'Present Days',   sub: 'This month',     value: selected.presentDays,        icon: 'ri-checkbox-circle-line', gradient: 'linear-gradient(135deg,#0ab39c,#22c8a9)', deep: '#0ab39c' },
-                      { key: 'late', label: 'Late Marks',     sub: 'This month',     value: selected.lateMarks,          icon: 'ri-time-line',            gradient: 'linear-gradient(135deg,#f7b84b,#fbcc77)', deep: '#92400e' },
-                      { key: 'miss', label: 'Missing Punches',sub: 'This month',     value: selected.missingPunch,       icon: 'ri-error-warning-line',   gradient: 'linear-gradient(135deg,#f06548,#f47c5d)', deep: '#b91c1c' },
-                    ] as const).map(k => (
-                      <Col key={k.key}>
-                        <div className="rec-kpi-card h-100">
-                          <span className="rec-kpi-strip" style={{ background: k.gradient }} />
-                          <div className="rec-kpi-text">
-                            <span className="rec-kpi-label">{k.label}</span>
-                            <span className="rec-kpi-num">{k.value}</span>
-                            <span className="att-kpi-sub">{k.sub}</span>
-                          </div>
-                          <span className="rec-kpi-icon" style={{ background: k.gradient }}>
-                            <i className={k.icon} />
-                          </span>
-                        </div>
-                      </Col>
-                    ))}
-                  </Row>
-
-                
-                  <Row className="g-2 align-items-stretch">
-                    <Col xl={7} lg={12}>
-                      <TodayRecordCard employee={selected} viewDate={viewDate} isPast={isPast} hour24={hour24} />
-                    </Col>
-                    <Col xl={5} lg={12}>
-                      <PunchTimelineCard employee={selected} />
-                    </Col>
-                  </Row>
-                  </>
-                ) : detailFallback(
-                  <>
-                    <EmployeeBarShimmer />
-                    <KpiRowShimmer />
-                    <DetailPanesShimmer />
-                  </>
-                )}
+                {detailReady || detailLoading ? (
+                  /* While loading this holds the OUTGOING employee (or, on the
+                     first load, the roster row), blurred behind a spinner, so
+                     the panel keeps its shape until the record lands. */
+                  <BusyOverlay busy={detailBusy} label={switchingLabel}>
+                    <EmployeeDetailPanel employee={shown} viewDate={viewDate} isPast={isPast} hour24={hour24} />
+                  </BusyOverlay>
+                ) : detailError}
               </Col>
             </Row>
 
             <div className="mt-2">
-              {detailReady ? (
-                <LogsRequestsCard
-                  employee={selected}
-                  tab={logTab} setTab={setLogTab}
-                  calMonth={calMonth} setCalMonth={setCalMonth}
-                  onPickDate={(iso) => setViewDate(iso)}
-                  onRegularize={openRegularizeFor}
-                  hour24={hour24}
-                />
-              ) : detailFallback(<LogsShimmer />)}
+              {detailReady || detailLoading ? (
+                <BusyOverlay busy={detailBusy} label={switchingLabel}>
+                  <LogsRequestsCard
+                    employee={shown}
+                    tab={logTab} setTab={setLogTab}
+                    calMonth={calMonth} setCalMonth={setCalMonth}
+                    onPickDate={(iso) => setViewDate(iso)}
+                    onRegularize={openRegularizeFor}
+                    hour24={hour24}
+                  />
+                </BusyOverlay>
+              ) : detailError}
             </div>
 
            

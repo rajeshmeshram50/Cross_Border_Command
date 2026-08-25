@@ -481,6 +481,72 @@ body {
     rgba(255, 255, 255, 0) 100%
   );
 }
+/* ── Busy overlay ──────────────────────────────────────────────────────
+   Blur + spinner over content that is being REFRESHED, as opposed to the
+   shimmer skeletons above, which stand in for content that has never been
+   drawn. Reaching for a skeleton on a refresh throws away a laid-out panel
+   and replaces it with grey bars — the page appears to rebuild itself every
+   time the user clicks a different row. Blurring what is already there keeps
+   the shape of the screen still and reads as "this is updating".
+   Markup lives in components/ui/BusyOverlay.tsx. */
+.busy-wrap {
+  position: relative;
+}
+.busy-wrap > .busy-content {
+  transition: filter .18s ease, opacity .18s ease;
+}
+.busy-wrap > .busy-content.is-busy {
+  filter: blur(3px) saturate(.9);
+  opacity: .5;
+  /* The stale panel must not be clickable or tabbable while it is standing
+     in for the next one — a click would act on the employee being replaced. */
+  pointer-events: none;
+  user-select: none;
+}
+.busy-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: inherit;
+  /* Faint scrim so the spinner reads against whatever it is standing over —
+     the blur alone leaves light panels almost as bright as the ring. */
+  background: var(--busy-scrim, rgba(255, 255, 255, .35));
+  animation: fadeIn .18s ease both;
+}
+.busy-veil-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid var(--busy-ring, rgba(124, 92, 252, .22));
+  border-top-color: var(--busy-ring-lit, #7c5cfc);
+  animation: busy-spin 700ms linear infinite;
+}
+@keyframes busy-spin {
+  to { transform: rotate(360deg); }
+}
+.busy-veil-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: .01em;
+  color: var(--vz-secondary-color, #6b7280);
+}
+[data-bs-theme="dark"] .busy-veil,
+[data-layout-mode="dark"] .busy-veil {
+  --busy-ring: rgba(255, 255, 255, .18);
+  --busy-ring-lit: #a78bfa;
+  --busy-scrim: rgba(16, 19, 26, .35);
+}
+/* Respect a reduced-motion preference: keep the blur, drop the spin. */
+@media (prefers-reduced-motion: reduce) {
+  .busy-veil-spinner { animation: none; }
+  .busy-veil { animation: none; }
+}
+
 :root {
   --shim-card-bg:      #ffffff;
   --shim-border:       #e5e7eb;
