@@ -29,6 +29,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class VendorController extends Controller
@@ -288,6 +289,14 @@ class VendorController extends Controller
             'address.state_code'       => 'nullable|string|max:32',
             'address.city'             => 'nullable|string|max:128',
             'address.pincode'          => 'nullable|string|max:16',
+            'address.google_location'  => ['nullable', 'string', 'max:1000',
+                // Any http(s) URL — Google hands out several shapes
+                // (maps.app.goo.gl short links, /maps/place/…, ?q=lat,lng)
+                // and pinning the pattern to one of them would reject the
+                // other two. Scheme-checked so a pasted address string
+                // cannot masquerade as a link.
+                'regex:/^https?:\/\/[^\s]+$/i',
+            ],
         ]);
 
         // Pull the address off $data (not a vendors column) — upserted onto the
@@ -477,6 +486,7 @@ class VendorController extends Controller
                     'state_code'   => $address['state_code']   ?? null,
                     'city'         => $address['city']         ?? null,
                     'pincode'      => $address['pincode']      ?? null,
+                    'google_location' => $address['google_location'] ?? null,
                 ];
                 $primary = $vendor->addresses()->where('is_primary', true)->first();
                 if ($primary) {
@@ -560,6 +570,14 @@ class VendorController extends Controller
             'primary_address.state_code'               => 'nullable|string|max:32',
             'primary_address.city'                     => 'nullable|string|max:128',
             'primary_address.pincode'                  => 'nullable|string|max:16',
+            'primary_address.google_location'          => ['nullable', 'string', 'max:1000',
+                // Any http(s) URL — Google hands out several shapes
+                // (maps.app.goo.gl short links, /maps/place/…, ?q=lat,lng)
+                // and pinning the pattern to one of them would reject the
+                // other two. Scheme-checked so a pasted address string
+                // cannot masquerade as a link.
+                'regex:/^https?:\/\/[^\s]+$/i',
+            ],
             'primary_address.contact_name'             => 'required|string|max:255',
             'primary_address.designation'              => 'nullable|string|max:128',
             'primary_address.contact_no'               => 'nullable|string|max:32',
@@ -602,7 +620,11 @@ class VendorController extends Controller
             $primary->save();
 
             // Mirror the primary contact's email onto the vendor row.
-            $vendor->primary_email  = $data['primary_address']['email'] ?? null;
+            // Same normalisation as validateContact() — see the note there.
+            $primaryEmail = $data['primary_address']['email'] ?? null;
+            $primaryEmail = $primaryEmail === null ? null : Str::lower(trim($primaryEmail));
+            $data['primary_address']['email'] = $primaryEmail;
+            $vendor->primary_email  = $primaryEmail;
             $vendor->step_completed = max((int) $vendor->step_completed, 1);
             $vendor->save();
 
@@ -711,7 +733,7 @@ class VendorController extends Controller
     /** Shared validation for a single additional contact (add + edit). */
     private function validateContact(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'contact_name'     => 'required|string|max:255',
             'designation'      => 'nullable|string|max:128',
             'contact_no'       => 'nullable|string|max:32',
@@ -721,6 +743,18 @@ class VendorController extends Controller
             // Existing stored path echoed back on edit when the file is unchanged.
             'attachment_path'  => 'nullable|string|max:500',
         ]);
+
+        // An address's domain half is case-insensitive, so Gmail@gmail.com and
+        // gmail@gmail.com are one mailbox. Stored as typed they are two rows,
+        // and the SPA's own duplicate check compares lower-cased — which is how
+        // the same contact could be saved twice. Normalised here rather than
+        // only in the form, because the form can be bypassed and this endpoint
+        // cannot.
+        if (isset($data['email'])) {
+            $data['email'] = $data['email'] === null ? null : Str::lower(trim($data['email']));
+        }
+
+        return $data;
     }
 
     /** Shape one additional contact for the SPA. */
@@ -1413,6 +1447,7 @@ class VendorController extends Controller
                 'state_code'        => $primary->state_code,
                 'city'              => $primary->city,
                 'pincode'           => $primary->pincode,
+                'google_location'   => $primary->google_location,
                 'contact_name'      => $primary->contact_name,
                 'designation'       => $primary->designation,
                 'contact_no'        => $primary->contact_no,

@@ -6,6 +6,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
 import AddVendorModal from './AddVendorModal';
+import SupplierScopeGate, { type SupplierScope } from './SupplierScopeGate';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
 import { ShimmerTable, ShimmerClmMaster } from '../../../../components/ui/Shimmer';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -142,7 +143,23 @@ export default function Vendors() {
   const [filterOpen, setFilterOpen] = useState(false);
   const SUPPLIER_FACETS: FacetKey[] = ['type', 'supplierType', 'segment', 'country'];
   const [tab, setTab] = useState<SupplierTab>('all');
+  /* Scope tabs on the "What We Are Doing Here" strip. Same split the Add
+     Supplier gate asks about, applied to the list: a supplier is domestic
+     when its country is India and international otherwise — the same rule the
+     form derives GST and State Code from.
+     Two tabs, no "All": the list is always looking at one side or the other,
+     and Domestic is the landing state because it is the larger book. */
+  const [scopeTab, setScopeTab] = useState<'domestic' | 'international'>('domestic');
   const [addOpen, setAddOpen] = useState(false);
+  /* Domestic / International is asked BEFORE the form opens, because the
+     answer changes what the form may OFFER — Country, and the GST block that
+     hangs off it — rather than being one more field inside it. Null while the
+     gate is up, set the moment a scope is chosen.
+     Only the Add path goes through the gate: an existing supplier's scope is
+     already settled by the country on record, and the deep-link path above
+     (opening a row by id) is an edit too. */
+  const [scopeGateOpen, setScopeGateOpen] = useState(false);
+  const [addScope, setAddScope] = useState<SupplierScope | null>(null);
   /* Edit vs Add — same modal, just seeded with an existing vendor id.
      Reset to null on close so the next "+ Add Vendor" click opens a
      blank form. */
@@ -363,6 +380,24 @@ export default function Vendors() {
     const recompute = () => {
       const el = scrollRef.current;
       if (!el) return;
+
+      /* Fit-to-viewport is a DESKTOP behaviour and has to be switched off on a
+         phone, not merely tuned for one.
+         The whole measurement assumes the table starts near the top of the
+         screen: it takes the space from there down to the bottom edge, fills
+         the card with it and scrolls the rows inside. On a phone everything
+         above the table — the header strip, the four step cards, the stacked
+         toolbar — has already used ~600px of a ~700px screen, so that space
+         comes out at or below zero and the card collapses to nothing. Which is
+         exactly what it did: tabs, Filter, then the footer, with no table.
+         Below 820px the page scrolls the way a page normally does: the card is
+         content-height and shows a fixed number of rows. */
+      if (window.innerWidth <= 820) {
+        setFillH(prev => (prev === undefined ? prev : undefined));
+        if (autoFitRef.current) setRpp(prev => (prev === 10 ? prev : 10));
+        return;
+      }
+
       const top = el.getBoundingClientRect().top;
       const THEAD = 42, ROW = 54, PAGER = 56;
       // Card is CONTENT-HEIGHT (no forced stretch) — the footer always sits right
@@ -437,6 +472,19 @@ useEffect(() => {
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
     const inTab = (v: Vendor) => tab === 'all' ? true : tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
+    /* Country arrives as the resolved master name. Compared lower-cased: the
+       master is user-editable and "india" / "INDIA" both occur. A supplier with
+       no country yet counts as neither, so it only shows under All rather than
+       being silently filed as international. */
+    const inScope = (v: Vendor) => {
+      const c = (v.country ?? '').trim().toLowerCase();
+      // No country on record yet — file it under Domestic rather than dropping
+      // it from both tabs. With no "All" left there is nowhere else for it to
+      // appear, and a supplier that shows in neither list is a supplier nobody
+      // ever finds again.
+      if (!c) return scopeTab === 'domestic';
+      return scopeTab === 'domestic' ? c === 'india' : c !== 'india';
+    };
     // Facet filter first (Trade Type / Segment / Country), across every tab —
     // applyPartyFilters reads `segment` as a comma-joined string, so normalise the
     // supplier's segments into one. The spread keeps every original vendor field.
@@ -446,6 +494,7 @@ useEffect(() => {
     );
     return facet
       .filter(inTab)
+      .filter(inScope)
       .filter(v => !lo
         || v.code.toLowerCase().includes(lo)
         || v.companyName.toLowerCase().includes(lo)
@@ -455,7 +504,7 @@ useEffect(() => {
         || v.city.toLowerCase().includes(lo)
         || v.state.toLowerCase().includes(lo)
         || (v.stateCode ?? '').toLowerCase().includes(lo));
-  }, [vendors, search, tab, filters]);
+  }, [vendors, search, tab, scopeTab, filters]);
 
   /* Active-filter chips shown under the toolbar — each removable. */
   const filterChips = useMemo(() => {
@@ -534,7 +583,7 @@ useEffect(() => {
               </div>
             </div>
             <div className="cstrip__right">
-              <button type="button" className="cstrip__action-btn" onClick={() => setAddOpen(true)}>
+              <button type="button" className="cstrip__action-btn" onClick={() => { setEditingId(null); setEditingStep(null); setAddScope(null); setScopeGateOpen(true); }}>
                 <span className="cstrip__action-btn-sheen" />
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 Add Supplier
@@ -557,6 +606,25 @@ useEffect(() => {
                 <div className="bref-box__header-sub">Creating suppliers, verifying compliance, and mapping products for procurement.</div>
               </div>
               <div className="bref-box__header-right">
+                {/* Scope tabs, ported from the Sourcing Tracker strip. stopPropagation
+                    on the group: the whole header is the collapse toggle, so a click
+                    here would otherwise fold the panel shut under the user. */}
+                <div className="sup-scope" onClick={e => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className={`sup-scope__tab ${scopeTab === 'domestic' ? 'is-active' : ''}`}
+                    onClick={() => setScopeTab('domestic')}
+                  >
+                    <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Suppliers</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`sup-scope__tab ${scopeTab === 'international' ? 'is-active' : ''}`}
+                    onClick={() => setScopeTab('international')}
+                  >
+                    <i className="ri-global-line" />International<span className="sup-scope__word"> Suppliers</span>
+                  </button>
+                </div>
                 <div className="bref-box__toggle">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
@@ -815,11 +883,20 @@ useEffect(() => {
         </Col>
       </Row>
 
+      {/* Scope first, form second. */}
+      {scopeGateOpen && (
+        <SupplierScopeGate
+          onClose={() => setScopeGateOpen(false)}
+          onChoose={scope => { setAddScope(scope); setScopeGateOpen(false); setAddOpen(true); }}
+        />
+      )}
+
       {addOpen && (
         <AddVendorModal
           vendorId={editingId}
           initialStep={editingStep ?? undefined}
-          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); returnToRef.current = null; void refresh({ silent: true }); }}
+          scope={addScope ?? undefined}
+          onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); setAddScope(null); returnToRef.current = null; void refresh({ silent: true }); }}
           onSubmit={handleSave}
         />
       )}
