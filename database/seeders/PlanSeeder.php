@@ -26,7 +26,7 @@ class PlanSeeder extends Seeder
             'best_for' => 'Trying out the platform',
             'sort_order' => 1,
         ]);
-        foreach (['branches', 'employees'] as $s) {
+        foreach (['branches', 'hr.employee'] as $s) {
             PlanModule::updateOrCreate(['plan_id' => $p1->id, 'module_id' => $mods[$s]], ['access_level' => 'limited']);
         }
 
@@ -44,7 +44,7 @@ class PlanSeeder extends Seeder
             'sort_order' => 2,
             'trial_days' => 7,
         ]);
-        foreach (['branches', 'employees', 'permissions'] as $s) {
+        foreach (['branches', 'hr.employee', 'permissions'] as $s) {
             PlanModule::updateOrCreate(['plan_id' => $p2->id, 'module_id' => $mods[$s]], ['access_level' => $s === 'permissions' ? 'limited' : 'full']);
         }
 
@@ -65,7 +65,7 @@ class PlanSeeder extends Seeder
             'yearly_discount' => 20,
             'trial_days' => 14,
         ]);
-        foreach (['branches', 'employees', 'permissions', 'settings'] as $s) {
+        foreach (['branches', 'hr.employee', 'permissions', 'settings'] as $s) {
             PlanModule::updateOrCreate(['plan_id' => $p3->id, 'module_id' => $mods[$s]], ['access_level' => 'full']);
         }
 

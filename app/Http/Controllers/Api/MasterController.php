@@ -125,7 +125,14 @@ class MasterController extends Controller
         'port_of_loading' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'address', 't' => 'textarea'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code']],
         'port_of_discharge' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'country_id', 't' => 'select', 'r' => true, 'ref' => 'countries'], ['n' => 'city', 't' => 'text'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code']],
         'segments' => ['fields' => [['n' => 'title', 't' => 'text', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['title']],
-        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{4,10}$/', 'patternMessage' => 'HSN/SAC code must be 4 to 10 digits.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'gst_rate_id', 't' => 'select', 'ref' => 'gst_percentage'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['hsn_code']],
+        /* GST rate was dropped from this master — the rate belongs to the
+           PRODUCT (products.gst_id), which is what every downstream document
+           reads. Carrying a second copy on the HSN row invited the two to
+           disagree with nothing to reconcile them.
+           `master_hsn_codes.gst_rate_id` is deliberately LEFT IN THE DATABASE
+           holding its historic values; it is simply no longer written, read or
+           offered. Nothing references it now, so the stored values are inert. */
+        'hsn_codes' => ['fields' => [['n' => 'hsn_code', 't' => 'text', 'r' => true, 'pattern' => '/^[0-9]{4,10}$/', 'patternMessage' => 'HSN/SAC code must be 4 to 10 digits.'], ['n' => 'description', 't' => 'textarea', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['hsn_code']],
         'gst_percentage' => ['fields' => [['n' => 'percentage', 't' => 'number', 'r' => true], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uFields' => ['percentage']],
         // `uEach` — currency name and code each independently unique.
         'currencies' => ['fields' => [['n' => 'name', 't' => 'text', 'r' => true], ['n' => 'code', 't' => 'text', 'r' => true], ['n' => 'symbol', 't' => 'text', 'r' => true], ['n' => 'exchange_rate', 't' => 'number'], ['n' => 'status', 't' => 'select', 'r' => true, 'opts' => ['Active', 'Inactive']]], 'uEach' => ['name', 'code']],
@@ -651,18 +658,21 @@ class MasterController extends Controller
             ], 403);
         }
 
-        // A GST rate that products or HSN codes still reference must not be
-        // deleted — doing so orphans products.gst_id / hsn_codes.gst_rate_id and
-        // the Product screens then render a stale/random rate (QA #43, #44).
+        /* A GST rate that products still reference must not be deleted — doing
+         * so orphans products.gst_id and the Product screens then render a
+         * stale/random rate (QA #43, #44).
+         *
+         * HSN codes are no longer counted here. They used to be, back when the
+         * HSN master carried its own GST rate; that field is gone from the
+         * form, so an HSN row's leftover gst_rate_id is a value nobody can see
+         * or clear. Keeping it in the guard would make a GST rate permanently
+         * undeletable, blocked by a link with no screen to unlink it on. */
         if ($slug === 'gst_percentage') {
             $productHits = \App\Models\Product::where('gst_id', $row->id)->count();
-            $hsnHits     = \App\Models\Masters\HsnCodes::where('gst_rate_id', $row->id)->count();
-            if ($productHits > 0 || $hsnHits > 0) {
-                $parts = [];
-                if ($productHits > 0) $parts[] = $productHits . ' product' . ($productHits === 1 ? '' : 's');
-                if ($hsnHits > 0)     $parts[] = $hsnHits . ' HSN code' . ($hsnHits === 1 ? '' : 's');
+            if ($productHits > 0) {
                 return response()->json([
-                    'message' => 'This GST rate is in use by ' . implode(' and ', $parts)
+                    'message' => 'This GST rate is in use by ' . $productHits . ' product'
+                        . ($productHits === 1 ? '' : 's')
                         . ' and cannot be deleted. Reassign those records to another GST rate first.',
                 ], 409);
             }
@@ -843,13 +853,12 @@ class MasterController extends Controller
             $arr[$k . '_url'] = file_url($v);
         }
 
-        // GST rates referenced by any product or HSN code are "in use" — the
-        // frontend disables their Delete button + shows a tooltip, mirroring the
-        // hard guard in destroy() (QA #43). Cheap: gst_percentage has a handful
-        // of rows, so the two exists() probes per row are negligible.
+        // GST rates referenced by any product are "in use" — the frontend
+        // disables their Delete button + shows a tooltip, mirroring the hard
+        // guard in destroy() (QA #43). HSN codes are no longer part of this
+        // test; see the note on that guard.
         if ($row instanceof \App\Models\Masters\GstPercentage) {
-            $arr['in_use'] = \App\Models\Product::where('gst_id', $row->id)->exists()
-                || \App\Models\Masters\HsnCodes::where('gst_rate_id', $row->id)->exists();
+            $arr['in_use'] = \App\Models\Product::where('gst_id', $row->id)->exists();
         }
 
         return $arr;
