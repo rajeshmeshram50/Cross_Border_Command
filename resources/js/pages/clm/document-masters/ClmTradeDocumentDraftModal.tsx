@@ -13,7 +13,9 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CTC_EDITOR_CSS, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import CtcLivePreview from '../operations/CtcLivePreview';
+import { useOpsTheme } from '../operations/useOpsTheme';
 
 /* ───────────────────────────────────────────────────────────────────────
  * Central CLM → Trade Documents Master → Draft New Trade Document (modal)
@@ -175,6 +177,19 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // Full-page drafting — expands the editor shell to fill the viewport so the
   // user can draft long documents without the modal chrome cramping them.
   const [fullPage, setFullPage] = useState(false);
+  /* Live PDF preview, beside the editor. Only offered in full page — the modal
+     frame leaves the editor too narrow to split, which is the same call the
+     CTC form makes (see ClmCtcForm's editorFs && previewOpen). */
+  const [previewOpen, setPreviewOpen] = useState(false);
+  /* Page margins for the A4 view — the draggable ruler above the sheet writes
+     here, and the value is what the page surface indents its text by. */
+  const [margins, setMargins] = useState<CtcMargins>(DEFAULT_MARGINS);
+  /* The preview follows the APP's theme, not this modal's chrome. The modal is
+     teal-dark by design whatever the app is set to, so passing a hard-coded
+     `dark` painted a dark preview over a light-mode page — the preview shows a
+     white A4 sheet either way, and only its surround should follow the theme.
+     Same source the CTC form reads (useOpsTheme -> useTheme). */
+  const ops = useOpsTheme('cyan');
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
@@ -944,6 +959,21 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></svg>
                       Clause Library
                     </button>
+                    {/* Live Preview — the actual PDF, rendered from the same
+                        blade the download uses, so what is checked here is what
+                        gets sent. Full page only: at modal width the split
+                        leaves neither pane usable. */}
+                    {fullPage && (
+                      <button
+                        type="button"
+                        className={`tdw-editor-btn ${previewOpen ? 'is-on' : ''}`}
+                        onClick={() => setPreviewOpen(v => !v)}
+                        title={previewOpen ? 'Hide the live PDF preview' : 'Show the live PDF preview'}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                        {previewOpen ? 'Hide Preview' : 'Live Preview'}
+                      </button>
+                    )}
                     {/* Full Page — expands the drafting area to fill the screen
                         (and collapses back). Lets the user draft long content
                         without the modal frame cramping the editor. */}
@@ -957,81 +987,25 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                     </button>
                   </div>
                 </div>
-                <div className="tdw-toolbar" onMouseDown={e => {
-                  /* preventDefault keeps the editor's text selection alive when a
-                   * toolbar BUTTON is clicked (the contentEditable would otherwise
-                   * blur and collapse the selection). But native <select> (font
-                   * size / block format) and <input type="color"> need the default
-                   * mousedown to open their dropdown / picker — preventing it stops
-                   * them from ever opening. Skip those; restoreCaretForInsert() in
-                   * applyFontSize/applyBlock re-applies the stashed selection. */
-                  if ((e.target as HTMLElement).closest('select, option, input')) return;
-                  e.preventDefault();
-                }}>
-                  <select className="tdw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
-                    <option value="11">11</option><option value="12">12</option><option value="13">13</option>
-                    <option value="14">14</option><option value="16">16</option><option value="18">18</option>
-                    <option value="20">20</option><option value="24">24</option><option value="28">28</option>
-                  </select>
-                  <select className="tdw-toolbar-sel" value={block} onChange={e => { setBlockState(e.target.value); applyBlock(e.target.value); }} title="Block format">
-                    <option value="p">Paragraph</option>
-                    <option value="h1">Heading 1</option>
-                    <option value="h2">Heading 2</option>
-                    <option value="h3">Heading 3</option>
-                    <option value="blockquote">Quote</option>
-                    <option value="pre">Code</option>
-                  </select>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('bold')}        title="Bold (Ctrl+B)"><b>B</b></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('italic')}      title="Italic (Ctrl+I)"><i>I</i></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('underline')}   title="Underline (Ctrl+U)"><u>U</u></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('superscript')} title="Superscript">X²</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('subscript')}   title="Subscript">X₂</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={insertLink} title="Insert link"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button>
-                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Text color" style={{ position: 'relative' }}>
-                    T
-                    <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
-                           style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
-                  </label>
-                  {/* Highlight — system color picker (click the icon) + a
-                     quick-pick palette of 5 common highlights immediately
-                     to the right so the user doesn't have to dive into the
-                     OS picker for the everyday yellow / mint / pink etc. */}
-                  <label className="tdw-toolbar-btn tdw-toolbar-color" title="Custom highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
-                    ✎
-                    <input type="color" defaultValue="#fde68a" onChange={e => exec('hiliteColor', e.target.value)}
-                           style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
-                  </label>
-                  {['#fde68a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e9d5ff'].map(c => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="tdw-toolbar-btn"
-                      title={`Highlight ${c}`}
-                      onMouseDown={e => e.preventDefault()}
-                      onClick={() => exec('hiliteColor', c)}
-                      style={{ background: c, width: 22, padding: 0, border: '1px solid #cbd5e1' }}
-                    >&nbsp;</button>
-                  ))}
-                  <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyLeft')}    title="Align left"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyCenter')}  title="Align center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5" y1="18" x2="19" y2="18"/></svg></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyRight')}   title="Align right"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('justifyFull')}    title="Justify"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
-                  <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('outdent')} title="Outdent">⇤</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('indent')}  title="Indent">⇥</button>
-                  <span className="tdw-toolbar-sep" />
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
-                  <button type="button" className="tdw-toolbar-btn" onClick={clearFormatting} title="Clear formatting">🅣</button>
-                </div>
+                {/* The Case-to-Case editor's toolbar, reused verbatim.
+                    This modal already runs on the same engine (useCtcEditor /
+                    CtcEditorContent above), so the only thing it did not share
+                    was the bar — which is why line spacing, sub points, the
+                    table menu, borders and Find & Replace existed in one CLM
+                    editor and not this one. One toolbar means a fix or an
+                    addition lands in both from now on.
+                    The controls this bar used to have that CtcToolbar lacked —
+                    superscript, subscript, text colour, highlight — were added
+                    to CtcToolbar first, so nothing is lost in the swap. */}
+                <CtcToolbar editor={ted.editor} dark />
                 {/* Scrollable region — the editor head + toolbar above stay
                    pinned; only this page-shell preview scrolls when the
                    content grows. */}
-                <div className="tdw-editor-scroll">
+                {/* Editor and preview sit side by side when the preview is on;
+                   the row is the flex parent so the editor keeps the slack and
+                   the preview holds a fixed share. */}
+                <div className="clm-editor-split">
+                <div className="tdw-editor-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
                   {/* Page-shell preview wraps the editor in a fixed header
                      (logo + title + subtitle) and footer (text + page #).
                      Same component the HR Document Templates Step 3 uses,
@@ -1052,9 +1026,35 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
                           <div style={{ fontSize: 12.5, fontWeight: 700 }}>Preparing editor…</div>
                         </div>
                       )}
-                      <CtcEditorContent editor={ted.editor} />
+                      {/* pageView — the draft is laid out as real A4 sheets with
+                          the page boundaries the PDF will actually break at,
+                          instead of one continuous column. Same call the CTC
+                          form makes, and the reason the two now look alike.
+                          The ruler writes into `margins`, and footerText puts
+                          the running footer on every sheet so a page break is
+                          judged against the space the footer really leaves. */}
+                      <CtcEditorContent
+                        editor={ted.editor}
+                        pageView
+                        margins={margins}
+                        onMargins={setMargins}
+                        footerText={(footerConfig as { text?: string }).text || ''}
+                      />
                     </div>
                   </HeaderFooterPanel>
+                </div>
+                {fullPage && previewOpen && (
+                  <div style={{ width: '32%', minWidth: 300, flexShrink: 0, minHeight: 0 }}>
+                    <CtcLivePreview
+                      endpoint="/clm/trade-doc-library/preview-live"
+                      contractId={editingId ?? null}
+                      content={content ?? ''}
+                      headerConfig={headerConfig as unknown as Record<string, unknown>}
+                      footerConfig={footerConfig as unknown as Record<string, unknown>}
+                      dark={ops.dark}
+                    />
+                  </div>
+                )}
                 </div>
                 <div className="tdw-editor-foot" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span className="tdw-editor-foot-hint">ℹ Placeholders auto-fill on document generation</span>
@@ -1432,7 +1432,33 @@ const TDW_CSS = `
   flex-shrink: 0;
 }
 /* Scrollable page-shell region between the pinned toolbar and footer. */
-.tdw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #fff; }
+/* Grey desk, not white: in page view the sheets are white, and a white
+   surround would hide where one page ends and the next begins. */
+/* A plain block scroller — no flex. The display:flex added earlier was left
+   over from stretching a content-height page shell, and a flex column parent
+   sizes its child against the container instead of letting it run past and
+   scroll, which is why the left pane stopped scrolling once page view was on.
+   CTC's own .ctc-mid-scroll is a plain block for the same reason. */
+.tdw-editor-scroll { flex: 1; min-height: 0; overflow-y: auto; background: #eef0f6; padding: 14px; }
+[data-bs-theme="dark"] .tdw-editor-scroll { background: #100c1c; }
+/* The desk behind the sheets.
+   HeaderFooterPanel paints .tpl-page-body white with an inline style — right
+   when the editor IS the page, wrong now that the page surface draws its own
+   paper. That white became the surround, so a dark-mode sheet sat framed in
+   white bars down both sides and below the footer. Matched to the scroller so
+   the sheet is the only thing on it.
+   The earlier flex-stretch rules are gone with it: they existed to fill a pane
+   a short draft left empty, and a page-view sheet is never short — it is
+   always a whole sheet. Stretching it only pulled the paper out of shape. */
+/* Only dark mode needs this. .tpl-page-body is white by inline style, which is
+   right in light mode — the shell is the paper's mount and the sheet sits on
+   it, exactly as it does in the CTC form. In DARK mode the page surface turns
+   dark while that inline white stays, so the sheet ends up framed in white
+   bars; matched to the desk there and left alone otherwise.
+   Overriding it in light mode too (the first attempt) added a second grey
+   frame inside the white shell — a layer the CTC form does not have, and the
+   reason the two stopped looking alike. */
+[data-bs-theme="dark"] .tdw-editor-scroll .tpl-page-body { background: #100c1c !important; }
 .tdw-editor-title { display: inline-flex; align-items: center; gap: 9px; }
 .tdw-editor-title-ico { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .tdw-editor-title-main { font-size: 11px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }

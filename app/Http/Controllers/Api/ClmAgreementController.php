@@ -1226,4 +1226,98 @@ class ClmAgreementController extends Controller
 
         return response()->json(['status' => true, 'data' => $row->fresh()]);
     }
+
+    /**
+     * Live PDF preview for the Stage-2 draft editor.
+     *
+     * Renders the same blade the signature PDF does, so what is checked in the
+     * editor is what the counterparty will receive — a preview built from a
+     * different view would agree with the editor and disagree with the file.
+     *
+     * Everything is taken from the REQUEST, not the saved row: the editor posts
+     * its current content, margins, header and footer on each debounce, so the
+     * preview tracks unsaved edits. The row is read only for a title and code,
+     * and only within the caller's own tenant.
+     */
+    public function previewLive(Request $request)
+    {
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(120);
+
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $data = $request->validate([
+            'id'            => 'nullable|integer',
+            'content'       => 'nullable|string',
+            'page_config'   => 'nullable|array',
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
+        ]);
+
+        $row = null;
+        if (!empty($data['id'])) {
+            $row = ClmAgreementLibrary::where('client_id', $user->client_id)->find($data['id']);
+        }
+
+        $html = trim((string) ($data['content'] ?? ($row->content ?? '')));
+        if ($html === '') {
+            $html = '<p><em>Nothing to preview yet — start typing in the editor.</em></p>';
+        }
+
+        /* Same ceiling the download carries. dompdf does not fail gracefully
+           past it — it takes the request down with it. */
+        if (($len = mb_strlen($html)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This draft is too large to preview — ' . number_format($len)
+                    . ' characters against a limit of ' . number_format(self::RENDER_MAX_CHARS) . '.',
+            ], 422);
+        }
+
+        /* A draft still holds its placeholders. Blanked rather than shown raw,
+           so the preview reads as the finished page will. The signature stamp
+           is only injected once the agreement is approved. */
+        $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $html);
+
+        $client       = \App\Models\Client::find($user->client_id);
+        $headerConfig = $data['header_config'] ?? (is_array($row->header_config ?? null) ? $row->header_config : []);
+        $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
+        $pageConfig   = $data['page_config']   ?? [];
+
+        // dompdf cannot fetch /storage URLs at render time — same candidate
+        // chain the DOCX export walks.
+        $urlPath = (isset($headerConfig['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerConfig['logo_url'], $lm)) ? $lm[1] : null;
+        $headerLogoBase64 = '';
+        foreach (array_filter([$headerConfig['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+            try {
+                if (Storage::disk('public')->exists($path)) {
+                    $headerLogoBase64 = base64_encode(Storage::disk('public')->get($path));
+                    break;
+                }
+            } catch (\Throwable $e) { /* try next candidate */ }
+        }
+
+        // Stand-in when the draft has never been saved, so the blade's
+        // $document->title still resolves.
+        $document = $row ?: new ClmAgreementLibrary(['title' => 'Agreement (draft preview)']);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $document,
+            'party'            => null,
+            'modelName'        => 'Agreement',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => (string) ($row->code ?? 'DRAFT'),
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'pageConfig'       => $pageConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        return $pdf->stream('agreement-preview.pdf');
+    }
+
 }

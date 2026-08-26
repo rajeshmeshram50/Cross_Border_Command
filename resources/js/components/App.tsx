@@ -119,6 +119,11 @@ const PurchaseOrder = lazy(() => import('../pages/p2p/procurement-management/pur
 const DevTools = lazy(() => import('../pages/dev-tools/DevTools'));
 const SupplierPurchaseInvoice = lazy(() => import('../pages/p2p/purchase-management/supplier-purchase-invoice/SupplierPurchaseInvoice'));
 const DebitNote = lazy(() => import('../pages/p2p/purchase-management/debit-note/DebitNote'));
+const InventoryPutAway = lazy(() => import('../pages/inventory/InventoryPutAway'));
+const InventoryStickers = lazy(() => import('../pages/inventory/InventoryStickers'));
+const ScanLanding = lazy(() => import('../pages/inventory/ScanLanding'));
+const InventoryScanDevices = lazy(() => import('../pages/inventory/InventoryScanDevices'));
+const InventoryScanLog = lazy(() => import('../pages/inventory/InventoryScanLog'));
 const MyTeam = lazy(() => import('../pages/MyTeam'));
 const Documentation = lazy(() => import('../pages/Documentation'));
 const Inbox = lazy(() => import('../pages/Inbox'));
@@ -825,7 +830,12 @@ function DashboardRoutes({ user }: { user: any }) {
               <Route path="/dev-tools" element={<DevTools />} />
               <Route path="/project-navigator" element={<ModuleStubPage />} />
               <Route path="/gts" element={<ModuleStubPage />} />
-              <Route path="/inventory" element={<ModuleStubPage />} />
+              {/* Inventory — Zebra TC27 put-away scanning. Runs on simulated
+                  data until the scan/device endpoints ship; see putAwayStore.ts. */}
+              <Route path="/inventory" element={<InventoryPutAway />} />
+              <Route path="/inventory/stickers" element={<InventoryStickers />} />
+              <Route path="/inventory/devices" element={<InventoryScanDevices />} />
+              <Route path="/inventory/scan-log" element={<InventoryScanLog />} />
               {/* P2P leaves without a real page yet — dark-mode-aware "Coming soon" stub. */}
               <Route path="/p2p/analytics" element={<ModuleStubPage />} />
               <Route path="/p2p/diagnosis" element={<ModuleStubPage />} />
@@ -923,6 +933,19 @@ function Router() {
       <Suspense fallback={<RouteFallback />}>
         <Routes>
           <Route path="/onboarding/:token" element={<PublicOnboarding />} />
+        </Routes>
+      </Suspense>
+    );
+  }
+
+  // Every printed sticker points here. It must resolve without a session:
+  // an unregistered device has to see "Device blocked", not a login form —
+  // bouncing it to /login would leak that the code means something.
+  if (location.pathname.startsWith('/s/')) {
+    return (
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route path="/s/:key" element={<ScanLanding />} />
         </Routes>
       </Suspense>
     );
