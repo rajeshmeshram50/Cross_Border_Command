@@ -1,4 +1,4 @@
-import { Menu, Moon, Sun, Bell, Maximize2, Minimize2, Settings, User as UserIcon, LogOut, ChevronDown, Check, Inbox } from 'lucide-react';
+import { Menu, Moon, Sun, Bell, Maximize2, Minimize2, Settings, User as UserIcon, LogOut, ChevronDown, Check, Inbox, Users, BookOpen, Palette } from 'lucide-react';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
@@ -119,6 +119,7 @@ export default function Topbar({ page, onToggleSidebar, onNavigate }: Props) {
           open={userOpen}
           setOpen={setUserOpen}
           onNavigate={onNavigate}
+          onOpenCustomizer={() => setCustomizerOpen(true)}
         />
       )}
 
@@ -365,7 +366,15 @@ function NotificationRow({ item, onClick }: { item: InAppNotification; onClick: 
 /* ───────────────────────────────────────────
    User Dropdown (Velzon pattern)
    ─────────────────────────────────────────── */
-function UserDropdown({ open, setOpen, onNavigate }: { open: boolean; setOpen: (v: boolean) => void; onNavigate: (id: string) => void }) {
+function UserDropdown({ open, setOpen, onNavigate, onOpenCustomizer }: {
+  open: boolean;
+  setOpen: (v: boolean) => void;
+  onNavigate: (id: string) => void;
+  /* The customizer's open state lives on Topbar (it owns <ThemeCustomizer>),
+     so the menu item asks the parent to open it rather than keeping a second
+     copy of that state down here. */
+  onOpenCustomizer: () => void;
+}) {
   const { user, logout } = useAuth();
   const toast = useToast();
   const ref = useRef<HTMLDivElement>(null);
@@ -457,11 +466,19 @@ function UserDropdown({ open, setOpen, onNavigate }: { open: boolean; setOpen: (
 
           {/* Menu */}
           <div className="py-1">
+            {/* Same items, same order as the horizontal header's profile menu
+                (velzon/Layouts/IdimsHeader.tsx). The two layouts render
+                different components, so this list had drifted — My Team,
+                Documentation Guide and Theme Customizer existed on horizontal
+                only, and switching layout silently took them away. */}
             <DropdownItem icon={<UserIcon size={14} />} label="Profile" onClick={() => { setOpen(false); onNavigate('profile'); }} />
+            <DropdownItem icon={<Users size={14} />} label="My Team" onClick={() => { setOpen(false); onNavigate('my-team'); }} />
             {user.user_type === 'client_admin' && (
               <DropdownItem icon={<Check size={14} />} label="My Plan" onClick={() => { setOpen(false); onNavigate('my-plan'); }} />
             )}
             <DropdownItem icon={<Settings size={14} />} label="Settings" onClick={() => { setOpen(false); onNavigate('settings'); }} />
+            <DropdownItem icon={<BookOpen size={14} />} label="Documentation Guide" onClick={() => { setOpen(false); onNavigate('documentation'); }} />
+            <DropdownItem icon={<Palette size={14} />} label="Theme Customizer" onClick={() => { setOpen(false); onOpenCustomizer(); }} />
             <div className="h-px bg-border my-1" />
             <DropdownItem
               icon={<LogOut size={14} />}

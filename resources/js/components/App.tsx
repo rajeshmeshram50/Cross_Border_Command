@@ -220,6 +220,12 @@ const getPagePath = (page: string, data?: any): string => {
     case 'permissions': return '/permissions';
     case 'settings': return '/settings';
     case 'profile': return '/profile';
+    /* Both routes existed but had no id here, so navigating to them by id fell
+       through to the `default` branch and landed on /dashboard. The horizontal
+       header pushes paths directly and never hit it; the vertical layout goes
+       through this map, which is why its profile menu couldn't offer them. */
+    case 'my-team': return '/my-team';
+    case 'documentation': return '/documentation';
     default:
       // Master leaf slugs come as `master.xxx` — map to `/master/xxx`
       if (page.startsWith('master.')) return `/master/${page.slice('master.'.length)}`;
