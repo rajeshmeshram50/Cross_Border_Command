@@ -79,14 +79,113 @@
    * page the table spans AND is never stranded alone at the bottom of a page —
    * fixing "table header on one page, its rows on the next". Tables that already
    * declare a <thead> are left untouched. Non-greedy match grabs one <tr>. */
+  /* Column widths → percentages on the first row's cells.
+   *
+   * TipTap's column resizing stores its widths in <colgroup><col style="width:
+   * NNpx">. dompdf's support for <col> is thin — it lays the table out on the
+   * cells and largely ignores the group — so a table the author had sized in
+   * the editor came out with even columns in the PDF.
+   *
+   * Percentages, not the original px: the PDF table is width:100% inside a
+   * fixed page, so a px width copied straight across would be a width for a
+   * different-sized table. The ratio is what the author actually chose.
+   * Written onto the first row because with table-layout:fixed that row
+   * decides the column widths for the whole table.
+   *
+   * Runs BEFORE the <thead> promotion below, while the first <tr> is still
+   * where the colgroup can be matched against it. */
+  if (!empty($processedHtml) && stripos($processedHtml, '<colgroup') !== false) {
+    $processedHtml = preg_replace_callback('/(<table\b[^>]*>)(.*?)(<\/table>)/is', function ($m) {
+      $inner = $m[2];
+      if (!preg_match('/<colgroup\b[^>]*>(.*?)<\/colgroup>/is', $inner, $cg))
+        return $m[0];
+      if (!preg_match_all('/<col\b[^>]*>/is', $cg[1], $cols) || !count($cols[0]))
+        return $m[0];
+
+      $widths = [];
+      foreach ($cols[0] as $col) {
+        if (preg_match('/width\s*:\s*([\d.]+)\s*px/i', $col, $w))      $widths[] = (float) $w[1];
+        elseif (preg_match('/width\s*=\s*"([\d.]+)"/i', $col, $w))      $widths[] = (float) $w[1];
+        else                                                            $widths[] = 0.0;
+      }
+      $total = array_sum($widths);
+      if ($total <= 0)
+        return $m[0];   // nothing was ever resized
+
+      $done = false;
+      $newInner = preg_replace_callback('/<tr\b[^>]*>.*?<\/tr>/is', function ($rm) use (&$done, $widths, $total) {
+        if ($done) return $rm[0];
+        $done = true;
+        $i = 0;
+        return preg_replace_callback('/<(td|th)\b([^>]*)>/i', function ($cm) use (&$i, $widths, $total) {
+          /* A merged cell covers several columns, so its width is their sum. */
+          $span = preg_match('/colspan\s*=\s*"?(\d+)"?/i', $cm[2], $sp) ? max(1, (int) $sp[1]) : 1;
+          $px = 0.0;
+          for ($k = 0; $k < $span; $k++) $px += $widths[$i + $k] ?? 0.0;
+          $i += $span;
+          if ($px <= 0) return $cm[0];
+
+          $pct   = round($px / $total * 100, 2) . '%';
+          $attrs = $cm[2];
+          if (preg_match('/style\s*=\s*"([^"]*)"/i', $attrs, $sm2)) {
+            $style = preg_replace('/(^|;)\s*width\s*:[^;]*/i', '', $sm2[1]);
+            $style = trim($style, "; \t\n\r") . '; width: ' . $pct;
+            $attrs = str_replace($sm2[0], 'style="' . trim($style, '; ') . '"', $attrs);
+          } else {
+            $attrs .= ' style="width: ' . $pct . '"';
+          }
+          return '<' . $cm[1] . $attrs . '>';
+        }, $rm[0]);
+      }, $inner);
+
+      /* Drop the <colgroup> now that its widths live on the cells.
+       *
+       * dompdf half-supports <col>: enough to take it into account, not enough
+       * to lay a table out from it — so leaving it in place next to real cell
+       * widths gave two sources of truth and dompdf went with neither, which
+       * is why the PDF kept showing even columns while the editor showed the
+       * dragged ones. The cells are the source dompdf actually honours with
+       * table-layout: fixed, so the group has nothing left to say. */
+      $newInner = preg_replace('/<colgroup\b[^>]*>.*?<\/colgroup>/is', '', $newInner, 1);
+
+      return $m[1] . $newInner . $m[3];
+    }, $processedHtml);
+  }
+
+
   if (!empty($processedHtml) && stripos($processedHtml, '<table') !== false) {
     $processedHtml = preg_replace_callback('/(<table\b[^>]*>)(.*?)(<\/table>)/is', function ($m) {
       if (stripos($m[2], '<thead') !== false)
         return $m[0];   // already grouped
-      if (!preg_match('/<tr\b[^>]*>.*?<\/tr>/is', $m[2], $tr))
+      $inner = $m[2];
+
+      /* <caption> and <colgroup> must stay AHEAD of <thead> — that is the order
+       * HTML defines, and dompdf builds its frame tree straight off the parsed
+       * DOM. Lift them out before promoting the first row and put them back in
+       * front of it.
+       *
+       * Without this the rebuilt table came out as
+       *     <table><thead>...</thead><colgroup>...</colgroup><tbody>...
+       * and dompdf lost the table parent for every cell after the misplaced
+       * colgroup — "Parent table not found for table cell", the error the Live
+       * Preview showed. It only ever bit tables with NO explicit <thead>, and
+       * TipTap emits exactly that shape (colgroup, then tbody, header row as
+       * <th> inside it), so it surfaced the moment Insert Table existed. */
+      $lead = '';
+      if (preg_match('/^\s*(?:<caption\b.*?<\/caption>\s*)?(?:<colgroup\b.*?<\/colgroup>\s*)?/is', $inner, $lm)
+          && trim($lm[0]) !== '') {
+        $lead  = $lm[0];
+        $inner = substr($inner, strlen($lm[0]));
+      }
+
+      if (!preg_match('/<tr\b[^>]*>.*?<\/tr>/is', $inner, $tr))
         return $m[0];
-      $rest = preg_replace('/<tr\b[^>]*>.*?<\/tr>/is', '', $m[2], 1);
-      return $m[1] . '<thead>' . $tr[0] . '</thead>' . $rest . $m[3];
+      $rest = preg_replace('/<tr\b[^>]*>.*?<\/tr>/is', '', $inner, 1);
+      /* A one-row table leaves <tbody></tbody> behind; dompdf reflows an empty
+       * row group as a frame that still expects children. */
+      $rest = preg_replace('/<tbody\b[^>]*>\s*<\/tbody>/is', '', $rest);
+
+      return $m[1] . $lead . '<thead>' . $tr[0] . '</thead>' . $rest . $m[3];
     }, $processedHtml);
   }
 @endphp
@@ -239,6 +338,12 @@
     }
 
     .document-content {
+      /* Times New Roman is the agreement's house face. dompdf maps it to its
+         built-in `times` metrics; the trailing serif catches anything it
+         cannot resolve so a clause never drops back to the sans body font.
+         Kept in step with the .ctcte-pageview rule in CtcRichEditor.tsx — if
+         these two differ, the editor's page breaks stop matching the PDF's. */
+      font-family: 'Times New Roman', Times, serif;
       padding: 18px 20px;
       border-radius: 4px;
       word-wrap: break-word;
@@ -258,6 +363,38 @@
       line-height: 1.5;
     }
 
+    /* Sub points — clause numbering (1 / 1.1 / 1.1.1).
+     *
+     * The editor writes data-legal on the outer <ol> (LegalList in
+     * CtcRichEditor.tsx) and numbers the items with CSS counters. The same
+     * rule has to exist here or the PDF would show the list with no numbers at
+     * all, since the marker is drawn entirely by ::before.
+     * counters(legal, ".") — with the S — is what walks the whole nesting and
+     * prints 1.1.1; counter() would print only the innermost level.
+     * Keep in step with the .ctcte-content block in CtcRichEditor.tsx. */
+    .document-content ol[data-legal],
+    .document-content ol[data-legal] ol {
+      counter-reset: legal;
+      list-style: none;
+      padding-left: 0;
+      margin-left: 0;
+    }
+
+    .document-content ol[data-legal] ol {
+      padding-left: 24px;
+    }
+
+    .document-content ol[data-legal] li {
+      display: block;
+      line-height: 1.5;
+    }
+
+    .document-content ol[data-legal] li:before {
+      counter-increment: legal;
+      content: counters(legal, ".") ". ";
+      font-weight: bold;
+    }
+
     /* Inserted Clause-Library / rich content uses <div>-per-line and <br>
          (contentEditable output). dompdf gives those NO spacing/line-height of
          their own, so lines ran together and overlapped in the PDF (CBC-438).
@@ -274,12 +411,27 @@
 
     /* Headings need an explicit line-height + capped size — without it dompdf's
          default (tight) box overlaps a wrapped clause name / heading. */
+    /* Headings name the font explicitly, matching the .ctcte-pageview rule in
+       CtcRichEditor.tsx. The body font is inherited from .document-content, but
+       an element-level h1/h2/h3 rule elsewhere in this sheet would beat an
+       inherited value — so it is stated rather than relied on. */
     .document-content h1,
     .document-content h2,
     .document-content h3 {
       margin: 14px 0 8px;
       color: #0f172a;
       line-height: 1.3;
+      font-family: 'Times New Roman', Times, serif;
+    }
+
+    /* Everything else an agreement is written with — a table cell or a list
+       item that fell back to the sans body font read as a different document. */
+    .document-content td,
+    .document-content th,
+    .document-content li,
+    .document-content strong,
+    .document-content em {
+      font-family: 'Times New Roman', Times, serif;
     }
 
     .document-content h1 {
