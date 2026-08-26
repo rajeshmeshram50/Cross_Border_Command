@@ -24,6 +24,11 @@ class AttendanceRegularization extends Model
         'type',
         'work_locations',
         'punches',
+        // The day as it stood when this request was DRAFTED. `punches` is the
+        // whole intended day (inherited rows + the change), so the difference
+        // between the two is what the request actually asks to change — which
+        // is what approval applies, rather than overwriting the day.
+        'base_punches',
         // Snapshot of the day's punches as they stood BEFORE approval replaced
         // them — the "before" half of the correction's audit trail.
         'original_punches',
@@ -42,6 +47,7 @@ class AttendanceRegularization extends Model
         'regularization_date'    => 'date',
         'work_locations'         => 'array',
         'punches'                => 'array',
+        'base_punches'           => 'array',
         'original_punches'       => 'array',
         'approval_chain'         => 'array',
         'current_approval_level' => 'integer',

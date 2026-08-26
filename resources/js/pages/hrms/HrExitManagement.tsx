@@ -5425,11 +5425,16 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
     { label: 'Loss of Pay (Absent / unpaid leave)', days: lopDays, paid: false },
   ];
   const dayTotal = dayRows.reduce((t, r) => t + r.days, 0);
+  /* `title` on the day chips, because the pair that reads as a contradiction
+     is "Working days 19" here against "Total days on the books 25" below.
+     Both are right and they measure different things — the six-day gap is the
+     week-offs and holidays, itemised row by row in that very table — but a
+     reader has no way to know that from two bare numbers (QA #118). */
   const stats = [
-    { label: 'Working days', value: b.working_days },
-    { label: 'Paid days',    value: activeDays > 0 ? paidCalendarDays : b.paid_days },
-    { label: 'LOP days',     value: b.lop_days },
-    { label: 'OT hours',     value: b.overtime_hours },
+    { label: 'Working days', value: b.working_days, hint: 'Calendar days on the books minus week-offs and holidays.' },
+    { label: 'Paid days',    value: activeDays > 0 ? paidCalendarDays : b.paid_days, hint: 'Calendar days on the books, less loss of pay.' },
+    { label: 'LOP days',     value: b.lop_days, hint: 'Days docked as loss of pay (absent / unpaid leave).' },
+    { label: 'OT hours',     value: b.overtime_hours, hint: 'Approved overtime hours this cycle.' },
   ].filter(s => Number(s.value) > 0 || s.label === 'Paid days');
 
   return (
@@ -5453,7 +5458,7 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
         <span>Breakdown — {payroll.cycle}</span>
         <div className="ep-fnf-bd-stats">
           {stats.map(s => (
-            <span key={s.label}><em>{s.label}</em>{Number(s.value)}</span>
+            <span key={s.label} title={s.hint}><em>{s.label}</em>{Number(s.value)}</span>
           ))}
         </div>
       </div>

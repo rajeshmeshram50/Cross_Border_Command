@@ -46,6 +46,32 @@ class CandidateController extends Controller
         'Walk', 'Bicycle', 'Two-wheeler', 'Four-wheeler', 'Public Transport', 'Other',
     ];
 
+    /* Email format. `email` alone is RFC validation, which accepts `test@test`
+     * and `a@b.c` — a domain with no dot, and a one-letter TLD, are both legal
+     * RFC addresses but neither is a working contact (QA #60). The regex adds
+     * what a contact address actually needs: labels that start and end
+     * alphanumeric, and a TLD of two or more letters. Kept identical to
+     * EMAIL_RE / isValidEmail() in HrCandidates.tsx so the form and the API
+     * refuse the same strings. Applies to the import too — a spreadsheet was
+     * the easier way to get junk in. */
+    private const EMAIL_RULES = [
+        'nullable',
+        'email:rfc',
+        'max:191',
+        'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
+        'not_regex:/\.\./',
+    ];
+
+    /** Candidate-page tab → the statuses that tab shows. Mirrors the tab
+     *  definitions in HrCandidates.tsx; 'all' is the ACTIVE pipeline, i.e.
+     *  everyone who has not been closed out one way or the other. */
+    private const STATUS_GROUPS = [
+        'all'      => ['Applied', 'Shortlisted', 'In Interview', 'Final Interview', 'On Hold'],
+        'final'    => ['Final Interview'],
+        'selected' => ['Selected', 'Offered'],
+        'rejected' => ['Rejected'],
+    ];
+
     /** Max CV upload size matches the front-end drop-zone (2 MB). */
     private const CV_MAX_KB     = 2048;
     private const CV_MIME_TYPES = 'pdf,doc,docx';
@@ -82,6 +108,17 @@ class CandidateController extends Controller
             }
             $q->where('source', $source);
         }
+        // The page's tabs are status GROUPS, not single statuses, and they have
+        // to be resolved here now that the browser only ever holds one page of
+        // rows — filtering a page of ten in the SPA would render three under a
+        // pager still claiming ten.
+        if ($group = $request->query('status_group')) {
+            $bucket = self::STATUS_GROUPS[$group] ?? null;
+            if ($bucket === null) {
+                return response()->json(['message' => 'Invalid status_group filter.'], 422);
+            }
+            $q->whereIn('status', $bucket);
+        }
         if ($search = $request->query('search')) {
             $q->where(function ($w) use ($search) {
                 $w->where('name', 'ilike', "%{$search}%")
@@ -90,9 +127,28 @@ class CandidateController extends Controller
             });
         }
 
-        return response()->json(
-            $q->orderByDesc('id')->get()->map(fn ($c) => $this->serialize($c)),
-        );
+        $q->orderByDesc('id');
+
+        /* Paginate only for callers that ask (?per_page), the same bargain
+           /employees strikes: every caller that doesn't pass it keeps the
+           plain array this endpoint has always answered with. */
+        if ($request->filled('per_page')) {
+            $perPage = max(1, min(200, (int) $request->query('per_page')));
+            // Page number read off THIS request rather than resolved from the
+            // global one, so the method answers the caller that called it.
+            $pageNo  = max(1, (int) $request->query('page', 1));
+            $page    = $q->paginate($perPage, ['*'], 'page', $pageNo);
+
+            return response()->json([
+                'data'         => collect($page->items())->map(fn ($c) => $this->serialize($c))->values(),
+                'total'        => $page->total(),
+                'per_page'     => $page->perPage(),
+                'current_page' => $page->currentPage(),
+                'last_page'    => $page->lastPage(),
+            ]);
+        }
+
+        return response()->json($q->get()->map(fn ($c) => $this->serialize($c)));
     }
 
     public function show(Request $request, $id)
@@ -583,7 +639,7 @@ class CandidateController extends Controller
                 // only name-safe characters — rejects blank/whitespace-only and
                 // special-character junk like "@#$%" (bug #29).
                 'name'                => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
-                'email'               => 'nullable|email|max:191',
+                'email'               => self::EMAIL_RULES,
                 'mobile'              => 'nullable|string|max:30',
                 'experience_years'    => 'nullable|numeric|min:0|max:99.99',
                 'qualification'       => 'nullable|string|max:191',
@@ -673,6 +729,16 @@ class CandidateController extends Controller
         if ($recId = $request->query('recruitment_id'))    $q->where('recruitment_id', $recId);
         if ($status = $request->query('status'))           $q->where('status', $status);
         if ($source = $request->query('source'))           $q->where('source', $source);
+        // Same tab grouping the list uses. "Current View Only" now sends the
+        // filters rather than a list of ids, so it exports the whole filtered
+        // set instead of the ten rows the user happens to be looking at.
+        if ($group = $request->query('status_group')) {
+            $bucket = self::STATUS_GROUPS[$group] ?? null;
+            if ($bucket === null) {
+                return response()->json(['message' => 'Invalid status_group filter.'], 422);
+            }
+            $q->whereIn('status', $bucket);
+        }
         // Optional id list — used by "Current View Only" so the export
         // matches the SPA's filtered set exactly.
         if ($ids = $request->query('ids')) {
@@ -1167,7 +1233,7 @@ class CandidateController extends Controller
             // name-safe characters — rejects special-character / blank names,
             // matching the import validator (bug #29).
             'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
-            'email'               => 'nullable|email|max:191',
+            'email'               => self::EMAIL_RULES,
             // Mobile: allow optional + / spaces / dashes; the digit count
             // must land between 7 and 15. Matches the frontend validator
             // so a payload that slips past the SPA still fails at the API.

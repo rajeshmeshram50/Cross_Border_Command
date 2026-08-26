@@ -3729,6 +3729,25 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
       }
     }
 
+    /* Cheque mode: the bank block is optional, but not a free-text scratchpad.
+       Nothing has to be filled — and whatever IS filled has to be the real
+       thing, or a half-typed account number sits in the record until the day
+       payroll switches to transfer and pays it. */
+    if (s4.salary_payment_mode !== 'bank') {
+      const acc  = s4.bank_account_number.trim();
+      const ifsc = s4.ifsc_code.trim();
+      const bad: string[] = [];
+      if (s4.bank_name.trim() && !isValidBankName(s4.bank_name)) bad.push('Bank Name (letters, not just digits)');
+      if (acc  && !/^\d{9,18}$/.test(acc))  bad.push('Account Number (9–18 digits)');
+      if (ifsc && !IFSC_RE.test(ifsc))      bad.push('IFSC Code (e.g. HDFC0000350)');
+      if (bad.length > 0) {
+        if (skipValidate) return false;
+        setS4ShowErrors(true);
+        toast.error('Check the bank details', `Fix or clear: ${bad.join(', ')}.`);
+        return false;
+      }
+    }
+
     // PAN format hard-block — a malformed PAN (wrong length / pattern, e.g.
     // 'ABCD1234E' or '12345ABCDE') must be REJECTED before the save, not just
     // flagged with an inline hint. Mirrors the AAAAA9999A rule the backend
@@ -7680,27 +7699,34 @@ function Stage4Payroll({
         </div>
       </div>
 
-      {/* Bank Details — only collected for `bank` mode. Cheque skips
-          straight to Tax & Statutory since no account is needed. This also
-          matches the validation + readiness checks, which require bank details
-          ONLY when the mode is `bank` (showing them for Cheque was misleading
-          since they were never validated/required — QA bug). */}
-      {s4.salary_payment_mode === 'bank' && (
+      {/* Bank Details — always shown, REQUIRED only for `bank` mode.
+          It used to be hidden entirely under Cheque, on the reasoning that
+          fields nobody validates are misleading. Hiding them lost real
+          information instead: an employee paid by cheque still has an account
+          for reimbursements, and still has one on the day payroll switches to
+          transfer, and HR had nowhere to record it. So the fields stay, marked
+          optional (no asterisk, no required styling) — and anything typed into
+          them is format-checked, which is what "misleading" actually meant. */}
       <div className="onb-pay-section">
         <div className="onb-pay-section-head">
           <span className="onb-pay-section-icon bank"><i className="ri-money-dollar-circle-line" /></span>
           <h6 className="onb-pay-section-title">Bank Details</h6>
+          {!bankMode && (
+            <span className="onb-pay-section-note">
+              Optional for cheque — recorded for reimbursements and for switching to bank transfer later.
+            </span>
+          )}
         </div>
         <div className="onb-pay-section-body">
           <Row className="g-3">
             <Col data-field="bank_name" md={4}>
-              <label className="onb-init-label">Bank Name <span className="req">*</span></label>
-              <input className={`onb-init-input is-required${invalid.bank_name ? ' is-invalid' : ''}`} placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
+              <label className="onb-init-label">Bank Name {bankMode && <span className="req">*</span>}</label>
+              <input className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.bank_name ? ' is-invalid' : ''}`} placeholder="e.g. HDFC Bank" value={s4.bank_name} onChange={e => setS4(p => ({ ...p, bank_name: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col data-field="bank_account_number" md={4}>
-              <label className="onb-init-label">Account Number <span className="req">*</span></label>
+              <label className="onb-init-label">Account Number {bankMode && <span className="req">*</span>}</label>
               <input
-                className={`onb-init-input is-required${invalid.bank_account_number ? ' is-invalid' : ''}`}
+                className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.bank_account_number ? ' is-invalid' : ''}`}
                 placeholder="Account number"
                 inputMode="numeric"
                 maxLength={18}
@@ -7722,9 +7748,9 @@ function Stage4Payroll({
               )}
             </Col>
             <Col data-field="ifsc_code" md={4}>
-              <label className="onb-init-label">IFSC Code <span className="req">*</span></label>
+              <label className="onb-init-label">IFSC Code {bankMode && <span className="req">*</span>}</label>
               <input
-                className={`onb-init-input is-required${invalid.ifsc_code ? ' is-invalid' : ''}`}
+                className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.ifsc_code ? ' is-invalid' : ''}`}
                 placeholder="e.g. HDFC0001234"
                 inputMode="text"
                 autoComplete="off"
@@ -7750,12 +7776,12 @@ function Stage4Payroll({
               )}
             </Col>
             <Col data-field="account_holder_name" md={4}>
-              <label className="onb-init-label">Name on the Account <span className="req">*</span></label>
-              <input className={`onb-init-input is-required${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
+              <label className="onb-init-label">Name on the Account {bankMode && <span className="req">*</span>}</label>
+              <input className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.account_holder_name ? ' is-invalid' : ''}`} placeholder="Full legal name as per bank" value={s4.account_holder_name} onChange={e => setS4(p => ({ ...p, account_holder_name: e.target.value.replace(/[^A-Za-z .'-]/g, '') }))} />
             </Col>
             <Col data-field="bank_branch" md={4}>
-              <label className="onb-init-label">Branch <span className="req">*</span></label>
-              <input className={`onb-init-input is-required${invalid.bank_branch ? ' is-invalid' : ''}`} placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
+              <label className="onb-init-label">Branch {bankMode && <span className="req">*</span>}</label>
+              <input className={`onb-init-input ${bankMode ? 'is-required' : ''}${invalid.bank_branch ? ' is-invalid' : ''}`} placeholder="e.g. Baner, Pune" value={s4.bank_branch} onChange={e => setS4(p => ({ ...p, bank_branch: e.target.value.replace(/[^A-Za-z0-9 .,&/'()\-]/g, '') }))} />
             </Col>
             <Col md={4}>
               <label className="onb-init-label">Account Type</label>
@@ -7769,7 +7795,6 @@ function Stage4Payroll({
           </Row>
         </div>
       </div>
-      )}
 
       {/* Tax & Statutory Details */}
       <div className="onb-pay-section">

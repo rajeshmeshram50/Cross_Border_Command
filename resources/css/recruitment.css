@@ -8048,6 +8048,18 @@
 }
 .att-emplist-sort:hover { color: var(--vz-body-color); }
 
+/* The roster is wrapped in a <BusyOverlay> so a date-change refresh blurs the
+   list instead of blanking the page. That wrapper sits between .att-emplist
+   (a flex column) and .att-emplist-scroll (the flex:1 child), so it has to
+   pass the flex chain through or the scroll area stops filling the panel. */
+.att-emplist .att-emplist-busy,
+.att-emplist .att-emplist-busy > .busy-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .att-emplist-scroll {
   flex: 1;
   overflow-y: auto;

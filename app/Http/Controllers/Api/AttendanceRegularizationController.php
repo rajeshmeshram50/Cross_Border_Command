@@ -186,33 +186,115 @@ class AttendanceRegularizationController extends Controller
             $punches = $bounded['punches'];
         }
 
-        /* One LIVE request per (employee, date).
+        /* Two stretches of the same day may not cover the same clock time.
          *
-         * This tested status = 'Pending' ONLY, so the guard fell away the moment
-         * the first request was decided: a second request for the same day was
-         * accepted, routed, and approved on its own merits — and
-         * applyApprovedAdjustment() then rewrote that day's punch ledger a
-         * SECOND time, stacking one correction on top of another.
+         * This is what replaces the blanket "one correction per day" rule. A
+         * correction on a day that already carries one is drafted from that
+         * day's punches, so the request arrives as "everything already there,
+         * plus the stretch being added" — and adding a stretch that overlaps an
+         * existing one puts an in-punch inside an open segment, which the
+         * alternating in→out ledger cannot represent. applyApprovedAdjustment()
+         * sorts the events and SKIPS whichever punch repeats the previous
+         * direction, so an overlap would be swallowed silently instead of
+         * refused, and the approved day would quietly lose a punch.
          *
-         * It was trivially reachable rather than a race. An employee with no
-         * reporting manager auto-approves at creation (see $autoApproved below),
-         * so the very next request for that date never met a Pending row at all
-         * and both ended up Approved. (QA #79)
+         * Checked after the shift bounding above, because a trim can push two
+         * stretches onto the same window edge. Segments that merely touch
+         * (11:00 out, 11:00 in) are fine — that is one break, not an overlap. */
+        /* A day may carry as many corrections as it has stretches to correct,
+         * and more than one of them may be pending at once. What is refused is
+         * a request for hours another request has already claimed.
          *
-         * Rejected / Cancelled deliberately do NOT block — being turned down is
-         * precisely when someone needs to correct the request and file it again. */
-        $dup = AttendanceRegularization::where('employee_id', $employee->id)
+         * The old rule was one live request per (employee, date), because
+         * approval REPLACED the day's punches: two requests drafted from the
+         * same "before" meant the second approval silently discarded the first
+         * (QA #79). That is fixed at the other end now — applyApprovedAdjustment
+         * diffs `base_punches` → `punches` and applies only what the request
+         * changes — so the count of live requests no longer matters. Only their
+         * times do.
+         *
+         * A pending request's own stretches are checked here rather than only
+         * on the day's punches, because a pending request has not touched the
+         * day yet: without this, "add 14:00–15:00" and "add 14:30–15:30" would
+         * both be accepted and only collide when the second one was approved,
+         * long after the employee could do anything about it.
+         *
+         * Rejected / Cancelled never claimed anything — they are ignored. */
+        $claimed = [];
+        $others = AttendanceRegularization::where('employee_id', $employee->id)
             ->where('regularization_date', $dateStr)
-            ->whereIn('status', ['Pending', 'Approved'])
-            // Report the Pending one first when both somehow exist: it is the
-            // one the user can still act on.
-            ->orderByRaw("CASE WHEN status = 'Pending' THEN 0 ELSE 1 END")
-            ->first();
-        if ($dup) {
-            $day = Carbon::parse($dateStr)->format('d M Y');
-            abort(422, $dup->status === 'Pending'
-                ? "A regularization request for {$day} is already pending approval. Act on that one before raising another."
-                : "{$day} has already been regularized and the correction was approved. Ask HR to reverse it before filing a new request for this date.");
+            ->where('status', 'Pending')
+            ->where('mode', 'adjust')
+            ->get(['id', 'punches', 'base_punches']);
+        foreach ($others as $other) {
+            $otherBase = collect(is_array($other->base_punches) ? $other->base_punches : [])
+                ->pluck('in')->map(fn ($t) => trim((string) $t))->all();
+            foreach ((is_array($other->punches) ? $other->punches : []) as $p) {
+                // Only the stretches that request ADDS are its own claim; the
+                // rest it merely inherited from the day, and those are already
+                // represented in this request's own prefill.
+                if (in_array(trim((string) ($p['in'] ?? '')), $otherBase, true)) continue;
+                $claimed[] = $p;
+            }
+        }
+
+        /* Two stretches of the same day may not cover the same clock time.
+         *
+         * This is what replaces the blanket "one correction per day" rule, and
+         * it runs over this request's own entries AND the stretches claimed by
+         * requests still pending. Overlapping stretches put an in-punch inside
+         * an open segment, which the alternating in→out ledger cannot represent:
+         * applyApprovedAdjustment() sorts the events and SKIPS whichever punch
+         * repeats the previous direction, so an overlap would be swallowed
+         * silently rather than refused, and the approved day would quietly lose
+         * a punch.
+         *
+         * Checked after the shift bounding above, because a trim can push two
+         * stretches onto the same window edge. Segments that merely touch
+         * (11:00 out, 11:00 in) are fine — that is one break, not an overlap. */
+        if ($data['mode'] === 'adjust') {
+            [$sMin, $eMin] = $this->shiftBoundsFor($employee);
+            $toSegment = function (array $p, string $source) use ($sMin, $eMin): ?array {
+                $inT  = trim((string) ($p['in'] ?? ''));
+                $outT = trim((string) ($p['out'] ?? ''));
+                $inM  = $this->toMinutes($inT);
+                if ($inM === null) return null;
+                $inM  = $this->nearestToWindow($inM, $sMin, $eMin) ?? $inM;
+                $outM = $this->toMinutes($outT);
+                $outM = $outM === null ? null : ($this->nearestToWindow($outM, $sMin, $eMin) ?? $outM);
+                // A stretch with no OUT yet (forgotten check-out) occupies only
+                // its own instant — it cannot overlap anything by itself.
+                return ['in' => $inT, 'out' => $outT, 'from' => $inM, 'to' => $outM ?? $inM, 'src' => $source];
+            };
+
+            $segments = [];
+            foreach ($punches as $p) {
+                if ($s = $toSegment($p, 'mine'))    $segments[] = $s;
+            }
+            foreach ($claimed as $p) {
+                if ($s = $toSegment($p, 'pending')) $segments[] = $s;
+            }
+            usort($segments, fn ($a, $b) => $a['from'] <=> $b['from']);
+
+            $label = fn (array $s) => $s['out'] !== '' ? "{$s['in']}–{$s['out']}" : $s['in'];
+            for ($i = 1; $i < count($segments); $i++) {
+                $prev = $segments[$i - 1];
+                $cur  = $segments[$i];
+                if ($cur['from'] >= $prev['to']) continue;
+                // Two already-pending stretches colliding is not this request's
+                // doing (each was checked when it was filed) — don't refuse the
+                // employee for it.
+                if ($prev['src'] === 'pending' && $cur['src'] === 'pending') continue;
+
+                $other = $prev['src'] === 'pending' ? $prev : ($cur['src'] === 'pending' ? $cur : null);
+                abort(422, $other
+                    ? 'A request already pending approval covers ' . $label($other)
+                        . ' on this day. Wait for it to be decided, or pick hours it does not cover —'
+                        . ' the same time cannot be regularized twice.'
+                    : 'Two entries cover the same time (' . $label($prev) . ' and ' . $label($cur)
+                        . '). Each entry has to be a separate stretch of the day —'
+                        . ' the same hours cannot be regularized twice.');
+            }
         }
 
         /* A correction that corrects nothing.
@@ -229,8 +311,16 @@ class AttendanceRegularizationController extends Controller
          * would actually be stored: times trimmed back onto the existing ones
          * count as unchanged too. Only for 'adjust' — an exempt-day request
          * carries no punches and is a statement about the day, not the times. */
+        /* The day as this request was drafted from. Also stored on the row
+           (`base_punches`) so approval can tell what the request CHANGES rather
+           than treating its whole punch list as the new day — see the migration
+           and applyApprovedAdjustment(). */
+        $basePunches = $data['mode'] === 'adjust'
+            ? $this->existingPunchPairs($employee, $dateStr)
+            : null;
+
         if ($data['mode'] === 'adjust') {
-            $existing = $this->existingPunchPairs($employee, $dateStr);
+            $existing = $basePunches ?? [];
             $norm = fn (array $ps) => json_encode(array_map(
                 fn ($p) => [trim((string) ($p['in'] ?? '')), trim((string) ($p['out'] ?? ''))],
                 $ps,
@@ -263,6 +353,7 @@ class AttendanceRegularizationController extends Controller
             'type'                   => $data['type'] ?? ($data['mode'] === 'exempt' ? 'On Duty (OD)' : 'Forgot to Punch'),
             'work_locations'         => array_values($data['work_locations'] ?? []),
             'punches'                => $punches,
+            'base_punches'           => $basePunches,
             'reason'                 => $data['reason'],
             'status'                 => $autoApproved ? 'Approved' : 'Pending',
             'approval_chain'         => $chain,
@@ -478,6 +569,85 @@ class AttendanceRegularizationController extends Controller
         if ($open !== null) $pairs[] = ['in' => $open, 'out' => null];
 
         return $pairs;
+    }
+
+    /**
+     * Apply one correction's own change to the day as it stands now.
+     *
+     * A request stores the whole day it wants (`punches`), because that is what
+     * the modal builds — the rows it inherited from the day plus the change.
+     * Writing that back wholesale is only safe when nothing else touched the day
+     * in between, which stopped being true the moment a day could carry more
+     * than one correction. Diffing the day it was DRAFTED from (`base_punches`)
+     * against the day it ASKS for isolates the change itself, which then
+     * composes with whatever else was approved, in any order.
+     *
+     * @param  array $base     the day when the request was filed
+     * @param  array $intended the whole day the request asks for
+     * @param  array $current  the day right now
+     * @return array           ordered {in, out} pairs to write
+     */
+    private function mergeRequestedChange(array $base, array $intended, array $current, Employee $employee): array
+    {
+        $inOf  = fn ($p) => trim((string) ($p['in'] ?? ''));
+        $outOf = fn ($p) => trim((string) ($p['out'] ?? ''));
+        $pair  = fn (string $in, string $out) => ['in' => $in, 'out' => $out === '' ? null : $out];
+
+        $baseBy = [];
+        foreach ($base as $p) {
+            if ($inOf($p) !== '') $baseBy[$inOf($p)] = $p;
+        }
+        $intendedKeys = [];
+        foreach ($intended as $p) {
+            if ($inOf($p) !== '') $intendedKeys[$inOf($p)] = true;
+        }
+
+        // Start from the day as it actually is, minus the stretches this
+        // request drops — the ones it was drafted with and does not ask for.
+        $merged = [];
+        foreach ($current as $p) {
+            $k = $inOf($p);
+            if ($k === '') continue;
+            if (isset($baseBy[$k]) && !isset($intendedKeys[$k])) continue;
+            $merged[$k] = $pair($k, $outOf($p));
+        }
+
+        // Then what it changes. A stretch it merely inherited unchanged is left
+        // alone: writing it back would undo a correction approved in the
+        // meantime that edited the very same stretch.
+        foreach ($intended as $p) {
+            $k = $inOf($p);
+            if ($k === '') continue;
+            $b = $baseBy[$k] ?? null;
+            if ($b !== null && $outOf($b) === $outOf($p)) continue;
+            $merged[$k] = $pair($k, $outOf($p));
+        }
+
+        [$sMin, $eMin] = $this->shiftBoundsFor($employee);
+        $at = function (string $t) use ($sMin, $eMin): int {
+            $m = $this->toMinutes($t);
+            return $m === null ? 0 : ($this->nearestToWindow($m, $sMin, $eMin) ?? $m);
+        };
+
+        $merged = array_values($merged);
+        usort($merged, fn ($a, $b) => $at($a['in']) <=> $at($b['in']));
+
+        /* Filing refuses overlapping stretches, including against requests still
+         * pending, so a merged day should never overlap. If one ever does, the
+         * write loop below would silently drop a punch to keep in→out
+         * alternating — say so in the log rather than let it pass unremarked. */
+        for ($i = 1; $i < count($merged); $i++) {
+            $prevEnd = $at($merged[$i - 1]['out'] ?? $merged[$i - 1]['in']);
+            if ($at($merged[$i]['in']) < $prevEnd) {
+                Log::warning('[regularization] merged day has overlapping stretches — a punch may be dropped', [
+                    'employee_id' => $employee->id,
+                    'merged'      => $merged,
+                ]);
+                break;
+            }
+        }
+
+        return $merged;
     }
 
     private function attachOriginalPunches($rows): void
@@ -926,7 +1096,30 @@ class AttendanceRegularizationController extends Controller
                     ])->save();
                 }
 
-                // Replace the day's punches with the approved corrected set.
+                /* What this request actually asked to change, applied to the day
+                 * as it stands NOW — not the day it was drafted from.
+                 *
+                 * `punches` is the whole intended day (inherited rows plus the
+                 * change), so writing it back wholesale discards anything that
+                 * landed in between: file "add 14:00–15:00" and "add
+                 * 16:00–17:00" while both are pending, approve both, and the
+                 * second write produces a day that never heard of 14:00–15:00.
+                 * Diffing base → intended isolates this request's own change, so
+                 * approvals in any order compose instead of overwriting.
+                 *
+                 * Rows filed before `base_punches` existed have no base to diff
+                 * against and keep the old replace-the-day behaviour — guessing
+                 * a base for them would invent intent they never expressed. */
+                $punches = is_array($row->base_punches)
+                    ? $this->mergeRequestedChange(
+                        $row->base_punches,
+                        $punches,
+                        $this->existingPunchPairs($employee, $dateStr),
+                        $employee,
+                    )
+                    : $punches;
+
+                // Replace the day's punches with the merged corrected set.
                 AttendancePunch::where('attendance_id', $attendance->id)->delete();
 
                 /* Flatten {in,out} pairs into discrete, time-ordered events.

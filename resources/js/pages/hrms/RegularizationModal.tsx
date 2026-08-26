@@ -111,17 +111,21 @@ export default function RegularizationModal({
      synchronously, so the second click is dropped. */
   const inFlight = useRef(false);
   const [errors, setErrors]       = useState<Partial<Record<'reason' | 'punches', string>>>({});
-  /* A request already live for this day. The server refuses a second one
-     (AttendanceRegularizationController::store), but finding that out only on
-     submit means retyping punches and a reason first. Looked up as the modal
-     opens so the answer is on screen before any of that. null = still checking. */
-  const [existing, setExisting] = useState<ApiRegularization | null | undefined>(undefined);
+  /* Requests already pending for this day. They no longer BLOCK a new one — a
+     day can be corrected more than once — but the hours they claim are not
+     available, so they are looked up as the modal opens and folded into the
+     overlap check below. undefined = still checking. */
+  const [pendingOther, setPendingOther] = useState<ApiRegularization[] | undefined>(undefined);
 
   /* Mirrors the server's shift bounding so the requester learns their 22:00 will
      be trimmed BEFORE they submit, rather than discovering it on the approved
      row. Falls back to the same 09:30–18:30 office default the backend uses when
      the employee's shift resolves to no timing. */
-  const outOfShift = useMemo(() => {
+  /* The shift window in minutes, plus the night-shift `lift` that decides
+     which side of midnight a bare clock time belongs to. Shared by the
+     out-of-shift warning and the overlap check below, which have to read a
+     time the same way or they would disagree about the same entry. */
+  const shiftWindow = useMemo(() => {
     const sMin = toMinutes(shiftStart) ?? toMinutes('09:30')!;
     let eMin  = toMinutes(shiftEnd) ?? toMinutes('18:30')!;
     const crossesMidnight = eMin <= sMin;
@@ -134,6 +138,12 @@ export default function RegularizationModal({
     const lift = (v: number) =>
       crossesMidnight && dist(v + 1440) < dist(v) ? v + 1440 : v;
 
+    return { sMin, eMin, lift };
+  }, [shiftStart, shiftEnd]);
+
+  const outOfShift = useMemo(() => {
+    const { sMin, eMin, lift } = shiftWindow;
+
     return punchEdits.some(e => {
       if (e.action === 'delete') return false;
       return [e.newIn, e.newOut].some(t => {
@@ -143,7 +153,83 @@ export default function RegularizationModal({
         return lifted < sMin || lifted > eMin;
       });
     });
-  }, [punchEdits, shiftStart, shiftEnd]);
+  }, [punchEdits, shiftWindow]);
+
+  /* Two rows covering the same clock time.
+   *
+   * A day may be regularized more than once, so the form for a day that already
+   * carries a correction opens with those times prefilled and a new stretch
+   * added below. What is NOT allowed is a stretch that repeats hours already on
+   * the day — the ledger alternates in→out and cannot hold an in-punch inside
+   * an open segment, so the server refuses it and this says so first.
+   * Rows that merely touch (out 13:00, in 13:00) are one break, not an overlap. */
+  /* The stretches the pending requests for this day are ASKING for.
+     A pending request carries the whole day it wants, so the rows it merely
+     inherited are in there too — and those are the same rows this form is
+     prefilled with. Colliding with them would be colliding with the prefill, so
+     only what a request ADDS counts as claimed. */
+  const pendingClaims = useMemo(() => {
+    const baseIns = new Set(
+      initialEdits.map(e => (e.oldIn || '').trim()).filter(Boolean),
+    );
+    return (pendingOther ?? []).flatMap(r =>
+      (r.punches ?? [])
+        .filter(p => p.in && !baseIns.has(p.in.trim()))
+        .map(p => ({ in: p.in!.trim(), out: (p.out || '').trim() })),
+    );
+  }, [pendingOther, initialEdits]);
+
+  const pendingClaimLabel = pendingClaims
+    .map(c => (c.out ? `${c.in}–${c.out}` : c.in))
+    .join(', ');
+
+  const overlap = useMemo(() => {
+    const { lift } = shiftWindow;
+    const seg = (inT: string, outT: string, claimed: boolean) => {
+      const inM = toMinutes(inT);
+      if (inM === null) return null;
+      const from = lift(inM);
+      const outM = toMinutes(outT);
+      // An unfinished stretch owns only its own instant.
+      return {
+        from,
+        to: outM === null ? from : lift(outM),
+        label: outT ? `${inT}–${outT}` : inT,
+        claimed,
+      };
+    };
+
+    const claimedSegs = pendingClaims.map(c => seg(c.in, c.out, true));
+
+    const segs = [
+      ...punchEdits
+        .filter(e => e.action !== 'delete')
+        .map(e => seg(e.newIn, e.newOut, false)),
+      ...claimedSegs,
+    ]
+      .filter((s): s is NonNullable<typeof s> => s !== null)
+      .sort((a, b) => a.from - b.from);
+
+    for (let i = 1; i < segs.length; i++) {
+      const prev = segs[i - 1];
+      const cur  = segs[i];
+      if (cur.from >= prev.to) continue;
+      // Two already-pending stretches colliding is not this form's doing.
+      if (prev.claimed && cur.claimed) continue;
+      const other = prev.claimed ? prev : cur.claimed ? cur : null;
+      return other
+        ? { pending: other.label }
+        : { a: prev.label, b: cur.label };
+    }
+    return null;
+  }, [punchEdits, shiftWindow, pendingClaims]);
+
+  /** The overlap message, worded for whichever kind of collision it is. */
+  const overlapMessage = overlap
+    ? 'pending' in overlap
+      ? `A request already pending approval covers ${overlap.pending} on this day — pick hours it does not cover.`
+      : `${overlap.a} and ${overlap.b} cover the same time — the same hours cannot be regularized twice.`
+    : null;
 
   /* Nothing has actually been changed.
    *
@@ -187,21 +273,35 @@ export default function RegularizationModal({
     setReason('');
     setErrors({});
 
-    /* Pending OR Approved blocks a new request; Rejected / Cancelled do not —
-       being turned down is exactly when the day gets re-filed. Same rule as the
-       server, so the two can't disagree. (QA #79) */
+    /* Nothing blocks the day outright any more. An approved correction leaves
+       the rest of the day open, a pending one only holds the hours it asks for,
+       and Rejected / Cancelled never held anything — being turned down is
+       exactly when the day gets re-filed. Same rule as the server, so the two
+       can't disagree. (QA #79, then #84) */
     let stale = false;
-    setExisting(undefined);
+    setPendingOther(undefined);
     regularizationApi.list({ employee_id: employeeId })
       .then(rows => {
         if (stale) return;
-        const day = (v: string) => (/^(d{4}-d{2}-d{2})/.exec(v || '')?.[1]) ?? '';
-        const hit = rows.find(r => day(r.regularization_date) === day(dateIso)
-          && (r.status === 'Pending' || r.status === 'Approved'));
-        setExisting(hit ?? null);
+        /* The leading date of an ISO value (`2026-08-25`, with or without a
+           time behind it), or null when the value is not one.
+           Two bugs lived in one line here: the character classes were written
+           `d{4}-d{2}-d{2}` with no backslashes, so the pattern matched the
+           LETTER d and never a date; and a miss fell back to ''. Together the
+           comparison became '' === '' for every row, which is why a single
+           approved request blocked filing on every OTHER date as well — the
+           modal reported "already regularized" on a day that had never been
+           touched (QA #84). Null on a miss so two unparseable values can never
+           read as equal. */
+        const day = (v: string): string | null => /^\d{4}-\d{2}-\d{2}/.exec(v || '')?.[0] ?? null;
+        const wanted = day(dateIso);
+        setPendingOther(wanted
+          ? rows.filter(r => day(r.regularization_date) === wanted
+              && r.status === 'Pending' && r.mode === 'adjust')
+          : []);
       })
       // A failed lookup must not block filing — the server still guards it.
-      .catch(() => { if (!stale) setExisting(null); });
+      .catch(() => { if (!stale) setPendingOther([]); });
     return () => { stale = true; };
   }, [open, dateIso, employeeId]);
 
@@ -226,12 +326,6 @@ export default function RegularizationModal({
 
   const submit = async () => {
     if (inFlight.current || submitting) return;
-    if (existing) {
-      toast.error('Already regularized', existing.status === 'Pending'
-        ? 'A request for this date is already pending approval.'
-        : 'This date has already been regularized and approved.');
-      return;
-    }
     const errs: typeof errors = {};
     if (unchanged) {
       setErrors({ punches: 'These are the same times already recorded for this day — change a punch to raise a correction.' });
@@ -247,6 +341,7 @@ export default function RegularizationModal({
     if (!valid) errs.punches = 'Add at least one punch entry';
     else if (!allOk) errs.punches = 'All punch entries need a valid HH:MM time';
     else if (duplicateIn) errs.punches = `Two rows both start at ${duplicateIn} — remove the duplicate or change its start time.`;
+    else if (overlapMessage) errs.punches = overlapMessage;
     if (Object.keys(errs).length) {
       setErrors(errs);
       toast.error('Validation', 'Fix the highlighted fields');
@@ -411,13 +506,19 @@ export default function RegularizationModal({
                     Two rows both start at {duplicateIn} — remove the duplicate or change its start time.
                   </small>
                 )}
-                {unchanged && !duplicateIn && !errors.punches && (
+                {overlapMessage && !duplicateIn && !errors.punches && (
+                  <small className="att-reg-keka-error">
+                    <i className="ri-error-warning-line me-1" />
+                    {overlapMessage}
+                  </small>
+                )}
+                {unchanged && !overlap && !duplicateIn && !errors.punches && (
                   <small className="att-reg-keka-error" style={{ color: '#d98c00' }}>
                     <i className="ri-error-warning-line me-1" />
                     These match the day’s existing punches — edit a time to raise a correction.
                   </small>
                 )}
-                {outOfShift && !unchanged && !duplicateIn && !errors.punches && (
+                {outOfShift && !unchanged && !overlap && !duplicateIn && !errors.punches && (
                   <small className="att-reg-keka-error" style={{ color: '#d98c00' }}>
                     <i className="ri-error-warning-line me-1" />
                     Some times fall outside the shift{shiftStart && shiftEnd ? ` (${fmt12h(shiftStart)} - ${fmt12h(shiftEnd)})` : ''}.
@@ -440,24 +541,28 @@ export default function RegularizationModal({
             </div>
           </div>
 
-          {existing && (
+          {/* Informational, not a refusal: another request for this day being
+              undecided does not stop this one — it only takes the hours it asks
+              for off the table, which the overlap check enforces. */}
+          {!!pendingOther?.length && (
             <div
-              className="att-reg-keka-error d-flex align-items-start gap-2 mb-2"
-              role="alert"
-              style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px', color: '#b91c1c' }}
+              className="d-flex align-items-start gap-2 mb-2"
+              role="status"
+              style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', color: '#92400e', fontSize: 12 }}
             >
-              <i className="ri-error-warning-line" style={{ marginTop: 1 }} />
+              <i className="ri-information-line" style={{ marginTop: 1 }} />
               <span>
-                {existing.status === 'Pending'
-                  ? 'A regularization request for this date is already pending approval. Act on that one before raising another.'
-                  : 'This date has already been regularized and the correction was approved. Ask HR to reverse it before filing again.'}
+                {pendingOther.length === 1 ? 'A request' : `${pendingOther.length} requests`} for this date
+                {pendingOther.length === 1 ? ' is' : ' are'} already pending approval
+                {pendingClaimLabel ? ` (${pendingClaimLabel})` : ''}. You can still raise another for hours
+                {pendingOther.length === 1 ? ' it does' : ' they do'} not cover.
               </span>
             </div>
           )}
 
           <div className="att-reg-keka-foot">
             <button type="button" className="att-reg-keka-cancel" onClick={onClose} disabled={submitting}>Cancel</button>
-            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting || !!existing} aria-busy={submitting}>
+            <button type="button" className="att-reg-keka-submit" onClick={submit} disabled={submitting} aria-busy={submitting}>
               {/* Spinner + label, so the in-flight state is legible at a glance
                   and not just a word swap on an otherwise identical button. */}
               {submitting && <span className="att-reg-keka-spin" aria-hidden="true" />}
