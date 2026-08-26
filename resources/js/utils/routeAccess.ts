@@ -206,8 +206,11 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
 
   // 6) Single-page business modules.
   if (path === '/gts') return isBiz && leaf('gts');
-  // Inventory hub + its put-away scan sub-pages all ride on the one grant.
-  if (path === '/inventory' || path.startsWith('/inventory/')) return isBiz && leaf('inventory');
+  // TEMPORARY — Inventory put-away scanning is open to every signed-in user
+  // while the Zebra TC27 pilot is being tested, so admins can reach it too.
+  // Restore the line below when the pilot ends:
+  //   if (path === '/inventory' || path.startsWith('/inventory/')) return isBiz && leaf('inventory');
+  if (path === '/inventory' || path.startsWith('/inventory/')) return true;
   if (path === '/credentials-vault') return isBiz && leaf('credentials-vault');
   if (path === '/project-navigator') return isBiz && leaf('project-navigator');
   if (path === '/developers' || path.startsWith('/developers/')) {
