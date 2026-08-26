@@ -32,12 +32,12 @@ class DatabaseSeeder extends Seeder
         // Order matters: GeographySeeder owns master_countries/master_states
         // and must run before MasterDataSeeder (state_codes resolution).
         $tasks = [
-            ModuleSeeder::class           => fn () => $this->call(ModuleSeeder::class),
-            PlanSeeder::class             => fn () => $this->call(PlanSeeder::class),
-            OrganizationTypeSeeder::class => fn () => $this->call(OrganizationTypeSeeder::class),
-            'SuperAdminUser'              => fn () => $this->seedSuperAdmin(),
-            GeographySeeder::class        => fn () => $this->call(GeographySeeder::class),
-            MasterDataSeeder::class       => fn () => $this->call(MasterDataSeeder::class),
+            ModuleSeeder::class           => fn() => $this->call(ModuleSeeder::class),
+            PlanSeeder::class             => fn() => $this->call(PlanSeeder::class),
+            OrganizationTypeSeeder::class => fn() => $this->call(OrganizationTypeSeeder::class),
+            'SuperAdminUser'              => fn() => $this->seedSuperAdmin(),
+            GeographySeeder::class        => fn() => $this->call(GeographySeeder::class),
+
         ];
 
         $hasLedger   = Schema::hasTable('seeder_runs');
@@ -74,12 +74,12 @@ class DatabaseSeeder extends Seeder
         if (! $hasLedger) {
             $this->command?->warn(
                 'seeder_runs ledger missing — ran all seeders. Run `php artisan migrate` '
-                . 'so future `db:seed` can skip already-applied seeders.'
+                    . 'so future `db:seed` can skip already-applied seeders.'
             );
         } elseif ($ran === 0) {
             $this->command?->info(
                 'Nothing to seed — all seeders already applied. '
-                . 'Use `php artisan db:seed --class=Foo` to force-run one.'
+                    . 'Use `php artisan db:seed --class=Foo` to force-run one.'
             );
         }
     }

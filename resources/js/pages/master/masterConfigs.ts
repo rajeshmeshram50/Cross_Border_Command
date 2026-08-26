@@ -687,24 +687,18 @@ const C: Record<string, MasterConfig> = {
       // the user types so a paste of "0802-1200" auto-corrects to "08021200".
       { n: 'hsn_code', l: 'HSN / SAC Code', t: 'text', r: true, p: 'e.g. 08021200', maxLen: 10 } as any,
       { n: 'description', l: 'Description', t: 'textarea', r: true, p: 'Product/commodity description', full: true },
-      // GST Rate is sourced from the GST Percentage master so the dropdown
-      // reflects whatever slabs (0/5/12/18/28% — or tenant-specific custom
-      // values) the user maintains in /master/gst_percentage. Stored as the
-      // gst_percentage row id; rendered as "{percentage}%" everywhere.
-      { n: 'gst_rate_id', l: 'GST Rate', t: 'select', ref: 'gst_percentage', refL: 'percentage', refLFmt: '{percentage}%' },
       { n: 'status', l: 'Status', t: 'select', r: true, opts: ['Active', 'Inactive'] },
     ],
-    cols: ['hsn_code', 'description', 'gst_rate_id', 'status'],
-    colL: ['HSN Code', 'Description', 'GST Rate', 'Status'],
+    cols: ['hsn_code', 'description', 'status'],
+    colL: ['HSN Code', 'Description', 'Status'],
     uFields: ['hsn_code'],
     data: [
-      { id: 1, hsn_code: '08021200', description: 'Almonds — Shelled', gst_rate_id: 2, status: 'Active' },
-      { id: 2, hsn_code: '08062000', description: 'Raisins — Dried Grapes', gst_rate_id: 2, status: 'Active' },
-      { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', gst_rate_id: 2, status: 'Active' },
+      { id: 1, hsn_code: '08021200', description: 'Almonds — Shelled', status: 'Active' },
+      { id: 2, hsn_code: '08062000', description: 'Raisins — Dried Grapes', status: 'Active' },
+      { id: 3, hsn_code: '12074000', description: 'Sesame Seeds', status: 'Active' },
     ],
     wtd: [
       { icon: 'ri-file-code-line', title: 'Enter HSN / SAC Code', desc: '4–10 digit numeric code (e.g. 08021200)' },
-      { icon: 'ri-money-rupee-circle-line', title: 'Set GST Rate', desc: '0% / 5% / 12% / 18% / 28%' },
       { icon: 'ri-file-list-3-line', title: 'Mandatory On B2B Invoices', desc: 'HSN needed for GST filing & customs' },
       { icon: 'ri-checkbox-circle-line', title: 'Set Status Active', desc: 'Code available for products' },
     ],

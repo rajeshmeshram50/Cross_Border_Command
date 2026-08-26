@@ -17,7 +17,12 @@ class HsnCodes extends Model
         'branch_id',
         'hsn_code',
         'description',
-        'gst_rate_id',
+        /* `gst_rate_id` is intentionally NOT fillable.
+           The GST rate was dropped from this master — it lives on the product
+           (products.gst_id), which is what the documents actually read. The
+           COLUMN still exists and keeps its historic values, but nothing
+           writes or reads it any more, so leaving it out of $fillable stops a
+           stray payload reviving a field the UI no longer offers. */
         'status',
         'created_by',
     ];
