@@ -1022,15 +1022,24 @@ const FindReplace = Extension.create({
           init: (): FindState => ({ term: '', matchCase: false, matches: [], index: 0 }),
           apply(tr, prev: FindState): FindState {
             const meta = tr.getMeta(findKey);
-            const next: FindState = meta ? { ...prev, ...meta } : prev;
-            // Recompute whenever the search changed OR the document did, so a
-            // highlight can never point at text that has moved.
-            if (meta || tr.docChanged) {
-              const matches = collectMatches(tr.doc, next.term, next.matchCase);
-              const index = matches.length ? Math.min(next.index, matches.length - 1) : 0;
-              return { ...next, matches, index };
+            let next: FindState = meta ? { ...prev, ...meta } : prev;
+
+            /* The matches normally arrive WITH the search, computed by the
+               toolbar against the live document (see pushSearch). Carrying them
+               rather than recomputing here is what keeps the highlights and the
+               1/61 counter describing the same set — they were computed in two
+               places and could disagree, which is how a search could count 61
+               matches and draw none of them.
+               A plain document edit brings no meta, so the set is refreshed
+               from the term instead; without that a highlight would keep
+               pointing at text that has since moved. */
+            if (tr.docChanged && !meta) {
+              next = { ...next, matches: collectMatches(tr.doc, next.term, next.matchCase) };
             }
-            return next;
+            if (!next.term) return { ...next, matches: [], index: 0 };
+
+            const index = next.matches.length ? Math.min(next.index, next.matches.length - 1) : 0;
+            return { ...next, index };
           },
         },
         props: {
@@ -1229,16 +1238,31 @@ function CtcMarginRuler({ margins, onChange }: { margins: CtcMargins; onChange: 
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
   }, [drag, margins, onChange]);
 
-  const ticks = [];
-  for (let cm = 1; cm < 21; cm++) ticks.push(cm);
+  /* Ticks every half centimetre across the sheet, numbered on the whole ones.
+     The ruler used to draw the numbers ALONE, floating with nothing under them,
+     so it read as a row of digits rather than a scale — there was no way to see
+     where a centimetre actually fell. A21 is 21cm wide, so 42 half-steps. */
+  const ticks: { x: number; major: boolean; cm: number }[] = [];
+  for (let half = 0; half <= 42; half++) {
+    ticks.push({ x: (half / 2) * PX_PER_CM, major: half % 2 === 0, cm: half / 2 });
+  }
 
   return (
     <div className="ctcte-ruler" ref={barRef} style={{ width: SHEET_W }}>
       {/* The greyed ends are the margins — the writable column is what stays white. */}
       <div className="ctcte-ruler-pad" style={{ left: 0, width: margins.left }} />
       <div className="ctcte-ruler-pad" style={{ right: 0, width: margins.right }} />
-      {ticks.map(cm => (
-        <span key={cm} className="ctcte-ruler-tick" style={{ left: cm * PX_PER_CM }}>{cm}</span>
+      {ticks.map(t => (
+        <span
+          key={`t${t.x}`}
+          className={`ctcte-ruler-tick${t.major ? ' is-major' : ''}`}
+          style={{ left: t.x }}
+        />
+      ))}
+      {/* 0 and 21 sit on the paper's own edges, where a number has no room and
+          nothing to say — the edge is the edge. */}
+      {ticks.filter(t => t.major && t.cm > 0 && t.cm < 21).map(t => (
+        <span key={`n${t.x}`} className="ctcte-ruler-num" style={{ left: t.x }}>{t.cm}</span>
       ))}
       <button
         type="button" title={`Left margin — ${margins.left}px`}
@@ -1285,6 +1309,9 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
   const [findTerm, setFindTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
   const [matchCase, setMatchCase] = useState(false);
+  /* False until the user has actually travelled to a match for the current
+     query — see stepMatch. A ref, not state: it must not cause a render. */
+  const findVisited = useRef(false);
   const [linkUrl, setLinkUrl] = useState('');
   if (!editor) return null;
 
@@ -1336,16 +1363,37 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
      The plugin owns the matches; these push the query into it and act on what
      it found. Everything goes through the view rather than a chain because a
      search is not a document edit — only the replaces are. */
+  /* The matches are computed HERE, from the live document, rather than read
+     back out of the plugin.
+     TipTap v3's useEditor does not re-render on a transaction unless it is
+     asked to (shouldRerenderOnTransaction defaults to false), so a toolbar
+     reading plugin state saw whatever was there at the last React render —
+     which for a fresh query is an empty match list. That is why the counter
+     sat at 0/0 on a word the document plainly contains.
+     The plugin still owns the DECORATIONS; it just is not the source of truth
+     for the count or for what Enter steps through. Only computed while the
+     panel is open with something typed in it, so a closed Find costs nothing
+     even on a 200-page agreement. */
+  const findMatches: FindMatch[] = (findOpen && findTerm)
+    ? collectMatches(editor.state.doc, findTerm, matchCase)
+    : [];
+  const findCount = findMatches.length;
   const findState: any = findKey.getState(editor.state);
-  const findCount = findState?.matches?.length ?? 0;
-  const findIndex = findCount ? (findState.index ?? 0) + 1 : 0;
+  const findIndex = findCount ? Math.min(findState?.index ?? 0, findCount - 1) + 1 : 0;
 
   const pushSearch = (term: string, caseSensitive: boolean) => {
-    editor.view.dispatch(editor.state.tr.setMeta(findKey, { term, matchCase: caseSensitive, index: 0 }));
-    /* Jump to the first hit as it is typed. Read AFTER the dispatch, because
-       the plugin recomputes the matches inside it. */
-    const fs: any = findKey.getState(editor.state);
-    if (fs?.matches?.length) scrollToMatch(fs.matches[0].from);
+    /* Highlights and the counter update as you type; the PAGE does not move.
+       Jumping on every keystroke meant the document ran away under a
+       half-typed word — "r", "re", "reg" each landing somewhere different —
+       and the first real match was reached by accident rather than on purpose.
+       Enter (or the arrows) is what travels.
+       The matches travel WITH the query so the decorations draw exactly the set
+       the counter is counting. */
+    const matches = term ? collectMatches(editor.state.doc, term, caseSensitive) : [];
+    editor.view.dispatch(
+      editor.state.tr.setMeta(findKey, { term, matchCase: caseSensitive, index: 0, matches }),
+    );
+    findVisited.current = false;
   };
 
   /* Step to a match and bring it on screen.
@@ -1357,10 +1405,16 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
      focus. Centred rather than merely "into view", so a match at the very
      bottom of the viewport does not sit under the panel. */
   const stepMatch = (delta: number) => {
-    const fs: any = findKey.getState(editor.state);
-    if (!fs?.matches?.length) return;
-    const next = (fs.index + delta + fs.matches.length) % fs.matches.length;
-    const m = fs.matches[next];
+    if (!findMatches.length) return;
+    const cur = Math.min(findKey.getState(editor.state)?.index ?? 0, findMatches.length - 1);
+    /* The first Enter after a new query goes to the match you are already ON,
+       not past it. Without this the opening hit was skipped: typing set the
+       index to 0 and the first Enter advanced straight to the second. */
+    const next = findVisited.current
+      ? (cur + delta + findMatches.length) % findMatches.length
+      : cur;
+    findVisited.current = true;
+    const m = findMatches[next];
     editor.view.dispatch(
       editor.state.tr
         .setMeta(findKey, { index: next })
@@ -1384,22 +1438,21 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
   };
 
   const replaceCurrent = () => {
-    const fs: any = findKey.getState(editor.state);
-    if (!fs?.matches?.length) return;
-    const m = fs.matches[fs.index] ?? fs.matches[0];
+    if (!findMatches.length) return;
+    const cur = Math.min(findKey.getState(editor.state)?.index ?? 0, findMatches.length - 1);
+    const m = findMatches[cur] ?? findMatches[0];
     editor.view.dispatch(editor.state.tr.insertText(replaceTerm, m.from, m.to));
     // The plugin recomputes on docChanged, so the next match is already the
     // current one — nothing to advance by hand.
   };
 
   const replaceAll = () => {
-    const fs: any = findKey.getState(editor.state);
-    if (!fs?.matches?.length) return;
+    if (!findMatches.length) return;
     const tr = editor.state.tr;
     /* Back to front: replacing shifts every position after the match, and
        working backwards leaves the ones still to do untouched. */
-    for (let i = fs.matches.length - 1; i >= 0; i--) {
-      const m = fs.matches[i];
+    for (let i = findMatches.length - 1; i >= 0; i--) {
+      const m = findMatches[i];
       tr.insertText(replaceTerm, m.from, m.to);
     }
     editor.view.dispatch(tr);
@@ -1731,6 +1784,40 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
       <TB active={editor.isActive('italic')}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></TB>
       <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></TB>
       <TB active={editor.isActive('strike')}    onClick={() => editor.chain().focus().toggleStrike().run()}    title="Strikethrough"><s>S</s></TB>
+      {/* Superscript / subscript, text colour and highlight. The extensions for
+          all four were already registered in useCtcEditor — only the buttons
+          were missing here, which is what would have made switching the Trade
+          Document editor onto this toolbar a downgrade. */}
+      <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
+      <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().toggleSubscript().run()}   title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
+      <label className="ctcte-btn ctcte-color" title="Text colour">
+        <span style={{ borderBottom: `3px solid ${editor.getAttributes('textStyle').color || '#1f2937'}`, lineHeight: 1 }}>A</span>
+        <input
+          type="color"
+          value={editor.getAttributes('textStyle').color || '#1f2937'}
+          onChange={e => (editor.chain().focus() as any).setColor(e.target.value).run()}
+        />
+      </label>
+      {/* Five everyday highlights inline, so the common case never opens the
+          OS colour picker; the last swatch clears it. */}
+      {['#FEF08A', '#BBF7D0', '#BFDBFE', '#FBCFE8', '#DDD6FE'].map(c => (
+        <button
+          key={c}
+          type="button"
+          className="ctcte-swatch"
+          style={{ background: c }}
+          title="Highlight"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => (editor.chain().focus() as any).setBackgroundColor(c).run()}
+        />
+      ))}
+      <button
+        type="button"
+        className="ctcte-swatch ctcte-swatch-none"
+        title="Remove highlight"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => (editor.chain().focus() as any).unsetBackgroundColor().run()}
+      />
 
       {/* Find and Replace. Its own panel because two inputs, a case toggle, a
           match counter and four actions do not fit a dropdown list. */}
@@ -1886,6 +1973,17 @@ export const CTC_EDITOR_CSS = `
 /* WRAP onto multiple rows so EVERY tool is visible (no horizontal scroll that
    hid the right-hand tools). row-gap keeps the rows cleanly separated and
    align-items:center lines the controls up so it doesn't read as ragged. */
+/* Editor + live preview side by side. Below 1180px the two panes stop being
+   usable together — a 32% preview leaves the editor under 700px, which is
+   narrower than the A4 sheet it is drawing — so they stack instead, editor
+   first. Shared by all three CLM editors (CTC, Trade Document, Agreement)
+   because all three lay the split out the same way. */
+.clm-editor-split { display: flex; flex: 1; min-height: 0; min-width: 0; }
+@media (max-width: 1180px) {
+  .clm-editor-split { flex-direction: column; }
+  .clm-editor-split > * { width: auto !important; }
+  .clm-editor-split > *:last-child { flex: 0 0 42%; min-height: 0; }
+}
 .ctcte-toolbar { display: flex; align-items: center; gap: 3px; row-gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
 .ctcte-toolbar > * { flex-shrink: 0; }
 /* A cluster of related controls. nowrap is the load-bearing part: the bar
@@ -2106,18 +2204,29 @@ export const CTC_EDITOR_CSS = `
 /* Word's ruler. Sits above the sheet and is exactly as wide as it, so a marker
    is literally over the paper edge it controls. */
 .ctcte-ruler {
-  position: relative; height: 22px; margin: 0 auto 10px;
+  position: relative; height: 26px; margin: 0 auto 10px;
   background: #fff; border: 1px solid #E3E6EF; border-radius: 4px;
   box-shadow: 0 1px 2px rgba(16,24,40,.05);
   user-select: none;
 }
 .ctcte-ruler-pad { position: absolute; top: 0; bottom: 0; background: #E6E9F2; }
+/* The scale itself: a short mark every half centimetre, a taller one on the
+   whole, numbers above the tall ones. Ticks hang from the BOTTOM edge so the
+   scale reads against the paper directly beneath it. */
 .ctcte-ruler-tick {
-  position: absolute; top: 4px; transform: translateX(-50%);
-  font-size: 7.5px; font-weight: 700; color: #98A2B3; letter-spacing: .04em;
+  position: absolute; bottom: 0; width: 1px; height: 4px;
+  background: #CBD2E0; transform: translateX(-50%);
 }
+.ctcte-ruler-tick.is-major { height: 8px; background: #98A2B3; }
+.ctcte-ruler-num {
+  position: absolute; top: 3px; transform: translateX(-50%);
+  font-size: 8px; font-weight: 700; color: #98A2B3; letter-spacing: .02em;
+  line-height: 1; pointer-events: none;
+}
+/* Sits high on the bar so it never covers the ticks it is being dragged
+   against. */
 .ctcte-ruler-grip {
-  position: absolute; top: 50%; width: 11px; height: 11px; padding: 0;
+  position: absolute; top: 7px; width: 11px; height: 11px; padding: 0;
   transform: translate(-50%, -50%) rotate(45deg);
   background: #7C3AED; border: 1px solid #fff; border-radius: 2px;
   cursor: ew-resize; box-shadow: 0 1px 3px rgba(16,24,40,.35);
@@ -2125,6 +2234,9 @@ export const CTC_EDITOR_CSS = `
 .ctcte-ruler-grip:hover, .ctcte-ruler-grip.is-drag { background: #4C1D95; }
 [data-bs-theme="dark"] .ctcte-ruler { background: #1b2028; border-color: #2a3140; }
 [data-bs-theme="dark"] .ctcte-ruler-pad { background: #2a3140; }
+[data-bs-theme="dark"] .ctcte-ruler-tick { background: #3b4354; }
+[data-bs-theme="dark"] .ctcte-ruler-tick.is-major { background: #5b6478; }
+[data-bs-theme="dark"] .ctcte-ruler-num { color: #7c8698; }
 
 /* A page boundary that falls inside a single block — a table row taller than a
    sheet, or a very long paragraph. The PDF splits these mid-block and leaves no
@@ -2201,6 +2313,17 @@ export const CTC_EDITOR_CSS = `
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }
+/* Colour + highlight. The native colour input is laid OVER its swatch so the
+   whole button opens the picker instead of sitting beside it as a second
+   target. */
+.ctcte-color { position: relative; overflow: hidden; font-weight: 800; }
+.ctcte-color input[type="color"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; padding: 0; border: none; }
+.ctcte-swatch { width: 18px; height: 18px; padding: 0; border: 1.5px solid rgba(15,23,42,.12); border-radius: 5px; cursor: pointer; flex-shrink: 0; }
+.ctcte-swatch:hover { border-color: #7C3AED; }
+.ctcte-swatch-none { background: #fff; position: relative; }
+.ctcte-swatch-none::after { content: ''; position: absolute; inset: 3px; border-top: 1.5px solid #EF4444; transform: rotate(-45deg); }
+[data-bs-theme="dark"] .ctcte-swatch { border-color: rgba(255,255,255,.18); }
+[data-bs-theme="dark"] .ctcte-swatch-none { background: #1b2230; }
 .ctcte-btn { min-width: 26px; height: 26px; padding: 0 6px; border: none; border-radius: 7px; background: none; color: #4C1D95; font-family: 'Georgia', serif; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; transition: background .12s, color .12s; }
 .ctcte-btn:hover { background: #EDE9FE; }
 .ctcte-btn.is-active { background: linear-gradient(135deg,#6D28D9,#7C3AED); color: #fff; }

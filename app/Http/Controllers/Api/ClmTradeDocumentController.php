@@ -572,6 +572,104 @@ class ClmTradeDocumentController extends Controller
     }
 
     /**
+     * Live PDF preview for the Stage 2 draft editor.
+     *
+     * The same shape as CtcContractController::previewLive, and it renders the
+     * same blade the real download does — that is the whole point: a preview
+     * built from a different view would agree with the editor and disagree
+     * with the file people actually receive.
+     *
+     * Everything comes off the REQUEST, not off the saved row: the editor
+     * posts its current content, margins, header and footer on every debounce,
+     * so the preview tracks unsaved edits. The row is looked up only to give
+     * the blade a title and a code, and only inside the caller's own tenant.
+     *
+     * Streams inline rather than downloading — the SPA pulls it as a blob and
+     * paints it with pdf.js.
+     */
+    public function previewLive(Request $request)
+    {
+        @ini_set('memory_limit', '1024M');
+        @set_time_limit(120);
+
+        $user = $request->user();
+        if (!$user) abort(401);
+
+        $data = $request->validate([
+            'id'            => 'nullable|integer',
+            'content'       => 'nullable|string',
+            'page_config'   => 'nullable|array',
+            'header_config' => 'nullable|array',
+            'footer_config' => 'nullable|array',
+        ]);
+
+        $row = null;
+        if (!empty($data['id'])) {
+            $row = ClmTradeDocLibrary::where('client_id', $user->client_id)->find($data['id']);
+        }
+
+        $html = trim((string) ($data['content'] ?? ($row->content ?? '')));
+        if ($html === '') {
+            $html = '<p><em>Nothing to preview yet — start typing in the editor.</em></p>';
+        }
+
+        /* Same guard the download carries. dompdf does not fail gracefully on a
+           document past this size, it takes the request down with it. */
+        if (($len = mb_strlen($html)) > self::RENDER_MAX_CHARS) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This draft is too large to preview — '
+                    . number_format($len) . ' characters against a limit of '
+                    . number_format(self::RENDER_MAX_CHARS) . '.',
+            ], 422);
+        }
+
+        /* A draft still holds its placeholders. Blanked rather than left as
+           raw {{tokens}}, so the preview reads as the finished page will —
+           and the signature stamp is only ever injected after approval. */
+        $processedHtml = preg_replace('/\{\{[^{}]*\}\}/', '', $html);
+
+        $client       = Client::find($user->client_id);
+        $headerConfig = $data['header_config'] ?? (is_array($row->header_config ?? null) ? $row->header_config : []);
+        $footerConfig = $data['footer_config'] ?? (is_array($row->footer_config ?? null) ? $row->footer_config : []);
+        $pageConfig   = $data['page_config']   ?? (is_array($row->page_config   ?? null) ? $row->page_config   : []);
+
+        // dompdf cannot fetch /storage URLs at render time — same resolution
+        // chain the download uses.
+        $logoUrlPath = null;
+        $lu = $headerConfig['logo_url'] ?? null;
+        if ($lu && str_contains($lu, '/storage/')) {
+            $logoUrlPath = ltrim(substr($lu, strpos($lu, '/storage/') + strlen('/storage/')), '/');
+        }
+        $headerLogoBase64 = $this->resolveLogoBase64(
+            $headerConfig['logo_path'] ?? null,
+            $logoUrlPath,
+            $client?->logo,
+        );
+
+        // A stand-in when the draft has never been saved, so the blade's
+        // $document->title still resolves.
+        $document = $row ?: new ClmTradeDocLibrary(['title' => 'Trade document (draft preview)']);
+
+        $pdf = Pdf::loadView('pdf.clm-signature-document', [
+            'document'         => $document,
+            'party'            => null,
+            'modelName'        => 'Trade Document',
+            'processedHtml'    => $processedHtml,
+            'generatedDate'    => now()->format('d/m/Y'),
+            'requestId'        => (string) ($row->code ?? 'DRAFT'),
+            'signers'          => [],
+            'client'           => $client,
+            'headerConfig'     => $headerConfig,
+            'footerConfig'     => $footerConfig,
+            'pageConfig'       => $pageConfig,
+            'headerLogoBase64' => $headerLogoBase64,
+        ])->setPaper('a4')->setOption('isPhpEnabled', true);
+
+        return $pdf->stream('trade-document-preview.pdf');
+    }
+
+    /**
      * Walk candidate public-disk paths and return the first that resolves to
      * a file, base64-encoded for inline embedding in the PDF header. Returns
      * '' when none resolve so the blade falls back to a text-only header.

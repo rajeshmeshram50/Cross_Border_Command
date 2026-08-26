@@ -42,13 +42,21 @@ export const CLM_CSS = `
 .clm-root .tc-wl-btn:hover:not(:disabled) { border-color: #0891b2; box-shadow: 0 4px 12px rgba(8,145,178,.25); }
 .clm-root {
   padding: 0;
-  margin-top: -8px;
+  /* 8px above, from .page-content, like every other page. The -8px pull that
+     used to be here cancelled that padding exactly, so a CLM page started
+     flush against the menu while its own left and right edges kept the 8px —
+     the top was the odd one out. */
+  margin-top: 0;
   width: 100%;
   font-family: var(--font-sans);
   font-size: 14px;
   letter-spacing: normal;
   color: #0F172A;
-  display: flex; flex-direction: column; gap: 10px;
+  /* One gap between the header strip, the "What We Are Doing Here" box and the
+     table card — the same 8px the rest of the product uses (.page-content sets
+     it on the other three sides). Was 10px, which is close enough to look like
+     a mistake rather than a choice. */
+  display: flex; flex-direction: column; gap: 8px;
   background: transparent;
   box-sizing: border-box;
 }

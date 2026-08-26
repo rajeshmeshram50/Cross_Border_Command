@@ -16,7 +16,9 @@ import HeaderFooterPanel, {
   DEFAULT_HEADER, DEFAULT_FOOTER,
   type HeaderConfig, type FooterConfig,
 } from '../../hrms/doc-templates/HeaderFooterPanel';
-import { useCtcEditor, CtcEditorContent, CTC_EDITOR_CSS, type CtcEditor } from '../operations/CtcRichEditor';
+import { useCtcEditor, CtcEditorContent, CtcToolbar, CTC_EDITOR_CSS, DEFAULT_MARGINS, type CtcMargins, type CtcEditor } from '../operations/CtcRichEditor';
+import CtcLivePreview from '../operations/CtcLivePreview';
+import { useOpsTheme } from '../operations/useOpsTheme';
 import type { Editor } from '@tiptap/react';
 
 /* ───────────────────────────────────────────────────────────────────────
@@ -917,6 +919,7 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
                 editor={agr.editor}
                 busy={editorBusy}
                 contentLength={(content ?? '').length}
+                content={content ?? ''}
                 fontSize={fontSize}
                 setFontSizeState={setFontSizeState}
                 applyFontSize={applyFontSize}
@@ -1043,6 +1046,7 @@ function AgrEditor({
   editor,
   busy,
   contentLength,
+  content,
   fontSize,
   setFontSizeState,
   applyFontSize,
@@ -1074,6 +1078,8 @@ function AgrEditor({
   editor: Editor | null;
   busy: boolean;
   contentLength: number;
+  /** The draft HTML itself — the live preview posts it on every debounce. */
+  content: string;
   fontSize: string;
   setFontSizeState: (v: string) => void;
   applyFontSize: (px: string) => void;
@@ -1107,6 +1113,15 @@ function AgrEditor({
   // toolbar's actions row has overflow-x:auto which would clip an absolute menu.
   const [dlMenuOpen, setDlMenuOpen] = useState(false);
   const [dlAnchor, setDlAnchor] = useState<{ top: number; right: number }>({ top: 0, right: 0 });
+  /* Live PDF preview beside the editor. Full page only — at modal width the
+     split leaves neither pane usable, the same call the CTC form makes. */
+  const [previewOpen, setPreviewOpen] = useState(false);
+  /* Page margins for the A4 view; the ruler above the sheet writes here. */
+  const [margins, setMargins] = useState<CtcMargins>(DEFAULT_MARGINS);
+  /* The preview follows the APP's theme, not this modal's chrome — the modal is
+     teal-dark whatever the app is set to, and the preview's A4 sheet is white
+     either way. */
+  const ops = useOpsTheme('cyan');
   const shell = (
     <div className={`agw-editor-shell ${fullPage ? 'agw-editor-shell-full' : ''}`}>
       {/* ProseMirror + toolbar base styles for the TipTap editor content. */}
@@ -1166,6 +1181,18 @@ function AgrEditor({
               Clause Library
             </button>
           </Tooltip>
+          {/* Live Preview — the actual PDF, rendered from the same blade the
+              signature copy uses, so what is checked here is what gets sent.
+              Full page only: at modal width the split leaves neither pane
+              usable. */}
+          {fullPage && (
+            <Tooltip label={previewOpen ? 'Hide the live PDF preview' : 'Show the live PDF preview'}>
+              <button type="button" className={`agw-editor-btn ${previewOpen ? 'is-on' : ''}`} onClick={() => setPreviewOpen(v => !v)}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                {previewOpen ? 'Hide Preview' : 'Live Preview'}
+              </button>
+            </Tooltip>
+          )}
           {/* Full Page — expands the drafting area to fill the screen (and
               collapses back) so long agreements can be authored without the
               modal frame cramping the editor. */}
@@ -1182,80 +1209,20 @@ function AgrEditor({
         </div>
       </div>
 
-      {/* preventDefault on mousedown keeps the editor's text selection alive
-          when a toolbar BUTTON is clicked (so execCommand acts on the
-          selection). Native <select> dropdowns, however, open ON mousedown —
-          blanket-preventing it stopped the Font-size / Block-format dropdowns
-          from opening at all. Skip the preventDefault when the target is a
-          <select> (or its options) so those dropdowns work again. */}
-      <div
-        className="agw-toolbar"
-        onMouseDown={e => { if (!(e.target as HTMLElement).closest('select')) e.preventDefault(); }}
-      >
-        <select className="agw-toolbar-sel" value={fontSize} onChange={e => { setFontSizeState(e.target.value); applyFontSize(e.target.value); }} title="Font size">
-          <option value="11">11</option><option value="12">12</option><option value="13">13</option>
-          <option value="14">14</option><option value="16">16</option><option value="18">18</option>
-          <option value="20">20</option><option value="24">24</option><option value="28">28</option>
-        </select>
-        <select className="agw-toolbar-sel" value={block} onChange={e => { setBlockState(e.target.value); applyBlock(e.target.value); }} title="Block format">
-          <option value="p">Paragraph</option>
-          <option value="h1">Heading 1</option>
-          <option value="h2">Heading 2</option>
-          <option value="h3">Heading 3</option>
-          <option value="blockquote">Quote</option>
-          <option value="pre">Code</option>
-        </select>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('bold')}          title="Bold (Ctrl+B)"><b>B</b></button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('italic')}        title="Italic (Ctrl+I)"><i>I</i></button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('underline')}     title="Underline (Ctrl+U)"><u>U</u></button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('strikeThrough')} title="Strikethrough"><s>S</s></button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('superscript')}   title="Superscript">X²</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('subscript')}     title="Subscript">X₂</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={insertLink} title="Insert link"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" /><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></svg></button>
-        <label className="agw-toolbar-btn agw-toolbar-color" title="Text color" style={{ position: 'relative' }}>
-          T
-          <input type="color" defaultValue="#0c4a6e" onChange={e => exec('foreColor', e.target.value)}
-                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
-        </label>
-        {/* Highlight — system color picker (click ✎) + quick-pick
-            swatches for the everyday yellow / mint / sky / pink / lilac
-            so the user doesn't have to dive into the OS picker for
-            common cases. Same palette the Trade Doc modal uses. */}
-        <label className="agw-toolbar-btn agw-toolbar-color" title="Custom highlight color" style={{ position: 'relative', color: '#f59e0b' }}>
-          ✎
-          <input type="color" defaultValue="#fde68a" onChange={e => exec('hiliteColor', e.target.value)}
-                 style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer' }} />
-        </label>
-        {['#fde68a', '#bbf7d0', '#bae6fd', '#fbcfe8', '#e9d5ff'].map(c => (
-          <button
-            key={c}
-            type="button"
-            className="agw-toolbar-btn"
-            title={`Highlight ${c}`}
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => exec('hiliteColor', c)}
-            style={{ background: c, width: 22, padding: 0, border: '1px solid #cbd5e1' }}
-          >&nbsp;</button>
-        ))}
-        <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyLeft')}    title="Align left">≡</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyCenter')}  title="Align center">≡</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyRight')}   title="Align right">≡</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('justifyFull')}    title="Justify">≡</button>
-        <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertUnorderedList')} title="Bullet list">•≡</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('insertOrderedList')}   title="Numbered list">1≡</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('outdent')} title="Outdent">⇤</button>
-        <button type="button" className="agw-toolbar-btn" onMouseDown={e => e.preventDefault()} onClick={() => exec('indent')}  title="Indent">⇥</button>
-        <span className="agw-toolbar-sep" />
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('undo')} title="Undo">↶</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('redo')} title="Redo">↷</button>
-        <button type="button" className="agw-toolbar-btn" onClick={() => exec('removeFormat')} title="Clear formatting">🅣</button>
-      </div>
+      {/* The Case-to-Case editor's toolbar, reused. This modal already runs on
+          the same engine (useCtcEditor / CtcEditorContent below), so the bar
+          was the only thing it did not share — which is why line spacing, sub
+          points, the table menu, borders and Find & Replace existed in one CLM
+          editor and not this one. Trade Document was switched over the same
+          way; all three now move together. */}
+      <CtcToolbar editor={editor} dark />
 
       {/* Scrollable region — the editor head + toolbar above stay pinned;
           only this page-shell preview scrolls when the content grows. */}
-      <div className="agw-editor-scroll">
+      {/* Editor and preview side by side; the row is the flex parent so the
+         editor keeps the slack and the preview holds a fixed share. */}
+      <div className="clm-editor-split">
+      <div className="agw-editor-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
         {/* Page-shell preview — wraps the editor in a fixed header (logo +
             title + subtitle) and footer (text + page #). Same component
             the HR Document Templates Step 3 and Trade Document modal use,
@@ -1276,7 +1243,19 @@ function AgrEditor({
                 <div style={{ fontSize: 12.5, fontWeight: 700 }}>Preparing editor…</div>
               </div>
             )}
-            <CtcEditorContent editor={editor} />
+            {/* pageView — real A4 sheets with the boundaries the PDF will
+                actually break at, instead of one continuous column. Same call
+                the CTC form and the Trade Document modal make.
+                footerText matters: a page break is judged against the space the
+                running footer really leaves, so without it the editor's breaks
+                drift from the PDF's. */}
+            <CtcEditorContent
+              editor={editor}
+              pageView
+              margins={margins}
+              onMargins={setMargins}
+              footerText={(footerConfig as { text?: string }).text || ''}
+            />
           </div>
         </HeaderFooterPanel>
 
@@ -1286,6 +1265,20 @@ function AgrEditor({
             <ClmClauseInsertPanel onClose={onCloseClauseLibrary} onInsert={onInsertClause} />
           )}
         </div>
+      </div>
+      {fullPage && previewOpen && (
+        <div style={{ width: '32%', minWidth: 300, flexShrink: 0, minHeight: 0 }}>
+          <CtcLivePreview
+            endpoint="/clm/agreement-library/preview-live"
+            contractId={editingId ?? null}
+            content={content ?? ''}
+            pageConfig={{ margin_left: margins.left, margin_right: margins.right, margin_x: margins.left }}
+            headerConfig={headerConfig as unknown as Record<string, unknown>}
+            footerConfig={footerConfig as unknown as Record<string, unknown>}
+            dark={ops.dark}
+          />
+        </div>
+      )}
       </div>
 
       <div className="agw-editor-foot">

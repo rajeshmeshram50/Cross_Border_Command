@@ -303,6 +303,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::post  ('/clm/docx-to-html',                        [ClmTradeDocumentController::class, 'docxToHtmlPreview']);
 
     Route::post  ('/clm/trade-doc-library/upload-header-logo',[ClmTradeDocumentController::class, 'uploadHeaderLogo']);
+    // Live PDF preview for the Stage 2 draft editor. Declared ABOVE the
+    // /{id} routes so 'preview-live' is never taken for a numeric id.
+    Route::post  ('/clm/trade-doc-library/preview-live',      [ClmTradeDocumentController::class, 'previewLive']);
     Route::get   ('/clm/trade-doc-library/for-party/{party}', [ClmTradeDocumentController::class, 'libraryForParty']);
     
     Route::get   ('/clm/trade-doc-library/{id}/download',     [ClmTradeDocumentController::class, 'downloadDocx'])->whereNumber('id');
@@ -345,6 +348,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::delete('/clm/agreement-types/{id}', [ClmAgreementController::class, 'typesDestroy']);
     Route::get   ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryIndex']);
     Route::post  ('/clm/agreement-library',      [ClmAgreementController::class, 'libraryStore']);
+    // Live PDF preview for the Stage-2 draft editor. Declared ABOVE the
+    // /{id} routes so 'preview-live' is never taken for a numeric id.
+    Route::post  ('/clm/agreement-library/preview-live', [ClmAgreementController::class, 'previewLive']);
     Route::put   ('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryUpdate']);
     Route::delete('/clm/agreement-library/{id}', [ClmAgreementController::class, 'libraryDestroy']);
     Route::get   ('/clm/agreement-library/{id}/download',     [ClmAgreementController::class, 'downloadDocx'])->whereNumber('id');

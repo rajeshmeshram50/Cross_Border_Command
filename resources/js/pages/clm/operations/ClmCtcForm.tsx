@@ -1356,7 +1356,7 @@ function Stage1(p: {
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={t.dark ? '#a78bfa' : '#7C3AED'} strokeWidth="2.2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                       <span style={{ fontSize: 9.5, fontWeight: 800, color: t.dark ? '#a78bfa' : '#6D28D9', letterSpacing: '.03em' }}>Read-only — this agreement is locked</span>
                     </div>}
-                <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                <div className="clm-editor-split">
                   <div className="ctc-mid-scroll" style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: 'auto', background: t.dark ? '#100c1c' : '#eef0f6', padding: 14 }}>
                     <HeaderFooterPanel header={header} setHeader={setHeader} footer={footer} setFooter={setFooter} uploadLogoEndpoint="/clm/trade-doc-library/upload-header-logo">
                       <CtcEditorContent
