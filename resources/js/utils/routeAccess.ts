@@ -206,7 +206,8 @@ export function canAccessPath(pathname: string, user: GuardUser | null | undefin
 
   // 6) Single-page business modules.
   if (path === '/gts') return isBiz && leaf('gts');
-  if (path === '/inventory') return isBiz && leaf('inventory');
+  // Inventory hub + its put-away scan sub-pages all ride on the one grant.
+  if (path === '/inventory' || path.startsWith('/inventory/')) return isBiz && leaf('inventory');
   if (path === '/credentials-vault') return isBiz && leaf('credentials-vault');
   if (path === '/project-navigator') return isBiz && leaf('project-navigator');
   if (path === '/developers' || path.startsWith('/developers/')) {
