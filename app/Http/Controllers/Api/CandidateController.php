@@ -46,6 +46,22 @@ class CandidateController extends Controller
         'Walk', 'Bicycle', 'Two-wheeler', 'Four-wheeler', 'Public Transport', 'Other',
     ];
 
+    /* Email format. `email` alone is RFC validation, which accepts `test@test`
+     * and `a@b.c` — a domain with no dot, and a one-letter TLD, are both legal
+     * RFC addresses but neither is a working contact (QA #60). The regex adds
+     * what a contact address actually needs: labels that start and end
+     * alphanumeric, and a TLD of two or more letters. Kept identical to
+     * EMAIL_RE / isValidEmail() in HrCandidates.tsx so the form and the API
+     * refuse the same strings. Applies to the import too — a spreadsheet was
+     * the easier way to get junk in. */
+    private const EMAIL_RULES = [
+        'nullable',
+        'email:rfc',
+        'max:191',
+        'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
+        'not_regex:/\.\./',
+    ];
+
     /** Candidate-page tab → the statuses that tab shows. Mirrors the tab
      *  definitions in HrCandidates.tsx; 'all' is the ACTIVE pipeline, i.e.
      *  everyone who has not been closed out one way or the other. */
@@ -623,7 +639,7 @@ class CandidateController extends Controller
                 // only name-safe characters — rejects blank/whitespace-only and
                 // special-character junk like "@#$%" (bug #29).
                 'name'                => ['required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
-                'email'               => 'nullable|email|max:191',
+                'email'               => self::EMAIL_RULES,
                 'mobile'              => 'nullable|string|max:30',
                 'experience_years'    => 'nullable|numeric|min:0|max:99.99',
                 'qualification'       => 'nullable|string|max:191',
@@ -1217,7 +1233,7 @@ class CandidateController extends Controller
             // name-safe characters — rejects special-character / blank names,
             // matching the import validator (bug #29).
             'name'                => [$isUpdate ? 'sometimes' : 'required', 'string', 'max:150', "regex:/^[A-Za-z][A-Za-z .'\\-]*$/"],
-            'email'               => 'nullable|email|max:191',
+            'email'               => self::EMAIL_RULES,
             // Mobile: allow optional + / spaces / dashes; the digit count
             // must land between 7 and 15. Matches the frontend validator
             // so a payload that slips past the SPA still fails at the API.

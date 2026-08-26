@@ -133,16 +133,24 @@ export default function ReportingManagerDependencyModal({
   const assignable = (r: Person, m: Person) =>
     m.id !== r.id && !m.exiting && eligibleManager(r.rank, m.rank);
 
-  /* Employee candidates for one report. Login users are appended ONLY when no
-     employee can take them — a hierarchy dead-end, e.g. a Team Leader whose
-     only possible managers (the HODs) are all exiting. Offering Branch Users
-     unconditionally would make it too easy to flatten the org chart by
-     accident; offering them here is the difference between an exit that can be
-     completed and one that is stuck with no route out of the screen. */
+  /* Employee candidates for one report, then the tenant's login users.
+     Login users used to be appended ONLY when no employee could take the
+     report — a hierarchy dead-end. The intent was to stop the org chart being
+     flattened by accident, but the effect was that the lower the report's
+     rank, the fewer options they got: an Intern/Trainee is outranked by
+     practically everyone, so the dead-end never triggered and a Branch User
+     could not be chosen for them at all, while the same pick worked fine for a
+     senior report (QA #116).
+     The employee master takes the opposite view for the very same field —
+     EmployeeController::managers() returns login users unconditionally,
+     commented "a login user is the top of the org chart, so it is an eligible
+     manager for every designation" — and the server accepts the pick either
+     way. Two screens writing one column must not disagree about what is
+     allowed, so they are offered here too. Employees stay FIRST in the list,
+     which is what keeps them the obvious choice. */
   const optionsFor = (r: Person) => {
     const emp = managers.filter(m => m.id !== r.id && eligibleManager(r.rank, m.rank));
-    const anyPickable = emp.some(m => !m.exiting);
-    return anyPickable ? emp : [...emp, ...loginUsers];
+    return [...emp, ...loginUsers];
   };
 
   /* Clicking a greyed option is intercepted rather than ignored — MasterSelect
@@ -162,9 +170,10 @@ export default function ReportingManagerDependencyModal({
   const bulkOptions = useMemo(
     () => {
       const emp = managers.filter(m => reports.every(r => assignable(r, m)));
-      // Same fallback as a single row: when no employee outranks everyone,
-      // a Branch User does (TOP_RANK), so bulk stays usable.
-      return (emp.length ? emp : loginUsers).map(optionFor);
+      // Login users rank above every designation, so they can always take
+      // every report — offered alongside the employees rather than only when
+      // the employee list comes up empty, matching optionsFor() above.
+      return [...emp, ...loginUsers].map(optionFor);
     },
     [managers, reports, loginUsers],
   );
