@@ -761,8 +761,20 @@ export default function SalesCustomerSendForSignatureModal({
           // Silently keep the previous defaults — the user can still drag.
         }
       })
-      .catch(() => {
-        if (!cancelled) toast.error('Preview failed', 'Could not render the document. Check the draft content.');
+      /* Surface WHY it failed. The response is a Blob (responseType), so the
+       * server's JSON message has to be read out of it — discarding it left
+       * every failure looking like bad draft content, when a 404 on the
+       * supplier / document or a render error reads exactly the same (QA #57,
+       * #58). Same unwrap the CLM draft/download screens use. */
+      .catch(async (e: any) => {
+        if (cancelled) return;
+        let msg = 'Could not render the document. Check the draft content.';
+        try {
+          const blob = e?.response?.data;
+          if (blob instanceof Blob) { const json = JSON.parse(await blob.text()); if (json?.message) msg = json.message; }
+          else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
+        } catch { /* keep the default */ }
+        if (!cancelled) toast.error('Preview failed', msg);
       })
       .finally(() => { if (!cancelled) setPreviewLoading(false); });
 

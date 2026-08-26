@@ -426,7 +426,18 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         : { trade_doc_id: parsed.libId, party_id: p.db_id, model_name: 'Vendor' };
       return api.post('/clm/signature-requests/preview', body, { responseType: 'blob' })
         .then(res => { const url = URL.createObjectURL(res.data as Blob); if (w) w.location.href = url; else window.open(url, '_blank'); setTimeout(() => URL.revokeObjectURL(url), 60000); })
-        .catch(() => { if (w) w.close(); toast.error('Preview failed', 'Could not render the document. Check the draft content.'); });
+        // Read the server's reason out of the Blob response rather than always
+        // blaming the draft content — see the same unwrap in the sign modal.
+        .catch(async (e: any) => {
+          if (w) w.close();
+          let msg = 'Could not render the document. Check the draft content.';
+          try {
+            const blob = e?.response?.data;
+            if (blob instanceof Blob) { const json = JSON.parse(await blob.text()); if (json?.message) msg = json.message; }
+            else if (typeof e?.response?.data?.message === 'string') msg = e.response.data.message;
+          } catch { /* keep the default */ }
+          toast.error('Preview failed', msg);
+        });
     });
   };
   /* Which file inside the signature request belongs to this row. A bulk send
