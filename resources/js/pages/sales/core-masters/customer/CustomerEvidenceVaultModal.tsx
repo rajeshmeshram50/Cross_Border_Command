@@ -172,9 +172,9 @@ interface Props {
   open: boolean;
   customer: CustomerVaultTarget | null;
   onClose: () => void;
-  /** Optional override — when the backend is wired, the parent passes
-   *  the API response. Until then, the demo builder below produces a
-   *  realistic snapshot for the design review. */
+  /** Optional override — lets a parent supply an already-fetched vault
+   *  payload instead of letting this modal fetch its own. When omitted
+   *  (the usual case) the modal fetches, and falls back to EMPTY_VAULT. */
   data?: VaultData | null;
   /** Tab to open on. Lets callers deep-link straight to a bucket — e.g.
    *  the Buyer Profile page opens the vault on 'owner-kyc' when a KYC
@@ -208,77 +208,30 @@ const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultDat
  * active tab is set programmatically (e.g. via initialTab deep-link). */
 const groupOfTab = (t: TabKey): GroupKey => TABS.find(x => x.key === t)?.group ?? 'standard';
 
-/* ─── Demo-data builder — produces a realistic vault snapshot keyed
- *      off the customer's id so the same customer always renders the
- *      same numbers during design review. Swap this for the API call
- *      when the backend lands. */
-function buildDemoVault(customer: CustomerVaultTarget): VaultData {
-  return {
-    total_documents:       22,
-    verified_signed:       18,
-    pending:               2,
-    company_dd_count:      8,
-    owner_kyc_count:       5,
-    trade_license_count:   4,
-    trade_documents_count: 3,
-    agreements_count:      5,
-    total_shipments:       4,
-    company_dd: [
-      { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',     authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
-      { id: 2, name: 'Company TAN',          reference: 'PNET01234B',     authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyTAN.pdf',     status: 'Verified' },
-      { id: 3, name: 'Company GST',          reference: '27AABCT1234F1Z5', authority: 'GST Portal',     issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyGST.pdf',     status: 'Verified' },
-      { id: 4, name: 'CIN / Shop Act',       reference: 'U72900MH2019PTC', authority: 'MCA',           issue_date: '01/01/2022', expiry: '—',           attachment: 'CIN.pdf',            status: 'Verified' },
-      { id: 5, name: 'IEC Code',             reference: '0412345678',     authority: 'DGFT',           issue_date: '01/01/2021', expiry: '—',           attachment: 'IECCode.pdf',        status: 'Verified' },
-      { id: 6, name: 'Business Address Proof', reference: '1234567890',   authority: '—',              issue_date: '01/01/2022', expiry: '01/01/2027', attachment: 'AddressProof.pdf',   status: 'Verified' },
-      { id: 7, name: 'Cancelled Cheque',     reference: '1234567890',     authority: 'HDFC Bank',     issue_date: '01/01/2025', expiry: '—',           attachment: 'CancelledCheque.pdf', status: 'Expiring' },
-      { id: 8, name: 'FSSAI License',        reference: '10223452000120', authority: 'FSSAI',         issue_date: '01/03/2024', expiry: '01/03/2025', attachment: 'FSSAI.pdf',          status: 'Pending' },
-    ],
-    owner_kyc: [
-      { id: 1, name: 'Aadhaar Card',         reference: 'XXXX-XXXX-3456', authority: 'UIDAI',            issue_date: '01/05/2018', expiry: 'Lifetime', attachment: 'Aadhaar.pdf',     status: 'Verified' },
-      { id: 2, name: 'PAN Card',             reference: 'BVKPJ5678K',     authority: 'Income Tax Dept', issue_date: '01/01/2015', expiry: 'Lifetime', attachment: 'PANCard.pdf',     status: 'Verified' },
-      { id: 3, name: 'Passport',             reference: 'P4521876J',      authority: 'MEA India',       issue_date: '15/06/2020', expiry: '15/06/2030', attachment: 'Passport.pdf',    status: 'Verified' },
-      { id: 4, name: 'Director Address Proof', reference: '—',             authority: '—',               issue_date: '01/01/2024', expiry: '01/01/2026', attachment: 'DirAddress.pdf',  status: 'Verified' },
-      { id: 5, name: 'DIN Certificate',      reference: '07654321',       authority: 'MCA',             issue_date: '—',           expiry: '—',           attachment: 'DIN.pdf',          status: 'Pending' },
-    ],
-    trade_licenses: [
-      { id: 1, name: 'Import Export License', reference: 'IEC-0412345678',      authority: 'DGFT',          issue_date: '01/01/2021', expiry: 'Lifetime',   attachment: 'IECLicense.pdf',  status: 'Verified' },
-      { id: 2, name: 'APEDA Registration',    reference: 'APEDA/REG/2021/7823', authority: 'APEDA',          issue_date: '15/03/2021', expiry: '14/03/2027', attachment: 'APEDA.pdf',       status: 'Verified' },
-      { id: 3, name: 'Agro Export Permit',    reference: 'AGRO/EXP/MH/4512',    authority: 'State Agri Dept', issue_date: '01/06/2023', expiry: '01/06/2026', attachment: 'AgroPermit.pdf',  status: 'Expiring' },
-      { id: 4, name: 'Organic Certification', reference: 'NPOP/ORG/2022/1134',  authority: 'APEDA / NPOP',   issue_date: '10/10/2022', expiry: '09/10/2027', attachment: 'OrganicCert.pdf', status: 'Verified' },
-    ],
-    trade_documents: [
-      { id: 1, name: 'Master Sales Agreement', reference: 'MSA/CUST/2024/001', authority: customer.company, issue_date: '01/04/2024', expiry: '31/03/2027', attachment: 'MSA.pdf',         status: 'Verified' },
-      { id: 2, name: 'Purchase Order Framework', reference: 'POF/CUST/2024/012', authority: customer.company, issue_date: '15/04/2024', expiry: '14/04/2026', attachment: 'POFramework.pdf', status: 'Verified' },
-      { id: 3, name: 'NDA & Confidentiality', reference: 'NDA/CUST/2025/003', authority: customer.company, issue_date: '—',           expiry: '—',          attachment: 'NDA.pdf',         status: 'Pending' },
-    ],
-    shipment_agreements: [
-      { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: customer.company,    country: customer.country ?? 'India',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true,
-        // Trade docs = the shipment's Proforma Invoice + its other trade documents.
-        trade_docs_buyer: [
-          { sig_req_id: 1001, name: 'Proforma Invoice (PI/2026-27/0107)', required: 'REQ', status: 'Signed',  uploaded_on: '11/01/2026', valid_upto: '—' },
-          { sig_req_id: 1002, name: 'Commercial Invoice',                  required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
-          { sig_req_id: 1003, name: 'Packing List',                        required: 'REQ', status: 'Signed',  uploaded_on: '12/01/2026', valid_upto: '—' },
-          { sig_req_id: 1004, name: 'Certificate of Origin',               required: 'OPT', status: 'Signed',  uploaded_on: '13/01/2026', valid_upto: '13/01/2027' },
-        ] },
-      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd', consignee: 'AgroLink FZE', country: 'United States',
-        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/4', pct: 50 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false,
-        trade_docs_buyer: [
-          { sig_req_id: 2001, name: 'Proforma Invoice (PI/2026-27/0028)', required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
-          { sig_req_id: 2002, name: 'Self Declaration',                   required: 'REQ', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
-        ],
-        trade_docs_consignee: [
-          { sig_req_id: 2003, name: 'End Use Declaration',                required: 'REQ', status: 'Signed',  uploaded_on: '10/01/2026', valid_upto: '—' },
-          { sig_req_id: 2004, name: 'Consignee KYC Acknowledgement',      required: 'OPT', status: 'Pending', uploaded_on: '—',          valid_upto: '—' },
-        ] },
-      { id: 3, shipment_id: 'SHP-2026-00512', opportunity_id: 'OPP-134', customer: 'Eastern Harvest Co.',    country: 'UAE',
-        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: true },
-      { id: 4, shipment_id: 'SHP-2026-00601', opportunity_id: 'OPP-156', customer: 'International Buyer LLC', country: 'UAE',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
-    ],
-    last_updated: '04/05/2026',
-  };
-}
+/* ─── Empty vault — the zero-state used until the live payload lands, and
+ *      when the fetch fails or the customer has no saved record yet. There is
+ *      deliberately NO demo data: an empty vault must read as empty, never as
+ *      a set of plausible-looking rows a reviewer could mistake for real
+ *      compliance evidence. The loading skeleton covers the fetch itself, so
+ *      this is only ever on screen when there is genuinely nothing to show. */
+const EMPTY_VAULT: VaultData = {
+  total_documents:       0,
+  verified_signed:       0,
+  pending:               0,
+  company_dd_count:      0,
+  owner_kyc_count:       0,
+  trade_license_count:   0,
+  trade_documents_count: 0,
+  agreements_count:      0,
+  total_shipments:       0,
+  company_dd:            [],
+  owner_kyc:             [],
+  trade_licenses:        [],
+  trade_documents:       [],
+  agreements:            [],
+  shipment_agreements:   [],
+  last_updated:          '—',
+};
 
 export default function CustomerEvidenceVaultModal({ open, customer, onClose, data, initialTab }: Props) {
   const toast = useToast();
@@ -379,8 +332,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
   /* Fetch the vault payload when the modal opens for a new customer.
    * Skips the fetch when (a) the parent passed an override via `data`
    * or (b) customer has no db_id (unsaved record). On failure the
-   * `vaultLive` stays null and the demo builder takes over so the
-   * design review still has something to render. */
+   * `vaultLive` stays null and the vault renders as EMPTY_VAULT rather
+   * than inventing rows. */
   /* Re-fetch the vault payload — called both by the open-effect below
    * and by the Actions column after a successful re-upload so the row
    * picks up the new attachment_url without a full modal re-open. */
@@ -477,10 +430,10 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   const vault: VaultData | null = useMemo(() => {
     if (!customer) return null;
-    /* Source priority: explicit `data` prop > live API > demo. The
-     * demo path stays as a graceful fallback when the API hasn't run
-     * yet, errors out, or the customer has no db_id. */
-    const base = data ?? vaultLive ?? buildDemoVault(customer);
+    /* Source priority: explicit `data` prop > live API > empty vault.
+     * No demo fallback — when the API hasn't run yet, errors out, or the
+     * customer has no db_id, the vault reads as genuinely empty. */
+    const base = data ?? vaultLive ?? EMPTY_VAULT;
     if (!base) return null;
     // Trade Documents tab = the party's expected trade docs (segment-rule
     // td, party-filtered to mirror the edit form) merged with their live
@@ -651,8 +604,8 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
 
   /* Show the skeleton only on the FIRST load (live data not in yet and no
    * explicit data prop). Re-fetches after that keep the current content
-   * visible — no skeleton flash. Until live data lands we'd otherwise show
-   * the demo fallback, which looked like real data swapping in. */
+   * visible — no skeleton flash. Until live data lands the vault holds
+   * EMPTY_VAULT, so the skeleton is what covers the gap. */
   const showSkeleton = loading && !vaultLive && !data;
 
   return createPortal(
@@ -1070,7 +1023,7 @@ function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; v
 
 /* ─── Loading skeleton — shimmer placeholders for the whole vault body
    (KPI ribbon, group cards, tabs, section banner, table). Shown on first
-   load instead of the demo fallback. */
+   load; once it clears, whatever the API returned is what renders. */
 function VaultSkeleton() {
   return (
     <div className="cev-skel">

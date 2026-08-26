@@ -156,58 +156,28 @@ const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultDat
 
 const groupOfTab = (t: TabKey): GroupKey => TABS.find(x => x.key === t)?.group ?? 'standard';
 
-function buildDemoVault(consignee: ConsigneeVaultTarget): VaultData {
-  return {
-    total_documents:       22,
-    verified_signed:       18,
-    pending:               2,
-    company_dd_count:      8,
-    owner_kyc_count:       5,
-    trade_license_count:   4,
-    trade_documents_count: 3,
-    agreements_count:      5,
-    total_shipments:       4,
-    company_dd: [
-      { id: 1, name: 'Company PAN',          reference: 'AABCT1234F',      authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyPAN.pdf',     status: 'Verified' },
-      { id: 2, name: 'Company TAN',          reference: 'PNET01234B',      authority: 'Income Tax Dept', issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyTAN.pdf',     status: 'Verified' },
-      { id: 3, name: 'Company GST',          reference: '27AABCT1234F1Z5', authority: 'GST Portal',      issue_date: '01/01/2023', expiry: '01/01/2028', attachment: 'CompanyGST.pdf',     status: 'Verified' },
-      { id: 4, name: 'CIN / Shop Act',       reference: 'U72900MH2019PTC', authority: 'MCA',             issue_date: '01/01/2022', expiry: '—',          attachment: 'CIN.pdf',            status: 'Verified' },
-      { id: 5, name: 'IEC Code',             reference: '0412345678',      authority: 'DGFT',            issue_date: '01/01/2021', expiry: '—',          attachment: 'IECCode.pdf',        status: 'Verified' },
-      { id: 6, name: 'Business Address Proof', reference: '1234567890',    authority: '—',               issue_date: '01/01/2022', expiry: '01/01/2027', attachment: 'AddressProof.pdf',   status: 'Verified' },
-      { id: 7, name: 'Cancelled Cheque',     reference: '1234567890',      authority: 'HDFC Bank',       issue_date: '01/01/2025', expiry: '—',          attachment: 'CancelledCheque.pdf', status: 'Expiring' },
-      { id: 8, name: 'FSSAI License',        reference: '10223452000120',  authority: 'FSSAI',           issue_date: '01/03/2024', expiry: '01/03/2025', attachment: 'FSSAI.pdf',          status: 'Pending' },
-    ],
-    owner_kyc: [
-      { id: 1, name: 'Aadhaar Card',           reference: 'XXXX-XXXX-3456', authority: 'UIDAI',           issue_date: '01/05/2018', expiry: 'Lifetime',   attachment: 'Aadhaar.pdf',     status: 'Verified' },
-      { id: 2, name: 'PAN Card',               reference: 'BVKPJ5678K',     authority: 'Income Tax Dept', issue_date: '01/01/2015', expiry: 'Lifetime',   attachment: 'PANCard.pdf',     status: 'Verified' },
-      { id: 3, name: 'Passport',               reference: 'P4521876J',      authority: 'MEA India',       issue_date: '15/06/2020', expiry: '15/06/2030', attachment: 'Passport.pdf',    status: 'Verified' },
-      { id: 4, name: 'Director Address Proof', reference: '—',              authority: '—',               issue_date: '01/01/2024', expiry: '01/01/2026', attachment: 'DirAddress.pdf',  status: 'Verified' },
-      { id: 5, name: 'DIN Certificate',        reference: '07654321',       authority: 'MCA',             issue_date: '—',          expiry: '—',          attachment: 'DIN.pdf',          status: 'Pending' },
-    ],
-    trade_licenses: [
-      { id: 1, name: 'Import Export License', reference: 'IEC-0412345678',      authority: 'DGFT',            issue_date: '01/01/2021', expiry: 'Lifetime',   attachment: 'IECLicense.pdf',  status: 'Verified' },
-      { id: 2, name: 'APEDA Registration',    reference: 'APEDA/REG/2021/7823', authority: 'APEDA',           issue_date: '15/03/2021', expiry: '14/03/2027', attachment: 'APEDA.pdf',       status: 'Verified' },
-      { id: 3, name: 'Agro Export Permit',    reference: 'AGRO/EXP/MH/4512',    authority: 'State Agri Dept', issue_date: '01/06/2023', expiry: '01/06/2026', attachment: 'AgroPermit.pdf',  status: 'Expiring' },
-      { id: 4, name: 'Organic Certification', reference: 'NPOP/ORG/2022/1134',  authority: 'APEDA / NPOP',    issue_date: '10/10/2022', expiry: '09/10/2027', attachment: 'OrganicCert.pdf', status: 'Verified' },
-    ],
-    trade_documents: [
-      { id: 1, name: 'Master Sales Agreement',  reference: 'MSA/CNGE/2024/001',  authority: consignee.company, issue_date: '01/04/2024', expiry: '31/03/2027', attachment: 'MSA.pdf',         status: 'Verified' },
-      { id: 2, name: 'Purchase Order Framework', reference: 'POF/CNGE/2024/012', authority: consignee.company, issue_date: '15/04/2024', expiry: '14/04/2026', attachment: 'POFramework.pdf', status: 'Verified' },
-      { id: 3, name: 'NDA & Confidentiality',    reference: 'NDA/CNGE/2025/003', authority: consignee.company, issue_date: '—',           expiry: '—',          attachment: 'NDA.pdf',         status: 'Pending' },
-    ],
-    shipment_agreements: [
-      { id: 1, shipment_id: 'SHP-2026-00487', opportunity_id: 'OPP-107', customer: consignee.company,         country: consignee.country ?? 'India',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
-      { id: 2, shipment_id: 'SHP-2026-00328', opportunity_id: 'OPP-028', customer: 'GreenHarvest Global Ltd',  country: 'United States',
-        due_dil: { ratio: '0/2', pct: 0 },   kyc: { ratio: '0/4', pct: 0 },   trade_lic: { ratio: '0/1', pct: 0 },   trade_docs: { ratio: '0/4', pct: 0 },   agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: false },
-      { id: 3, shipment_id: 'SHP-2026-00512', opportunity_id: 'OPP-134', customer: 'Eastern Harvest Co.',      country: 'UAE',
-        due_dil: { ratio: '1/2', pct: 50 },  kyc: { ratio: '2/3', pct: 67 },  trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '2/4', pct: 50 },  agreement: { ratio: '0/1', pct: 0 },   risk: 'Medium', buyer_is_consignee: true },
-      { id: 4, shipment_id: 'SHP-2026-00601', opportunity_id: 'OPP-156', customer: 'International Buyer LLC',  country: 'UAE',
-        due_dil: { ratio: '2/2', pct: 100 }, kyc: { ratio: '3/3', pct: 100 }, trade_lic: { ratio: '1/1', pct: 100 }, trade_docs: { ratio: '4/4', pct: 100 }, agreement: { ratio: '1/1', pct: 100 }, risk: 'Compliant', buyer_is_consignee: true },
-    ],
-    last_updated: '04/05/2026',
-  };
-}
+/* ─── Empty vault — the zero-state used until the live payload lands, and
+ *      when the fetch fails or the consignee has no saved record yet. There is
+ *      deliberately NO demo data: an empty vault must read as empty, never as
+ *      a set of plausible-looking rows a reviewer could mistake for real
+ *      compliance evidence. The loading skeleton covers the fetch itself. */
+const EMPTY_VAULT: VaultData = {
+  total_documents:       0,
+  verified_signed:       0,
+  pending:               0,
+  company_dd_count:      0,
+  owner_kyc_count:       0,
+  trade_license_count:   0,
+  trade_documents_count: 0,
+  agreements_count:      0,
+  total_shipments:       0,
+  company_dd:            [],
+  owner_kyc:             [],
+  trade_licenses:        [],
+  trade_documents:       [],
+  shipment_agreements:   [],
+  last_updated:          '—',
+};
 
 export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, data, initialTab }: Props) {
   const toast = useToast();
@@ -252,8 +222,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
   const kpiStripRef = useRef<HTMLDivElement | null>(null);
   const [kpiPaused, setKpiPaused] = useState(false);
   /* Live API payload — populated by the fetch effect below. Falls back
-   * to the demo builder if the fetch fails or the consignee has no
-   * db_id (unsaved record). */
+   * to EMPTY_VAULT if the fetch fails or the consignee has no db_id
+   * (unsaved record) — never to demo rows. */
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
   /* Zoho Sign signature requests for this consignee — fetched in parallel
@@ -302,8 +272,8 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   /* Fetch the vault payload when the modal opens. Skips when (a) the
    * parent passed an override via `data` or (b) consignee has no
-   * db_id. Failure leaves vaultLive at null and the demo path takes
-   * over so the design review still has content. */
+   * db_id. Failure leaves vaultLive at null, and the vault then renders
+   * as EMPTY_VAULT rather than inventing rows. */
   useEffect(() => {
     if (!open || !consignee?.db_id || data) {
       setVaultLive(null);
@@ -384,8 +354,9 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
 
   const vault: VaultData | null = useMemo(() => {
     if (!consignee) return null;
-    /* Priority: explicit `data` prop > live API > demo fallback. */
-    const base = data ?? vaultLive ?? buildDemoVault(consignee);
+    /* Priority: explicit `data` prop > live API > empty vault. No demo
+     * fallback — an unloaded or failed vault reads as genuinely empty. */
+    const base = data ?? vaultLive ?? EMPTY_VAULT;
     if (!base) return null;
     // Trade Documents tab = the party's expected trade docs (segment-rule
     // td, party-filtered to mirror the edit form) merged with their live
@@ -949,7 +920,7 @@ function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; v
 
 /* ─── Loading skeleton — shimmer placeholders for the whole vault body
    (KPI ribbon, group cards, tabs, section banner, table). Shown on first
-   load instead of the demo fallback. */
+   load; once it clears, whatever the API returned is what renders. */
 function VaultSkeleton() {
   return (
     <div className="cnev-skel">
