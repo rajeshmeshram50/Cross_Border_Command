@@ -679,6 +679,27 @@ const FONT_FAMILIES: { label: string; value: string }[] = [
   { label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
 ];
 
+/**
+ * The font list for editors that ARE allowed a choice — currently only Terms &
+ * Conditions, whose clauses are dropped into third-party paperwork that may be
+ * set in something other than the house face.
+ *
+ * The agreement editors deliberately do NOT get this: a clause in a different
+ * typeface from the rest of the contract is a defect, not an option.
+ *
+ * Every value ends in a generic (serif / sans-serif) because dompdf ships only
+ * Times, Helvetica, Courier and the DejaVu family — Georgia and Cambria will
+ * render AS a serif in the PDF rather than as themselves. Arial and Times New
+ * Roman are the two that come out exactly.
+ */
+export const TNC_FONT_FAMILIES: { label: string; value: string }[] = [
+  { label: 'Arial',           value: 'Arial, Helvetica, sans-serif' },
+  { label: 'Calibri',         value: "Calibri, 'Segoe UI', sans-serif" },
+  { label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
+  { label: 'Georgia',         value: 'Georgia, serif' },
+  { label: 'Cambria',         value: 'Cambria, Georgia, serif' },
+];
+
 /* Sizes in POINTS, not pixels. A legal draft is specified in pt (12pt body,
  * 14pt headings) and that is the unit the printed/PDF page is measured in —
  * px only ever matched on screen. Values are the ones Word offers. */
@@ -1101,6 +1122,75 @@ export function repairBrokenLinkHrefs(html: string): string {
   }
 }
 
+/**
+ * The extension set behind the CLM editors.
+ *
+ * Exported because the toolbar (CtcToolbar) is only as capable as the
+ * extensions under it: an editor that renders the bar without these gets
+ * buttons that silently do nothing. The Terms & Conditions wizard keeps its
+ * own useEditor — its hydration and change handling differ — and takes the
+ * capability from here instead of re-listing it.
+ *
+ * PageBreak and PageFlow are included even for editors that never paginate.
+ * PageFlow does nothing outside a .ctcte-pageview surface (it checks before
+ * measuring), and PageBreak without its toolbar button is simply a node type
+ * nobody can insert — while leaving them out would mean any page break already
+ * saved in a document could not be parsed back.
+ */
+export function ctcExtensions() {
+  return [
+      // StarterKit v3 BUNDLES link + underline, so configure link HERE (a second
+    // Link extension would be a duplicate and its config ignored). autolink/
+    // linkOnPaste OFF: they linkify any "word.word" text as a domain, which
+    // turned every {{customer.name}} / {{customer.company}} placeholder into a
+    // link. Manual links via the toolbar's 🔗 button still work.
+    StarterKit.configure({
+      heading: { levels: [1, 2, 3] },
+      // autolink/linkOnPaste OFF + shouldAutoLink hard-returns false so NOTHING
+      // is ever auto-linkified — placeholder tokens like {{customer.name}} were
+      // being turned into links because ".name/.company/.email/.zip" are real
+      // TLDs. Manual links via the toolbar 🔗 button still work.
+      link: {
+        // Manual links (toolbar 🔗) open in a NEW TAB when clicked so the
+        // editor isn't navigated away. autolink/linkOnPaste stay OFF so
+        // placeholder tokens like {{customer.name}} are never linkified.
+        openOnClick: true,
+        autolink: false,
+        linkOnPaste: false,
+        shouldAutoLink: () => false,
+        HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
+      },
+    }),
+    TextAlign.configure({ types: ['heading', 'paragraph'] }),
+    LineHeight,
+    LegalList,
+    FindReplace,
+    TextStyle,
+    FontSize,
+    FontFamily,
+    Color,
+    BackgroundColor,
+    Subscript,
+    Superscript,
+    /* Tables — Insert Table here, plus tables carried in from an uploaded
+       DOCX. resizable: TRUE so a column can be dragged to width the way it
+       can in Word; it was off because the widths it writes were considered
+       noise in the serialized HTML, but a table you cannot size is a table
+       that never fits its content.
+       The widths land in a <colgroup>, which the PDF honours (its tables are
+       table-layout: fixed) — that path only became safe once the blade
+       stopped moving <colgroup> behind the promoted <thead>. */
+    StyledTable.configure({ resizable: true }),
+    TableFit,
+    StyledTableRow,
+    StyledTableHeader,
+    StyledTableCell,
+    ParagraphIndent,
+    PageBreak,
+    PageFlow,
+  ];
+}
+
 export function useCtcEditor(opts: { value: string; onChange: (html: string) => void; editable?: boolean }): CtcEditor {
   const { value, onChange, editable = true } = opts;
   const lastSyncedRef = useRef<string>(value);
@@ -1108,57 +1198,7 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
 
   const editor = useEditor({
     editable,
-    extensions: [
-      // StarterKit v3 BUNDLES link + underline, so configure link HERE (a second
-      // Link extension would be a duplicate and its config ignored). autolink/
-      // linkOnPaste OFF: they linkify any "word.word" text as a domain, which
-      // turned every {{customer.name}} / {{customer.company}} placeholder into a
-      // link. Manual links via the toolbar's 🔗 button still work.
-      StarterKit.configure({
-        heading: { levels: [1, 2, 3] },
-        // autolink/linkOnPaste OFF + shouldAutoLink hard-returns false so NOTHING
-        // is ever auto-linkified — placeholder tokens like {{customer.name}} were
-        // being turned into links because ".name/.company/.email/.zip" are real
-        // TLDs. Manual links via the toolbar 🔗 button still work.
-        link: {
-          // Manual links (toolbar 🔗) open in a NEW TAB when clicked so the
-          // editor isn't navigated away. autolink/linkOnPaste stay OFF so
-          // placeholder tokens like {{customer.name}} are never linkified.
-          openOnClick: true,
-          autolink: false,
-          linkOnPaste: false,
-          shouldAutoLink: () => false,
-          HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer' },
-        },
-      }),
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      LineHeight,
-      LegalList,
-      FindReplace,
-      TextStyle,
-      FontSize,
-      FontFamily,
-      Color,
-      BackgroundColor,
-      Subscript,
-      Superscript,
-      /* Tables — Insert Table here, plus tables carried in from an uploaded
-         DOCX. resizable: TRUE so a column can be dragged to width the way it
-         can in Word; it was off because the widths it writes were considered
-         noise in the serialized HTML, but a table you cannot size is a table
-         that never fits its content.
-         The widths land in a <colgroup>, which the PDF honours (its tables are
-         table-layout: fixed) — that path only became safe once the blade
-         stopped moving <colgroup> behind the promoted <thead>. */
-      StyledTable.configure({ resizable: true }),
-      TableFit,
-      StyledTableRow,
-      StyledTableHeader,
-      StyledTableCell,
-      ParagraphIndent,
-      PageBreak,
-      PageFlow,
-    ],
+    extensions: ctcExtensions(),
     content: repairBrokenLinkHrefs(value) || '<p></p>',
     onUpdate({ editor }) {
       const html = editor.getHTML();
@@ -1301,7 +1341,19 @@ export function CtcEditorContent({ editor, pageView, margins, onMargins, footerT
 }
 
 /** Formatting toolbar — render ABOVE the content surface. */
-export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boolean }) {
+export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES }: {
+  editor: Editor | null;
+  dark?: boolean;
+  /** Fonts the Font control may offer. Defaults to the house face alone — an
+   *  agreement is set in one typeface and a clause in another is a defect. Pass
+   *  a longer list (TNC_FONT_FAMILIES) where a real choice is wanted. */
+  fonts?: { label: string; value: string }[];
+  /** Drop the Page Break button. For an editor whose content is a FRAGMENT of
+   *  a document rather than a document: a T&C clause is inserted into an
+   *  agreement and takes that agreement's pagination, so a break authored here
+   *  would land wherever the host happened to drop the clause. */
+  hidePageBreak?: boolean;
+}) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [spacingOpen, setSpacingOpen] = useState(false);
   const [tableOpen, setTableOpen] = useState(false);
@@ -1354,7 +1406,7 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
      on the page surface in CSS, not as a mark, so text that was simply typed
      carries no fontFamily attribute and the control read "Font" — as though no
      font were chosen — on a document that is entirely in one. */
-  const curFontFamily = String(editor.getAttributes('textStyle').fontFamily || FONT_FAMILIES[0].value);
+  const curFontFamily = String(editor.getAttributes('textStyle').fontFamily || fonts[0].value);
   /* Every structure command is a no-op outside a table, so the menu greys
      them out rather than letting a click do nothing silently. */
   const inTable = editor.isActive('table');
@@ -1526,6 +1578,12 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
           width it wraps BETWEEN groups and never mid-group. Wrapping the
           buttons as loose siblings is what made the second row start
           halfway through a set and read as scattered. */}
+      {/* Grouped the way a document toolbar is read: what the block IS,
+          then how the TEXT looks, then how the PARAGRAPH sits, then lists,
+          then things you INSERT, then the tools, then history.
+          Find had been sitting among the bold/italic buttons and the sub-point
+          numbering next to the highlighters — both were where they first got
+          added rather than where they belong. */}
       <div className="ctcte-grp">
       <select
         className="ctcte-sel"
@@ -1543,7 +1601,7 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
       </select>
 
       <select
-        className="ctcte-sel ctcte-sel-fixed"
+        className={`ctcte-sel${fonts.length > 1 ? '' : ' ctcte-sel-fixed'}`}
         value={curFontFamily}
         onChange={e => {
           const v = e.target.value;
@@ -1552,10 +1610,9 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         }}
         title="Font"
       >
-        {/* No blank placeholder: there is one font, and it is always the one in
-            use. An empty first option would only ever mean "not Times New
-            Roman", which is not a state this editor has. */}
-        {FONT_FAMILIES.map(f => (
+        {/* No blank placeholder — the control always shows the font actually in
+            use, and "no font" is not a state a document has. */}
+        {fonts.map(f => (
           <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
         ))}
       </select>
@@ -1573,6 +1630,56 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         <option value="">Size</option>
         {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
+      </div>
+      <span className="ctcte-div" />
+      <div className="ctcte-grp">
+      <TB active={editor.isActive('bold')}      onClick={() => editor.chain().focus().toggleBold().run()}      title="Bold"><b>B</b></TB>
+      <TB active={editor.isActive('italic')}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></TB>
+      <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></TB>
+      <TB active={editor.isActive('strike')}    onClick={() => editor.chain().focus().toggleStrike().run()}    title="Strikethrough"><s>S</s></TB>
+      {/* Superscript / subscript, text colour and highlight. The extensions for
+          all four were already registered in useCtcEditor — only the buttons
+          were missing here, which is what would have made switching the Trade
+          Document editor onto this toolbar a downgrade. */}
+      <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
+      <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().toggleSubscript().run()}   title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
+      <label className="ctcte-btn ctcte-color" title="Text colour">
+        <span style={{ borderBottom: `3px solid ${editor.getAttributes('textStyle').color || '#1f2937'}`, lineHeight: 1 }}>A</span>
+        <input
+          type="color"
+          value={editor.getAttributes('textStyle').color || '#1f2937'}
+          onChange={e => (editor.chain().focus() as any).setColor(e.target.value).run()}
+        />
+      </label>
+      {/* Five everyday highlights inline, so the common case never opens the
+          OS colour picker; the last swatch clears it. */}
+      {['#FEF08A', '#BBF7D0', '#BFDBFE', '#FBCFE8', '#DDD6FE'].map(c => (
+        <button
+          key={c}
+          type="button"
+          className="ctcte-swatch"
+          style={{ background: c }}
+          title="Highlight"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => (editor.chain().focus() as any).setBackgroundColor(c).run()}
+        />
+      ))}
+      <button
+        type="button"
+        className="ctcte-swatch ctcte-swatch-none"
+        title="Remove highlight"
+        onMouseDown={e => e.preventDefault()}
+        onClick={() => (editor.chain().focus() as any).unsetBackgroundColor().run()}
+      />
+
+      </div>
+      <span className="ctcte-div" />
+      <div className="ctcte-grp">
+      <TB active={editor.isActive({ textAlign: 'left' })}    onClick={() => editor.chain().focus().setTextAlign('left').run()}    title="Align left"><Ico d="M3 6h18M3 12h12M3 18h18" /></TB>
+      <TB active={editor.isActive({ textAlign: 'center' })}  onClick={() => editor.chain().focus().setTextAlign('center').run()}  title="Align center"><Ico d="M3 6h18M6 12h12M3 18h18" /></TB>
+      <TB active={editor.isActive({ textAlign: 'right' })}   onClick={() => editor.chain().focus().setTextAlign('right').run()}   title="Align right"><Ico d="M3 6h18M9 12h12M3 18h18" /></TB>
+      <TB active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><Ico d="M3 6h18M3 12h18M3 18h18" /></TB>
+
 
       {/* Line and Paragraph Spacing — Word's menu, same three sections: the
           multiplier list, then the two paragraph-space toggles. A menu rather
@@ -1648,10 +1755,44 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
           </>
         )}
       </div>
-
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
+      <TB active={editor.isActive('bulletList')}  onClick={() => editor.chain().focus().toggleBulletList().run()}  title="Bullet list"><Ico d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></TB>
+      <TB active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><Ico d="M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2" /></TB>
+      <TB onClick={() => changeIndent(1)} title="Increase indent"><Ico d="M3 6h18M3 12h9M3 18h18M17 9l3 3-3 3" /></TB>
+      <TB onClick={() => changeIndent(-1)} title="Decrease indent"><Ico d="M3 6h18M3 12h9M3 18h18M21 9l-3 3 3 3" /></TB>
+
+
+      {/* Sub points. Turns the list under the caret into clause numbering, or
+          starts one where there is no list yet. Tab / Shift+Tab then move a
+          line in and out a level, the way they already do in any list here. */}
+      <TB
+        active={editor.isActive('orderedList') && !!editor.getAttributes('orderedList').legal}
+        onClick={() => {
+          const chain = editor.chain().focus();
+          if (!editor.isActive('orderedList')) chain.toggleOrderedList();
+          const on = !!editor.getAttributes('orderedList').legal;
+          chain.updateAttributes('orderedList', { legal: on ? null : '1' }).run();
+        }}
+        title="Sub points (1.1, 1.1.1)"
+      >
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '-.02em' }}>1.1</span>
+      </TB>
+      </div>
+      <span className="ctcte-div" />
+      <div className="ctcte-grp">
+      <div className="ctcte-linkwrap">
+        <TB active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href ?? ''); setLinkOpen(o => !o); }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
+        {linkOpen && (
+          <div className="ctcte-linkpop" onMouseDown={e => e.preventDefault()}>
+            <input autoFocus className="ctcte-linkinput" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setLinkOpen(false); }} />
+            <button type="button" className="ctcte-linkbtn" onClick={applyLink}>Apply</button>
+          </div>
+        )}
+      </div>
+
+
       {/* Table. The extensions were already registered for the Agreement /
           Trade Doc editors and for tables carried in from an uploaded DOCX —
           only the UI was missing here, so this is a menu over commands that
@@ -1780,45 +1921,6 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
-      <TB active={editor.isActive('bold')}      onClick={() => editor.chain().focus().toggleBold().run()}      title="Bold"><b>B</b></TB>
-      <TB active={editor.isActive('italic')}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></TB>
-      <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></TB>
-      <TB active={editor.isActive('strike')}    onClick={() => editor.chain().focus().toggleStrike().run()}    title="Strikethrough"><s>S</s></TB>
-      {/* Superscript / subscript, text colour and highlight. The extensions for
-          all four were already registered in useCtcEditor — only the buttons
-          were missing here, which is what would have made switching the Trade
-          Document editor onto this toolbar a downgrade. */}
-      <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
-      <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().toggleSubscript().run()}   title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
-      <label className="ctcte-btn ctcte-color" title="Text colour">
-        <span style={{ borderBottom: `3px solid ${editor.getAttributes('textStyle').color || '#1f2937'}`, lineHeight: 1 }}>A</span>
-        <input
-          type="color"
-          value={editor.getAttributes('textStyle').color || '#1f2937'}
-          onChange={e => (editor.chain().focus() as any).setColor(e.target.value).run()}
-        />
-      </label>
-      {/* Five everyday highlights inline, so the common case never opens the
-          OS colour picker; the last swatch clears it. */}
-      {['#FEF08A', '#BBF7D0', '#BFDBFE', '#FBCFE8', '#DDD6FE'].map(c => (
-        <button
-          key={c}
-          type="button"
-          className="ctcte-swatch"
-          style={{ background: c }}
-          title="Highlight"
-          onMouseDown={e => e.preventDefault()}
-          onClick={() => (editor.chain().focus() as any).setBackgroundColor(c).run()}
-        />
-      ))}
-      <button
-        type="button"
-        className="ctcte-swatch ctcte-swatch-none"
-        title="Remove highlight"
-        onMouseDown={e => e.preventDefault()}
-        onClick={() => (editor.chain().focus() as any).unsetBackgroundColor().run()}
-      />
-
       {/* Find and Replace. Its own panel because two inputs, a case toggle, a
           match counter and four actions do not fit a dropdown list. */}
       <div className="ctcte-linkwrap">
@@ -1879,52 +1981,6 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
           </div>
         )}
       </div>
-
-      {/* Sub points. Turns the list under the caret into clause numbering, or
-          starts one where there is no list yet. Tab / Shift+Tab then move a
-          line in and out a level, the way they already do in any list here. */}
-      <TB
-        active={editor.isActive('orderedList') && !!editor.getAttributes('orderedList').legal}
-        onClick={() => {
-          const chain = editor.chain().focus();
-          if (!editor.isActive('orderedList')) chain.toggleOrderedList();
-          const on = !!editor.getAttributes('orderedList').legal;
-          chain.updateAttributes('orderedList', { legal: on ? null : '1' }).run();
-        }}
-        title="Sub points (1.1, 1.1.1)"
-      >
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '-.02em' }}>1.1</span>
-      </TB>
-
-      </div>
-      <span className="ctcte-div" />
-      <div className="ctcte-grp">
-      <TB active={editor.isActive({ textAlign: 'left' })}    onClick={() => editor.chain().focus().setTextAlign('left').run()}    title="Align left"><Ico d="M3 6h18M3 12h12M3 18h18" /></TB>
-      <TB active={editor.isActive({ textAlign: 'center' })}  onClick={() => editor.chain().focus().setTextAlign('center').run()}  title="Align center"><Ico d="M3 6h18M6 12h12M3 18h18" /></TB>
-      <TB active={editor.isActive({ textAlign: 'right' })}   onClick={() => editor.chain().focus().setTextAlign('right').run()}   title="Align right"><Ico d="M3 6h18M9 12h12M3 18h18" /></TB>
-      <TB active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><Ico d="M3 6h18M3 12h18M3 18h18" /></TB>
-
-      </div>
-      <span className="ctcte-div" />
-      <div className="ctcte-grp">
-      <TB active={editor.isActive('bulletList')}  onClick={() => editor.chain().focus().toggleBulletList().run()}  title="Bullet list"><Ico d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></TB>
-      <TB active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><Ico d="M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2" /></TB>
-      <TB onClick={() => changeIndent(1)} title="Increase indent"><Ico d="M3 6h18M3 12h9M3 18h18M17 9l3 3-3 3" /></TB>
-      <TB onClick={() => changeIndent(-1)} title="Decrease indent"><Ico d="M3 6h18M3 12h9M3 18h18M21 9l-3 3 3 3" /></TB>
-
-      </div>
-      <span className="ctcte-div" />
-      <div className="ctcte-grp">
-      <div className="ctcte-linkwrap">
-        <TB active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href ?? ''); setLinkOpen(o => !o); }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
-        {linkOpen && (
-          <div className="ctcte-linkpop" onMouseDown={e => e.preventDefault()}>
-            <input autoFocus className="ctcte-linkinput" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setLinkOpen(false); }} />
-            <button type="button" className="ctcte-linkbtn" onClick={applyLink}>Apply</button>
-          </div>
-        )}
-      </div>
-
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
@@ -1936,16 +1992,18 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
           alignment control, so nobody found it. This is a rare, deliberate
           action with no widely-known glyph — the word is what makes it
           findable. */}
-      <button
-        type="button"
-        className="ctcte-pgbtn"
-        title="Insert a page break — the PDF starts a new page from here"
-        onMouseDown={e => e.preventDefault()}
-        onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
-      >
-        <Ico d="M3 5h18M3 19h18M4 12h3M10.5 12h3M17 12h3" />
-        Page Break
-      </button>
+      {!hidePageBreak && (
+        <button
+          type="button"
+          className="ctcte-pgbtn"
+          title="Insert a page break — the PDF starts a new page from here"
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
+        >
+          <Ico d="M3 5h18M3 19h18M4 12h3M10.5 12h3M17 12h3" />
+          Page Break
+        </button>
+      )}
 
       {/* Undo / redo share the Page Break group rather than sitting behind a
           divider of their own — two buttons alone were being wrapped onto a
