@@ -805,14 +805,39 @@ export default function AddVendorModal(props: {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
     return name === 'India' ? 'domestic' : 'international';
   }, [country, countryOpts]);
-  /* Segments with NO Document Control Panel rule at all — these stay disabled
-     ("No rule"). A segment that HAS a rule but for the wrong country doc-type
-     (e.g. an International-only segment on a domestic supplier) is left ENABLED
-     and instead blocked with a toast on select (see the segment onChange). */
+  /* Segments the supplier cannot take, greyed in the dropdown.
+     TWO reasons now, not one:
+       1. No Document Control Panel rule at all — "No rule", as before.
+       2. A rule that does not cover THIS supplier's trade type: a Domestic
+          segment on an international supplier, or the reverse.
+     The second used to be selectable, with a toast on pick and a hard error on
+     save. That is the wrong order — it lets someone choose a thing, act as
+     though it worked, and only then take it back. The scope is known the
+     moment a country is set (and the Add Supplier gate sets one up front), so
+     the answer can be given before the click instead of after it.
+     DISABLED, not hidden. A supplier saved earlier against what is now the
+     wrong scope keeps its chip and stays visible — hiding the option would
+     drop that segment silently on the next save, or make the form unsavable
+     because a required value is missing from its own list.
+     Nothing is greyed until a country is chosen: with no country there is no
+     trade type to judge against. */
   const disabledSegmentIds = useMemo(() => {
     if (!segRulesLoaded) return [] as string[];
-    return segmentOpts.map(o => o.value).filter(v => !ruledSegIds.has(v));
-  }, [segRulesLoaded, segmentOpts, ruledSegIds]);
+    return segmentOpts.map(o => o.value).filter(v => {
+      if (!ruledSegIds.has(v)) return true;                 // no rule at all
+      if (!country) return false;                           // scope not known yet
+      if (segment.includes(v)) return false;                // already on the supplier
+      const t = segTypesById.get(String(v));
+      return !!t && t.size > 0 && !t.has(supplierDocType);  // wrong trade type
+    });
+  }, [segRulesLoaded, segmentOpts, ruledSegIds, country, segment, segTypesById, supplierDocType]);
+
+  /* The hint the dropdown shows on a greyed row. Which of the two reasons
+     applies depends on the row, so the wording covers the one the user is most
+     likely looking at once a country is set. */
+  const segmentDisabledHint = country
+    ? `not available for a ${supplierDocType === 'domestic' ? 'Domestic' : 'International'} supplier — no matching rule in the Document Control Panel`
+    : 'no document rule defined in the Document Control Panel yet';
   const [contactName, setContactName] = useState('');
   const [designation, setDesignation] = useState('');
   const [contactNo,   setContactNo]   = useState('');
@@ -3442,7 +3467,7 @@ export default function AddVendorModal(props: {
                           options={segmentOpts}
                           placeholder="Select Segment"
                           disabledValues={disabledSegmentIds}
-                          disabledHint="no document rule defined in the Document Control Panel yet"
+                          disabledHint={segmentDisabledHint}
                           renderBadges={(id) => {
                             const t = segTypesById.get(String(id));
                             if (!t || t.size === 0) return null;

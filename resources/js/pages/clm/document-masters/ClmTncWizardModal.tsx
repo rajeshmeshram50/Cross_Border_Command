@@ -16,6 +16,7 @@ import Tooltip from '../../../components/ui/Tooltip';
 import { SimpleNameModal } from '../shared/clmCommon';
 import { deriveShortCode } from './ClmTncPage';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
+import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS, TNC_FONT_FAMILIES } from '../operations/CtcRichEditor';
 
 /* Block-indent extension — StarterKit's list sink/lift only work *inside* a
  * list, so the Indent/Outdent toolbar buttons did nothing on plain paragraphs
@@ -152,12 +153,14 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      BlockIndent,
-    ],
+    /* The same capability the other CLM editors run on — font, size, spacing,
+       sub points, tables, borders, colour, find & replace. The toolbar below is
+       only as able as this list: rendering CtcToolbar over the old four-item
+       set would have given buttons that quietly did nothing.
+       useEditor is kept rather than useCtcEditor because this wizard hydrates
+       and syncs its own way (see the open effect, and onUpdate below); only the
+       extensions are shared. */
+    extensions: ctcExtensions(),
     content: '<p></p>',
     onUpdate({ editor }) {
       setContent(editor.getHTML());
@@ -457,7 +460,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
         </div>
 
         {/* ── Body ── */}
-        <div className="tnw-body">
+        <div className={`tnw-body${step === 2 ? ' is-editor' : ''}`}>
           {step === 1 ? (
             <div className="tnw-step-body">
               {/* Regulatory Type leads for a normal document; picking Debit
@@ -762,119 +765,18 @@ function TncEditor({
         </div>
       </div>
 
-      <div className="tnw-toolbar">
-        {/* Paragraph / heading dropdown */}
-        <select
-          className="tnw-toolbar-sel"
-          title="Block type"
-          value={
-            isActive('heading', { level: 1 }) ? 'h1' :
-            isActive('heading', { level: 2 }) ? 'h2' :
-            isActive('heading', { level: 3 }) ? 'h3' : 'p'
-          }
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === 'p') editor.chain().focus().setParagraph().run();
-            else editor.chain().focus().toggleHeading({ level: Number(v.slice(1)) as 1|2|3 }).run();
-          }}
-        >
-          <option value="p">Paragraph</option>
-          <option value="h1">Heading 1</option>
-          <option value="h2">Heading 2</option>
-          <option value="h3">Heading 3</option>
-        </select>
-
-        <Tooltip label="Bold (Ctrl+B)">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('bold') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBold().run()}><b>B</b></button>
-        </Tooltip>
-        <Tooltip label="Italic (Ctrl+I)">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('italic') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleItalic().run()}><i>I</i></button>
-        </Tooltip>
-        <Tooltip label="Underline (Ctrl+U)">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('underline') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleUnderline().run()}><u>U</u></button>
-        </Tooltip>
-        <Tooltip label="Strikethrough">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('strike') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleStrike().run()}><s>S</s></button>
-        </Tooltip>
-        <Tooltip label="Inline code">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('code') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleCode().run()}>{'<>'}</button>
-        </Tooltip>
-        <Tooltip label="Blockquote">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('blockquote') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBlockquote().run()}>“”</button>
-        </Tooltip>
-
-        <span className="tnw-toolbar-sep" />
-
-        <Tooltip label="Align left">
-          <button type="button" className={`tnw-toolbar-btn ${isActive({ textAlign: 'left' } as any) ? 'is-on' : ''}`} onClick={() => editor.chain().focus().setTextAlign('left').run()} aria-label="Align left">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Align center">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('center').run()} aria-label="Align center">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Align right">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('right').run()} aria-label="Align right">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Justify">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().setTextAlign('justify').run()} aria-label="Justify">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
-          </button>
-        </Tooltip>
-
-        <span className="tnw-toolbar-sep" />
-
-        <Tooltip label="Bullet list">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('bulletList') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleBulletList().run()} aria-label="Bullet list">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1" fill="currentColor"/><circle cx="4" cy="12" r="1" fill="currentColor"/><circle cx="4" cy="18" r="1" fill="currentColor"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Numbered list">
-          <button type="button" className={`tnw-toolbar-btn ${isActive('orderedList') ? 'is-on' : ''}`} onClick={() => editor.chain().focus().toggleOrderedList().run()} aria-label="Numbered list">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Decrease indent / lift">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => {
-            const c = editor.chain().focus();
-            (editor.isActive('listItem') ? c.liftListItem('listItem') : (c as any).outdentBlock()).run();
-          }} aria-label="Outdent">⇤</button>
-        </Tooltip>
-        <Tooltip label="Increase indent / sink">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => {
-            const c = editor.chain().focus();
-            (editor.isActive('listItem') ? c.sinkListItem('listItem') : (c as any).indentBlock()).run();
-          }} aria-label="Indent">⇥</button>
-        </Tooltip>
-
-        <span className="tnw-toolbar-sep" />
-
-        <Tooltip label="Insert link">
-          <button type="button" className="tnw-toolbar-btn" onClick={onLink} aria-label="Insert link">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Horizontal rule">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().setHorizontalRule().run()} aria-label="Horizontal rule">—</button>
-        </Tooltip>
-        <Tooltip label="Undo (Ctrl+Z)">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} aria-label="Undo">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"/><path d="M3.51 13a9 9 0 1 0 2.13-9.36L3 6"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Redo (Ctrl+Y)">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} aria-label="Redo">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"/><path d="M20.49 13a9 9 0 1 1-2.13-9.36L21 6"/></svg>
-          </button>
-        </Tooltip>
-        <Tooltip label="Clear formatting">
-          <button type="button" className="tnw-toolbar-btn" onClick={() => editor.chain().focus().clearNodes().unsetAllMarks().run()} aria-label="Clear formatting">⌫</button>
-        </Tooltip>
-      </div>
+      {/* ProseMirror + toolbar base styles for the shared editor. */}
+      <style>{CTC_EDITOR_CSS}</style>
+      {/* The same toolbar the Case-to-Case, Trade Document and Agreement
+          editors use — minus Page Break. A T&C is a FRAGMENT: it is inserted
+          into an agreement and takes that agreement's pagination, so a page
+          break authored here would land wherever the host happened to drop the
+          clause. There is no live PDF preview here for the same reason — a T&C
+          has no page of its own to preview. */}
+      {/* A real font choice here, unlike the agreement editors: a T&C clause is
+          reusable text that may be dropped into paperwork set in something
+          other than the house face. */}
+      <CtcToolbar editor={editor} hidePageBreak fonts={TNC_FONT_FAMILIES} />
 
       <div className="tnw-editor-area">
         <EditorContent editor={editor} className="tnw-editor" />
@@ -1404,6 +1306,15 @@ const TNW_CSS = `
   background: linear-gradient(160deg, #f0fdff 0%, #e8f9fd 50%, #f0f9ff 100%);
   padding: 22px;
 }
+/* Step 2 is the editor and nothing else, so the body hands its height straight
+   to the frame and stops scrolling itself — two nested scrollers would mean the
+   outer one moves the toolbar out of view before the inner one moves the text. */
+.tnw-body.is-editor { overflow: hidden; display: flex; flex-direction: column; }
+/* .tnw-step-body sits between the body and the editor frame, and it was sizing
+   itself to its content — so the height stopped there. Every link in the chain
+   has to pass it on, or the frame grows past the modal and is simply clipped,
+   which is what happened: no scrollbar, and the last pages unreachable. */
+.tnw-body.is-editor > .tnw-step-body { flex: 1; min-height: 0; }
 .tnw-step-body { display: flex; flex-direction: column; gap: 18px; }
 .tnw-grid-2 { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 18px; }
 .tnw-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
@@ -1507,12 +1418,25 @@ const TNW_CSS = `
 .tnw-add-mini:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(8,145,178,.50); }
 
 /* ── Editor (step 2) ── */
+/* The editor is a FRAME, not a block that grows.
+   It used to be plain flow: the shell grew with the content and .tnw-body — the
+   modal's own scroller — carried the whole thing, so scrolling the draft
+   scrolled the header and the toolbar off the top with it. The Trade Document
+   editor pins those and scrolls only the page beneath them; this is the same
+   arrangement.
+   The height comes from the modal: .tnw-body is the flex parent and gives this
+   what is left after the stepper, so the frame is exactly as tall as the space
+   there is. */
 .tnw-editor-shell {
   border: 1px solid rgba(6,182,212,.20);
   border-radius: 14px;
   overflow: hidden;
   background: #fff;
+  display: flex; flex-direction: column;
+  flex: 1; min-height: 0;
 }
+/* Header, toolbar and footer keep their size; only the draft area gives. */
+.tnw-editor-head, .tnw-editor-foot, .tnw-editor-shell .ctcte-toolbar { flex-shrink: 0; }
 .tnw-editor-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; flex-wrap: wrap;
@@ -1554,7 +1478,10 @@ const TNW_CSS = `
 .tnw-toolbar-btn:disabled { opacity: .4; cursor: not-allowed; }
 .tnw-toolbar-sep { width: 1px; height: 20px; background: #cbd5e1; }
 
-.tnw-editor-area { position: relative; }
+/* The one part that scrolls. min-height:0 is load-bearing: without it a flex
+   child refuses to shrink below its content, so the frame would grow instead of
+   the area scrolling — which is the state this was in. */
+.tnw-editor-area { position: relative; flex: 1; min-height: 0; overflow-y: auto; }
 .tnw-editor, .tnw-editor .ProseMirror {
   min-height: 240px;
   padding: 18px 22px;
