@@ -901,9 +901,18 @@ function Stage1(p: {
         );
         return;
       }
+      /* Strip the font Word wrote into every span.
+         A DOCX carries its own font-family on nearly every run — Calibri,
+         Aptos, whatever the author had — and those inline styles beat the
+         editor's Times New Roman, so an uploaded agreement came in looking
+         nothing like a typed one and printed that way too. Removing the
+         declaration lets each run inherit the house face; anything else the
+         author set (bold, size, colour) is left alone. */
+      const houseFontHtml = html.replace(/font-family\s*:[^;"']*;?/gi, '');
+
       // Replace the whole document via the ProseMirror model — no innerHTML,
       // no ghost caret, no manual scroll reset (TipTap handles all of that).
-      ctcEd.setHTML(html);
+      ctcEd.setHTML(houseFontHtml);
       /* Reset the EDITOR's scroller, found from the editor itself.
          This used to walk up from docxRef — the hidden file input, which lives
          in the editor's header, above the editor's own scroll area. So the

@@ -1461,6 +1461,7 @@ export default function AddVendorModal(props: {
       address_type?: string | null;
       address_line?: string | null; country_id?: number | null; state_id?: number | null;
       state_code?: string | null; city?: string | null; pincode?: string | null;
+      google_location?: string | null;
       contact_name?: string | null; designation?: string | null; contact_no?: string | null;
       email?: string | null; whatsapp_enabled?: boolean;
       attachment_path?: string | null; attachment_url?: string | null;
