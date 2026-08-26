@@ -399,7 +399,12 @@ class HrGeneratedDocumentController extends Controller
      */
     private function resolveTokens(Employee $emp, array $customValues, ?HrDocumentTemplate $tpl): array
     {
-        $emp->loadMissing(['department', 'designation', 'reportingManager', 'legalEntity', 'branch.client']);
+        // reportingManagerUser: a manager can be a Branch / login user rather
+        // than an employee — {{ReportsTo}} has to resolve either kind.
+        $emp->loadMissing([
+            'department', 'designation', 'reportingManager', 'reportingManagerUser',
+            'legalEntity', 'branch.client',
+        ]);
 
         $first  = trim((string) ($emp->first_name ?? ''));
         $middle = trim((string) ($emp->middle_name ?? ''));
@@ -414,10 +419,25 @@ class HrGeneratedDocumentController extends Controller
             : '';
         $today = now()->format($dateFormat);
 
+        /* Reports To resolves EITHER kind of manager.
+         *
+         * This read `reportingManager` only — the employee-manager relation —
+         * so an employee whose manager is a Branch / login user
+         * (reporting_manager_user_id) rendered a blank line in every letter,
+         * which is half of "some placeholders are not fetching" (QA #39).
+         * `display_name` is preferred over first+last for the same reason
+         * MyTeamController::reportsToName() prefers it: it is the name HR
+         * actually maintains, and first/last can be empty on a record that has
+         * one. */
         $manager = $emp->reportingManager;
-        $managerName = $manager
-            ? trim(((string) ($manager->first_name ?? '')) . ' ' . ((string) ($manager->last_name ?? '')))
-            : '';
+        $managerName = '';
+        if ($manager) {
+            $managerName = trim((string) ($manager->display_name ?? ''))
+                ?: trim(((string) ($manager->first_name ?? '')) . ' ' . ((string) ($manager->last_name ?? '')));
+        }
+        if ($managerName === '' && $emp->reportingManagerUser) {
+            $managerName = trim((string) ($emp->reportingManagerUser->name ?? ''));
+        }
 
         // Legal entity = the employing branch. This previously read
         // `legal_entity_name`, a column that never existed on the old
@@ -459,6 +479,19 @@ class HrGeneratedDocumentController extends Controller
             ], fn ($v) => $v !== '')))
             : '';
 
+        /* The compensation actually in force. Revisions supersede rather than
+           overwrite (one `active` row per employee, Rule 19), so a letter must
+           read the active one — ordered defensively in case data ever carries
+           more than one. */
+        $salaryStructure = \App\Models\SalaryStructure::where('employee_id', $emp->id)
+            ->where('status', 'active')
+            ->orderByDesc('effective_from')
+            ->orderByDesc('id')
+            ->first();
+        /* Blank, not "0.00", when a component genuinely isn't there — a zero in
+           an offer letter is a statement, an empty line is an omission. */
+        $money = fn (?float $v) => $v === null ? '' : number_format($v, 2);
+
         $tokens = [
             // Basic
             'FirstName'      => $first,
@@ -482,12 +515,17 @@ class HrGeneratedDocumentController extends Controller
             'JoiningDate' => $joining,
             'ReportsTo'   => $managerName,
 
-            // Salary — only the headline figure is stored on the employee row.
-            // Basic/HRA breakdowns live in salary_structure (JSON) and are
-            // deferred to Phase 2 when we wire the salary engine in.
+            /* Salary. CTC is the headline figure on the employee row; the
+               breakdown comes off the employee's ACTIVE salary structure.
+               Both were hardcoded '' with a note deferring them to "Phase 2" —
+               but the engine did get wired in, and the components have been
+               sitting in salary_structures.earnings ever since, so every
+               template using {{Basic}} or {{HRA}} printed a blank line
+               (QA #39). These are MONTHLY amounts, as the structure stores
+               them and as Salary Setup shows them. */
             'CTC'   => (string) ($emp->annual_salary ?? ''),
-            'Basic' => '',
-            'HRA'   => '',
+            'Basic' => $salaryStructure ? $money($salaryStructure->basicAmount()) : '',
+            'HRA'   => $salaryStructure ? $money($salaryStructure->hraAmount()) : '',
 
             // Organization
             'CompanyName'    => $companyName,

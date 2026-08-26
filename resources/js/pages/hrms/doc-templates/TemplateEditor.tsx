@@ -41,9 +41,13 @@ export const STATIC_PLACEHOLDER_GROUPS: PlaceholderGroup[] = [
     { label: 'Reports To',     token: '{{ReportsTo}}' },
   ]},
   { id: 'salary', label: 'Salary', fields: [
-    { label: 'CTC',            token: '{{CTC}}' },
-    { label: 'Basic',          token: '{{Basic}}' },
-    { label: 'HRA',            token: '{{HRA}}' },
+    /* CTC is the ANNUAL figure on the employee record; Basic and HRA are the
+       MONTHLY components off the active salary structure. Labelled so an
+       author doesn't put all three in one column and imply they share a
+       period. */
+    { label: 'CTC (annual)',   token: '{{CTC}}' },
+    { label: 'Basic (monthly)',token: '{{Basic}}' },
+    { label: 'HRA (monthly)',  token: '{{HRA}}' },
   ]},
   { id: 'org', label: 'Organization', fields: [
     { label: 'Company Name',   token: '{{CompanyName}}' },

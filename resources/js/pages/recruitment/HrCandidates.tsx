@@ -93,6 +93,22 @@ const LOCKED_STYLE = { opacity: .5, cursor: 'not-allowed', filter: 'grayscale(0.
    here last time instead of snapping back to the default. */
 const PER_PAGE_KEY = 'cbc.candidates.perPage';
 
+/* Email format, kept in step with CandidateController::EMAIL_RULES.
+ *
+ * The old check was /^[^\s@]+@[^\s@]+\.[^\s@]+$/ — "something, an @, something
+ * with a dot" — which accepts plenty that is not an address: `a@b.c`,
+ * `abc@abc.com.`, `test@-gmail.com` all passed it (QA #60). Each label must now
+ * start and end alphanumeric and the TLD must be two or more letters. */
+const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+
+function isValidEmail(raw: string): boolean {
+  const v = raw.trim();
+  // Consecutive dots are invalid on either side of the @ and are awkward to
+  // forbid inside the pattern — cheaper to rule out here.
+  if (v === '' || v.length > 191 || v.includes('..')) return false;
+  return EMAIL_RE.test(v);
+}
+
 export default function HrCandidates() {
   const { id: recruitmentId } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -239,26 +255,36 @@ export default function HrCandidates() {
   const recClosedMsg = `Cannot add candidates — this recruitment is ${(recruitment?.status || '').toLowerCase()}`;
 
   /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     16+13+9+5+8+8+7+8+7+9+10. */
+     14+8+12+9+5+7+7+6+7+7+9+9. */
   const columns = useMemo<DataTableColumn<CandidateRow>[]>(() => [
     {
       header: 'Name',
       accessorKey: 'name',
-      meta: { width: '16%' },
+      meta: { width: '14%' },
+      cell: info => (
+        <span className="fw-bold fs-13 text-truncate d-block" title={info.getValue() as string}>
+          {info.getValue() as string}
+        </span>
+      ),
+    },
+    {
+      /* Its own column rather than a pill next to the name (QA #63, #64): the
+         code is a field of the record, so it has to be sortable and scannable
+         down the column like every other one. */
+      header: 'Recruitment ID',
+      accessorKey: 'recruitment_code',
+      meta: { width: '8%', align: 'center' },
       cell: info => {
-        const c = info.row.original;
-        return (
-          <div className="d-flex align-items-center gap-2">
-            <span className="fw-bold fs-13 text-truncate" title={c.name}>{c.name}</span>
-            {c.recruitment_code && <span className="rec-id-pill flex-shrink-0" style={{ fontSize: 10, padding: '2px 7px' }}>{c.recruitment_code}</span>}
-          </div>
-        );
+        const code = info.getValue() as string | null;
+        return code
+          ? <span className="rec-id-pill" style={{ fontSize: 10, padding: '2px 7px' }}>{code}</span>
+          : <span className="dt-dash">—</span>;
       },
     },
     {
       header: 'Email',
       accessorKey: 'email',
-      meta: { width: '13%' },
+      meta: { width: '12%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive className="text-muted" />,
     },
     {
@@ -276,7 +302,7 @@ export default function HrCandidates() {
     {
       header: 'Current Sal',
       accessorKey: 'current_salary_lpa',
-      meta: { width: '8%', align: 'center' },
+      meta: { width: '7%', align: 'center' },
       cell: info => {
         const v = info.getValue() as number | null;
         return v != null ? <span className="fs-13 fw-semibold">{v} L</span> : <span className="dt-dash">—</span>;
@@ -285,7 +311,7 @@ export default function HrCandidates() {
     {
       header: 'Expected',
       accessorKey: 'expected_salary_lpa',
-      meta: { width: '8%', align: 'center' },
+      meta: { width: '7%', align: 'center' },
       cell: info => {
         const v = info.getValue() as number | null;
         return v != null ? <span className="fs-13 fw-semibold">{v} L</span> : <span className="dt-dash">—</span>;
@@ -294,13 +320,13 @@ export default function HrCandidates() {
     {
       header: 'Notice',
       accessorKey: 'notice_period',
-      meta: { width: '7%' },
+      meta: { width: '6%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
       header: 'Source',
       accessorKey: 'source',
-      meta: { width: '8%', align: 'center' },
+      meta: { width: '7%', align: 'center' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive />,
     },
     {
@@ -335,7 +361,7 @@ export default function HrCandidates() {
       header: 'Actions',
       id: '__actions',
       enableSorting: false,
-      meta: { width: '10%', align: 'center', wrap: true },
+      meta: { width: '9%', align: 'center', wrap: true },
       cell: info => {
         const c = info.row.original;
         return (
@@ -1293,9 +1319,8 @@ function CandidateFormModal({
 
     if (!email.trim()) {
       errs.email = 'Email is required';
-    } else {
-      const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!emailRe.test(email.trim())) errs.email = 'Enter a valid email address';
+    } else if (!isValidEmail(email)) {
+      errs.email = 'Enter a valid email address (e.g. name@company.com)';
     }
 
     if (!mobile.trim()) {

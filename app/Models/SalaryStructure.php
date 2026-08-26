@@ -82,6 +82,38 @@ class SalaryStructure extends Model
         return $source === 'assumed';
     }
 
+    /**
+     * House Rent Allowance component amount, or null when the structure has no
+     * row identifiable as HRA.
+     *
+     * Deliberately NOT mirrored on basicAmount()'s 50%-of-gross last resort:
+     * an absent Basic still has to be charged PF on, so a documented
+     * assumption beats refusing to run payroll. HRA has no such obligation —
+     * plenty of structures genuinely don't have one, and inventing a figure
+     * would put a number in an offer letter that nobody agreed to.
+     *
+     * Matched the same two ways as Basic: the code the modal seeds, then the
+     * label a human left behind after editing (Salary Setup re-codes edited
+     * rows `comp_1`, `comp_2`, … so the code alone misses them).
+     */
+    public function hraAmount(): ?float
+    {
+        $rows = (array) $this->earnings;
+
+        foreach ($rows as $c) {
+            if (($c['code'] ?? null) === 'hra') {
+                return (float) ($c['amount'] ?? 0);
+            }
+        }
+        foreach ($rows as $c) {
+            $label = (string) ($c['label'] ?? '');
+            if (preg_match('/(?<![\w-])(hra|house\s*rent)\b/i', $label)) {
+                return (float) ($c['amount'] ?? 0);
+            }
+        }
+        return null;
+    }
+
     /** @return array{0: float, 1: string} [amount, 'code'|'label'|'assumed'] */
     private function resolveBasic(): array
     {

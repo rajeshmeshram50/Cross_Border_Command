@@ -1,10 +1,10 @@
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Extension, Node } from '@tiptap/core';
-import { Plugin, PluginKey } from '@tiptap/pm/state';
+import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
-import { TextStyle, FontSize, Color, BackgroundColor } from '@tiptap/extension-text-style';
+import { TextStyle, FontSize, FontFamily, Color, BackgroundColor } from '@tiptap/extension-text-style';
 import Subscript from '@tiptap/extension-subscript';
 import Superscript from '@tiptap/extension-superscript';
 import { Table } from '@tiptap/extension-table';
@@ -646,6 +646,172 @@ const ParagraphIndent = Extension.create({
   },
 });
 
+/* Line spacing — the Word "Line and Paragraph Spacing" control.
+ *
+ * TipTap ships no line-height extension, so this is the same shape as
+ * ParagraphIndent above: a global attribute on the block nodes, written out as
+ * an inline style. Inline style rather than a class because the value has to
+ * survive the round trip through the DOCX/PDF exporters, which read the
+ * serialized HTML and understand `line-height` but know nothing about our
+ * class names.
+ *
+ * Applied per BLOCK, not to a text selection: spacing is a property of a
+ * paragraph, and half a paragraph at 1.5 and half at 1.0 is not a thing Word
+ * can express either. Selecting across several paragraphs sets all of them.
+ */
+/* One font: Times New Roman.
+ *
+ * The agreement is set in it, so anything else on offer is a way to make a
+ * clause not match the rest of the document. The list used to hold fourteen
+ * faces; a draft is not a place to pick a typeface.
+ *
+ * The control is kept rather than removed because it still does something:
+ * text that arrived carrying its own font — pasted from a browser, or from a
+ * DOCX written before the upload strip existed — can be put back on the house
+ * face by selecting it and choosing this. The uploader strips font-family on
+ * the way in (ClmCtcForm's uploadDocx) and the page surface sets Times New
+ * Roman as the default, so typing and uploading both land here already.
+ *
+ * The stack ends in a generic serif so dompdf resolves it to its built-in
+ * times metrics, and a machine without the face falls back to a serif rather
+ * than to the app's sans. */
+const FONT_FAMILIES: { label: string; value: string }[] = [
+  { label: 'Times New Roman', value: "'Times New Roman', Times, serif" },
+];
+
+/* Sizes in POINTS, not pixels. A legal draft is specified in pt (12pt body,
+ * 14pt headings) and that is the unit the printed/PDF page is measured in —
+ * px only ever matched on screen. Values are the ones Word offers. */
+const FONT_SIZES = ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '36'];
+
+/* Insert Table writes its borders INLINE rather than relying on a stylesheet.
+ *
+ * The PDF deliberately forces no cell border (see clm-signature-document
+ * .blade.php): a bordered table has to carry its border in the markup so that
+ * clause / layout tables — the borderless ones a DOCX upload brings in — stay
+ * clean in the output. The editor follows the same rule, which is why a table
+ * inserted with the plain insertTable() command appeared to do nothing: it was
+ * there, three empty rows of it, with nothing drawn.
+ *
+ * Building the HTML here instead of calling insertTable() is what lets the
+ * styles be part of the node from the first render. StyledTable / -Row / -Cell
+ * preserve the `style` attribute, so it survives the save and the export. */
+const TBL_BORDER = '1px solid #94A3B8';
+function buildTableHTML(rows: number, cols: number): string {
+  const th = `<th style="border:${TBL_BORDER};padding:6px 8px;background:#EEF2F7;vertical-align:top;text-align:left"><p></p></th>`;
+  const td = `<td style="border:${TBL_BORDER};padding:6px 8px;vertical-align:top"><p></p></td>`;
+  const head = `<tr>${th.repeat(cols)}</tr>`;
+  const body = `<tr>${td.repeat(cols)}</tr>`.repeat(Math.max(0, rows - 1));
+  return `<table style="width:100%;table-layout:fixed;border-collapse:collapse"><tbody>${head}${body}</tbody></table><p></p>`;
+}
+
+/* Row height.
+ *
+ * prosemirror-tables ships columnResizing and nothing for rows, so the
+ * horizontal border cannot be dragged the way the vertical one can. Word's own
+ * fallback is the same thing this is: a height set on the row, with the row
+ * still free to GROW past it when the text needs more space.
+ *
+ * Written as a min-height on the row's own style attribute (StyledTableRow
+ * keeps `style`), because a plain `height` on a table row is treated as a
+ * minimum by every renderer anyway — including dompdf — and saying min-height
+ * makes that explicit rather than implied. */
+const ROW_HEIGHTS: { label: string; value: string | null }[] = [
+  { label: 'Auto (fit text)', value: null },
+  { label: 'Short',  value: '28px' },
+  { label: 'Medium', value: '40px' },
+  { label: 'Tall',   value: '56px' },
+];
+
+/** Replace (or drop) min-height inside an existing inline style string. */
+function withRowHeight(style: string | null | undefined, height: string | null): string | null {
+  const kept = String(style || '')
+    .split(';')
+    .map(d => d.trim())
+    .filter(d => d && !/^min-height\s*:/i.test(d) && !/^height\s*:/i.test(d));
+  if (height) kept.push(`min-height: ${height}`);
+  return kept.length ? kept.join('; ') : null;
+}
+
+/* Cell borders.
+ *
+ * The PDF forces no border on cells by design (clm-signature-document.blade
+ * .php), so a bordered table has to say so in its own markup — which means
+ * turning borders on or off is an edit to each cell's inline style, not a
+ * class toggle. Insert Table already writes them; these let an existing table
+ * — including one that arrived from a DOCX with no borders at all — be
+ * changed after the fact. */
+type BorderSpec = 'all' | 'bottom' | 'none';
+
+/** Rewrite the border declarations inside one inline style string. */
+function withBorders(style: string | null | undefined, spec: BorderSpec): string | null {
+  const kept = String(style || '')
+    .split(';')
+    .map(d => d.trim())
+    .filter(d => d && !/^border(-top|-right|-bottom|-left)?\s*:/i.test(d));
+  if (spec === 'all')    kept.push(`border: ${TBL_BORDER}`);
+  if (spec === 'bottom') kept.push(`border-bottom: ${TBL_BORDER}`);
+  return kept.length ? kept.join('; ') : null;
+}
+
+const LINE_HEIGHTS = ['1', '1.15', '1.5', '2', '2.5', '3'];
+/* What "Add Space Before/After Paragraph" adds. Word uses 10pt; the editor
+ * works in px, and 10pt is 13.33px. */
+const PARA_SPACE = '13px';
+
+const LineHeight = Extension.create({
+  name: 'lineHeight',
+  addOptions() { return { types: ['paragraph', 'heading'] as string[] }; },
+  addGlobalAttributes() {
+    return [{
+      types: this.options.types,
+      attributes: {
+        lineHeight: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.style.lineHeight || null,
+          renderHTML: (attributes: { lineHeight?: string | null }) =>
+            attributes.lineHeight ? { style: `line-height: ${attributes.lineHeight}` } : {},
+        },
+        /* Word's menu carries three separate things and so does this: the line
+         * spacing above, plus space BEFORE and space AFTER the paragraph.
+         * They are different properties — line spacing is the gap between the
+         * lines INSIDE one paragraph, these two are the gap between one
+         * paragraph and the next — which is why setting 1.5 never moved the
+         * paragraphs apart and looked like it had not worked. */
+        spaceBefore: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.style.marginTop || null,
+          renderHTML: (attributes: { spaceBefore?: string | null }) =>
+            attributes.spaceBefore ? { style: `margin-top: ${attributes.spaceBefore}` } : {},
+        },
+        spaceAfter: {
+          default: null,
+          parseHTML: (element: HTMLElement) => element.style.marginBottom || null,
+          renderHTML: (attributes: { spaceAfter?: string | null }) =>
+            attributes.spaceAfter ? { style: `margin-bottom: ${attributes.spaceAfter}` } : {},
+        },
+      },
+    }];
+  },
+  addCommands() {
+    /* Applied to EVERY block type in one chain, so a selection spanning a
+     * heading and two paragraphs is set in a single undo step. */
+    const each = (types: string[], fn: (c: any, t: string) => any) =>
+      ({ chain }: any) => types.reduce((c: any, t: string) => fn(c, t), chain()).run();
+
+    return {
+      setLineHeight: (value: string) =>
+        each(this.options.types, (c, t) => c.updateAttributes(t, { lineHeight: value })),
+      unsetLineHeight: () =>
+        each(this.options.types, (c, t) => c.resetAttributes(t, ['lineHeight'])),
+      setSpaceBefore: (value: string | null) =>
+        each(this.options.types, (c, t) => c.updateAttributes(t, { spaceBefore: value })),
+      setSpaceAfter: (value: string | null) =>
+        each(this.options.types, (c, t) => c.updateAttributes(t, { spaceAfter: value })),
+    } as any;
+  },
+});
+
 /* Preserve the inline `style` attribute on table nodes. TipTap's default table
  * extensions drop arbitrary `style`, which stripped the border/background the
  * Insert-Table modal writes inline — so inserted tables lost their borders and
@@ -660,6 +826,229 @@ const keepStyleAttr = {
     renderHTML: (attrs: { style?: string | null }) => (attrs.style ? { style: attrs.style } : {}),
   },
 };
+/* Keep every table's columns fully specified and inside the sheet.
+ *
+ * Two things prosemirror-tables does not do, and both of them showed up as the
+ * editor and the PDF preview disagreeing:
+ *
+ *   1. A drag only records widths for the columns beside the handle. The rest
+ *      stay null and serialize with no width, so anything reading the HTML
+ *      sees a partial picture and lays the table out its own way.
+ *   2. Nothing bounds the total, because nothing in it knows how wide the
+ *      paper is — so widening a column pushed the table off the right margin.
+ *
+ * This fills in every column and rescales the set to the page. Same ratios the
+ * author dragged; a complete, bounded set of numbers to serialize.
+ *
+ * 694px is this editor's text column: 794 (A4 at 96dpi) less the two @page
+ * margins and the 50px the PDF's own wrappers add — the same arithmetic the
+ * .ctcte-pageview rule below is built on. Keep the two in step.
+ *
+ * The ratios the author dragged are preserved; only the total is brought back
+ * to the page. A floor of 30px stops a column being crushed to nothing, which
+ * is the other half of the same problem.
+ *
+ * The PDF does not need this — the blade converts these widths to percentages
+ * of the table, so they always sum to 100 there. This is the editor catching
+ * up with what the page can actually hold. */
+const PAGE_CONTENT_W = 694;
+const MIN_COL_W = 30;
+
+const TableFit = Extension.create({
+  name: 'tableFit',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey('tableFit'),
+        appendTransaction(trs, _old, newState) {
+          if (!trs.some(t => t.docChanged)) return null;
+
+          let tr = newState.tr;
+          let changed = false;
+
+          newState.doc.descendants((table, pos) => {
+            if (table.type.name !== 'table') return true;
+            const firstRow = table.firstChild;
+            if (!firstRow) return false;
+
+            /* ── Read the current per-column widths ──────────────────────────
+               prosemirror-tables only writes colwidth for the columns either
+               side of the handle you dragged; the rest stay null. TipTap then
+               serializes those as a bare min-width with no width at all, so the
+               PDF had widths for two columns and nothing for the third — it
+               sized the two it knew and squeezed the rest, which is why the
+               editor and the preview disagreed while both "had" the widths.
+               Every column gets a real number here, so what is serialized is
+               the whole picture. */
+            const cols: number[] = [];
+            firstRow.forEach(cell => {
+              const span = cell.attrs.colspan || 1;
+              const cw = cell.attrs.colwidth;
+              for (let i = 0; i < span; i++) cols.push(Array.isArray(cw) ? (cw[i] || 0) : 0);
+            });
+            if (!cols.length) return false;
+
+            const knownTotal = cols.reduce((a, b) => a + b, 0);
+            const missing = cols.filter(w => !w).length;
+
+            /* Untouched columns share whatever the page has left over; if the
+               drag already used it all they fall back to the floor. */
+            const spare = Math.max(0, PAGE_CONTENT_W - knownTotal);
+            const share = missing ? Math.max(MIN_COL_W, Math.floor(spare / missing)) : 0;
+            const filled = cols.map(w => (w ? w : share));
+
+            /* Then bring the total back to the page, keeping the ratios. This
+               is also what stops a drag pushing the table off the sheet. */
+            const total = filled.reduce((a, b) => a + b, 0);
+            const factor = total > 0 ? PAGE_CONTENT_W / total : 1;
+            const final = filled.map(w => Math.max(MIN_COL_W, Math.round(w * factor)));
+
+            /* Write back, but only where a value actually differs — an
+               unconditional setNodeMarkup would re-fire this plugin forever. */
+            table.forEach((row, rowOff) => {
+              const rowPos = pos + 1 + rowOff;
+              let col = 0;
+              row.forEach((cell, cellOff) => {
+                const span = cell.attrs.colspan || 1;
+                const next = final.slice(col, col + span);
+                col += span;
+                const cur = cell.attrs.colwidth;
+                const same = Array.isArray(cur)
+                  && cur.length === next.length
+                  && cur.every((v: number, i: number) => v === next[i]);
+                if (same) return;
+                tr = tr.setNodeMarkup(rowPos + 1 + cellOff, undefined, { ...cell.attrs, colwidth: next });
+                changed = true;
+              });
+            });
+
+            return false;   // no tables inside tables
+          });
+
+          return changed ? tr : null;
+        },
+      }),
+    ];
+  },
+});
+
+/* Sub points — the multi-level clause numbering an agreement is written in:
+ *
+ *     1.  Purpose
+ *     1.1   The Seller shall ...
+ *     1.1.1   ... including
+ *
+ * A plain nested <ol> cannot do this. Its levels number independently, so the
+ * second level restarts at 1 instead of continuing its parent as 1.1 — which
+ * is the whole point of clause numbering, because clauses are cross-referenced
+ * by that number.
+ *
+ * Built on CSS counters rather than by writing the numbers into the text: the
+ * numbers then renumber themselves when a clause is inserted or deleted, which
+ * hand-typed ones do not. dompdf implements counters() (see
+ * vendor/dompdf/dompdf/src/Css/Content/Counters.php), so the same rule works
+ * in the PDF — the matching CSS lives in clm-signature-document.blade.php and
+ * the two have to stay in step.
+ *
+ * The flag sits on the OUTER list only; the nested ones are picked up by the
+ * descendant selector, so Tab-ing a new level in needs no extra bookkeeping. */
+const LegalList = Extension.create({
+  name: 'legalList',
+  addGlobalAttributes() {
+    return [{
+      types: ['orderedList'],
+      attributes: {
+        legal: {
+          default: null,
+          parseHTML: (el: HTMLElement) => (el.getAttribute('data-legal') ? '1' : null),
+          renderHTML: (attrs: { legal?: string | null }) => (attrs.legal ? { 'data-legal': '1' } : {}),
+        },
+      },
+    }];
+  },
+});
+
+/* Find and Replace.
+ *
+ * TipTap ships no search extension (the official one is paid), so this is the
+ * whole thing: a plugin that finds every match and decorates it, plus commands
+ * to step through them and rewrite them.
+ *
+ * Matching is done per TEXT BLOCK, not per text node. A text node ends
+ * wherever a mark starts, so "Agreement" with only "Agree" in bold is two
+ * nodes — searching node by node would never find it. Walking the block and
+ * building a char→position map finds it and still lands on the right document
+ * positions, including when the block also holds non-text inline nodes (a page
+ * break, a hard break) which occupy a position but contribute no text.
+ */
+const findKey = new PluginKey('findReplace');
+
+type FindMatch = { from: number; to: number };
+type FindState = { term: string; matchCase: boolean; matches: FindMatch[]; index: number };
+
+function collectMatches(doc: any, term: string, matchCase: boolean): FindMatch[] {
+  const out: FindMatch[] = [];
+  if (!term) return out;
+  const needle = matchCase ? term : term.toLowerCase();
+
+  doc.descendants((node: any, pos: number) => {
+    if (!node.isTextblock) return true;
+    let text = '';
+    const map: number[] = [];
+    node.forEach((child: any, offset: number) => {
+      if (!child.isText) return;
+      const start = pos + 1 + offset;
+      for (let i = 0; i < child.text.length; i++) map.push(start + i);
+      text += child.text;
+    });
+    const hay = matchCase ? text : text.toLowerCase();
+    let at = hay.indexOf(needle);
+    while (at !== -1) {
+      out.push({ from: map[at], to: map[at + needle.length - 1] + 1 });
+      at = hay.indexOf(needle, at + needle.length);
+    }
+    return false;   // a textblock holds no further textblocks
+  });
+  return out;
+}
+
+const FindReplace = Extension.create({
+  name: 'findReplace',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: findKey,
+        state: {
+          init: (): FindState => ({ term: '', matchCase: false, matches: [], index: 0 }),
+          apply(tr, prev: FindState): FindState {
+            const meta = tr.getMeta(findKey);
+            const next: FindState = meta ? { ...prev, ...meta } : prev;
+            // Recompute whenever the search changed OR the document did, so a
+            // highlight can never point at text that has moved.
+            if (meta || tr.docChanged) {
+              const matches = collectMatches(tr.doc, next.term, next.matchCase);
+              const index = matches.length ? Math.min(next.index, matches.length - 1) : 0;
+              return { ...next, matches, index };
+            }
+            return next;
+          },
+        },
+        props: {
+          decorations(state) {
+            const fs: FindState = findKey.getState(state);
+            if (!fs?.matches.length) return DecorationSet.empty;
+            return DecorationSet.create(
+              state.doc,
+              fs.matches.map((m, i) =>
+                Decoration.inline(m.from, m.to, { class: i === fs.index ? 'ctcte-find-cur' : 'ctcte-find-hit' })),
+            );
+          },
+        },
+      }),
+    ];
+  },
+});
+
 const StyledTable = Table.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
 const StyledTableRow = TableRow.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
 const StyledTableCell = TableCell.extend({ addAttributes() { return { ...this.parent?.(), ...keepStyleAttr }; } });
@@ -734,16 +1123,26 @@ export function useCtcEditor(opts: { value: string; onChange: (html: string) => 
         },
       }),
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      LineHeight,
+      LegalList,
+      FindReplace,
       TextStyle,
       FontSize,
+      FontFamily,
       Color,
       BackgroundColor,
       Subscript,
       Superscript,
-      // Tables — required by the Agreement / Trade Doc editors (Insert Table +
-      // tables carried in from an uploaded DOCX). Harmless for CTC (no table
-      // button in its toolbar). resizable off keeps the serialized HTML clean.
-      StyledTable.configure({ resizable: false }),
+      /* Tables — Insert Table here, plus tables carried in from an uploaded
+         DOCX. resizable: TRUE so a column can be dragged to width the way it
+         can in Word; it was off because the widths it writes were considered
+         noise in the serialized HTML, but a table you cannot size is a table
+         that never fits its content.
+         The widths land in a <colgroup>, which the PDF honours (its tables are
+         table-layout: fixed) — that path only became safe once the blade
+         stopped moving <colgroup> behind the promoted <thead>. */
+      StyledTable.configure({ resizable: true }),
+      TableFit,
       StyledTableRow,
       StyledTableHeader,
       StyledTableCell,
@@ -880,6 +1279,12 @@ export function CtcEditorContent({ editor, pageView, margins, onMargins, footerT
 /** Formatting toolbar — render ABOVE the content surface. */
 export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boolean }) {
   const [linkOpen, setLinkOpen] = useState(false);
+  const [spacingOpen, setSpacingOpen] = useState(false);
+  const [tableOpen, setTableOpen] = useState(false);
+  const [findOpen, setFindOpen] = useState(false);
+  const [findTerm, setFindTerm] = useState('');
+  const [replaceTerm, setReplaceTerm] = useState('');
+  const [matchCase, setMatchCase] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   if (!editor) return null;
 
@@ -911,7 +1316,135 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
     : editor.isActive('heading', { level: 3 }) ? 'h3' : 'p';
 
   // Current font size (px number without unit) from the textStyle mark.
-  const curFontSize = String(editor.getAttributes('textStyle').fontSize || '').replace('px', '');
+  /* Documents written before the switch to points carry px values, so a stored
+     `16px` must not read as blank in a pt dropdown. Converted at 1pt = 1.333px
+     and rounded, which lands the old px list exactly on the pt list. */
+  const rawFontSize = String(editor.getAttributes('textStyle').fontSize || '');
+  const curFontSize = rawFontSize.endsWith('px')
+    ? String(Math.round(parseFloat(rawFontSize) * 0.75))
+    : rawFontSize.replace('pt', '');
+  /* Falls back to the house font rather than to blank. Times New Roman is set
+     on the page surface in CSS, not as a mark, so text that was simply typed
+     carries no fontFamily attribute and the control read "Font" — as though no
+     font were chosen — on a document that is entirely in one. */
+  const curFontFamily = String(editor.getAttributes('textStyle').fontFamily || FONT_FAMILIES[0].value);
+  /* Every structure command is a no-op outside a table, so the menu greys
+     them out rather than letting a click do nothing silently. */
+  const inTable = editor.isActive('table');
+
+  /* ── Find and Replace ──────────────────────────────────────────────────
+     The plugin owns the matches; these push the query into it and act on what
+     it found. Everything goes through the view rather than a chain because a
+     search is not a document edit — only the replaces are. */
+  const findState: any = findKey.getState(editor.state);
+  const findCount = findState?.matches?.length ?? 0;
+  const findIndex = findCount ? (findState.index ?? 0) + 1 : 0;
+
+  const pushSearch = (term: string, caseSensitive: boolean) => {
+    editor.view.dispatch(editor.state.tr.setMeta(findKey, { term, matchCase: caseSensitive, index: 0 }));
+    /* Jump to the first hit as it is typed. Read AFTER the dispatch, because
+       the plugin recomputes the matches inside it. */
+    const fs: any = findKey.getState(editor.state);
+    if (fs?.matches?.length) scrollToMatch(fs.matches[0].from);
+  };
+
+  /* Step to a match and bring it on screen.
+     The scroll is done on the DOM, not with the transaction's scrollIntoView().
+     That flag is honoured against the FOCUSED selection, and the focus is in
+     the Find box — which is where it has to stay, or the next keystroke would
+     go into the document instead of the search. So the match is located with
+     domAtPos and scrolled directly; that works whether or not the editor holds
+     focus. Centred rather than merely "into view", so a match at the very
+     bottom of the viewport does not sit under the panel. */
+  const stepMatch = (delta: number) => {
+    const fs: any = findKey.getState(editor.state);
+    if (!fs?.matches?.length) return;
+    const next = (fs.index + delta + fs.matches.length) % fs.matches.length;
+    const m = fs.matches[next];
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(findKey, { index: next })
+        .setSelection(TextSelection.create(editor.state.doc, m.from, m.to)),
+    );
+    scrollToMatch(m.from);
+  };
+
+  /** Scroll whatever element holds this document position into the middle. */
+  const scrollToMatch = (pos: number) => {
+    try {
+      const at = editor.view.domAtPos(pos);
+      const node: any = at?.node;
+      const el: HTMLElement | null =
+        node?.nodeType === 3 ? node.parentElement : (node as HTMLElement | null);
+      el?.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    } catch {
+      /* domAtPos throws if the position was mapped away mid-edit — the next
+         keystroke recomputes the matches anyway. */
+    }
+  };
+
+  const replaceCurrent = () => {
+    const fs: any = findKey.getState(editor.state);
+    if (!fs?.matches?.length) return;
+    const m = fs.matches[fs.index] ?? fs.matches[0];
+    editor.view.dispatch(editor.state.tr.insertText(replaceTerm, m.from, m.to));
+    // The plugin recomputes on docChanged, so the next match is already the
+    // current one — nothing to advance by hand.
+  };
+
+  const replaceAll = () => {
+    const fs: any = findKey.getState(editor.state);
+    if (!fs?.matches?.length) return;
+    const tr = editor.state.tr;
+    /* Back to front: replacing shifts every position after the match, and
+       working backwards leaves the ones still to do untouched. */
+    for (let i = fs.matches.length - 1; i >= 0; i--) {
+      const m = fs.matches[i];
+      tr.insertText(replaceTerm, m.from, m.to);
+    }
+    editor.view.dispatch(tr);
+  };
+
+  /* Walk up from the caret to the table (or just the row, for a bottom line)
+     and rewrite every cell's style in ONE transaction, so the whole change is
+     a single undo step. Done through the view rather than a chain because
+     updateAttributes only ever reaches the node the caret is actually in —
+     here every cell has to be touched. */
+  const applyBorders = (spec: BorderSpec, scope: 'table' | 'row') => {
+    const { state, view } = editor;
+    const $from = state.selection.$from;
+    let target: { node: any; pos: number } | null = null;
+    for (let d = $from.depth; d > 0; d--) {
+      const n = $from.node(d);
+      if (n.type.name === (scope === 'row' ? 'tableRow' : 'table')) {
+        target = { node: n, pos: $from.before(d) };
+        break;
+      }
+    }
+    if (!target) return;
+
+    const tr = state.tr;
+    const visitRow = (row: any, rowPos: number) => {
+      row.forEach((cell: any, cellOff: number) => {
+        const next = withBorders(cell.attrs.style, spec);
+        if (next === (cell.attrs.style ?? null)) return;
+        tr.setNodeMarkup(rowPos + 1 + cellOff, undefined, { ...cell.attrs, style: next });
+      });
+    };
+    if (scope === 'row') visitRow(target.node, target.pos);
+    else target.node.forEach((row: any, rowOff: number) => visitRow(row, target!.pos + 1 + rowOff));
+
+    if (tr.docChanged) view.dispatch(tr);
+    editor.commands.focus();
+  };
+  /* Heading first — getAttributes('paragraph') is empty while the caret sits in
+     a heading, and the control would read as unset. */
+  const blockAttrs = Object.keys(editor.getAttributes('heading')).length
+    ? editor.getAttributes('heading')
+    : editor.getAttributes('paragraph');
+  const curLineHeight = String(blockAttrs.lineHeight || '');
+  const hasSpaceBefore = !!blockAttrs.spaceBefore;
+  const hasSpaceAfter  = !!blockAttrs.spaceAfter;
 
   // Indent / outdent: nudge list nesting inside a list, else the block's
   // margin-left (the ParagraphIndent attribute) across the selection.
@@ -936,6 +1469,11 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
 
   return (
     <div className={`ctcte-toolbar ${dark ? 'ctcte-dark' : ''}`}>
+      {/* Every cluster is its own flex box, so when the bar runs out of
+          width it wraps BETWEEN groups and never mid-group. Wrapping the
+          buttons as loose siblings is what made the second row start
+          halfway through a set and read as scattered. */}
+      <div className="ctcte-grp">
       <select
         className="ctcte-sel"
         value={headingValue}
@@ -952,38 +1490,344 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
       </select>
 
       <select
+        className="ctcte-sel ctcte-sel-fixed"
+        value={curFontFamily}
+        onChange={e => {
+          const v = e.target.value;
+          if (v) (editor.chain().focus() as any).setFontFamily(v).run();
+          else (editor.chain().focus() as any).unsetFontFamily().run();
+        }}
+        title="Font"
+      >
+        {/* No blank placeholder: there is one font, and it is always the one in
+            use. An empty first option would only ever mean "not Times New
+            Roman", which is not a state this editor has. */}
+        {FONT_FAMILIES.map(f => (
+          <option key={f.label} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>
+        ))}
+      </select>
+
+      <select
         className="ctcte-sel ctcte-sel-sm"
         value={curFontSize}
         onChange={e => {
           const v = e.target.value;
-          if (v) editor.chain().focus().setFontSize(`${v}px`).run();
+          if (v) editor.chain().focus().setFontSize(`${v}pt`).run();
           else editor.chain().focus().unsetFontSize().run();
         }}
-        title="Font size"
+        title="Font size (points)"
       >
         <option value="">Size</option>
-        {['10', '11', '12', '13', '14', '16', '18', '20', '24', '28', '32'].map(s => <option key={s} value={s}>{s}</option>)}
+        {FONT_SIZES.map(s => <option key={s} value={s}>{s}</option>)}
       </select>
 
+      {/* Line and Paragraph Spacing — Word's menu, same three sections: the
+          multiplier list, then the two paragraph-space toggles. A menu rather
+          than a <select> because a select cannot hold the toggles, and those
+          are the half people actually reach for: line spacing changes the gap
+          INSIDE a paragraph, the toggles change the gap BETWEEN paragraphs. */}
+      <div className="ctcte-linkwrap">
+        <button
+          type="button"
+          className={`ctcte-pgbtn${spacingOpen ? ' is-open' : ''}`}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => setSpacingOpen(o => !o)}
+          title="Line and paragraph spacing"
+        >
+          <Ico d="M3 5h18M3 12h18M3 19h18" />
+          {curLineHeight || 'Spacing'}
+        </button>
+        {spacingOpen && (
+          <>
+            {/* Click-away. mousedown-prevented everywhere inside so the caret
+                never leaves the document while the menu is open. */}
+            <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setSpacingOpen(false); }} />
+            <div className="ctcte-spcpop" onMouseDown={e => e.preventDefault()}>
+              {LINE_HEIGHTS.map(h => (
+                <button
+                  key={h}
+                  type="button"
+                  className={`ctcte-spcitem${curLineHeight === h ? ' is-on' : ''}`}
+                  onClick={() => { (editor.chain().focus() as any).setLineHeight(h).run(); setSpacingOpen(false); }}
+                >
+                  <span className="ctcte-spctick">{curLineHeight === h ? '✓' : ''}</span>
+                  {h === '1' ? '1.0' : h === '2' ? '2.0' : h === '3' ? '3.0' : h}
+                </button>
+              ))}
+              <div className="ctcte-spcsep" />
+              <button
+                type="button"
+                className="ctcte-spcitem"
+                onClick={() => {
+                  (editor.chain().focus() as any).setSpaceBefore(hasSpaceBefore ? null : PARA_SPACE).run();
+                  setSpacingOpen(false);
+                }}
+              >
+                <span className="ctcte-spctick" />
+                {hasSpaceBefore ? 'Remove Space Before Paragraph' : 'Add Space Before Paragraph'}
+              </button>
+              <button
+                type="button"
+                className="ctcte-spcitem"
+                onClick={() => {
+                  (editor.chain().focus() as any).setSpaceAfter(hasSpaceAfter ? null : PARA_SPACE).run();
+                  setSpacingOpen(false);
+                }}
+              >
+                <span className="ctcte-spctick" />
+                {hasSpaceAfter ? 'Remove Space After Paragraph' : 'Add Space After Paragraph'}
+              </button>
+              <div className="ctcte-spcsep" />
+              <button
+                type="button"
+                className="ctcte-spcitem"
+                onClick={() => {
+                  (editor.chain().focus() as any).unsetLineHeight().run();
+                  (editor.chain().focus() as any).setSpaceBefore(null).run();
+                  (editor.chain().focus() as any).setSpaceAfter(null).run();
+                  setSpacingOpen(false);
+                }}
+              >
+                <span className="ctcte-spctick" />
+                Reset spacing
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      </div>
       <span className="ctcte-div" />
+      <div className="ctcte-grp">
+      {/* Table. The extensions were already registered for the Agreement /
+          Trade Doc editors and for tables carried in from an uploaded DOCX —
+          only the UI was missing here, so this is a menu over commands that
+          already worked.
+          The structure items are disabled outside a table rather than hidden:
+          a menu whose length changes as the caret moves is harder to learn
+          than one whose items grey out. */}
+      <div className="ctcte-linkwrap">
+        <button
+          type="button"
+          className={`ctcte-pgbtn${tableOpen ? ' is-open' : ''}`}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => setTableOpen(o => !o)}
+          title="Table"
+        >
+          <Ico d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14" />
+          Table
+        </button>
+        {tableOpen && (
+          <>
+            <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setTableOpen(false); }} />
+            <div className="ctcte-spcpop" onMouseDown={e => e.preventDefault()}>
+              {([['3 × 3', 3, 3], ['2 × 2', 2, 2], ['4 × 4', 4, 4]] as [string, number, number][]).map(([label, rows, cols]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="ctcte-spcitem"
+                  onClick={() => { editor.chain().focus().insertContent(buildTableHTML(rows, cols)).run(); setTableOpen(false); }}
+                >
+                  <span className="ctcte-spctick" />Insert Table ({label})
+                </button>
+              ))}
+
+              <div className="ctcte-spcsep" />
+              {([
+                ['Insert Row Above',    () => editor.chain().focus().addRowBefore().run()],
+                ['Insert Row Below',    () => editor.chain().focus().addRowAfter().run()],
+                ['Insert Column Left',  () => editor.chain().focus().addColumnBefore().run()],
+                ['Insert Column Right', () => editor.chain().focus().addColumnAfter().run()],
+              ] as [string, () => void][]).map(([label, run]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="ctcte-spcitem"
+                  disabled={!inTable}
+                  onClick={() => { run(); setTableOpen(false); }}
+                >
+                  <span className="ctcte-spctick" />{label}
+                </button>
+              ))}
+
+              <div className="ctcte-spcsep" />
+              {ROW_HEIGHTS.map(h => (
+                <button
+                  key={h.label}
+                  type="button"
+                  className="ctcte-spcitem"
+                  disabled={!inTable}
+                  onClick={() => {
+                    const cur = editor.getAttributes('tableRow')?.style ?? null;
+                    editor.chain().focus()
+                      .updateAttributes('tableRow', { style: withRowHeight(cur, h.value) })
+                      .run();
+                    setTableOpen(false);
+                  }}
+                >
+                  <span className="ctcte-spctick" />Row Height — {h.label}
+                </button>
+              ))}
+
+              <div className="ctcte-spcsep" />
+              {([
+                ['All Borders',        'all',    'table'],
+                ['Row — Bottom Line',  'bottom', 'row'],
+                ['No Borders',         'none',   'table'],
+              ] as [string, BorderSpec, 'table' | 'row'][]).map(([label, spec, scope]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="ctcte-spcitem"
+                  disabled={!inTable}
+                  onClick={() => { applyBorders(spec, scope); setTableOpen(false); }}
+                >
+                  <span className="ctcte-spctick" />{label}
+                </button>
+              ))}
+
+              <div className="ctcte-spcsep" />
+              {([
+                ['Merge Cells', () => editor.chain().focus().mergeCells().run()],
+                ['Split Cell',  () => editor.chain().focus().splitCell().run()],
+                ['Toggle Header Row', () => editor.chain().focus().toggleHeaderRow().run()],
+              ] as [string, () => void][]).map(([label, run]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="ctcte-spcitem"
+                  disabled={!inTable}
+                  onClick={() => { run(); setTableOpen(false); }}
+                >
+                  <span className="ctcte-spctick" />{label}
+                </button>
+              ))}
+
+              <div className="ctcte-spcsep" />
+              {([
+                ['Delete Row',    () => editor.chain().focus().deleteRow().run()],
+                ['Delete Column', () => editor.chain().focus().deleteColumn().run()],
+                ['Delete Table',  () => editor.chain().focus().deleteTable().run()],
+              ] as [string, () => void][]).map(([label, run]) => (
+                <button
+                  key={label}
+                  type="button"
+                  className="ctcte-spcitem is-danger"
+                  disabled={!inTable}
+                  onClick={() => { run(); setTableOpen(false); }}
+                >
+                  <span className="ctcte-spctick" />{label}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      </div>
+      <span className="ctcte-div" />
+      <div className="ctcte-grp">
       <TB active={editor.isActive('bold')}      onClick={() => editor.chain().focus().toggleBold().run()}      title="Bold"><b>B</b></TB>
       <TB active={editor.isActive('italic')}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></TB>
       <TB active={editor.isActive('underline')} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></TB>
       <TB active={editor.isActive('strike')}    onClick={() => editor.chain().focus().toggleStrike().run()}    title="Strikethrough"><s>S</s></TB>
 
+      {/* Find and Replace. Its own panel because two inputs, a case toggle, a
+          match counter and four actions do not fit a dropdown list. */}
+      <div className="ctcte-linkwrap">
+        <button
+          type="button"
+          className={`ctcte-pgbtn${findOpen ? ' is-open' : ''}`}
+          onMouseDown={e => e.preventDefault()}
+          onClick={() => {
+            const next = !findOpen;
+            setFindOpen(next);
+            // Leaving the panel clears the highlights; they are a search aid,
+            // not part of the document.
+            if (!next) pushSearch('', matchCase);
+            else if (findTerm) pushSearch(findTerm, matchCase);
+          }}
+          title="Find and replace"
+        >
+          <Ico d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.35-4.35" />
+          Find
+        </button>
+        {findOpen && (
+          <div className="ctcte-findpop" onMouseDown={e => e.stopPropagation()}>
+            <div className="ctcte-findrow">
+              <input
+                className="ctcte-linkinput"
+                autoFocus
+                placeholder="Find"
+                value={findTerm}
+                onChange={e => { setFindTerm(e.target.value); pushSearch(e.target.value, matchCase); }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') { e.preventDefault(); stepMatch(e.shiftKey ? -1 : 1); }
+                  if (e.key === 'Escape') { e.preventDefault(); setFindOpen(false); pushSearch('', matchCase); }
+                }}
+              />
+              <span className="ctcte-findcount">{findTerm ? `${findIndex}/${findCount}` : ''}</span>
+              <button type="button" className="ctcte-btn" disabled={!findCount} onClick={() => stepMatch(-1)} title="Previous match">‹</button>
+              <button type="button" className="ctcte-btn" disabled={!findCount} onClick={() => stepMatch(1)}  title="Next match">›</button>
+            </div>
+            <div className="ctcte-findrow">
+              <input
+                className="ctcte-linkinput"
+                placeholder="Replace with"
+                value={replaceTerm}
+                onChange={e => setReplaceTerm(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); replaceCurrent(); } }}
+              />
+              <button type="button" className="ctcte-linkbtn" disabled={!findCount} onClick={replaceCurrent}>Replace</button>
+              <button type="button" className="ctcte-linkbtn" disabled={!findCount} onClick={replaceAll}>All</button>
+            </div>
+            <label className="ctcte-findcase">
+              <input
+                type="checkbox"
+                checked={matchCase}
+                onChange={e => { setMatchCase(e.target.checked); pushSearch(findTerm, e.target.checked); }}
+              />
+              Match case
+            </label>
+          </div>
+        )}
+      </div>
+
+      {/* Sub points. Turns the list under the caret into clause numbering, or
+          starts one where there is no list yet. Tab / Shift+Tab then move a
+          line in and out a level, the way they already do in any list here. */}
+      <TB
+        active={editor.isActive('orderedList') && !!editor.getAttributes('orderedList').legal}
+        onClick={() => {
+          const chain = editor.chain().focus();
+          if (!editor.isActive('orderedList')) chain.toggleOrderedList();
+          const on = !!editor.getAttributes('orderedList').legal;
+          chain.updateAttributes('orderedList', { legal: on ? null : '1' }).run();
+        }}
+        title="Sub points (1.1, 1.1.1)"
+      >
+        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '-.02em' }}>1.1</span>
+      </TB>
+
+      </div>
       <span className="ctcte-div" />
+      <div className="ctcte-grp">
       <TB active={editor.isActive({ textAlign: 'left' })}    onClick={() => editor.chain().focus().setTextAlign('left').run()}    title="Align left"><Ico d="M3 6h18M3 12h12M3 18h18" /></TB>
       <TB active={editor.isActive({ textAlign: 'center' })}  onClick={() => editor.chain().focus().setTextAlign('center').run()}  title="Align center"><Ico d="M3 6h18M6 12h12M3 18h18" /></TB>
       <TB active={editor.isActive({ textAlign: 'right' })}   onClick={() => editor.chain().focus().setTextAlign('right').run()}   title="Align right"><Ico d="M3 6h18M9 12h12M3 18h18" /></TB>
       <TB active={editor.isActive({ textAlign: 'justify' })} onClick={() => editor.chain().focus().setTextAlign('justify').run()} title="Justify"><Ico d="M3 6h18M3 12h18M3 18h18" /></TB>
 
+      </div>
       <span className="ctcte-div" />
+      <div className="ctcte-grp">
       <TB active={editor.isActive('bulletList')}  onClick={() => editor.chain().focus().toggleBulletList().run()}  title="Bullet list"><Ico d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></TB>
       <TB active={editor.isActive('orderedList')} onClick={() => editor.chain().focus().toggleOrderedList().run()} title="Numbered list"><Ico d="M10 6h11M10 12h11M10 18h11M4 6h1v4M4 10h2" /></TB>
       <TB onClick={() => changeIndent(1)} title="Increase indent"><Ico d="M3 6h18M3 12h9M3 18h18M17 9l3 3-3 3" /></TB>
       <TB onClick={() => changeIndent(-1)} title="Decrease indent"><Ico d="M3 6h18M3 12h9M3 18h18M21 9l-3 3 3 3" /></TB>
 
+      </div>
       <span className="ctcte-div" />
+      <div className="ctcte-grp">
       <div className="ctcte-linkwrap">
         <TB active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href ?? ''); setLinkOpen(o => !o); }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
         {linkOpen && (
@@ -994,7 +1838,9 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         )}
       </div>
 
+      </div>
       <span className="ctcte-div" />
+      <div className="ctcte-grp">
       {/* Page break — the only EXACT control over where the PDF splits. The
           A4 guides on the surface are an estimate (browser and dompdf lay text
           out differently); this is a real instruction dompdf obeys. */}
@@ -1014,9 +1860,15 @@ export function CtcToolbar({ editor, dark }: { editor: Editor | null; dark?: boo
         Page Break
       </button>
 
-      <span className="ctcte-div" />
-      <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M3 7v6h6M3 13a9 9 0 1 0 3-7.7L3 8" /></TB>
-      <TB onClick={() => editor.chain().focus().redo().run()} title="Redo"><Ico d="M21 7v6h-6M21 13a9 9 0 1 1-3-7.7L21 8" /></TB>
+      {/* Undo / redo share the Page Break group rather than sitting behind a
+          divider of their own — two buttons alone were being wrapped onto a
+          row by themselves, which read as leftovers rather than a group. */}
+      {/* Feather rotate-ccw / rotate-cw. The previous pair drew a nearly closed
+          arc with its arrow head lying along the circle, so at 13px both came
+          out as plain rings with a stub. */}
+      <TB onClick={() => editor.chain().focus().undo().run()} title="Undo"><Ico d="M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10" /></TB>
+      <TB onClick={() => editor.chain().focus().redo().run()} title="Redo"><Ico d="M23 4v6h-6M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></TB>
+      </div>
     </div>
   );
 }
@@ -1036,8 +1888,23 @@ export const CTC_EDITOR_CSS = `
    align-items:center lines the controls up so it doesn't read as ragged. */
 .ctcte-toolbar { display: flex; align-items: center; gap: 3px; row-gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
 .ctcte-toolbar > * { flex-shrink: 0; }
+/* A cluster of related controls. nowrap is the load-bearing part: the bar
+   wraps, the group inside it does not, so a row break always falls on a
+   divider instead of through the middle of the alignment buttons. */
+.ctcte-grp { display: flex; align-items: center; gap: 3px; flex-wrap: nowrap; flex-shrink: 0; }
+/* An empty group can be left behind when a divider lands at either end. */
+.ctcte-grp:empty { display: none; }
+/* A divider that ends up first or last on a wrapped row is a line against
+   nothing. */
+.ctcte-div:first-child, .ctcte-div:last-child { display: none; }
 .ctcte-sel { height: 28px; border: 1.5px solid #E5E1F3; border-radius: 8px; background: #fff; color: #4C1D95; font-family: inherit; font-size: 11px; font-weight: 600; padding: 0 8px; cursor: pointer; outline: none; }
 .ctcte-sel-sm { min-width: 56px; padding: 0 6px; }
+/* The font control has exactly one option, so the native chevron was promising
+   a choice that is not there. Dropped rather than the whole control, because
+   selecting it still does something: it puts pasted text that carried its own
+   font back onto the house face. */
+.ctcte-sel-fixed { appearance: none; -webkit-appearance: none; -moz-appearance: none; padding-right: 10px; text-align: left; }
+.ctcte-sel-fixed::-ms-expand { display: none; }
 /* ── A4 page view ──────────────────────────────────────────────────────────
    Every number is read off the PDF, not chosen for looks — a sheet edge here
    has to be where dompdf really breaks.
@@ -1116,7 +1983,13 @@ export const CTC_EDITOR_CSS = `
   font-size: 11px;
   /* 11 x 1.5 x 1.28 — the template's 1.5 at dompdf's line-box scale. */
   line-height: 21.1px;
-  font-family: 'DejaVu Sans', Arial, Helvetica, sans-serif;
+  /* Times New Roman — the agreement's house face, and the DEFAULT, so a draft
+     is in it whether it was typed here or uploaded as a DOCX (see the
+     font-family strip in ClmCtcForm's uploadDocx).
+     The stack ends in a generic serif on purpose: dompdf resolves Times New
+     Roman to its built-in times metrics, and any machine without the face
+     falls back to a serif rather than to the app's sans. */
+  font-family: 'Times New Roman', Times, serif;
   /* A sheet is always a whole sheet. Without this an empty draft rendered as a
      short white strip floating in grey, which reads as a broken layout rather
      than as page 1 of 1. */
@@ -1128,9 +2001,27 @@ export const CTC_EDITOR_CSS = `
    dompdf, an 11px/1.5 paragraph 21.4px. */
 .ctcte-content.ctcte-pageview .ProseMirror p,
 .ctcte-content.ctcte-pageview .ProseMirror div { margin: 0 0 8px; line-height: 21.1px; }
+/* Headings have to name the font themselves. The page surface sets it on the
+   .ProseMirror container and everything inside inherits — except headings,
+   because the app's own stylesheet carries a plain element-level rule for
+   h1, h2 and h3, and a rule that targets the element beats one inherited from an
+   ancestor no matter how specific the ancestor's selector is. So the body came
+   out in Times New Roman and every clause title stayed on the app's sans. */
 .ctcte-content.ctcte-pageview .ProseMirror h1,
 .ctcte-content.ctcte-pageview .ProseMirror h2,
-.ctcte-content.ctcte-pageview .ProseMirror h3 { margin: 14px 0 8px; }
+.ctcte-content.ctcte-pageview .ProseMirror h3 {
+  margin: 14px 0 8px;
+  font-family: 'Times New Roman', Times, serif;
+}
+/* Same reason, for the rest of what an agreement is written with. */
+.ctcte-content.ctcte-pageview .ProseMirror th,
+.ctcte-content.ctcte-pageview .ProseMirror td,
+.ctcte-content.ctcte-pageview .ProseMirror li,
+.ctcte-content.ctcte-pageview .ProseMirror strong,
+.ctcte-content.ctcte-pageview .ProseMirror em,
+.ctcte-content.ctcte-pageview .ProseMirror blockquote {
+  font-family: 'Times New Roman', Times, serif;
+}
 .ctcte-content.ctcte-pageview .ProseMirror h1 { font-size: 20px; line-height: 33.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h2 { font-size: 17px; line-height: 28.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h3 { font-size: 15px; line-height: 25.0px; }
@@ -1149,8 +2040,56 @@ export const CTC_EDITOR_CSS = `
   word-wrap: break-word; overflow-wrap: break-word; word-break: break-word;
 }
 .ctcte-content.ctcte-pageview .ProseMirror table p { margin: 0; }
+/* Column resizing. ProseMirror inserts the handle element but ships no CSS for
+   it, so without this the grab area exists and is invisible. */
+.ctcte-content .ProseMirror table { position: relative; max-width: 100%; }
+
+/* Sub points (see LegalList). counters(legal, ".") is what turns the nesting
+   into 1 / 1.1 / 1.1.1 — counter() alone would print only the innermost level.
+   The marker is drawn by ::before, so the native list marker is switched off
+   and the item becomes a block; the indent then comes from the nested list's
+   own padding rather than from a list marker box. */
+.ctcte-content .ProseMirror ol[data-legal],
+.ctcte-content .ProseMirror ol[data-legal] ol {
+  counter-reset: legal; list-style: none; padding-left: 0; margin-left: 0;
+}
+.ctcte-content .ProseMirror ol[data-legal] ol { padding-left: 24px; }
+.ctcte-content .ProseMirror ol[data-legal] li { display: block; }
+.ctcte-content .ProseMirror ol[data-legal] li::before {
+  counter-increment: legal;
+  content: counters(legal, ".") ". ";
+  font-weight: 700;
+  margin-right: 6px;
+}
+.ctcte-content .ProseMirror .column-resize-handle {
+  position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
+  background: #7C3AED; pointer-events: none; z-index: 20;
+}
+.ctcte-content .ProseMirror.resize-cursor { cursor: col-resize; }
+.ctcte-content .ProseMirror th, .ctcte-content .ProseMirror td { position: relative; }
+/* The selected-cell wash TipTap toggles while dragging across cells. */
+.ctcte-content .ProseMirror .selectedCell::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: rgba(124,58,237,.14);
+}
+/* A cell with no border of its own still needs an edge while you are editing,
+   or a borderless layout table is a set of invisible boxes you cannot click
+   into accurately. Dashed and pale so it never reads as a real rule, and it is
+   editor-only CSS — nothing here reaches the PDF, which keeps such tables
+   clean by design. The :not([style*="border"]) guard steps aside the moment the cell
+   carries a real border. */
+.ctcte-content.ctcte-pageview .ProseMirror table td:not([style*="border"]),
+.ctcte-content.ctcte-pageview .ProseMirror table th:not([style*="border"]) {
+  outline: 1px dashed #D8DEE9; outline-offset: -1px;
+}
 
 /* ── The PDF's own font ──────────────────────────────────────────────────
+   NOTE: the page surface now sets Times New Roman (above) to match the blade.
+   The DejaVu faces below are kept because dompdf still falls back to them for
+   any glyph Times lacks, and because content that carries its own font-family
+   (a pasted table, an uploaded fragment) can still land on them — so the
+   editor must be able to measure them.
+
    dompdf renders the body in DejaVu Sans (see the blade's font-family). The
    editor was rendering in DM Sans, the app font. Same size, same line-height,
    completely different letterforms — so every line wrapped at a different word,
@@ -1243,10 +2182,19 @@ export const CTC_EDITOR_CSS = `
 .ctcte-pgtop::after,
 .ctcte-pagegap::after,
 .ctcte-pagegap-row > td::after,
+/* .ctcte-pageline was missing from this list, which is why "PAGE N ENDS" kept
+   showing after it was supposedly removed. Line 505 picks the class per
+   boundary: m.sheet ? 'ctcte-pageline' : 'ctcte-spanmark' — pageline is the
+   ORDINARY page break and spanmark only appears for a block taller than a
+   whole sheet. Only the rare one was being hidden. */
+.ctcte-pageline::after,
 .ctcte-spanmark::after { content: none !important; display: none !important; }
 .ctcte-pgtop::before,
 .ctcte-pagegap::before,
 .ctcte-pagegap-row > td::before { border-top: none !important; box-shadow: none !important; }
+/* The label and the hairline are separate declarations — hiding ::after alone
+   would leave the rule floating across the page with no caption. */
+.ctcte-pageline,
 .ctcte-spanmark { border-top: none !important; box-shadow: none !important; }
 
 .ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }
@@ -1257,6 +2205,71 @@ export const CTC_EDITOR_CSS = `
 .ctcte-btn:hover { background: #EDE9FE; }
 .ctcte-btn.is-active { background: linear-gradient(135deg,#6D28D9,#7C3AED); color: #fff; }
 .ctcte-linkwrap { position: relative; display: inline-flex; }
+/* Find & Replace panel + match highlights */
+.ctcte-findpop {
+  position: absolute; top: 32px; left: 0; z-index: 60;
+  width: min(340px, calc(100vw - 24px));
+  padding: 9px; background: #fff; border: 1.5px solid #DDD6FE; border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(109,40,217,.2);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.ctcte-findrow { display: flex; align-items: center; gap: 6px; }
+.ctcte-findrow .ctcte-linkinput { flex: 1; width: auto; min-width: 0; }
+.ctcte-findcount { font-size: 10.5px; font-weight: 700; color: #7C3AED; min-width: 38px; text-align: center; white-space: nowrap; }
+.ctcte-findcase { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #4C1D95; cursor: pointer; }
+.ctcte-findpop .ctcte-linkbtn:disabled,
+.ctcte-findpop .ctcte-btn:disabled { opacity: .45; cursor: default; }
+/* Every match, and the one you are on. Background only — a match inside bold
+   or coloured text must keep looking like that text. */
+.ctcte-find-hit { background: #FEF08A; }
+.ctcte-find-cur { background: #FB923C; color: #fff; }
+[data-bs-theme="dark"] .ctcte-findpop { background: #1b2230; border-color: rgba(124,58,237,.35); }
+[data-bs-theme="dark"] .ctcte-findcase { color: #DDD6FE; }
+/* Line & paragraph spacing menu */
+.ctcte-pgbtn.is-open { background: #EDE9FE; border-color: #C4B5FD; }
+.ctcte-spcbd { position: fixed; inset: 0; z-index: 59; }
+.ctcte-spcpop {
+  position: absolute; top: 32px; left: 0; z-index: 60; min-width: 232px;
+  padding: 5px; background: #fff; border: 1.5px solid #DDD6FE; border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(109,40,217,.2);
+  display: flex; flex-direction: column;
+  /* The Table menu is 15 items now and ran off the bottom of the screen, so
+     the last of them could not be reached at all. Capped against the VIEWPORT
+     rather than a fixed pixel height — the editor is used both in a page panel
+     and full screen, and a number that fits one crops the other. */
+  max-height: min(58vh, 420px);
+  overflow-y: auto;
+  /* Scrolling the menu must not scroll the document underneath it once the
+     list hits its end. */
+  overscroll-behavior: contain;
+  /* Near the right edge of a narrow window a left-anchored menu would push the
+     page sideways; it stays inside the viewport instead. */
+  max-width: min(320px, calc(100vw - 24px));
+  scrollbar-width: thin; scrollbar-color: #DDD6FE transparent;
+}
+.ctcte-spcpop::-webkit-scrollbar { width: 8px; }
+.ctcte-spcpop::-webkit-scrollbar-thumb { background: #DDD6FE; border-radius: 99px; }
+.ctcte-spcitem {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 7px 9px; border: none; border-radius: 7px; background: none;
+  font-family: inherit; font-size: 11.5px; font-weight: 600; color: #4C1D95;
+  text-align: left; white-space: nowrap; cursor: pointer; transition: background .12s;
+}
+.ctcte-spcitem:hover { background: #F5F3FF; }
+.ctcte-spcitem:disabled { color: #A9A3C4; cursor: default; }
+.ctcte-spcitem:disabled:hover { background: none; }
+.ctcte-spcitem.is-danger { color: #B91C1C; }
+.ctcte-spcitem.is-danger:hover { background: #FEF2F2; }
+.ctcte-spcitem.is-danger:disabled { color: #D9B3B3; }
+.ctcte-spcitem.is-danger:disabled:hover { background: none; }
+.ctcte-spcitem.is-on { background: #EDE9FE; color: #6D28D9; font-weight: 800; }
+.ctcte-spctick { width: 12px; flex-shrink: 0; font-size: 11px; color: #7C3AED; }
+.ctcte-spcsep { height: 1px; margin: 4px 6px; background: #EDE9FE; }
+[data-bs-theme="dark"] .ctcte-spcpop { background: #1b2230; border-color: rgba(124,58,237,.35); }
+[data-bs-theme="dark"] .ctcte-spcitem { color: #DDD6FE; }
+[data-bs-theme="dark"] .ctcte-spcitem:hover { background: rgba(124,58,237,.18); }
+[data-bs-theme="dark"] .ctcte-spcitem.is-on { background: rgba(124,58,237,.28); color: #fff; }
+[data-bs-theme="dark"] .ctcte-spcsep { background: rgba(124,58,237,.25); }
 .ctcte-linkpop { position: absolute; top: 32px; left: 0; z-index: 60; display: flex; gap: 6px; padding: 7px; background: #fff; border: 1.5px solid #DDD6FE; border-radius: 10px; box-shadow: 0 12px 30px rgba(109,40,217,.2); }
 .ctcte-linkinput { width: 200px; height: 30px; border: 1.5px solid #E5E1F3; border-radius: 7px; padding: 0 9px; font-family: inherit; font-size: 12px; color: #1f2937; outline: none; }
 .ctcte-linkinput:focus { border-color: #7C3AED; }
