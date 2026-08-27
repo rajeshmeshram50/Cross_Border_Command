@@ -86,6 +86,37 @@ class PayrollController extends Controller
         return $user->user_type === 'branch_user';
     }
 
+    /**
+     * The employee this caller may see payroll for, or null when they may see
+     * the whole cycle. (#119)
+     *
+     * The payroll READ endpoints were gated on nothing but `auth:sanctum`, so
+     * an employee-tier login opening Payroll Processing received every
+     * colleague's row — gross, net pay, PF, PT, TDS and bank-verified status —
+     * and the Run Payroll warnings panel listed colleagues by name and
+     * department. Salary Setup, by contrast, refuses them outright (403), which
+     * is what made the two screens disagree and got raised as this ticket.
+     *
+     * Salary Setup has it right, so the fix runs that way: the employee tier
+     * keeps its own row and loses everyone else's, rather than Salary Setup
+     * being opened up to match. Their own payslip history already has its own
+     * self-guarded endpoint, so nothing they are entitled to is lost.
+     *
+     * Returns null for every managing tier, which leaves those callers exactly
+     * as they were.
+     */
+    private function selfOnlyEmployeeId(Request $request): ?int
+    {
+        $user = $request->user();
+        if (!$user || $user->user_type !== 'employee') {
+            return null;
+        }
+
+        // 0 when the login is not linked to an employee record — matches nothing,
+        // which is the correct answer for "show me my row" when there isn't one.
+        return (int) ($user->employee_id ?? 0);
+    }
+
     /** Processing actions need a concrete tenant scope — a super-admin with no
      *  client/branch selected would otherwise pool every tenant's employees
      *  into one run. Returns an error response when scope is missing, else null. */
@@ -347,8 +378,11 @@ class PayrollController extends Controller
 
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
+        // An employee tier sees their own row and nothing else (#119).
+        $selfOnly = $this->selfOnlyEmployeeId($request);
         $slips = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
+            ->when($selfOnly !== null, fn ($q) => $q->where('employee_id', $selfOnly))
             ->orderBy('employee_name')
             ->get();
 
@@ -395,7 +429,9 @@ class PayrollController extends Controller
          * status tells HR to do. No payslip_id, so the row carries no payslip
          * actions (the PDF handler already refuses a row without one). */
         $pending = collect();
-        if ($run) {
+        // Never for the employee tier — this lists colleagues who are not in the
+        // run yet, which is precisely what they must not see. (#119)
+        if ($run && $selfOnly === null) {
             $covered = $slips->pluck('employee_id')->filter()->map(fn ($i) => (int) $i)->all();
             $pending = $this->payroll->eligibleEmployees($period)
                 ->reject(fn ($e) => in_array((int) $e->id, $covered, true))
@@ -511,9 +547,14 @@ class PayrollController extends Controller
         $end   = Carbon::parse($period->period_end)->endOfDay();
 
         $items = [];
+        /* Waiving a sandwich is a payroll decision, and the list carries
+           colleagues' names, departments and leave dates — not an employee-tier
+           read. They get their own rows or nothing. (#119) */
+        $selfOnly = $this->selfOnlyEmployeeId($request);
         // Only employees this cycle actually pays — a leave belonging to someone
         // payroll skips (half-onboarded, exited) is not reviewable here.
         foreach ($this->payroll->eligibleEmployees($period) as $employee) {
+            if ($selfOnly !== null && (int) $employee->id !== $selfOnly) continue;
             if (!\App\Support\SandwichPolicy::appliesTo($employee)) continue;
 
             $leaves = \App\Models\LeaveRequest::query()
@@ -657,8 +698,16 @@ class PayrollController extends Controller
 
         // Prefer the already-generated payslips' exceptions; otherwise dry-run.
         $run = $period->runs()->latest('id')->first();
+        // The issue list names employees and carries their pay — an employee
+        // tier gets only their own. (#119)
+        $selfOnly = $this->selfOnlyEmployeeId($request);
         if ($run) {
-            $slips = Payslip::where('payroll_run_id', $run->id)->get();
+            $slips = Payslip::where('payroll_run_id', $run->id)
+                ->when($selfOnly !== null, fn ($q) => $q->where('employee_id', $selfOnly))
+                ->get();
+        } elseif ($selfOnly !== null) {
+            // No run yet: dry-running the whole cycle would compute colleagues.
+            $slips = collect();
         } else {
             $slips = $this->payroll->eligibleEmployees($period)->map(function ($e) use ($period) {
                 $data = $this->payroll->computeForEmployee($e, $period);
@@ -1038,6 +1087,13 @@ class PayrollController extends Controller
         if ($user && $user->user_type !== 'super_admin' && (int) $employee->client_id !== (int) $user->client_id) {
             return response()->json(['message' => 'Employee belongs to another tenant.'], 403);
         }
+        /* …and the right BRANCH. A settlement exposes full salary and payout
+           figures, so a branch-pinned user must not reach another branch's
+           employee — same rule ownsRow() and employeePayslips() apply. (#119) */
+        if ($user && $user->user_type === 'branch_user' && $user->branch_id
+            && $employee->branch_id && (int) $employee->branch_id !== (int) $user->branch_id) {
+            return response()->json(['message' => 'Employee belongs to another branch.'], 403);
+        }
 
         // FnF is only meaningful for an exiting employee — without an exit record
         // the engine silently used "today" as the last working day and produced a
@@ -1133,6 +1189,16 @@ class PayrollController extends Controller
         $slips = Payslip::with(['run:id,status', 'period:id,label,month,year'])
             ->where('employee_id', $employeeId)
             ->when($user && $user->client_id, fn ($q) => $q->where('client_id', $user->client_id))
+            /* Branch-pinned users get their own branch only — the same rule
+               ownsRow() applies to a single payslip. Without it a branch user
+               could read any other branch's employee salary history (net pay
+               per cycle) by changing the id in the URL. (#119) */
+            ->when(
+                $user && $user->user_type === 'branch_user' && $user->branch_id,
+                fn ($q) => $q->where(fn ($w) => $w
+                    ->whereNull('branch_id')
+                    ->orWhere('branch_id', $user->branch_id)),
+            )
             ->orderByDesc('payroll_period_id')
             ->limit(24)
             ->get();
@@ -1499,6 +1565,24 @@ class PayrollController extends Controller
            employee record has no own slip to read, so 0 matches nothing. */
         if ($user->user_type === 'employee') {
             return (int) $slip->employee_id === (int) ($user->employee_id ?? 0);
+        }
+        /* A branch-pinned user only ever reads their OWN branch's payslips.
+         *
+         * This gate stopped at the client, so a branch_user could open any
+         * other branch's payslip — its full breakdown, its PDF, and email it to
+         * the employee — just by walking the id. Every branch is an equal,
+         * isolated peer, and the switcher cannot widen a branch user's scope
+         * (see effectiveBranchId), so the row gate has to say the same thing:
+         * findRun() and PayrollPaymentController::findScoped() already branch-
+         * check for exactly this tier, and this was the one payroll gate that
+         * did not. Found by cross-tier testing on #119: a branch-3 user reading
+         * a branch-2 payslip.
+         *
+         * A slip with no branch_id is left to the client check above — that is
+         * a client-wide run, not another branch's data. */
+        if ($user->user_type === 'branch_user' && $user->branch_id
+            && $slip->branch_id && (int) $slip->branch_id !== (int) $user->branch_id) {
+            return false;
         }
         return true;
     }

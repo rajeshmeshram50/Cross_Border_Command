@@ -3,9 +3,7 @@ import { Modal, ModalBody, Spinner } from 'reactstrap';
 import api from '../api';
 import { useToast } from '../contexts/ToastContext';
 import { useConfirm } from '../contexts/ConfirmContext';
-// MasterDatePicker is no longer imported — Effective From is a fixed, read-only
-// value taken from the joining date, not a chosen one. (#118)
-import { MasterFormStyles } from '../pages/master/masterFormKit';
+import { MasterDatePicker, MasterFormStyles } from '../pages/master/masterFormKit';
 import { pfDeduction } from '../utils/salaryBreakup';
 
 export interface SalaryComponent { code: string; label: string; amount: number }
@@ -125,6 +123,15 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
              pf_eligible on the employee disabled the box, while pf_applicable
              false on the structure left it unticked — so PF was missing from
              Salary Setup with no way to add it (#89). */
+          /* Show the date the structure ACTUALLY carries. (#124)
+             The field was seeded from the joining date above and nothing here
+             ever overwrote it, so a saved Effective From was never displayed
+             back: change the date, save, reopen — and the joining date was on
+             screen again. The value had persisted correctly all along; the
+             screen simply never read it, which is indistinguishable from the
+             save having failed. Falls back to the roster's copy, then to the
+             joining date, so a structure without one still opens sensibly. */
+          setEffectiveFrom(d.effective_from || employee.effective_from || employee.date_of_joining || todayISO());
           setPfApplicable(!!d.pf_applicable || !!employee.pf_eligible);
           setEsiApplicable(!!d.esi_applicable || !!employee.esi_applicable);
           /* Read the saved flag as it is. `d.pt_applicable !== false` treated a
@@ -303,16 +310,56 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     });
   };
 
+  /**
+   * Keep the earnings adding up to the Annual CTC by moving the difference into
+   * the BALANCE component. (#125)
+   *
+   * The breakup is a split of an agreed figure, not a list that happens to have
+   * a total — the panel above says as much: "Special Allowance — the remaining
+   * balance after Basic + HRA". Nothing enforced it once the rows were edited,
+   * so replacing a component meant deleting one (its amount folds into Basic,
+   * gross preserved) and then adding another — whose amount landed ON TOP.
+   * A ₹5,00,000 CTC came out at ₹5,28,084 a year and the form refused to save,
+   * leaving the user to hand-balance three rows to a figure the form already
+   * knew.
+   *
+   * Special absorbs it, falling back to Basic when a structure has no Special
+   * row. Editing the balance row ITSELF is left alone — that is someone stating
+   * the figure deliberately, and quietly moving it back would fight them; the
+   * over/short banner and "Balance to Basic" still cover that case.
+   *
+   * Nothing is forced negative: if the other rows already exceed the CTC there
+   * is no split to find, so the rows stay as typed and the banner reports it,
+   * which is the honest outcome.
+   */
+  const rebalanceEarnings = (rows: SalaryComponent[], editedIdx: number): SalaryComponent[] => {
+    if (salaryAnnual <= 0) return rows;                       // no target to balance against
+    if (rows[editedIdx]?.code === 'special') return rows;     // explicit edit of the balance head
+
+    const monthly = Math.round(salaryAnnual / 12);
+    let idx = rows.findIndex((c, k) => k !== editedIdx && c.code === 'special');
+    if (idx === -1) idx = rows.findIndex((c, k) => k !== editedIdx && c.code === 'basic');
+    if (idx === -1) return rows;
+
+    const others = rows.reduce((s, c, k) => k === idx ? s : s + (Number(c.amount) || 0), 0);
+    const balance = Math.round(monthly - others);
+    if (balance < 0) return rows;
+
+    return rows.map((c, k) => (k === idx ? { ...c, amount: balance } : c));
+  };
+
   const updateRow = (
     list: SalaryComponent[],
     setList: (v: SalaryComponent[]) => void,
     i: number,
     field: keyof SalaryComponent,
     value: string,
+    kind: 'earn' | 'ded' = 'earn',
   ) => {
     const next = [...list];
     next[i] = { ...next[i], [field]: field === 'amount' ? (Number(value) || 0) : value };
-    setList(next);
+    // Only earnings are a split of the CTC — a deduction is its own figure.
+    setList(kind === 'earn' && field === 'amount' ? rebalanceEarnings(next, i) : next);
   };
 
   const addRow = (list: SalaryComponent[], setList: (v: SalaryComponent[]) => void) =>
@@ -504,7 +551,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                 placeholder="Component name"
                 value={c.label}
                 readOnly={locked}
-                onChange={e => updateRow(list, setList, i, 'label', e.target.value)}
+                onChange={e => updateRow(list, setList, i, 'label', e.target.value, kind)}
               />
               <div className="ssm-amount">
                 <span className="ssm-rupee">₹</span>
@@ -515,7 +562,7 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   value={c.amount}
                   readOnly={amountLocked}
                   title={amountLocked ? 'Auto — 12% of Basic Salary (capped at the ₹15,000 EPF ceiling unless PF Type is Standard)' : undefined}
-                  onChange={e => updateRow(list, setList, i, 'amount', e.target.value)}
+                  onChange={e => updateRow(list, setList, i, 'amount', e.target.value, kind)}
                 />
               </div>
               {locked ? (
@@ -542,6 +589,17 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
           greater than zero; at zero it falls back to the state PT slab / the
           statutory 0.75% ESI. Without this, a ticked box showing ₹0 reads as
           the deduction having failed — which is half of what #117 reported. */}
+      {/* Which row takes up the slack, so the auto-adjustment is expected
+          rather than surprising. (#125) */}
+      {kind === 'earn' && salaryAnnual > 0 && list.some(c => c.code === 'special' || c.code === 'basic') && (
+        <div className="ssm-panel-foot">
+          <i className="ri-scales-3-line" />
+          <span>
+            {list.some(c => c.code === 'special') ? 'Special Allowance' : 'Basic Salary'} balances
+            automatically so the breakup always totals the Annual CTC. Edit it directly to override.
+          </span>
+        </div>
+      )}
       {kind === 'ded' && list.some(c => c.code === 'pt' || c.code === 'esi') && (
         <div className="ssm-panel-foot">
           <i className="ri-information-line" />
@@ -639,32 +697,33 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                   </span>
                 )}
               </div>
-              {/* Effective From is READ-ONLY — the joining date, shown, not
-                  chosen. (#118)
-                  It was a date picker floored at the joining date and capped a
-                  year ahead, which let a salary be dated into the future from
-                  this screen. The date is not a decision made here: a salary
-                  runs from the day the employee joined, and the Add/Edit
-                  Employee wizard already states exactly that rule. Offering a
-                  picker invited a value that only ever needed to be read, and
-                  every value other than the seeded one was wrong.
-                  Rendered as a field rather than a caption so the form still
-                  reads as a form, with a lock making it clear the value is
-                  fixed rather than merely disabled by a bug. */}
+              {/* Effective From is editable again (#124) — it was locked for
+                  #118, which reported that it accepted FUTURE dates. Freezing
+                  it fixed that by removing the control altogether, and took a
+                  legitimate edit with it: a revision agreed from the 1st of a
+                  past month could no longer be dated.
+
+                  Both tickets are satisfied by bounding the picker instead of
+                  removing it:
+                    · floor  = joining date — a salary cannot start before the
+                      employee existed (#87), and the field still SEEDS there.
+                    · ceiling = today — no forward dating from this screen,
+                      which is what #118 actually objected to.
+                  The API keeps its own wider bound, so a forward-dated revision
+                  remains possible programmatically for the payroll features
+                  that rely on it; it is just not offered here. */}
               <div className="ssm-field">
                 <label className="ssm-label">Effective From</label>
-                <div className="ssm-locked" title="Taken from the employee's joining date — not editable">
-                  <i className="ri-calendar-event-line" />
-                  <span className="ssm-locked-value">
-                    {effectiveFrom
-                      ? new Date(effectiveFrom).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                      : '—'}
-                  </span>
-                  <i className="ri-lock-2-line ssm-locked-icon" />
-                </div>
+                <MasterDatePicker
+                  value={effectiveFrom}
+                  onChange={setEffectiveFrom}
+                  minDate={employee.date_of_joining || undefined}
+                  maxDate={todayISO()}
+                  placeholder="Select date"
+                />
                 <span className="ssm-hint">
                   {employee.date_of_joining
-                    ? 'Taken from the joining date — a salary runs from the day the employee joined.'
+                    ? `Defaults to the joining date (${new Date(employee.date_of_joining).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}). Cannot be earlier than that, or in the future.`
                     : 'No joining date on the employee record, so today is used.'}
                 </span>
               </div>
@@ -1070,20 +1129,7 @@ function SalaryModalStyles() {
       }
       .ssm-panel-foot i { font-size: 12px; flex-shrink: 0; margin-top: 1px; }
 
-      /* Read-only value that is deliberately fixed, not a disabled input — it
-         reads as information rather than as a control that failed to load. */
-      .ssm-locked {
-        display: flex; align-items: center; gap: 8px;
-        height: 36px; padding: 0 11px;
-        border: 1px solid var(--vz-border-color);
-        border-radius: 9px;
-        background: var(--vz-light);
-        color: var(--vz-body-color);
-        cursor: default;
-      }
-      .ssm-locked > i:first-child { font-size: 14px; color: var(--vz-secondary-color); flex-shrink: 0; }
-      .ssm-locked-value { font-size: 13px; font-weight: 600; flex: 1 1 auto; min-width: 0; }
-      .ssm-locked-icon { font-size: 13px; color: var(--vz-secondary-color); opacity: .75; flex-shrink: 0; }
+      /* (.ssm-locked* removed with the frozen Effective From field — #124.) */
 
       /* ── Totals ── */
       .ssm-totals { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 12px; }
