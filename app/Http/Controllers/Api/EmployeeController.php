@@ -2297,9 +2297,29 @@ class EmployeeController extends Controller
             'ifsc_code',
             'salary_payment_mode'
         ];
+        /* Payslips that could NOT follow this change, by cycle. (QA #90)
+         *
+         * recomputeEmployeePayslips() only rewrites draft/generated runs —
+         * approved and paid runs are frozen by Rule 14/15 and a locked period is
+         * skipped. That is correct, but this path said nothing about it, so
+         * turning "PF Applicable" from No to Yes reported a plain "Updated"
+         * while the Salary Report the user was looking at kept showing no PF.
+         * Indistinguishable from the flag not working — which is how this came
+         * back as a bug. SalaryStructureController already names the frozen
+         * cycles on the same kind of change; this now matches it. */
+        $frozenCycles = collect();
         if (!empty(array_intersect($payrollFields, array_keys($data)))) {
             try {
                 app(\App\Services\PayrollService::class)->recomputeEmployeePayslips((int) $row->id);
+
+                $frozenCycles = \App\Models\Payslip::where('employee_id', $row->id)
+                    ->whereHas('run', fn ($q) => $q->whereNotIn('status', ['draft', 'generated']))
+                    ->with('run.period')
+                    ->get()
+                    ->map(fn ($s) => $s->run?->period?->label)
+                    ->filter()
+                    ->unique()
+                    ->values();
             } catch (\Throwable $e) {
                 // Never block an employee save on a payroll recompute hiccup.
             }
@@ -2370,7 +2390,12 @@ class EmployeeController extends Controller
          * they stay: a caller that wants to read back what it saved still can.
          */
         return response()->json([
-            'message'  => 'Updated',
+            'message'  => 'Updated'
+                . ($frozenCycles->isNotEmpty()
+                    ? ' — note: already-approved payroll (' . $frozenCycles->implode(', ')
+                        . ') keeps its original figures, so this change will not appear there.'
+                        . ' Run a fresh cycle, or post an adjustment, to apply it.'
+                    : ''),
             'employee' => (clone $row)->setRelations([])->setAppends([]),
         ]);
     }

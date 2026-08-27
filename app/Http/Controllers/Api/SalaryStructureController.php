@@ -90,6 +90,38 @@ class SalaryStructureController extends Controller
         if ($user && $user->client_id) $eq->where('client_id', $user->client_id);
         if ($branch) $eq->where('branch_id', $branch);
 
+        /* Nobody who had not joined yet. (#116)
+         *
+         * Salary Setup is a TAB INSIDE a payroll cycle — the strip above it says
+         * which month is being worked on — but the roster was fetched without
+         * any notion of that cycle, so it listed every active employee on the
+         * books. An employee joining 15 August therefore appeared in the July
+         * setup, where payroll will never pay them: eligibleEmployees() prices a
+         * cycle from the joining date, so July has nothing to run for them.
+         * Worse, the "needs setup" badge counted them, so July looked
+         * permanently unfinished because of people who do not belong to it.
+         *
+         * The cut is the LAST DAY of the cycle, not its first: someone joining
+         * on the 20th is genuinely part of that month (paid pro-rata from the
+         * 20th), and only a joining date after the month has ended puts them
+         * outside it.
+         *
+         * A null joining date is KEPT. It cannot be judged, and dropping those
+         * rows would hide an employee from every cycle rather than the wrong
+         * one — a worse fault than the one being fixed here.
+         *
+         * Applied only when the caller names a cycle, so a request without
+         * month/year still returns the whole roster and no existing caller
+         * changes behaviour. */
+        $month = (int) $request->query('month', 0);
+        $year  = (int) $request->query('year', 0);
+        if ($month >= 1 && $month <= 12 && $year >= 2000 && $year <= 2100) {
+            $cycleEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
+            $eq->where(fn ($q) => $q
+                ->whereNull('date_of_joining')
+                ->orWhereDate('date_of_joining', '<=', $cycleEnd));
+        }
+
         $employees = $eq->get();
         $ids = $employees->pluck('id')->all();
 

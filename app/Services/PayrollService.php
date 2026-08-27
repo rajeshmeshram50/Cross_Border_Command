@@ -1621,11 +1621,23 @@ class PayrollService
             $credited = $worked + $paidLv + $holiday;
             $paidDays += max(0.0, min(1.0 - $unpaidLv, $credited));
 
-            // Two sources claiming the same day is a data-quality problem even
-            // now that the money is right — HR should still be told that the
-            // punch and the leave request disagree.
-            if ($credited + $unpaidLv > 1.001) {
-                $overlapDays += $credited + $unpaidLv - 1;
+            /* Two sources claiming the same day is a data-quality problem even
+             * now that the money is right — HR should still be told that the
+             * punch and the leave request disagree.
+             *
+             * The test deliberately EXCLUDES $holiday, and measures only what
+             * attendance and LEAVE each claim. A holiday is not a competing
+             * claim on the day: working on a public holiday is normal and fully
+             * expected — it is paid through the holiday credit and, where the
+             * hours warrant it, overtime. Counting it here meant worked(1) +
+             * holiday(1) = 2 tripped the threshold and raised
+             * "attendance and an approved leave request cover the same date"
+             * for an employee who had filed no leave at all. The message named
+             * a document that did not exist, and HR had nothing to go and
+             * check. (#113) */
+            $leaveClaim = $paidLv + $unpaidLv;
+            if ($worked > 0 && $leaveClaim > 0 && $worked + $leaveClaim > 1.001) {
+                $overlapDays += $worked + $leaveClaim - 1;
             }
         }
         $paidDays    = round(min($effectiveWorkingDays, $paidDays), 2);
@@ -1691,6 +1703,13 @@ class PayrollService
         $latePolicy  = $lateBranch
             ? $lateBranch->lateMarkPolicy()
             : \App\Models\Branch::normalizeLateMarkPolicy(null);
+        /* Everything charged UP TO HERE is absence — days the employee did not
+         * work. What the late-mark rule adds below is a different animal: a
+         * penalty on days they DID work, priced in days because that is the
+         * unit pay is charged in. Keeping the two apart is what lets paid_days
+         * stay an honest attendance figure further down (#114). */
+        $absenceLopDays = $lopDays;
+
         $lateLopDays = \App\Models\Branch::lateMarkLopFor($latePolicy, (int) $lateMarks);
         $lateUnit    = $latePolicy['deduction'] === 'full_day' ? 'full day' : 'half day';
         if ($lateLopDays > 0) {
@@ -1732,7 +1751,32 @@ class PayrollService
          * The money is separately capped at the pro-rated basic / gross below,
          * so a larger day count cannot overdraw the payslip. */
         $lopDays = min($effectiveWorkingDays + $sandwichLop, $lopDays);
-        $paidDays = max(0, round($effectiveWorkingDays - $lopDays, 2));
+        $absenceLopDays = min($effectiveWorkingDays + $sandwichLop, $absenceLopDays);
+        // What the late-mark rule actually cost after the ceiling — the clamp
+        // can swallow part of it when absence alone already fills the cycle.
+        $lateLopCharged = max(0, round($lopDays - $absenceLopDays, 2));
+
+        /* TWO different "paid days", because they answer two different
+         * questions and conflating them is bug #114.
+         *
+         *   $paidDays        — days the employee is credited for by ATTENDANCE.
+         *                      This is what the payslip prints next to Payable
+         *                      Days, so an employee who turned up for every
+         *                      payable day reads 25 / 25. It used to be
+         *                      overwritten with the line below, which quietly
+         *                      subtracted the late-mark penalty and produced
+         *                      "Payable 25 / Paid 24" for someone with a full
+         *                      attendance record and nothing on the slip
+         *                      explaining the missing day.
+         *
+         *   $paidDaysForPay  — days after every deduction in day units,
+         *                      including the late penalty. Statutory bases ride
+         *                      on this, so the money is untouched by the split.
+         *
+         * They are equal for everyone who has no late-mark LOP, which is the
+         * overwhelming majority of every run. */
+        $paidDaysForPay = max(0, round($effectiveWorkingDays - $lopDays, 2));
+        $paidDays       = max(0, round($effectiveWorkingDays - $absenceLopDays, 2));
 
         // Unpaid-leave vs LOP sanity — an employee on unpaid leave should be
         // docked at least those working days. When fewer LOP days are charged
@@ -2007,10 +2051,25 @@ class PayrollService
          *
          * Deducted as entered, not scaled by the earned share — same rule the
          * business set for the other flat structure deductions. */
+        /* PF APPLIES TO EVERY EMPLOYMENT TYPE. (#122)
+         *
+         * PF used to be withheld from anyone whose employment type did not read
+         * as full-time — part-time, contract, intern, trainee. That produced a
+         * rule nobody could act on: the salary structure accepted PF, the
+         * employee record accepted PF, and the deduction was then dropped in
+         * silence at run time, with a warning that appeared only once payroll
+         * had already been processed.
+         *
+         * Business decision: the employment type does not decide PF. What
+         * decides it is the PF flag on the structure / employee record, which
+         * is set deliberately per employee and is visible on both screens. The
+         * type gate is gone rather than mirrored into Salary Setup, so there is
+         * one answer to "does this person get PF" instead of two that can
+         * disagree. */
         $pfManual = $this->structureDeduction($structDeductions, 'pf');
-        if ($pfManual > 0 && $this->isPfEligibleType($employee)) {
+        if ($pfManual > 0) {
             $pf = $pfManual;
-        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic > 0) {
+        } elseif ($pfApplicable && $earnedBasic > 0) {
             /* PF WAGES ARE MEASURED ON WORKING DAYS, NOT PAID CALENDAR DAYS.
              *
              * Everything else on the payslip pro-rates on calendar days —
@@ -2041,8 +2100,13 @@ class PayrollService
              * Falls back to $earnedBasic when the month has no working days on
              * file at all — a zero denominator must not silently zero someone's
              * PF. */
+            /* $paidDaysForPay, not $paidDays — PF rides on the days actually
+             * PAID, which is net of the late-mark penalty. The two only differ
+             * for an employee carrying late-mark LOP, and using the attendance
+             * figure here would have raised their PF as a side effect of the
+             * #114 display fix. */
             $pfDayBasis = $empWorkingDays > 0
-                ? min(1, max(0, $paidDays) / $empWorkingDays)
+                ? min(1, max(0, $paidDaysForPay) / $empWorkingDays)
                 : null;
             $pfEarnedBasic = $pfDayBasis === null
                 ? $earnedBasic
@@ -2078,7 +2142,7 @@ class PayrollService
                         . 'Rename the basic component to "Basic Salary" in Salary Setup so PF is charged on the real figure.'
                 );
             }
-        } elseif ($pfApplicable && $this->isPfEligibleType($employee) && $earnedBasic <= 0 && $earnedGross > 0) {
+        } elseif ($pfApplicable && $earnedBasic <= 0 && $earnedGross > 0) {
             /* Paid for the month, PF ticked, and still no PF — the base came out
              * zero. That is a structure problem (no basic, or a zero one), not a
              * policy, and it presents to the employee as exactly this ticket:
@@ -2089,21 +2153,11 @@ class PayrollService
                 'PF is applicable but no PF was deducted — the basic pay for this cycle worked out to zero. '
                     . 'Check the earning components on the salary structure.'
             );
-        } elseif (($pfApplicable || $pfManual > 0) && !$this->isPfEligibleType($employee)) {
-            /* Configured, then withheld by the employment type — the other way
-             * this ticket's symptom appears. PF is a full-time head, so an
-             * intern / contractor / consultant is skipped deliberately; saying
-             * so is the difference between a policy and a missing deduction.
-             * Warning, because someone ticked PF on the structure and is not
-             * getting it, which is worth a look before the run is approved. */
-            $exceptions = $this->withException(
-                $exceptions,
-                'warning',
-                'PF is applicable on the salary structure but not deducted — employment type is "'
-                    . ($employee->employee_type ?: $employee->work_type)
-                    . '", and PF applies to full-time employees only.'
-            );
         }
+        /* The employment-type warning that used to sit here is gone with the
+         * rule it explained (#122). PF is no longer withheld from part-time,
+         * contract or intern staff, so there is nothing left to warn about —
+         * a ticked PF box now always produces a PF deduction. */
         // ESI — honour a MANUAL structure 'esi' line first (HR/accounts enter
         // the amount in the salary breakup); fall back to the statutory 0.75%
         // of gross when no manual line exists. Manual amounts scale to earned
@@ -2131,13 +2185,46 @@ class PayrollService
             // Flat monthly figure, deducted as entered — same rule as ESI above.
             $pt = $ptManual;
         } elseif ($ptApplicable && $earnedGross > 0) {
-            $pt = $this->professionalTax($employee, $earnedGross, $period->month);
-            // A fallback or an uncovered gross is a configuration gap HR needs
-            // to see. Warning, not blocking: the run must not stop because one
-            // state master is missing, but the slip should not read clean.
-            if ($this->lastPtNote !== null) {
-                $exceptions = $this->withException($exceptions, 'warning', $this->lastPtNote);
-            }
+            /* PT is computed and left to speak for itself. (#123)
+             *
+             * professionalTax() still records WHY it picked the slab it picked
+             * (see $lastPtNote), but that note is no longer raised onto the
+             * payslip. It fired on the shape of the master data rather than on
+             * anything wrong with the pay: an employee whose work state is not
+             * set falls back to the Maharashtra ladder and is taxed correctly,
+             * yet every such slip carried a warning through the whole run
+             * screen. The slabs are seeded for every state, so the note was
+             * reporting a configuration nuance to people who were reviewing
+             * salaries, on runs where the PT figure was right.
+             *
+             * The note stays on the property for a caller that wants it — this
+             * only stops it being an exception on the payslip. */
+
+            /* THE SLAB IS READ AGAINST THE MONTHLY GROSS, NOT THE EARNED GROSS.
+             *
+             * Professional Tax is a flat monthly levy: the state's ladder is a
+             * function of the salary the employee is ON, and every band in
+             * master_pt_slabs is written against that figure. Passing
+             * $earnedGross measured it against pay AFTER loss of pay instead,
+             * so absence quietly moved people down the ladder — the second half
+             * of this ticket, "PT is not calculated as per the configured
+             * slab":
+             *
+             *     Vivek     9,000/mo   slab 175  → charged 0
+             *     Anjali   30,000/mo   slab 200  → charged 0
+             *     Vaibhav  10,288/mo   slab 200  → charged 0
+             *
+             * It also disagreed with the line directly above: a MANUAL pt row
+             * is deducted exactly as entered and never scaled for absence, so
+             * two employees on the same salary paid different PT purely
+             * according to whether HR typed the figure in or let the slab
+             * resolve it.
+             *
+             * $gross is the full monthly gross of the structure in force.
+             * $earnedGross still guards the branch above — someone who earned
+             * nothing this cycle is not taxed — but once there is pay, the band
+             * is the one their salary sits in. */
+            $pt = $this->professionalTax($employee, $gross, $period->month);
         }
 
         /* TDS — a MANUAL 'tds' line on the structure always wins: accounts may
@@ -2364,6 +2451,11 @@ class PayrollService
                day breakdown needs it to say WHY a day was paid. */
             'holiday_days'   => $holidayDays,
             'lop_days'       => $lopDays,
+            /* The share of lop_days that is the late-mark penalty rather than
+             * absence. Stored so the payslip can say why Loss of Pay exceeds
+             * the days missed — without it, "Payable 25 / Paid 25 / LOP 1" is
+             * just as unreadable as the mismatch it replaced (#114). */
+            'late_lop_days'  => $lateLopCharged,
             'paid_leave_days'   => $paidLeaveDays,
             'unpaid_leave_days' => $unpaidLeaveDays,
             'late_marks'     => $lateMarks,
@@ -2747,26 +2839,10 @@ class PayrollService
         };
     }
 
-    /**
-     * Rule 8 — PF applies to full-time staff.
-     *
-     * Reads the canonical `employee_type` first and only falls back to the
-     * free-text `work_type` for rows the backfill could not classify. An
-     * employee with neither on file stays eligible, which is the long-standing
-     * behaviour: PF is the norm, and holding a payslip over a blank dropdown
-     * would stop runs on data that is merely incomplete. The blank case is
-     * flagged separately on the slip so it does not stay invisible.
-     */
-    private function isPfEligibleType(Employee $employee): bool
-    {
-        $type = strtolower(trim((string) ($employee->employee_type ?? '')));
-        if ($type !== '') {
-            return $type === 'full-time';
-        }
-
-        $legacy = strtolower((string) ($employee->work_type ?? ''));
-        return $legacy === '' || str_contains($legacy, 'full');
-    }
+    /* isPfEligibleType() / readsAsFullTime() removed with the rule they served
+     * (#122) — PF is no longer decided by employment type, so there is nothing
+     * left to classify. The PF flag on the structure / employee record is the
+     * single answer now. */
 
     /** True when neither employment-type column is set — PF assumed, not known. */
     private function employmentTypeUnknown(Employee $employee): bool

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Col, Row } from 'reactstrap';
+import { useScrollLock } from '../hooks/useScrollLock';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface PayrollRunActionChip {
@@ -320,6 +321,20 @@ export default function PayrollRunModal({
     }
   }, [open]);
 
+  /* Freeze whatever is scrolling BEHIND the popup (#115).
+   *
+   * The second bar down the right edge was not the dialog's — it was the page's.
+   * This app scrolls on <div class="main-content"> (Velzon puts overflowY:auto
+   * there and #layout-wrapper is overflow:hidden), so opening the popup left
+   * that container's scrollbar sitting right next to .prm-body's, and the wheel
+   * moved whichever the pointer was over. Every sibling modal already locks it
+   * (BatchPaymentModal, PayslipViewerModal, ConfirmContext); this one never did.
+   *
+   * exceptSelector spares the overlay's own subtree, which IS meant to scroll.
+   * Called before the `if (!open)` early return below so the hook order stays
+   * stable across renders. */
+  useScrollLock(open, '.ep-modal-overlay');
+
   const blocking = useMemo(() => issues.filter(i => i.type === 'blocking'), [issues]);
   const warnings = useMemo(() => issues.filter(i => i.type === 'warning'),  [issues]);
 
@@ -351,7 +366,13 @@ export default function PayrollRunModal({
         background: 'rgba(15,23,42,0.55)',
         backdropFilter: 'blur(2px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16, overflowY: 'auto',
+        padding: 16,
+        /* The CARD owns the height (maxHeight below) and its body is the one
+           scrollable region. The overlay scrolling too put a second scrollbar
+           down the right edge of the same popup — one for the overlay, one for
+           .prm-body — and the wheel landed on whichever the pointer happened to
+           be over. (#115) */
+        overflow: 'hidden',
       }}
     >
       <div
@@ -914,10 +935,14 @@ function IssueCard({
 function PayrollRunStyles() {
   return (
     <style>{`
+      /* Header and footer keep their natural height; only the body between them
+         scrolls. Without flex-shrink:0 a long issue list squeezes the footer's
+         buttons instead of scrolling past them. */
       .prm-header {
         padding: 16px 18px;
         border-bottom: 1px solid var(--vz-border-color);
         background: var(--vz-card-bg);
+        flex-shrink: 0;
       }
       .prm-warn-icon {
         width: 36px; height: 36px; border-radius: 9px;
@@ -938,11 +963,16 @@ function PayrollRunStyles() {
       .prm-body {
         padding: 16px 18px;
         overflow-y: auto;
-        /* Capped so the popup stops growing with its content. It had no ceiling,
-           so a cycle with many warnings pushed the dialog past the screen and
-           the footer buttons went out of reach. Leaves room for the header
-           strip and the fixed footer. */
-        max-height: calc(100vh - 250px);
+        /* The single scrolling region of the dialog. Sized by the flex column
+           rather than a hardcoded ceiling: it takes whatever the card has left
+           after the header and footer, so the footer buttons stay reachable at
+           any content length and any header height. min-height:0 is what lets a
+           flex child shrink below its content and actually scroll.
+           The old max-height: calc(100vh - 250px) guessed the chrome height,
+           which left the body short of the card and the overlay picking up the
+           overflow — the second scrollbar in #115. */
+        flex: 1 1 auto;
+        min-height: 0;
         overscroll-behavior: contain;
         background: var(--vz-secondary-bg);
       }
@@ -1271,6 +1301,7 @@ function PayrollRunStyles() {
         border-top: 1px solid var(--vz-border-color);
         background: var(--vz-card-bg);
         display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        flex-shrink: 0;
       }
 
       .prm-btn {
@@ -1314,6 +1345,7 @@ function PayrollRunStyles() {
         text-align: center;
         background: linear-gradient(135deg,#064e3b 0%,#047857 50%,#10b981 100%);
         color: #fff;
+        flex-shrink: 0;
       }
       .prm-success-check {
         display: inline-flex; align-items: center; justify-content: center;
@@ -1331,7 +1363,18 @@ function PayrollRunStyles() {
       }
       .prm-success-close:hover { background: rgba(255,255,255,0.28); }
 
-      .prm-success-body { padding: 16px 20px 18px; background: var(--vz-card-bg); }
+      /* Same single-scroller rule as .prm-body. This screen used to have no
+         scroll of its own and leaned on the overlay's — which is the scrollbar
+         that has now been removed, so on a short viewport the Proceed to Pay
+         button would sit below the clipped edge of the card. */
+      .prm-success-body {
+        padding: 16px 20px 18px;
+        background: var(--vz-card-bg);
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
       .prm-success-recap {
         background: var(--vz-secondary-bg);
         border: 1px solid var(--vz-border-color);

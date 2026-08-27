@@ -35,6 +35,10 @@ export interface PayslipViewerModalProps {
   paidDays?: number;
   /** Weekly offs in the period — outside paidDays, and paid. */
   weekOffDays?: number;
+  /** How much of lossOfPay is the late-mark penalty rather than days missed.
+   *  Undefined on slips generated before the split was recorded, in which case
+   *  no note is shown at all. (#114) */
+  lateLopDays?: number;
   /** Overtime — only rendered when the employee master marks this employee
    *  overtime-applicable. The OT Hours KPI and the "Overtime Allowance"
    *  earnings line both key off this, so staff the policy doesn't cover see
@@ -138,6 +142,7 @@ export default function PayslipViewerModal({
   lossOfPay = 0,
   paidDays = 31,
   weekOffDays = 0,
+  lateLopDays,
   overtimeApplicable = false,
   overtimeHours = 0,
   overtimeDetectedHours = 0,
@@ -203,6 +208,23 @@ export default function PayslipViewerModal({
     return new Blob([res.data], { type: 'application/pdf' });
   };
 
+  /* What the server actually said, for a request that asked for a Blob.
+   *
+   * All three PDF handlers below used a bare `catch` and printed "Could not
+   * generate/open the payslip PDF", which described a broken renderer no
+   * matter what had really happened — a permission refusal, or a slip whose
+   * run has not been approved yet, both of which the API explains precisely.
+   * The error body is a Blob here (the request asked for one), so it has to be
+   * read back as text before it can be parsed. (#110) */
+  const pdfErrorMessage = async (err: any, fallback: string): Promise<string> => {
+    if (err?.response?.status === 403) return 'You are not allowed to download payslips.';
+    const data = err?.response?.data;
+    if (data instanceof Blob) {
+      try { return JSON.parse(await data.text())?.message || fallback; } catch { return fallback; }
+    }
+    return data?.message || fallback;
+  };
+
   // Month/Year filter → load that period's payslip. We match the chosen
   // full-month + year against the Recent Payslips list (labelled "Mon YYYY")
   // and ask the parent to switch to it. Without this the filters only changed
@@ -228,8 +250,8 @@ export default function PayslipViewerModal({
       a.href = url; a.download = `${fileLabel}.pdf`; a.click();
       URL.revokeObjectURL(url);
       toast.success('Payslip downloaded', `${fileLabel}.pdf`);
-    } catch {
-      toast.error('Download failed', 'Could not generate the payslip PDF.');
+    } catch (err: any) {
+      toast.error('Download failed', await pdfErrorMessage(err, 'Could not generate the payslip PDF.'));
     } finally {
       setBusyAction(null);
     }
@@ -245,8 +267,8 @@ export default function PayslipViewerModal({
       window.open(url, '_blank');
       // Give the tab time to load before revoking.
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch {
-      toast.error('View failed', 'Could not open the payslip PDF.');
+    } catch (err: any) {
+      toast.error('View failed', await pdfErrorMessage(err, 'Could not open the payslip PDF.'));
     } finally {
       setBusyAction(null);
     }
@@ -260,8 +282,8 @@ export default function PayslipViewerModal({
       const url = URL.createObjectURL(await fetchPdfBlob());
       const w = window.open(url, '_blank');
       if (w) { w.onload = () => { try { w.print(); } catch { /* user can print manually */ } }; }
-    } catch {
-      toast.error('Print failed', 'Could not open the payslip PDF.');
+    } catch (err: any) {
+      toast.error('Print failed', await pdfErrorMessage(err, 'Could not open the payslip PDF.'));
     } finally {
       setBusyAction(null);
     }
@@ -527,7 +549,16 @@ export default function PayslipViewerModal({
                   { label: 'Days in Month', value: lastDayOfMonth(month, year), tint: 'rgba(99,102,241,0.10)', fg: '#4338ca' },
                   { label: 'Payable Days', value: workingDays, tint: 'rgba(99,102,241,0.10)',  fg: '#4338ca' },
                   { label: 'Days Present', value: daysPresent, tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78' },
-                  { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207' },
+                  /* Loss of Pay can exceed the days missed, because the
+                     late-mark rule (BR-01) charges pay in days for days that
+                     WERE worked. Paid Days is an attendance figure and no
+                     longer absorbs that penalty (#114), so without this note a
+                     fully-present employee reads "Payable 25 / Paid 25 / Loss
+                     of Pay 1" with nothing joining the three up. */
+                  { label: 'Loss of Pay',  value: lossOfPay,   tint: 'rgba(245,158,11,0.10)',  fg: '#a16207',
+                    note: lateLopDays && lateLopDays > 0
+                      ? `incl. ${lateLopDays} for late marks`
+                      : undefined },
                   /* Week-offs are NOT inside Paid Days and must not be — the
                      salary is built from working days, which exclude them. But
                      with nothing on the slip naming them, "Paid Days 5" in a

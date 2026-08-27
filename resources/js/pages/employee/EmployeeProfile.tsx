@@ -445,7 +445,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           company: d.company,
           month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
           year: y || String(new Date().getFullYear()),
-          working: d.totalMonthDays ?? d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          /* workingDays FIRST — this feeds the viewer's "Payable Days" tile.
+             It was reading totalMonthDays (the calendar length of the month),
+             so an August slip showed "Payable Days 31" against "Paid Days 27"
+             and read as a 4-day shortfall for an employee who had not missed a
+             single day. The month's own length already has its own tile ("Days
+             in Month"), which the viewer computes itself — this one has to be
+             the payable WORKING days or the two cannot be compared. #114 */
+          working: d.workingDays ?? d.totalMonthDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          weekOff: d.weekOffDays, lateLop: d.lateLopDays,
         });
       })
       .catch(() => { /* keep prior */ })
@@ -3183,6 +3191,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         daysPresent={viewSlip?.present}
         paidDays={viewSlip?.paid}
         lossOfPay={viewSlip?.lop}
+        weekOffDays={viewSlip?.weekOff ?? 0}
+        lateLopDays={viewSlip?.lateLop}
         isFinal={viewSlip?.isFinal}
         /* #85 — hold the body until the breakup arrives. Without this the modal
            renders its own fallbacks (March, empty earnings/deductions, zero

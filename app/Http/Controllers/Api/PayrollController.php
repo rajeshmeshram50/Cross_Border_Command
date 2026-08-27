@@ -378,6 +378,32 @@ class PayrollController extends Controller
         $elapsed = $this->elapsedWorkingDaysMap($period, $slips);
         $rows = $slips->map(fn ($p) => $this->serializePayslip($p, false, $elapsed[$p->employee_id] ?? null));
 
+        /* Employees this cycle SHOULD pay who have no payslip in it yet. (#121)
+         *
+         * The run's payslips are a snapshot taken when Run Payroll was pressed.
+         * Anyone who joined — or finished onboarding — after that moment is
+         * eligible by every rule the engine applies, and yet appears nowhere on
+         * this screen: no row, no exclusion notice, nothing. An employee whose
+         * joining date is today simply is not there, which is indistinguishable
+         * from them having been dropped, and the only way to find out was to
+         * re-run the payroll and count.
+         *
+         * They are listed as real rows with a status of their own, so the
+         * screen shows who is waiting and the count matches the roster. Every
+         * money column is zero because nothing has been computed for them yet —
+         * the figures appear once payroll is re-run, which is exactly what the
+         * status tells HR to do. No payslip_id, so the row carries no payslip
+         * actions (the PDF handler already refuses a row without one). */
+        $pending = collect();
+        if ($run) {
+            $covered = $slips->pluck('employee_id')->filter()->map(fn ($i) => (int) $i)->all();
+            $pending = $this->payroll->eligibleEmployees($period)
+                ->reject(fn ($e) => in_array((int) $e->id, $covered, true))
+                ->map(fn ($e) => $this->serializePendingEmployee($e))
+                ->values();
+            $rows = $rows->concat($pending)->values();
+        }
+
         return response()->json([
             'data' => [
                 'period'  => $this->serializePeriod($period, $run),
@@ -607,6 +633,18 @@ class PayrollController extends Controller
     {
         return collect((array) ($payslip->exceptions ?? []))
             ->reject(fn ($e) => stripos((string) ($e['reason'] ?? ''), 'probation') !== false)
+            /* Professional Tax notes, dropped for the same reason and in the
+             * same way as the probation ones (#123). PayrollService no longer
+             * raises them, but every payslip generated before that has one
+             * stored in its `exceptions` JSON, and an open cycle is not re-run
+             * just because a message was withdrawn — so without this the
+             * warning would sit on the run screen for months on exactly the
+             * cycles HR is working through now.
+             *
+             * Matched on the head name rather than an exact string: the note
+             * has three wordings (no work state, no slab for the state, no band
+             * covering the gross) and all three are in the data. */
+            ->reject(fn ($e) => stripos((string) ($e['reason'] ?? ''), 'professional tax') !== false)
             ->values()
             ->all();
     }
@@ -1121,13 +1159,8 @@ class PayrollController extends Controller
         if (!$slip || !$this->ownsRow($request, $slip)) {
             return response()->json(['message' => 'Payslip not found.'], 404);
         }
-        // A payslip with an unresolved status must not be generated — On Hold
-        // (blocking issue) and Pending Review (needs HR verification) slips are
-        // not final figures, so producing a PDF would hand out a wrong slip.
-        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
-            return response()->json([
-                'message' => "Payslip can't be generated while the status is \"{$slip->status}\". Resolve the issue and set the payroll to Ready first.",
-            ], 422);
+        if ($msg = $this->pdfBlockReason($slip)) {
+            return response()->json(['message' => $msg], 422);
         }
 
         $bytes = $this->pdf->render($slip);
@@ -1156,22 +1189,42 @@ class PayrollController extends Controller
         $period = $this->payroll->resolveOrCreatePeriod($ctx, $month, $year);
         $run = $period->runs()->latest('id')->first();
 
-        $slips = Payslip::where('payroll_period_id', $period->id)
+        $matched = Payslip::where('payroll_period_id', $period->id)
             ->when($run, fn ($q) => $q->where('payroll_run_id', $run->id))
             ->when($request->query('department'), fn ($q, $d) => $q->where('department', $d))
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
-            // Unresolved slips (On Hold / Pending Review) aren't final, so they
-            // are excluded from bulk generation just like the single download.
-            ->whereNotIn('status', ['On Hold', 'Pending Review'])
             ->with('run:id,status')
             ->orderBy('employee_name')
             ->get();
 
+        /* Same rule as the single download — pdfBlockReason(), so the two
+           cannot drift apart. Unresolved slips are skipped only while the run
+           is still provisional; once it is approved or paid they print,
+           because approval already required acknowledging them. (#110) */
+        $slips = $matched->reject(fn ($s) => $this->pdfBlockReason($s) !== null)->values();
+
         if ($slips->isEmpty()) {
+            /* "Generate payroll first" is only true when the cycle really is
+               empty. When payroll HAS been generated and every slip was held
+               back as unresolved, that message sends HR to re-run a cycle that
+               already ran, and says nothing about the thing they actually have
+               to deal with. The two cases are now told apart. */
+            if ($matched->isNotEmpty()) {
+                $held = $matched->count();
+                return response()->json([
+                    'message' => "None of the {$held} payslip(s) in {$period->label} can be downloaded yet — "
+                        . 'every one is On Hold or Pending Review and the payroll has not been approved. '
+                        . 'Resolve the issues and regenerate, or approve the run first.',
+                ], 422);
+            }
+
             return response()->json(['message' => 'No payslips to download — generate payroll first.'], 422);
         }
 
-        // dompdf is ~1s/slip; give a large batch enough headroom to finish.
+        /* Headroom for the batch. A payslip renders in well under a second now
+           that the branch logo is downscaled before it is embedded (#110) — it
+           used to take 30–50s each, which no timeout on this endpoint could
+           have covered. 3s/slip leaves a wide margin over the measured rate. */
         @set_time_limit(max(120, $slips->count() * 3));
 
         $tmp = tempnam(sys_get_temp_dir(), 'pslip');
@@ -1207,10 +1260,13 @@ class PayrollController extends Controller
         if (!$this->isFinalSlip($slip)) {
             return response()->json(['message' => 'Approve the payroll before emailing payslips.'], 422);
         }
-        if (in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
-            return response()->json([
-                'message' => "Payslip can't be emailed while the status is \"{$slip->status}\". Resolve the issue first.",
-            ], 422);
+        /* isFinalSlip() above already established the run is approved/paid, so
+           this only ever fired for a slip whose figures ARE final — refusing to
+           email a payslip for money that had already been disbursed. Kept as a
+           call to the shared helper so the email, single-download and bulk
+           paths state one rule between them. (#110) */
+        if ($msg = $this->pdfBlockReason($slip)) {
+            return response()->json(['message' => $msg], 422);
         }
 
         $result = $this->sendPayslipMail($slip);
@@ -1303,6 +1359,40 @@ class PayrollController extends Controller
     private function isFinalSlip(Payslip $slip): bool
     {
         return in_array(optional($slip->run)->status, ['approved', 'paid'], true) || $slip->status === 'Paid';
+    }
+
+    /**
+     * Why this payslip cannot be turned into a PDF, or null when it can.
+     *
+     * The rule used to be "On Hold / Pending Review → refuse", full stop. The
+     * intent was right — those are not final figures and handing one to an
+     * employee gives them a wrong slip — but applying it regardless of the RUN
+     * left a dead end (#110):
+     *
+     *   · Approval already has its own gate. PayrollController::approve stops
+     *     on unresolved slips and only proceeds when the caller explicitly
+     *     acknowledges them, which is recorded in the audit log. Once that has
+     *     happened the figures ARE the approved figures.
+     *   · A paid run is locked and cannot be reopened. So a slip that was
+     *     acknowledged, approved and DISBURSED still refused to print, and the
+     *     message told HR to "set the payroll to Ready first" — an instruction
+     *     that is impossible to carry out on a locked run. The employee had
+     *     been paid and could not be given a payslip for it.
+     *
+     * So the block now follows the run, not the row: provisional while the run
+     * is still draft/generated, printable once it is approved or paid.
+     */
+    private function pdfBlockReason(Payslip $slip): ?string
+    {
+        if (!in_array($slip->status, ['On Hold', 'Pending Review'], true)) {
+            return null;
+        }
+        if ($this->isFinalSlip($slip)) {
+            return null;
+        }
+
+        return "Payslip can't be generated while the status is \"{$slip->status}\" and the payroll "
+            . 'has not been approved. Resolve the issue and regenerate, or approve the run first.';
     }
 
     private function periodLabelFor(Payslip $slip): string
@@ -1433,6 +1523,8 @@ class PayrollController extends Controller
             'processed'      => $rows->whereIn('status', ['Processed', 'Paid'])->count(),
             'pendingReview'  => $rows->where('status', 'Pending Review')->count(),
             'onHold'         => $rows->where('status', 'On Hold')->count(),
+            // Eligible employees the current run has not computed yet (#121).
+            'notInRun'       => $rows->where('status', 'Not in Run')->count(),
             'totalPayroll'   => round($rows->sum('netPay'), 2),
             'totalGross'     => round($rows->sum('earnings'), 2),
             'totalNetPay'    => round($rows->sum('netPay'), 2),
@@ -1676,6 +1768,12 @@ class PayrollController extends Controller
                 }
             }
             $row['lopDays']           = (float) $p->lop_days;
+            /* How much of Loss of Pay is the late-mark penalty rather than days
+             * missed. Null on slips generated before the column existed — the
+             * viewer prints the note only when it has a real figure, rather
+             * than asserting "0 of which late" about a cycle that never
+             * recorded the split. (#114) */
+            $row['lateLopDays']       = $p->late_lop_days === null ? null : (float) $p->late_lop_days;
             // Total calendar days of the month — salary & LOP are computed on
             // this basis (÷30/31), so the payslip shows it as the day count.
             $row['totalMonthDays']    = $p->period
@@ -1690,6 +1788,61 @@ class PayrollController extends Controller
         }
 
         return $row;
+    }
+
+    /**
+     * A roster row for an employee the run has not computed yet (#121).
+     *
+     * Deliberately the SAME shape serializePayslip() returns, so the grid, the
+     * filters and the export all treat it as an ordinary row — the only
+     * differences are a status of its own and a null payslip_id, which is what
+     * stops the payslip actions offering anything for a slip that does not
+     * exist. Money columns are zero rather than null: every consumer sums them.
+     */
+    private function serializePendingEmployee(\App\Models\Employee $e): array
+    {
+        $name = trim(($e->first_name ?? '') . ' ' . ($e->last_name ?? '')) ?: ($e->display_name ?: 'Employee');
+        $parts = preg_split('/\s+/', trim($name));
+        $initials = strtoupper(substr($parts[0] ?? '', 0, 1) . substr(end($parts) ?: '', 0, 1));
+
+        return [
+            'id'          => 'pending-' . $e->id,
+            'payslip_id'  => null,
+            'empId'       => $e->emp_code ?: ('EMP-' . $e->id),
+            'employee_id' => $e->id,
+            'encryptedId' => $this->encId($e->id),
+            'name'        => $name,
+            'initials'    => $initials ?: 'NA',
+            'accent'      => $this->accentFor($e->id),
+            'department'  => $e->department?->name ?? '—',
+            'designation' => $e->designation?->name ?? '—',
+            'ctc'         => 0.0,
+            'earnings'    => 0.0,
+            'deductions'  => 0.0,
+            'netPay'      => 0.0,
+            'attendance'  => 0.0,
+            'workingDays' => 0.0,
+            'lop_days'    => 0.0,
+            'status'      => 'Not in Run',
+            'present'     => 0.0,
+            'absent'      => 0.0,
+            'lateMarks'   => 0,
+            'missingPunch'=> 0,
+            'unpaidLeave' => 0.0,
+            'paidLeave'   => 0.0,
+            'attSource'   => 'Manual',
+            'mismatch'    => null,
+            'attMismatch' => false,
+            'pfEmp'       => 0.0,
+            'esi'         => 0.0,
+            'pt'          => 0.0,
+            'tds'         => 0.0,
+            'lopDeducted' => 0.0,
+            'advanceRec'  => 0.0,
+            'holdReason'  => 'Joined after this payroll was generated — re-run payroll to include them.',
+            'reasons'     => ['Not included in the current run — re-run payroll to compute their salary.'],
+            'bankVerified'=> (bool) ($e->bank_account_number && $e->ifsc_code),
+        ];
     }
 
     private function accentFor(int $id): string

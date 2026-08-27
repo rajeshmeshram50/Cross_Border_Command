@@ -15,7 +15,7 @@ import '../../../css/recruitment.css';
 import '../employee-onboarding/HrEmployeeOnboarding.css';
 
 type CycleStatus = 'Completed' | 'In Progress' | 'Not Started';
-type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold' | 'Paid';
+type RowStatus   = 'Ready' | 'Processed' | 'Pending Review' | 'On Hold' | 'Paid' | 'Not in Run';
 type AttSource   = 'Biometric' | 'Review' | 'Manual';
 
 interface CycleMonth {
@@ -172,6 +172,10 @@ const ROW_TONES: Record<string, { bg: string; fg: string; dot: string }> = {
   'Pending Review': { bg: '#fdf3d6', fg: '#a06f00', dot: '#f59e0b' },
   'On Hold':        { bg: '#fdd9d6', fg: '#b1401d', dot: '#f06548' },
   'Paid':           { bg: '#d6f4e3', fg: '#0a7d5a', dot: '#0ab39c' },
+  /* Eligible for this cycle, but the run predates them — a joiner the payroll
+     has not been computed for yet. Neutral grey on purpose: nothing is wrong
+     with the employee, the run is simply older than they are. (#121) */
+  'Not in Run':     { bg: '#e9ecef', fg: '#5e6470', dot: '#adb5bd' },
 };
 
 const toneFor = (status: string) => ROW_TONES[status] ?? ROW_TONES['Processed'];
@@ -184,6 +188,7 @@ const STATUS_OPTIONS: { value: 'All' | RowStatus; label: string }[] = [
   { value: 'Pending Review', label: 'Pending Review' },
   { value: 'On Hold',        label: 'On Hold' },
   { value: 'Paid',           label: 'Paid' },
+  { value: 'Not in Run',     label: 'Not in Run' },
 ];
 
 const KPI_CARDS = [
@@ -307,9 +312,18 @@ export default function HrPayroll() {
   const [rosterLoading, setRosterLoading] = useState(false);
   const [salaryEmp, setSalaryEmp] = useState<SalaryEmployeeLite | null>(null);
 
-  const loadRoster = () => {
+  /* Salary Setup is a tab inside a CYCLE, so its roster has to be fetched for
+     that cycle. It used to be fetched bare, which listed every active employee
+     regardless of the month on screen — so an August joiner appeared in the
+     July setup, and the "needs setup" badge counted them, leaving July looking
+     permanently unfinished over people July will never pay. (#116) */
+  const loadRoster = (forMonth?: number, forYear?: number) => {
+    const m = forMonth ?? cycle?.month;
+    const y = forYear ?? cycle?.year;
     setRosterLoading(true);
-    api.get('/salary-structures/employees')
+    api.get('/salary-structures/employees', {
+      params: (m && y) ? { month: m, year: y } : undefined,
+    })
       .then(res => setRoster(Array.isArray(res.data?.data) ? res.data.data : []))
       .catch(() => setRoster([]))
       .finally(() => setRosterLoading(false));
@@ -324,7 +338,19 @@ export default function HrPayroll() {
    *
    * The other three tabs already have their counts on mount (they come from
    * the payroll rows), so this also stops Salary Setup being the odd one out. */
-  useEffect(() => { loadRoster(); /* eslint-disable-next-line */ }, []);
+  /* Re-fetched when the CYCLE changes, not just on mount — switching from
+     August back to July has to drop the August joiners from the list and from
+     the badge. (#116)
+
+     Keyed on `cycleKey` (the state, declared above) and NOT on `cycle.month` /
+     `cycle.year`: `cycle` is a useMemo declared further down the component, and
+     a dependency array is evaluated DURING RENDER, so naming it here read a
+     const before its initialiser had run and threw
+     "Cannot access 'cycle' before initialization" — a blank payroll page.
+     cycleKey is what `cycle` is derived from, so it changes on exactly the same
+     occasions, and loadRoster() reads `cycle` when it is CALLED (after render),
+     by which time it is initialised. */
+  useEffect(() => { loadRoster(); /* eslint-disable-next-line */ }, [cycleKey]);
   const [q, setQ] = useState('');
   const [deptFilter, setDeptFilter]     = useState<string>('All');
   const [statusFilter, setStatusFilter] = useState<'All' | RowStatus>('All');
@@ -362,7 +388,7 @@ export default function HrPayroll() {
   // so View PDF / the day chips always reflect the SELECTED period — not the
   // period the modal was first opened on.
   const [activePayslipId, setActivePayslipId] = useState<number | undefined>(undefined);
-  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number; weekOffDays?: number } | null>(null);
+  const [payslipDays, setPayslipDays] = useState<{ present?: number; lopDays?: number; totalMonthDays?: number; paidDays?: number; workingDays?: number; weekOffDays?: number; lateLopDays?: number } | null>(null);
   /* Overtime for the open payslip. Only populated for employees the employee
      master marks overtime-applicable — drives the OT Hours KPI and the
      Overtime Allowance earnings line. */
@@ -414,6 +440,11 @@ export default function HrPayroll() {
           // client (which mixed calendar-month total with working-day LOP). (#33)
           paidDays: typeof d.paidDays === 'number' ? d.paidDays : undefined,
           workingDays: typeof d.workingDays === 'number' ? d.workingDays : undefined,
+          /* Both of these were declared in the state's type and read by the
+             viewer, but never actually set here — so the week-off note under
+             Paid Days could never appear. (#114) */
+          weekOffDays: typeof d.weekOffDays === 'number' ? d.weekOffDays : undefined,
+          lateLopDays: typeof d.lateLopDays === 'number' ? d.lateLopDays : undefined,
         });
         setPayslipOt(d.overtimeApplicable ? {
           applicable: true,
@@ -447,6 +478,18 @@ export default function HrPayroll() {
   };
 
   const openPayslip = (row: PayrollRow) => {
+    /* A row with no payslip has nothing to show. "Not in Run" rows are
+       employees this cycle is eligible to pay but the run predates, so there is
+       no slip behind them until payroll is re-run — opening the viewer would
+       fetch /payroll/payslip/undefined and land on an error dialog. Say what to
+       do instead. (#121) */
+    if (!row.payslip_id) {
+      toast.error(
+        'No payslip yet',
+        `${row.name} is not in the current payroll run — re-run payroll for this cycle to compute their salary.`,
+      );
+      return;
+    }
     setPaySlipRow(row);
     setPayslipBreakup(null);
     setPayslipFinal(undefined);
@@ -924,8 +967,20 @@ export default function HrPayroll() {
       a.download = `${row.name.replace(/\s+/g, '_')}_${cycle.label.replace(' ', '_')}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast.error('Download failed', 'Could not generate the payslip PDF.');
+    } catch (err: any) {
+      /* Surface what the SERVER said. This was a bare `catch {}` printing
+         "Could not generate the payslip PDF" for every outcome — a permission
+         refusal, a slip the run has not approved yet, a missing payslip — so a
+         normal, explained 422 read as a broken PDF engine and got raised as
+         one (#110). The body arrives as a Blob because the request asks for
+         one, so it has to be read back as text before it is JSON. Mirrors the
+         bulk-download handler below. */
+      let msg = 'Could not generate the payslip PDF.';
+      if (err?.response?.status === 403) msg = 'You are not allowed to download payslips.';
+      else if (err?.response?.data instanceof Blob) {
+        try { msg = JSON.parse(await err.response.data.text())?.message || msg; } catch { /* keep default */ }
+      } else if (err?.response?.data?.message) msg = err.response.data.message;
+      toast.error('Download failed', msg);
     } finally {
       setPdfBusyId(null);
     }
@@ -1017,13 +1072,23 @@ export default function HrPayroll() {
     setDownloading('excel');
     try {
     const sheet = rows.map(r => {
-      const lopDays = Math.max(0, (periodMeta?.working_days || 26) - r.attendance);
+      /* Both of these came off the PERIOD, not the employee — and LOP was
+         re-derived on the client from the difference. #114
+         `periodMeta.working_days` is the company-wide figure (calendar minus
+         Sundays), while Paid Days is per-employee: it honours that person's own
+         weekly-off pattern and any mid-cycle join. Putting the two side by side
+         showed a shortfall for people who had not missed anything — a
+         Saturday-and-Sunday-off employee read "Working 26 / Paid 22 / LOP 4".
+         The `|| 26` fallback invented a number of its own on top.
+         The server already sends both figures per row, computed together; the
+         export just has to print them. */
+      const lopDays = r.lop_days ?? Math.max(0, (r.workingDays ?? 0) - r.attendance);
       return {
         'Emp Code': r.empId,
         'Employee': r.name,
         'Department': r.department,
         'Designation': r.designation,
-        'Working Days': periodMeta?.working_days || 26,
+        'Working Days': r.workingDays ?? periodMeta?.working_days ?? '',
         'Present': r.present,
         'Paid Days': r.attendance,
         'LOP Days': lopDays,
@@ -1270,8 +1335,13 @@ export default function HrPayroll() {
       meta: { width: '6%', align: 'center' },
       cell: info => {
         const r = info.row.original;
-        const wd = periodMeta?.working_days || 26;
-        const low = r.present < wd;
+        /* The employee's OWN payable days, not the cycle's company-wide count.
+           The denominator was periodMeta.working_days (calendar minus Sundays)
+           while the numerator is this employee's attendance — so anyone on a
+           Saturday-and-Sunday week-off, or who joined mid-cycle, read "22/26"
+           and was flagged amber for four days they were never due to work. #114 */
+        const wd = r.workingDays ?? periodMeta?.working_days ?? 0;
+        const low = wd > 0 && r.present < wd;
         return (
           <span className="onb-role-pill pay-att-badge" data-att={low ? 'low' : 'ok'} style={low ? { background: '#fde8c4', color: '#a4661c' } : undefined}>
             {r.present}/{wd}
@@ -2381,11 +2451,16 @@ export default function HrPayroll() {
             defaultYear={yStr}
             earnings={earnings}
             deductions={deductions}
-            workingDays={payslipDays?.workingDays ?? r.workingDays ?? periodMeta?.working_days ?? 26}
+            /* Per-employee only. The old chain fell back to the cycle's
+               company-wide figure and then to a hardcoded 26, either of which
+               puts a number next to Paid Days that was never computed on the
+               same basis. #114 */
+            workingDays={payslipDays?.workingDays ?? r.workingDays}
             daysPresent={payslipDays?.present ?? r.present}
             lossOfPay={payslipDays?.lopDays ?? r.lop_days ?? 0}
             paidDays={payslipDays?.paidDays ?? r.attendance ?? 0}
             weekOffDays={payslipDays?.weekOffDays ?? 0}
+            lateLopDays={payslipDays?.lateLopDays}
             overtimeApplicable={!!payslipOt?.applicable}
             overtimeHours={payslipOt?.hours ?? 0}
             overtimeDetectedHours={payslipOt?.detectedHours ?? 0}
