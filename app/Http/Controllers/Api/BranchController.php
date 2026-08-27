@@ -148,6 +148,13 @@ class BranchController extends Controller
             // accepts a literal false — it only rejects null / "" / absent,
             // which is exactly the "never chosen" case we want to block.
             'sandwich_policy' => 'required|boolean',
+            /* Loss-of-pay policy. Two scalars rather than a nested
+               `lop_policy` object because this form also posts as
+               multipart (logo / signature uploads), where a nested array
+               arrives as a JSON string and validation on it is guesswork.
+               Composed into the stored object by Branch::normalizeLopPolicy. */
+            'lop_basis'   => ['nullable', Rule::in(Branch::LOP_BASES)],
+            'lop_divisor' => ['nullable', Rule::in(Branch::LOP_DIVISORS)],
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             /* The branch's legal identity is MANDATORY (QA #5 / #6): these
@@ -268,6 +275,14 @@ class BranchController extends Controller
                     'contact_person' => $request->contact_person,
                     'branch_type' => $request->branch_type,
                     'sandwich_policy' => $request->boolean('sandwich_policy'),
+                    /* normalizeLopPolicy() applies the documented defaults
+                       (basic ÷ calendar) for anything absent or unrecognised,
+                       so a caller that omits these gets the same policy new
+                       branches have always had. */
+                    'lop_policy' => Branch::normalizeLopPolicy([
+                        'basis'   => $request->input('lop_basis'),
+                        'divisor' => $request->input('lop_divisor'),
+                    ]),
                     'industry' => $request->industry,
                     'description' => $request->description,
                     'gst_number' => $request->gst_number,
@@ -522,6 +537,13 @@ class BranchController extends Controller
             // accepts a literal false — it only rejects null / "" / absent,
             // which is exactly the "never chosen" case we want to block.
             'sandwich_policy' => 'required|boolean',
+            /* Loss-of-pay policy. Two scalars rather than a nested
+               `lop_policy` object because this form also posts as
+               multipart (logo / signature uploads), where a nested array
+               arrives as a JSON string and validation on it is guesswork.
+               Composed into the stored object by Branch::normalizeLopPolicy. */
+            'lop_basis'   => ['nullable', Rule::in(Branch::LOP_BASES)],
+            'lop_divisor' => ['nullable', Rule::in(Branch::LOP_DIVISORS)],
             'industry' => 'nullable|string|max:100',
             'description' => 'nullable|string',
             // Mandatory on edit too — see the matching block in store().
@@ -689,6 +711,31 @@ class BranchController extends Controller
                          * payslip in the branch is stale the moment it is
                          * flipped. Locked/paid runs are frozen and skipped inside
                          * recomputeEmployeePayslips(). */
+                        $this->recomputeBranchPayslips($branch);
+                    }
+                }
+
+                /* Loss-of-pay policy — which amount an absent day is priced
+                 * against (basic or gross) and over how many days.
+                 *
+                 * Payroll reads this on every run, so a change has to invalidate
+                 * the same draft payslips a sandwich-policy change does: the
+                 * per-day LOP rate moves, and every draft priced under the old
+                 * basis is stale the moment it is saved. Locked / paid runs are
+                 * frozen and skipped inside recomputeEmployeePayslips().
+                 *
+                 * Only the keys actually sent are changed — a partial update
+                 * (basis only) keeps the stored divisor rather than silently
+                 * resetting it to the default. */
+                if ($request->has('lop_basis') || $request->has('lop_divisor')) {
+                    $lopBefore = $branch->lopPolicy();
+                    $lopAfter  = Branch::normalizeLopPolicy([
+                        'basis'   => $request->input('lop_basis',   $lopBefore['basis']),
+                        'divisor' => $request->input('lop_divisor', $lopBefore['divisor']),
+                    ]);
+
+                    if ($lopBefore !== $lopAfter) {
+                        $branch->update(['lop_policy' => $lopAfter]);
                         $this->recomputeBranchPayslips($branch);
                     }
                 }
