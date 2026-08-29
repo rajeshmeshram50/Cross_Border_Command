@@ -850,7 +850,15 @@ function Stage1(p: {
   // machinery). The hook owns the ProseMirror document model, formatting-toolbar
   // commands, caret-safe insertion, and debounced sync back to the parent draft.
   const docxRef = useRef<HTMLInputElement | null>(null);
-  const ctcEd = useCtcEditor({ value: p.draft, onChange: p.setDraft, editable: !p.editLock });
+  const ctcEd = useCtcEditor({
+    value: p.draft,
+    onChange: p.setDraft,
+    editable: !p.editLock,
+    onLimit: (attempted, max) => toast.error(
+      'Content limit reached',
+      `That paste would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+    ),
+  });
   // Placeholder / clause side-panels call these; route them through the editor.
   const insertText = (text: string) => ctcEd.insertText(text);
   const insertHtml = (html: string) => ctcEd.insertHTML(html);

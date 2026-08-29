@@ -153,7 +153,14 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
   // on a successful save. Download is blocked while dirty so the user never
   // downloads a stale (last-saved) version of edits they can still see.
   const [dirty, setDirty] = useState(false);
-  const agr: CtcEditor = useCtcEditor({ value: content, onChange: (html) => { setContent(html); setDirty(true); } });
+  const agr: CtcEditor = useCtcEditor({
+    value: content,
+    onChange: (html) => { setContent(html); setDirty(true); },
+    onLimit: (attempted, max) => toast.error(
+      'Content limit reached',
+      `That paste would take this agreement to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+    ),
+  });
   const [placeholderOpen, setPlaceholderOpen] = useState(false);
   const [clauseOpen, setClauseOpen]           = useState(false);
   /* Insert Table / Insert HR — same pattern Trade Doc uses. Caret is

@@ -18,6 +18,12 @@ import { deriveShortCode } from './ClmTncPage';
 import ClmClauseInsertPanel from './ClmClauseInsertPanel';
 import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS, TNC_FONT_FAMILIES } from '../operations/CtcRichEditor';
 
+/* Same 1,000,000-character ceiling the other CLM editors carry. A T&C is
+   inserted into an agreement, so it is the AGREEMENT's PDF that dies past
+   this — which is exactly why the limit has to be enforced here rather
+   than left to whoever assembles the document later. */
+const TNC_MAX_CHARS = 1000000;
+
 /* Block-indent extension — StarterKit's list sink/lift only work *inside* a
  * list, so the Indent/Outdent toolbar buttons did nothing on plain paragraphs
  * or headings. This adds an `indent` level attribute (rendered as margin-left)
@@ -160,7 +166,12 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
        useEditor is kept rather than useCtcEditor because this wizard hydrates
        and syncs its own way (see the open effect, and onUpdate below); only the
        extensions are shared. */
-    extensions: ctcExtensions(),
+    extensions: ctcExtensions({
+      onLimit: (attempted, max) => toast.error(
+        'Content limit reached',
+        `That paste would take this T&C to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports of whatever hosts it stop working, so it was not added.`,
+      ),
+    }),
     content: '<p></p>',
     onUpdate({ editor }) {
       setContent(editor.getHTML());
@@ -450,11 +461,11 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
               );
             })}
           </div>
+          {/* The two progress bars are gone. The stepper beside them already
+              says which step you are on and how many there are — a second,
+              wordless reading of the same thing. The "Step 1 of 2" label is
+              kept: it is the one part that states the count outright. */}
           <div className="tnw-stepper-progress">
-            <div className="tnw-stepper-bars">
-              <span className={`tnw-stepper-bar ${step >= 1 ? 'on' : ''}`} />
-              <span className={`tnw-stepper-bar ${step >= 2 ? 'on' : ''}`} />
-            </div>
             <div className="tnw-stepper-label">Step {step} of {STEPS.length}</div>
           </div>
         </div>
@@ -634,6 +645,21 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
                     .then(({ data }) => {
                       const html = (data?.html ?? '').trim();
                       if (!html) { toast.warning('Nothing to import', 'The document appears to be empty.'); return; }
+                      /* The 1,000,000-character ceiling, checked BEFORE the
+                         content goes in. Past it the PDF and Word exports of
+                         whatever hosts this T&C are dead, and seeding first
+                         would leave the user to undo it by hand.
+                         INSERTED, not replaced, so the existing content counts
+                         towards the total — a clause pasted into an already
+                         long T&C has to be measured against what is there. */
+                      const total = (editor.getHTML()?.length ?? 0) + html.length;
+                      if (total > TNC_MAX_CHARS) {
+                        toast.error(
+                          'Document too long',
+                          `${file.name} would take this T&C to ${total.toLocaleString()} characters — the limit is ${TNC_MAX_CHARS.toLocaleString()}. Shorten it or split it into separate T&Cs.`,
+                        );
+                        return;
+                      }
                       editor.chain().focus().insertContent(html).run();
                       toast.success('Imported', `${file.name} loaded into the editor.`);
                     })

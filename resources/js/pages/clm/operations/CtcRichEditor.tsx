@@ -1123,6 +1123,115 @@ export function repairBrokenLinkHrefs(html: string): string {
 }
 
 /**
+ * The 1,000,000-character ceiling, enforced on the way IN.
+ *
+ * Past it the PDF and Word exports are dead — dompdf and PhpWord do not fail
+ * gracefully on a document that size, they take the request down. So the limit
+ * was already checked on DOCX upload, and shown by the counter under every
+ * editor. Neither of those covers a paste: someone could drop five megabytes of
+ * text in, watch the counter turn red, and save it anyway.
+ *
+ * A paste is the only realistic way to cross a million characters by hand —
+ * typing cannot — so paste and drop are the two events guarded. Typing is left
+ * alone deliberately: checking every keystroke would mean serialising the whole
+ * document on each one, and it cannot cross the line a character at a time.
+ *
+ * The message is not shown from here. The extension reports to whoever
+ * configured it, so each editor raises it through its own toast rather than
+ * this file inventing a second notification style.
+ */
+export const CONTENT_MAX_CHARS = 1000000;
+
+type ContentLimitOptions = {
+  max: number;
+  onExceed?: (attempted: number, max: number) => void;
+};
+
+const ContentLimit = Extension.create<ContentLimitOptions>({
+  name: 'contentLimit',
+  addOptions() {
+    return { max: CONTENT_MAX_CHARS, onExceed: undefined };
+  },
+  /* The document's HTML length, cached.
+     getHTML() serialises the whole document, so it cannot be called on every
+     keystroke of a million-character draft. It is already called once per
+     update by the editors' own onChange, so the number is taken from there and
+     reused — the guard costs nothing per key. */
+  addStorage() {
+    return { htmlLen: 0, lastWarn: 0 };
+  },
+  onCreate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
+  onUpdate() { this.storage.htmlLen = this.editor.getHTML()?.length ?? 0; },
+  addProseMirrorPlugins() {
+    const { max, onExceed } = this.options;
+    const editor = this.editor;
+    const storage = this.storage;
+
+    /* One message per two seconds. Typing at the ceiling fires the guard on
+       every key, and a toast per keystroke is worse than the thing it warns
+       about. */
+    const warn = (attempted: number) => {
+      const now = Date.now();
+      if (now - storage.lastWarn < 2000) return;
+      storage.lastWarn = now;
+      onExceed?.(attempted, max);
+    };
+
+    /* True = block. Measured against getHTML() so the number matches the
+       counter on screen, not a different idea of "length" that would reject at
+       a figure the user never saw. */
+    const wouldOverflow = (incoming: number): boolean => {
+      const attempted = (editor.getHTML()?.length ?? 0) + incoming;
+      if (attempted <= max) return false;
+      warn(attempted);
+      return true;
+    };
+
+    /* At or past the ceiling, nothing more goes in. Uses the CACHED length —
+       see addStorage. */
+    const atCeiling = (incoming: number): boolean => {
+      const attempted = storage.htmlLen + incoming;
+      if (attempted <= max) return false;
+      warn(attempted);
+      return true;
+    };
+
+    return [
+      new Plugin({
+        key: new PluginKey('contentLimit'),
+        props: {
+          handlePaste(_view, event) {
+            const cd = (event as ClipboardEvent).clipboardData;
+            const len = (cd?.getData('text/html') || cd?.getData('text/plain') || '').length;
+            return wouldOverflow(len);
+          },
+          handleDrop(_view, event) {
+            const dt = (event as DragEvent).dataTransfer;
+            const len = (dt?.getData('text/html') || dt?.getData('text/plain') || '').length;
+            return wouldOverflow(len);
+          },
+          /* Typing. A document sitting just under the ceiling walks past it one
+             character at a time, which is exactly how a draft reached
+             1,000,043 — the paste guard alone was never going to catch that.
+             handleTextInput and handleKeyDown are USER-input hooks: they never
+             fire for setContent, so hydrating a document that is already at the
+             limit still works. A filterTransaction guard would have blocked
+             that too and left the editor blank. */
+          handleTextInput(_view, _from, _to, text) {
+            return atCeiling(text.length);
+          },
+          handleKeyDown(_view, event) {
+            // Enter opens a new block — a few characters of HTML, not one.
+            if (event.key !== 'Enter') return false;
+            return atCeiling(8);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+/**
  * The extension set behind the CLM editors.
  *
  * Exported because the toolbar (CtcToolbar) is only as capable as the
@@ -1137,8 +1246,12 @@ export function repairBrokenLinkHrefs(html: string): string {
  * nobody can insert — while leaving them out would mean any page break already
  * saved in a document could not be parsed back.
  */
-export function ctcExtensions() {
+export function ctcExtensions(opts?: {
+  /** Called when a paste or drop would cross CONTENT_MAX_CHARS. */
+  onLimit?: (attempted: number, max: number) => void;
+}) {
   return [
+    ContentLimit.configure({ max: CONTENT_MAX_CHARS, onExceed: opts?.onLimit }),
       // StarterKit v3 BUNDLES link + underline, so configure link HERE (a second
     // Link extension would be a duplicate and its config ignored). autolink/
     // linkOnPaste OFF: they linkify any "word.word" text as a domain, which
@@ -1191,14 +1304,21 @@ export function ctcExtensions() {
   ];
 }
 
-export function useCtcEditor(opts: { value: string; onChange: (html: string) => void; editable?: boolean }): CtcEditor {
-  const { value, onChange, editable = true } = opts;
+export function useCtcEditor(opts: {
+  value: string;
+  onChange: (html: string) => void;
+  editable?: boolean;
+  /** Raised when a paste or drop would cross CONTENT_MAX_CHARS. The editor
+   *  blocks the input either way; this is how the screen says so. */
+  onLimit?: (attempted: number, max: number) => void;
+}): CtcEditor {
+  const { value, onChange, editable = true, onLimit } = opts;
   const lastSyncedRef = useRef<string>(value);
   const syncTimer = useRef<number | null>(null);
 
   const editor = useEditor({
     editable,
-    extensions: ctcExtensions(),
+    extensions: ctcExtensions({ onLimit }),
     content: repairBrokenLinkHrefs(value) || '<p></p>',
     onUpdate({ editor }) {
       const html = editor.getHTML();
@@ -1410,6 +1530,43 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
   /* Every structure command is a no-op outside a table, so the menu greys
      them out rather than letting a click do nothing silently. */
   const inTable = editor.isActive('table');
+
+  /* ── Sub points ────────────────────────────────────────────────────────
+     The flag belongs on the OUTERMOST ordered list, never on the level the
+     caret happens to be in.
+     Word applies a multilevel scheme to the whole list, and the CSS here does
+     the same: the numbering is `counters(legal, ".")` walking down from the top
+     list, so 1 / 1.1 / 1.1.1 only comes out if the top one carries the flag.
+     updateAttributes() writes to the nearest matching node — so pressing Tab
+     first and then the button marked the SUB-list, leaving the parent on plain
+     decimal and the two levels numbering independently. */
+  const outerOrderedList = (): { pos: number; node: any } | null => {
+    const $from = editor.state.selection.$from;
+    let found: { pos: number; node: any } | null = null;
+    for (let d = 1; d <= $from.depth; d++) {
+      const n = $from.node(d);
+      if (n.type.name === 'orderedList' && !found) found = { pos: $from.before(d), node: n };
+    }
+    return found;   // the SHALLOWEST ordered list, i.e. the top of the list
+  };
+  const legalListOn = !!outerOrderedList()?.node.attrs.legal;
+  const toggleLegalList = () => {
+    if (!editor.isActive('orderedList')) {
+      // No list yet — make one, then mark it. The new list is the outermost by
+      // definition, so a second lookup is not needed.
+      editor.chain().focus().toggleOrderedList().updateAttributes('orderedList', { legal: '1' }).run();
+      return;
+    }
+    const outer = outerOrderedList();
+    if (!outer) return;
+    editor.view.dispatch(
+      editor.state.tr.setNodeMarkup(outer.pos, undefined, {
+        ...outer.node.attrs,
+        legal: outer.node.attrs.legal ? null : '1',
+      }),
+    );
+    editor.commands.focus();
+  };
 
   /* ── Find and Replace ──────────────────────────────────────────────────
      The plugin owns the matches; these push the query into it and act on what
@@ -1692,10 +1849,14 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           className={`ctcte-pgbtn${spacingOpen ? ' is-open' : ''}`}
           onMouseDown={e => e.preventDefault()}
           onClick={() => setSpacingOpen(o => !o)}
-          title="Line and paragraph spacing"
+          title={`Line and paragraph spacing${curLineHeight ? ` — ${curLineHeight}` : ''}`}
         >
-          <Ico d="M3 5h18M3 12h18M3 19h18" />
-          {curLineHeight || 'Spacing'}
+          {/* Word's icon: the text lines on the right, the up/down arrow that
+              measures the gap between them on the left. */}
+          <Ico d="M9 5h12M9 12h12M9 19h12M4 4v16M4 4l-2 2.5M4 4l2 2.5M4 20l-2-2.5M4 20l2-2.5" />
+          {/* The current value is kept as a caption — it is the one thing the
+              icon cannot say, and it is what people check before changing it. */}
+          {curLineHeight && <span className="ctcte-btn-val">{curLineHeight}</span>}
         </button>
         {spacingOpen && (
           <>
@@ -1768,16 +1929,17 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           starts one where there is no list yet. Tab / Shift+Tab then move a
           line in and out a level, the way they already do in any list here. */}
       <TB
-        active={editor.isActive('orderedList') && !!editor.getAttributes('orderedList').legal}
-        onClick={() => {
-          const chain = editor.chain().focus();
-          if (!editor.isActive('orderedList')) chain.toggleOrderedList();
-          const on = !!editor.getAttributes('orderedList').legal;
-          chain.updateAttributes('orderedList', { legal: on ? null : '1' }).run();
-        }}
+        active={legalListOn}
+        onClick={toggleLegalList}
         title="Sub points (1.1, 1.1.1)"
       >
-        <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: '-.02em' }}>1.1</span>
+        {/* Text, not an icon — deliberately, and the only one on this bar.
+            Word's multilevel glyph is stepped rules with markers, which at 13px
+            is indistinguishable from the numbered list and the two indent
+            buttons standing right next to it: four near-identical icons in a
+            row, one of which does something entirely different.
+            "1.1" says what the others cannot and is read at a glance. */}
+        <span className="ctcte-btn-txt">1.1</span>
       </TB>
       </div>
       <span className="ctcte-div" />
@@ -1809,7 +1971,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           title="Table"
         >
           <Ico d="M3 5h18v14H3zM3 10h18M3 15h18M9 5v14M15 5v14" />
-          Table
         </button>
         {tableOpen && (
           <>
@@ -1939,7 +2100,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           title="Find and replace"
         >
           <Ico d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.35-4.35" />
-          Find
         </button>
         {findOpen && (
           <div className="ctcte-findpop" onMouseDown={e => e.stopPropagation()}>
@@ -1995,7 +2155,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
       {!hidePageBreak && (
         <button
           type="button"
-          className="ctcte-pgbtn"
+          className="ctcte-pgbtn ctcte-pgbtn-label"
           title="Insert a page break — the PDF starts a new page from here"
           onMouseDown={e => e.preventDefault()}
           onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
@@ -2217,6 +2377,19 @@ export const CTC_EDITOR_CSS = `
   font-weight: 700;
   margin-right: 6px;
 }
+/* The number and its text on ONE line.
+   A list item's content in ProseMirror is a <p>, and a <p> is a block — so the
+   ::before marker took a line of its own and every clause came out as "1." with
+   its words underneath. Only the FIRST paragraph goes inline: a clause that
+   runs to a second paragraph should still break, it just should not break
+   between the number and the sentence it numbers. */
+.ctcte-content .ProseMirror ol[data-legal] li > p:first-of-type {
+  display: inline;
+  margin: 0;
+}
+/* A nested level is a block again, or the sub-list would run on inside its
+   parent's sentence. */
+.ctcte-content .ProseMirror ol[data-legal] li > ol { display: block; }
 .ctcte-content .ProseMirror .column-resize-handle {
   position: absolute; right: -2px; top: 0; bottom: 0; width: 4px;
   background: #7C3AED; pointer-events: none; z-index: 20;
@@ -2368,6 +2541,17 @@ export const CTC_EDITOR_CSS = `
 .ctcte-spanmark { border-top: none !important; box-shadow: none !important; }
 
 .ctcte-pgbtn { height: 26px; padding: 0 9px; border: 1.5px solid #DDD6FE; border-radius: 7px; background: #F5F3FF; color: #6D28D9; font-family: inherit; font-size: 10.5px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; transition: background .12s, border-color .12s; }
+/* Icon-only buttons are square. Without this they keep the 9px side padding a
+   labelled button needs and read as wide empty pills. Page Break keeps its
+   words — it inserts something permanent, and an icon alone invites the
+   accidental click. */
+.ctcte-pgbtn:not(.ctcte-pgbtn-label) { padding: 0 6px; }
+/* The spacing value beside its icon (1.5, 2.0…). Not a label — the number is
+   the state, which no icon can show. */
+.ctcte-btn-val { font-size: 9.5px; font-weight: 800; letter-spacing: -.02em; }
+/* A button whose glyph IS text (the sub-points 1.1). Sized to sit on the
+   same optical weight as the stroked icons around it. */
+.ctcte-btn-txt { font-size: 10px; font-weight: 800; letter-spacing: -.02em; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }

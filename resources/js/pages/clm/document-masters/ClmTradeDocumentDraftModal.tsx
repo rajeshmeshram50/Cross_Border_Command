@@ -164,7 +164,14 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // the old contentEditable + document.execCommand that froze the tab when
   // formatting large (200-300 page) trade documents. HTML in / HTML out, so the
   // backend contract (content = HTML string) is unchanged.
-  const ted: CtcEditor = useCtcEditor({ value: content, onChange: (html) => { setContent(html); setDirty(true); } });
+  const ted: CtcEditor = useCtcEditor({
+    value: content,
+    onChange: (html) => { setContent(html); setDirty(true); },
+    onLimit: (attempted, max) => toast.error(
+      'Content limit reached',
+      `That paste would take this document to ${attempted.toLocaleString()} characters — the limit is ${max.toLocaleString()}. Past it the PDF and Word exports stop working, so it was not added.`,
+    ),
+  });
   const [fontSize, setFontSizeState] = useState('14');
   const [block, setBlockState]       = useState('p');
   const [pickerOpen, setPickerOpen]  = useState(false);
@@ -411,6 +418,22 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
           toast.warning('Nothing to import', 'The document appears to be empty.');
           return;
         }
+        /* The 1,000,000-character ceiling, enforced at UPLOAD time.
+           It was only ever shown — the counter turned red AFTER the document
+           had already been seeded into the editor, so the file "uploaded" and
+           then announced it was too long. Past this size the PDF and Word
+           exports are dead, so an editor holding it is an editor that cannot
+           produce anything.
+           Rejected BEFORE setHTML: seeding and then complaining would leave
+           unusable content the user has to undo by hand. Same order the CTC and
+           Agreement editors already use. */
+        if (html.length > TDW_RENDER_MAX_CHARS) {
+          toast.error(
+            'Document too long',
+            `${file.name} converts to ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
+          );
+          return;
+        }
         ted.setHTML(html);   // re-seeds the TipTap document AND updates `content`
         toast.success('Imported', `${file.name} loaded into the editor.`);
         return;
@@ -419,6 +442,17 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       const row = data?.data;
+      /* Same ceiling on the saved-row path. The server stores the file and
+         returns the converted HTML, so the length has to be checked here too —
+         otherwise a long document is blocked when the draft is new and waved
+         through the moment it has been saved once. */
+      if (row?.content && String(row.content).length > TDW_RENDER_MAX_CHARS) {
+        toast.error(
+          'Document too long',
+          `${file.name} converts to ${String(row.content).length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. Split it into smaller documents, or shorten it before uploading.`,
+        );
+        return;
+      }
       if (row?.content) {
         ted.setHTML(row.content);
       }
