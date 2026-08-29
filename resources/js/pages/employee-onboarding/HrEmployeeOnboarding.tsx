@@ -2157,10 +2157,37 @@ function InitiateOnboardingModal({
            document creates a fresh run and cancelling one leaves a Cancelled
            row behind, so the newest run alone can say "Cancelled" for a
            template that was in fact dispatched and signed earlier. */
-        const dispatched = new Set(runs.filter(r => r.status !== 'Cancelled').map(r => r.template_id));
+        const dispatched = new Set(
+          runs.filter(r => r.status !== 'Cancelled')
+              .map(r => r.template_id)
+              .filter((id: any) => id != null),
+        );
         setStage5Total(tpls.length);
-        setStage5Signed(tpls.filter(t => latest.get(t.id)?.status === 'Completed').length);
-        setStage5Sent(tpls.filter(t => dispatched.has(t.id)).length);
+
+        /* Counted from the RUNS, not from the matched-template list. (#127)
+         *
+         * Both figures used to be `tpls.filter(...)` — only documents that
+         * appear in the matched menu could be counted. A document sent from a
+         * template that is NOT in that list (matched on a different trigger,
+         * renamed, later unmatched, or simply picked by HR from elsewhere)
+         * left sent = 0 and signed = 0, and `stage5Signed >= stage5Sent` is
+         * then 0 >= 0 — true. Stage 5 read 100%, Stage 6 followed it, and
+         * Complete Onboarding lit up while the document sat unsigned.
+         *
+         * A dispatched run is a document awaiting signature whether or not the
+         * menu still lists its template, so both sides are now measured on the
+         * same population: every template with a live run, plus the matched
+         * ones. Sending nothing still leaves 0 of 0 — "none of these apply to
+         * this hire" remains a valid answer, which is the case the original
+         * 0 >= 0 was written for. */
+        const accountable = new Set<number>([
+          ...dispatched,
+          ...tpls.filter(t => dispatched.has(t.id)).map(t => t.id),
+        ]);
+        setStage5Sent(accountable.size);
+        setStage5Signed(
+          [...accountable].filter(id => latest.get(id)?.status === 'Completed').length,
+        );
         setStage5Loaded(true);
       } catch { if (!cancelled) { setStage5Total(0); setStage5Signed(0); setStage5Sent(0); setStage5Loaded(false); } }
     })();
@@ -8157,15 +8184,30 @@ function Stage5Policies({ emp, onProgress }: {
     return m;
   }, [runs]);
 
-  const signedCount = templates.filter(t => runByTemplateId.get(t.id)?.status === 'Completed').length;
-
   /* Templates that have been DISPATCHED for signature at least once. Read over
      every run rather than the latest, because a cancelled re-send leaves the
-     newest run at 'Cancelled' on a template that was already sent. */
-  const sentCount = useMemo(() => {
-    const dispatched = new Set(runs.filter(r => r.status !== 'Cancelled').map(r => r.template_id));
-    return templates.filter(t => dispatched.has(t.id)).length;
+     newest run at 'Cancelled' on a template that was already sent.
+
+     Measured on the RUNS rather than on the matched template list. (#127)
+     `templates` is the menu of agreements that matched this employee; a
+     document sent from anything outside it — matched on another trigger,
+     renamed since, or picked by HR directly — produced sent = 0 AND
+     signed = 0, and the stage's "signed >= sent" test passes at 0 >= 0. Stage
+     5 showed 100%, Stage 6 followed, and Complete Onboarding was enabled with
+     the document still unsigned. Both counts now cover the same population, so
+     anything dispatched must come back signed before the stage closes. */
+  const accountableIds = useMemo(() => {
+    const ids = new Set<number>();
+    runs.forEach(r => { if (r.status !== 'Cancelled' && r.template_id != null) ids.add(r.template_id); });
+    templates.forEach(t => { if (ids.has(t.id)) ids.add(t.id); });
+    return ids;
   }, [runs, templates]);
+
+  const sentCount = accountableIds.size;
+  const signedCount = useMemo(
+    () => [...accountableIds].filter(id => runByTemplateId.get(id)?.status === 'Completed').length,
+    [accountableIds, runByTemplateId],
+  );
 
   /* Report the LIVE counts up to the modal so the sidebar percentage tracks
      them. The parent used to fetch its own copy of exactly this, once, keyed

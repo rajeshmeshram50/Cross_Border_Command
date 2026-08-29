@@ -6528,6 +6528,10 @@
   border: 1px solid var(--vz-border-color); border-radius: 7px; background: var(--vz-card-bg);
   transition: background .15s ease, border-color .15s ease, color .15s ease;
 }
+/* View sits beside Download (#119). The first button keeps the margin-left:auto
+   that pushes the pair to the right edge; the second only needs a gap, or the
+   two glyphs butt together and read as one wide control. */
+.ep-fnf-drop-view + .ep-fnf-drop-view { margin-left: 6px; }
 .ep-fnf-drop-view:hover {
   color: #3730a3;
   background: rgba(67, 56, 202, 0.10);
@@ -11424,13 +11428,22 @@
 /* Candidate form/import modal field overrides (Client-form aesthetic).
    Extracted from inline <style> blocks in HrCandidates.tsx; applies to
    both CandidateFormModal and ImportCandidatesModal via .cand-form-clientstyle. */
+/* Field labels match the Add Employee form (.onb-label). (#62)
+   The base .rec-form-label paints a purple GRADIENT through
+   background-clip:text — the "purple/blue" this ticket reports. The reference
+   forms do not use a colour at all: .onb-label is neutral dark grey #374151,
+   uppercase, 12px/700. Every value below is copied from it so the two read
+   identically, and the gradient machinery is explicitly cancelled (background,
+   clip and text-fill all have to be unset or the colour never shows).
+   Kept scoped to .cand-form-clientstyle: .rec-form-label is shared with the
+   holiday, leave-plan, PIP and broadcast screens, which are not in scope. */
 .cand-form-clientstyle .rec-form-label,
 .cand-form-clientstyle .cand-import-label {
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  text-transform: none;
-  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: 0 0 8px;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -11438,8 +11451,8 @@
   background: none;
   -webkit-background-clip: initial;
   background-clip: initial;
-  -webkit-text-fill-color: var(--vz-body-color);
-  color: var(--vz-body-color);
+  -webkit-text-fill-color: #374151;
+  color: #374151;
 }
 [data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label,
 [data-bs-theme="dark"] .cand-form-clientstyle .cand-import-label,
@@ -11449,11 +11462,20 @@
   -webkit-text-fill-color: var(--vz-body-color);
   background: none;
 }
+/* Leading icon takes the label's own colour, so a row does not read as two
+   styles. Grey with the label, not a violet of its own. (#62) */
 .cand-form-clientstyle .rec-form-label i,
 .cand-form-clientstyle .cand-import-label i {
-  color: var(--vz-secondary-color);
-  -webkit-text-fill-color: var(--vz-secondary-color);
-  font-size: 13px;
+  color: #374151;
+  -webkit-text-fill-color: #374151;
+  font-size: 12px;
+}
+[data-bs-theme="dark"] .cand-form-clientstyle .rec-form-label i,
+[data-bs-theme="dark"] .cand-form-clientstyle .cand-import-label i,
+[data-layout-mode="dark"] .cand-form-clientstyle .rec-form-label i,
+[data-layout-mode="dark"] .cand-form-clientstyle .cand-import-label i {
+  color: var(--vz-body-color);
+  -webkit-text-fill-color: var(--vz-body-color);
 }
 .cand-form-clientstyle .rec-input,
 .cand-form-clientstyle .cand-import-input,

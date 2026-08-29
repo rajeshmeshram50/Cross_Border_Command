@@ -334,6 +334,72 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
   const paymentMode = empDetail?.salary_payment_mode === 'bank' ? 'Bank Transfer'
     : empDetail?.salary_payment_mode ? String(empDetail.salary_payment_mode) : '—';
 
+  /* Bank Information status, derived from the record rather than asserted.
+   *
+   * The pill was hardcoded to "Not Initiated" — a literal in the markup with
+   * nothing behind it — so it read the same for an employee whose bank name,
+   * account number, IFSC, branch, account type and name on account were all on
+   * file as for one with nothing at all. (#200)
+   *
+   * The test is deliberately the SAME one payroll applies when it decides
+   * whether it can pay someone: App\Support\BankDetails::isValid(), i.e. an
+   * IFSC of 4 letters + 0 + 6 alphanumerics and an account number of 6–18
+   * digits. Anything looser would show "Complete" on details that
+   * PayrollService::disburseRun() would then hold at payment time, which is the
+   * contradiction this pill exists to prevent.
+   *
+   * "Complete" rather than "Verified": nothing here is checked against the
+   * bank. It says the details are present and well-formed, which is what is
+   * actually known — claiming verification that never happened would be a
+   * different kind of wrong pill. */
+  const bankStatus = (() => {
+    const acct = String(empDetail?.bank_account_number ?? '').replace(/\s+/g, '');
+    const ifsc = String(empDetail?.ifsc_code ?? '').replace(/\s+/g, '').toUpperCase();
+    const others = [
+      empDetail?.bank_name, empDetail?.bank_branch,
+      empDetail?.bank_account_type, empDetail?.account_holder_name,
+    ].filter(v => String(v ?? '').trim() !== '');
+
+    if (!acct && !ifsc && others.length === 0) {
+      return { label: 'Not Initiated', tone: 'amber' as const, title: 'No bank details captured yet.' };
+    }
+    const payable = /^\d{6,18}$/.test(acct) && /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc);
+    return payable
+      ? { label: 'Complete', tone: 'green' as const,
+          title: 'Account number and IFSC are present and correctly formatted — payroll can disburse to this account.' }
+      : { label: 'Incomplete', tone: 'amber' as const,
+          title: !acct || !ifsc
+            ? 'Account number and IFSC are both required before payroll can disburse.'
+            : 'Account number or IFSC is not in a valid format — payroll would hold this payment.' };
+  })();
+
+  /* The PAN pill was hardcoded to "Verified" — the same fault as the bank one
+     but pointing the other way, and worse for it: it asserted a verification
+     that never happens anywhere in the system, including for an employee with
+     no PAN on file at all. Nothing checks a PAN against the income-tax
+     database, so the honest statement is whether one is on file and well
+     formed. Same 5 letters / 4 digits / 1 letter rule the onboarding wizard
+     and the branch and client forms already apply. (#200) */
+  const panStatus = (() => {
+    const pan = String(empDetail?.pan_number ?? '').replace(/\s+/g, '').toUpperCase();
+    if (!pan) return { label: 'Not Provided', tone: 'amber' as const, title: 'No PAN on file.' };
+    return /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)
+      ? { label: 'Provided', tone: 'green' as const, title: 'PAN is on file and correctly formatted.' }
+      : { label: 'Check Format', tone: 'amber' as const, title: 'PAN is not in the expected format (e.g. ABCDE1234F).' };
+  })();
+
+  /* Aadhaar, same story and the most visible of the three: the number is
+     DROPPED from the layout when it is missing (see hasAadhaar above), yet the
+     pill beside the empty section still read "Verified". An employee with no
+     Aadhaar on file was shown a green tick and nothing else. (#200) */
+  const aadhaarStatus = (() => {
+    const aadhaar = String(empDetail?.aadhaar_number ?? '').replace(/\s+/g, '');
+    if (!aadhaar) return { label: 'Not Provided', tone: 'amber' as const, title: 'No Aadhaar on file.' };
+    return /^\d{12}$/.test(aadhaar)
+      ? { label: 'Provided', tone: 'green' as const, title: 'Aadhaar is on file and correctly formatted.' }
+      : { label: 'Check Format', tone: 'amber' as const, title: 'Aadhaar should be 12 digits.' };
+  })();
+
   /* QA #190 — skeleton while the payroll details load. After every hook
      above, so the hook order stays identical between renders. */
   if (empDetailLoading) {
@@ -443,8 +509,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                         <h6 className="mb-0 fw-bold pyt-section-title">Payment Information</h6>
                       </div>
                       <div className="d-flex align-items-center gap-2">
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-amber">
-                          <span className="pyt-dot-amber" /> Not Initiated
+                        <span
+                          className={`d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-${bankStatus.tone}`}
+                          title={bankStatus.title}
+                        >
+                          <span className={`pyt-dot-${bankStatus.tone}`} /> {bankStatus.label}
                         </span>
                         <button
                           type="button"
@@ -491,8 +560,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                       {/* PAN Card sub-header */}
                       <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2 pyt-subhead-purple">
                         <span className="fw-bold pyt-subhead-title-purple">PAN Card</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-green">
-                          <span className="pyt-dot-green" /> Verified
+                        <span
+                          className={`d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-${panStatus.tone}`}
+                          title={panStatus.title}
+                        >
+                          <span className={`pyt-dot-${panStatus.tone}`} /> {panStatus.label}
                         </span>
                       </div>
                       <Row className="g-3 mb-3">
@@ -508,8 +580,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                       {/* Aadhaar Card sub-header */}
                       <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-2 pyt-subhead-teal">
                         <span className="fw-bold pyt-subhead-title-teal">Aadhaar Card</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-green">
-                          <span className="pyt-dot-green" /> Verified
+                        <span
+                          className={`d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-${aadhaarStatus.tone}`}
+                          title={aadhaarStatus.title}
+                        >
+                          <span className={`pyt-dot-${aadhaarStatus.tone}`} /> {aadhaarStatus.label}
                         </span>
                       </div>
                       <Row className="g-3">
@@ -542,8 +617,11 @@ const canPay = !!np?.applicable && Number(np?.outstanding) > 0 && !pendingPaymen
                     <div className="px-3 py-3 flex-grow-1">
                       <div className="d-flex align-items-center justify-content-between gap-2 px-3 py-2 mb-3 pyt-subhead-teal">
                         <span className="fw-bold pyt-subhead-title-teal">Aadhaar Card (Address Proof)</span>
-                        <span className="d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-green">
-                          <span className="pyt-dot-green" /> Verified
+                        <span
+                          className={`d-inline-flex align-items-center gap-1 fw-semibold pyt-pill-${aadhaarStatus.tone}`}
+                          title={aadhaarStatus.title}
+                        >
+                          <span className={`pyt-dot-${aadhaarStatus.tone}`} /> {aadhaarStatus.label}
                         </span>
                       </div>
                       <Row className="g-3">

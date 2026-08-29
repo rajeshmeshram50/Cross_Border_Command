@@ -895,7 +895,10 @@ function CreateAnnouncementModal({
             </div>
             {/* The only way out of this dialog now, so it gets an outline of its
                 own rather than sitting as a faint patch on the gradient. */}
-            <button type="button" onClick={onClose} aria-label="Close" className="brd-close-x" style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff', borderRadius: 8, width: 32, height: 32, flexShrink: 0 }}>
+            {/* Closing mid-publish abandons a request that is already creating
+                the announcement, with no modal left to report the result. Same
+                guard the footer's Cancel/Publish already carry. (#33) */}
+            <button type="button" onClick={onClose} aria-label="Close" disabled={!!saving} className="brd-close-x" style={{ background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff', borderRadius: 8, width: 32, height: 32, flexShrink: 0, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1 }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
@@ -914,15 +917,23 @@ function CreateAnnouncementModal({
               const done = step > s.key;
               return (
                 <Fragment key={s.key}>
+                {/* Frozen while publishing. (#33) A completed step stays
+                    clickable by design so the author can go back and check
+                    something — but not once Publish is in flight: stepping back
+                    then swaps the form under a request that has already left,
+                    and whatever is edited there is discarded when the modal
+                    closes on success. The footer buttons were already guarded;
+                    the stepper is the other way back into the form. */}
                 <button
                   type="button"
-                  onClick={() => { if (done || active) setStep(s.key); }}
-                  disabled={!done && !active}
+                  onClick={() => { if (!saving && (done || active)) setStep(s.key); }}
+                  disabled={!!saving || (!done && !active)}
                   className="d-inline-flex align-items-center"
                   style={{
                     gap: 8, padding: '4px 8px', border: 0, background: 'transparent',
                     color: active ? '#0ea5e9' : (done ? '#0ea5e9' : '#9ca3af'),
-                    cursor: (done || active) ? 'pointer' : 'default',
+                    cursor: saving ? 'not-allowed' : ((done || active) ? 'pointer' : 'default'),
+                    opacity: saving ? 0.6 : 1,
                     // Natural width — the connector lines take the slack.
                     flexShrink: 0,
                   }}
@@ -983,9 +994,13 @@ function CreateAnnouncementModal({
                 MultiPicker dropdown, and the file drag-and-drop zone). Footer
                 paging (Next) lives outside this wrapper so the user can still
                 page through the steps. */}
+            {/* …and while a save/publish is in flight. (#33) A value typed after
+                the request left is not in the payload being sent and is thrown
+                away when the modal closes on success, so the form is frozen for
+                the same reason it is frozen in read-only mode. */}
             <fieldset
-              disabled={readOnly}
-              style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', pointerEvents: readOnly ? 'none' : undefined }}
+              disabled={readOnly || !!saving}
+              style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto', pointerEvents: (readOnly || saving) ? 'none' : undefined }}
             >
             {step === 1 && (
               <Step1Basic

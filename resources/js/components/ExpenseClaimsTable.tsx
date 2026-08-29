@@ -263,7 +263,10 @@ export function expenseClaimColumns({
     {
       header: 'Description',
       accessorKey: 'title',
-      meta: { width: '15%' },
+      /* 13%, down from 15% — the 2% went to Zoho Sync. (#170) This cell is a
+         TruncCell that already ellipsises at 70 chars and shows the full text
+         on hover, so it degrades gracefully; a fixed status pill does not. */
+      meta: { width: '13%' },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     {
@@ -357,7 +360,14 @@ export function expenseClaimColumns({
       id: 'zoho_sync',
       enableSorting: false,
       accessorFn: (c: ExpenseClaimRow) => c.zoho_sync ?? 'na',
-      meta: { width: '9%', align: 'center' },
+      /* 11%, up from 9%. (#170) The cell is a pill — icon + gap + label +
+         20px of horizontal padding — and "Completed" is the longest label, so
+         9% of this table's width left it clipped. The extra 2% is taken from
+         Description below rather than added on top: the percentage columns
+         already over-allocate at 110%, and widening one without narrowing
+         another just squeezes every neighbour a little harder. Description is
+         free text that reflows, so it is the column that can spare it. */
+      meta: { width: '11%', align: 'center' },
       cell: info => {
         // Nothing is booked in Zoho for a rejected claim (QA #122).
         if (info.row.original.status === 'rejected') {
@@ -372,7 +382,13 @@ export function expenseClaimColumns({
         };
         const t = tone[z];
         return (
-          <span className="d-inline-flex align-items-center gap-1 fw-semibold" style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg }}>
+          /* nowrap so the label can never break between the icon and the word,
+             or mid-word, whatever width the column ends up at. (#170) */
+          <span
+            className="d-inline-flex align-items-center gap-1 fw-semibold"
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 999, background: t.bg, color: t.fg, whiteSpace: 'nowrap' }}
+            title={t.label}
+          >
             <i className={t.icon} /> {t.label}
           </span>
         );

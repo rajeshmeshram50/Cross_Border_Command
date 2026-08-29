@@ -1500,7 +1500,32 @@ function CandidateFormModal({
                 </Col>
                 <Col md={4}>
                   <label className="rec-form-label">Email<span className="req">*</span></label>
-                  <input type="email" className={`rec-input${errors.email ? ' is-invalid' : ''}`} placeholder="name@email.com" value={email} disabled={readOnly} onChange={e => setEmail(e.target.value)} />
+                  {/* Checked on BLUR as well as on submit (#60).
+                      The format was already refused by handleSubmit and again by
+                      the API, but nothing said so until Save was pressed — so
+                      typing a bad address and moving on looked exactly like the
+                      field having accepted it, which is how this was reported.
+                      Clearing as soon as the value becomes valid keeps it from
+                      nagging while the address is still being typed. */}
+                  <input
+                    type="email"
+                    className={`rec-input${errors.email ? ' is-invalid' : ''}`}
+                    placeholder="name@email.com"
+                    value={email}
+                    disabled={readOnly}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setEmail(v);
+                      if (errors.email && v.trim() && isValidEmail(v)) setFieldError('email', null);
+                    }}
+                    onBlur={() => {
+                      const v = email.trim();
+                      if (!v) return;                       // "required" stays a submit-time message
+                      setFieldError('email', isValidEmail(v)
+                        ? null
+                        : 'Enter a valid email address (e.g. name@company.com)');
+                    }}
+                  />
                   {errors.email && <div className="rec-error"><i className="ri-error-warning-line" />{errors.email}</div>}
                 </Col>
                 <Col md={4}>

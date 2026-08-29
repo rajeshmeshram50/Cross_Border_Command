@@ -6,7 +6,7 @@ import { Card, CardBody, Col, Row, Input, Modal, ModalBody, Spinner } from 'reac
 import { MasterFormStyles, MasterSelect, MasterDatePicker } from '../master/masterFormKit';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { type DataTableColumn } from '../../components/ui/DataTable';
-import { Shimmer } from '../../components/ui/Shimmer';
+import { ShimmerTableRows } from '../../components/ui/Shimmer';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -1255,9 +1255,28 @@ function HolidayListModal({ open, onClose }: { open: boolean; onClose: () => voi
 
         <div style={{ padding: '14px 18px', maxHeight: '65vh', overflowY: 'auto' }}>
           {loading ? (
-            <div className="text-center py-5 text-muted">
-              <i className="ri-loader-4-line" style={{ fontSize: 26, animation: 'spin 1s linear infinite' }} />
-              <div style={{ fontSize: 13, marginTop: 8 }}>Loading holidays…</div>
+            /* Skeleton of the real table, not a spinner on an empty panel. (#124)
+               A centred spinner told the user something was happening but left
+               the content area blank, so the modal appeared to open onto
+               nothing and then jump into a table. Rendering the actual header
+               with placeholder rows underneath keeps the layout stable — what
+               loads in is the same shape that was already on screen — and
+               matches how every other list in the app loads. */
+            <div className="table-responsive">
+              <table className="table align-middle table-nowrap mb-0">
+                <thead style={{ background: dark ? 'rgba(255,255,255,0.06)' : '#f8f9fa', color: dark ? 'rgba(255,255,255,0.65)' : undefined }}>
+                  <tr>
+                    <th className="text-center" style={{ width: 60, background: 'transparent', color: 'inherit' }}>Sr No</th>
+                    <th style={{ background: 'transparent', color: 'inherit' }}>Holiday</th>
+                    <th style={{ width: 135, background: 'transparent', color: 'inherit' }}>Date</th>
+                    <th style={{ width: 110, background: 'transparent', color: 'inherit' }}>Day</th>
+                    <th style={{ width: 120, background: 'transparent', color: 'inherit' }}>Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <ShimmerTableRows rows={6} cols={5} keyPrefix="hol-shim" />
+                </tbody>
+              </table>
             </div>
           ) : sorted.length === 0 ? (
             <div className="text-center py-5 text-muted">

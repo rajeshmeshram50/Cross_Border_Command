@@ -1165,6 +1165,21 @@ function strValues(obj: unknown): Record<string, string> {
 /* Styling + wording for an action held back by the document-release gate. */
 /** Remixicon glyph by file extension. This build has no `ri-file-check-line`,
  *  so using it rendered an empty box in the upload zone. */
+/* Can the browser RENDER this attachment, or only save it? (#119)
+ *
+ * Uploads are restricted to PDF / JPG / PNG, all of which a browser displays
+ * natively — those get a View action. Legacy attachments predate that rule and
+ * may still be a Word or Excel file, which the browser downloads whatever the
+ * link says; offering "View" for one of those is a button that silently does
+ * something else, which is exactly why the earlier View was removed (#59).
+ * Deciding per file lets both tickets be right at once: View where it works,
+ * Download only where it doesn't. */
+function fnfIsViewable(name?: string | null, url?: string | null): boolean {
+  const from = String(name || url || '').split('?')[0];
+  const ext = from.split('.').pop()?.toLowerCase() ?? '';
+  return ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+}
+
 function fnfFileIcon(name: string): string {
   const ext = String(name).split('.').pop()?.toLowerCase() ?? '';
   if (ext === 'pdf') return 'ri-file-pdf-line';
@@ -3974,14 +3989,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                           : fnfDoc ? 'Click again to replace' : 'PDF, JPG or PNG · up to 5 MB · required'}
                       </span>
                     </span>
-                    {/* Download, not View (#59). Legacy attachments predate the
-                        PDF/JPG/PNG-only rule and may still be a Word or Excel
-                        file, which the browser downloads rather than renders —
-                        so the button could not honour a "View" label. It is a
-                        download now, stated by an icon: `download` makes the
-                        behaviour explicit instead of leaving it to the file
-                        type, and the attachment's own name is used rather than
+                    {/* View + Download. (#119)
+                        View opens the file in a new tab so the settlement sheet
+                        can be checked without saving a copy — shown only for
+                        types the browser actually renders (see fnfIsViewable),
+                        because a "View" that quietly downloads is the fault
+                        #59 removed the old one for. Download stays for every
+                        attachment, and carries the file's own name rather than
                         the storage hash. */}
+                    {fnfDoc?.url && fnfIsViewable(fnfDoc.name, fnfDoc.url) && (
+                      <a className="ep-fnf-drop-view" href={fnfDoc.url}
+                         target="_blank" rel="noopener noreferrer"
+                         title={`View ${fnfDoc.name || 'document'}`}
+                         aria-label={`View ${fnfDoc.name || 'document'}`}
+                         onClick={e => e.stopPropagation()}>
+                        <i className="ri-eye-line" style={{ fontSize: 15 }} />
+                      </a>
+                    )}
                     {fnfDoc?.url && (
                       <a className="ep-fnf-drop-view" href={fnfDoc.url}
                          download={fnfDoc.name || true}

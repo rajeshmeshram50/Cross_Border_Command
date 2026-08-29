@@ -66,7 +66,21 @@ export default function BatchPaymentModal({ open, onClose, onDone }: {
     if (!open) return;
     setView('history'); resetForm(); setHistPage(1);
     loadHistory();
-    api.get('/employees').then(r => setEmployees(Array.isArray(r.data) ? r.data : [])).catch(() => setEmployees([]));
+    /* Active staff only — a batch payment cannot be raised against someone who
+       has left. (#164) The list was fetched unfiltered, so exited, resigned and
+       terminated employees sat in the Select Employee dropdown and could be
+       picked for a payout.
+
+       `enabled=1` is the API's own filter for this: it drops soft-deleted rows
+       and anyone whose status is inactive / terminated / resigned, and reads a
+       NULL status as Active the same way this screen does — a plain
+       `status != 'Exited'` would have silently hidden every employee whose
+       status was never set. An exit still IN PROGRESS keeps status 'Active' and
+       stays listed on purpose: outstanding expenses are usually settled on the
+       way out, and hiding those people would block a legitimate payment. */
+    api.get('/employees', { params: { enabled: 1 } })
+      .then(r => setEmployees(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setEmployees([]));
   }, [open]);
 
   /* Lock background scroll while open (QA #99).

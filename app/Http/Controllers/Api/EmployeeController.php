@@ -3323,19 +3323,35 @@ class EmployeeController extends Controller
 
             // Stage 4 — Payroll & Finance Setup
             'salary_payment_mode'   => 'nullable|in:bank,cheque,cash',
-            'bank_name'             => 'nullable|string|max:150',
+            /* Bank details are REQUIRED when the salary is paid by bank
+             * transfer, and optional for cheque. (#125)
+             *
+             * The wizard already enforces exactly this and marks the fields
+             * with an asterisk while the mode is Bank Transfer, but the API
+             * accepted the same stage with every bank field blank — so an
+             * employee could be completed through any other client, an import
+             * or a direct call with no account to pay into, and the omission
+             * only surfaced at disbursement when payroll held the payment.
+             *
+             * required_if, not required: cheque is a legitimate mode with
+             * nothing to fill in, which is the other half of this ticket. The
+             * format rules still apply to whatever IS entered in either mode,
+             * so a cheque employee cannot use the block as a scratchpad. */
+            'bank_name'             => ['required_if:salary_payment_mode,bank', 'nullable', 'string', 'max:150'],
             // QA #187 — 8 to 18 digits. Same rule as updateBankDetails(); this
             // form writes the same column, so a rule on only one of the two is
             // not a rule. (Replaces the old NRE/NRO letters exemption — see the
             // note there.)
-            'bank_account_number'   => ['nullable', 'string', 'regex:/^\d{8,18}$/'],
+            'bank_account_number'   => ['required_if:salary_payment_mode,bank', 'nullable', 'string', 'regex:/^\d{8,18}$/'],
             // IFSC: 4 letters, 0, 6 alphanumeric (case-insensitive).
-            'ifsc_code'             => 'nullable|string|regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/',
-            'account_holder_name'   => 'nullable|string|max:150',
+            'ifsc_code'             => ['required_if:salary_payment_mode,bank', 'nullable', 'string', 'regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/'],
+            'account_holder_name'   => ['required_if:salary_payment_mode,bank', 'nullable', 'string', 'max:150'],
             // QA #186 — same rule as updateBankDetails(). Applied here too
             // because the main employee form writes the very same column, and
             // a rule enforced on only one of two doors is not enforced.
-            'bank_branch'           => ['nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
+            // Required alongside the rest of the block on bank transfer — the
+            // wizard asterisks it too. (#125)
+            'bank_branch'           => ['required_if:salary_payment_mode,bank', 'nullable', 'string', 'max:150', 'regex:/^(?=.*[A-Za-z])[A-Za-z0-9 .,\-\/()&\']+$/'],
             'bank_account_type'     => 'nullable|string|max:30',
             // UAN: exactly 12 digits when present.
             'uan_number'            => 'nullable|string|regex:/^\d{12}$/',
@@ -3374,6 +3390,14 @@ class EmployeeController extends Controller
             // Kept in sync with the inline messages in HrEmployees.tsx.
             'annual_salary.required' => 'Annual CTC is required.',
             'annual_salary.numeric'  => 'Annual CTC must be a valid number.',
+            /* Name the CONDITION, not just the field. "The bank name field is
+               required" gives no clue why it became required halfway through a
+               form where it had been optional a moment earlier. (#125) */
+            'bank_name.required_if'           => 'Bank Name is required when the salary is paid by bank transfer.',
+            'bank_account_number.required_if' => 'Account Number is required when the salary is paid by bank transfer.',
+            'ifsc_code.required_if'           => 'IFSC Code is required when the salary is paid by bank transfer.',
+            'account_holder_name.required_if' => 'Name on the Account is required when the salary is paid by bank transfer.',
+            'bank_branch.required_if'         => 'Branch is required when the salary is paid by bank transfer.',
             'annual_salary.min'      => 'Annual CTC must be greater than 0.',
             'annual_salary.max'      => 'Annual CTC must be ≤ 999,999,999,999.99.',
             'city.not_regex'               => 'City cannot contain < or > characters.',

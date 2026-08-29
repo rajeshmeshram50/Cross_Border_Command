@@ -580,7 +580,22 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Action</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '16%', wrap: true },
+      /* A FIXED width where the wide "Review & Approve" CTA appears, the same
+       * rule the claims table already uses. (#173)
+       *
+       * 16% of a table whose percentage columns add up to 157% is not 16% of
+       * anything — the browser scales them all down, and this column lost
+       * enough width that the CTA was pressed against the right edge and the
+       * action group wrapped on some rows but not others, leaving the column
+       * ragged down the page. A pixel width is not scaled, so the widest case
+       * always fits and every row lines up.
+       * The non-approver views keep a percentage: they show icons only, and a
+       * 240px reservation there would be dead space. */
+      meta: {
+        align: 'center',
+        width: (mode === 'hr' || mode === 'team') ? 240 : '12%',
+        wrap: true,
+      },
       cell: info => (
         <AdvanceActionCell
           row={info.row.original}
@@ -786,7 +801,19 @@ function AdvanceActionCell({
 
   return (
     <>
-      <div className="d-inline-flex align-items-center gap-1 justify-content-center flex-nowrap">
+      {/* Right-aligned inside a reserved width, with breathing room at the
+          edge — the same treatment the claims table's action cell uses. (#173)
+          Centring a group whose width changes per row (Review & Approve here,
+          two icons there) left the buttons landing in a different place on
+          every line; anchoring them to the right of a fixed column puts every
+          trailing control in a straight line down the table. paddingRight
+          stops the last control sitting flush against the column edge, where
+          it reads as clipped — and genuinely is clipped when a vertical
+          scrollbar overlaps that edge. */}
+      <div
+        className="d-inline-flex align-items-center gap-1 justify-content-end flex-nowrap"
+        style={{ minWidth: (mode === 'hr' || mode === 'team') ? 216 : undefined, paddingRight: 6 }}
+      >
         {/* Manager / HR act via the same Review & Approve popup as expense claims. */}
         {(canManagerAct || canHrReview) && onReview ? (
           (() => {

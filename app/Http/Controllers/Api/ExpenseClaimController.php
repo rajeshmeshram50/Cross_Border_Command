@@ -1904,4 +1904,52 @@ class ExpenseClaimController extends Controller
             'data'    => $this->serialize($row),
         ]);
     }
+
+    /**
+     * Render the on-screen Expense / Advance export as a real PDF. (#166)
+     *
+     * "Export ▸ PDF" used to open a print window and call window.print(), so the
+     * user got a print dialog and had to know to choose "Save as PDF" — the
+     * report was never actually exported, and a pop-up blocker stopped it
+     * outright. Every other PDF in this app is produced server-side with dompdf
+     * and streamed back as a download; this brings the expense export in line.
+     *
+     * The already-formatted headers/rows come FROM the screen rather than being
+     * re-queried here, deliberately: the export must contain exactly what the
+     * user is looking at, and the module toggle, status tab, date range and
+     * search box are all client-side state. Re-deriving that server-side would
+     * be a second implementation of the same filtering, free to disagree with
+     * the first. The Blade escapes every cell, so nothing in the payload can
+     * reach the document as markup.
+     */
+    public function exportPdf(Request $request)
+    {
+        $data = $request->validate([
+            'title'     => ['required', 'string', 'max:200'],
+            'meta'      => ['nullable', 'string', 'max:300'],
+            'filename'  => ['nullable', 'string', 'max:120'],
+            'headers'   => ['required', 'array', 'min:1', 'max:40'],
+            'headers.*' => ['nullable', 'string', 'max:120'],
+            /* Bounded so one export cannot hold a worker open indefinitely —
+               dompdf is memory-bound and 5k rows is already a very large
+               document. */
+            'rows'      => ['present', 'array', 'max:5000'],
+            'rows.*'    => ['array', 'max:40'],
+            'rows.*.*'  => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.expense-export', [
+            'title'   => $data['title'],
+            'meta'    => $data['meta'] ?? '',
+            'headers' => $data['headers'],
+            'rows'    => $data['rows'] ?? [],
+        ])->setPaper('a4', 'landscape');
+
+        // Filename comes from the client; strip it to a safe basename so it
+        // cannot smuggle a path or header break into Content-Disposition.
+        $name = preg_replace('/[^A-Za-z0-9._-]+/', '_', (string) ($data['filename'] ?? 'expense-export'));
+        if ($name === '' || $name === '_') $name = 'expense-export';
+
+        return $pdf->download($name . '.pdf');
+    }
 }

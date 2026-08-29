@@ -5,19 +5,14 @@
 .hrexp-surface { background: #ffffff; }
 [data-bs-theme="dark"] .hrexp-surface { background: #1c2531; }
 
-.hrexp-hero-card {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 16px; flex-wrap: wrap;
-  padding: 18px 22px;
-  border-radius: 16px;
-  background: linear-gradient(135deg, #f3edff 0%, #ede4ff 100%);
-  border: 1px solid #e3d6ff;
-  box-shadow: 0 2px 12px rgba(124,92,252,0.06);
-}
-[data-bs-theme="dark"] .hrexp-hero-card {
-  background: linear-gradient(135deg, rgba(124,92,252,0.18) 0%, rgba(167,139,250,0.10) 100%);
-  border-color: rgba(124,92,252,0.32);
-}
+/* .hrexp-hero-card removed (#165). It re-skinned the shared .frm-cstrip header
+   — purple gradient instead of the white surface, its own border colour,
+   shadow, padding and gap — so the one element that exists to look identical
+   across HRMS modules was the only one that differed. The base class already
+   carries the entire layout AND the appearance, including its own dark-mode
+   treatment, so the page now inherits both instead of redefining them. The
+   short-viewport padding rules that referenced it are retargeted to
+   .frm-cstrip further down; that density work is still wanted. */
 .hrexp-hero-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 5px 10px; border-radius: 999px;
@@ -244,7 +239,7 @@
    ─────────────────────────────────────────────────────────────────────────── */
 @media (max-height: 900px) {
   .hrexp-page .hrexp-kpi-card { padding: 11px 14px !important; }
-  .hrexp-page .hrexp-hero-card { padding-top: 12px !important; padding-bottom: 12px !important; }
+  .hrexp-page .frm-cstrip { padding-top: 12px !important; padding-bottom: 12px !important; }
   /* The KPI row and the Analytics panel each carry their own bottom margin. */
   .hrexp-page .hrexp-kpi-row { margin-bottom: 10px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 10px !important; }
@@ -260,7 +255,7 @@
 /* Tighter still — a 110% zoom on a 1080p screen lands here (~785px). */
 @media (max-height: 800px) {
   .hrexp-page .hrexp-kpi-card { padding: 8px 12px !important; }
-  .hrexp-page .hrexp-hero-card { padding-top: 8px !important; padding-bottom: 8px !important; }
+  .hrexp-page .frm-cstrip { padding-top: 8px !important; padding-bottom: 8px !important; }
   .hrexp-page .hrexp-kpi-row { margin-bottom: 8px !important; }
   .hrexp-page .hrexp-analytics-card { margin-bottom: 8px !important; }
   .hrexp-page .dt-tab,
