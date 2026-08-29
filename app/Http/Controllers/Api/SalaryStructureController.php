@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Employee;
+use App\Models\Module;
+use App\Models\Permission;
 use App\Models\SalaryStructure;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -28,6 +30,9 @@ class SalaryStructureController extends Controller
      *  is rejected — one rupee a month, enough to absorb the rounding in the
      *  form's annual ÷ 12 seed and nothing more. */
     private const SALARY_ROUNDING_SLACK = 12;
+
+    /** Memoised hr.payroll grant answer for this request — see hasPayrollGrant(). */
+    private ?bool $payrollGrant = null;
 
     /**
      * Salary roster — every payable employee with their CURRENT structure
@@ -89,6 +94,38 @@ class SalaryStructureController extends Controller
             ->orderBy('first_name');
         if ($user && $user->client_id) $eq->where('client_id', $user->client_id);
         if ($branch) $eq->where('branch_id', $branch);
+
+        /* Nobody who had not joined yet. (#116)
+         *
+         * Salary Setup is a TAB INSIDE a payroll cycle — the strip above it says
+         * which month is being worked on — but the roster was fetched without
+         * any notion of that cycle, so it listed every active employee on the
+         * books. An employee joining 15 August therefore appeared in the July
+         * setup, where payroll will never pay them: eligibleEmployees() prices a
+         * cycle from the joining date, so July has nothing to run for them.
+         * Worse, the "needs setup" badge counted them, so July looked
+         * permanently unfinished because of people who do not belong to it.
+         *
+         * The cut is the LAST DAY of the cycle, not its first: someone joining
+         * on the 20th is genuinely part of that month (paid pro-rata from the
+         * 20th), and only a joining date after the month has ended puts them
+         * outside it.
+         *
+         * A null joining date is KEPT. It cannot be judged, and dropping those
+         * rows would hide an employee from every cycle rather than the wrong
+         * one — a worse fault than the one being fixed here.
+         *
+         * Applied only when the caller names a cycle, so a request without
+         * month/year still returns the whole roster and no existing caller
+         * changes behaviour. */
+        $month = (int) $request->query('month', 0);
+        $year  = (int) $request->query('year', 0);
+        if ($month >= 1 && $month <= 12 && $year >= 2000 && $year <= 2100) {
+            $cycleEnd = \Carbon\Carbon::create($year, $month, 1)->endOfMonth()->toDateString();
+            $eq->where(fn ($q) => $q
+                ->whereNull('date_of_joining')
+                ->orWhereDate('date_of_joining', '<=', $cycleEnd));
+        }
 
         $employees = $eq->get();
         $ids = $employees->pluck('id')->all();
@@ -507,18 +544,63 @@ class SalaryStructureController extends Controller
      *     annual_salary is not bounded at all, because that check only runs
      *     when one is on file.
      *
-     * Mirrors PayrollAdjustmentController::canManage() so the two payroll
-     * write surfaces answer the question the same way.
+     * WHO PASSES (changed — see hasPayrollGrant()):
+     *
+     *   · super_admin / client_admin / branch_user — by tier, as before.
+     *   · ANY other tier, the `employee` tier included, that holds an HRMS →
+     *     Time & Pay → Payroll (`hr.payroll`) grant with can_edit or
+     *     can_approve.
+     *
+     * The blanket "the employee tier never manages salary" refusal that used to
+     * sit here was wrong in practice: HR executives are routinely provisioned
+     * as employee-tier logins in this HRMS, so granting them hr.payroll did
+     * nothing — Salary Setup answered 403 and named no reason. Permission, not
+     * tier, is the intended gate; the tier list above is a shortcut for the
+     * roles that implicitly hold it.
+     *
+     * Mirrors PayrollAdjustmentController::canManage() in shape, but no longer
+     * in outcome — that one still refuses the employee tier outright and still
+     * carries the dead lookup described below.
      */
     private function canManage(Request $request): bool
     {
         $user = $request->user();
         if (!$user) return false;
         if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) return true;
-        // The employee tier never manages salary, whatever else is granted.
-        if ($user->user_type === 'employee') return false;
-        $perm = $user->permissions['hr.payroll'] ?? null;
-        return is_array($perm) && (($perm['can_edit'] ?? false) || ($perm['can_approve'] ?? false));
+        return $this->hasPayrollGrant($user);
+    }
+
+    /**
+     * Does this user hold a writeable `hr.payroll` grant?
+     *
+     * Resolved the way every other module gate in this codebase resolves one
+     * (EmployeeController::authorize): look the module up by slug, then ask the
+     * `permissions` table.
+     *
+     * This replaces `$user->permissions['hr.payroll'] ?? null`, which could
+     * never match. `User::permissions()` is a HasMany returning a Collection of
+     * Permission ROWS — indexing it by a module slug finds nothing, `?? null`
+     * swallowed it silently, and `is_array(null)` is false. The whole branch
+     * was dead code, so in practice only the three tiers above could manage
+     * salary and no hr.payroll grant ever counted. The slug-keyed array that
+     * lookup assumed exists only in AuthController's /me response payload, not
+     * on the model.
+     *
+     * Memoised: canManage() is called more than once per request on the read
+     * paths. A missing module row means the module was never seeded, so nobody
+     * can hold the grant — deny rather than fall open.
+     */
+    private function hasPayrollGrant($user): bool
+    {
+        if ($this->payrollGrant !== null) return $this->payrollGrant;
+
+        $moduleId = Module::where('slug', 'hr.payroll')->value('id');
+        if (!$moduleId) return $this->payrollGrant = false;
+
+        return $this->payrollGrant = Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where(fn ($q) => $q->where('can_edit', true)->orWhere('can_approve', true))
+            ->exists();
     }
 
     /** 403 response when the caller may not manage salary, else null. */

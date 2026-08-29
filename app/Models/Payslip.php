@@ -17,7 +17,7 @@ class Payslip extends Model
     protected $fillable = [
         'client_id', 'branch_id', 'payroll_run_id', 'payroll_period_id', 'employee_id',
         'employee_code', 'employee_name', 'department', 'designation', 'employee_type',
-        'working_days', 'present_days', 'paid_days', 'lop_days',
+        'working_days', 'present_days', 'paid_days', 'lop_days', 'late_lop_days',
         'paid_leave_days', 'unpaid_leave_days', 'late_marks', 'missing_punches',
         'overtime_hours', 'att_source',
         'earnings', 'deductions',
@@ -38,6 +38,7 @@ class Payslip extends Model
         'present_days'      => 'decimal:2',
         'paid_days'         => 'decimal:2',
         'lop_days'          => 'decimal:2',
+        'late_lop_days'     => 'decimal:2',
         'paid_leave_days'   => 'decimal:2',
         'unpaid_leave_days' => 'decimal:2',
         'overtime_hours'    => 'decimal:2',

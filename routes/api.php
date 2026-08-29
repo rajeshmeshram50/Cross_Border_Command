@@ -92,10 +92,12 @@ Route::middleware('throttle:20,1')->group(function () {
 });
 Route::post('/razorpay/webhook', [RazorpayWebhookController::class, 'handle']);
 
-// One-off attendance backfill tool — now requires an authenticated user (was
-// unauthenticated + a source-committed ?key=, i.e. a public cross-tenant write).
-Route::match(['get', 'post'], '/tools/attendance-backfill', [\App\Http\Controllers\Api\AttendanceBackfillController::class, 'run'])
-    ->middleware(['auth:sanctum', 'user.active']);
+/* The one-off /tools/attendance-backfill route and its controller are gone.
+   It generated four months of attendance for a fixed employee list, defaulting
+   to client 10 / branch 27 — the only place in runtime code that hardcoded a
+   tenant, and it OVERWROTE the punches it touched, which feed payroll. The
+   backfill it existed for is done. Recover from git history if it is ever
+   needed again, and derive the tenant from the caller if so. */
 
 
 Route::get('/sales/quotations/{id}/view',        [SalesPdfController::class, 'publicViewQuotation'])

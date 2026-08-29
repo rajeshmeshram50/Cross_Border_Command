@@ -134,7 +134,15 @@
             @endif
             <td><div class="lbl">Actual Payable Days</div><div class="val">{{ $days['payable'] }}</div></td>
             <td><div class="lbl">Total Working Days</div><div class="val">{{ $days['working'] }}</div></td>
-            <td><div class="lbl">Loss Of Pay Days</div><div class="val">{{ $days['lop'] }}</div></td>
+            <td>
+                <div class="lbl">Loss Of Pay Days</div>
+                <div class="val">{{ $days['lop'] }}</div>
+                {{-- Says why LOP can exceed the days missed: the late-mark rule
+                     charges pay for days that were actually worked. (#114) --}}
+                @if(!empty($days['late_lop']))
+                    <div class="lbl" style="margin-top:1px">incl. {{ $days['late_lop'] }} late marks</div>
+                @endif
+            </td>
             <td><div class="lbl">Days Payable</div><div class="val">{{ $days['payable_int'] }}</div></td>
         </tr>
     </table>

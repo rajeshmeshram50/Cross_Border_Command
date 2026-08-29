@@ -1040,7 +1040,16 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
         <thead>
           <tr>
             <th style={{ width: 56 }}>Sr No</th>
-            <th>Document Name</th>
+            {/* Pinned width. The table is width:100% with a 980px min-width, so
+                whenever the row content is narrower than that the browser hands
+                the slack to the widest auto column — Document Name. Owner KYC
+                has the shortest values of the three standard tabs (KYC-001,
+                "N/A" expiry, a 25-char-capped authority), so it collected almost
+                all of it and opened a large empty gap beside the names, while
+                Trade Licenses looked right (QA #67). Fixing the width makes all
+                three tabs match and spreads any remaining slack across the other
+                columns instead of pooling it in one. */}
+            <th style={{ width: 220 }}>Document Name</th>
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>

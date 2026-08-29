@@ -33,6 +33,13 @@ const empty = {
      validator still guards against is now unreachable from this form.
      Converted to 1/0 at submit. */
   sandwich_policy: 'no',
+  /* Loss-of-pay policy: what an absent day is priced against, and over how
+     many days. Seeded with the rule payroll has always applied (basic ÷
+     calendar days) so an admin who never opens this section keeps exactly the
+     existing behaviour. Submitted as two scalars; the server composes them
+     into branches.lop_policy. */
+  lop_basis: 'basic',
+  lop_divisor: 'calendar',
   /* Late-mark deduction rule for this office. Seeded with the rule payroll
      used to hardcode (every 3 late marks = half day) so an admin who never
      touches this section gets exactly the old behaviour. Half day / full day
@@ -892,6 +899,12 @@ export default function BranchForm({ onBack, editId }: Props) {
         // to the unanswered '' state — an edit must not be blocked by a field
         // the branch was created before.
         sandwich_policy: b.sandwich_policy ? 'yes' : 'no',
+        /* lop_policy is null on every branch created before the column
+           existed. Null is not "unanswered" here — it means the default that
+           payroll has been applying all along, so it maps to that rather than
+           to an empty control. */
+        lop_basis:   (b.lop_policy as any)?.basis   === 'gross'   ? 'gross'   : 'basic',
+        lop_divisor: (b.lop_policy as any)?.divisor === 'working' ? 'working' : 'calendar',
         late_mark_enabled: rawLate && rawLate.enabled === false ? 'no' : 'yes',
         late_mark_count: String(rawLate?.count ?? 3),
         late_mark_deduction: rawLate?.deduction === 'full_day' ? 'full_day' : 'half_day',
@@ -1051,6 +1064,9 @@ export default function BranchForm({ onBack, editId }: Props) {
       if (form.sandwich_policy === 'yes' || form.sandwich_policy === 'no') {
         payload.sandwich_policy = form.sandwich_policy === 'yes' ? 1 : 0;
       }
+      // Plain strings, so they survive both the JSON and the FormData path.
+      payload.lop_basis   = form.lop_basis;
+      payload.lop_divisor = form.lop_divisor;
       // Work shifts (repeater) — drop blank rows, trim names. Sent as a JSON
       // string on multipart (FormData stringifies arrays badly) and as a real
       // array on the JSON path.
@@ -2221,6 +2237,126 @@ export default function BranchForm({ onBack, editId }: Props) {
                       {fieldError('sandwich_policy')}
                     </div>
                   )}
+                </div>
+              );
+            })()}
+
+            {/* Loss of Pay basis.
+                Sits beside the sandwich policy because both decide how this
+                office turns a day off into money.
+
+                Two questions, because they are genuinely independent: WHAT an
+                absent day is priced against, and over HOW MANY days. Charging
+                on basic means allowances are never clawed back — an employee
+                absent all month still takes home the allowance half of their
+                salary. That is a legitimate policy plenty of employers run,
+                but it has to be a decision somebody made rather than a default
+                nobody could see: until this control existed the switch lived
+                only in the database (QA #117).
+
+                The live rate below is the whole point — it shows the four
+                combinations differ by more than rounding, before Save rather
+                than in a payslip. */}
+            {(() => {
+              const opt = (
+                field: 'lop_basis' | 'lop_divisor',
+                value: string,
+                title: string,
+                sub: string,
+              ) => {
+                const on = (form as any)[field] === value;
+                return (
+                  <div
+                    role="radio"
+                    aria-checked={on}
+                    tabIndex={0}
+                    onClick={() => set(field, value)}
+                    onKeyDown={ev => {
+                      if (ev.key === ' ' || ev.key === 'Enter') { ev.preventDefault(); set(field, value); }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 9,
+                      border: `1.5px solid ${on ? '#4F46E5' : 'var(--vz-border-color)'}`,
+                      background: on ? 'rgba(79,70,229,0.06)' : 'var(--vz-card-bg)',
+                      borderRadius: 10, padding: '10px 12px', cursor: 'pointer',
+                      transition: 'border-color .15s ease, background .15s ease',
+                      height: '100%',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 15, height: 15, borderRadius: '50%', marginTop: 1, flexShrink: 0,
+                        border: `1.5px solid ${on ? '#4F46E5' : 'var(--vz-border-color)'}`,
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      {on && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4F46E5' }} />}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="fw-semibold" style={{ fontSize: 12.5 }}>{title}</div>
+                      <div className="text-muted" style={{ fontSize: 11, marginTop: 1 }}>{sub}</div>
+                    </div>
+                  </div>
+                );
+              };
+
+              /* A worked example on a round number, so the consequence of the
+                 choice is a figure rather than a sentence. 30/26 are the usual
+                 stand-ins for a month's calendar and working days. */
+              const gross = 30000;
+              const basic = gross / 2;
+              const amount = form.lop_basis === 'gross' ? gross : basic;
+              const days   = form.lop_divisor === 'working' ? 26 : 30;
+              const perDay = Math.round(amount / days);
+
+              return (
+                <div
+                  style={{
+                    border: '1px solid var(--vz-border-color)',
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    marginBottom: 14,
+                    background: 'var(--vz-card-bg)',
+                  }}
+                >
+                  <div className="d-flex align-items-start gap-3">
+                    <span
+                      className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                      style={{
+                        width: 30, height: 30, borderRadius: 9,
+                        background: 'rgba(79,70,229,0.10)', color: '#4F46E5',
+                      }}
+                    >
+                      <i className="ri-money-rupee-circle-line" style={{ fontSize: 15 }} />
+                    </span>
+                    <div className="min-w-0">
+                      <div className="fw-semibold" style={{ fontSize: 13 }}>Loss of Pay Calculation</div>
+                      <div className="text-muted" style={{ fontSize: 11.5, marginTop: 2 }}>
+                        How an unpaid day is priced for everyone in this branch. Applies to
+                        payroll and to full &amp; final settlements.
+                      </div>
+                    </div>
+                  </div>
+
+                  <Row className="g-2" style={{ marginTop: 8, marginLeft: 29 }}>
+                    <Col md={6}>{opt('lop_basis', 'basic', 'Charge on Basic', 'Allowances are not deducted')}</Col>
+                    <Col md={6}>{opt('lop_basis', 'gross', 'Charge on Monthly Gross', 'Deducts what a day actually earns')}</Col>
+                    <Col md={6}>{opt('lop_divisor', 'calendar', 'Divide by Calendar Days', 'All days of the month')}</Col>
+                    <Col md={6}>{opt('lop_divisor', 'working', 'Divide by Working Days', 'Excludes week-offs and holidays')}</Col>
+                  </Row>
+
+                  <div
+                    className="text-muted"
+                    style={{ fontSize: 11.5, marginTop: 8, marginLeft: 29 }}
+                  >
+                    On a ₹{gross.toLocaleString('en-IN')} monthly gross with a 50% basic, one
+                    LOP day costs{' '}
+                    <span className="fw-semibold" style={{ color: '#4F46E5' }}>
+                      ₹{perDay.toLocaleString('en-IN')}
+                    </span>{' '}
+                    ({form.lop_basis === 'gross' ? 'gross' : 'basic'} ÷ {days}{' '}
+                    {form.lop_divisor === 'working' ? 'working' : 'calendar'} days).
+                  </div>
                 </div>
               );
             })()}

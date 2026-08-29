@@ -1023,6 +1023,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     if (saving) return;
     if (!validateHasProducts()) return;
     if (!validateSegments()) return;
+    if (!validateLineFields()) return;
     // Expected Delivery Date can't be earlier than today — but only for a NEW
     // PO. An existing PO being edited may legitimately have a past delivery
     // date, so we don't block the edit on it.
@@ -1093,6 +1094,39 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     return true;
   };
 
+  /* Product Name (PO), Quantity (PO) and Rate are mandatory on every product
+   * row that will be persisted. buildPayload keeps any row with a name / qty /
+   * PI name and sends `product_name: r.name || null`, `quantity: num(r.qty)`,
+   * `rate: num(r.rate)` — so a cleared field used to save as null/0 rather than
+   * being rejected (QA #65 with shipment, #66 without, #73 name + rate; one
+   * table, so one gate covers all three).
+   *
+   * With-shipment rows arrive prefilled from the PI and the without-shipment
+   * picker fills name + rate on select, so this only ever fires on a field the
+   * user actually cleared. Quantity must be > 0 (a line for nothing is not a
+   * line); rate only has to be entered, since a zero-rate line is legitimate. */
+  const incompleteLines = (): string[] => rows
+    .filter(r => r.name || r.qty || r.piName)   // exactly what buildPayload persists
+    .map(r => {
+      const missing: string[] = [];
+      if (!r.name.trim())  missing.push('Product Name');
+      if (num(r.qty) <= 0) missing.push('Quantity (PO)');
+      if (!r.rate.trim())  missing.push('Rate');
+      if (missing.length === 0) return null;
+      const label = formatProductCode(r.code) || r.name || r.piName || 'Unnamed product';
+      return `${label} (${missing.join(', ')})`;
+    })
+    .filter((x): x is string => x !== null);
+  const validateLineFields = (): boolean => {
+    const bad = incompleteLines();
+    if (bad.length === 0) return true;
+    toast.error(
+      'Product details are incomplete',
+      `Product Name, Quantity (PO) and Rate are required on every product row — fill in ${bad.join('; ')}.`,
+    );
+    return false;
+  };
+
   // A PO can't be saved/submitted while any product's segment differs from the
   // supplier's segment — the buyer must remove the product or map the supplier
   // to that segment first. Gates Save Details, Save & Next, and the final
@@ -1144,6 +1178,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
     // segment mismatch before it can be left.
     if (stage >= 2 && !validateHasProducts()) return;
     if (stage >= 2 && !validateSegments()) return;
+    if (stage >= 2 && !validateLineFields()) return;
     if (stage >= 2 && !validateAmounts()) return;
     // Stage 2 must be "saved" (Save Details) before advancing so the buyer has
     // reviewed the missing-quantity check. Edit/view auto-reveals it, so only a
@@ -1617,6 +1652,7 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
                       if (savingDetails || poView) return;
                       if (!validateHasProducts()) return;
                       if (!validateSegments()) return;
+                      if (!validateLineFields()) return;
                       if (!validateAmounts()) return;
                       setSavingDetails(true);
                       try {
@@ -1691,7 +1727,14 @@ export default function CreatePoWizard({ editRow, viewOnly = false, onClose, onS
           <div className="p2pj-footer__dots">{[1, 2, 3, 4].map(i => <div key={i} className={`p2pj-fdot ${i < stage ? 'is-done' : (i === stage ? 'is-active' : '')}`} />)}</div>
           <div className="p2pj-footer__btns">
             <button className="p2pj-fbtn p2pj-fbtn--ghost" onClick={back}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6" /></svg> {stage === 1 ? 'Change Link' : 'Back'}</button>
-            <button className={`p2pj-fbtn ${!roMode && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving} onClick={next}>
+            {/* Also disabled while the wizard is still hydrating. Opening an
+                existing PO shows the Stage-1 shimmer, but the footer stayed
+                live — clicking Save & Next then advanced the stage (and ran
+                stage-1 validation) against half-loaded data (QA #71). This is
+                the same rule canJumpTo already applies to the stepper; both
+                loading flags settle via allSettled/finally, so the button can
+                never be stranded. */}
+            <button className={`p2pj-fbtn ${!roMode && stage === 3 ? 'p2pj-fbtn--submit' : 'p2pj-fbtn--primary'}`} disabled={saving || stage1Loading} onClick={next}>
               {saving ? (<><Spin s={14} /> {stage === 4 ? (isEdit ? 'Updating…' : 'Generating…') : 'Please wait…'}</>)
                 : roMode ? (stage === 4 ? (<><XIco /> Close</>) : (<>Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>))
                 : stage === 3 ? (<><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg> Submit PO &amp; Next <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg></>)

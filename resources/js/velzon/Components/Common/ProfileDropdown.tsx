@@ -42,23 +42,27 @@ const ProfileDropdown = () => {
     logout();
   };
 
-  // My Team — every user that manages people (computed server-side in /me).
-  const canSeeMyTeam = !!user.is_reporting_manager;
   // Platform Settings (branding, support email, privacy) is admin-only.
   const canSeeSettings = user.user_type !== 'employee';
   // Branch / company line shown in the dropdown header (mirrors horizontal).
   const branchName = user.branch_name || user.client_name || '';
 
-  // Menu mirrors the horizontal header's profile dropdown: Profile, My Team,
-  // Settings, Logout. Inbox / Gmail now live as top-bar icons, not here.
+  /* Menu mirrors the horizontal header's profile dropdown (IdimsHeader.tsx):
+     Profile, My Team, Settings, Documentation Guide, Theme Customizer, Logout.
+     Inbox / Gmail live as top-bar icons, not here.
+
+     It had drifted to three items: Documentation Guide and Theme Customizer
+     were never added, and My Team was hidden behind `is_reporting_manager`
+     while the horizontal header showed it to everyone. Switching layout then
+     silently removed menu entries, which reads as a broken build rather than
+     as a permission. Same list in both layouts now. */
   const menuItems: { to: string; icon: string; label: string; grad: string }[] = [
     { to: '/profile',  icon: 'ri-user-3-line',     label: 'Profile',  grad: 'linear-gradient(135deg,#A78BFA,#7C3AED)' },
-    ...(canSeeMyTeam
-      ? [{ to: '/my-team',  icon: 'ri-team-line',      label: 'My Team',  grad: 'linear-gradient(135deg,#34D399,#059669)' }]
-      : []),
+    { to: '/my-team',  icon: 'ri-team-line',       label: 'My Team',  grad: 'linear-gradient(135deg,#34D399,#059669)' },
     ...(canSeeSettings
       ? [{ to: '/settings', icon: 'ri-settings-3-line', label: 'Settings', grad: 'linear-gradient(135deg,#94A3B8,#64748B)' }]
       : []),
+    { to: '/documentation', icon: 'ri-book-2-line', label: 'Documentation Guide', grad: 'linear-gradient(135deg,#38BDF8,#0284C7)' },
   ];
 
   return (
@@ -276,6 +280,32 @@ const ProfileDropdown = () => {
                 </Link>
               </DropdownItem>
             ))}
+
+            {/* Opens the Velzon theme customizer. Not a Link, so it can't ride
+                in menuItems above. RightSidebar listens for this event — the
+                same trigger the horizontal header uses, rather than a second
+                floating gear that would cover the pagination arrows. */}
+            <DropdownItem
+              tag="div"
+              onClick={() => window.dispatchEvent(new Event('idims:open-theme-customizer'))}
+            >
+              <div className="cbc-profile-row" style={{ cursor: 'pointer' }}>
+                <span
+                  className="d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: 34,
+                    height: 34,
+                    borderRadius: 10,
+                    background: 'linear-gradient(135deg,#F0ABFC,#C026D3)',
+                    boxShadow: '0 2px 6px rgba(15,23,42,0.18)',
+                  }}
+                >
+                  <i className="ri-palette-line" style={{ color: '#fff', fontSize: 15 }}></i>
+                </span>
+                <span className="fw-semibold flex-grow-1" style={{ fontSize: 13.5 }}>Theme Customizer</span>
+                <i className="ri-arrow-right-s-line cbc-profile-chev" />
+              </div>
+            </DropdownItem>
 
             <div
               style={{
