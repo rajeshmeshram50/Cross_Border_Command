@@ -721,7 +721,15 @@ export default function SalesMatrixDetail() {
            progress bar was measuring work nobody had asked for. */
         const key  = a.id != null ? `id:${a.id}` : `code:${a.code ?? ''}|title:${a.title ?? ''}`;
         agrAny.add(key);
-        if (a.needed !== true) continue;
+        /* Necessary, OR already sent.
+           The Necessary flag lives in clm_lead_doc_needs and is set by hand in
+           the popup. Sending an agreement for signature does NOT set it — so an
+           agreement raised straight after the PI went out had a live signature
+           request and still did not exist as far as this card was concerned:
+           "No agreements", 0%, while the deal was waiting on a signature.
+           Sending a document IS the statement that it is needed; a card that
+           tracks outstanding work cannot leave out the work already in flight. */
+        if (a.needed !== true && !a.signature_request) continue;
         const done = a.signature_request?.status === 'completed';
         agrSeen.set(key, (agrSeen.get(key) ?? false) || done);
       }
@@ -737,8 +745,10 @@ export default function SalesMatrixDetail() {
         if (buyerEqualsConsignee && !td.for_buyer) continue;
         const key  = td.db_id != null ? `id:${td.db_id}` : `code:${td.doc_code}|ref:${td.reference}|name:${td.name}`;
         tdAny.add(key);
-        // Same rule as agreements above — Necessary only.
-        if (td.needed !== true) continue;
+        /* Same rule as agreements above: Necessary, or already sent, or already
+           uploaded. A trade doc that has been verified is finished work — it
+           belongs in the total whether or not anyone ticked the box first. */
+        if (td.needed !== true && !td.signature_request && td.status !== 'Verified') continue;
         const done = td.status === 'Verified' || td.signature_request?.status === 'completed';
         tdSeen.set(key, (tdSeen.get(key) ?? false) || done);
       }
@@ -1417,6 +1427,10 @@ export default function SalesMatrixDetail() {
             stage={stage}
             onPrev={goPrev}
             onNext={goNext}
+            /* The entry rule for the NEXT stage, asked before that stage's own
+               Save & Next writes anything. Same guard goNext() runs, just
+               reachable early — see canEnterNextStage in stageTypes. */
+            canEnterNextStage={() => (stage === 2 ? requireSalespersonForSourcing() : true)}
             reloadLead={reloadLead}
             /* Stage 3 watches this to re-fetch its product list when the
                toolbar Product Directory popup maps/removes a product. Other

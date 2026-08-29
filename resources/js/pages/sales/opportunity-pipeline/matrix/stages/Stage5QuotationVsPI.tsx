@@ -432,6 +432,18 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
   };
 
   const onEdit = (kind: DocType, id: number) => {
+    /* Nothing is editable until we know whether it has been sent or signed.
+       The lock further down reads sigByRow, which is empty for the few seconds
+       the signature fetch takes — so on every page load an already-sent PI was
+       editable for that window, and the guard that should have stopped it had
+       nothing to read yet.
+       The Send button already waited on this flag (it shows "Checking…").
+       Edit did not, which is why one was safe and the other was not. */
+    if (!sigLoaded) {
+      toast.info('Checking signature status', 'One moment — confirming whether this document has already been sent for signature.');
+      return;
+    }
+
     // A quotation that's been converted to a PI (or cancelled) is locked — the
     // PI is now the live document; editing the quotation would desync them.
     if (kind === 'quotation') {
@@ -781,6 +793,13 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                           {/* STATUS = e-signature lifecycle:
                               Not Sent (draft) → Sent (awaiting) → Signed. */}
                           {(() => {
+                            /* Same window as the Edit guard: until the fetch
+                               lands there is no status to read, and falling
+                               through to "Not Sent" told the user the opposite
+                               of the truth about a document already sent. */
+                            if (!sigLoaded) {
+                              return <span className="s5-st-badge s5-st-notsent" style={{ opacity: .7 }}>Checking…</span>;
+                            }
                             const st = sigByRow[`${docType}:${r.id}`]?.status;
                             // Clean solid pill — same shape as the Document Type
                             // badge (s5-dt2), just colour-coded by signature state.
@@ -798,7 +817,32 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             if (st === 'recalled') {
                               return <span className="s5-st-badge s5-st-recalled">Recalled</span>;
                             }
-                            return <span className="s5-st-badge s5-st-notsent">Not Sent</span>;
+                            if (st === 'expired') {
+                              return <span className="s5-st-badge s5-st-recalled">Expired</span>;
+                            }
+                            /* No request at all — nothing has been sent. */
+                            if (!st) {
+                              return <span className="s5-st-badge s5-st-notsent">Not Sent</span>;
+                            }
+                            /* A request EXISTS but Zoho returned a state this
+                               screen does not know — an undelivered / bounced
+                               mail is one of them, and Zoho's raw value is
+                               stored as-is (see show() in
+                               ClmSignatureController).
+                               Showing Zoho's own word is the only honest option:
+                               falling through to "Not Sent" denied a request
+                               that had been sent, and there is no basis for
+                               calling it "Declined" — nobody refused anything.
+                               Title-cased so "undelivered" reads as
+                               "Undelivered". */
+                            return (
+                              <span
+                                className="s5-st-badge s5-st-recalled"
+                                title={`Signature request state reported by Zoho: ${st}`}
+                              >
+                                {st.charAt(0).toUpperCase() + st.slice(1)}
+                              </span>
+                            );
                           })()}
                         </td>
                       )}

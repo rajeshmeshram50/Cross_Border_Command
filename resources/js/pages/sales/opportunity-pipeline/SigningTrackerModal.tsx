@@ -523,12 +523,41 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     if (a.viewed_at) {
       out.push({ key: `att-${a.id}-view`, icon: 'eye', label: 'Reviewed by signer(s)', short: 'Reviewed', desc: 'Opened & reviewed by the signer(s)', person: null, date: fmt(a.viewed_at), state: 'done', tone: 'ok', badge: 'Done' });
     }
+    /* Each terminal state is matched EXPLICITLY. This used to be an else that
+       caught everything left over, so an attempt that merely never finished —
+       the mail bounced, the link was never opened, a new request superseded it
+       — was rendered as "Declined — A signer declined the document", complete
+       with a Download declined document button that has nothing to download.
+       "Declined" is a statement about the customer: they read it and refused.
+       Saying that about a mail that never arrived sends the salesperson to
+       argue a decision nobody made, when the real job is to fix an address. */
     if (st === 'recalled') {
       out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Recalled', short: 'Recalled', desc: a.recall_reason || 'The request was recalled', person: null, date: fmt(a.recalled_at || a.created_at), state: 'done', tone: 'warn', badge: 'Recalled', download: true, dlId: a.id });
     } else if (st === 'completed') {
       out.push({ key: `att-${a.id}-final`, icon: 'check', label: 'Signed & completed', short: 'Signed', desc: 'A previous round was completed', person: null, date: fmt(a.completed_at || a.created_at), state: 'done', tone: 'ok', badge: 'Done' });
-    } else {
+    } else if (st === 'declined' || st === 'rejected' || a.declined_at) {
       out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Declined', short: 'Declined', desc: a.decline_reason || 'A signer declined the document', person: null, date: fmt(a.declined_at || a.created_at), state: 'done', tone: 'bad', badge: 'Declined', download: true, dlId: a.id });
+    } else {
+      /* Ended without a decision. `viewed_at` separates the two cases we can
+         actually tell apart: opened and left alone, versus never opened at all
+         — the second is what an undelivered mail looks like from here.
+         No download: there is no declined copy, and offering one only produces
+         a failed request. */
+      const neverOpened = !a.viewed_at;
+      out.push({
+        key: `att-${a.id}-final`,
+        icon: 'x',
+        label: neverOpened ? 'Not delivered' : 'Closed without signature',
+        short: neverOpened ? 'Not delivered' : 'Closed',
+        desc: neverOpened
+          ? 'The signer never opened this request — the e-sign mail may not have reached them. Check the address before re-sending.'
+          : 'This round ended without a signature and was replaced by a new request.',
+        person: null,
+        date: fmt(a.created_at),
+        state: 'done',
+        tone: 'bad',
+        badge: neverOpened ? 'Not delivered' : 'Closed',
+      });
     }
     return out;
   });

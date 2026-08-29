@@ -1474,10 +1474,33 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
    *  would land wherever the host happened to drop the clause. */
   hidePageBreak?: boolean;
 }) {
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [spacingOpen, setSpacingOpen] = useState(false);
-  const [tableOpen, setTableOpen] = useState(false);
-  const [findOpen, setFindOpen] = useState(false);
+  /* ONE menu open at a time.
+     These were four independent booleans, so each menu knew only about itself:
+     opening Table while Find was up left both on screen, overlapping. A toolbar
+     that can show two menus at once is a toolbar where the second one is read
+     as part of the first.
+     Exclusivity is a property of the state now rather than something every
+     handler has to remember — a fifth menu added later inherits it. The
+     setters keep the same shape (boolean or updater) so no call site changed. */
+  type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
+  const [menu, setMenu] = useState<ToolMenu>(null);
+  const linkOpen    = menu === 'link';
+  const spacingOpen = menu === 'spacing';
+  const tableOpen   = menu === 'table';
+  const findOpen    = menu === 'find';
+  const menuSetter = (name: Exclude<ToolMenu, null>) =>
+    (v: boolean | ((prev: boolean) => boolean)) =>
+      setMenu(prev => {
+        const isOpen = prev === name;
+        const next = typeof v === 'function' ? v(isOpen) : v;
+        // Closing a menu that is not the open one must not shut the one that is
+        // — the popovers' click-away handlers fire on each other.
+        return next ? name : (isOpen ? null : prev);
+      });
+  const setLinkOpen    = menuSetter('link');
+  const setSpacingOpen = menuSetter('spacing');
+  const setTableOpen   = menuSetter('table');
+  const setFindOpen    = menuSetter('find');
   const [findTerm, setFindTerm] = useState('');
   const [replaceTerm, setReplaceTerm] = useState('');
   const [matchCase, setMatchCase] = useState(false);
@@ -1975,7 +1998,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
         {tableOpen && (
           <>
             <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setTableOpen(false); }} />
-            <div className="ctcte-spcpop" onMouseDown={e => e.preventDefault()}>
+            <div className="ctcte-spcpop ctcte-pop-right" onMouseDown={e => e.preventDefault()}>
               {([['3 × 3', 3, 3], ['2 × 2', 2, 2], ['4 × 4', 4, 4]] as [string, number, number][]).map(([label, rows, cols]) => (
                 <button
                   key={label}
@@ -2102,7 +2125,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           <Ico d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.35-4.35" />
         </button>
         {findOpen && (
-          <div className="ctcte-findpop" onMouseDown={e => e.stopPropagation()}>
+          <div className="ctcte-findpop ctcte-pop-right" onMouseDown={e => e.stopPropagation()}>
             <div className="ctcte-findrow">
               <input
                 className="ctcte-linkinput"
@@ -2552,6 +2575,21 @@ export const CTC_EDITOR_CSS = `
 /* A button whose glyph IS text (the sub-points 1.1). Sized to sit on the
    same optical weight as the stroked icons around it. */
 .ctcte-btn-txt { font-size: 10px; font-weight: 800; letter-spacing: -.02em; }
+/* A menu that opens INWARD.
+   Every popover here is anchored left:0 under its button, which is right for
+   the controls at the start of the bar. Table and Find sit at the far end, so
+   from there a left-anchored panel runs past the dialog's right edge and gets
+   clipped — the Find box lost its Replace button and both arrows.
+   Set by class rather than measured at runtime: these two are always the last
+   controls on the bar, so which way they should open is known up front. */
+/* Compounded with each popover's own class, not left bare.
+   .ctcte-findpop and .ctcte-spcpop both set left:0, and a bare
+   .ctcte-pop-right is the same weight (0,1,0) — so the winner came down to
+   which rule sits later in the sheet, and both of those do. The class was on
+   the element and doing nothing; the panel still opened rightward and off the
+   dialog. Compounding makes it (0,2,0) and settles it on specificity. */
+.ctcte-findpop.ctcte-pop-right,
+.ctcte-spcpop.ctcte-pop-right { left: auto; right: 0; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }

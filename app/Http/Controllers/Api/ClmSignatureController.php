@@ -1513,6 +1513,39 @@ class ClmSignatureController extends Controller
 
         $docKind = $data['doc_kind'];
         $docId   = (int) $data['doc_id'];
+
+        /* One live signature request per document — enforced HERE, before Zoho
+         * is touched.
+         *
+         * The screen already hides Send once a request is out, but a screen
+         * cannot hold this line: the send takes several seconds, and a second
+         * tab opened in that window still shows the document as unsent. Both
+         * tabs then send, Zoho issues two requests, and the customer receives
+         * two links for the same PI — signing either one leaves the other live.
+         * Nothing downstream reconciles that.
+         *
+         * `completed` is deliberately NOT blocked here — a signed document is
+         * already refused by hasSignedForDoc on the edit path, and blocking it
+         * again with this message would read as though it were merely pending.
+         * `superseded` and `recalled` are not blocked either: those are exactly
+         * the states a re-send is FOR. */
+        $liveDocType = $docKind === 'quotation'
+            ? ClmSignatureRequest::DOC_QUOTATION
+            : ClmSignatureRequest::DOC_PROFORMA_INVOICE;
+        $live = ClmSignatureRequest::where('client_id', $user->client_id)
+            ->where('document_type', $liveDocType)
+            ->where('trade_doc_id', $docId)
+            ->whereIn('status', ['draft', 'inprogress'])
+            ->whereNull('deleted_at')
+            ->first();
+        if ($live) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'This document has already been sent for signature and is awaiting a response. '
+                    . 'Recall the existing request before sending it again.',
+                'data'    => ['signature_request_id' => $live->id],
+            ], 409);
+        }
         // Lead may be omitted (direct PI/quotation with no opportunity); when
         // supplied it's tenant-scoped. Falls back to the document's own opp_id
         // below once the record is loaded.
@@ -2285,9 +2318,18 @@ class ClmSignatureController extends Controller
         // Locate the declining signer(s) from the per-recipient actions.
         $reasonByEmail  = [];
         $declinedReason = '';
+        /* DECLINE actions only — `recalled` is not one.
+           This list used to include 'recalled', and $reasonByEmail then fed
+           $isDeclined below. So a single recipient action of `recalled` on a
+           request whose own status was still `inprogress` marked the entire
+           request DECLINED: the row went red, the timeline said "A signer
+           declined the document", and nobody had declined anything.
+           A recall is our side withdrawing the request; a decline is the
+           signer refusing it. They are opposite events and cannot share a
+           bucket. Recall is detected from the REQUEST status, just below. */
         foreach (data_get($details, 'requests.actions', []) as $a) {
             $st = strtolower((string) ($a['action_status'] ?? ''));
-            if (!in_array($st, ['declined', 'rejected', 'recalled'], true)) continue;
+            if (!in_array($st, ['declined', 'rejected'], true)) continue;
             $email  = strtolower((string) ($a['recipient_email'] ?? ''));
             $reason = $pickReason((array) $a) ?: $reqLevelReason;
             if ($email !== '') $reasonByEmail[$email] = $reason;
