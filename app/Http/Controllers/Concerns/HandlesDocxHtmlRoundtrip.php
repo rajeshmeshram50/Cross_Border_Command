@@ -798,6 +798,9 @@ trait HandlesDocxHtmlRoundtrip
      * recovered line and Google Docs rejects it ("unexpected error"). Rewrites
      * document.xml + any header/footer parts in-place inside the .docx zip:
      *
+     *   0. Control characters XML forbids outright, and invalid UTF-8. Neither
+     *      can be escaped into legality; they have to go. They come in with
+     *      content pasted from PDFs and legacy Word files.
      *   1. Bare `&` (PhpWord leaves ampersands decoded from HTML entities
      *      unescaped) → `&amp;`. This is the fatal one: it makes the XML
      *      non-well-formed, so the whole document fails to parse.
@@ -910,13 +913,48 @@ trait HandlesDocxHtmlRoundtrip
     /** Apply the three OOXML repairs (see sanitizeDocxXml) to one XML part. */
     protected function sanitizeOoxmlString(string $xml): string
     {
+        /* 0) Characters XML 1.0 does not allow AT ALL.
+              Control codes below 0x20 (except tab, LF, CR) are illegal in XML,
+              full stop — no escaping makes them legal. One of them anywhere in
+              the file and every reader, Word included, refuses the document
+              with a generic "there is a problem with its contents".
+              They arrive from content pasted out of PDFs and legacy Word files,
+              which is exactly the "upload a doc, then download it" path this
+              was reported on, and they survive every step because nothing else
+              looks at them.
+              Invalid UTF-8 is dropped for the same reason: a broken byte
+              sequence is not a character, and the parser stops at it. */
+        $xml = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F]/u', '', (string) $xml) ?? $xml;
+        if (!mb_check_encoding($xml, 'UTF-8')) {
+            $xml = mb_convert_encoding($xml, 'UTF-8', 'UTF-8');
+        }
+
         // 1) Escape bare ampersands (anything not already a valid entity).
         $xml = preg_replace('/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/', '&amp;', (string) $xml);
 
-        // 2) Fractional font sizes → nearest whole half-point.
+        /* 2) Numeric attributes that are not whole numbers, or that still carry
+              a CSS unit.
+              OOXML measurements are integers -- twips, half-points, eighths of
+              a point -- and Word rejects the WHOLE file on a single bad value
+              with "we found a problem with its contents", naming nothing. They
+              get in because PhpWord converts CSS to OOXML by arithmetic: a
+              line-height of 1.5, a row height in px, a percentage column width
+              each divide into a fraction, and a unit PhpWord does not
+              recognise is passed through as written.
+              This used to round only w:sz / w:szCs, the one case that had been
+              hit. Every numeric w:* attribute is covered now, because the next
+              style added to the editor produces the next one.
+              A non-numeric value is left alone: w:val also carries keywords
+              (w:jc w:val="center") that must not be touched. */
         $xml = preg_replace_callback(
-            '/(<w:sz(?:Cs)?\b[^>]*\bw:val=")([0-9]+\.[0-9]+)(")/',
-            fn ($m) => $m[1] . (string) max(1, (int) round((float) $m[2])) . $m[3],
+            '/\b(w:[a-zA-Z]+)="(-?\d+(?:\.\d+)?)(px|pt|pc|in|cm|mm|em|rem|%)?"/',
+            function ($m) {
+                $attr = $m[1];
+                $num  = $m[2];
+                $unit = $m[3] ?? '';
+                if ($unit === '' && strpos($num, '.') === false) return $m[0];
+                return $attr . '="' . (string) max(0, (int) round((float) $num)) . '"';
+            },
             (string) $xml
         );
 
