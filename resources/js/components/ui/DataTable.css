@@ -467,6 +467,24 @@
 .dt-sort { font-size: 13px; opacity: .45; flex-shrink: 0; }
 .dt-sort.on { opacity: 1; }
 
+/* A CENTRED sortable header parks its arrow at the cell's right edge instead
+   of carrying it in the flex row. (#171)
+   In the row it is a sibling of the label, so `justify-content:center` centres
+   [label + gap + arrow] as one group and the label itself ends up about half
+   the arrow's width left of centre — while the cell beneath it is centred on
+   the true middle. Next to a non-sortable centred column, which has no arrow
+   and lines up exactly, the difference reads as a broken column.
+   Taking the arrow out of the flow lets the label centre on the column, and the
+   arrow still sits where a sort control is expected. Left/right-aligned headers
+   are untouched: there the arrow trailing the label is the correct reading. */
+.dt-table thead th[data-align="center"] { position: relative; }
+.dt-table thead th[data-align="center"] .dt-sort {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
 .dt-table tbody td {
   padding: 7px 9px;
   font-size: 11.5px; font-weight: 500;

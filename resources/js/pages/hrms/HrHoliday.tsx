@@ -793,10 +793,14 @@ function ManageGroupsModal({
 
   const save = async () => {
     if (!name.trim()) { setNameErr('Group name is required'); return; }
-    // Group names are labels — allow letters, numbers, spaces and hyphens only.
-    // Blocks apostrophes and other special characters.
-    if (!/^[\p{L}\p{N} \-]+$/u.test(name.trim())) {
-      setNameErr('Group name can only contain letters, numbers, spaces and hyphens');
+    /* Group names are labels — letters, numbers, spaces and hyphens only, and
+       they must contain at least one LETTER. (#58) Without the lookahead a
+       purely numeric "12345" passed both here and the API. Digits stay legal
+       inside a name so "Diwali 2026" and "Group 1" still save; only a name made
+       entirely of digits/spaces/hyphens is refused. Kept identical to the rule
+       in HolidayGroupController so the form and the API agree. */
+    if (!/^(?=.*\p{L})[\p{L}\p{N} \-]+$/u.test(name.trim())) {
+      setNameErr('Group name must include at least one letter — numbers alone are not a valid name');
       return;
     }
     setSaving(true);

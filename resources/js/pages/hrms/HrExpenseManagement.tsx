@@ -628,42 +628,41 @@ export default function HrExpenseManagement() {
     }
   };
 
-  const exportPdf = () => {
+  /* Downloads a real PDF instead of opening the print dialog. (#166)
+   *
+   * This used to write an HTML document into a new window and call
+   * window.print(), which is not an export: the user got a print preview and
+   * had to know to pick "Save as PDF" themselves, and a pop-up blocker stopped
+   * it happening at all. The rows are now posted to the API, dompdf renders
+   * them, and the browser receives a finished file — the same path the payslip
+   * and signed-document PDFs already take.
+   *
+   * The rows are sent rather than re-queried because the export must match what
+   * is on screen, and the module toggle, status tab, date range and search are
+   * all client-side state; re-deriving them server-side would be a second
+   * implementation of the same filtering, free to disagree with this one. */
+  const exportPdf = async () => {
     if (!hasExportRows()) return;
-    const esc = (v: any) =>
-      String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const thead = `<tr>${activeExportHeader.map(h => `<th>${esc(h)}</th>`).join('')}</tr>`;
-    const tbody = activeExportRows
-      .map(r => `<tr>${activeExportRow(r).map(c => `<td>${esc(c)}</td>`).join('')}</tr>`)
-      .join('');
     const title = `${isAdvanceModule ? 'Advance Requests' : 'Expense Claims'} — ${DATE_FILTER_LABELS[dateFilter]}`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(exportBaseName())}</title>
-      <style>
-        * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 24px; }
-        h1 { font-size: 16px; margin: 0 0 4px; }
-        .meta { font-size: 11px; color: #6b7280; margin: 0 0 16px; }
-        table { border-collapse: collapse; width: 100%; font-size: 9px; }
-        th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; vertical-align: top; }
-        thead th { background: #f3f4f6; font-weight: 700; }
-        tbody tr:nth-child(even) { background: #fafafa; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style></head>
-      <body>
-        <h1>${esc(title)}</h1>
-        <p class="meta">${activeExportRows.length} ${exportNoun}(s) · generated ${esc(exportStamp())}</p>
-        <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
-        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
-      </body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) {
-      toast.error('Pop-up blocked', 'Allow pop-ups for this site to export as PDF.');
-      return;
+    try {
+      const resp = await api.post('/expense-claims/export-pdf', {
+        title,
+        meta: `${activeExportRows.length} ${exportNoun}(s) · generated ${exportStamp()}`,
+        filename: exportBaseName(),
+        headers: activeExportHeader.map(h => String(h ?? '')),
+        rows: activeExportRows.map(r => activeExportRow(r).map(c => String(c ?? ''))),
+      }, { responseType: 'blob' });
+      triggerDownload(new Blob([resp.data], { type: 'application/pdf' }), `${exportBaseName()}.pdf`);
+      exportDoneToast('PDF');
+    } catch (err: any) {
+      /* The body is a Blob because the request asked for one, so the server's
+         message has to be read back as text before it is JSON. */
+      let msg = 'Could not generate the PDF. Please try again.';
+      const d = err?.response?.data;
+      if (d instanceof Blob) { try { msg = JSON.parse(await d.text())?.message || msg; } catch { /* keep default */ } }
+      else if (d?.message) msg = d.message;
+      toast.error('Export failed', msg);
     }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${activeExportRows.length} ${exportNoun}${activeExportRows.length === 1 ? '' : 's'}.`);
   };
 
   const runExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
@@ -836,7 +835,16 @@ export default function HrExpenseManagement() {
       <MasterFormStyles />
       <div className="hrexp-page">
 
-        <div className="frm-cstrip mb-2 hrexp-hero-card">
+        {/* Plain .frm-cstrip, exactly as every other HRMS module renders its
+            header. (#165) This carried an extra `hrexp-hero-card` modifier that
+            re-skinned the shared strip — purple gradient instead of the white
+            surface, its own border colour, shadow, padding and gap — so the one
+            element meant to look identical across modules was the one that did
+            not. The base class already supplies the whole layout (flex,
+            space-between, min-height, padding, border, radius, shadow); the
+            modifier only changed how it looked.
+            mb-3 rather than mb-2 for the same reason: the standard spacing. */}
+        <div className="frm-cstrip mb-3">
           <span className="frm-cstrip-accent" />
           <div className="frm-cstrip-left">
             <div className="frm-cstrip-icon"><i className="ri-bank-card-2-line" /></div>
@@ -1178,12 +1186,19 @@ export default function HrExpenseManagement() {
             columns={advanceColumns}
             serial
             accent="violet"
-            /* autoFitRows picks the rows-per-page from the space available.
-               This page has a tall header (hero + 5 KPI cards + Spend Analytics
-               + tabs), so pinning the card to the fold squeezed it to ~2 rows on
-               a big screen. minAutoRows floors it at 8 and we drop fitToViewport
-               so the extra rows spill below the fold and the page scrolls. */
+            /* autoFitRows picks the rows-per-page from the space available;
+               minAutoRows floors it at 8 so a tall header (hero + 5 KPI cards +
+               Spend Analytics + tabs) cannot squeeze the card down to ~2 rows.
+
+               fitToViewport is back on (#162). Without it the card took its
+               natural height, so a short list left a screen-tall dead gap
+               between the pager and the page footer — every other HRMS list
+               passes it, which is why this was the only page reported. The two
+               settings are complementary rather than opposed: minAutoRows keeps
+               the row COUNT honest, fitToViewport keeps the card's HEIGHT
+               filling the space it was given. */
             autoFitRows
+            fitToViewport
             minAutoRows={8}
             minWidth={1500}
             loading={advanceLoading || switching}
@@ -1206,7 +1221,9 @@ export default function HrExpenseManagement() {
             columns={claimColumns}
             serial
             accent="violet"
+            // Same pairing as the Advances table above — see the note there. (#162)
             autoFitRows
+            fitToViewport
             minAutoRows={8}
             minWidth={1150}
             loading={loading || switching}

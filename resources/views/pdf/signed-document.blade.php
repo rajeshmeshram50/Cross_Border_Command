@@ -1,7 +1,40 @@
 @php
   $h = is_array($header) ? $header : [];
   $f = is_array($footer) ? $footer : [];
-  $title    = (string) ($h['title']    ?? '');
+
+  /* Letterhead name, resolved at RENDER time. (#113)
+   *
+   * Templates seeded before the organisation name was available stored the
+   * placeholder words "Company Name" / "Company Name Pvt. Ltd." as plain text,
+   * so every document built from them printed those words as if they were the
+   * letterhead — and in Evidence Vault the footer read "Company Name
+   * Confidential". Plain text has nothing to resolve, so fixing the seed only
+   * helps templates written from now on; the documents already in the vault
+   * needed the substitution to happen here, where they are drawn.
+   *
+   * $companyName is passed by the controllers and resolves per document to the
+   * legal entity, then the client org name, then the employee's own BRANCH —
+   * the branch-name default this ticket asks for. When it cannot be resolved
+   * the placeholder is dropped rather than printed, so a footer degrades to
+   * "Confidential" instead of asserting a company that does not exist.
+   *
+   * Also swaps the {{CompanyName}} token, which new templates now seed when the
+   * author has no organisation of their own. */
+  $orgName = trim((string) ($companyName ?? ''));
+  $fillOrg = function (string $s) use ($orgName): string {
+      if ($s === '') return $s;
+      $s = preg_replace('/\{\{\s*CompanyName\s*\}\}/i', $orgName, $s);
+      // Longest first — "Company Name Pvt. Ltd." must not be half-replaced.
+      foreach (['Company Name Pvt. Ltd.', 'Company Name'] as $ph) {
+          $s = str_ireplace($ph, $orgName, $s);
+      }
+      // A dropped name can leave "  |  Confidential" or a trailing separator.
+      $s = preg_replace('/\s*\|\s*\|\s*/', ' | ', $s);
+      $s = preg_replace('/^\s*\|\s*|\s*\|\s*$/', '', $s);
+      return trim(preg_replace('/\s{2,}/', ' ', $s));
+  };
+
+  $title    = $fillOrg((string) ($h['title']    ?? ''));
   $subtitle = (string) ($h['subtitle'] ?? '');
   $align    = (string) ($h['align']    ?? 'right');
   $hBg      = (string) ($h['background'] ?? '#ffffff');
@@ -9,7 +42,7 @@
   $showLogo = ($h['show_logo'] ?? true) && !empty($logoDataUri);
   $showTitle= ($h['show_title'] ?? true);
 
-  $fText    = (string) ($f['text']  ?? '');
+  $fText    = $fillOrg((string) ($f['text']  ?? ''));
   $fAlign   = (string) ($f['align'] ?? 'center');
   $fBg      = (string) ($f['background'] ?? '#ffffff');
   $fFg      = (string) ($f['text_color'] ?? '#6b7280');

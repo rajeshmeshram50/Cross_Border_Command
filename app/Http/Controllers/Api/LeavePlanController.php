@@ -85,7 +85,15 @@ class LeavePlanController extends Controller
         if (!$user) abort(401);
 
         $data = $request->validate([
-            'plan_name' => ['required', 'string', 'max:255'],
+            /* Letters, numbers, spaces and hyphens, and at least one LETTER. (#126)
+             *
+             * There was no format rule at all — "12345" and "@#$%" both saved
+             * as plan names, and a plan is picked from a dropdown by people who
+             * have to recognise it. Digits stay legal inside a name so
+             * "Leave Plan 2026" works; the lookahead only refuses a name made
+             * entirely of digits, spaces, hyphens or symbols. Same rule as the
+             * holiday group name (#58). */
+            'plan_name' => ['required', 'string', 'max:255', 'regex:/^(?=.*\pL)[\pL\pN \-]+$/u'],
             'description' => ['nullable', 'string'],
             'from_month_type' => ['required', Rule::in(['Calendar', 'If Joining'])],
             'from_month' => ['nullable', Rule::in([
@@ -97,6 +105,10 @@ class LeavePlanController extends Controller
             'policy_doc_path' => ['nullable', 'string', 'max:1024'],
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['nullable', 'boolean'],
+        ], [
+            // Names the rule that failed. Laravel's default ("format is
+            // invalid") leaves the user guessing which character to drop. (#126)
+            'plan_name.regex' => 'Leave plan name must include at least one letter, and can only contain letters, numbers, spaces and hyphens.',
         ]);
 
         [$clientId, $branchId] = $this->resolveOwnership($user, $request);
@@ -131,7 +143,9 @@ class LeavePlanController extends Controller
         $this->assertPlanEditable($plan);
 
         $data = $request->validate([
-            'plan_name' => ['sometimes', 'required', 'string', 'max:255'],
+            // Same rule as store() — a form that writes the same column through
+            // a second door needs the same lock on it. (#126)
+            'plan_name' => ['sometimes', 'required', 'string', 'max:255', 'regex:/^(?=.*\pL)[\pL\pN \-]+$/u'],
             'description' => ['nullable', 'string'],
             'from_month_type' => ['sometimes', 'required', Rule::in(['Calendar', 'If Joining'])],
             'from_month' => ['nullable', Rule::in([
@@ -143,6 +157,8 @@ class LeavePlanController extends Controller
             'policy_doc_path' => ['nullable', 'string', 'max:1024'],
             'status' => ['nullable', Rule::in(['Active', 'Inactive'])],
             'is_default' => ['nullable', 'boolean'],
+        ], [
+            'plan_name.regex' => 'Leave plan name must include at least one letter, and can only contain letters, numbers, spaces and hyphens.',
         ]);
 
         if (array_key_exists('plan_name', $data)) {
@@ -945,11 +961,35 @@ class LeavePlanController extends Controller
             ];
         });
 
-        // Distinct values for the filter dropdowns — limited to the in-scope
-        // employees so the dropdowns don't expose other branches.
-        $departments = $employees
+        /* Distinct values for the filter dropdowns — from every in-scope
+         * employee, NOT from the filtered result. (#127)
+         *
+         * These were plucked off $employees, which already has the caller's own
+         * location/search/department filters applied. So picking "Pune" made
+         * the response describe a world containing only Pune, the Location
+         * dropdown rebuilt itself from that, and the user was left with the one
+         * option they had already chosen and no way back to the others.
+         *
+         * A filter list has to describe what is AVAILABLE, not what is
+         * currently shown — otherwise choosing a value destroys the means of
+         * changing it. Rebuilt from the same tenant/plan scope with the user's
+         * filters left off, so the dropdowns still never expose another
+         * branch's data. Two thin id/location/department reads, no eager loads.
+         *
+         * Kept as one query with a join rather than reusing $empQ — cloning
+         * that after the filters are applied would carry them along, which is
+         * the bug itself. */
+        $filterBaseQ = Employee::query()
+            ->select(['employees.id', 'employees.location', 'employees.department_id'])
+            ->join('leave_plan_employees as lpe2', 'lpe2.employee_id', '=', 'employees.id')
+            ->whereIn('lpe2.leave_plan_id', $planIds)
+            ->whereRaw('(employees.status IS NULL OR LOWER(employees.status) NOT IN (?, ?, ?, ?))', ['inactive', 'resigned', 'terminated', 'exited'])
+            ->with(['department:id,name']);
+        $filterPool = $filterBaseQ->get();
+
+        $departments = $filterPool
             ->pluck('department.name')->filter()->unique()->sort()->values()->all();
-        $locations = $employees
+        $locations = $filterPool
             ->pluck('location')->filter()->unique()->sort()->values()->all();
 
         return response()->json([

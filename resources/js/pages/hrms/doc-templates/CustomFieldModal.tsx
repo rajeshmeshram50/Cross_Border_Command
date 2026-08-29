@@ -241,14 +241,25 @@ export default function CustomFieldModal(props: {
               <h5 className="mb-0 fw-bold" style={{ color: '#fff' }}>{initial?.id ? 'Edit Custom Field' : 'Add Custom Field'}</h5>
               <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.9)' }}>Variables used in templates — filled at document generation time</div>
             </div>
-            <button type="button" onClick={onClose} className="cfm-close-x"
-              style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: 'pointer', transition: 'background .15s ease' }}>
+            {/* Closing mid-save would leave the request in flight with no modal
+                to report back to — the same reason Cancel is disabled. (#10) */}
+            <button type="button" onClick={onClose} disabled={saving} className="cfm-close-x"
+              style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(255,255,255,0.18)', border: 0, color: '#fff', cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.5 : 1, transition: 'background .15s ease' }}>
               <i className="ri-close-line" style={{ fontSize: 18 }} />
             </button>
           </div>
 
-          {/* Body */}
-          <div className="cfm-body" style={{ padding: '16px 22px' }}>
+          {/* Body.
+              Wrapped in a disabled <fieldset> while saving (#10): only the two
+              footer buttons were guarded, so the name, description, "used in"
+              inputs and the type tiles all stayed live behind "Saving…" — a
+              value typed there was never part of the request being sent and was
+              silently discarded when the modal closed. A fieldset disables every
+              control it contains in one place, so a field added later cannot be
+              forgotten. `border:0;padding:0;margin:0` keeps it purely
+              behavioural — a fieldset carries its own box styling otherwise. */}
+          <fieldset disabled={saving} style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto' }}>
+          <div className="cfm-body" style={{ padding: '16px 22px', opacity: saving ? 0.6 : 1, transition: 'opacity .15s ease' }}>
             <div className="mb-3">
               <label className="cfm-label" style={fieldLabel}>Field Name <span style={req}>*</span></label>
               <input type="text" value={name} onChange={e => setName(e.target.value)}
@@ -316,6 +327,7 @@ export default function CustomFieldModal(props: {
             </div>
 
           </div>
+          </fieldset>
 
           {/* Footer */}
           <div className="cfm-footer" style={{ padding: 14, borderTop: '1px solid #e5e7eb', background: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>

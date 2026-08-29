@@ -819,6 +819,15 @@ class HrDocumentSignatureController extends Controller
             'header'     => $headerCfg,
             'footer'     => $footerCfg,
             'logoDataUri'=> $logoUrl,
+            /* Letterhead name for templates that stored the placeholder words
+               instead of a real one — the blade substitutes it. Legal entity →
+               client org name → the employee's own BRANCH. (#113) */
+            'companyName' => (string) (
+                $row->employee?->legalEntity?->name
+                ?: $row->employee?->branch?->client?->org_name
+                ?: $row->employee?->branch?->name
+                ?: ''
+            ),
             // Inline any storage-served <img> URLs (signatures, embedded
             // images) as base64 data URIs. DomPDF runs headless and can't
             // fetch /storage/... over HTTP — same workaround as the header

@@ -225,6 +225,15 @@ class HrDocumentTemplateController extends Controller
             'header'      => $headerCfg,
             'footer'      => $footerCfg,
             'logoDataUri' => $this->previewLogoDataUri($headerCfg, $request->user()),
+            /* Preview has no subject employee, so it shows the AUTHOR's own
+               letterhead — branch name, then client org name. The preview must
+               show what the finished document will look like, and printing the
+               placeholder words here is what made them look intentional. (#113) */
+            'companyName' => (string) (
+                $request->user()?->branch?->name
+                ?: $request->user()?->client?->org_name
+                ?: ''
+            ),
             // DomPDF runs headless and cannot fetch /storage over HTTP.
             'bodyHtml'    => $this->inlineLocalImages($html),
         ])->setPaper('A4');

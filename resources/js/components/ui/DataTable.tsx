@@ -624,6 +624,15 @@ export default function DataTable<T extends object>({
                            column is added, reordered, or rendered conditionally —
                            and then it hides a different column in silence. */
                         data-col={header.column.id}
+                        /* Exposed so CSS can treat a CENTRED header differently
+                           from a left/right one. A sortable header lays out as
+                           [label][gap][arrow] inside a centred flex row, so the
+                           whole group is centred and the LABEL lands ~8px left
+                           of the column's true centre — while the cell below it
+                           is centred exactly. Beside a non-sortable neighbour
+                           (which has no arrow and so lines up perfectly) that
+                           reads as a misaligned column. (#171) */
+                        data-align={textAlign}
                         style={{ textAlign, width: meta?.width }}
                         className={canSort ? 'dt-sortable' : undefined}
                         onClick={canSort ? header.column.getToggleSortingHandler() : undefined}

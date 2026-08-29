@@ -40,8 +40,14 @@ class HrCustomFieldController extends Controller
         'FirstName', 'MiddleName', 'LastName', 'FullName', 'DisplayName', 'EmployeeNumber',
         // Contact
         'Email', 'Mobile', 'Address', 'City', 'State',
-        // Job
-        'JobTitle', 'Department', 'Designation', 'JoiningDate', 'ReportsTo',
+        /* Job. 'JobTitle' is deliberately NOT offered (#40): it resolves to the
+           very same value as 'Designation' — both are $emp->designation->name in
+           HrGeneratedDocumentController — so the picker listed one field twice
+           under two names and left the author guessing which was which.
+           It is only removed from the MENU, not from the resolver: templates
+           already written against {{JobTitle}} must keep rendering, and an
+           unknown token prints its braces verbatim into the document. */
+        'Department', 'Designation', 'JoiningDate', 'ReportsTo',
         // Salary
         'CTC', 'Basic', 'HRA',
         // Org
