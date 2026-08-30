@@ -429,36 +429,44 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'uom':
-                /* Upsert keys on `title`, so the four units that already exist
-                   (Kilogram, Gram, Liter, Dozen) are listed with their CURRENT
-                   short codes — GM / LTR / DZN, not G / L / DOZEN. Re-seeding
-                   must not silently rewrite a code that saved quotations and
-                   packing lists already print. Align them deliberately if the
-                   shorter forms are wanted. */
                 return [
-                    // ── Weight ──
-                    ['title' => 'Kilogram',    'short_code' => 'KG',   'unit_type' => 'Weight', 'status' => 'Active'],
-                    ['title' => 'Gram',        'short_code' => 'GM',   'unit_type' => 'Weight', 'status' => 'Active'],
+                    ['title' => 'Kilogram',    'short_code' => 'KG',  'unit_type' => 'Weight', 'status' => 'Active'],
+                    ['title' => 'Number',   'short_code' => 'NOS',   'unit_type' => 'Quantity', 'status' => 'Active'],
+                    ['title' => 'Kilogram', 'short_code' => 'KG',    'unit_type' => 'Weight',   'status' => 'Active'],
+                    ['title' => 'Gram',     'short_code' => 'G',     'unit_type' => 'Weight',   'status' => 'Active'],
+                    ['title' => 'Liter',    'short_code' => 'L',     'unit_type' => 'Volume',   'status' => 'Active'],
+                    ['title' => 'Milliliter', 'short_code' => 'ML',   'unit_type' => 'Volume',   'status' => 'Active'],
+                    ['title' => 'Meter',    'short_code' => 'M',     'unit_type' => 'Length',   'status' => 'Active'],
+                    ['title' => 'Centimeter', 'short_code' => 'CM',   'unit_type' => 'Length',   'status' => 'Active'],
+                    ['title' => 'Millimeter', 'short_code' => 'MM',   'unit_type' => 'Length',   'status' => 'Active'],
+                    ['title' => 'Dozen',    'short_code' => 'DOZEN', 'unit_type' => 'Quantity', 'status' => 'Active'],
 
-                    // ── Volume ──
-                    ['title' => 'Liter',       'short_code' => 'LTR',  'unit_type' => 'Volume', 'status' => 'Active'],
-                    ['title' => 'Milliliter',  'short_code' => 'ML',   'unit_type' => 'Volume', 'status' => 'Active'],
-
-                    // ── Length ──
-                    ['title' => 'Meter',       'short_code' => 'M',    'unit_type' => 'Length', 'status' => 'Active'],
-                    ['title' => 'Centimeter',  'short_code' => 'CM',   'unit_type' => 'Length', 'status' => 'Active'],
-                    ['title' => 'Millimeter',  'short_code' => 'MM',   'unit_type' => 'Length', 'status' => 'Active'],
-
-                    // ── Count ──
-                    ['title' => 'Numbers',     'short_code' => 'NOS',  'unit_type' => 'Count',  'status' => 'Active'],
-                    ['title' => 'Dozen',       'short_code' => 'DZN',  'unit_type' => 'Count',  'status' => 'Active'],
                 ];
 
             case 'packaging_material':
-                return [
-                    ['title' => 'PP Bag',           'material_type' => 'Bag',    'status' => 'Active'],
-                ];
-
+                return
+                    [
+                        ['title' => 'Corrugated Box',   'material_type' => 'Box',       'status' => 'Active'],
+                        ['title' => 'Carton Box',       'material_type' => 'Box',       'status' => 'Active'],
+                        ['title' => 'Wooden Crate',     'material_type' => 'Crate',     'status' => 'Active'],
+                        ['title' => 'Wooden Pallet',    'material_type' => 'Pallet',    'status' => 'Active'],
+                        ['title' => 'Plastic Pallet',   'material_type' => 'Pallet',    'status' => 'Active'],
+                        ['title' => 'Plastic Box',      'material_type' => 'Box',       'status' => 'Active'],
+                        ['title' => 'Plastic Container', 'material_type' => 'Container', 'status' => 'Active'],
+                        ['title' => 'Glass Bottle',     'material_type' => 'Bottle',    'status' => 'Active'],
+                        ['title' => 'Glass Vial',       'material_type' => 'Vial',      'status' => 'Active'],
+                        ['title' => 'HDPE Bottle',      'material_type' => 'Bottle',    'status' => 'Active'],
+                        ['title' => 'LDPE Bag',         'material_type' => 'Bag',       'status' => 'Active'],
+                        ['title' => 'Poly Bag',         'material_type' => 'Bag',       'status' => 'Active'],
+                        ['title' => 'Bubble Wrap',      'material_type' => 'Wrap',      'status' => 'Active'],
+                        ['title' => 'Foam',             'material_type' => 'Protective', 'status' => 'Active'],
+                        ['title' => 'Thermocol',        'material_type' => 'Protective', 'status' => 'Active'],
+                        ['title' => 'Shrink Wrap',      'material_type' => 'Wrap',      'status' => 'Active'],
+                        ['title' => 'Vacuum Pack',      'material_type' => 'Pack',      'status' => 'Active'],
+                        ['title' => 'Drum',             'material_type' => 'Drum',      'status' => 'Active'],
+                        ['title' => 'Can',              'material_type' => 'Can',       'status' => 'Active'],
+                        ['title' => 'Tube',             'material_type' => 'Tube',      'status' => 'Active'],
+                    ];
             case 'conditions':
                 return [
 
@@ -531,24 +539,20 @@ class MasterDataSeeder extends Seeder
                 return [];
 
             case 'haz_class':
-                /* The nine IMDG dangerous-goods classes plus a Non-Hazardous
-                   entry, named the way they print on a dangerous-goods
-                   declaration. haz_code + packing_group were dropped from this
-                   master (migration 2026_05_19_000010_simplify_master_haz_class),
-                   so the HAZ-### codes seen in the UI are display-only — `name`
-                   and `status` are the only stored columns, and `name` is the
-                   upsert key. */
+                // haz_code + packing_group columns were dropped — master is
+                // simplified to just name + status (see migration
+                // 2026_05_19_000010_simplify_master_haz_class).
                 return [
-                    ['name' => 'Non-Hazardous',                            'status' => 'Active'],
-                    ['name' => 'Class 1 – Explosives',                     'status' => 'Active'],
-                    ['name' => 'Class 2 – Gases',                          'status' => 'Active'],
-                    ['name' => 'Class 3 – Flammable Liquids',              'status' => 'Active'],
-                    ['name' => 'Class 4 – Flammable Solids',               'status' => 'Active'],
-                    ['name' => 'Class 5 – Oxidizing Substances',           'status' => 'Active'],
-                    ['name' => 'Class 6 – Toxic & Infectious Substances',  'status' => 'Active'],
-                    ['name' => 'Class 7 – Radioactive Material',           'status' => 'Active'],
-                    ['name' => 'Class 8 – Corrosive Substances',           'status' => 'Active'],
-                    ['name' => 'Class 9 – Miscellaneous Dangerous Goods',  'status' => 'Active'],
+                    ['name' => 'Non-Hazardous',                         'status' => 'Active'],
+                    ['name' => 'Explosives',                            'status' => 'Active'],
+                    ['name' => 'Gases',                                 'status' => 'Active'],
+                    ['name' => 'Flammable Liquids',                     'status' => 'Active'],
+                    ['name' => 'Flammable Solids',                      'status' => 'Active'],
+                    ['name' => 'Oxidizing Substances',                  'status' => 'Active'],
+                    ['name' => 'Toxic & Infectious Substances',         'status' => 'Active'],
+                    ['name' => 'Radioactive Material',                  'status' => 'Active'],
+                    ['name' => 'Corrosive Substances',                  'status' => 'Active'],
+                    ['name' => 'Miscellaneous Dangerous Goods',          'status' => 'Active'],
                 ];
 
             case 'compliance_behaviours':
