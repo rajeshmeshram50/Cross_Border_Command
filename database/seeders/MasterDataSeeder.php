@@ -126,6 +126,7 @@ class MasterDataSeeder extends Seeder
                     ->exists();
 
                 $values = array_merge($row, [
+
                     'client_id'  => null,
                     'branch_id'  => null,
                     'created_by' => $adminId,
@@ -335,8 +336,30 @@ class MasterDataSeeder extends Seeder
                 return [];
 
             case 'port_of_loading':
+                /* Indian sea ports + air cargo complexes actually used on export
+                   documents. Codes follow ICEGATE: the plain UN/LOCODE where it is
+                   free, and the customs suffix where two facilities share a city
+                   (sea = 1, air cargo = 4). Mumbai and Chennai each have BOTH a sea
+                   port and an air cargo complex, so they cannot both hold the bare
+                   INBOM / INMAA code — `port_of_loading` enforces uEach on name AND
+                   code (MasterController), so a collision would fail the save. */
                 return [
-                    ['name' => 'Jawaharlal Nehru Port',       'code' => 'INNSA', 'address' => 'JNPT, Nhava Sheva, Mumbai - 400707',                      'status' => 'Active'],
+                    // ── Sea ports ──
+                    ['name' => 'Nhava Sheva / JNPT',    'code' => 'INNSA1', 'address' => 'Jawaharlal Nehru Port, Nhava Sheva, Navi Mumbai - 400707',   'status' => 'Active'],
+                    ['name' => 'Mundra Port',           'code' => 'INMUN',  'address' => 'Mundra, Kutch, Gujarat - 370421',                            'status' => 'Active'],
+                    ['name' => 'Chennai Port',          'code' => 'INMAA',  'address' => 'Rajaji Salai, Chennai, Tamil Nadu - 600001',                 'status' => 'Active'],
+                    ['name' => 'Kolkata Port',          'code' => 'INCCU',  'address' => 'Syama Prasad Mookerjee Port, Kolkata, West Bengal - 700043', 'status' => 'Active'],
+                    ['name' => 'Cochin Port',           'code' => 'INCOK',  'address' => 'Willingdon Island, Kochi, Kerala - 682009',                  'status' => 'Active'],
+                    ['name' => 'Kandla Port',           'code' => 'INIXY',  'address' => 'Deendayal Port, Kandla, Gujarat - 370210',                   'status' => 'Active'],
+                    ['name' => 'Visakhapatnam Port',    'code' => 'INVTZ',  'address' => 'Port Area, Visakhapatnam, Andhra Pradesh - 530035',          'status' => 'Active'],
+                    ['name' => 'Mumbai Port',           'code' => 'INBOM1', 'address' => 'Mumbai Port Trust, Shoorji Vallabhdas Marg, Mumbai - 400001', 'status' => 'Active'],
+
+                    // ── Air cargo complexes ──
+                    ['name' => 'Delhi Air Cargo',       'code' => 'INDEL',  'address' => 'IGI Airport Cargo Terminal, New Delhi - 110037',             'status' => 'Active'],
+                    ['name' => 'Mumbai Air Cargo',      'code' => 'INBOM',  'address' => 'CSMI Airport Air Cargo Complex, Mumbai - 400099',            'status' => 'Active'],
+                    ['name' => 'Chennai Air Cargo',     'code' => 'INMAA4', 'address' => 'Chennai Airport Air Cargo Complex, Chennai - 600027',        'status' => 'Active'],
+                    ['name' => 'Bengaluru Air Cargo',   'code' => 'INBLR4', 'address' => 'Kempegowda Airport Cargo Terminal, Bengaluru - 560300',      'status' => 'Active'],
+                    ['name' => 'Hyderabad Air Cargo',   'code' => 'INHYD',  'address' => 'Rajiv Gandhi Airport Cargo Terminal, Hyderabad - 500409',    'status' => 'Active'],
                 ];
 
             case 'port_of_discharge':
@@ -370,12 +393,11 @@ class MasterDataSeeder extends Seeder
                 // `label` was dropped — the master now stores percentage + status only.
                 return [
 
-                    ['percentage' => 3,    'status' => 'Active'],
+                    ['percentage' => 0,    'status' => 'Active'],
                     ['percentage' => 5,    'status' => 'Active'],
-                    ['percentage' => 6,    'status' => 'Active'],
+
                     ['percentage' => 12,   'status' => 'Active'],
                     ['percentage' => 18,   'status' => 'Active'],
-                    ['percentage' => 28,   'status' => 'Active'],
                     ['percentage' => 40,   'status' => 'Active'],
                 ];
 
@@ -407,8 +429,29 @@ class MasterDataSeeder extends Seeder
                 ];
 
             case 'uom':
+                /* Upsert keys on `title`, so the four units that already exist
+                   (Kilogram, Gram, Liter, Dozen) are listed with their CURRENT
+                   short codes — GM / LTR / DZN, not G / L / DOZEN. Re-seeding
+                   must not silently rewrite a code that saved quotations and
+                   packing lists already print. Align them deliberately if the
+                   shorter forms are wanted. */
                 return [
-                    ['title' => 'Kilogram',    'short_code' => 'KG',  'unit_type' => 'Weight', 'status' => 'Active'],
+                    // ── Weight ──
+                    ['title' => 'Kilogram',    'short_code' => 'KG',   'unit_type' => 'Weight', 'status' => 'Active'],
+                    ['title' => 'Gram',        'short_code' => 'GM',   'unit_type' => 'Weight', 'status' => 'Active'],
+
+                    // ── Volume ──
+                    ['title' => 'Liter',       'short_code' => 'LTR',  'unit_type' => 'Volume', 'status' => 'Active'],
+                    ['title' => 'Milliliter',  'short_code' => 'ML',   'unit_type' => 'Volume', 'status' => 'Active'],
+
+                    // ── Length ──
+                    ['title' => 'Meter',       'short_code' => 'M',    'unit_type' => 'Length', 'status' => 'Active'],
+                    ['title' => 'Centimeter',  'short_code' => 'CM',   'unit_type' => 'Length', 'status' => 'Active'],
+                    ['title' => 'Millimeter',  'short_code' => 'MM',   'unit_type' => 'Length', 'status' => 'Active'],
+
+                    // ── Count ──
+                    ['title' => 'Numbers',     'short_code' => 'NOS',  'unit_type' => 'Count',  'status' => 'Active'],
+                    ['title' => 'Dozen',       'short_code' => 'DZN',  'unit_type' => 'Count',  'status' => 'Active'],
                 ];
 
             case 'packaging_material':
@@ -488,10 +531,25 @@ class MasterDataSeeder extends Seeder
                 return [];
 
             case 'haz_class':
-                // haz_code + packing_group columns were dropped — master is
-                // simplified to just name + status (see migration
-                // 2026_05_19_000010_simplify_master_haz_class).
-                return [];
+                /* The nine IMDG dangerous-goods classes plus a Non-Hazardous
+                   entry, named the way they print on a dangerous-goods
+                   declaration. haz_code + packing_group were dropped from this
+                   master (migration 2026_05_19_000010_simplify_master_haz_class),
+                   so the HAZ-### codes seen in the UI are display-only — `name`
+                   and `status` are the only stored columns, and `name` is the
+                   upsert key. */
+                return [
+                    ['name' => 'Non-Hazardous',                            'status' => 'Active'],
+                    ['name' => 'Class 1 – Explosives',                     'status' => 'Active'],
+                    ['name' => 'Class 2 – Gases',                          'status' => 'Active'],
+                    ['name' => 'Class 3 – Flammable Liquids',              'status' => 'Active'],
+                    ['name' => 'Class 4 – Flammable Solids',               'status' => 'Active'],
+                    ['name' => 'Class 5 – Oxidizing Substances',           'status' => 'Active'],
+                    ['name' => 'Class 6 – Toxic & Infectious Substances',  'status' => 'Active'],
+                    ['name' => 'Class 7 – Radioactive Material',           'status' => 'Active'],
+                    ['name' => 'Class 8 – Corrosive Substances',           'status' => 'Active'],
+                    ['name' => 'Class 9 – Miscellaneous Dangerous Goods',  'status' => 'Active'],
+                ];
 
             case 'compliance_behaviours':
                 return [

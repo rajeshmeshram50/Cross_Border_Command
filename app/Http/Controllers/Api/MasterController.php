@@ -471,10 +471,18 @@ class MasterController extends Controller
         // are protected from edit + delete via the is_system flag. Block
         // create here so even a direct API hit (Postman) can't add
         // new entries.
-        if ($slug === 'address_types') {
-            return response()->json([
-                'message' => 'Address Types is a fixed master. Only Registered Office, Warehouse, and Branch are allowed — no new types can be added.',
-            ], 403);
+        //
+        // Designations is closed for the same reason: the six seeded levels
+        // ARE the org hierarchy, and every HR screen that groups by level
+        // (the hierarchy strip, the level KPI tiles, reporting-line pickers)
+        // assumes exactly that set. A tenant-added seventh title has no level
+        // to sit at. Existing rows stay editable — only creation is blocked.
+        $lockedFixed = [
+            'address_types' => 'Address Types is a fixed master. Only Registered Office, Warehouse, and Branch are allowed — no new types can be added.',
+            'designations' => 'Designations is a fixed master. The five seeded titles cover the whole hierarchy — no new designations can be added.',
+        ];
+        if (isset($lockedFixed[$slug])) {
+            return response()->json(['message' => $lockedFixed[$slug]], 403);
         }
 
         $modelClass = $this->resolveModel($slug);
