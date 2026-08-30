@@ -445,7 +445,15 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           company: d.company,
           month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
           year: y || String(new Date().getFullYear()),
-          working: d.totalMonthDays ?? d.workingDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          /* workingDays FIRST — this feeds the viewer's "Payable Days" tile.
+             It was reading totalMonthDays (the calendar length of the month),
+             so an August slip showed "Payable Days 31" against "Paid Days 27"
+             and read as a 4-day shortfall for an employee who had not missed a
+             single day. The month's own length already has its own tile ("Days
+             in Month"), which the viewer computes itself — this one has to be
+             the payable WORKING days or the two cannot be compared. #114 */
+          working: d.workingDays ?? d.totalMonthDays, present: d.present, paid: d.paidDays, lop: d.lopDays,
+          weekOff: d.weekOffDays, lateLop: d.lateLopDays,
         });
       })
       .catch(() => { /* keep prior */ })
@@ -2601,7 +2609,9 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
   // view (expense claims or advance requests), honouring the active
   // status filter + My/Team sub-tab.
   const [exportOpen, setExportOpen] = useState(false);
-  const runProfileExport = (fmt: 'xlsx' | 'pdf' | 'csv') => {
+  // async: the PDF branch now awaits a server-rendered file instead of opening
+  // a print window. (#166 / #167)
+  const runProfileExport = async (fmt: 'xlsx' | 'pdf' | 'csv') => {
     setExportOpen(false);
     const isAdvance = expenseModuleTab === 'advance';
     /* Dates in the file must read exactly as they do on screen (CBC #94-96).
@@ -2678,37 +2688,39 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       }
       return;
     }
-    // pdf — open a printable HTML report; user picks "Save as PDF". Same
-    // dependency-free approach used elsewhere (payslip print, HR export).
     const escHtml = (v: any) => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    const thead = `<tr>${header.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr>`;
-    const tbody = rows.map(r => `<tr>${r.map(c => `<td>${escHtml(c)}</td>`).join('')}</tr>`).join('');
     const title = `${label} — ${escHtml(employee?.name || profileEmpCode || '')}`;
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escHtml(baseName)}</title>
-      <style>
-        * { box-sizing: border-box; }
-        body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; margin: 24px; }
-        h1 { font-size: 16px; margin: 0 0 4px; }
-        .meta { font-size: 11px; color: #6b7280; margin: 0 0 16px; }
-        table { border-collapse: collapse; width: 100%; font-size: 9px; }
-        th, td { border: 1px solid #d1d5db; padding: 4px 6px; text-align: left; vertical-align: top; }
-        thead th { background: #f3f4f6; font-weight: 700; }
-        tbody tr:nth-child(even) { background: #fafafa; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style></head>
-      <body>
-        <h1>${title}</h1>
-        <p class="meta">${rows.length} ${noun}(s) · generated ${escHtml(stamp)}</p>
-        <table><thead>${thead}</thead><tbody>${tbody}</tbody></table>
-        <script>window.onload = function () { window.focus(); window.print(); };<\/script>
-      </body></html>`;
-    const w = window.open('', '_blank');
-    if (!w) {
-      toast.error('Pop-up blocked', 'Allow pop-ups for this site to export as PDF.');
-      return;
+    /* Download a real PDF instead of opening the print dialog. (#166 / #167)
+     *
+     * This screen carried the same fault the Expense export was raised for: it
+     * wrote HTML into a new window, called window.print(), and then told the
+     * user "Print view opened — Choose Save as PDF in the print dialog". That
+     * is not an export, it is homework; a pop-up blocker stopped it outright,
+     * and the message described the browser's UI rather than the result.
+     *
+     * Reuses the endpoint added for the expense export — the payload is the
+     * same shape (title, meta, headers, rows) and the server owns the markup,
+     * so both screens produce an identically formatted document. */
+    try {
+      const resp = await api.post('/expense-claims/export-pdf', {
+        title,
+        meta: `${rows.length} ${noun}(s) · generated ${stamp}`,
+        filename: baseName,
+        headers: header.map(h => String(h ?? '')),
+        rows: rows.map(r => r.map(c => String(c ?? ''))),
+      }, { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url; a.download = `${baseName}.pdf`; a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Export ready', `${rows.length} ${noun}${rows.length === 1 ? '' : 's'} exported to PDF.`);
+    } catch (err: any) {
+      let msg = 'Could not generate the PDF. Please try again.';
+      const d = err?.response?.data;
+      if (d instanceof Blob) { try { msg = JSON.parse(await d.text())?.message || msg; } catch { /* keep default */ } }
+      else if (d?.message) msg = d.message;
+      toast.error('Export failed', msg);
     }
-    w.document.open(); w.document.write(html); w.document.close();
-    toast.success('Print view opened', `Choose "Save as PDF" in the print dialog · ${rows.length} ${noun}${rows.length === 1 ? '' : 's'}.`);
   };
 
   // Snap back to the All view when the user is sitting on the Drafts pill
@@ -3183,6 +3195,8 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         daysPresent={viewSlip?.present}
         paidDays={viewSlip?.paid}
         lossOfPay={viewSlip?.lop}
+        weekOffDays={viewSlip?.weekOff ?? 0}
+        lateLopDays={viewSlip?.lateLop}
         isFinal={viewSlip?.isFinal}
         /* #85 — hold the body until the breakup arrives. Without this the modal
            renders its own fallbacks (March, empty earnings/deductions, zero

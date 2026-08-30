@@ -34,7 +34,12 @@ export const STATIC_PLACEHOLDER_GROUPS: PlaceholderGroup[] = [
     { label: 'State',          token: '{{State}}' },
   ]},
   { id: 'job', label: 'Employee Job', fields: [
-    { label: 'Job Title',      token: '{{JobTitle}}' },
+    /* "Job Title" removed (#40) — {{JobTitle}} and {{Designation}} both resolve
+       to the employee's designation name, so the palette offered one value
+       under two names and the author had to guess whether they differed.
+       Dropped from the PALETTE only: the server still resolves {{JobTitle}},
+       so templates already written against it keep rendering rather than
+       printing the braces. */
     { label: 'Department',     token: '{{Department}}' },
     { label: 'Designation',    token: '{{Designation}}' },
     { label: 'Joining Date',   token: '{{JoiningDate}}' },

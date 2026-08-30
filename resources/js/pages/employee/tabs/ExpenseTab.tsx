@@ -452,6 +452,14 @@ export default function ExpenseTab() {
                             <DropdownItem onClick={() => runProfileExport('xlsx')}>
                               <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
                             </DropdownItem>
+                            {/* PDF was missing here while runProfileExport had
+                                handled 'pdf' all along — the employee-facing
+                                menu simply never offered it. (#168) Same order,
+                                label and icon as the HR Expense Management
+                                menu, so the two read as one feature. */}
+                            <DropdownItem onClick={() => runProfileExport('pdf')}>
+                              <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
+                            </DropdownItem>
                             <DropdownItem onClick={() => runProfileExport('csv')}>
                               <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)
                             </DropdownItem>
@@ -530,6 +538,13 @@ export default function ExpenseTab() {
                           <DropdownItem header>Download as</DropdownItem>
                           <DropdownItem onClick={() => runProfileExport('xlsx')}>
                             <i className="ri-file-excel-2-line me-2 text-success" />Excel (.xlsx)
+                          </DropdownItem>
+                          {/* Second export menu on this tab — the Advance
+                              Requests view. Kept in step with the Claims menu
+                              above; offering PDF in one and not the other is
+                              how the two drifted apart in the first place. (#168) */}
+                          <DropdownItem onClick={() => runProfileExport('pdf')}>
+                            <i className="ri-file-pdf-2-line me-2 text-danger" />PDF (.pdf)
                           </DropdownItem>
                           <DropdownItem onClick={() => runProfileExport('csv')}>
                             <i className="ri-file-text-line me-2 text-primary" />CSV (.csv)

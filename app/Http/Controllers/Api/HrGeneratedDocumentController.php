@@ -63,6 +63,23 @@ class HrGeneratedDocumentController extends Controller
         return response()->json([
             'rendered_html' => $html,
             'tokens'        => $tokens,
+            /* Resolved letterhead for the on-screen preview. (#126)
+             *
+             * The modal draws the header strip itself from the template's
+             * stored header_config, which is why the preview showed the
+             * placeholder words "Company Name" and no logo at all: the config
+             * holds whatever was seeded when the template was written, and the
+             * frontend had nothing to resolve it against. The PDF path already
+             * resolves both — the branch logo via headerLogoDataUri() and the
+             * name via the CompanyName token — so the preview was showing
+             * something the finished document would never contain.
+             *
+             * Handed over as plain values rather than the {{CompanyLogo}} token,
+             * which is an <img> element the client would have to parse. */
+            'letterhead'    => [
+                'company_name' => (string) ($tokens['CompanyName'] ?? ''),
+                'logo_url'     => $emp->branch?->logo ? file_url($emp->branch->logo) : null,
+            ],
             'template'      => [
                 'id' => $tpl->id, 'code' => $tpl->code, 'name' => $tpl->name,
             ],
@@ -233,6 +250,14 @@ class HrGeneratedDocumentController extends Controller
             'header'      => $headerCfg,
             'footer'      => $footerCfg,
             'logoDataUri' => $this->headerLogoDataUri($headerCfg, $row),
+            /* Same resolution the {{CompanyName}} token uses, for letterheads
+               that stored the placeholder words as plain text. (#113) */
+            'companyName' => (string) (
+                $row->employee?->legalEntity?->name
+                ?: $row->employee?->branch?->client?->org_name
+                ?: $row->employee?->branch?->name
+                ?: ''
+            ),
             // DomPDF runs headless and cannot fetch /storage over HTTP, so every
             // local <img> — the body's company logo included — is inlined first.
             'bodyHtml'    => $this->inlineLocalImagesAsDataUris(
@@ -419,6 +444,38 @@ class HrGeneratedDocumentController extends Controller
             : '';
         $today = now()->format($dateFormat);
 
+        /* Token names a REGISTERED custom field has claimed. (#105)
+         *
+         * CurrentDate / Date / Today are built-ins filled with the generation
+         * date, which is right for a template that just wants "today" printed
+         * on it. But a tenant can also define a custom field of the same name,
+         * and then the date is not the system's to decide — it is a value the
+         * operator types on the Send-for-signature screen (a joining date, an
+         * effective date, an agreed date). Filling it automatically meant the
+         * field arrived pre-answered with today, and leaving it blank silently
+         * printed today anyway.
+         *
+         * A registered custom field therefore OWNS its name: the built-in is
+         * suppressed and the token starts blank, so it stays blank unless the
+         * operator fills it in. Compared case-insensitively because
+         * renderTemplate() matches tokens that way — {{Date}} and {{date}} are
+         * the same token and must not disagree about who owns them. */
+        $claimedByCustomField = [];
+        try {
+            $claimedByCustomField = \App\Models\HrCustomField::query()
+                ->when($emp->client_id, fn ($q) => $q->where('client_id', $emp->client_id))
+                ->pluck('name')
+                ->filter()
+                ->map(fn ($n) => mb_strtolower(trim((string) $n)))
+                ->flip()
+                ->all();
+        } catch (\Throwable $e) {
+            // No registry (or it cannot be read) — behave exactly as before.
+            $claimedByCustomField = [];
+        }
+        $ownedByOperator = fn (string $token): bool
+            => isset($claimedByCustomField[mb_strtolower($token)]);
+
         /* Reports To resolves EITHER kind of manager.
          *
          * This read `reportingManager` only — the employee-manager relation —
@@ -540,9 +597,14 @@ class HrGeneratedDocumentController extends Controller
              * Only the canonical spellings are listed; renderTemplate() matches
              * case-insensitively, so {{Currentdate}} and {{currentdate}} both
              * resolve without an entry each. */
-            'CurrentDate'    => $today,
-            'Date'           => $today,
-            'Today'          => $today,
+            /* Blank when a custom field of the same name exists — see
+               $ownedByOperator above. Kept in the map (rather than dropped) so
+               the token still resolves: an unknown token is printed with its
+               braces intact, which would put a literal {{Date}} in the letter
+               whenever the operator left the field empty. (#105) */
+            'CurrentDate'    => $ownedByOperator('CurrentDate') ? '' : $today,
+            'Date'           => $ownedByOperator('Date') ? '' : $today,
+            'Today'          => $ownedByOperator('Today') ? '' : $today,
         ];
 
         /* Signer slot tokens. The NAME is the real person the role resolves to

@@ -328,6 +328,10 @@ export default function SalesLeadWorksheet() {
 
   // CTQ confirmation modal
   const [ctqLead, setCtqLead] = useState<Lead | null>(null);
+  // Conversion in flight. Shared by the bulk toolbar button and the
+  // single-row confirm dialog because both hit the same endpoint and a
+  // second POST would re-qualify rows the first call already moved.
+  const [ctqBusy, setCtqBusy] = useState(false);
 
   // Add New Lead modal — toggled by the My Workplace banner button.
   // Frontend-only for now; the modal owns the form state. On save
@@ -801,11 +805,13 @@ export default function SalesLeadWorksheet() {
     });
   };
   const onBulkCTQ       = async () => {
+    if (ctqBusy) return;
     const ids = leads.filter(l => selected.has(l.oppId) && l.status === 'disqualified').map(l => l.id);
     if (ids.length === 0) {
       toast.warning('Nothing to convert', 'Select disqualified rows first');
       return;
     }
+    setCtqBusy(true);
     try {
       const { data } = await api.post<{ status: boolean; converted: number }>(
         '/sales/leads/convert-to-qualified',
@@ -816,13 +822,16 @@ export default function SalesLeadWorksheet() {
       fetchLeads();
     } catch (e: any) {
       toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert leads');
+    } finally {
+      setCtqBusy(false);
     }
   };
 
   // CTQ for a single disqualified row — confirmation dialog → backend.
   const onAskCTQ      = (l: Lead) => setCtqLead(l);
   const onConfirmCTQ  = async () => {
-    if (!ctqLead) return;
+    if (!ctqLead || ctqBusy) return;
+    setCtqBusy(true);
     try {
       await api.post('/sales/leads/convert-to-qualified', { lead_ids: [ctqLead.id] });
       toast.success('Converted', `${ctqLead.oppId} moved to Qualified`);
@@ -830,6 +839,8 @@ export default function SalesLeadWorksheet() {
       fetchLeads();
     } catch (e: any) {
       toast.error('Convert failed', e?.response?.data?.message ?? 'Could not convert lead');
+    } finally {
+      setCtqBusy(false);
     }
   };
 
@@ -1320,9 +1331,9 @@ export default function SalesLeadWorksheet() {
             Assign Selected Leads
           </button>
           {showBulkCTQ && (
-            <button className="lwp-bulk-btn-ctq" onClick={onBulkCTQ}>
-              <IconCheck />
-              Convert to Qualified
+            <button className="lwp-bulk-btn-ctq" onClick={onBulkCTQ} disabled={ctqBusy}>
+              {ctqBusy ? <span className="lwp-ctq-spin" aria-hidden="true" /> : <IconCheck />}
+              {ctqBusy ? 'Converting…' : 'Convert to Qualified'}
             </button>
           )}
           <button className="lwp-bulk-btn-clear" onClick={clearSelection}>
@@ -1347,7 +1358,7 @@ export default function SalesLeadWorksheet() {
                 <div className="lwp-ctq-head-title">Convert to Qualified</div>
                 <div className="lwp-ctq-head-sub">Lead qualification confirmation</div>
               </div>
-              <button className="lwp-ctq-close" onClick={() => setCtqLead(null)} aria-label="Close">
+              <button className="lwp-ctq-close" onClick={() => setCtqLead(null)} disabled={ctqBusy} aria-label="Close">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
@@ -1394,12 +1405,16 @@ export default function SalesLeadWorksheet() {
               </div>
 
               <div className="lwp-ctq-actions">
-                <button className="lwp-ctq-btn-cancel" onClick={() => setCtqLead(null)}>Cancel</button>
-                <button className="lwp-ctq-btn-confirm" onClick={onConfirmCTQ}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  Convert to Qualified
+                <button className="lwp-ctq-btn-cancel" onClick={() => setCtqLead(null)} disabled={ctqBusy}>Cancel</button>
+                <button className="lwp-ctq-btn-confirm" onClick={onConfirmCTQ} disabled={ctqBusy}>
+                  {ctqBusy ? (
+                    <span className="lwp-ctq-spin" aria-hidden="true" />
+                  ) : (
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  )}
+                  {ctqBusy ? 'Converting…' : 'Convert to Qualified'}
                 </button>
               </div>
             </div>
@@ -2237,7 +2252,7 @@ const SCOPED_CSS = `
   cursor: pointer; transition: all .15s;
   box-shadow: 0 2px 8px rgba(0,0,0,.10);
 }
-.lwp-root .lwp-bulk-btn-ctq:hover { background: #fde68a; }
+.lwp-root .lwp-bulk-btn-ctq:hover:not(:disabled) { background: #fde68a; }
 .lwp-root .lwp-bulk-btn-clear {
   display: flex; align-items: center; gap: 5px;
   padding: 8px 14px; background: rgba(255,255,255,.14); color: #fff;
@@ -2299,7 +2314,7 @@ const SCOPED_CSS = `
   display: flex; align-items: center; justify-content: center;
   transition: background .15s; flex-shrink: 0;
 }
-.lwp-ctq-close:hover { background: rgba(255,255,255,.28); }
+.lwp-ctq-close:hover:not(:disabled) { background: rgba(255,255,255,.28); }
 
 .lwp-ctq-body { padding: 22px 24px 20px; }
 
@@ -2360,7 +2375,7 @@ const SCOPED_CSS = `
   font-size: 12.5px; font-weight: 600; cursor: pointer;
   transition: all .15s;
 }
-.lwp-ctq-btn-cancel:hover { border-color: #94a3b8; background: #f8fafc; }
+.lwp-ctq-btn-cancel:hover:not(:disabled) { border-color: #94a3b8; background: #f8fafc; }
 .lwp-ctq-btn-confirm {
   padding: 10px 22px; border-radius: 10px; border: none;
   background: linear-gradient(135deg, #0891b2 0%, #0e7490 55%, #155e75 100%);
@@ -2370,8 +2385,31 @@ const SCOPED_CSS = `
   transition: all .15s;
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
 }
-.lwp-ctq-btn-confirm:hover { transform: translateY(-1px); filter: brightness(1.05); }
-.lwp-ctq-btn-confirm:active { transform: translateY(0); }
+.lwp-ctq-btn-confirm:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.05); }
+.lwp-ctq-btn-confirm:active:not(:disabled) { transform: translateY(0); }
+
+/* Conversion in flight. The tick icon is swapped for this arc so the button
+   itself is the loader - there is no separate overlay, and the row count can
+   make the POST take a couple of seconds. Reuses the lwp-spin keyframes
+   already defined for the sync and export buttons. */
+.lwp-root .lwp-ctq-spin,
+.lwp-ctq-spin {
+  width: 13px; height: 13px; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: lwp-spin .7s linear infinite;
+}
+/* Amber toolbar button sits on a light fill, so its arc needs the ink colour. */
+.lwp-root .lwp-bulk-btn-ctq .lwp-ctq-spin {
+  border-color: rgba(180,83,9,.30); border-top-color: #b45309;
+}
+.lwp-ctq-btn-confirm:disabled,
+.lwp-ctq-btn-cancel:disabled,
+.lwp-root .lwp-bulk-btn-ctq:disabled {
+  opacity: .70; cursor: not-allowed; transform: none;
+}
+.lwp-ctq-close:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Dark mode — body flips to slate but the teal header stays (intentional
    to mirror the cyan brand strip used across CLM modals). */

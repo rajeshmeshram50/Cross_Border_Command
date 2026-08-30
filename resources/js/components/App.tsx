@@ -609,8 +609,21 @@ function DashboardRoutes({ user }: { user: any }) {
   const location = useLocation();
   const [splashDone, setSplashDone] = useState(false);
 
-  const isClient = user.user_type === 'client_admin' || user.user_type === 'branch_user';
-  const planExpiredOrMissing = isClient && user.plan && (!user.plan.has_plan || user.plan.expired);
+  /* The EMPLOYEE tier is gated too. (#201)
+   *
+   * This read `client_admin || branch_user`, so an employee login sailed past
+   * an expired plan and kept using the whole application — the subscription
+   * governs the tenant, not the seniority of whoever signs in, and the people
+   * doing the day-to-day work are the ones for whom "still usable" matters
+   * most. The API already sends `plan` for anyone carrying a client_id, so the
+   * information was there; only this test excluded them.
+   *
+   * super_admin stays out: they belong to no client, have no plan of their
+   * own, and are the account that has to be able to reach a locked-out tenant. */
+  const isPlanGoverned = user.user_type === 'client_admin'
+    || user.user_type === 'branch_user'
+    || user.user_type === 'employee';
+  const planExpiredOrMissing = isPlanGoverned && user.plan && (!user.plan.has_plan || user.plan.expired);
   const defaultPages = ['/my-plan', '/profile', '/plan-blocked'];
 
   // Onboarding gate — an employee whose onboarding isn't finished yet CAN sign
@@ -682,7 +695,12 @@ function DashboardRoutes({ user }: { user: any }) {
       return;
     }
     if (planExpiredOrMissing && !defaultPages.includes(path)) {
-      navigate('/my-plan', { replace: true });
+      // Same split as the render-time guard below — a tier that cannot buy is
+      // shown the block, not the purchase page. (#201)
+      navigate(
+        (user.user_type === 'branch_user' || user.user_type === 'employee') ? '/plan-blocked' : '/my-plan',
+        { replace: true },
+      );
       return;
     }
     navigate(path, data ? { state: data } : undefined);
@@ -703,7 +721,11 @@ function DashboardRoutes({ user }: { user: any }) {
 
   // Redirect to my-plan if plan expired and trying to access other pages
   if (planExpiredOrMissing && !defaultPages.includes(location.pathname)) {
-    if (user.user_type === 'branch_user') {
+    /* Only a client_admin can actually buy or renew, so only they are sent to
+       the purchase page. A branch user or an employee gets the explanatory
+       block instead — routing them to a plan picker they have no authority to
+       act on reads as "you did something wrong". (#201) */
+    if (user.user_type === 'branch_user' || user.user_type === 'employee') {
       return <Navigate to="/plan-blocked" replace />;
     }
     return <Navigate to="/my-plan" replace />;

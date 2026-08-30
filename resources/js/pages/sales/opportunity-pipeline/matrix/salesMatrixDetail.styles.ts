@@ -585,12 +585,27 @@ export const SALES_MATRIX_DETAIL_CSS = `
   grid-template-columns: 20% 1fr 30%;
   gap: 10px;
   align-items: stretch;
-  transition: grid-template-columns .3s ease;
+  /* No transition on grid-template-columns.
+     The tracks go from 20% to 44px — different units — so the browser
+     interpolates through calc() and RE-LAYS-OUT the centre column on every
+     frame of the 300ms. The Stage 6 panel is a grid of its own, so its content
+     reflowed ~18 times in a row: that is the flicker, not a repaint glitch.
+     Collapsing is a single deliberate click; it does not need easing, and
+     without it the panel simply changes width and stays put. */
 }
 /* Collapsed side rails shrink their column to the 44px rail width. */
 .smd-body-clm-collapsed  { grid-template-columns: 44px 1fr 30%; }
 .smd-body-deal-collapsed { grid-template-columns: 20% 1fr 44px; }
 .smd-body-clm-collapsed.smd-body-deal-collapsed { grid-template-columns: 44px 1fr 44px; }
+/* The row is as tall as its tallest column, and a side panel full of segment
+   cards is often the one setting that height. Collapse it and the row loses
+   its tallest member, so the CENTRE shrank at the exact moment the user made
+   room for it — the opposite of what collapsing is for.
+   The floor keeps the row where it was. It is the same figure the three cards
+   already use, so nothing new is being invented here; it just has to survive
+   the panel that was supplying it going away. */
+.smd-body-clm-collapsed,
+.smd-body-deal-collapsed { min-height: calc(100vh - 300px); }
 
 /* ── Collapsed side rail ── */
 .smd-rail {
@@ -645,13 +660,14 @@ export const SALES_MATRIX_DETAIL_CSS = `
   min-height: calc(100vh - 300px);
   box-shadow: 0 2px 16px rgba(124,58,237,.10);
 }
-/* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). transition
-   on the side cards lets the width ease when the panels collapse/expand. */
+/* Per-card flex sizing (CLM 20% · Stage fills · Deal 30%). */
 .smd-clm-card {
   flex: 0 0 20%;
   border: 1px solid #ede9fe;
   box-shadow: 0 2px 12px rgba(124,58,237,.07);
-  transition: flex .3s ease;
+  /* No width transition either: collapsing does not resize this card, it
+     REPLACES it with the 44px rail. The transition never had anything to
+     animate and only added another moving part to the same frames. */
 }
 .smd-stage-card {
   flex: 1 1 0%;

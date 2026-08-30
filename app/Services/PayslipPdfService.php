@@ -100,6 +100,15 @@ class PayslipPdfService
                 'payable_int' => (int) round((float) $slip->paid_days),
                 'working'     => $this->num($slip->working_days),
                 'lop'         => $this->num($slip->lop_days),
+                /* The late-mark share of LOP. Loss of Pay can now exceed the
+                   days missed — the late-mark rule charges pay in days for days
+                   that WERE worked, and Actual Payable Days no longer absorbs
+                   that penalty (#114). Null on slips generated before the split
+                   was recorded, so the template prints nothing rather than
+                   asserting a zero it cannot vouch for. */
+                'late_lop'    => $slip->late_lop_days !== null && (float) $slip->late_lop_days > 0
+                    ? $this->num($slip->late_lop_days)
+                    : null,
                 /* Calendar length of the pay period (#91). The slip carried
                    payable / working / LOP days but never the month's own
                    length, so there was nothing to read the other three
@@ -225,10 +234,122 @@ class PayslipPdfService
                 if ($data === false) continue;
                 $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION)) ?: 'png';
                 $mime = $ext === 'svg' ? 'image/svg+xml' : ($ext === 'jpg' ? 'image/jpeg' : "image/$ext");
+
+                /* Downscale before embedding — the whole of bug #110.
+                 *
+                 * The uploaded file went into the HTML verbatim, and tenants
+                 * upload whatever their designer sent: the logo on this install
+                 * is 1.1 MB, which base64 inflates to ~1.5 MB of data-URI on a
+                 * 9 KB template. dompdf then spent 30–50 SECONDS on a single
+                 * payslip and produced a 1.1 MB PDF, which is simply longer
+                 * than the request survives — so the download failed and the
+                 * screen reported it as "could not generate the PDF". The bulk
+                 * ZIP was hopeless: 40 slips at 35s each is over 20 minutes
+                 * against a 120s limit.
+                 *
+                 * The template displays it at max 190×60 px (.hdr-logo img), so
+                 * every pixel beyond that was paid for and then thrown away. It
+                 * is resized to 2× that box for print sharpness and cached on
+                 * disk, keyed by source path + mtime, so a bulk run pays for it
+                 * once rather than per payslip. */
+                $scaled = $this->downscaleLogo($path, $data, $ext);
+                if ($scaled !== null) {
+                    return 'data:image/png;base64,' . base64_encode($scaled);
+                }
+
                 return 'data:' . $mime . ';base64,' . base64_encode($data);
             }
         }
         return null;
+    }
+
+    /** Display box in the template (.hdr-logo img), doubled for print sharpness. */
+    private const LOGO_MAX_W = 380;
+    private const LOGO_MAX_H = 120;
+    /** Anything at or under this is already small enough to embed as-is. */
+    private const LOGO_PASSTHROUGH_BYTES = 40960; // 40 KB
+
+    /**
+     * A print-sized PNG of the logo, or null to embed the original untouched.
+     *
+     * Null is returned for every case where resizing is not clearly a win —
+     * an SVG (already vector, and GD cannot read it), a file that is small
+     * enough not to matter, an image GD cannot decode, or a missing GD
+     * extension. The caller then falls back to the original bytes, so a logo
+     * always renders even when this cannot help.
+     *
+     * The result is cached on disk keyed by path + mtime + target box, because
+     * a bulk payslip run resolves the same branch logo once per employee.
+     */
+    private function downscaleLogo(string $path, string $data, string $ext): ?string
+    {
+        if ($ext === 'svg' || strlen($data) <= self::LOGO_PASSTHROUGH_BYTES) {
+            return null;
+        }
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagescale')) {
+            return null;
+        }
+
+        $cacheDir = storage_path('app/payslip-logo-cache');
+        $key      = sha1($path . '|' . @filemtime($path) . '|' . self::LOGO_MAX_W . 'x' . self::LOGO_MAX_H);
+        $cacheFile = $cacheDir . DIRECTORY_SEPARATOR . $key . '.png';
+        if (is_file($cacheFile)) {
+            $cached = @file_get_contents($cacheFile);
+            if ($cached !== false && $cached !== '') {
+                return $cached;
+            }
+        }
+
+        try {
+            $src = @imagecreatefromstring($data);
+            if ($src === false) {
+                return null;
+            }
+            $w = imagesx($src);
+            $h = imagesy($src);
+            if ($w < 1 || $h < 1) {
+                imagedestroy($src);
+                return null;
+            }
+            // Already within the box — re-encoding would only lose quality.
+            if ($w <= self::LOGO_MAX_W && $h <= self::LOGO_MAX_H) {
+                imagedestroy($src);
+                return null;
+            }
+
+            $ratio = min(self::LOGO_MAX_W / $w, self::LOGO_MAX_H / $h);
+            $newW  = max(1, (int) round($w * $ratio));
+            $newH  = max(1, (int) round($h * $ratio));
+
+            $dst = imagecreatetruecolor($newW, $newH);
+            // Keep transparency — a logo dropped onto a black box is worse than
+            // the oversized original this is replacing.
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            imagefill($dst, 0, 0, imagecolorallocatealpha($dst, 0, 0, 0, 127));
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $newW, $newH, $w, $h);
+
+            ob_start();
+            imagepng($dst, null, 6);
+            $out = (string) ob_get_clean();
+
+            imagedestroy($src);
+            imagedestroy($dst);
+
+            if ($out === '') {
+                return null;
+            }
+
+            if (!is_dir($cacheDir)) {
+                @mkdir($cacheDir, 0775, true);
+            }
+            @file_put_contents($cacheFile, $out);
+
+            return $out;
+        } catch (\Throwable $e) {
+            // Never let a logo stop a payslip — fall back to the original.
+            return null;
+        }
     }
 
     private function paymentMode(?Employee $e): string

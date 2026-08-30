@@ -1688,6 +1688,16 @@ function AddLeavePlanModal({
   const handleSave = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Leave plan name is required';
+    /* A plan name is a label people pick from a dropdown. (#126) There was no
+       format rule at all — "12345" and "@#$%" both saved with nothing said.
+       Letters, numbers, spaces and hyphens only, and at least one LETTER, so a
+       purely numeric or symbol-only name is refused while "Leave Plan 2026" and
+       "Executives - Senior" still work. Same rule as the holiday group name
+       (#58) and kept identical to LeavePlanController so the form and the API
+       cannot disagree. */
+    else if (!/^(?=.*\p{L})[\p{L}\p{N} \-]+$/u.test(name.trim())) {
+      errs.name = 'Leave plan name must include at least one letter, and can only contain letters, numbers, spaces and hyphens';
+    }
     if (Object.keys(errs).length) { setErrors(errs); return; }
 
     setSaving(true);
@@ -2258,6 +2268,8 @@ function AssignLeaveTypesModal({
               type="button"
               onClick={handleClose}
               aria-label="Close"
+              disabled={saving}
+              style={saving ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
               className="rec-close-btn d-inline-flex align-items-center justify-content-center"
             >
               <i className="ri-close-line" style={{ fontSize: 17 }} />
@@ -2287,6 +2299,17 @@ function AssignLeaveTypesModal({
             Select the leave types from below to add to the leave plan
           </div>
 
+          {/* Frozen while the assignment saves. (#125) The checkbox `disabled`
+              above stops the input, but each row is a <label> with its own hover
+              and cursor, so the list still LOOKED interactive; pointer-events
+              and the fade make the frozen state visible rather than merely
+              unresponsive. Same treatment the leave-type modal in this file
+              already uses. */}
+          <fieldset
+            disabled={saving}
+            style={{ border: 0, padding: 0, margin: 0, minInlineSize: 'auto',
+                     ...(saving ? { pointerEvents: 'none', opacity: 0.6 } : {}) }}
+          >
           {(['regular', 'incident', 'unpaid', 'compoff'] as const).map(cat => {
             const meta = CATEGORY_META[cat];
             const items = grouped(cat);
@@ -2309,10 +2332,16 @@ function AssignLeaveTypesModal({
                         className={`alt-row ${isSelected ? 'is-selected' : ''} ${isExisting ? 'is-locked' : ''}`}
                         style={{ ['--alt-accent' as string]: meta.color } as CSSProperties}
                       >
+                        {/* …and while the assignment is being saved. (#125)
+                            The guard was `isExisting` alone, so every other type
+                            stayed tickable behind "Saving…" — a box ticked after
+                            the request left is not in the set being assigned and
+                            is wiped when the modal resets its selection on
+                            success, so the click silently did nothing. */}
                         <input
                           type="checkbox"
                           checked={isSelected}
-                          disabled={isExisting}
+                          disabled={isExisting || saving}
                           onChange={() => toggle(t.id)}
                           style={{ accentColor: meta.color }}
                         />
@@ -2331,6 +2360,7 @@ function AssignLeaveTypesModal({
               </div>
             );
           })}
+          </fieldset>
         </div>
 
         <div className="rec-form-footer">
@@ -2338,7 +2368,9 @@ function AssignLeaveTypesModal({
             {visibleSelectedCount === 0 ? 'Pick at least one leave type to enable Save' : `${visibleSelectedCount} selected · ready to save`}
           </span>
           <div className="d-flex gap-2">
-            <button type="button" className="rec-btn-ghost" onClick={handleClose}>Cancel</button>
+            {/* Cancel resets the selection and closes — doing that mid-save
+                abandons a request already assigning the types. (#125) */}
+            <button type="button" className="rec-btn-ghost" onClick={handleClose} disabled={saving}>Cancel</button>
             <button
               type="button"
               className="rec-btn-primary"

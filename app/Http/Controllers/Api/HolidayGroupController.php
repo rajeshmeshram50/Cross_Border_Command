@@ -122,11 +122,26 @@ class HolidayGroupController extends Controller
         $data = $request->validate([
             // Group names are labels — letters, numbers, spaces and hyphens only
             // (no apostrophes or other special characters). Mirrors the frontend.
-            'name'        => ['required', 'string', 'max:191', 'regex:/^[\pL\pN \-]+$/u'],
+            /* Must contain at least one LETTER. (#58)
+             *
+             * The pattern allowed \pN freely, so "12345" or "2026" saved as a
+             * group name with nothing to object — a number is not a name, and
+             * nothing downstream can make sense of one.
+             *
+             * Digits are still allowed INSIDE a name: "Diwali 2026" and
+             * "Group 1" are ordinary things to call a holiday group, and
+             * banning digits outright would swap a validation gap for a
+             * validation obstacle. The lookahead is what draws the line — it
+             * rejects a name made only of digits, spaces or hyphens while
+             * leaving every real name alone. Same idiom the bank-branch rule
+             * uses for the same reason. */
+            'name'        => ['required', 'string', 'max:191', 'regex:/^(?=.*\pL)[\pL\pN \-]+$/u'],
             'description' => 'nullable|string|max:1000',
             'status'      => ['nullable', Rule::in(['Active', 'Inactive'])],
         ], [
-            'name.regex' => 'Group name can only contain letters, numbers, spaces and hyphens.',
+            // Says what a valid name IS, and names the rule that just failed —
+            // "invalid format" leaves the user guessing which character to drop.
+            'name.regex' => 'Group name must include at least one letter — it can also contain numbers, spaces and hyphens, but not numbers alone.',
         ]);
 
         // Block duplicate group names within the same tenant scope. Match is

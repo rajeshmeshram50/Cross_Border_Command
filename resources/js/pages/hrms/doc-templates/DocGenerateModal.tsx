@@ -87,6 +87,13 @@ export default function DocGenerateModal({
   const [tokensFailed, setTokensFailed] = useState(false);
   const [values, setValues]         = useState<Record<string, string>>({});
   const [previewHtml, setPreviewHtml] = useState<string>('');
+  /* Organisation name + logo the finished document will carry, resolved by the
+     preview endpoint per employee (legal entity → client → branch). The header
+     strip is drawn here from the template's stored config, which may hold the
+     placeholder words "Company Name" and no logo at all. (#126) */
+  const [letterhead, setLetterhead] = useState<{ company_name: string; logo_url: string | null }>(
+    { company_name: '', logo_url: null },
+  );
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving]         = useState(false);
   const [sending, setSending]       = useState(false);
@@ -198,6 +205,11 @@ export default function DocGenerateModal({
         custom_values: values,
       });
       setPreviewHtml(data?.rendered_html || '');
+      // Resolved organisation name + logo for the header/footer strips (#126).
+      setLetterhead({
+        company_name: String(data?.letterhead?.company_name ?? ''),
+        logo_url:     data?.letterhead?.logo_url ?? null,
+      });
       // Remember exactly which values this render was built from, so the
       // "out of date" flag reflects a real difference rather than any keypress.
       previewSignature.current = JSON.stringify(values);
@@ -451,10 +463,10 @@ export default function DocGenerateModal({
               </div>
               <div className="dgm-preview-stage">
                 <div className="dgm-preview-paper">
-                  <DocHeader cfg={template?.header_config} />
+                  <DocHeader cfg={template?.header_config} letterhead={letterhead} />
                   <div className="dgm-preview-body"
                     dangerouslySetInnerHTML={{ __html: decorateUnfilledTokens(previewHtml || '<p style="color:#9ca3af;font-style:italic;">(empty preview)</p>') }} />
-                  <DocFooter cfg={template?.footer_config} />
+                  <DocFooter cfg={template?.footer_config} letterhead={letterhead} />
                 </div>
               </div>
             </>
@@ -525,12 +537,46 @@ function decorateUnfilledTokens(html: string): string {
   );
 }
 
-function DocHeader({ cfg }: { cfg?: HeaderConfig | null }) {
+/* Swap the placeholder letterhead for the organisation this document is
+ * actually for. (#126)
+ *
+ * A template stores whatever its author's letterhead resolved to when it was
+ * written — and when that could not be resolved it stored the literal words
+ * "Company Name" / "Company Name Pvt. Ltd.", or the {{CompanyName}} token.
+ * Both reach this preview as plain text with nothing to resolve them, which is
+ * why the strip read "Company Name · Confidential" for a document belonging to
+ * a real branch. Mirrors the substitution the PDF blade performs, so the
+ * preview and the finished document say the same thing.
+ *
+ * With no name resolvable the placeholder is DROPPED rather than printed, and
+ * a stranded separator is cleaned up, so the strip degrades to "Confidential"
+ * instead of asserting a company that does not exist. */
+function fillOrgName(text: string | null | undefined, orgName: string): string {
+  let s = String(text ?? '');
+  if (!s) return s;
+  s = s.replace(/\{\{\s*CompanyName\s*\}\}/gi, orgName);
+  // Longest first — "Company Name Pvt. Ltd." must not be half-replaced.
+  s = s.replace(/Company Name Pvt\. Ltd\./gi, orgName).replace(/Company Name/gi, orgName);
+  return s.replace(/\s*\|\s*\|\s*/g, ' | ').replace(/^\s*\|\s*|\s*\|\s*$/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+type Letterhead = { company_name: string; logo_url: string | null };
+
+function DocHeader({ cfg, letterhead }: { cfg?: HeaderConfig | null; letterhead?: Letterhead }) {
   if (!cfg) return null;
+  const org = letterhead?.company_name ?? '';
   const showLogo  = cfg.show_logo  !== false;
   const showTitle = cfg.show_title !== false;
-  const logoSrc = cfg.logo_url || (cfg.logo_path ? `/storage/${cfg.logo_path}` : null);
-  const hasAnything = (showLogo && logoSrc) || (showTitle && (cfg.title || cfg.subtitle));
+  /* Falls back to the employing branch's logo when the template carries none —
+     the PDF already does this (headerLogoDataUri), so a preview with no logo
+     was showing something the finished document would never look like. */
+  const logoSrc = cfg.logo_url
+    || (cfg.logo_path ? `/storage/${cfg.logo_path}` : null)
+    || letterhead?.logo_url
+    || null;
+  const title    = fillOrgName(cfg.title, org);
+  const subtitle = fillOrgName(cfg.subtitle, org);
+  const hasAnything = (showLogo && logoSrc) || (showTitle && (title || subtitle));
   if (!hasAnything) return null;
   return (
     <div className="dgm-doc-header" style={{ background: cfg.background || '#0f172a', color: cfg.text_color || '#fff' }}>
@@ -538,19 +584,21 @@ function DocHeader({ cfg }: { cfg?: HeaderConfig | null }) {
         <img src={logoSrc} alt="Logo" className="dgm-doc-logo"
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
       )}
-      {showTitle && (cfg.title || cfg.subtitle) && (
+      {showTitle && (title || subtitle) && (
         <div style={{ textAlign: cfg.align === 'left' ? 'left' : 'right', flex: 1 }}>
-          {cfg.title    && <div className="dgm-doc-title">{cfg.title}</div>}
-          {cfg.subtitle && <div className="dgm-doc-sub">{cfg.subtitle}</div>}
+          {title    && <div className="dgm-doc-title">{title}</div>}
+          {subtitle && <div className="dgm-doc-sub">{subtitle}</div>}
         </div>
       )}
     </div>
   );
 }
 
-function DocFooter({ cfg }: { cfg?: FooterConfig | null }) {
+function DocFooter({ cfg, letterhead }: { cfg?: FooterConfig | null; letterhead?: Letterhead }) {
   if (!cfg) return null;
-  const text = (cfg.text || '').trim();
+  // Same substitution as the header — the footer is where "Company Name Pvt.
+  // Ltd.  |  Confidential" lives. (#126)
+  const text = fillOrgName(cfg.text, letterhead?.company_name ?? '');
   const showPage = cfg.show_page_number !== false;
   if (!text && !showPage) return null;
   const align = cfg.align || 'right';

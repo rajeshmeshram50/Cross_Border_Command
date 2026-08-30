@@ -127,20 +127,38 @@ type OrgIdentity = { name: string; address: string; logo_path: string | null; lo
    "Company Name Pvt. Ltd. | Confidential" in the footer — placeholder copy
    that reads as real letterhead and went out on documents unedited. Both stay
    fully editable; this only decides what they start as. */
+/* When the logged-in user has no organisation name to seed from, the letterhead
+ * falls back to the {{CompanyName}} TOKEN rather than to the placeholder words
+ * "Company Name". (#113)
+ *
+ * org.name is branch name → client org name, so it is filled for every ordinary
+ * user. It comes back empty for a super-admin, who belongs to no branch and no
+ * client — and their template then stored the literal strings "Company Name"
+ * and "Company Name Pvt. Ltd.  |  Confidential", which are plain text with
+ * nothing to resolve. Every document generated from that template printed them
+ * verbatim, and in Evidence Vault the footer read as "Company Name
+ * Confidential" — placeholder copy presented as real letterhead.
+ *
+ * The token resolves per EMPLOYEE at generate time (legal entity → client org
+ * name → the employee's own BRANCH — see HrGeneratedDocumentController), so a
+ * template written by someone with no branch of their own still prints the
+ * right name for whoever the document is about. That is the branch-name default
+ * this ticket asks for, applied at the moment the answer is actually known. */
+const COMPANY_TOKEN = '{{CompanyName}}';
+
 function headerFromOrg(org: OrgIdentity): HeaderConfig {
   return {
     ...DEFAULT_HEADER,
-    title: org.name || DEFAULT_HEADER.title,
+    title: org.name || COMPANY_TOKEN,
     logo_path: org.logo_path ?? DEFAULT_HEADER.logo_path,
     logo_url:  org.logo_url  ?? DEFAULT_HEADER.logo_url,
   };
 }
 
 function footerFromOrg(org: OrgIdentity): FooterConfig {
-  if (!org.name) return DEFAULT_FOOTER;
-  // Same "<name>  |  Confidential" shape as the default, trimmed to the
-  // footer strip's character budget so a long branch name can't overflow it.
-  const text = `${org.name}  |  Confidential`;
+  // Same "<name>  |  Confidential" shape either way, trimmed to the footer
+  // strip's character budget so a long branch name can't overflow it.
+  const text = `${org.name || COMPANY_TOKEN}  |  Confidential`;
   return { ...DEFAULT_FOOTER, text: text.slice(0, FOOTER_TEXT_MAX) };
 }
 

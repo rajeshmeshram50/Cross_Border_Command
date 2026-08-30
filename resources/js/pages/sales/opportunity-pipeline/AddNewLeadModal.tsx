@@ -393,7 +393,7 @@ export default function AddNewLeadModal(props: {
               <div className="anl-head-sub">Complete the form below to register a new sales lead</div>
             </div>
           </div>
-          <button className="anl-close" onClick={onClose} aria-label="Close">
+          <button className="anl-close" onClick={onClose} disabled={saving} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -770,7 +770,11 @@ const SCOPED_CSS = `
   transition: background .15s, transform .12s;
   position: relative; z-index: 1;
 }
-.anl-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.anl-close:hover:not(:disabled) { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+/* Locked shut while a save is in flight — dismissing the modal mid-POST
+   drops the user back on the list with no idea whether the lead landed,
+   and a retry then creates a duplicate. */
+.anl-close:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 /* Body */
 .anl-body {

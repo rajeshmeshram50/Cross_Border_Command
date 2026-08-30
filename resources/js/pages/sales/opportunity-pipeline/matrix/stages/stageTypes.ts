@@ -21,6 +21,15 @@ export type StageProps = {
    * (the only other path that re-rendered the parent with new
    * server state). */
   onPiChange?: () => void;
+  /* Asked BEFORE a stage writes its advance, not after.
+   * The page owns the rules for entering a stage (Stage 3 needs a
+   * salesperson). Those rules used to live only in the page's navigation
+   * guard, which runs on onNext() — i.e. after the stage had already PUT the
+   * new lead_stage_id and shown "Stage advanced". The move was refused, but
+   * the row said stage 3 and the user had just been told it worked.
+   * Returns false when the move is not allowed; the guard raises its own
+   * message, so the caller only has to stop. */
+  canEnterNextStage?: () => boolean;
   /* When the stage is rendered inside a toolbar popup (not the pipeline),
    * the "Save & Next / Previous" footer is suppressed — the popup is a
    * quick-action view, not a pipeline step. All in-table actions still

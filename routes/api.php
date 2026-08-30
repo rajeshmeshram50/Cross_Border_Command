@@ -796,6 +796,9 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     // "Route [login] not defined".
     Route::post  ('/expense-claims/batch-payments/{batchId}/sync-zoho', [ExpenseClaimController::class, 'syncBatchPaymentToZoho']);
     Route::post  ('/expense-claims/batch-pay',                [ExpenseClaimController::class, 'batchPay']);
+    // Server-rendered PDF for the Expense / Advance export (#166) — POST because
+    // the screen sends the rows it is displaying, not a query to re-run.
+    Route::post  ('/expense-claims/export-pdf',               [ExpenseClaimController::class, 'exportPdf']);
     Route::post  ('/expense-claims',                          [ExpenseClaimController::class, 'store']);
     Route::get   ('/expense-claims/{id}',                     [ExpenseClaimController::class, 'show']);
     Route::post  ('/expense-claims/{id}/manager-approve',     [ExpenseClaimController::class, 'managerApprove']);

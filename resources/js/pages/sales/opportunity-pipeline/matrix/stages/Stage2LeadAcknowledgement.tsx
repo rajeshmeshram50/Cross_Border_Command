@@ -45,7 +45,7 @@ type MasterPayload = {
   clarity_pending: MasterReason[];
 };
 
-export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead }: StageProps) {
+export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, reloadLead, canEnterNextStage }: StageProps) {
   const toast = useToast();
 
   /* Optimistic pending rows — prepended to the Activity Report the instant
@@ -201,6 +201,13 @@ export default function Stage2LeadAcknowledgement({ header, onPrev, onNext, relo
       );
       return;
     }
+    /* Ask the page whether Stage 3 will accept this lead BEFORE writing the
+       advance. Stage 3 requires a salesperson, and that check used to run on
+       onNext() — after the PUT and after the success toast — so a lead with no
+       owner was told "Stage advanced", then refused, and left with
+       lead_stage_id = 3 on a screen still showing Stage 2. */
+    if (canEnterNextStage && !canEnterNextStage()) return;
+
     setAdvancing(true);
     try {
       await api.put(`/sales/leads/${header.leadId}`, { lead_stage_id: 3 });

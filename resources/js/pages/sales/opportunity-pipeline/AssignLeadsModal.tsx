@@ -248,7 +248,7 @@ export default function AssignLeadsModal({
               </div>
             </div>
           </div>
-          <button className="alm-close" onClick={onClose} aria-label="Close">
+          <button className="alm-close" onClick={onClose} disabled={submitting} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -450,7 +450,10 @@ const ALM_CSS = `
   color: #fff; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background .15s;
 }
-.alm-close:hover { background: rgba(255,255,255,.28); }
+.alm-close:hover:not(:disabled) { background: rgba(255,255,255,.28); }
+/* Same reasoning as the Cancel button: closing mid-assignment leaves the
+   worklist showing stale owners until a manual refresh. */
+.alm-close:disabled { opacity: .45; cursor: not-allowed; }
 
 /* Single-mode context strip — sits between the teal header and the form
    body. Light cyan band with two pills showing customer + Opp code so

@@ -10,7 +10,7 @@ import { useToast } from '../../../contexts/ToastContext';
 import { useScrollLock } from '../../../hooks/useScrollLock';
 import { useSelectionLock } from '../../../hooks/useSelectionLock';
 import Tooltip from '../../../components/ui/Tooltip';
-import { MasterSelect } from '../../../components/ui/MasterSelect';
+import { MasterSelect, OptBadge } from '../../../components/ui/MasterSelect';
 import WorklistPager from '../../../components/ui/WorklistPager';
 import TableContainer from '../../../velzon/Components/Common/TableContainerReactTable';
 import DeleteConfirmModal from '../../../components/ui/DeleteConfirmModal';
@@ -3213,7 +3213,7 @@ export function CreateQuotationModal(props: {
        * from outside the /sales/qpi workspace (e.g. Sales Matrix Stage 5).
        * Duplicate <style> tags are inert when the workspace is also mounted. */}
       <style>{SCOPED_CSS}</style>
-      <div className="qpi-modal qpi-modal-teal">
+      <div className={`qpi-modal qpi-modal-teal${saving ? ' qpi-modal-busy' : ''}`}>
         {/* Header (teal) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-teal">
           <div className="qpi-modal-head-left">
@@ -3239,7 +3239,7 @@ export function CreateQuotationModal(props: {
               <span className="qpi-modal-pill-label">Quotation Date</span>
               <span className="qpi-modal-pill-value">{existingDate ?? formatDmy(new Date())}</span>
             </div>
-            <button className="qpi-modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+            <button className="qpi-modal-close" onClick={onClose} disabled={saving} aria-label="Close"><IconClose /></button>
           </div>
         </div>
 
@@ -3309,14 +3309,14 @@ export function CreateQuotationModal(props: {
         {/* Footer */}
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
-            <button className="qpi-btn-cancel" onClick={onClose}>Cancel</button>
+            <button className="qpi-btn-cancel" onClick={onClose} disabled={saving}>Cancel</button>
             {step === 2 && (
-              <button className="qpi-btn-back" onClick={() => setStep(1)}>
+              <button className="qpi-btn-back" onClick={() => setStep(1)} disabled={saving}>
                 ← Back
               </button>
             )}
             {step === 1 ? (
-              <button className="qpi-btn-next qpi-btn-next-teal" onClick={onSaveNext} disabled={hydrating}>
+              <button className="qpi-btn-next qpi-btn-next-teal" onClick={onSaveNext} disabled={hydrating || saving}>
                 Save &amp; Next →
               </button>
             ) : (
@@ -3693,7 +3693,7 @@ export function CreatePIModal(props: {
       {/* Same scope CSS injection as the Quotation modal — keeps the PI
        * modal styled regardless of where it's mounted. */}
       <style>{SCOPED_CSS}</style>
-      <div className="qpi-modal qpi-modal-purple">
+      <div className={`qpi-modal qpi-modal-purple${saving || docChecking ? ' qpi-modal-busy' : ''}`}>
         {/* Header (purple) — title + pills reflect create vs edit mode. */}
         <div className="qpi-modal-head qpi-modal-head-purple">
           <div className="qpi-modal-head-left">
@@ -3719,7 +3719,7 @@ export function CreatePIModal(props: {
               <span className="qpi-modal-pill-label">PI Date</span>
               <span className="qpi-modal-pill-value">{existingDate ?? formatDmy(new Date())}</span>
             </div>
-            <button className="qpi-modal-close" onClick={onClose} aria-label="Close"><IconClose /></button>
+            <button className="qpi-modal-close" onClick={onClose} disabled={saving || docChecking} aria-label="Close"><IconClose /></button>
           </div>
         </div>
 
@@ -3784,9 +3784,9 @@ export function CreatePIModal(props: {
         {/* Footer */}
         <div className="qpi-modal-foot">
           <div className="qpi-modal-foot-actions">
-            <button className="qpi-btn-cancel" onClick={onClose}>Cancel</button>
+            <button className="qpi-btn-cancel" onClick={onClose} disabled={saving || docChecking}>Cancel</button>
             {step === 2 && (
-              <button className="qpi-btn-back" onClick={() => setStep(1)}>
+              <button className="qpi-btn-back" onClick={() => setStep(1)} disabled={saving || docChecking}>
                 ← Back
               </button>
             )}
@@ -3860,8 +3860,13 @@ function BasicFormSkeleton({ theme }: { theme: 'teal' | 'purple' }) {
  *  server-side via the leads `customer_id` filter. onPick hands the parent
  *  the fully-mapped LeadRow so the cascade (customer/consignee/currency)
  *  works without a second lookup. */
+/* One row of the async Opportunity picker: the dropdown option plus the raw
+ * lead it came from (the parent cascades customer / consignee / date off it)
+ * and the Domestic / International pill derived from that lead's customer. */
+type OppOption = { value: string; label: string; row: LeadRow; badge?: MasterOpt['badge'] };
+
 function OpportunitySelect({
-  value, customerId, disabled, excludeWithPi, onPick,
+  value, customerId, disabled, excludeWithPi, docType, onPick,
 }: {
   value: string;
   customerId: number | null;
@@ -3869,10 +3874,19 @@ function OpportunitySelect({
   /* When true (Create Quotation), opportunities that already have a Proforma
    * Invoice are hidden — a quotation can't be created against an opp with a PI. */
   excludeWithPi?: boolean;
+  /* The form's Document Type. Narrows the list to opportunities whose CUSTOMER
+   * suits that type: an Indian customer's opps for Domestic, a foreign
+   * customer's for International. Without it the picker offered opps that
+   * silently flipped Document Type on selection (forcedDocType rewrites the
+   * field from the customer's country the moment one is picked, then locks it),
+   * so the user's International choice was revoked with no message.
+   * Opps with no customer mapped yet resolve to no scope and stay in both
+   * lists — they force no Document Type either. */
+  docType?: 'International' | 'Domestic';
   onPick: (oppValue: string, row: LeadRow | null) => void;
 }) {
   const [open, setOpen]       = useState(false);
-  const [items, setItems]     = useState<Array<{ value: string; label: string; row: LeadRow }>>([]);
+  const [items, setItems]     = useState<Array<OppOption>>([]);
   const [page, setPage]       = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -3884,7 +3898,7 @@ function OpportunitySelect({
 
   // Map an API lead row → option + LeadRow (identical shape to the static
   // masters loader so the parent cascade reads the same fields).
-  const mapLead = (r: any): { value: string; label: string; row: LeadRow } | null => {
+  const mapLead = (r: any): OppOption | null => {
     const code = r.opp_code ?? r.opp_id ?? (r.id ? `OPP-${String(r.id).padStart(4, '0')}` : '');
     // Show the mapped customer's COMPANY name (not legal name) beside the
     // Opp ID. Falls back to the lead's sender/company only when the opp has
@@ -3910,7 +3924,12 @@ function OpportunitySelect({
       consigneeDbId:  r.consignee_id != null ? Number(r.consignee_id) : (r.consignee?.id != null ? Number(r.consignee.id) : null),
       currency:       r.currency ?? r.quote_currency ?? null,
     };
-    return { value: label, label, row };
+    // Scope pill, from the mapped customer's PRIMARY address — the same
+    // country forcedDocType reads, so the badge can never contradict the
+    // Document Type the field will settle on. No customer / no country on
+    // file means no pill rather than a guessed one.
+    const badge = partyScopeBadge(r.customer?.primary_address?.country);
+    return { value: label, label, row, badge };
   };
 
   const fetchPage = useCallback(async (pageNum: number, q: string, replace: boolean) => {
@@ -3928,10 +3947,12 @@ function OpportunitySelect({
           lead_ack_complete: 1,
           // Create Quotation: hide opps that already have a Proforma Invoice.
           exclude_with_pi: excludeWithPi ? 1 : undefined,
+          // Server-side scope narrowing — see the docType prop above.
+          doc_scope:   docType || undefined,
         },
       });
       const rows   = Array.isArray(res.data?.data) ? res.data.data : [];
-      const mapped = rows.map(mapLead).filter(Boolean) as Array<{ value: string; label: string; row: LeadRow }>;
+      const mapped = rows.map(mapLead).filter(Boolean) as Array<OppOption>;
       setItems(prev => (replace ? mapped : [...prev, ...mapped]));
       const lastPage = res.data?.pagination?.last_page ?? null;
       setHasMore(lastPage != null ? pageNum < lastPage : mapped.length >= 50);
@@ -3942,7 +3963,7 @@ function OpportunitySelect({
     } finally {
       setLoading(false);
     }
-  }, [customerId, excludeWithPi]);
+  }, [customerId, excludeWithPi, docType]);
 
   // (Re)load page 1 on open and whenever the search text or customer
   // changes while open. Debounce typed searches so we don't fire per key.
@@ -4011,7 +4032,23 @@ function OpportunitySelect({
           </div>
           <div className="master-select-list" ref={listRef} onScroll={onScroll} style={{ maxHeight: 220, overflowY: 'auto' }}>
             {items.length === 0 && !loading ? (
-              <div className="master-select-empty">{search ? 'No results' : 'No opportunities'}</div>
+              /* Naming the scope matters here: with the filter on, an empty
+                 list is a normal state (no foreign-customer opp qualified yet),
+                 not a broken screen. Say which type is empty and what to do. */
+              <div className="master-select-empty">
+                {search ? 'No results' : (
+                  docType ? (
+                    <>
+                      <div>No {docType} opportunities</div>
+                      <div style={{ fontSize: 10.5, opacity: 0.7, marginTop: 3, lineHeight: 1.45 }}>
+                        {docType === 'International'
+                          ? 'Every qualified opportunity belongs to an Indian customer. Switch Document Type to Domestic, or qualify a lead for a foreign customer.'
+                          : 'Every qualified opportunity belongs to a foreign customer. Switch Document Type to International, or qualify a lead for an Indian customer.'}
+                      </div>
+                    </>
+                  ) : 'No opportunities'
+                )}
+              </div>
             ) : (
               <>
                 {items.map(opt => (
@@ -4021,7 +4058,8 @@ function OpportunitySelect({
                     onClick={() => onPick(opt.value, opt.row)}
                     className="master-select-item"
                   >
-                    {opt.label}
+                    <span className="master-select-value-text">{opt.label}</span>
+                    {opt.badge && <OptBadge b={opt.badge} staticPill />}
                   </DropdownItem>
                 ))}
                 {loading && <div className="master-select-empty">Loading…</div>}
@@ -4131,7 +4169,7 @@ function BasicForm(props: {
   // customer has none mapped, the list is empty and the field shows the
   // "No consignees for this customer" placeholder — we no longer fall back to
   // the full list, which used to leak every consignee.
-  const filteredConsignees = useMemo(() => {
+  const consigneesForCustomer = useMemo(() => {
     if (!selectedCustomerRow) return masters.consignees;
     const matchValues = new Set(
       masters.consigneesRaw
@@ -4140,6 +4178,23 @@ function BasicForm(props: {
     );
     return masters.consignees.filter(opt => matchValues.has(opt.value));
   }, [selectedCustomerRow, masters.consignees, masters.consigneesRaw]);
+
+  /* Scope narrowing on top of the customer mapping — International documents
+   * offer foreign consignees, Domestic ones Indian consignees.
+   *
+   * Being mapped to the right customer is NOT enough on its own: the pivot is
+   * many-to-many and nothing stops an Indian consignee from being mapped to a
+   * foreign customer (CN-030 sits under a United Kingdom customer in live
+   * data), so a Domestic consignee surfaced on an International document and
+   * the option's own pill contradicted the Document Type on the same screen.
+   *
+   * Same rule as the Customer field a few lines up, including the exemption:
+   * a consignee with no country on file carries no pill, can't be classified,
+   * and therefore is never hidden. */
+  const filteredConsignees = useMemo(
+    () => consigneesForCustomer.filter(o => !o.badge?.text || o.badge.text === form.docType),
+    [consigneesForCustomer, form.docType],
+  );
 
   // ── Auto-fill on Opportunity selection ────────────────────────
   // 1. Look up the lead row from the picked OPP code.
@@ -4377,6 +4432,9 @@ function BasicForm(props: {
               /* Hide opportunities that already have a PI — applies to BOTH the
                  Quotation and PI pickers (one PI per opp; no quoting after PI). */
               excludeWithPi
+              /* Keeps the list in step with the Document Type field — see the
+                 prop's note on forcedDocType. */
+              docType={form.docType}
               onPick={(val, row) => onOpportunityChange(val, row)}
             />
           )}
@@ -4408,12 +4466,14 @@ function BasicForm(props: {
             <input className="qpi-input qpi-input-readonly" value={form.consignee} readOnly title="Fixed by the lead this was opened from" />
           ) : (
             <MasterSelect
-              key={`cons-${filteredConsignees.length}-${form.customer}`}
+              key={`cons-${filteredConsignees.length}-${form.customer}-${form.docType}`}
               value={form.consignee}
               loading={masters.loading}
               placeholder={form.customer
                 ? (filteredConsignees.length === 0
-                    ? 'No consignees for this customer'
+                    ? (consigneesForCustomer.length > 0
+                        ? `No ${form.docType} consignee for this customer`
+                        : 'No consignees for this customer')
                     : '— Select Consignee —')
                 : '— Select Consignee —'}
               options={withCurrent(filteredConsignees, form.consignee)}
@@ -6514,7 +6574,7 @@ const SCOPED_CSS = `
   color: #fff; display: inline-flex; align-items: center; justify-content: center;
   cursor: pointer; transition: background .15s;
 }
-.qpi-modal-close:hover { background: rgba(255,255,255,.2); }
+.qpi-modal-close:hover:not(:disabled) { background: rgba(255,255,255,.2); }
 .qpi-modal-close svg { width: 13px; height: 13px; }
 
 /* Stepper — compact: smaller badge, tighter padding. */
@@ -6914,7 +6974,7 @@ const SCOPED_CSS = `
   border: 1px solid #e2e8f0; background: #fff;
   color: #475569; font-family: inherit; font-size: 12px; font-weight: 700; cursor: pointer;
 }
-.qpi-btn-cancel:hover { background: #f8fafc; }
+
 .qpi-btn-back {
   padding: 6px 14px; border-radius: 7px;
   border: 1px solid #c4b5fd; background: #fff;
@@ -6922,7 +6982,7 @@ const SCOPED_CSS = `
   transition: background .18s ease, border-color .18s ease, color .18s ease,
               transform .15s ease, box-shadow .18s ease;
 }
-.qpi-btn-back:hover {
+.qpi-btn-back:hover:not(:disabled) {
   background: linear-gradient(135deg, #ede9fe, #ddd6fe);
   border-color: #a78bfa;
   color: #5b21b6;
@@ -6969,6 +7029,36 @@ const SCOPED_CSS = `
 .qpi-btn-next-purple:focus-visible,
 .qpi-btn-submit-purple:focus-visible { box-shadow: 0 0 0 3px rgba(124,58,237,.28), 0 4px 12px rgba(124,58,237,.4); }
 .qpi-btn-submit:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+/* ── Save in flight: the whole wizard goes read-only ──────────────────
+   Disabling only the submit button was not enough. Cancel, Back and the
+   header X stayed live, so a slow POST could be abandoned half-way, and
+   the body stayed fully editable - a product row could be deleted or the
+   customer swapped while the request that was already carrying the old
+   values was in the air. Whatever came back then disagreed with what the
+   screen showed.
+
+   pointer-events on the body and stepper kills clicks on every field,
+   dropdown and row control at once, which is why this is a class on the
+   shell rather than a disabled prop threaded through each input. The
+   footer stays interactive so the spinner on the submit button is still
+   visible and readable. */
+.qpi-modal-busy .qpi-modal-body,
+.qpi-modal-busy .qpi-modal-stepper {
+  pointer-events: none;
+  user-select: none;
+  opacity: .55;
+  transition: opacity .15s ease;
+}
+/* Cursor + fade for the shell buttons the busy class cannot reach,
+   matching .qpi-btn-submit:disabled above. */
+.qpi-btn-cancel:disabled,
+.qpi-btn-back:disabled,
+.qpi-btn-next:disabled {
+  opacity: .55; cursor: not-allowed; transform: none; box-shadow: none;
+}
+.qpi-modal-close:disabled { opacity: .45; cursor: not-allowed; }
+.qpi-btn-cancel:hover:not(:disabled) { background: #f8fafc; }
 
 /* ════════════════════════════════════════════════════════════════════════════
  * Dark mode — mirrors the SalesLeadAckMaster palette so the two Sales-Matrix

@@ -79,6 +79,37 @@
    * page the table spans AND is never stranded alone at the bottom of a page —
    * fixing "table header on one page, its rows on the next". Tables that already
    * declare a <thead> are left untouched. Non-greedy match grabs one <tr>. */
+  /* Box-drawing, arrows and block shapes get their own font.
+   *
+   * dompdf maps Times New Roman to its built-in `times`, one of the core-14
+   * PDF fonts — Latin-1 only. Anything outside that comes out as "?", which is
+   * what happened to the flow charts drawn with │ ├ └ ─ once the document font
+   * moved from DejaVu Sans to Times New Roman: DejaVu carries those glyphs and
+   * times does not.
+   *
+   * dompdf picks ONE font per element and does no per-glyph fallback, so
+   * listing DejaVu in the font stack would change nothing — times resolves and
+   * that is the end of it. The characters have to be wrapped so the run itself
+   * asks for a font that has them.
+   *
+   * Only the ranges that actually matter are wrapped, and only in TEXT: the
+   * outer match walks between tags so an attribute value can never be rewritten.
+   *   2190-21FF  arrows
+   *   2500-257F  box drawing
+   *   2580-259F  block elements
+   *   25A0-25FF  geometric shapes
+   */
+  if (!empty($processedHtml) && preg_match('/[\x{2190}-\x{21FF}\x{2500}-\x{25FF}]/u', $processedHtml)) {
+    $processedHtml = preg_replace_callback('/>([^<]+)</u', function ($m) {
+      $text = preg_replace(
+        '/([\x{2190}-\x{21FF}\x{2500}-\x{25FF}]+)/u',
+        '<span style="font-family: \'DejaVu Sans\', sans-serif">$1</span>',
+        $m[1]
+      );
+      return '>' . $text . '<';
+    }, $processedHtml);
+  }
+
   /* Column widths → percentages on the first row's cells.
    *
    * TipTap's column resizing stores its widths in <colgroup><col style="width:
@@ -393,6 +424,18 @@
       counter-increment: legal;
       content: counters(legal, ".") ". ";
       font-weight: bold;
+    }
+
+    /* Number and text on one line — a list item's content is a <p>, and a block
+       <p> pushes the :before marker onto a line of its own. Kept in step with
+       the .ctcte-content rule in CtcRichEditor.tsx. */
+    .document-content ol[data-legal] li > p {
+      display: inline;
+      margin: 0;
+    }
+
+    .document-content ol[data-legal] li > ol {
+      display: block;
     }
 
     /* Inserted Clause-Library / rich content uses <div>-per-line and <br>

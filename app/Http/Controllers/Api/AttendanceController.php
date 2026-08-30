@@ -328,9 +328,16 @@ class AttendanceController extends Controller
 
         // Holidays for this employee's group across the log window (the month),
         // so holiday days surface as "Holiday" in the Log + Calendar.
-        $empHolidaySet = $emp->holiday_group_id
-            ? ($this->holidayDatesForGroups([$emp->holiday_group_id], (clone $start), (clone $end))[$emp->holiday_group_id] ?? [])
-            : [];
+        /* Fetched even when the employee is in NO holiday group — company-wide
+           holidays still apply to them, and the old `? :` returned an empty set
+           for exactly those people. (#85) */
+        $empHolidayMap = $this->holidayDatesForGroups(
+            array_filter([$emp->holiday_group_id]),
+            (clone $start), (clone $end),
+            $emp->client_id, $emp->branch_id,
+        );
+        $empHolidaySet = $empHolidayMap[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
+            ?? $empHolidayMap[self::HOLIDAY_COMPANY_KEY] ?? [];
 
         // Total Leaves KPI (bug #18) — count the working days in the month window
         // covered by an APPROVED leave request. Weekly-offs and holidays are
@@ -637,14 +644,30 @@ class AttendanceController extends Controller
         // loaded once per request (keyed by group) to avoid an N+1.
         $holidayGroupIds = $employees->pluck('holiday_group_id')->filter()->unique()->values()->all();
         // Compliance is the only reader, so this follows it into detail mode.
+        /* Client/branch passed so COMPANY-wide holidays (no group) are included
+           — they apply to every employee here, grouped or not. (#85) */
+        $holidayScopeClient = $employees->first()?->client_id;
+        $holidayScopeBranch = $employees->pluck('branch_id')->filter()->unique()->count() === 1
+            ? $employees->pluck('branch_id')->filter()->first()
+            : null;   // mixed branches → client-wide only, never one branch's calendar for all
         $holidayByGroup  = $detailMode
-            ? $this->holidayDatesForGroups($holidayGroupIds, (clone $dateC)->startOfMonth(), (clone $dateC)->endOfMonth())
+            ? $this->holidayDatesForGroups(
+                $holidayGroupIds, (clone $dateC)->startOfMonth(), (clone $dateC)->endOfMonth(),
+                $holidayScopeClient, $holidayScopeBranch,
+            )
             : [];
         // Wider holiday set covering the full 90-day Log / Calendar window, so
         // holidays outside the current month still surface in the log/calendar.
-        $holidayByGroupLog = $detailMode
-            ? $this->holidayDatesForGroups($holidayGroupIds, \Carbon\Carbon::parse($histStart), $histEndC->copy())
-            : [];
+        /* Loaded in BOTH modes now, not just detail. (#86)
+           The selected day's status is resolved from this set — a holiday with
+           no attendance row has to read "Holiday" rather than "Absent" — and
+           the list view resolves a status just as the log does, so gating this
+           on detailMode left the list still calling a closed day an absence.
+           One indexed query per request. */
+        $holidayByGroupLog = $this->holidayDatesForGroups(
+            $holidayGroupIds, \Carbon\Carbon::parse($histStart), $histEndC->copy(),
+            $holidayScopeClient, $holidayScopeBranch,
+        );
 
         // Denominator window end = month-to-date: never count days in the
         // future toward "absent". For a fully-past month this is the month
@@ -762,7 +785,15 @@ class AttendanceController extends Controller
 
             // Determine status for the selected date.
             $joinIso     = $this->joiningIso($emp);
-            $statusToday = $this->resolveDayStatus($today, $isWeeklyOff, $shiftStart, $date);
+            /* Is the selected date a company holiday for THIS employee? Read
+               from the log-window set, which now covers company-wide holidays
+               and employees in no group alike (#85). Without it the day fell to
+               "Absent" until a regularization created a row (#86). */
+            $logHolidaySet = $holidayByGroupLog[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
+                ?? $holidayByGroupLog[self::HOLIDAY_COMPANY_KEY] ?? [];
+            $statusToday = $this->resolveDayStatus(
+                $today, $isWeeklyOff, $shiftStart, $date, isset($logHolidaySet[$date]),
+            );
             /* Selected date sits BEFORE this employee joined → the day is out of
                scope for them, not an absence. Reading it as "Absent" put people
                in the Absent tab and the Absent KPI for months they had not been
@@ -873,7 +904,9 @@ class AttendanceController extends Controller
                not render anywhere. One employee costs ~2 ms. */
             $compliancePct = null;
             if ($detailMode) {
-            $holidaySet  = $holidayByGroup[$emp->holiday_group_id] ?? [];
+            /* No group → the company-wide set, not an empty one. (#85) */
+            $holidaySet  = $holidayByGroup[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
+                ?? $holidayByGroup[self::HOLIDAY_COMPANY_KEY] ?? [];
             $joinDate    = $emp->date_of_joining ? \Carbon\Carbon::parse($emp->date_of_joining) : null;
             $tracked     = $this->trackedWorkingDays(
                 (clone $dateC)->startOfMonth(), $mtdEndC, $joinDate, $weeklyOffLabel, $holidaySet, $mByIso,
@@ -906,7 +939,8 @@ class AttendanceController extends Controller
                 $hRows = $historyRows->get($emp->id, collect());
                 $logs  = $this->buildHistoryLogs(
                     $hRows, $emp, $shiftStart, $expectedMinutes, $weeklyOffLabel, $histStart, $histEnd,
-                    $holidayByGroupLog[$emp->holiday_group_id] ?? [],
+                    $holidayByGroupLog[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
+                        ?? $holidayByGroupLog[self::HOLIDAY_COMPANY_KEY] ?? [],
                     $leaveLogByEmp[$emp->id] ?? [],
                     $joinIso
                 );
@@ -981,20 +1015,64 @@ class AttendanceController extends Controller
      * re-anchored to the window's year. Mirrors PayrollService::holidayAggregates
      * so attendance compliance and payroll agree on what a holiday is.
      */
-    private function holidayDatesForGroups(array $groupIds, \Carbon\Carbon $start, \Carbon\Carbon $end): array
-    {
-        if (empty($groupIds) || !\Illuminate\Support\Facades\Schema::hasTable('holidays')) {
+    /** Key under which the COMPANY-wide holiday set is returned — the set that
+     *  applies to an employee belonging to no holiday group. */
+    public const HOLIDAY_COMPANY_KEY = 0;
+
+    private function holidayDatesForGroups(
+        array $groupIds,
+        \Carbon\Carbon $start,
+        \Carbon\Carbon $end,
+        ?int $clientId = null,
+        ?int $branchId = null,
+    ): array {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('holidays')) {
             return [];
         }
+
+        /* A holiday with NO group is a COMPANY holiday — it applies to everyone
+         * in the client, not to nobody. (#85)
+         *
+         * `whereIn('holiday_group_id', $groupIds)` never matches NULL, so every
+         * ungrouped holiday was invisible to attendance: the Log showed the day
+         * as Absent for anyone without punches, while payroll — which fixed
+         * this same rule under QA #93 — was crediting it as a paid holiday. The
+         * two modules disagreed about what a holiday is, which is exactly what
+         * this method's docblock says must not happen.
+         *
+         * holidays.holiday_group_id is nullable and the Holiday screen offers
+         * "no group" as a normal choice, so this is not an edge case — it is how
+         * company-wide holidays are entered. The early return on an empty
+         * $groupIds is gone with it: a tenant that uses no groups at all still
+         * has company holidays to honour. */
         $rows = DB::table('holidays')
-            ->whereIn('holiday_group_id', $groupIds)
             ->whereNull('deleted_at')
+            ->where(function ($q) use ($groupIds, $clientId, $branchId) {
+                // Company-wide: no group, scoped to this client/branch.
+                $q->where(function ($w) use ($clientId, $branchId) {
+                    $w->whereNull('holiday_group_id');
+                    // The client must MATCH — a null client_id is an unscoped
+                    // row, not a global one, and treating it as global would
+                    // hand one tenant's calendar to all of them.
+                    if ($clientId) $w->where('client_id', $clientId);
+                    // Branch, by contrast, IS "match or null": a company holiday
+                    // entered without a branch covers every office.
+                    if ($branchId) {
+                        $w->where(fn ($b) => $b->whereNull('branch_id')->orWhere('branch_id', $branchId));
+                    }
+                });
+                // Plus the specific groups asked for.
+                if (!empty($groupIds)) {
+                    $q->orWhereIn('holiday_group_id', $groupIds);
+                }
+            })
             ->get(['holiday_group_id', 'name', 'date', 'is_recurring']);
 
         // Value is the holiday NAME (not just `true`) so the Attendance Log can
         // label the day with which holiday it is. All readers use isset(), so a
         // non-empty string is still truthy for the "is this a holiday?" checks.
         $map = [];
+        $company = [];
         foreach ($rows as $r) {
             if (!$r->date) continue;
             $d = \Carbon\Carbon::parse($r->date);
@@ -1002,8 +1080,25 @@ class AttendanceController extends Controller
                 $d = \Carbon\Carbon::create($start->year, $d->month, $d->day);
             }
             if ($d->lt($start) || $d->gt($end)) continue;
-            $map[$r->holiday_group_id][$d->toDateString()] = $r->name ?: 'Holiday';
+            $iso  = $d->toDateString();
+            $name = $r->name ?: 'Holiday';
+            if ($r->holiday_group_id === null) {
+                $company[$iso] = $name;
+            } else {
+                $map[$r->holiday_group_id][$iso] = $name;
+            }
         }
+
+        /* Company holidays belong to every group as well as to the no-group
+           set, so a reader that indexes by the employee's group id gets them
+           without having to know they exist. A group's OWN entry for the same
+           date wins — a group that overrides a company holiday means it. */
+        foreach ($groupIds as $gid) {
+            if ($gid === null) continue;
+            $map[$gid] = ($map[$gid] ?? []) + $company;
+        }
+        $map[self::HOLIDAY_COMPANY_KEY] = $company;
+
         return $map;
     }
 
@@ -1062,8 +1157,13 @@ class AttendanceController extends Controller
      * about which days are off. */
 
    
-    private function resolveDayStatus(?Attendance $row, bool $weeklyOff, ?string $shiftStart, string $date): string
-    {
+    private function resolveDayStatus(
+        ?Attendance $row,
+        bool $weeklyOff,
+        ?string $shiftStart,
+        string $date,
+        bool $isHoliday = false,
+    ): string {
         if ($row && !empty($row->status)) {
             $stored = (string) $row->status;
             // Auto-promote Present → Late based on the local first-in. 10-min
@@ -1076,6 +1176,20 @@ class AttendanceController extends Controller
             return $stored;
         }
         if ($weeklyOff) return 'Weekly Off';
+        /* A company holiday is not an absence. (#86)
+         *
+         * With no attendance row this fell straight through to 'Absent', so a
+         * holiday only started reading as one once a regularization CREATED a
+         * row for the day — the status appeared to depend on paperwork rather
+         * than on the calendar. Nobody has to be regularized onto a day the
+         * company was closed.
+         *
+         * Checked after the stored status, so an employee who genuinely worked
+         * the holiday keeps their Present/Late reading, and after the weekly
+         * off, so a holiday landing on someone's off-day still reads as their
+         * off-day. Only the "no row, working day" case changes — which is the
+         * one that was wrong. */
+        if ($isHoliday) return 'Holiday';
         // Future dates with no attendance row default to Absent rather than
         // pretending the day is already "Present". The SPA's date picker
         // shouldn't be in the future in practice, but if the user navigates
