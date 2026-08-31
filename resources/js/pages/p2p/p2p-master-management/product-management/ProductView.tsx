@@ -218,39 +218,86 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   }, [activeImg]);
 
   if (loading) {
-    // Shimmer placeholder that mirrors the actual layout: image strip
-    // on the left, header + info blocks on the right. Beats a single
-    // "Loading…" message because the user sees the page structure
-    // immediately and the perceived load time drops sharply.
+    /* Shimmer placeholder that mirrors the CURRENT detail layout
+       (.pv2pd-*): purple hero bar, then the two-column body — gallery
+       (main image / thumb strip / price card / buy bar) on the left,
+       Product Details highlight tiles + tab card on the right. It reuses
+       the real layout containers, so every block lands in exactly the box
+       its real counterpart will occupy and nothing jumps on load. */
+    const line = (w: string | number, h = 11) => (
+      <div className="pv2-shimmer pv2pd-skel-line" style={{ width: w, height: h }} />
+    );
     return (
-      <div className="pv2-root">
-        <div className="pv2-shell">
-          <div className="pv2-grid">
-            <div className="pv2-gallery">
-              <div className="pv2-thumbs">
-                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
-                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
-                <div className="pv2-shimmer" style={{ height: 60, borderRadius: 8 }} />
-              </div>
-              <div className="pv2-shimmer pv2-main-shimmer" />
+      <div className="pv2-root pv2pd-root pv2pd-skel" aria-busy="true" aria-live="polite">
+
+        {/* ─── HERO ─── */}
+        <div className="pv2pd-hero">
+          <div className="pv2pd-hero-row">
+            <div className="pv2pd-hero-main">
+              <div className="pv2-shimmer pv2pd-skel-title" />
             </div>
-            <div className="pv2-info">
-              <div className="pv2-shimmer" style={{ height: 32, width: '60%', marginBottom: 12, borderRadius: 6 }} />
-              <div className="pv2-shimmer" style={{ height: 18, width: '40%', marginBottom: 24, borderRadius: 4 }} />
-              <div className="pv2-info-grid">
-                <div className="pv2-info-block">
-                  <div className="pv2-shimmer" style={{ height: 16, width: 140, marginBottom: 12, borderRadius: 4 }} />
-                  {[...Array(6)].map((_, i) => (
-                    <div key={i} className="pv2-shimmer" style={{ height: 14, width: i % 2 ? '70%' : '85%', marginBottom: 10, borderRadius: 4 }} />
-                  ))}
+            <div className="pv2pd-hero-btns">
+              <div className="pv2-shimmer pv2pd-skel-hbtn" />
+              <div className="pv2-shimmer pv2pd-skel-hbtn" />
+              <div className="pv2-shimmer pv2pd-skel-hbtn" />
+            </div>
+          </div>
+        </div>
+
+        {/* ─── BODY ─── */}
+        <div className="pv2pd-body">
+
+          {/* LEFT: gallery + price card + buy bar */}
+          <div className="pv2pd-gallery">
+            <div className="pv2-shimmer pv2pd-skel-mainimg" />
+            <div className="pv2pd-thumbs">
+              {[...Array(5)].map((_, i) => (
+                <div key={i} className="pv2-shimmer pv2pd-skel-thumb" />
+              ))}
+            </div>
+            <div className="pv2-shimmer pv2pd-skel-pricecard" />
+            <div className="pv2pd-buybar">
+              <div className="pv2-shimmer pv2pd-skel-qty" />
+              <div className="pv2-shimmer pv2pd-skel-act" />
+              <div className="pv2-shimmer pv2pd-skel-act" />
+            </div>
+          </div>
+
+          {/* RIGHT: Product Details highlights + tabs */}
+          <div className="pv2pd-infocol">
+            <div className="pv2pd-info">
+
+              <div className="pv2pd-sec pv2pd-details">
+                <div className="pv2pd-sec__title">
+                  <span className="pv2-shimmer pv2pd-skel-secico" />
+                  <span className="pv2-shimmer pv2pd-skel-sectitle" />
                 </div>
-                <div className="pv2-info-block">
-                  <div className="pv2-shimmer" style={{ height: 16, width: 140, marginBottom: 12, borderRadius: 4 }} />
+                <div className="pv2pd-highlights">
                   {[...Array(6)].map((_, i) => (
-                    <div key={i} className="pv2-shimmer" style={{ height: 14, width: i % 2 ? '60%' : '80%', marginBottom: 10, borderRadius: 4 }} />
+                    <div key={i} className="pv2pd-hl">
+                      <span className="pv2-shimmer pv2pd-skel-hlico" />
+                      <span className="pv2pd-hl__txt">
+                        <span className="pv2-shimmer pv2pd-skel-hlk" />
+                        <span className="pv2-shimmer pv2pd-skel-hlv" />
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
+
+              <div className="pv2pd-sec pv2pd-sec--tabs">
+                <div className="pv2pd-tabs">
+                  <div className="pv2-shimmer pv2pd-skel-tab" />
+                  <div className="pv2-shimmer pv2pd-skel-tab" />
+                  <div className="pv2-shimmer pv2pd-skel-tab" />
+                </div>
+                <div className="pv2pd-tab-body">
+                  {line('92%')}
+                  {line('86%')}
+                  {line('64%')}
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
