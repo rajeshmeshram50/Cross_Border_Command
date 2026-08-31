@@ -228,6 +228,32 @@ class ExitController extends Controller
 
         $row = EmployeeExit::firstOrNew(['employee_id' => $employee->id]);
 
+        /* Notice cannot start today or earlier. (#125)
+         *
+         * Server-side twin of the picker's floor. Notice is a period still to
+         * be served, and the notice END is derived from this date
+         * (start + N − 1), so a start already under way understates the period
+         * and every figure built on it — days served / unserved, the
+         * pay-in-lieu or recovery amount.
+         *
+         * Two exemptions, both deliberate:
+         *  · the date ALREADY SAVED on this case is never re-judged, so an exit
+         *    filed weeks ago still saves when HR edits some other field;
+         *  · an employee for whom no notice period applies (probation, or an
+         *    early exit inside the joining window) — the SPA freezes the field
+         *    and auto-fills today for exactly that case, so rejecting it would
+         *    block a save on a field nobody can edit. */
+        $incomingNotice = $data['notice_date'] ?? null;
+        $storedNotice   = $row->notice_date?->toDateString();
+        if (
+            $incomingNotice
+            && \Carbon\Carbon::parse($incomingNotice)->toDateString() !== $storedNotice
+            && \App\Support\ProbationGuard::noticePeriodApplies($employee, $incomingNotice)
+            && \Carbon\Carbon::parse($incomingNotice)->startOfDay()->lte(\Carbon\Carbon::today())
+        ) {
+            abort(422, 'The notice start date must be tomorrow or later — notice cannot begin on a day that is already under way.');
+        }
+
         /* An exit cannot be STARTED for a disabled employee — re-enable them
            first. Disabling (HR > Employees toggle) soft-deletes the row and
            kills the login; an exit process needs a live employee to serve
@@ -1010,9 +1036,35 @@ class ExitController extends Controller
         $this->guardSameTenant($request, $employee, 'can_edit');
         $this->guardNotSelf($request, $employee);
 
+        /* Rejoining date — the day they actually come back. (#120)
+         *
+         * Rehire collected no date at all, so a reactivated employee kept the
+         * joining date of the employment that had just ended. Everything keyed
+         * on it then read the OLD date: payroll prorates the return month from
+         * it, tenure and probation run from it, and the Employee form's
+         * "Salary Effective From" is locked equal to it — which is how this was
+         * reported as rehire accepting past joining / salary-effective dates.
+         *
+         * NOT the generic date_of_joining rule (EmployeeController allows 50
+         * years back — recording a historic hire is legitimate there). A
+         * REJOIN is by definition the day they return, so the past is closed:
+         * you cannot come back yesterday. Capped two years ahead to match the
+         * employee rule's forward bound.
+         *
+         * Optional. Omitting it keeps the previous behaviour exactly, so an
+         * older client that does not send the field still works. */
         $data = $request->validate([
             'restart_onboarding' => 'nullable|boolean',
             'note'               => 'nullable|string|max:500',
+            'rejoining_date'     => [
+                'nullable',
+                'date',
+                'after_or_equal:' . now()->toDateString(),
+                'before_or_equal:' . now()->addYears(2)->toDateString(),
+            ],
+        ], [
+            'rejoining_date.after_or_equal'  => 'The rejoining date cannot be in the past — it is the day this employee returns.',
+            'rejoining_date.before_or_equal' => 'The rejoining date cannot be more than two years ahead.',
         ]);
 
         $exit = EmployeeExit::where('employee_id', $employee->id)
@@ -1035,6 +1087,20 @@ class ExitController extends Controller
                 $employee->restore();
             }
             $employee->status = 'Active';
+
+            /* The salary structure's effective_from moves WITH the joining
+             * date. The Employee form treats the two as one fact — it renders
+             * "Salary Effective From" read-only off the joining date and
+             * refuses a save where they differ — so advancing one without the
+             * other would leave the record failing its own validation the next
+             * time anyone opened it. (#120) */
+            if (!empty($data['rejoining_date'])) {
+                $employee->date_of_joining = $data['rejoining_date'];
+                \App\Models\SalaryStructure::where('employee_id', $employee->id)
+                    ->where('status', 'active')
+                    ->update(['effective_from' => $data['rejoining_date']]);
+            }
+
             if ($restart) {
                 // Back to the start of onboarding so the wizard reopens and HR
                 // can correct anything. Below the >= 6 gate that payroll, the
@@ -1749,12 +1815,41 @@ class ExitController extends Controller
             return;
         }
         if ($row->notice_payment_choice === 'no_pay') {
+            // Captured BEFORE the zeroing — it is what has to come back out of
+            // the stored F&F total below. (#122)
+            $priced = round((float) ($row->notice_settlement_amount ?? 0), 2);
+
             $row->notice_days_required     = 0;
             $row->notice_days_served       = 0;
             $row->notice_days_unserved     = 0;
             $row->notice_per_day_rate      = 0;
             $row->notice_settlement_amount = 0;
             $row->notice_settlement_status = 'NA';
+
+            /* …and the same money has to leave the SAVED F&F blob. (#122)
+             *
+             * Zeroing the notice columns above was only half the job. The F&F
+             * totals are cached on `fnf` as earn / ded / net, and for a
+             * Termination paid in lieu the notice amount is folded into `earn`
+             * — it is not one of `fnf.lines`, so nothing here could recompute
+             * it from the lines. Switching Pay → No-Pay left that cache intact,
+             * so every reader of the stored settlement still showed the notice
+             * money the case no longer owed: "select Pay, change to No-Pay, it
+             * still shows an amount".
+             *
+             * Only the cached TOTALS move. `fnf.lines` are HR's typed figures
+             * and none of them is the notice — touching them would delete work
+             * nobody asked to delete. Clamped at zero so a blob saved under a
+             * different basis cannot drive the settlement negative. */
+            $fnf = $row->fnf;
+            if ($priced > 0 && is_array($fnf)) {
+                foreach (['earn', 'net'] as $key) {
+                    if (isset($fnf[$key]) && is_numeric($fnf[$key])) {
+                        $fnf[$key] = round(max(0, (float) $fnf[$key] - $priced), 2);
+                    }
+                }
+                $row->fnf = $fnf;
+            }
         }
     }
 

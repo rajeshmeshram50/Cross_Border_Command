@@ -35,11 +35,26 @@ class SubscriptionController extends Controller
     public function status(Request $request)
     {
         $user = $request->user();
-        if (!$user->client_id) {
+
+        /* Same tenant resolution as AuthController::formatUser(). (#206)
+         *
+         * These two endpoints answer the identical question and must not be
+         * able to disagree — the SPA gates on the login/me payload and this one
+         * backs the My Plan screen. Both used the raw `users.client_id`, which
+         * is unreliable on employee / branch_user rows; for those tiers the
+         * branch is the authoritative tenant link.
+         *
+         * `find()` on a soft-deleted client also returned null here and the
+         * next line dereferenced it — a 500 rather than an answer. */
+        $client = $user->effectiveClient();
+        if (in_array($user->user_type, ['employee', 'branch_user'], true) && $user->branch?->client) {
+            $client = $user->branch->client;
+        }
+        if (!$client) {
             return response()->json(['has_plan' => false]);
         }
+        $client->loadMissing('plan');
 
-        $client = Client::with('plan')->find($user->client_id);
         $expired = $client->plan_expires_at && $client->plan_expires_at->isPast();
 
         return response()->json([

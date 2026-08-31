@@ -421,15 +421,24 @@
 .dt-scroll::-webkit-scrollbar-thumb { background: var(--dt-a-200); border-radius: 8px; }
 .dt-scroll::-webkit-scrollbar-thumb:hover { background: var(--dt-a-300); }
 
-/* Clone header — the real one flattened out of the scroll box.
-   overflow:hidden (not auto) because its horizontal position is driven from
-   .dt-scroll's scrollLeft; giving it a scrollbar of its own would show a second
-   horizontal bar directly above the real one. */
-
 .dt-table {
   width: 100%;
   margin: 0;
-  border-collapse: collapse;
+  /* SEPARATE + zero spacing, not `collapse`. (#140)
+     `thead th` below is `position: sticky`, and sticky positioning on table
+     sections is unreliable under `border-collapse: collapse` — the collapsed
+     border model hands cell geometry to the table, so the browser has no
+     stable box to offset the sticky element against. Chromium mispositions the
+     header band, most visibly as a horizontal offset against the columns it is
+     supposed to sit above, and the effect grows with the width the table
+     scrolls across. That is the reported symptom: headers not lining up with
+     their data, the band appearing to shift/overlap sideways.
+     `separate` with `border-spacing: 0` gives each cell its own box for sticky
+     to resolve against while rendering identically here — the only borders in
+     this table are a `border-bottom` on `td` (th is `border: 0`), so there are
+     no adjacent edges that could double up. */
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 /* Header fill sits between --dt-a-500 and --dt-a-600 — a softer tint of the
@@ -477,13 +486,34 @@
    Taking the arrow out of the flow lets the label centre on the column, and the
    arrow still sits where a sort control is expected. Left/right-aligned headers
    are untouched: there the arrow trailing the label is the correct reading. */
-.dt-table thead th[data-align="center"] { position: relative; }
+/* NOTE: do NOT re-declare `position` here. This rule used to say
+   `position: relative`, which beat the `position: sticky` on
+   `.dt-table thead th` above (higher specificity, declared later) and so
+   silently un-stuck EVERY centred column's header — a table with mixed
+   alignments scrolled half its header away and left the other half floating
+   over the rows. `sticky` is itself a positioned value, so it already gives
+   the arrow below its containing block; no extra `position` is needed. */
 .dt-table thead th[data-align="center"] .dt-sort {
   position: absolute;
   right: 6px;
   top: 50%;
   transform: translateY(-50%);
 }
+
+/* A RIGHT-aligned sortable header puts its arrow BEFORE the label. (#139)
+   #171 fixed the centred case and explicitly left right-aligned headers alone,
+   reasoning that an arrow trailing the label reads correctly. For a right
+   column it does not: the flex row is [label][gap][arrow] pushed to flex-end,
+   so the ARROW takes the right edge and the label stops ~17px short of it —
+   while the figure in the cell below is flush right against the same 9px
+   padding. Every money column in Payroll Processing is right-aligned and
+   sortable, so a whole block of headers sat visibly inboard of their own
+   numbers, reading as the header strip being shifted sideways.
+   `order: -1` moves the arrow ahead of the label without touching the DOM, so
+   the LABEL takes the right edge and lands exactly above its column's values.
+   The arrow stays visible and still reads as the sort control.
+   Non-sortable right headers have no arrow and already lined up — unaffected. */
+.dt-table thead th[data-align="right"] .dt-sort { order: -1; }
 
 .dt-table tbody td {
   padding: 7px 9px;

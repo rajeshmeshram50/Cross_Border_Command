@@ -2023,7 +2023,15 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   {
     id: 'address', title: 'Address Proof', icon: 'ri-map-pin-line', tint: '#dceefe', fg: '#0c63b0',
     docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Pending' },
+      /* Optional, not Pending. A joiner's CURRENT address is routinely a rental
+       * or shared place they hold no utility bill or registered agreement for,
+       * so demanding one blocked Stage 2 on a document they cannot produce —
+       * while Permanent Address Proof, which is govt-issued and they do have,
+       * already establishes address. `status: 'Optional'` is the existing
+       * mechanism (see Post-graduation below): the row still renders and still
+       * accepts an upload, it just carries an "Optional" tag and is excluded
+       * from the required-document count that gates stage progress. (#132) */
+      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Optional' },
       { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 2 MB',                    maxMb: 2, status: 'Pending' },
     ],
   },
@@ -3144,7 +3152,22 @@ const joinTodayIso = _shiftYears(0);
 const joinDateOrig = emp?.raw?.date_of_joining
   ? String(emp.raw.date_of_joining).slice(0, 10)
   : '';
-const joinMin = (joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
+/* A RE-ONBOARDED employee — one brought back through Exit Management → Rehire
+ * → "Reactivate and re-onboard" — does not get the keep-your-existing-date
+ * exemption below. (#121)
+ *
+ * That exemption exists so an employee whose record legitimately carries a
+ * historical joining date can be re-saved without being forced to change it:
+ * `doj !== joinDateOrig` lets the stored value through, and joinMin opens the
+ * picker back to it. For a rehire that is precisely wrong — the stored value
+ * IS the old employment's joining date, so the wizard offered the past date as
+ * the default and then accepted it, which is this ticket. Their joining date
+ * has to move forward to the day they came back.
+ *
+ * Read off the exit row's `rehired_at`, which EmployeeController keeps in the
+ * payload for exactly this kind of "have they been brought back?" question. */
+const isRehired = !!emp?.raw?.exit?.rehired_at;
+const joinMin = (!isRehired && joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
 // Salary effective from: anchored to joining date when set, otherwise
 // allow up to 1 year before today. Hard cap at 1 year ahead so an
 // admin can schedule a near-future increment but not type "2012" or
@@ -3321,8 +3344,14 @@ const validateStage1 = (): boolean => {
   const doj = s1.date_of_joining?.trim() ?? '';
   if (!doj) {
     errors.date_of_joining = 'Joining date is required';
-  } else if (doj < joinTodayIso && doj !== joinDateOrig) {
-    errors.date_of_joining = 'Joining date can’t be in the past';
+    // `doj !== joinDateOrig` is the keep-your-existing-date exemption; a
+    // re-onboarded employee is excluded from it, because their existing date
+    // is the OLD employment's and is exactly the past value being rejected.
+    // (#121 — see the isRehired note above joinMin.)
+  } else if (doj < joinTodayIso && (isRehired || doj !== joinDateOrig)) {
+    errors.date_of_joining = isRehired
+      ? 'Joining date can’t be in the past — set the date this employee rejoined'
+      : 'Joining date can’t be in the past';
   } else if (doj > joinMax) {
     errors.date_of_joining = 'Joining date cannot be more than a year in the future';
   }

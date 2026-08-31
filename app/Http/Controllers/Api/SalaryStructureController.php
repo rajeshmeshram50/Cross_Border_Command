@@ -268,6 +268,11 @@ class SalaryStructureController extends Controller
             'deductions.*.label'  => ['required_with:deductions', 'string', 'max:120'],
             'deductions.*.amount' => ['required_with:deductions', 'numeric', 'min:0', 'max:99999999.99'],
             'pf_applicable'   => ['boolean'],
+            /* PF Type, same rule and same two values as EmployeeController's
+             * own pf_type rule — Revise Salary now offers the dropdown the
+             * Employee form always had, and both write the one column. Nullable
+             * because the form sends null when PF is not applied. (#127) */
+            'pf_type'         => ['nullable', 'in:statutory,standard'],
             'esi_applicable'  => ['boolean'],
             'pt_applicable'   => ['boolean'],
             'revision_note'   => ['nullable', 'string', 'max:500'],
@@ -468,11 +473,26 @@ class SalaryStructureController extends Controller
              * The breakup remains what is written, not the typed CTC: the two
              * agree to within SALARY_ROUNDING_SLACK by the time we get here, and
              * the components are the figures payroll will actually pay. */
-            $employee->update([
+            $employeeChanges = [
                 'pf_eligible'    => (bool) $created->pf_applicable,
                 'esi_applicable' => $created->esi_applicable ? 'Yes' : 'No',
                 'annual_salary'  => round($monthlyGross * 12, 2),
-            ]);
+            ];
+
+            /* PF Type rides along with pf_eligible — same column the Employee
+             * form and the onboarding wizard write, and the only one
+             * PayrollService::computeForEmployee() reads when picking the PF
+             * base. Written ONLY when the caller actually sent the field, so an
+             * older client that posts without it leaves the stored type alone
+             * rather than silently resetting everyone to Statutory. Cleared
+             * when PF is switched off, matching the Employee form. (#127) */
+            if (array_key_exists('pf_type', $data)) {
+                $employeeChanges['pf_type'] = $created->pf_applicable
+                    ? ($data['pf_type'] ?: 'statutory')
+                    : null;
+            }
+
+            $employee->update($employeeChanges);
 
             return $created;
         });
