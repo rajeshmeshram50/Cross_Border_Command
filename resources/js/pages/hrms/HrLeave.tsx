@@ -1360,7 +1360,10 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
               </span>
               <div className="min-w-0">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
-                  {row.empName} <span style={{ opacity: 0.8 }}>· {row.id}</span>
+                  {/* Employee CODE, not `row.id` — the latter is the leave
+                      request's internal database id and read as a stray number
+                      beside the name (same leak as the approve modal, CBC #132). */}
+                  {row.empName} <span style={{ opacity: 0.8 }}>· {row.empCode}</span>
                 </h5>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   {row.empRole} · Reporting to {row.reportingManager.name}
@@ -1617,8 +1620,13 @@ function ConfirmActionModal({
             </span>
             <div className="min-w-0 flex-grow-1">
               <div className="fw-semibold" style={{ fontSize: 13 }}>{row.empName}</div>
+              {/* Employee code · role — the SAME identity line the list row
+                  shows (see the `employee` column). `row.id` used to lead this
+                  line, but that is the leave REQUEST's internal database id,
+                  not anything the approver can act on: it read as a stray
+                  number glued in front of the Employee ID (CBC #132). */}
               <div className="text-muted" style={{ fontSize: 11.5 }}>
-                {row.id} · {row.empCode} · {row.empRole}
+                {row.empCode} · {row.empRole}
               </div>
             </div>
           </div>
