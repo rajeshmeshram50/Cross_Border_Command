@@ -25,6 +25,11 @@ class AttendanceRegularizationController extends Controller
      *  same pair AttendanceController / PayrollService fall back to. */
     private const DEFAULT_SHIFT = ['09:30', '18:30'];
 
+    /** Set by refreshPayslipsAfterApply() and returned with the approval, so an
+     *  approved correction that could not reach a frozen payslip says so
+     *  instead of appearing to have worked. Null = nothing to report. (#136) */
+    private ?string $payslipRefreshNotice = null;
+
     // ─────────────────────────────────────────────────────────────────────
     // Index — regularization history for an employee
     // ─────────────────────────────────────────────────────────────────────
@@ -841,7 +846,14 @@ class AttendanceRegularizationController extends Controller
             $this->applyApprovedAdjustment($row);
         }
 
-        return response()->json(['data' => $row->fresh('approver:id,name')]);
+        /* Carries the frozen-payroll warning when the correction landed on
+         * attendance but could not reach an already-approved payslip. Silent
+         * (null) in the ordinary case, so nothing changes for a normal
+         * approval. (#136) */
+        return response()->json(array_filter([
+            'data'    => $row->fresh('approver:id,name'),
+            'message' => $this->payslipRefreshNotice,
+        ], fn ($v) => $v !== null));
     }
 
     // ─────────────────────────────────────────────────────────────────────
@@ -1227,7 +1239,47 @@ class AttendanceRegularizationController extends Controller
     private function refreshPayslipsAfterApply(AttendanceRegularization $row, int $employeeId): void
     {
         try {
-            app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employeeId);
+            $recomputed = app(\App\Services\PayrollService::class)->recomputeEmployeePayslips($employeeId);
+
+            /* Say so when the payslip for THIS day's cycle could not follow the
+             * correction. (#136)
+             *
+             * recomputeEmployeePayslips() only touches draft/generated runs;
+             * approved and paid runs are frozen and locked periods are skipped.
+             * That freeze is right — the money has left the building — but here
+             * it was entirely silent: the request flipped to Approved, the
+             * attendance timeline showed the corrected day, and the payslip kept
+             * its pre-regularization present_days / paid_days for good. Read
+             * from the payroll screen, that is exactly "payroll does not
+             * consider the regularized attendance".
+             *
+             * Worth stressing that this state is reachable WITHOUT the period
+             * being locked: disburseRun() leaves the run 'approved' while the
+             * period stays 'processing' when any payslip is On Hold, and
+             * payrollLocked() only tests the period — so filing and approval
+             * both pass their guards and the recompute then matches nothing.
+             *
+             * Scoped to the cycle the regularized DATE falls in, so an unrelated
+             * frozen cycle from months ago is not dragged into the message.
+             * Mirrors SalaryStructureController::store()'s frozen-run notice. */
+            $date = $row->regularization_date;
+            $frozen = $date
+                ? \App\Models\Payslip::where('employee_id', $employeeId)
+                    ->whereHas('period', fn ($q) => $q
+                        ->where('month', (int) $date->month)
+                        ->where('year', (int) $date->year))
+                    ->whereHas('run', fn ($q) => $q->whereNotIn('status', ['draft', 'generated']))
+                    ->with('period')
+                    ->get()
+                    ->map(fn ($s) => $s->period?->label)
+                    ->filter()->unique()->values()
+                : collect();
+
+            $this->payslipRefreshNotice = $frozen->isNotEmpty()
+                ? 'Attendance updated, but payroll for ' . $frozen->implode(', ')
+                    . ' is already approved and keeps its original figures — reopen that cycle'
+                    . ' and re-run payroll for the correction to reach the salary.'
+                : ($recomputed > 0 ? "{$recomputed} draft payslip(s) updated." : null);
         } catch (\Throwable $e) {
             // Distinct message: the attendance correction DID land; only the
             // payslip refresh failed, and re-running payroll still fixes it.

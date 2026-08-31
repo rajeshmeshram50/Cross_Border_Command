@@ -215,10 +215,20 @@ class AttendanceController extends Controller
         // scoping the lookup we'd silently pick whichever has the lower id
         // and then 403 against the viewer when the access check fails on
         // the wrong row. Scope to the user's tenant (super_admin sees any).
+        /* withTrashed() throughout. (#87)
+         *
+         * Completing an exit SOFT-DELETES the employee row, so every lookup
+         * below missed an exited person and this method 404'd — taking the
+         * profile's Attendance tab with it. Their attendance and punch rows are
+         * all still there (soft delete cascades nothing), so the history exists
+         * and simply could not be reached. Reading a leaver's attendance is the
+         * ordinary case here: it is where "join date to exit date" is looked at.
+         * The tenant scope and the access check below are unchanged, so this
+         * widens WHICH rows resolve, never WHO may see them. */
         if (ctype_digit($employeeId)) {
-            $emp = Employee::find((int) $employeeId);
+            $emp = Employee::withTrashed()->find((int) $employeeId);
         } else {
-            $q = Employee::where('emp_code', $employeeId);
+            $q = Employee::withTrashed()->where('emp_code', $employeeId);
             if ($user->user_type !== 'super_admin') {
                 $q->where(function ($w) use ($user) {
                     $w->whereNull('client_id')->orWhere('client_id', $user->client_id);
@@ -246,16 +256,16 @@ class AttendanceController extends Controller
             // /profile, which uses their emp_code) still works even when the
             // row's client_id is null but the user has a client_id set.
             if (!$emp) {
-                $emp = Employee::where('emp_code', $employeeId)
+                $emp = Employee::withTrashed()->where('emp_code', $employeeId)
                     ->where('user_id', $user->id)
                     ->first()
-                    ?: Employee::where('emp_code', $employeeId)->orderBy('id')->first();
+                    ?: Employee::withTrashed()->where('emp_code', $employeeId)->orderBy('id')->first();
             }
         }
         if (!$emp) abort(404, 'Employee not found.');
 
         // Access check — self OR admin in same tenant OR super_admin.
-        $isSelf = Employee::where('id', $emp->id)->where('user_id', $user->id)->exists();
+        $isSelf = Employee::withTrashed()->where('id', $emp->id)->where('user_id', $user->id)->exists();
         // A14: strict tenant match. The self-path is already covered by $isSelf,
         // so a null client_id must NOT count as "same tenant" for admins (that
         // let any tenant read a client-less employee's attendance).
@@ -542,9 +552,41 @@ class AttendanceController extends Controller
         $histEndC   = \Carbon\Carbon::parse($histEnd);
 
         // ── 1) Resolve which employees the caller is allowed to see ──
-        $empQ = Employee::query()
+        /* Exited employees stay visible for the days they WORKED. (#87)
+         *
+         * Completing an exit sets status to Resigned/Terminated AND soft-deletes
+         * the employee row (ExitController). Between the soft-delete global
+         * scope and a literal `where('status','Active')`, they vanished from
+         * this roster the moment their exit completed — and because the roster
+         * IS the employee set the attendance rows are then fetched for, their
+         * entire history disappeared with them. The rows were never touched:
+         * attendance is queried by employee_id and the delete is soft, so
+         * nothing cascaded. There was simply no id left to ask for.
+         *
+         * The rule is employment, not status: an employee belongs on the sheet
+         * for a date if they had joined by then and had not yet left. So a past
+         * date shows the people who were actually working that day, and today
+         * shows only current staff — a leaver drops off the day after their
+         * last working day rather than retroactively erasing their history. */
+        $empQ = Employee::withTrashed()
             ->where('attendance_tracking', true)
-            ->where('status', 'Active')
+            ->where(function ($q) use ($date) {
+                $q->where(function ($active) {
+                    $active->where('status', 'Active')->whereNull('deleted_at');
+                })->orWhereHas('exit', function ($x) use ($date) {
+                    // Left, but the day being viewed is on or before their last
+                    // working day. A rehired case is excluded — that exit is
+                    // spent and the person is active again on their own row.
+                    $x->whereNull('rehired_at')
+                      ->whereNotNull('last_working_day')
+                      ->whereDate('last_working_day', '>=', $date);
+                });
+            })
+            // Never before they joined: a date preceding the joining date is
+            // not a day they were absent, it is a day they did not exist here.
+            ->where(function ($q) use ($date) {
+                $q->whereNull('date_of_joining')->orWhereDate('date_of_joining', '<=', $date);
+            })
             // Only fully-onboarded employees belong in the Attendance Sheet.
             // An employee still mid-onboarding (onboarding_stage_completed < 6)
             // has no settled org context yet and must not be available for

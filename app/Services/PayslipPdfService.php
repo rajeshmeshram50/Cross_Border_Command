@@ -84,13 +84,18 @@ class PayslipPdfService
                 'date_joined'    => $employee && $employee->date_of_joining
                     ? Carbon::parse($employee->date_of_joining)->format('d M Y') : 'N/A',
                 'department'     => $slip->department ?: 'N/A',
-                'sub_department' => 'N/A',
+                // No 'sub_department' key: the concept does not exist on the
+                // employee record or the Employee form, so the payslip cell it
+                // fed was a permanent 'N/A'. Removed with the cell. (#138)
                 'designation'    => $slip->designation ?: 'N/A',
                 'payment_mode'   => $this->paymentMode($employee),
+                /* UAN is the only PF identifier the payslip carries. The
+                 * template also had a "PF Number" cell fed from a `pf_number`
+                 * key hardcoded to 'N/A' — there is no PF-account-number column
+                 * on employees, and pf_deduction is a config flag, not an
+                 * account number. Both the key and the cell are gone rather
+                 * than left printing a blank duplicate. (#137) */
                 'uan'            => $employee->uan_number ?: 'N/A',
-                // No dedicated PF-account-number column on employees yet; the
-                // pf_deduction field is a config flag, not an account number.
-                'pf_number'      => 'N/A',
                 'pan'            => $employee->pan_number ?: 'N/A',
                 'location'       => $employee->location ?: $company['city'] ?: 'N/A',
                 'bank_name'      => $employee->bank_name ?: 'N/A',

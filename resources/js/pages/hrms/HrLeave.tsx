@@ -169,13 +169,28 @@ interface ApprovalNode {
   initials: string;
   name: string;
   role: 'Self' | 'Manager' | 'HR';
-  decision: 'approved' | 'viewed' | 'pending' | 'idle' | 'rejected' | 'skipped';
+  decision: 'approved' | 'viewed' | 'pending' | 'idle' | 'rejected' | 'skipped' | 'cancelled';
   detail?: string;
   actionAt?: string;
   comment?: string;
 }
 
 const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
+  /* A cancelled request never reached a decision, so its approver nodes stay
+   * 'Pending' on the record — and the timeline drew them as the amber clock,
+   * i.e. exactly like a request still waiting on someone. Nothing on the
+   * timeline said the request was over. (#207)
+   *
+   * Cancellation is resolved from the request's own stage rather than from any
+   * approver's answer, because that is what it is: the EMPLOYEE ended the
+   * request, no approver rejected it. Applied only to nodes that had not yet
+   * decided — a manager who genuinely approved before the employee cancelled
+   * keeps their green tick, because that did happen and the timeline is a
+   * history, not a summary. */
+  const isCancelled = r.stage === 'Cancelled';
+  const undecided = (d: ApprovalNode['decision']): ApprovalNode['decision'] =>
+    isCancelled && (d === 'pending' || d === 'idle') ? 'cancelled' : d;
+
   const self: ApprovalNode = {
     initials: r.empInitials,
     name: r.empName,
@@ -202,8 +217,10 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     initials: r.reportingManager.initials,
     name: r.reportingManager.name,
     role: 'Manager',
-    decision: managerDecision,
-    detail: managerDetail,
+    decision: undecided(managerDecision),
+    // Says what actually happened to this step, instead of leaving "Awaiting
+    // decision" on a request nobody is waiting on any more. (#207)
+    detail: undecided(managerDecision) === 'cancelled' ? 'Not required — request cancelled' : managerDetail,
     actionAt: r.managerActionAt,
     comment: r.managerComment,
   };
@@ -222,8 +239,12 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
   const hrDecision: ApprovalNode['decision'] =
     !r.escalatedToHr ? (hrReviewed ? 'viewed' : 'idle')
     : hrStoodIn
-      ? (r.status === 'Approved' ? 'approved'
-        : r.status === 'Rejected' ? 'rejected'
+      /* `r.stage`, not `r.status` — LeaveRequest has no `status` field, so this
+         read was always undefined and the manager-unavailable node fell through
+         to 'pending' even on a request HR had already decided. Same timeline,
+         same class of fault as the cancelled case. (#207) */
+      ? (r.stage === 'Approved' ? 'approved'
+        : r.stage === 'Rejected' ? 'rejected'
         : 'pending')
     : r.hrStatus === 'Approved' ? 'approved'
     : r.hrStatus === 'Rejected' ? 'rejected'
@@ -234,8 +255,8 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Approved' ? 'Override approved'
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Rejected' ? 'Concurred with manager'
     : r.escalationReason === 'manager_unavailable'
-      ? (r.status === 'Approved' ? 'Manager on leave — approved by HR'
-        : r.status === 'Rejected' ? 'Manager on leave — rejected by HR'
+      ? (r.stage === 'Approved' ? 'Manager on leave — approved by HR'
+        : r.stage === 'Rejected' ? 'Manager on leave — rejected by HR'
         : 'Manager on leave — awaiting HR')
     : r.escalationReason === 'aged_out'         ? 'Auto-escalated · 7-day rule'
     : r.escalationReason === 'hr_raised'        ? 'HR raised the request'
@@ -247,8 +268,8 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     initials: r.hrApprover?.initials || 'HR',
     name: r.hrApprover?.name || 'HR Team',
     role: 'HR',
-    decision: hrDecision,
-    detail: hrDetail,
+    decision: undecided(hrDecision),
+    detail: undecided(hrDecision) === 'cancelled' ? 'Not required — request cancelled' : hrDetail,
     actionAt: r.hrActionAt || (hrDecision === 'viewed' ? r.hrViewedAt : undefined),
     comment: r.hrComment,
   };
@@ -1470,21 +1491,31 @@ function ApprovalTimelineList({
           const isPending  = n.decision === 'pending';
           const isRejected = n.decision === 'rejected';
           const isSkipped  = n.decision === 'skipped';
+          // Cancelled — the request was withdrawn, so this step never ran. (#207)
+          const isCancelledNode = n.decision === 'cancelled';
           const isGreen    = isApproved || isViewed;
           const isLast = i === chain.length - 1;
 
           const dotBg =
             isGreen ? 'linear-gradient(135deg,#0ab39c,#108548)'
             : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
+            /* Filled red, like a rejection — the request is CLOSED and the
+               marker has to read as an ending at a glance, which the amber
+               clock did not. Distinguished from a rejection by its icon
+               (a crossed circle, not a bare cross) and by its label, because
+               "withdrawn by the employee" and "refused by an approver" are
+               different facts and the timeline should not conflate them. */
+            : isCancelledNode ? 'linear-gradient(135deg,#f87171,#b91c1c)'
             : isPending  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
             : isSkipped  ? (dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6')
             : (dark ? 'rgba(255,255,255,0.08)' : '#fff');
-          const dotColor = isGreen || isRejected || isPending ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
-          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isGreen && !isRejected && !isPending ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
+          const dotColor = isGreen || isRejected || isPending || isCancelledNode ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
+          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isGreen && !isRejected && !isPending && !isCancelledNode ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
           const dotIcon =
             isViewed   ? 'ri-eye-line'
             : isApproved ? 'ri-check-line'
             : isRejected ? 'ri-close-line'
+            : isCancelledNode ? 'ri-close-circle-line'
             : isSkipped  ? 'ri-subtract-line'
             : isPending  ? 'ri-time-line'
             : n.role === 'Self' ? 'ri-user-3-line'
@@ -1495,7 +1526,7 @@ function ApprovalTimelineList({
           const dateLabel = formatDate(n.actionAt || (n.role === 'Self' ? appliedOn : ''));
 
           const connectorColor =
-            isGreen ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
+            isGreen ? '#10b981' : isRejected ? '#dc2626' : isCancelledNode ? '#fca5a5' : '#e5e7eb';
 
           return (
             <div key={i} className="text-center position-relative" style={{ minWidth: 0, opacity: isSkipped ? 0.6 : 1 }}>

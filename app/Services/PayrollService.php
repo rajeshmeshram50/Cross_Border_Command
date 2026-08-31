@@ -1675,6 +1675,45 @@ class PayrollService
         }
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
+
+        /* …but only across days that have actually HAPPENED. (#134)
+         *
+         * This subtracted attendance from the whole month's working days with
+         * no regard for the date, so generating a cycle while the month was
+         * still running charged loss of pay for every working day still to
+         * come — days with no attendance because nobody has worked them yet.
+         * An employee on ₹10,000 whose run was generated on the 21st lost ten
+         * unelapsed days and was paid ₹6,774.20, which is the ticket.
+         *
+         * The controller already refuses to judge an in-progress cycle on days
+         * that have not happened — elapsedWorkingDaysMap() clips the Absent
+         * column for exactly this reason — but the clip stopped at the display
+         * and never reached the money.
+         *
+         * Only the LOP DAY COUNT is capped. working_days still reports the
+         * month's full figure, because that is the denominator the salary is
+         * built on and the slip must keep stating it; and guardPeriodStarted()
+         * still blocks a period that has not begun at all. A finished month is
+         * untouched — winEnd is in the past, so this branch never runs and
+         * every historic payslip recomputes to the figure it already had. */
+        $lopToday = Carbon::today();
+        if ($winEnd->gt($lopToday)) {
+            $elapsedWorkingDays = $winStart->gt($lopToday)
+                ? 0.0
+                : (float) $this->employeeWorkingDays($employee, $winStart->copy(), $lopToday->copy());
+            $cappedLop = max(0, round($elapsedWorkingDays - $paidDays, 2));
+
+            if ($cappedLop < $lopDays) {
+                $remaining = round($effectiveWorkingDays - $elapsedWorkingDays, 2);
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
+                    "Cycle still in progress — {$remaining} working day(s) of this month have not happened yet "
+                        . 'and are not charged as loss of pay. Re-run payroll once the month is complete.'
+                );
+                $lopDays = $cappedLop;
+            }
+        }
         // Off-days sandwiched inside an UNPAID leave are unpaid too. They sit
         // outside the working-day denominator, so they are added rather than
         // subtracted — there is nothing in that denominator to take them from.

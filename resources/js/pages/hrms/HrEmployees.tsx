@@ -1515,7 +1515,13 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
   }, [eAnnualSalary, eSalaryFreq]);
 
   useEffect(() => {
-    if (!empOpen || empStep !== 4 || !eDetailedBreakup) return;
+    /* Loaded whether or not the "Detailed breakup" toggle is on. It used to be
+     * gated on that toggle, so with it off the form held no stored components
+     * at all — and persistBreakup() then had no way to tell a structure that
+     * already matches the CTC from one that does not, and would have flattened
+     * a hand-built breakup to 50/30/20. Loading changes nothing on screen; it
+     * only lets the save path leave a good structure alone. (#133) */
+    if (!empOpen || empStep !== 4) return;
     const target: number | 'new' = editingDbId ?? 'new';
     if (breakupLoadedForRef.current === target) return;
     breakupLoadedForRef.current = target;
@@ -1559,7 +1565,9 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             setEPfEligible(pf);
             setEEsiApplicable(esi);
             setEPtApplicable(pt);
-            breakupBaselineRef.current = breakupSignature(earn, ded, pf, esi, pt);
+            // Same CTC-aware shape persistBreakup() compares against, so a
+            // structure that is already in step is not re-posted. (#133)
+            breakupBaselineRef.current = `${breakupSignature(earn, ded, pf, esi, pt)}|${Math.round((Number(active.monthly_gross) || 0) * 12)}`;
           } else {
             seedFresh();
           }
@@ -1927,16 +1935,57 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     );
   };
 
+  /* Stage 4 writes the salary in TWO places: the employee PUT carries
+   * `annual_salary`, and this POST carries the component breakup that becomes
+   * the salary structure. Payroll reads ONLY the structure
+   * (PayrollService::resolveCompensation) — `annual_salary` is just a
+   * no-structure fallback — so any save that moves one without the other
+   * leaves the Compensation screen and the payslip stating different salaries
+   * for the same employee, which is this ticket. (#133)
+   *
+   * Two holes did exactly that, and both are closed here:
+   *
+   *  1. `if (!eDetailedBreakup) return` — with the breakup toggle off, a CTC
+   *     change updated employees.annual_salary and never touched the
+   *     structure. The CTC card showed the new figure while payroll kept
+   *     paying the old monthly_gross, indefinitely. The toggle governs whether
+   *     HR *edits the components by hand*; it was never meant to decide
+   *     whether the salary is stored at all. With it off we now derive the
+   *     same 50/30/20 split the form itself seeds with, so the structure
+   *     always agrees with the CTC that was saved.
+   *
+   *  2. The signature short-circuit did not include the CTC, so a CTC-only
+   *     edit hashed identically to the previous save and was skipped.
+   */
   const persistBreakup = async (empId: number): Promise<void> => {
-    if (!eDetailedBreakup) return;
-    const earn = eEarnings
+    const monthly = monthlyGrossFromSalary();
+
+    const typed = eEarnings
       .filter(c => c.label.trim() && Number(c.amount) >= 0)
       .map((c, i) => ({ code: (c.code || `comp_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
+
+    /* Detailed OFF: the components are not on screen to be edited, so derive
+     * them rather than posting nothing. Same helper the form seeds with, so a
+     * later toggle to ON shows exactly what was stored.
+     *
+     * But ONLY when the stored breakup and the CTC actually disagree. A
+     * structure built by hand (Revise Salary, or a previous detailed edit)
+     * that already totals the CTC is left exactly as it is — re-deriving it
+     * would flatten a real breakup into 50/30/20 as a side effect of someone
+     * saving an unrelated field with this toggle off, which is a worse fault
+     * than the one being fixed. */
+    const storedAgreesWithCtc = typed.length > 0 && salaryAnnual > 0 && breakupMatches;
+    const earn = (eDetailedBreakup || storedAgreesWithCtc)
+      ? typed
+      : (monthly > 0 ? seedBreakup(monthly) : typed);
     if (!earn.length) return;
+
     const ded = eDeductions
       .filter(c => c.label.trim())
       .map((c, i) => ({ code: (c.code || `ded_${i + 1}`).trim(), label: c.label.trim(), amount: Number(c.amount) || 0 }));
-    const sig = breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable);
+
+    // CTC is part of the identity of this save — see hole 2 above.
+    const sig = `${breakupSignature(earn, ded, ePfEligible, eEsiApplicable, ePtApplicable)}|${salaryAnnual}`;
     if (breakupBaselineRef.current === sig) return;
 
     await api.post('/salary-structures', {
@@ -1945,6 +1994,16 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       earnings: earn,
       deductions: ded,
       pf_applicable: ePfEligible,
+      /* Sent so the server validates the components against the CTC ON SCREEN
+       * and writes annual_salary from the same number it stores the structure
+       * from (SalaryStructureController::store). Omitting it measured this
+       * save against the PREVIOUS annual_salary — which the employee PUT had
+       * often just changed — so a legitimate increment could 422 against a
+       * figure no longer on screen. */
+      annual_ctc: salaryAnnual > 0 ? salaryAnnual : undefined,
+      // Keeps the structure's PF Type in step with the dropdown above it,
+      // which until now reached the employee record only. (#127)
+      pf_type: ePfEligible ? ePfType.toLowerCase() : null,
       esi_applicable: eEsiApplicable,
       pt_applicable: ePtApplicable,
     });

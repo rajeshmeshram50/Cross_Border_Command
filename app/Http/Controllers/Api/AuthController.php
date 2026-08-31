@@ -706,11 +706,44 @@ class AuthController extends Controller
             }
         }
 
-        // Plan info for client users
+        /* Plan info for client users. (#206)
+         *
+         * Resolved the way the REST of login resolves a tenant, not from the
+         * raw `users.client_id`. This block used to read `$user->client_id` /
+         * `$user->client` directly, which is the one column login itself warns
+         * is unreliable on these rows — see the note above the candidate query:
+         * "branch_user / employee rows often have no direct client_id, so the
+         * parent-org check has to traverse branch → client".
+         *
+         * That made plan state per-ROW rather than per-tenant, and one employee
+         * could be told the plan had expired while every colleague in the same
+         * client and branch was fine:
+         *
+         *   · client_id pointing at a different or legacy client — baked in
+         *     permanently at creation from a mis-scoped creator or invite —
+         *     read THAT client's expiry;
+         *   · client_id set but the client soft-deleted — `$user->client` is
+         *     null, so has_plan came out false and the user was blocked;
+         *   · client_id null — the block was skipped entirely and the user was
+         *     never gated, which is why colleagues looked healthy.
+         *
+         * For an employee or branch user the BRANCH is the authoritative tenant
+         * link: it is what scopes every other query they make. So where the two
+         * disagree, the branch wins, and the plan they are judged against is
+         * the plan of the tenant whose data they actually see. Client-tier
+         * users are unaffected — they have no branch to prefer, and
+         * effectiveClient() returns exactly what `$user->client` did. */
+        $client = $user->effectiveClient();
+        if (in_array($user->user_type, ['employee', 'branch_user'], true) && $user->branch?->client) {
+            $client = $user->branch->client;
+        }
+
         $planInfo = null;
-        if ($user->client_id) {
-            $client = $user->client;
-            $expired = $client?->plan_expires_at && $client->plan_expires_at->isPast();
+        // Keyed on a RESOLVED client, not on the presence of a column. A row
+        // whose client_id survives its client is no longer read as "on a plan
+        // that has run out".
+        if ($client) {
+            $expired = $client->plan_expires_at && $client->plan_expires_at->isPast();
             $planInfo = [
                 // suggested_plan_id is the plan the Super Admin assigned to this
                 // client when they were created/edited — the My Plan page uses

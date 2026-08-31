@@ -383,9 +383,33 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                 value={leaveTypeId}
                 onChange={(v) => setLeaveTypeId(String(v))}
                 placeholder="Select a leave type…"
+                /* Paid / Unpaid rides on the option as a BADGE. (#130)
+                 *
+                 * The dropdown gave the name and the days available but not
+                 * whether the days are paid — which is the fact that decides
+                 * whether to take the leave at all, and the moment it matters
+                 * is here, while choosing. `paid_unpaid` was already in this
+                 * array (LeavePlanController sends it, and it is typed on
+                 * ApiEmployeeBalanceType); nothing was reading it.
+                 *
+                 * MasterSelect renders `badge` natively, so this is a chip
+                 * beside the label rather than more text appended to it —
+                 * "Sick Leave — 12 days available — Paid" would bury the one
+                 * word being added. Red for Unpaid so it reads as a cost;
+                 * green for Paid. No badge at all when the leave master has no
+                 * value, rather than implying "Paid". */
                 options={balanceTypes.map(t => ({
                   value: String(t.leave_type_id),
                   label: `${t.name} — ${t.unlimited ? 'Unlimited days available' : `${t.available ?? 0} days available`}`,
+                  ...(t.paid_unpaid ? {
+                    badge: {
+                      text: t.paid_unpaid,
+                      tone: (t.paid_unpaid === 'Unpaid' ? 'red' : 'green') as 'red' | 'green',
+                      title: t.paid_unpaid === 'Unpaid'
+                        ? 'Days taken under this type are not paid — they are deducted as loss of pay.'
+                        : 'Days taken under this type are paid.',
+                    },
+                  } : {}),
                 }))}
               />
             )}
@@ -435,6 +459,23 @@ export default function RequestLeaveModal({ isOpen, employeeId, onClose, onSubmi
                   Custom
                 </button>
               </div>
+
+              {/* Say WHY Custom is unavailable. (#131)
+                  The button is disabled whenever the leave type has "Allow half
+                  day leave" switched off, but the only explanation was a hover
+                  `title` — on a greyed control most people never find it, so
+                  the restriction read as the option being broken rather than
+                  withheld. The server refuses these too
+                  (LeaveRequestController: "This leave type does not allow
+                  half-day leave"), so this simply states the rule at the point
+                  it applies. Shown only once a type is chosen — before that,
+                  Custom is disabled merely because nothing is selected yet. */}
+              {selectedBalanceType && !allowHalf && (
+                <div className="text-muted mt-2" style={{ fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <i className="ri-information-line" />
+                  <span><strong>{selectedBalanceType.name}</strong> cannot be taken as a half day — it must be applied for as full days.</span>
+                </div>
+              )}
 
               {isHalf && (
                 <div className="mt-2">

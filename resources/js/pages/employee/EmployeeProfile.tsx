@@ -441,6 +441,10 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
           id: payslipId,
           earnings: (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 })),
           deductions: (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 })),
+          // Why an expected deduction (PF today) is absent from a slip that was
+          // finalized before it applied — otherwise the section is simply short
+          // a line, with nothing saying so. (#130)
+          notices: Array.isArray(d.notices) ? d.notices : [],
           isFinal: d.is_final,
           company: d.company,
           month: MONTH_ABBR_FULL[mAbbr] || mAbbr || 'March',
@@ -3191,6 +3195,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         defaultYear={viewSlip?.year || String(new Date().getFullYear())}
         earnings={viewSlip?.earnings || []}
         deductions={viewSlip?.deductions || []}
+        notices={viewSlip?.notices || []}
         workingDays={viewSlip?.working}
         daysPresent={viewSlip?.present}
         paidDays={viewSlip?.paid}
