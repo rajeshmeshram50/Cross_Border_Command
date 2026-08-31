@@ -674,8 +674,17 @@ export default function CreateShipmentOrderModal({
 function Field({ label, required, error, children }: {
   label: string; required?: boolean; error?: string; children: React.ReactNode;
 }) {
+  /* The wrapper carries the error state, so the CONTROL inside gets marked
+     whatever it is.
+     Before this, Field only printed the message underneath and each call site
+     had to add `cso-input-err` to its own <input>. Every plain input did; none
+     of the MasterSelect dropdowns could, because the class goes on an element
+     the call site does not render. So "Please fix the highlighted fields"
+     pointed at nothing whenever the missing field was a dropdown — and most of
+     the required fields on this form ARE dropdowns.
+     Marking it here fixes every control at once, including ones added later. */
   return (
-    <div className="cso-field">
+    <div className={`cso-field${error ? ' cso-field-err' : ''}`}>
       <label className="cso-flabel">
         {label}{required && <span className="cso-req">*</span>}
       </label>
@@ -855,6 +864,23 @@ const SCOPED_CSS = `
 }
 .cso-input:focus { border-color: #d97706; box-shadow: 0 0 0 3px rgba(217,119,6,.16); }
 .cso-input-err   { border-color: #ef4444 !important; }
+/* Every control inside a Field that has an error — text boxes, textareas and
+   the MasterSelect trigger, which is the one that was never marked.
+   The dropdown's popup is portalled to <body>, so it is not a descendant here
+   and its own search box is never caught by this. */
+.cso-field-err .cso-input,
+.cso-field-err input,
+.cso-field-err textarea,
+.cso-field-err .master-select-toggle {
+  border-color: #ef4444 !important;
+}
+/* A red ring on focus too, so tabbing into the field keeps saying "this one". */
+.cso-field-err .cso-input:focus,
+.cso-field-err input:focus,
+.cso-field-err textarea:focus,
+.cso-field-err .master-select-toggle:focus {
+  box-shadow: 0 0 0 3px rgba(239,68,68,.16) !important;
+}
 
 /* Dropdowns (MasterSelect) match the amber input border within this form. */
 .cso-grid .master-select-toggle {

@@ -192,6 +192,14 @@ class HolidayController extends Controller
                     continue;
                 }
 
+                // Same name rule as the Add Holiday form — a sheet row named
+                // "2026" or "12345" is not a holiday name, so it is reported
+                // back instead of being imported silently.
+                if (!preg_match('/^(?=.*\pL)[\pL\pN .\'\-]+$/u', $name)) {
+                    $errors[] = ['row' => $line, 'message' => "Invalid holiday name \"{$name}\" — a name must include at least one letter."];
+                    continue;
+                }
+
                 $date = $this->parseImportDate($rawDate);
                 if (!$date) {
                     $errors[] = ['row' => $line, 'message' => "Invalid date \"{$rawDate}\" (use YYYY-MM-DD or DD-MM-YYYY)."];
@@ -311,14 +319,25 @@ class HolidayController extends Controller
 
     private function validatePayload(Request $request, ?int $id = null): array
     {
+        // Holiday names are labels — letters, numbers, spaces and basic name
+        // punctuation (. ' -) only, and they MUST contain at least one letter.
+        // "2026" or "12345" is not a holiday name, so the lookahead rejects a
+        // name made only of digits/spaces/punctuation while still allowing
+        // digits INSIDE a real name ("Diwali 2026"). Same idiom as the group
+        // name rule in HolidayGroupController.
         $data = $request->validate([
-            'name'             => 'required|string|max:191',
+            'name'             => ['required', 'string', 'max:191', 'regex:/^(?=.*\pL)[\pL\pN .\'\-]+$/u'],
             'date'             => 'required|date',
             'type'             => ['nullable', Rule::in(self::TYPES)],
             'is_recurring'     => 'nullable|boolean',
             'description'      => 'nullable|string|max:1000',
             'holiday_group_id' => 'nullable|integer',
+        ], [
+            // Says what a valid name IS, and names the rule that just failed.
+            'name.regex' => 'Holiday name must include at least one letter — it can also contain numbers, spaces, dots, apostrophes and hyphens, but not numbers alone.',
         ]);
+
+        $data['name'] = trim($data['name']);
 
         // Normalise to a clean date string + defaults so the DB never sees a
         // datetime or an unexpected type value.

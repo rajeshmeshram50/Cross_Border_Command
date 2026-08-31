@@ -603,7 +603,18 @@ export default function SalesTodo() {
     setModalOpen(true);
   };
 
-  const close = () => { if (savingRef.current) return; setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
+  /* Unconditional dismissal — clears the form and shuts the modal.
+   *
+   * The save path MUST use this rather than `close()` below. `savingRef` is
+   * still true when a successful save reaches its close call (it only clears
+   * in the `finally`), so the guarded `close()` bailed out on its first line
+   * and the popup stayed open behind the success toast. */
+  const resetAndClose = () => { setModalOpen(false); setForm({}); setFormErrors([]); setMtgErr({}); };
+
+  /* User-initiated dismissal — the backdrop, the X, and Cancel. Refuses while
+   * a save is in flight so an in-progress request can't be abandoned half-way,
+   * leaving the list disagreeing with what actually reached the server. */
+  const close = () => { if (savingRef.current) return; resetAndClose(); };
 
   const setMark = async (record: Reminder | Meeting, status: string) => {
     if (savingRef.current) return;
@@ -755,7 +766,7 @@ export default function SalesTodo() {
           );
           setPage(1);
         }
-        close();
+        resetAndClose();
       } catch (err: any) {
         setFormErrors([prettySaveError(err)]);
       } finally {
@@ -896,7 +907,7 @@ export default function SalesTodo() {
           setMeetingFilter(payload.status as MeetingStatus);
           setPage(1);
         }
-        close();
+        resetAndClose();
       } catch (err: any) {
         setFormErrors([prettySaveError(err)]);
       } finally {

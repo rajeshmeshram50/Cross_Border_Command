@@ -193,6 +193,56 @@ class SalesLeadController extends Controller
             });
         }
 
+        /* Quotation / PI opportunity picker: narrow to the opportunities that
+         * suit the chosen DOCUMENT TYPE (?doc_scope=Domestic|International).
+         *
+         * Scope comes from the mapped CUSTOMER's primary-address country, not
+         * from the lead's own sender country. That is deliberate: the wizard's
+         * `forcedDocType` derives Document Type from the customer's country and
+         * then locks the field, so filtering on anything else would offer an
+         * opportunity that silently flips the type the moment it is picked.
+         * The two genuinely disagree in real data (a Bulgarian enquiry mapped
+         * to an Indian customer, an Indian enquiry mapped to a Pakistani one).
+         *
+         * India -> Domestic, any other country -> International. LOWER()+TRIM
+         * on both sides because the country is stored as free text and casing
+         * drifts between seeded and hand-entered rows.
+         *
+         * Leads whose scope cannot be resolved -- no customer mapped yet, or a
+         * customer with no primary address / a blank country -- stay visible
+         * under BOTH types. They force no Document Type either, so hiding them
+         * would strand opportunities that are legitimately quotable.
+         *
+         * Soft-deleted customers are NOT excluded: the list eager-loads the
+         * customer withTrashed, so a lead mapped to an archived customer still
+         * shows, and it must keep resolving to the same scope.
+         */
+        $docScope = $request->query('doc_scope');
+        if (in_array($docScope, ['Domestic', 'International'], true)) {
+            $knownCountry = function ($sub) {
+                $sub->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('customers')
+                    ->join('customer_addresses', function ($j) {
+                        $j->on('customer_addresses.customer_id', '=', 'customers.id')
+                          ->where('customer_addresses.is_primary', true);
+                    })
+                    ->whereColumn('customers.id', 'leads.customer_id')
+                    ->whereRaw("TRIM(COALESCE(customer_addresses.country, '')) <> ''");
+            };
+            $q->where(function ($outer) use ($docScope, $knownCountry) {
+                $outer
+                    ->whereExists(function ($sub) use ($docScope, $knownCountry) {
+                        $knownCountry($sub);
+                        $sub->whereRaw(
+                            $docScope === 'Domestic'
+                                ? "LOWER(TRIM(customer_addresses.country)) = 'india'"
+                                : "LOWER(TRIM(customer_addresses.country)) <> 'india'"
+                        );
+                    })
+                    ->orWhereNotExists($knownCountry);
+            });
+        }
+
         $perPage = min(max((int) $request->query('per_page', 50), 1), 200);
         $page    = max((int) $request->query('page', 1), 1);
 

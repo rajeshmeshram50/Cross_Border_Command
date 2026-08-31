@@ -36,7 +36,7 @@ const badgeToneStyle = (tone?: OptBadgeSpec['tone']): CSSProperties => {
    it isn't clipped by the option list's `overflow: auto`. `staticPill`
    forces the plain, non-interactive span (used inside the toggle, which is
    itself a <button> — a nested interactive control there would be invalid). */
-function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: boolean }) {
+export function OptBadge({ b, staticPill }: { b: OptBadgeSpec; staticPill?: boolean }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLSpanElement>(null);

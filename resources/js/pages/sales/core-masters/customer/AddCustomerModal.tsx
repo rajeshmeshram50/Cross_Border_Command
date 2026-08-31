@@ -4219,7 +4219,7 @@ function KycFileSlot({
           </button>
         </Tooltip>
       )}
-      {error && <span className="acm-field-error">{error}</span>}
+      {error && <span className="acm-field-error" title={error}>{error}</span>}
     </div>
   );
 }
@@ -5247,7 +5247,7 @@ function Field({ label, required, children, error, fieldKey }: { label: string; 
     <div className="acm-field" data-field={fieldKey}>
       <label>{label} {required && <span className="acm-req">*</span>}</label>
       {children}
-      {error && <span className="acm-field-error">{error}</span>}
+      {error && <span className="acm-field-error" title={error}>{error}</span>}
     </div>
   );
 }
@@ -5597,6 +5597,32 @@ const SCOPED_CSS = `
 .acm-field input.acm-input-error { border-color: #ef4444; background: #fef2f2; }
 .acm-field input.acm-input-error:focus { box-shadow: 0 0 0 3.5px rgba(239,68,68,.15); }
 .acm-field-error { color: #ef4444; font-size: 10.5px; font-weight: 600; margin-top: 4px; letter-spacing: .02em; }
+
+/* Validation messages must not resize their grid row.
+   .acm-row is a CSS grid with the default stretch alignment, so a message
+   appearing under ONE field grew every cell in that row and shoved the rest
+   of the form down; clearing it snapped everything back. Customer Segment
+   made this obvious because its message toggles on every select/deselect -
+   and its trade-type mismatch text wraps to three lines in a quarter-width
+   column, so the jump was large.
+
+   The message is lifted out of flow into the 14px gap that already sits under
+   every row, so the field box is identical whether or not it is in error and
+   NOTHING moves. Deliberately no reserved padding: adding a strip under every
+   field would have grown each of this form's rows and pushed the modal
+   hundreds of pixels taller for a state that is usually empty.
+
+   One line, ellipsised, because the gap only fits one - a wrapping message
+   would ride over the next row's label. The full text stays on hover via the
+   title attribute Field() sets alongside it. */
+.acm-row .acm-field { position: relative; }
+.acm-row .acm-field > .acm-field-error,
+.acm-row .acm-field > .acm-field-note {
+  position: absolute; top: 100%; left: 0; right: 0;
+  margin-top: 1px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  line-height: 1.25;
+}
 
 /* Neutral counterpart to .acm-field-error — explains a field that is locked
    rather than wrong (e.g. Country on a customer already mapped to a lead), so

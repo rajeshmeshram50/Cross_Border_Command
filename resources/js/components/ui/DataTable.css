@@ -486,7 +486,13 @@
    Taking the arrow out of the flow lets the label centre on the column, and the
    arrow still sits where a sort control is expected. Left/right-aligned headers
    are untouched: there the arrow trailing the label is the correct reading. */
-.dt-table thead th[data-align="center"] { position: relative; }
+/* NOTE: do NOT re-declare `position` here. This rule used to say
+   `position: relative`, which beat the `position: sticky` on
+   `.dt-table thead th` above (higher specificity, declared later) and so
+   silently un-stuck EVERY centred column's header — a table with mixed
+   alignments scrolled half its header away and left the other half floating
+   over the rows. `sticky` is itself a positioned value, so it already gives
+   the arrow below its containing block; no extra `position` is needed. */
 .dt-table thead th[data-align="center"] .dt-sort {
   position: absolute;
   right: 6px;

@@ -560,14 +560,25 @@ export default function CreateProcurementModal({
                             const qtyMsg = errors[`qty_${d.key}`] || numError(d.qty);
                             return (
                               <>
+                                {/* READ-ONLY. The quantity comes from the confirmed
+                                    Proforma Invoice, which the customer has already
+                                    agreed to. Typing a different figure here bought a
+                                    different amount than the PI promises, and nothing
+                                    downstream reconciles the two — the gap surfaced
+                                    only when the shipment came up short.
+                                    Frozen rather than validated: there is no correct
+                                    value other than the PI's, so there is nothing here
+                                    for the user to decide. To change it, change the PI.
+                                    The onChange is gone with the edit — a read-only
+                                    input fires none, and leaving a handler that can
+                                    never run only invites someone to re-enable it. */}
                                 <input
                                   type="text" inputMode="decimal"
-                                  className={`cps-row-input ${qtyMsg ? 'cps-input-err' : ''}`}
+                                  className={`cps-row-input cps-row-input-ro ${qtyMsg ? 'cps-input-err' : ''}`}
                                   value={d.qty}
-                                  // Strip the minus sign on input — qty can't be
-                                  // negative, so "-5" auto-converts to "5" rather
-                                  // than failing the "> 0" check and blocking submit.
-                                  onChange={e => setDraft(d.key, { qty: e.target.value.replace(/[^0-9.]/g, '') })}
+                                  readOnly
+                                  tabIndex={-1}
+                                  title="Quantity comes from the confirmed Proforma Invoice and cannot be changed here"
                                   placeholder="Qty"
                                 />
                                 {qtyMsg && <div className="cps-row-err">{qtyMsg}</div>}
@@ -1115,6 +1126,13 @@ const SCOPED_CSS = `
   outline: none; font-family: inherit;
 }
 .cps-row-input:focus { border-color: #0e7490; box-shadow: 0 0 0 3px rgba(8,145,178,.16); }
+/* A frozen field has to LOOK frozen, or the first thing anyone does is click it
+   and wonder why nothing happens. Muted fill, no focus ring, default cursor. */
+.cps-row-input-ro {
+  background: #eef4f6; border-color: #cfe0e6; color: #475569;
+  cursor: default; font-weight: 600;
+}
+.cps-row-input-ro:focus { border-color: #cfe0e6; box-shadow: none; }
 /* Per-row validation message under QTY / TARGET PRICE — keeps the typed value
    visible and explains why it's invalid (negative / non-numeric / empty). */
 .cps-row-err { margin-top: 3px; font-size: 10px; font-weight: 600; color: #ef4444; line-height: 1.25; }
