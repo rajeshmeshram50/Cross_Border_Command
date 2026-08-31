@@ -5,18 +5,12 @@ import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
-import AddVendorModal from './AddVendorModal';
+import AddVendorModal, { MappedProductsViewPopup } from './AddVendorModal';
 import SupplierScopeGate, { type SupplierScope } from './SupplierScopeGate';
 import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
 import { ShimmerTable, ShimmerClmMaster } from '../../../../components/ui/Shimmer';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
-import PartyFilterModal, {
-  applyPartyFilters,
-  countPartyFilterValues,
-  type FacetKey,
-  type PartyFilters,
-} from '../../../sales/core-masters/PartyFilterModal';
 import {
   readVendorMasterBundle,
   writeVendorMasterBundle,
@@ -56,6 +50,12 @@ export type Vendor = {
   segment?: string;
   segments?: string[];
   risk?: string;
+  /* Compliance Behaviour master value ("Compliant", "Under Review",
+     "Flagged", …) — rendered as the Compliant Status pill. */
+  compliance?: string;
+  /* vendor_product_mappings row count for this supplier (withCount on
+     GET /vendors). Drives the Mapped Products badge + its popup. */
+  mappedProducts: number;
   website?: string;
   address?: string;
   country?: string;
@@ -91,6 +91,12 @@ type ApiVendor = {
   segment?: { id: number; name: string | null } | null;
   segments?: { id: number; name: string | null }[] | null;
   risk_level?: { id: number; name: string | null } | null;
+  /* Compliance Behaviour master row — eager-loaded by VendorController::index
+     for the Compliant Status column. */
+  compliance_behaviour?: { id: number; name: string | null } | null;
+  /* withCount('productMappings') on the index query. Arrives as a number or a
+     numeric string depending on the driver, so it's coerced on map. */
+  product_mappings_count?: number | string | null;
   /* Correlated-subquery count from VendorController::index — drives the
      Fresh / Recurring split. May arrive as a number or a numeric string
      depending on the driver, so it's coerced on map. */
@@ -130,18 +136,59 @@ function typeKind(type: string): 'material' | 'logistics' | 'services' {
   return 'material';
 }
 
+/* ── Supplier Flag ────────────────────────────────────────────────────────
+ * The Figma column reads "Genuine" / "High Risk". There is no dedicated flag
+ * column on `vendors`; the field that actually carries this judgement is the
+ * Risk Level master (Low / High) set on the supplier's Identity step. So the
+ * pill is derived from it rather than from a new column nobody fills in.
+ *
+ * An unassessed supplier (risk_level_id null) renders a dash, NOT "Genuine" —
+ * the prototype defaults to Genuine, but calling a supplier nobody has vetted
+ * "Genuine" is exactly the claim this column exists to make carefully.
+ * (Vendor Behaviour was the other candidate; its master holds performance
+ * ratings — Excellent / Good / Delayed — not a trust flag.) */
+function supplierFlag(risk?: string): { label: string; cls: string } | null {
+  const r = (risk || '').trim().toLowerCase();
+  if (!r) return null;
+  if (r.includes('high') || r.includes('critical') || r.includes('severe')) {
+    return { label: 'High Risk', cls: 'sl-flag--highrisk' };
+  }
+  if (r.includes('medium') || r.includes('moderate')) {
+    return { label: 'Medium Risk', cls: 'sl-flag--medium' };
+  }
+  return { label: 'Genuine', cls: 'sl-flag--genuine' };
+}
+
+/* ── Compliant Status ─────────────────────────────────────────────────────
+ * The prototype renders a boolean (Compliant / Non Compliant). The real
+ * Compliance Behaviour master is not boolean — it holds ten states (Compliant,
+ * Cleared, Approved, Exempt, Conditionally Compliant, Under Review, Pending,
+ * Flagged, Watchlist, Non-Compliant). Collapsing those to a yes/no pill would
+ * report "Non Compliant" for a supplier who is merely still Under Review, so
+ * the real value is shown and only the TONE is bucketed: green for settled-OK,
+ * red for settled-bad, amber for still-in-flight. */
+function complianceTone(status?: string): { label: string; cls: string } | null {
+  const s = (status || '').trim();
+  if (!s) return null;
+  const k = s.toLowerCase();
+  if (k.includes('non-compliant') || k.includes('non compliant') || k.includes('flag') || k.includes('watchlist')) {
+    return { label: s, cls: 'sl-compliant--no' };
+  }
+  if (k.includes('review') || k.includes('pending')) {
+    return { label: s, cls: 'sl-compliant--pending' };
+  }
+  return { label: s, cls: 'sl-compliant--yes' };
+}
+
 export default function Vendors() {
   const { user } = useAuth();
   const toast = useToast();
 
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
-  /* Facet filters — same two-pane PartyFilterModal the Customer list uses.
-     Suppliers use Trade Type (Domestic/International) + Segment + Country
-     (no WhatsApp facet — the supplier row doesn't carry a whatsapp flag). */
-  const [filters, setFilters] = useState<PartyFilters>({});
-  const [filterOpen, setFilterOpen] = useState(false);
-  const SUPPLIER_FACETS: FacetKey[] = ['type', 'supplierType', 'segment', 'country'];
+  /* The facet Filter (the two-pane PartyFilterModal the Customer list uses)
+     was removed from this page. Search plus the Fresh/Recurring and
+     Domestic/International tabs are the whole narrowing story here now. */
   const [tab, setTab] = useState<SupplierTab>('all');
   /* Scope tabs on the "What We Are Doing Here" strip. Same split the Add
      Supplier gate asks about, applied to the list: a supplier is domestic
@@ -225,6 +272,9 @@ export default function Vendors() {
   const [vaultTarget, setVaultTarget] = useState<SupplierVaultTarget | null>(null);
   /* When set, the Contact Persons popup lists all of this supplier's contacts. */
   const [contactsTarget, setContactsTarget] = useState<Vendor | null>(null);
+  /* When set, the read-only Mapped Products popup lists this supplier's product
+     mappings — opened from the Mapped Products count badge. */
+  const [mappedTarget, setMappedTarget] = useState<Vendor | null>(null);
   /* Segment "+N" popover — fixed-positioned card anchored to the clicked badge
      so the table's overflow can't clip it. */
   const [segPop, setSegPop] = useState<{ segments: string[]; x: number; y: number; top: number } | null>(null);
@@ -319,14 +369,15 @@ export default function Vendors() {
       legalName:   row.legal_name ?? row.company_name ?? '—',
       type:        row.vendor_type?.name ?? 'Pending',
       /* State NAME (e.g. "Maharashtra"); falls back to the code, then a dash.
-         The code is kept separately in `stateCode` so the cell can render it
-         BOLD in brackets — e.g. "Maharashtra (27)". */
+         The code lives in its own GST State Code column, so it is NOT appended
+         in brackets here any more. */
       state:       row.primary_address?.state?.name
                      || row.primary_address?.state_code
                      || '—',
-      stateCode:   (row.primary_address?.state?.name && row.primary_address?.state_code)
-                     ? row.primary_address.state_code
-                     : null,
+      /* GST state code (e.g. "27"). Kept whenever the address carries one —
+         it used to be dropped unless the state NAME also resolved, which blanked
+         the code for any supplier whose state_id points at a removed master row. */
+      stateCode:   row.primary_address?.state_code || null,
       city:        row.primary_address?.city ?? '—',
       country:     row.primary_address?.country?.name ?? undefined,
       contactName: contacts[0]?.name || row.primary_address?.contact_name || '—',
@@ -344,6 +395,8 @@ export default function Vendors() {
         return arr.length ? arr : (row.segment?.name ? [row.segment.name] : []);
       })(),
       risk:        row.risk_level?.name ?? undefined,
+      compliance:  row.compliance_behaviour?.name ?? undefined,
+      mappedProducts: Number(row.product_mappings_count ?? 0) || 0,
       contacts,
     };
   };
@@ -370,7 +423,7 @@ export default function Vendors() {
   useEffect(() => { void refresh(); }, [refresh]);
   /* Reset to page 1 whenever the tab or search changes so the user never
      lands on an out-of-range page after the result set shrinks. */
-  useEffect(() => { setPage(1); }, [tab, search, filters]);
+  useEffect(() => { setPage(1); }, [tab, search]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
@@ -468,7 +521,6 @@ useEffect(() => {
 }, [allowed]);
  
 
-  const activeFilterCount = countPartyFilterValues(filters);
   const filtered = useMemo(() => {
     const lo = search.trim().toLowerCase();
     const inTab = (v: Vendor) => tab === 'all' ? true : tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
@@ -485,14 +537,7 @@ useEffect(() => {
       if (!c) return scopeTab === 'domestic';
       return scopeTab === 'domestic' ? c === 'india' : c !== 'india';
     };
-    // Facet filter first (Trade Type / Segment / Country), across every tab —
-    // applyPartyFilters reads `segment` as a comma-joined string, so normalise the
-    // supplier's segments into one. The spread keeps every original vendor field.
-    const facet = applyPartyFilters(
-      vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) })),
-      filters,
-    );
-    return facet
+    return vendors
       .filter(inTab)
       .filter(inScope)
       .filter(v => !lo
@@ -504,17 +549,7 @@ useEffect(() => {
         || v.city.toLowerCase().includes(lo)
         || v.state.toLowerCase().includes(lo)
         || (v.stateCode ?? '').toLowerCase().includes(lo));
-  }, [vendors, search, tab, scopeTab, filters]);
-
-  /* Active-filter chips shown under the toolbar — each removable. */
-  const filterChips = useMemo(() => {
-    const chips: { label: string; onRemove: () => void }[] = [];
-    if (filters.region) chips.push({ label: filters.region === 'domestic' ? 'Domestic' : 'International', onRemove: () => setFilters(f => ({ ...f, region: undefined })) });
-    (filters.supplierType ?? []).forEach(t => chips.push({ label: t, onRemove: () => setFilters(f => ({ ...f, supplierType: (f.supplierType ?? []).filter(x => x !== t) })) }));
-    (filters.segments ?? []).forEach(s => chips.push({ label: s, onRemove: () => setFilters(f => ({ ...f, segments: (f.segments ?? []).filter(x => x !== s) })) }));
-    (filters.countries ?? []).forEach(c => chips.push({ label: c, onRemove: () => setFilters(f => ({ ...f, countries: (f.countries ?? []).filter(x => x !== c) })) }));
-    return chips;
-  }, [filters]);
+  }, [vendors, search, tab, scopeTab]);
 
   /* Client-side pagination math — page size is the dynamic `rpp`. */
   const total = filtered.length;
@@ -698,20 +733,11 @@ useEffect(() => {
                   <span>Recurring Suppliers</span>
                 </button>
               </div>
-              <button
-                type="button"
-                className={`sl-filter-btn ${activeFilterCount > 0 ? 'on' : ''}`}
-                onClick={() => setFilterOpen(true)}
-              >
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="10" y1="18" x2="14" y2="18" /></svg>
-                Filter
-                {activeFilterCount > 0 && <span className="sl-filter-badge">{activeFilterCount}</span>}
-              </button>
               <div className="sl-search">
                 <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
                 <input
                   type="text"
-                  placeholder="Search suppliers by name, code, type, state, country, contact, phone or email…"
+                  placeholder="Search suppliers by name, code or contact…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -723,56 +749,46 @@ useEffect(() => {
               </div>
             </div>
 
-            {/* Active filter chips + Clear all — mirrors the Customer list. */}
-            {filterChips.length > 0 && (
-              <div className="sl-filterbar">
-                <span className="sl-filterbar-lbl">Filters:</span>
-                {filterChips.map((chip, i) => (
-                  <span key={i} className="sl-filterchip">
-                    {chip.label}
-                    <button type="button" onClick={chip.onRemove} aria-label={`Remove ${chip.label}`}>×</button>
-                  </span>
-                ))}
-                <button type="button" className="sl-filterbar-clear" onClick={() => setFilters({})}>Clear all</button>
-              </div>
-            )}
-
             {/* Table — purple Figma table wired to the real /vendors data.
                 Pagination is client-side (10 rows/page). */}
             {loading ? (
-              <div className="p-3"><ShimmerTable rows={8} cols={11} /></div>
+              <div className="p-3"><ShimmerTable rows={8} cols={15} /></div>
             ) : (
               <>
                 <div className="sl-table-scroll" ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
                   <table className="sl-table">
                     <thead>
                       <tr>
-                        <th>Sr No</th>
-                        <th>Supplier Code</th>
+                        <th className="sl-th-2line sl-col-c"><span>Sr</span><span>No</span></th>
+                        <th className="sl-th-2line sl-col-c"><span>Supplier</span><span>Code</span></th>
                         <th>Supplier Name</th>
-                        <th>Supplier Type</th>
+                        <th className="sl-col-c">Supplier Type</th>
                         <th>Segment</th>
-                        <th>Supplier State</th>
-                        <th>Country</th>
+                        <th className="sl-col-c">Country</th>
+                        <th className="sl-col-c">State</th>
+                        <th className="sl-th-2line sl-col-c"><span>GST State</span><span>Code</span></th>
                         <th>Contact Person</th>
-                        <th>Contact No</th>
+                        <th className="sl-col-c">Contact No</th>
                         <th className="sl-th-email">Email</th>
-                        <th>WhatsApp</th>
+                        <th>Supplier Flag</th>
+                        <th>Compliant Status</th>
+                        <th className="sl-th-2line sl-col-c"><span>Mapped</span><span>Products</span></th>
                         <th>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {pageRows.length === 0 ? (
-                        <tr><td colSpan={12} className="sl-empty">No suppliers found.</td></tr>
+                        <tr><td colSpan={15} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
-                        const hasWa = !!v.phone && v.phone !== '—';
+                        const flag = supplierFlag(v.risk);
+                        const compliance = complianceTone(v.compliance);
                         return (
                           <tr key={v.id}>
-                            <td><span className="sl-sr">{start + i + 1}</span></td>
-                            <td><span className="sl-code">{v.code}</span></td>
+                            <td className="sl-col-c"><span className="sl-sr">{start + i + 1}</span></td>
+                            <td className="sl-col-c"><span className="sl-code">{v.code}</span></td>
                             <td><Tooltip label={v.companyName}><span className="sl-name sl-trunc">{v.companyName}</span></Tooltip></td>
-                            <td><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
+                            <td className="sl-col-c"><span className={`sl-pill sl-pill--${kind}`}><span className="sl-pill-dot" />{v.type}</span></td>
                             <td>
                               <span className="sl-seg-wrap">
                                 {v.segments && v.segments.length > 0 ? (
@@ -796,8 +812,9 @@ useEffect(() => {
                                 ) : <span className="sl-seg">—</span>}
                               </span>
                             </td>
-                            <td><span className="sl-state">{v.state}{v.stateCode ? <> (<strong>{v.stateCode}</strong>)</> : ''}</span></td>
-                            <td><span className="sl-country">{v.country || '—'}</span></td>
+                            <td className="sl-col-c"><span className="sl-country">{v.country || '—'}</span></td>
+                            <td className="sl-col-c"><span className="sl-state">{v.state}</span></td>
+                            <td className="sl-col-c">{v.stateCode ? <span className="sl-gstcode">{v.stateCode}</span> : <span className="sl-state">—</span>}</td>
                             <td>
                               <span className="sl-contact-wrap">
                                 <Tooltip label={v.contactName}><span className="sl-contact sl-trunc">{v.contactName}</span></Tooltip>
@@ -814,12 +831,55 @@ useEffect(() => {
                                 )}
                               </span>
                             </td>
-                            <td><span className="sl-phone">{v.phone}</span></td>
+                            <td className="sl-col-c"><span className="sl-phone">{v.phone}</span></td>
                             <td className="sl-td-email"><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
                             <td>
-                              {hasWa
-                                ? <span className="sl-wa sl-wa--yes"><span className="sl-wa-dot" />Yes</span>
-                                : <span className="sl-wa sl-wa--no"><span className="sl-wa-dot" />No</span>}
+                              {flag
+                                ? (
+                                  <Tooltip label={`Risk Level: ${v.risk}`}>
+                                    <span className={`sl-flag ${flag.cls}`}>
+                                      {flag.cls === 'sl-flag--genuine'
+                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>}
+                                      {flag.label}
+                                    </span>
+                                  </Tooltip>
+                                )
+                                : <Tooltip label="No risk level set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
+                            </td>
+                            <td>
+                              {compliance
+                                ? (
+                                  <span className={`sl-compliant ${compliance.cls}`}>
+                                    {compliance.cls === 'sl-compliant--yes'
+                                      ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                                      : compliance.cls === 'sl-compliant--pending'
+                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg>
+                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>}
+                                    {compliance.label}
+                                  </span>
+                                )
+                                : <Tooltip label="No compliance behaviour set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
+                            </td>
+                            <td className="sl-col-c">
+                              {/* Count badge → read-only Mapped Products popup.
+                                  Zero is rendered as a flat, non-clickable badge:
+                                  a button that opens an empty list is a dead end. */}
+                              {v.mappedProducts > 0 ? (
+                                <Tooltip label="View mapped products">
+                                  <button
+                                    type="button"
+                                    className="sl-prodcount"
+                                    onClick={() => setMappedTarget(v)}
+                                  >
+                                    {v.mappedProducts}
+                                  </button>
+                                </Tooltip>
+                              ) : (
+                                <Tooltip label="No products mapped to this supplier yet">
+                                  <span className="sl-prodcount sl-prodcount--zero">0</span>
+                                </Tooltip>
+                              )}
                             </td>
                             <td>
                               <div className="sl-actions">
@@ -894,6 +954,12 @@ useEffect(() => {
       {addOpen && (
         <AddVendorModal
           vendorId={editingId}
+          /* The row already shows the code, so hand it over rather than making
+             the modal's header wait for /vendors/{id}. Read off the loaded list
+             instead of held in state — nothing to keep in sync. Resolves to
+             null on a deep-link open before the list has landed, which is the
+             old behaviour. */
+          vendorCodeHint={editingId ? (vendors.find(x => x.id === editingId)?.code ?? null) : null}
           initialStep={editingStep ?? undefined}
           scope={addScope ?? undefined}
           onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); setAddScope(null); returnToRef.current = null; void refresh({ silent: true }); }}
@@ -977,6 +1043,18 @@ useEffect(() => {
         </div>
       )}
 
+      {/* Mapped Products popup (read-only) — same chrome as the wizard's
+          Mapped Products popup, minus the "Map Product" CTA and the per-row
+          edit/remove icons. Mappings are edited in the supplier form. */}
+      {mappedTarget && (
+        <MappedProductsViewPopup
+          vendorId={mappedTarget.id}
+          code={mappedTarget.code}
+          name={mappedTarget.companyName}
+          onClose={() => setMappedTarget(null)}
+        />
+      )}
+
       {/* Read-only Supplier Evidence Vault popup — pulls
           /api/segment-uploads/supplier/{id}/vault to render KPI cards +
           per-bucket tables (Company DD, Owner KYC, Trade Licenses,
@@ -989,18 +1067,6 @@ useEffect(() => {
         onClose={() => setVaultTarget(null)}
       />
 
-      {/* Facet filter — the same two-pane modal the Customer list uses. */}
-      <PartyFilterModal
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        onApply={setFilters}
-        initial={filters}
-        rows={vendors.map(v => ({ ...v, segment: (v.segments && v.segments.length ? v.segments.join(', ') : (v.segment ?? '')) }))}
-        facets={SUPPLIER_FACETS}
-        title="Filter Suppliers"
-        typeLabel="Trade Type"
-        theme="purple"
-      />
     </>
   );
 }

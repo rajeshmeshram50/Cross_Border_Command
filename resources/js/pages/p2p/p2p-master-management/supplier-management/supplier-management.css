@@ -135,7 +135,12 @@
 .sup-fig .sl-tab svg,.sup-fig .sl-tab span{position:relative;z-index:1;}
 .sup-fig .sl-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 7px;border-radius:99px;font-size:10px;font-weight:800;color:#7c3aed;background:#fff;border:1px solid #ddd0f7;}
 .sup-fig .sl-tab.is-active .sl-tab-count{color:#7c3aed;background:#fff;border-color:transparent;}
-.sup-fig .sl-search{flex:1;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
+/* Capped, not flex:1. Filling the toolbar made the field a full-width slab
+   that read as the page header rather than a control — and removing the
+   Filter button beside it made that worse. flex-basis with shrink lets it
+   give way on narrow screens; margin-left:auto keeps it at the right end,
+   where the button used to sit. */
+.sup-fig .sl-search{flex:0 1 400px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
 .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18);}
 .sup-fig .sl-search-ico{flex-shrink:0;}
 .sup-fig .sl-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:#3b0764;}
@@ -168,6 +173,32 @@
 .sup-fig .sl-table thead tr{background:linear-gradient(110deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 75%,#5b21b6 100%);}
 .sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:9px 9px;}
 .sup-fig .sl-table thead th.sl-th-email{text-align:left;}
+/* Two-line headers (SR NO, SUPPLIER CODE, GST STATE CODE, MAPPED PRODUCTS).
+   The table-wide `white-space:nowrap` above meant each of these labels set its
+   column's width from the whole phrase, which is far wider than the short
+   value underneath (a number pill, a code chip, a 2-digit GST code, a count
+   badge). Stacking them halves those columns.
+
+   The break is forced STRUCTURALLY — one <span> per line, each a nowrap block
+   — rather than by handing the browser a width and hoping it wraps there.
+   Auto table layout treats a width as a preference it may overrule when it
+   distributes leftover space, so a width-driven wrap silently un-wraps on a
+   wide viewport. With blocks the column width is simply the widest span, at
+   any table width. The nowrap on the span is what keeps "GST STATE" together
+   rather than letting it break again into three lines. */
+   Centred rather than left-aligned like the one-line headers: the two spans
+   are different widths, so flush-left leaves a ragged right edge that reads as
+   a mistake in a narrow column. */
+.sup-fig .sl-table thead th.sl-th-2line{white-space:normal;line-height:1.22;text-align:center;}
+.sup-fig .sl-table thead th.sl-th-2line span{display:block;white-space:nowrap;}
+/* Centred columns — Country, State, GST State Code, Contact No. These hold
+   short values of roughly uniform width (a country, a state, a 2-digit code,
+   a phone number) sitting in columns whose HEADER is the wider of the two, so
+   flush-left leaves the value stranded against a long heading. Header and cell
+   are centred together — centring only one of them just moves the problem.
+   Beats `th:nth-child()` because the column order is still in flux. */
+.sup-fig .sl-table thead th.sl-col-c,
+.sup-fig .sl-table tbody td.sl-col-c{text-align:center;}
 .sup-fig .sl-table tbody td.sl-td-email{text-align:left;}
 .sup-fig .sl-table thead th:last-child{text-align:center;}
 .sup-fig .sl-table tbody td{padding:7px 9px;border-bottom:1px solid #F1ECFB;color:#334155;vertical-align:middle;}
@@ -190,18 +221,58 @@
    Explicit per-field caps because table cells auto-size to content. */
 .sup-fig .sl-trunc{display:inline-block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle;}
 .sup-fig .sl-name.sl-trunc{max-width:145px;}   /* ~20 chars, then ellipsis (full name in tooltip) */
-.sup-fig .sl-contact.sl-trunc{max-width:140px;}
+/* Cap lives on .sl-contact-wrap now (see below) — the name just shrinks. */
+.sup-fig .sl-contact.sl-trunc{max-width:none;min-width:0;flex:0 1 auto;}
 .sup-fig .sl-email.sl-trunc{max-width:110px;}   /* ~15 chars, then ellipsis (full email in tooltip) */
 .sup-fig .sl-state,.sup-fig .sl-country,.sup-fig .sl-contact{font-weight:600;color:#475569;}
 /* State code in brackets — dark + bold so it stands out from the muted name. */
 .sup-fig .sl-state strong{font-weight:800;color:#1e293b;}
-.sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:6px;}
-.sup-fig .sl-contact-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
+/* ── GST State Code / Supplier Flag / Compliant Status / Mapped Products ──
+   The four Figma list columns. Palettes lifted from the prototype
+   (.sl-gstcode / .sl-flag / .sl-compliant / .sl-prodcount) so the ported table
+   matches it exactly. Two additions the prototype has no equivalent for:
+     • .sl-flag--medium — the Risk Level master is user-editable, so a client
+       who adds a "Medium" level between Low and High gets its own tone rather
+       than being lumped in with High Risk.
+     • .sl-compliant--pending — Compliance Behaviour is a 10-value master, not
+       a boolean; "Under Review" / "Pending" are neither green nor red. */
+.sup-fig .sl-gstcode{display:inline-flex;align-items:center;justify-content:center;min-width:26px;padding:2px 8px;font-size:11px;font-weight:700;color:#6d28d9;background:#F5F3FF;border:1px solid #DDD6FE;border-radius:7px;}
+.sup-fig .sl-flag,.sup-fig .sl-compliant{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:20px;border:1px solid;white-space:nowrap;}
+.sup-fig .sl-flag--genuine{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
+.sup-fig .sl-flag--medium{color:#a16207;background:#FEFCE8;border-color:#FEF08A;}
+.sup-fig .sl-flag--highrisk{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
+.sup-fig .sl-compliant--yes{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
+.sup-fig .sl-compliant--pending{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
+.sup-fig .sl-compliant--no{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}
+.sup-fig .sl-prodcount{display:inline-flex;align-items:center;justify-content:center;min-width:32px;height:26px;padding:0 9px;font-family:inherit;font-size:12px;font-weight:800;color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed);border-radius:8px;box-shadow:0 2px 6px -1px rgba(124,58,237,.4);border:none;cursor:pointer;transition:transform .14s,box-shadow .14s;}
+.sup-fig .sl-prodcount:hover{transform:translateY(-1px);box-shadow:0 4px 10px -1px rgba(124,58,237,.55);}
+.sup-fig .sl-prodcount:active{transform:translateY(0);}
+/* Zero mappings — flat, muted and not a button. Nothing to open. */
+.sup-fig .sl-prodcount--zero{background:#f1f5f9;color:#94a3b8;box-shadow:none;cursor:default;border:1px solid #e2e8f0;}
+.sup-fig .sl-prodcount--zero:hover{transform:none;box-shadow:none;}
+/* The "+N" badge hangs off the END OF THE NAME, not in a reserved slot.
+   The width cap used to sit on the name span itself, so the name always
+   claimed its full 140px and the badge started at that fixed offset — on a
+   short name that left an obvious gap, and the badge read as its own little
+   column rather than as part of the name. Moving the cap to the WRAPPER makes
+   the name a shrinkable flex item: it takes only the width it needs (or
+   ellipsises when it can't), and the badge is always immediately after the
+   last visible character. min-width:0 is what allows that shrink — a flex
+   item's default min-width:auto refuses to go below min-content and would
+   push the badge out of the cell instead. */
+.sup-fig .sl-contact-wrap{display:inline-flex;align-items:center;gap:4px;max-width:186px;min-width:0;}
+/* flex:none — the badge must never be the thing that shrinks; a squashed
+   "+1" is unreadable, and the name is what has an ellipsis to fall back on. */
+.sup-fig .sl-contact-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
 .sup-fig .sl-contact-more:hover{background:#e6d9fb;transform:translateY(-1px);}
-.sup-fig .sl-seg.sl-trunc{max-width:120px;}
+/* Cap lives on .sl-seg-wrap now — same reasoning as .sl-contact above:
+   the label shrinks so the "+N" badge sits against its last visible
+   character instead of at a fixed offset. Scoped to .sl-trunc so the
+   segment PILLS in the overflow popover (plain .sl-seg) are untouched. */
+.sup-fig .sl-seg.sl-trunc{max-width:none;min-width:0;flex:0 1 auto;}
 .sup-fig .sl-seg{font-weight:600;color:#475569;}
-.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:6px;}
-.sup-fig .sl-seg-more{font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
+.sup-fig .sl-seg-wrap{display:inline-flex;align-items:center;gap:4px;max-width:166px;min-width:0;}
+.sup-fig .sl-seg-more{flex:none;font-family:inherit;font-size:10px;font-weight:800;color:#7c3aed;background:#f1eafe;border:1px solid #ddd0f7;border-radius:999px;padding:2px 7px;cursor:pointer;line-height:1;transition:all .15s;}
 .sup-fig .sl-seg-more:hover{background:#e6d9fb;transform:translateY(-1px);}
 /* Segment "+N" anchored popover — small white card at the badge (mirrors the
    Customer list's segment overflow popover: titled list of segment pills). */
@@ -241,7 +312,11 @@
 
 /* Contact Persons popup */
 .sc-ov{position:fixed;inset:0;z-index:1200;background:rgba(49,22,99,.42);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;padding:24px;font-family: var(--font-sans);}
-.sc-pop{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);border:1.5px solid rgba(255,255,255,.65);}
+/* No border. The 1.5px rgba(255,255,255,.65) ring that used to be here was
+   drawn OUTSIDE the overflow clip, so it traced the whole box — including the
+   purple header — and read as a pale hairline inset around the gradient. The
+   Figma .sc-pop has no border at all; the shadow alone lifts it off the page. */
+.sc-pop{width:100%;max-width:480px;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(15,23,42,.45);}
 .sc-head{display:flex;align-items:center;gap:12px;padding:16px 18px;background:linear-gradient(115deg,#4c1d95 0%,#5b21b6 28%,#6d28d9 55%,#7c3aed 80%,#8b5cf6 100%);color:#fff;}
 .sc-head-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;}
 .sc-title{font-size:15.5px;font-weight:700;}
@@ -280,15 +355,23 @@
 .sup-fig .sl-wa-dot{width:4px;height:4px;border-radius:50%;background:currentColor;}
 .sup-fig .sl-wa--yes{color:#16a34a;background:#F0FDF4;border-color:#BBF7D0;}
 .sup-fig .sl-wa--no{color:#dc2626;background:#FEF2F2;border-color:#FECACA;}
-.sup-fig .sl-actions{display:flex;align-items:center;justify-content:flex-start;gap:6px;padding-left:4px;}
-.sup-fig .sl-act-btn{width:34px;height:34px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid;cursor:pointer;transition:transform .14s,box-shadow .14s,background .14s;}
+.sup-fig .sl-actions{display:flex;align-items:center;justify-content:flex-start;gap:5px;padding-left:0;}
+.sup-fig .sl-act-btn{width:30px;height:30px;display:flex;align-items:center;justify-content:center;border-radius:8px;border:1px solid;cursor:pointer;transition:transform .14s,box-shadow .14s,background .14s;}
 .sup-fig .sl-act-btn svg{width:13px;height:13px;}
 .sup-fig .sl-act-btn:hover{transform:translateY(-1px);}
 .sup-fig .sl-act-btn--edit{color:#7c3aed;background:linear-gradient(135deg,#faf8ff,#f1ebfe);border-color:#DDD6FE;box-shadow:0 1px 3px rgba(124,58,237,.12),0 1px 0 rgba(255,255,255,.7) inset;}
 .sup-fig .sl-act-btn--edit:hover{background:linear-gradient(135deg,#8b5cf6,#7c3aed);color:#fff;border-color:transparent;box-shadow:0 5px 13px rgba(124,58,237,.45),0 1px 0 rgba(255,255,255,.3) inset;}
-.sup-fig .sl-evault-btn{position:relative;overflow:hidden;width:auto;height:34px;gap:8px;padding:0 17px;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:.012em;color:#fff;border:none;border-radius:9px;background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 38%,#7c3aed 70%,#6d28d9 100%);box-shadow:0 4px 12px rgba(124,58,237,.4),0 1px 0 rgba(255,255,255,.4) inset,0 -2px 6px rgba(91,33,182,.3) inset;text-shadow:0 1px 2px rgba(76,29,149,.4);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
+/* Narrower than the Figma original: at 17px side padding + an 8px icon gap
+   this button was the widest thing in the Actions column, and the four new
+   Figma columns left it far less room. Trimmed on padding, gap and type size
+   rather than by shortening the label — "Evidence Vault" is the name of the
+   thing it opens. Trimmed twice: the 15-column table still overflowed into a
+   horizontal scrollbar, and this button was the widest cell driving it.
+   Height drops to 30px in step with .sl-act-btn above so the edit icon beside
+   it stays the same size and the two still align. */
+.sup-fig .sl-evault-btn{position:relative;overflow:hidden;width:auto;height:30px;gap:5px;padding:0 8px;font-family:inherit;font-size:10.5px;font-weight:700;letter-spacing:0;color:#fff;border:none;border-radius:9px;background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 38%,#7c3aed 70%,#6d28d9 100%);box-shadow:0 4px 12px rgba(124,58,237,.4),0 1px 0 rgba(255,255,255,.4) inset,0 -2px 6px rgba(91,33,182,.3) inset;text-shadow:0 1px 2px rgba(76,29,149,.4);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}
 .sup-fig .sl-evault-btn::before{content:'';position:absolute;top:0;left:0;right:0;height:50%;background:linear-gradient(180deg,rgba(255,255,255,.28),transparent);pointer-events:none;}
-.sup-fig .sl-evault-btn svg{width:14px;height:14px;position:relative;z-index:1;}
+.sup-fig .sl-evault-btn svg{width:12px;height:12px;flex:none;position:relative;z-index:1;}
 .sup-fig .sl-evault-btn span{position:relative;z-index:1;}
 .sup-fig .sl-evault-btn:hover{background:linear-gradient(135deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 100%);box-shadow:0 7px 18px rgba(124,58,237,.52),0 1px 0 rgba(255,255,255,.45) inset,0 -2px 6px rgba(76,29,149,.35) inset;transform:translateY(-1px);}
 /* Book Entry — teal icon button (name shown via tooltip), same size as the edit icon button. */
@@ -460,6 +543,10 @@
    the table itself already scrolls horizontally via .sl-table-scroll. */
 @media (max-width: 640px) {
   .sup-fig .sl-toolbar { flex-direction: column; align-items: stretch; }
+  /* Stacked toolbar: the cap and the right-push both have to go, or the auto
+     margin overrides align-items:stretch and leaves a short field floated
+     right instead of a full-width one. */
+  .sup-fig .sl-search { flex-basis: auto; margin-left: 0; }
   /* The three nowrap tabs don't fit a phone, so the strip MUST scroll.
      `justify-content: center` (what this used to be) is the trap: when flex
      content overflows a centred container the spill goes to BOTH ends and the
@@ -576,6 +663,17 @@
 [data-bs-theme="dark"] .sup-fig .sl-phone{color:#9a93b3;}
 [data-bs-theme="dark"] .sup-fig .sl-code{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-contact-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+/* Figma list columns in dark — the light palettes are near-white washes that
+   glare on the dark table, so each is restated as a translucent tint of the
+   same hue with a lifted text colour. */
+[data-bs-theme="dark"] .sup-fig .sl-gstcode{background:rgba(124,58,237,.18);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
+[data-bs-theme="dark"] .sup-fig .sl-flag--genuine,
+[data-bs-theme="dark"] .sup-fig .sl-compliant--yes{background:rgba(34,197,94,.14);color:#86efac;border-color:rgba(34,197,94,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-flag--medium{background:rgba(234,179,8,.14);color:#fde047;border-color:rgba(234,179,8,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-flag--highrisk,
+[data-bs-theme="dark"] .sup-fig .sl-compliant--pending{background:rgba(245,158,11,.14);color:#fcd34d;border-color:rgba(245,158,11,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-compliant--no{background:rgba(239,68,68,.14);color:#fca5a5;border-color:rgba(239,68,68,.32);}
+[data-bs-theme="dark"] .sup-fig .sl-prodcount--zero{background:rgba(148,163,184,.16);color:#94a3b8;border-color:rgba(148,163,184,.28);}
 [data-bs-theme="dark"] .sup-fig .sl-seg{color:#adb5bd;}
 [data-bs-theme="dark"] .sup-fig .sl-seg-more{background:rgba(124,58,237,.2);color:#c4b5fd;border-color:rgba(167,139,250,.3);}
 [data-bs-theme="dark"] .sup-fig .sl-seg-pop{background:#1a1430;border-color:#3b2a6b;box-shadow:0 18px 46px rgba(0,0,0,.55);}
@@ -600,7 +698,7 @@
 [data-bs-theme="dark"] .sup-fig .sl-footer{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
 
 /* Contact Persons popup — dark surface */
-[data-bs-theme="dark"] .sup-fig .sc-pop{background:#1c2531;border-color:rgba(167,139,250,.25);}
+[data-bs-theme="dark"] .sup-fig .sc-pop{background:#1c2531;}
 [data-bs-theme="dark"] .sup-fig .sc-row{border-bottom-color:rgba(255,255,255,.06);}
 [data-bs-theme="dark"] .sup-fig .sc-pager{background:rgba(255,255,255,.03);border-top-color:rgba(255,255,255,.07);}
 [data-bs-theme="dark"] .sup-fig .sc-pg-info{color:#c4b5fd;}

@@ -85,6 +85,9 @@ class VendorController extends Controller
                 // render the Segment column + "+N" badge, not just the scalar one.
                 'segments:id,name',
                 'riskLevel:id,name',
+                // Drives the "Compliant Status" column on the list. Without it
+                // the pill had no data and every row rendered a dash.
+                'complianceBehaviour:id,name',
             ])
             ->withCount('productMappings')
             // ── Fresh vs Recurring split ──────────────────────────────────────
@@ -123,6 +126,60 @@ class VendorController extends Controller
         }
 
         return response()->json($q->paginate((int) $request->query('per_page', 24)));
+    }
+
+    /**
+     * Read-only product mappings for ONE supplier — powers the "Mapped
+     * Products" popup opened from the count badge on the supplier list.
+     *
+     * index() already ships `product_mappings_count` for the badge itself;
+     * this fills the popup once it's clicked. GET /vendors/{id} would answer
+     * the same question, but it eager-loads the ~16 relations the 3-step
+     * wizard needs (documents, owners, bank accounts, GST scrutiny, segment
+     * uploads) — far too much for a 9-column read-only table, and it doesn't
+     * even carry HSN / segment (the wizard backfills those client-side from a
+     * separate 500-row /products fetch). Joining them here means the popup is
+     * one small request with nothing to reconcile afterwards.
+     *
+     * Scoped through the same forUser() visibility rule as index(), so a
+     * supplier outside the caller's tenant 404s rather than leaking rows.
+     */
+    public function productMappings(Request $request, int $id): JsonResponse
+    {
+        $vendor = Vendor::query()->forUser($request->user())->findOrFail($id);
+
+        $rows = VendorProductMapping::query()
+            ->where('vendor_id', $vendor->id)
+            ->with([
+                'product:id,product_code,name,hsn_id,segment_id',
+                'product.hsn:id,hsn_code',
+                'product.segment:id,name',
+            ])
+            ->orderBy('id')
+            ->get()
+            ->map(fn (VendorProductMapping $m) => [
+                'id'               => $m->id,
+                'product_id'       => $m->product_id,
+                'product_code'     => $m->product?->product_code,
+                'product_name'     => $m->product?->name,
+                'hsn_sac_code'     => $m->product?->hsn?->hsn_code,
+                'segment'          => $m->product?->segment?->name,
+                'batch_serial_lot' => $m->batch_serial_lot,
+                'purchase_price'   => $m->purchase_price,
+                'gst_percentage'   => $m->gst_percentage,
+                'gst_amount'       => $m->gst_amount,
+                'total_amount'     => $m->total_amount,
+            ]);
+
+        return response()->json([
+            'data' => $rows,
+            'meta' => [
+                'vendor_id'   => $vendor->id,
+                'vendor_code' => $vendor->vendor_code,
+                'vendor_name' => $vendor->company_name,
+                'count'       => $rows->count(),
+            ],
+        ]);
     }
 
     public function show(Request $request, int $id): JsonResponse

@@ -184,6 +184,8 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
   
     Route::get   ('/vendors/master-bundle',            [\App\Http\Controllers\Api\VendorController::class, 'masterBundle']);
     Route::get   ('/vendors/{id}',                     [\App\Http\Controllers\Api\VendorController::class, 'show'])->whereNumber('id');
+    // Read-only mapping rows behind the supplier list's "Mapped Products" badge.
+    Route::get   ('/vendors/{id}/product-mappings',    [\App\Http\Controllers\Api\VendorController::class, 'productMappings'])->whereNumber('id');
     Route::post  ('/vendors/step/identity',            [\App\Http\Controllers\Api\VendorController::class, 'storeIdentity']);
     Route::put   ('/vendors/{id}/step/contacts',       [\App\Http\Controllers\Api\VendorController::class, 'storeContacts'])->whereNumber('id');
     // Additional contact persons — independent CRUD (primary row excluded).

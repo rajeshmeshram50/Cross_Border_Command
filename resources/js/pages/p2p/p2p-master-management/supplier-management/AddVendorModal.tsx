@@ -6,7 +6,7 @@ import { useToast } from '../../../../contexts/ToastContext';
 import { useConfirm } from '../../../../contexts/ConfirmContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
 import Tooltip from '../../../../components/ui/Tooltip';
-import { ShimmerForm } from '../../../../components/ui/Shimmer';
+import { Shimmer, ShimmerForm, ShimmerTable } from '../../../../components/ui/Shimmer';
 import { MasterMultiSelect } from '../../../master/masterFormKit';
 import { useRuledSegments, type SegDocType } from '../../../../hooks/useRuledSegments';
 import AuthorityBadges from '../../../clm/compliance/AuthorityBadges';
@@ -367,10 +367,16 @@ export default function AddVendorModal(props: {
    *  Step 2 of this work reads it to decide what Country may offer:
    *  domestic → India only, international → every country except India. */
   scope?: 'domestic' | 'international';
+  /** Supplier code the opener already has on screen (the list row's own
+   *  `S-002`). Purely so the header can read "Edit Supplier — S-002" from the
+   *  FIRST frame: the code otherwise arrives with the /vendors/{id} response,
+   *  so the title rewrote itself mid-load and the whole header jumped. The
+   *  fetched value still overwrites this once it lands. */
+  vendorCodeHint?: string | null;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
-  const { onClose, onSubmit, vendorId: initialVendorId, initialStep, scope } = props;
+  const { onClose, onSubmit, vendorId: initialVendorId, initialStep, scope, vendorCodeHint } = props;
   const toast = useToast();
   const confirm = useConfirm();
   const isEdit = !!initialVendorId;
@@ -516,7 +522,9 @@ export default function AddVendorModal(props: {
   /* Vendor code surfaced in the carried-over header on later steps.
      Populated from /vendors/{id} on edit-mode load; new vendors get
      their code only after Step 1 saves, so it stays blank until then. */
-  const [vendorCode, setVendorCode] = useState<string>('');
+  /* Seeded from the opener's hint so the header title is complete on the very
+     first paint; the /vendors/{id} response replaces it with the stored code. */
+  const [vendorCode, setVendorCode] = useState<string>(vendorCodeHint ?? '');
   const [saving,   setSaving]   = useState(false);
   /* True while advancing to the next tab/step (Save & Next). Drives a
      page-level shimmer so it's clear the next step is loading — the button
@@ -3236,6 +3244,31 @@ export default function AddVendorModal(props: {
 
         {/* ─── Body ─── */}
         <div className="avm-body">
+          {/* Tab strip renders OUTSIDE the loading branch.
+              It used to live inside the loaded form, so while the edit prefill
+              was in flight the body opened straight onto the shimmer and the
+              two tabs popped in afterwards, shoving every skeleton card down
+              the page. The strip is chrome, not data — it says the same thing
+              before and after the fetch — so it is painted immediately and
+              merely disabled until the form behind it is real. */}
+          {step === 1 && (
+            <div className="avm-tabs">
+              <button
+                className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`}
+                disabled={loadingEdit || mastersLoading || advancing}
+                onClick={() => setIdTab('identification')}
+              >Supplier Identification &amp; Address Details</button>
+              {/* Can't jump to Contact Person Details until Supplier
+                  Identification is valid. Mirrors Save & Next: validates +
+                  persists (so the contact step has a vendorId to attach to)
+                  and only switches when clean — else inline errors show. */}
+              <button
+                className={`avm-tab ${idTab === 'address' ? 'on' : ''}`}
+                disabled={saving || advancing || loadingEdit || mastersLoading}
+                onClick={async () => { if (saving || advancing || idTab === 'address') return; setAdvancing(true); try { const ok = await saveIdentity(); if (ok) setIdTab('address'); } finally { setAdvancing(false); } }}
+              >Contact Person Details</button>
+            </div>
+          )}
           {(loadingEdit || mastersLoading || advancing) ? (
             /* Shimmer skeleton — replaces the form entirely while
                /vendors/master-bundle (or the edit-mode prefill) is in
@@ -3245,10 +3278,22 @@ export default function AddVendorModal(props: {
                Mutually-exclusive rendering is simpler and reliable.
                Skeleton hits 0ms when the sessionStorage cache is fresh. */
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
-              {/* Shared ShimmerForm — identical to the Client / Branch form
-                  loading shimmer (header card + 4 section cards, 3-col grids). */}
-              <div style={{ width: '100%', maxWidth: 1100 }}>
-                <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header />
+              {/* Step 1's identification tab is what opens 99% of the time, and
+                  it gets a skeleton built from the real section cards so nothing
+                  shifts when the data lands (see Step1IdentitySkeleton).
+
+                  Everything else — step 2/3, or the Contact Person tab mid
+                  `advancing` — falls back to the generic form shimmer. `header`
+                  is off there because that block draws a 64px avatar, two lines
+                  and a button: a profile card this wizard does not have, which
+                  vanished on load and dragged every real section up the page.
+                  No max-width either; the real cards run the full width of
+                  .avm-body, so a 1100px cap made the skeleton visibly narrower
+                  than the form replacing it. */}
+              <div style={{ width: '100%' }}>
+                {step === 1 && idTab === 'identification'
+                  ? <Step1IdentitySkeleton />
+                  : <ShimmerForm sections={4} cols={3} fieldsPerSection={6} header={false} />}
               </div>
             </div>
           ) : (<>
@@ -3297,7 +3342,7 @@ export default function AddVendorModal(props: {
                   ],
                   [
                     { label: 'Registered Office Address', value: registeredOffice || '—' },
-                    { label: 'Google Location', value: googleLocation || '—' },
+                    { label: 'Google Location Link', value: googleLocation || '—' },
                     { label: 'Country',             value: labelFor(country, countryOpts) || '—' },
                     { label: 'State',               value: labelFor(state, stateOpts) || '—' },
                     { label: 'City',                value: city || '—' },
@@ -3412,15 +3457,7 @@ export default function AddVendorModal(props: {
           {/* ─── STEP 1 ─── */}
           {step === 1 && (
             <>
-              <div className="avm-tabs">
-                <button className={`avm-tab ${idTab === 'identification' ? 'on' : ''}`} onClick={() => setIdTab('identification')}>Supplier Identification &amp; Address Details</button>
-                {/* Can't jump to Contact Person Details until Supplier
-                    Identification is valid. Mirrors Save & Next: validates +
-                    persists (so the contact step has a vendorId to attach to)
-                    and only switches when clean — else inline errors show. */}
-                <button className={`avm-tab ${idTab === 'address' ? 'on' : ''}`} disabled={saving || advancing} onClick={async () => { if (saving || advancing || idTab === 'address') return; setAdvancing(true); try { const ok = await saveIdentity(); if (ok) setIdTab('address'); } finally { setAdvancing(false); } }}>Contact Person Details</button>
-              </div>
-
+              {/* (Tab strip hoisted above the loading branch — see there.) */}
               {idTab === 'identification' && (
                 <SectionCard tone="violet" icon={<i className="ri-home-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
                   {/* 3×3 grid mirroring the Figma:
@@ -3655,7 +3692,7 @@ export default function AddVendorModal(props: {
                       locates neither, and the overseas one is the harder of the
                       two to verify from text alone. */}
                   <div className={gstApplicable === 'Yes' ? 'avm-grid-2' : 'avm-grid-1'}>
-                    <Field label="Google Location" error={fieldErrors.googleLocation}>
+                    <Field label="Google Location Link" error={fieldErrors.googleLocation}>
                       <input
                         className="avm-input"
                         placeholder="Paste the Google Maps link — e.g. https://maps.app.goo.gl/…"
@@ -4771,6 +4808,54 @@ function SectionCard(props: {
       </div>
       <div className="avm-section-body">{props.children}</div>
     </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Step 1 loading skeleton
+ *
+ * Built from the form's OWN <SectionCard> and .avm-grid-* classes rather than
+ * the generic ShimmerForm, because the two did not describe the same page: the
+ * generic version drew plain white cards with a grey bar for a heading, so on
+ * load every card suddenly grew a coloured left accent, an icon tile and a
+ * two-line heading, and the field grid re-flowed from 2 rows of 3 to the real
+ * 3-3-1-4-2 shape. The page visibly rebuilt itself.
+ *
+ * The card chrome is not data — the headings, tones and icons are static
+ * markup that is known before any request is made — so it is drawn for real
+ * and only the field contents shimmer. What lands is then the same layout,
+ * with values filled in, and nothing moves.
+ * ────────────────────────────────────────────────────────────────────── */
+function SkelField({ label = 60 }: { label?: number }) {
+  return (
+    <div className="avm-field">
+      <Shimmer width={`${label}%`} height={10} radius={4} />
+      <Shimmer width="100%" height={38} radius={10} />
+    </div>
+  );
+}
+
+function Step1IdentitySkeleton() {
+  return (
+    <>
+      <SectionCard tone="violet" icon={<i className="ri-home-line" />} title="Basic Company Details" subtitle="Supplier identity, type, and risk classification">
+        {/* 3 × 3 — the same grid the real card uses. */}
+        <div className="avm-grid-3">
+          {[52, 62, 46, 50, 58, 40, 56, 60, 64].map((w, i) => <SkelField key={i} label={w} />)}
+        </div>
+      </SectionCard>
+      <SectionCard tone="amber" icon={<i className="ri-map-pin-line" />} title="Supplier Address Details" subtitle="Registered office and location">
+        {/* Full-width Registered Office Address, then Country / State / State
+            Code / City across four, then the two-up row below it. */}
+        <div className="avm-grid-2" style={{ gridTemplateColumns: '1fr' }}><SkelField label={28} /></div>
+        <div className="avm-grid-4">
+          {[42, 38, 52, 30].map((w, i) => <SkelField key={i} label={w} />)}
+        </div>
+        <div className="avm-grid-2">
+          {[46, 40].map((w, i) => <SkelField key={i} label={w} />)}
+        </div>
+      </SectionCard>
+    </>
   );
 }
 
@@ -5984,8 +6069,16 @@ function TradeDocsTable(props: {
  * with purchase price + GST + total. Empty state until "+ Add More
  * Products" is clicked.
  * ────────────────────────────────────────────────────────────────────── */
-function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean }) {
-  if (props.rows.length === 0) return <EmptyTable label="No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products." />;
+/* `readOnly` drops the ACTIONS column entirely (header + cells) — the supplier
+ * LIST opens this same table as a view-only popup, where editing or removing a
+ * mapping is not on offer. It also swaps the empty-state copy, which otherwise
+ * tells the reader to use a "+ Add More Products" button that isn't there. */
+function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean }) {
+  if (props.rows.length === 0) {
+    return <EmptyTable label={props.readOnly
+      ? 'No products mapped to this supplier yet.'
+      : 'No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products.'} />;
+  }
   return (
     <div className="table-responsive border rounded avm-kyc-table-wrap avm-mapped-wrap">
       <table className="table align-middle mb-0 avm-kyc-table avm-mapped-table">
@@ -6000,7 +6093,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
             <th className="text-end">GST %</th>
             <th className="text-end">GST (₹)</th>
             <th className="text-end">TOTAL (₹)</th>
-            <th>ACTIONS</th>
+            {!props.readOnly && <th>ACTIONS</th>}
           </tr>
         </thead>
         <tbody>
@@ -6015,6 +6108,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
               <td className="text-end font-monospace fs-13">₹{r.gstAmount.toFixed(2)}</td>
               <td className="text-end font-monospace fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
+              {!props.readOnly && (
               <td>
                 <div className="avm-row-actions">
                   {props.onEdit && (
@@ -6031,6 +6125,7 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
                   </Tooltip>
                 </div>
               </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -6191,6 +6286,116 @@ function MappedProductsPopup(props: {
         </div>
       </div>
     </div>
+  ), document.body);
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * Mapped Products — LIST view (read-only)
+ *
+ * Same popup chrome as MappedProductsPopup above, opened from the "Mapped
+ * Products" count badge on the supplier list instead of from inside the
+ * wizard. Two deliberate differences:
+ *
+ *   • No "Map Product" CTA and no per-row edit/remove icons. The list is a
+ *     browsing surface; mappings are created and changed in the supplier
+ *     form, which is one click away via the row's Edit action.
+ *   • It fetches its own rows from GET /vendors/{id}/product-mappings rather
+ *     than being handed wizard state. That endpoint joins the product's
+ *     HSN/SAC and segment server-side, so the table is complete on arrival —
+ *     the wizard has to backfill both from a separate 500-row /products call.
+ *
+ * Lives in this file (rather than its own) so it shares SCOPED_CSS and
+ * ProductMappingTable with the wizard popup it mirrors — the two must not
+ * drift apart visually.
+ * ────────────────────────────────────────────────────────────────────── */
+export function MappedProductsViewPopup(props: {
+  vendorId: number;
+  code: string;
+  name: string;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [rows, setRows] = useState<ProductMappingRow[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    type ApiRow = {
+      id: number; product_id?: number | null;
+      product_code?: string | null; product_name?: string | null;
+      hsn_sac_code?: string | null; segment?: string | null; batch_serial_lot?: string | null;
+      purchase_price?: number | string | null; gst_percentage?: number | string | null;
+      gst_amount?: number | string | null; total_amount?: number | string | null;
+    };
+    (async () => {
+      try {
+        const res = await api.get<{ data?: ApiRow[] }>(`/vendors/${props.vendorId}/product-mappings`);
+        if (!alive) return;
+        const list = Array.isArray(res.data) ? res.data as ApiRow[] : (res.data?.data ?? []);
+        setRows(list.map(m => ({
+          id: String(m.id),
+          productId: m.product_id ?? null,
+          productCode: m.product_code ?? '',
+          productName: m.product_name ?? '—',
+          hsnSacCode: m.hsn_sac_code ?? '',
+          segment: m.segment ?? '',
+          batchSerialLot: m.batch_serial_lot ?? '',
+          purchasePrice: Number(m.purchase_price ?? 0),
+          gstPercentage: Number(m.gst_percentage ?? 0),
+          gstAmount: Number(m.gst_amount ?? 0),
+          totalAmount: Number(m.total_amount ?? 0),
+        })));
+      } catch {
+        if (!alive) return;
+        setFailed(true);
+        setRows([]);
+        toast.error('Load failed', 'Could not load the mapped products for this supplier.');
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.vendorId]);
+
+  const n = rows?.length ?? 0;
+  return createPortal((
+    <>
+      <style>{SCOPED_CSS}</style>
+      {/* Backdrop click closes — unlike the wizard popups, nothing here is
+          unsaved input that a stray click could destroy. */}
+      <div className="avm-cp-backdrop" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
+        <div className="avm-cp-popup avm-cp-popup-wide">
+          <div className="avm-cp-head">
+            <div className="avm-cp-title">
+              <i className="ri-box-3-line" />
+              <div className="avm-cp-htext">
+                <div className="avm-cp-htitle">Mapped Products — {props.code}</div>
+                <div className="avm-cp-subtitle">{props.name} · Products linked to this supplier with price &amp; GST</div>
+              </div>
+            </div>
+            <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+          <div className="avm-cp-body">
+            {rows === null ? (
+              <ShimmerTable rows={5} cols={9} />
+            ) : (
+              <>
+                <div className="avm-mapped-toolbar">
+                  <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
+                </div>
+                {failed
+                  ? <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
+                  : <ProductMappingTable rows={rows} onRemove={() => {}} readOnly />}
+              </>
+            )}
+          </div>
+          <div className="avm-cp-foot">
+            <button className="avm-btn-ghost" onClick={props.onClose}>Close</button>
+          </div>
+        </div>
+      </div>
+    </>
   ), document.body);
 }
 
@@ -7099,7 +7304,15 @@ export const SCOPED_CSS = `
 .avm-step-ico-num {
   position: absolute; right: -4px; bottom: -4px;
   width: 17px; height: 17px; border-radius: 50%;
-  background: #fff; color: #7c3aed; border: 1.5px solid #ede9fe;
+  /* The ring is WHITE, and the definition comes from a violet hairline plus a
+     drop shadow OUTSIDE it. The ring used to be 1.5px solid #ede9fe — the same
+     lavender as the active card behind it — so it disappeared into the card,
+     the white disc lost its edge, and the digit read as floating loose beside
+     the icon tile rather than pinned to its corner. Same construction as
+     .avm-step-ico-check below, which never had the problem because its white
+     ring sits against a green fill. */
+  background: #fff; color: #6d28d9; border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(167,139,250,.55), 0 1px 3px rgba(76,29,149,.28);
   font-size: 9.5px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
 }
@@ -7995,6 +8208,15 @@ export const SCOPED_CSS = `
   inset: auto;
   z-index: auto;
   min-height: 100%;
+  /* Inherited from .avm-load-overlay, and both are wrong once the skeleton
+     flows INSIDE .avm-body rather than covering it:
+       • padding 22/26 stacked on top of the body's own 12/22, so the skeleton
+         cards sat ~26px narrower on each side than the section cards that
+         replaced them — the form visibly widened as it loaded;
+       • the white fill hid the body's lavender wash, so the whole panel went
+         from white to tinted at the same moment. */
+  padding: 0;
+  background: transparent;
 }
 [data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
 /* The skeleton content now uses the shared <Shimmer> component (same as the
@@ -8225,7 +8447,13 @@ export const SCOPED_CSS = `
 [data-bs-theme="dark"] .avm-step { background: #221852; }
 [data-bs-theme="dark"] .avm-step-title { color: #ede9fe; }
 [data-bs-theme="dark"] .avm-step-sub   { color: #a89fc7; }
-[data-bs-theme="dark"] .avm-step-num   { background: #2a1d5c; color: #a89fc7; }
+/* Was .avm-step-num — a class this file no longer renders, so the badge had no
+   dark rule at all and kept its light white-on-white ring. Dark inverts it:
+   a dark disc on the lighter card, same violet hairline doing the separating. */
+[data-bs-theme="dark"] .avm-step-ico-num {
+  background: #1a1430; color: #c4b5fd; border-color: #1a1430;
+  box-shadow: 0 0 0 1px rgba(167,139,250,.45), 0 1px 3px rgba(0,0,0,.5);
+}
 /* Attractive dark mode — soft purple glow gives the flat form depth (mirrors
    the CLM Segment Master recipe, in purple instead of teal). */
 [data-bs-theme="dark"] .avm-body {

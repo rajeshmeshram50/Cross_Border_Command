@@ -18,7 +18,16 @@ const fmtShiftTime = (hhmm?: string | null): string => {
 };
 
 export default function JobTab() {
-  const { empDetail, empDetailLoading, employee, employeeId, fmtDate, ancillaryList } = useEmployeeProfile();
+  const { empDetail, empDetailLoading, employee, employeeId, fmtDate, ancillaryList, salaryStruct } = useEmployeeProfile();
+
+  /* Salary Effective Date.
+   *
+   * What HR wants here is the date the employee's CURRENT pay took effect, so
+   * the active salary structure's effective_from wins when there is one — a
+   * revision moves it forward, and the employee record's own
+   * salary_effective_from stays pinned to the joining date. That column is the
+   * fallback for anyone not yet on a structure. */
+  const salaryEffectiveFrom = salaryStruct?.effective_from || empDetail?.salary_effective_from;
 
   /* "General (09:30 AM – 06:30 PM)".
    *
@@ -63,7 +72,7 @@ export default function JobTab() {
 
   return (
         <>
-          {/* Employment Details — single row of 7 fields */}
+          {/* Employment Details — single row of 8 fields */}
           <div className="ep-section-card-flat ep-section-card mb-3 ep-ct-indigo">
             <div
               className="d-flex align-items-center gap-3 px-3 py-2 ep-hd-indigo"
@@ -80,6 +89,7 @@ export default function JobTab() {
                   <span className=" fw-semibold jt-emp-badge">{empDetail?.emp_code || employeeId}</span>
                 </Col>
                 <Col><div className="ep-field-label">Joining Date</div><div className="ep-field-value  ep-fs-11">{fmtDate(empDetail?.date_of_joining)}</div></Col>
+                <Col><div className="ep-field-label">Salary Effective Date</div><div className="ep-field-value  ep-fs-11">{fmtDate(salaryEffectiveFrom)}</div></Col>
                 <Col><div className="ep-field-label">Job Title (Primary)</div><div className="ep-field-value">{empDetail?.designation?.name || employee?.designation || '—'}</div></Col>
                 <Col>
                   <div className="ep-field-label">Job Title (Secondary)</div>
