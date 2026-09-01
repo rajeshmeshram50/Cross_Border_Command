@@ -1187,7 +1187,7 @@ export default function SalesLeadWorksheet() {
                         {/* Transferred away from this user → view-only marker (QA #63). */}
                         {l.readOnly && (
                           <Tooltip label="Transferred to another user — view only. You can still track its history & progress.">
-                            <span style={{ fontSize: 9, fontWeight: 700, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '1px 6px', marginLeft: 4, whiteSpace: 'nowrap' }}>View only</span>
+                            <span className="lwp-viewonly" style={{ fontSize: 9, fontWeight: 700, color: '#b45309', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '1px 6px', marginLeft: 4, whiteSpace: 'nowrap' }}>View only</span>
                           </Tooltip>
                         )}
                       </span>
@@ -1972,18 +1972,22 @@ const SCOPED_CSS = `
 .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb:hover { background: #67e8f9; background-clip: content-box; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap { scrollbar-color: rgba(34,211,238,.4) transparent; }
 [data-bs-theme="dark"] .lwp-root .lwp-table-wrap::-webkit-scrollbar-thumb { background: rgba(34,211,238,.4); background-clip: content-box; }
-/* min-width = sum of the <col> widths below (1500px). Without it the
+/* min-width = sum of the <col> widths below (1564px). Without it the
  * fixed layout obeys width:100% and crushes every column proportionally
  * on narrow screens; with it the table holds its legible column widths
  * and .lwp-table-wrap { overflow-x:auto } scrolls horizontally instead. */
-.lwp-root .lwp-table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
+.lwp-root .lwp-table { width: 100%; min-width: 1564px; border-collapse: collapse; font-size: 10.5px; table-layout: fixed; }
 .lwp-root .lwp-table col.c-chk    { width: 42px; }
 .lwp-root .lwp-table col.c-type   { width: 110px; }
 .lwp-root .lwp-table col.c-date   { width: 88px; }
 .lwp-root .lwp-table col.c-source { width: 86px; }
 .lwp-root .lwp-table col.c-assign { width: 130px; }
 .lwp-root .lwp-table col.c-wa     { width: 124px; }
-.lwp-root .lwp-table col.c-opp    { width: 96px; }
+/* Holds the opp code AND, when present, the key-opportunity star and the
+   "View only" badge. At the old 96px the code alone took ~58px, so the badge
+   ran past the cell and the td's overflow:hidden cut it to "View on".
+   The table min-width above is the sum of these widths — keep them in step. */
+.lwp-root .lwp-table col.c-opp    { width: 160px; }
 .lwp-root .lwp-table col.c-cust   { width: 140px; }
 .lwp-root .lwp-table col.c-phone  { width: 118px; }
 .lwp-root .lwp-table col.c-email  { width: 160px; }
@@ -2069,7 +2073,18 @@ const SCOPED_CSS = `
    "Opportunity ID" header. The key star sits right after the id (gap:5px),
    not pushed to the far right, so plain and Key-Opportunity rows line up. */
 .lwp-root .lwp-opp-cell { display: flex; align-items: center; justify-content: flex-start; gap: 5px; width: 100%; }
-.lwp-root .lwp-opp-link { color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap; }
+/* The code yields first. The star and the badge are fixed-size signals — an
+   ellipsised code still reads (OPP-00…), half a badge does not, and "View on"
+   is worse than useless because it looks like a different state.
+   min-width:0 is what actually lets a flex item shrink far enough to
+   ellipsise; without it the code stays full width and pushes the badge out. */
+.lwp-root .lwp-opp-link {
+  color: #0891b2; font-weight: 600; cursor: pointer; white-space: nowrap;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+/* Never shrink, never wrap — the star already had this protection, which is
+   why the badge was always the piece that lost. */
+.lwp-root .lwp-viewonly { flex: 0 0 auto; }
 .lwp-root .lwp-opp-link:hover { text-decoration: underline; color: #0e7490; }
 .lwp-root .lwp-key-star { color: #f59e0b; flex: 0 0 auto; }
 .lwp-root .lwp-cust-name { font-weight: 600; color: #0f172a; }

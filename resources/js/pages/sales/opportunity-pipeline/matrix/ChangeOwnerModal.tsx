@@ -30,13 +30,21 @@ export default function ChangeOwnerModal(props: {
   /** Live owner candidates — falls back to SAMPLE_OWNERS for the mock. */
   owners?: OwnerOption[];
   onClose: () => void;
-  onUpdate?: (newOwner: OwnerOption) => void;
+  /* Returns a promise the modal WAITS on. It used to be `=> void`, so an async
+     parent handler (PUT + reloadLead) was fired and forgotten: the modal closed
+     while the write was still in flight, and the page behind it still held the
+     old owner. Clicking Save & Next in that gap failed the "salesperson
+     required" check on a lead that had just been assigned one. */
+  onUpdate?: (newOwner: OwnerOption) => void | Promise<void>;
 }) {
   const { open, currentOwner = 'Unassigned', owners = SAMPLE_OWNERS, onClose, onUpdate } = props;
   const toast = useToast();
   const [selected, setSelected] = useState<string>('');
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (open) setSelected(''); }, [open]);
+  // Reset BOTH on reopen — `saving` is left true when a successful update
+  // closes the modal, and a stale true would lock the button on next open.
+  useEffect(() => { if (open) { setSelected(''); setSaving(false); } }, [open]);
 
   // Body scroll lock — keep the page behind the modal from scrolling while open.
   useEffect(() => {
@@ -48,16 +56,29 @@ export default function ChangeOwnerModal(props: {
 
   if (!open) return null;
 
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
+    if (saving) return;
     if (!selected) {
       toast.error('Pick a team member', 'Select a new owner before updating');
       return;
     }
     const opt = owners.find(o => o.value === selected);
     if (!opt) return;
-    if (onUpdate) onUpdate(opt);
-    toast.success('Owner updated', `Reassigned to ${opt.label}`);
-    onClose();
+    /* Wait for the parent to finish writing AND re-reading the lead before
+       closing. Closing early is what let the user act on a page that had not
+       caught up yet.
+       No success toast here: the parent raises it, and only once it knows the
+       write actually landed. This one fired the instant the button was clicked
+       — so a failed update showed "Owner updated" and "Update failed" together,
+       and a successful one showed the same success twice. */
+    setSaving(true);
+    try {
+      await onUpdate?.(opt);
+      onClose();
+    } catch {
+      // Parent reported the failure; stay open so the user can retry.
+      setSaving(false);
+    }
   };
 
   const isUnassigned = !currentOwner || currentOwner === 'Unassigned';
@@ -80,14 +101,17 @@ export default function ChangeOwnerModal(props: {
               <div className="com-head-sub">Reassign this opportunity to a new team member</div>
             </div>
           </div>
-          <button className="com-close" onClick={onClose} aria-label="Close">
+          <button className="com-close" onClick={onClose} disabled={saving} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
 
-        <div className="com-body">
+        {/* Frozen while the reassign PUT + lead re-read run — picking a
+            different owner mid-flight would leave the selection disagreeing
+            with what was actually saved. */}
+        <div className="com-body" inert={saving}>
           {/* Current owner card */}
           <div className="com-current">
             <div className={`com-current-avatar ${isUnassigned ? 'com-current-avatar-q' : ''}`}>
@@ -125,14 +149,19 @@ export default function ChangeOwnerModal(props: {
         </div>
 
         <div className="com-foot">
-          <button className="com-btn-ghost" onClick={onClose}>Close</button>
-          <button className="com-btn-primary" onClick={handleUpdate}>
+          {/* Both locked while the update is in flight — closing mid-write
+              leaves the page showing the old owner, which is the whole bug. */}
+          <button className="com-btn-ghost" onClick={onClose} disabled={saving}>Close</button>
+          {/* NOT disabled on an empty selection — the click needs to reach
+              handleUpdate so it can say "Pick a team member". A dead button
+              explains nothing. */}
+          <button className="com-btn-primary" onClick={() => void handleUpdate()} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3">
               <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
               <circle cx="9" cy="7" r="4" />
               <polyline points="17 11 19 13 23 9" />
             </svg>
-            Update Owner
+            {saving ? 'Updating…' : 'Update Owner'}
           </button>
         </div>
       </div>
@@ -196,13 +225,17 @@ const SCOPED_CSS = `
   transition: background .15s, transform .12s;
   position: relative; z-index: 1;
 }
-.com-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.com-close:hover:not(:disabled) { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+.com-close:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
 .com-body {
   padding: 22px;
   background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
   display: flex; flex-direction: column; gap: 6px;
 }
+/* Frozen while the update runs. The inert attribute blocks input silently, so
+   the dimmed wait state is the only thing telling the user why. */
+.com-body[inert] { opacity: .6; cursor: wait; user-select: none; }
 
 /* Current owner card */
 .com-current {
@@ -319,14 +352,16 @@ const SCOPED_CSS = `
   border: 1.5px solid #e2e8f0;
   color: #475569;
 }
-.com-btn-ghost:hover { background: #f1f5f9; border-color: #cbd5e1; }
+.com-btn-ghost:hover:not(:disabled) { background: #f1f5f9; border-color: #cbd5e1; }
+/* Locked while the owner update is in flight. */
+.com-btn-ghost:disabled, .com-btn-primary:disabled { opacity: .55; cursor: not-allowed; }
 .com-btn-primary {
   border: none;
   background: linear-gradient(135deg, #7c3aed, #5b21b6);
   color: #fff;
   box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
 }
-.com-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124, 58, 237, .45); }
+.com-btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124, 58, 237, .45); }
 
 /* Dark mode */
 [data-bs-theme="dark"] .com-modal { background: #14102a; color: #ede9fe; }

@@ -128,6 +128,7 @@ export function MasterSelect({
   onSearchChange,
   loadingMore,
   currentValueLabel,
+  emptyText,
   searchable = true,
   onDisabledClick,
 }: {
@@ -151,6 +152,12 @@ export function MasterSelect({
    * async list hasn't loaded it). Prevents the toggle from falling back to
    * printing the raw value/id. */
   currentValueLabel?: string;
+  /* Replaces the bare "No options" when the list arrives empty. A picker whose
+     contents depend on configuration (a department, a branch, a permission)
+     leaves the user staring at two words that do not say WHICH setting is
+     missing or who can change it. Only shown for a genuinely empty list — a
+     search that matches nothing still says "No results". */
+  emptyText?: string;
   disabled?: boolean;
   invalid?: boolean;
   /* When true, the toggle renders a shimmer block instead of the
@@ -410,7 +417,7 @@ export function MasterSelect({
           >
             {filtered.length === 0 && !loadingMore ? (
               <div className="master-select-empty">
-                {options.length === 0 ? 'No options' : 'No results'}
+                {options.length === 0 ? (emptyText ?? 'No options') : 'No results'}
               </div>
             ) : (
               <>

@@ -1147,9 +1147,32 @@ class SalesLeadController extends Controller
         $user = $request->user();
         if (!$user) abort(401);
 
+        /* READ path — former owners included.
+         *
+         * This is the one read endpoint that was left owner-scoped. The list
+         * and detail both pass includeFormerOwned = true, so after a lead was
+         * reassigned the old owner still saw it (with the View only badge) and
+         * could open it — but the moment they opened Activity Tracker this
+         * query found nothing, firstOrFail threw a 404, and the modal rendered
+         * its empty state: "No activity yet", alongside a "Load failed" toast.
+         *
+         * The history itself was never missing — lead_assignment_histories had
+         * every row. The person who most needs to read it, the one the lead was
+         * taken from, was simply not allowed to ask.
+         *
+         * Read-only by nature: it returns the assignment trail and writes
+         * nothing, so widening it grants no new power. */
         $q = Lead::query()->whereKey($id);
-        $this->applyScope($q, $user);
-        $lead = $q->firstOrFail(['id', 'opp_code']);
+        $this->applyScope($q, $user, null, true);
+        $lead = $q->first(['id', 'opp_code']);
+
+        if (!$lead) {
+            // Plain message instead of a bare 404 page — the modal shows this.
+            return response()->json([
+                'status'  => false,
+                'message' => 'Opportunity not found, or it is outside your access.',
+            ], 404);
+        }
 
         return response()->json([
             'status'   => true,
@@ -1751,9 +1774,34 @@ class SalesLeadController extends Controller
             return response()->json(['status' => false, 'message' => 'No client tenant on user'], 422);
         }
 
+        /* Owner-scoped, deliberately. A former owner may READ this lead but not
+         * write to it.
+         *
+         * findOrFail alone was doing the blocking correctly, but its
+         * ModelNotFoundException reaches the browser as
+         * "No query results for model [App\Models\Lead] 40" — a framework
+         * string that names an internal class and a raw id, tells the user
+         * nothing, and reads like the lead has been deleted. Separating the two
+         * cases lets each say what actually happened. */
         $leadQ = Lead::query();
         $this->applyScope($leadQ, $user);
-        $lead = $leadQ->findOrFail($leadId);
+        $lead = $leadQ->find($leadId);
+
+        if (!$lead) {
+            // Visible on the read path but not the write path = reassigned away.
+            $readQ = Lead::query();
+            $this->applyScope($readQ, $user, null, true);
+            if ($readQ->whereKey($leadId)->exists()) {
+                return response()->json([
+                    'status'  => false,
+                    'message' => 'This opportunity has been reassigned to another user — you can view it, but not change its products.',
+                ], 403);
+            }
+            return response()->json([
+                'status'  => false,
+                'message' => 'Opportunity not found, or it is outside your access.',
+            ], 404);
+        }
 
         $data = $request->validate([
             'product_id'   => 'required|integer|exists:products,id',

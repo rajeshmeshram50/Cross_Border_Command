@@ -1120,8 +1120,27 @@
                                     {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                 </div>
                             @endif
+                            {{-- Grouped under a segment · product heading. The
+                                 controller already resolved which segment (and
+                                 which line items) pulled each clause in; the
+                                 PDF used to drop both and print one flat list,
+                                 so a customer spanning several segments could
+                                 not tell which term applied to which purchase.
+                                 Entries arrive grouped by segment already
+                                 (fetchSegmentTncs walks products in document
+                                 order and dedupes), so a heading is emitted
+                                 whenever the segment changes — inside the
+                                 non-empty guard, or an all-blank segment would
+                                 print a heading with nothing under it. --}}
+                            @php($lastTncSeg = null)
                             @foreach($segTncs as $tnc)
                                 @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                    @if(($tnc['segment'] ?? null) !== $lastTncSeg)
+                                        @php($lastTncSeg = $tnc['segment'] ?? null)
+                                        <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
+                                            {{ $tnc['segment'] }}@if(!empty($tnc['products']))<span style="font-weight: 600; color: #555;"> &middot; {{ implode(', ', $tnc['products']) }}</span>@endif
+                                        </div>
+                                    @endif
                                     <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
                                         {!! $tnc['content'] !!}
                                     </div>
@@ -1330,8 +1349,19 @@
                                             {!! nl2br(e(trim($quotation->terms_and_conditions))) !!}
                                         </div>
                                     @endif
+                                    {{-- Same segment · product grouping as the
+                                         main layout above — this is the
+                                         footer-page copy of the block, and the
+                                         two must not drift apart. --}}
+                                    @php($lastTncSeg2 = null)
                                     @foreach($segTncs as $tnc)
                                         @if(!empty(trim(strip_tags($tnc['content'] ?? ''))))
+                                            @if(($tnc['segment'] ?? null) !== $lastTncSeg2)
+                                                @php($lastTncSeg2 = $tnc['segment'] ?? null)
+                                                <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
+                                                    {{ $tnc['segment'] }}@if(!empty($tnc['products']))<span style="font-weight: 600; color: #555;"> &middot; {{ implode(', ', $tnc['products']) }}</span>@endif
+                                                </div>
+                                            @endif
                                             <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
                                                 {!! $tnc['content'] !!}
                                             </div>

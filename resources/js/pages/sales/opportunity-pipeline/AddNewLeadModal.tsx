@@ -401,7 +401,15 @@ export default function AddNewLeadModal(props: {
         </div>
 
         {/* Body */}
-        <div className="anl-body">
+        {/* Frozen while the POST is in flight. Disabling only the footer
+            buttons left every input, dropdown and checkbox live: the user could
+            keep typing into a form that had already been submitted, so the lead
+            that landed on the server no longer matched what the screen showed —
+            and those edits were silently thrown away when the modal closed.
+            `inert` blocks clicks, typing AND tab-focus for the whole subtree in
+            one attribute, so a control added here later is covered without
+            anyone remembering to disable it. */}
+        <div className="anl-body" inert={saving}>
           {/* Existing customer toggle */}
           <label className="anl-existing-toggle">
             <input
@@ -783,6 +791,11 @@ const SCOPED_CSS = `
   background: linear-gradient(180deg, #f0fdff 0%, #ffffff 100%);
   overflow-y: auto;
 }
+/* A frozen form must LOOK frozen. The inert attribute alone blocks input
+   silently, so a user who keeps typing gets no explanation for why nothing
+   appears — the dimmed, wait-cursor state is what tells them a save is
+   running. (No backticks in here: this block is a template literal.) */
+.anl-body[inert] { opacity: .6; cursor: wait; user-select: none; }
 
 /* Existing-customer toggle — green border to flag this as the "shortcut"
    row that pulls saved customer records, distinct from the cyan form

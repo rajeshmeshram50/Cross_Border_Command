@@ -136,6 +136,13 @@ type Props = {
   open:    boolean;
   leadId:  number | null;
   onClose: () => void;
+  /* The lead was reassigned away from this user. The directory still OPENS —
+   * viewing the mapped products is what a former owner is still entitled to do
+   * — but Map / Edit / Unmap are refused server-side, so they are hidden here
+   * rather than left to fail. Leaving them enabled is what produced the raw
+   * "No query results for model [App\Models\Lead] 40" toast after the user had
+   * already filled in the whole form. */
+  readOnly?: boolean;
   onAddProduct?: () => void;   // header "+ Add Product Master" — opens AddProductModal
   /* Fired after a product mapping changes here (map / edit / remove) so the
    * parent can refresh the inline Stage 3 view + its count badges without a
@@ -170,7 +177,7 @@ const isIndia = (c?: string | null): boolean => {
  * customer has already been sent. Worth saying out loud before they commit. */
 const SHARED_PRICE_WARNING_STAGE = 4;
 
-export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments, customerCountry }: Props) {
+export default function ProductDirectoryModal({ open, leadId, onClose, onAddProduct, onChanged, leadStage, customerSegments, customerCountry, readOnly = false }: Props) {
   const toast = useToast();
   const confirm = useConfirm();
   const sharedPriceWarning = (leadStage ?? 1) >= SHARED_PRICE_WARNING_STAGE
@@ -550,6 +557,10 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
             </div>
           </div>
           <div className="pdm-head-actions">
+            {/* Hidden, not disabled: on a read-only lead there is no state in
+                which this becomes available, so a greyed button would only
+                invite clicking. QA's ask was that it not be accessible. */}
+            {!readOnly && (
             <button
               className="pdm-map-btn"
               onClick={() => { setEditingId(null); setErrors({}); setDraft(freshDraft()); setDraftOpen(o => !o); }}
@@ -560,6 +571,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
               </svg>
               Map Product
             </button>
+            )}
             {/* "+ Add Product" ghost button intentionally hidden — the
                 prototype design (image 1) keeps the header to a single
                 action (Map Product) plus the close pill. The toolbar's
@@ -677,6 +689,11 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                             center in a tall row; the flex lives here, not on the
                             cell, otherwise the row's vertical-align is ignored. */}
                         <div className="pdm-act-inner">
+                        {/* Edit + Unmap are writes, so a read-only lead shows
+                            neither — the row stays visible, which is the point:
+                            a former owner may see what is mapped, not change it.
+                            An em dash keeps the column from collapsing. */}
+                        {readOnly ? <span className="pdm-act-none" aria-label="View only">—</span> : (<>
                         {/* Themed Tooltip pills — same treatment as the Lead
                             Acknowledgement master's action column (QA ask),
                             replacing the browser-native title bubbles. */}
@@ -726,6 +743,7 @@ export default function ProductDirectoryModal({ open, leadId, onClose, onAddProd
                         </Tooltip>
                           );
                         })()}
+                        </>)}
                         </div>
                       </td>
                     </tr>
@@ -1288,6 +1306,9 @@ const SCOPED_CSS = `
 }
 .pdm-act-cell { text-align: center; vertical-align: middle; white-space: nowrap; }
 .pdm-act-inner { display: inline-flex; gap: 6px; justify-content: center; align-items: center; }
+/* Stands in for Edit/Unmap on a read-only lead so the column keeps its width
+   and the row does not look like the icons failed to load. */
+.pdm-act-none { color: #94a3b8; font-weight: 700; }
 /* Center STATUS + ACTIONS (header and cells). !important overrides the base
    left-aligned th rule. */
 .pdm-ta-c { text-align: center !important; }

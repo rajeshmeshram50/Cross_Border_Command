@@ -145,6 +145,23 @@ export default function AssignLeadsModal({
     return sp ? fmtSp(sp) : (initialSalespersonName ?? undefined);
   }, [salespeople, initialSalespersonId, initialSalespersonName]);
 
+  /* Why the picker is empty — the two causes need different answers.
+   *
+   * `spOptions` deliberately drops the lead's CURRENT owner, so a branch with
+   * exactly one Sales-department member produces an empty list on a lead that
+   * member already owns. The old message read "No Sales-department employees
+   * found — add a person to the Sales department", printed directly under a
+   * field showing that very person's name. It sent the user to fix a
+   * department that was not broken, while the real answer — there is nobody
+   * ELSE to hand this lead to — went unsaid.
+   * Empty string = the list is fine, say nothing. */
+  const emptyReason = useMemo(() => {
+    if (loadingSp || spOptions.length > 0) return '';
+    return salespeople.length > 0
+      ? `This lead is already assigned to the only Sales-department member in this branch${currentOwnerLabel ? ` (${currentOwnerLabel})` : ''}. Add another person to the Sales department to reassign it.`
+      : 'No Sales-department employees in this branch. Add a person to the Sales department (HR → Employees), or switch branch.';
+  }, [loadingSp, spOptions.length, salespeople.length, currentOwnerLabel]);
+
   const validate = (): boolean => {
     const next: Record<string, string> = {};
     if (!spId) next.spId = 'Select a salesperson';
@@ -288,7 +305,12 @@ export default function AssignLeadsModal({
           </div>
         )}
 
-        <div className="alm-body">
+        {/* Frozen mid-assign — same reasoning as the footer buttons, which were
+            already locked. Leaving the account / date / salesperson controls
+            live meant the user could change the very filters the in-flight
+            request was resolving leads from, so what got assigned no longer
+            matched what the form showed. */}
+        <div className="alm-body" inert={submitting}>
           {mode === 'filters' && accountAvailable && (
             <div className="alm-field">
               <label className="alm-label alm-label-icon">
@@ -304,6 +326,9 @@ export default function AssignLeadsModal({
                 options={accountOptions}
                 placeholder="Select account"
                 invalid={!!errors.account}
+                /* See the salesperson field below — the open panel is
+                   portalled outside the inert body, so it needs its own lock. */
+                disabled={submitting}
               />
               {errors.account && <div className="alm-err">{errors.account}</div>}
             </div>
@@ -325,6 +350,7 @@ export default function AssignLeadsModal({
                   onChange={setStartDate}
                   placeholder="Select start date"
                   invalid={!!errors.startDate}
+                  disabled={submitting}
                 />
                 {errors.startDate && <div className="alm-err">{errors.startDate}</div>}
               </div>
@@ -343,6 +369,7 @@ export default function AssignLeadsModal({
                   onChange={setEndDate}
                   placeholder="Select end date"
                   invalid={!!errors.endDate}
+                  disabled={submitting}
                 />
                 {errors.endDate && <div className="alm-err">{errors.endDate}</div>}
               </div>
@@ -363,18 +390,27 @@ export default function AssignLeadsModal({
               options={spOptions}
               currentValueLabel={currentOwnerLabel}
               placeholder={loadingSp ? 'Loading…' : 'Search by name or EMP code…'}
-              disabled={loadingSp}
+              /* `submitting` matters here beyond the inert body around it: the
+                 dropdown PANEL is portalled to <body>, so it lives outside that
+                 subtree and stays clickable. A panel left open when Assign was
+                 pressed could still be used to pick a different salesperson
+                 while the request was in flight — the one the server had
+                 already been told to use. MasterSelect renders its panel with
+                 `open && !disabled`, so this closes it outright. */
+              disabled={loadingSp || submitting}
               invalid={!!errors.spId}
+              /* The hint below this field says the same thing, but the OPEN
+                 dropdown panel sits on top of it — so the one moment the user
+                 needs the explanation is the one moment they cannot see it.
+                 They get a bare "No options" and no idea it is a department
+                 setting rather than a broken screen. */
+              emptyText={emptyReason}
             />
             {errors.spId && <div className="alm-err">{errors.spId}</div>}
-            {/* No Sales-department people exist → the dropdown has nothing to
-                show. Explain why + how to fix instead of a bare "No options". */}
-            {!loadingSp && spOptions.length === 0 && (
-              <div className="alm-empty-hint">
-                No Sales-department employees found. Add a person to the <strong>Sales</strong> department
-                (HR → Employees) before assigning leads.
-              </div>
-            )}
+            {/* Same sentence the dropdown shows, repeated here for when the
+                panel is closed. One source (emptyReason) so the two can never
+                disagree about why the list is empty. */}
+            {emptyReason && <div className="alm-empty-hint">{emptyReason}</div>}
           </div>
 
           {mode === 'selection' && (
@@ -492,6 +528,9 @@ const ALM_CSS = `
 [data-bs-theme="dark"] .alm-ctx-sep  { color: rgba(103,232,249,.45); }
 
 .alm-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+/* Frozen mid-assign. The inert attribute blocks input silently, so the dimmed
+   wait state is the only thing telling the user why. */
+.alm-body[inert] { opacity: .6; cursor: wait; user-select: none; }
 .alm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .alm-field { display: flex; flex-direction: column; gap: 4px; position: relative; }
 /* Match the figma field curve (10px) on the account / date / salesperson

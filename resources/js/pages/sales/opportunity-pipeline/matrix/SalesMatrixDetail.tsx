@@ -384,6 +384,12 @@ export default function SalesMatrixDetail() {
   const [serverHeader, setServerHeader] = useState<{
     qualified?:           boolean;
     disqualified?:        boolean;
+    /* The lead was reassigned AWAY from this user. They keep read access so
+     * they can follow its history, but every write is refused server-side.
+     * The API has always sent this; the page simply never read it, so the
+     * write actions stayed enabled and the refusal surfaced as a raw
+     * "No query results for model [App\Models\Lead] 40" toast. */
+    readOnly?:            boolean;
     keyOpportunity?:      boolean;
     taskManager?:         StageTaskManager | null;
     acknowledgements?:    StageAcknowledgement[];
@@ -470,6 +476,8 @@ export default function SalesMatrixDetail() {
       whatsapp_screenshot_url: string | null;
       task_manager: StageTaskManager | null;
       acknowledgements: StageAcknowledgement[];
+      read_only: boolean;
+
       pi_signed_at: string | null;
       opportunity_date_iso: string | null;
       /* Currency shared by the lead's mapped products; null until the first
@@ -505,6 +513,8 @@ export default function SalesMatrixDetail() {
           // Prefer the server-resolved URL (points at the real file host);
           // fall back to the raw path for older API responses.
           whatsappScreenshot:  d.whatsapp_screenshot_url ?? d.whatsapp_screenshot,
+          readOnly:            !!d.read_only,
+
           piSignedAt:          d.pi_signed_at,
           oppDateIso:          d.opportunity_date_iso,
           leadSenderName:      d.sender_name,
@@ -825,6 +835,25 @@ export default function SalesMatrixDetail() {
   const onLockedClick = useCallback(() => {
     toast.warning('PI is signed', 'You cannot edit anything — this opportunity is read-only.');
   }, [toast]);
+
+  /* Reassigned away from this user — they may look, not touch.
+   * A DIFFERENT lock from the signed-PI one above: that one applies to
+   * everybody once the PI is signed, this one applies only to a former owner.
+   * Both end at the same place (writes refused), so the toolbar treats them as
+   * one flag and only the explanation differs. */
+  const isReadOnlyLead = !!serverHeader.readOnly;
+  const onReadOnlyClick = useCallback(() => {
+    toast.warning(
+      'View only',
+      'This opportunity has been reassigned to another user. You can still follow its history and progress, but not change it.',
+    );
+  }, [toast]);
+
+  /* One flag for every write action on this page. Read-only is checked FIRST
+   * so a former owner looking at a signed PI is told the reason that actually
+   * applies to them. */
+  const writeLocked   = isSigned || isReadOnlyLead;
+  const onWriteLocked = isReadOnlyLead ? onReadOnlyClick : onLockedClick;
 
   const header: OppHeaderData = {
     ...seedHeader,
@@ -1166,17 +1195,27 @@ export default function SalesMatrixDetail() {
           className={!serverHeader.customerId ? 'smd-act-disabled' : ''}          onClick={onConsigneeClick} />
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconPlusSq />}   label="Add Product"
-          locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductAddOpen(true)} />
+          locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setProductAddOpen(true)} />
+        {/* NOT locked for a read-only lead — the Product Directory is how a
+            former owner VIEWS the mapped products, which is exactly what they
+            are still allowed to do. The write actions inside it (Map Product,
+            row edit/delete) are gated by the readOnly prop instead. It stays
+            locked for a signed PI, where nobody edits anything. */}
         <ActionBtn icon={<IconBook />}     label="Product Directory"
           locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductDirectoryOpen(true)} />
         <ActionBtn icon={<IconSourcing />} label="Product Sourcing"
-          locked={isSigned} onLocked={onLockedClick}          onClick={() => setProductSourcingOpen(true)} />
+          locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setProductSourcingOpen(true)} />
         <ActionBtn icon={<IconDollar />}   label="Share Prices"
-          locked={isSigned} onLocked={onLockedClick}          onClick={() => setPriceSharedOpen(true)} />
+          locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setPriceSharedOpen(true)} />
         <ActionBtn icon={<IconUserCog />}  label="Change Owner"
-          locked={isSigned} onLocked={onLockedClick}          onClick={() => setChangeOwnerOpen(true)} />
-        <ActionBtn icon={<IconMsg />}      label="Remark"          onClick={() => setRemarksOpen(true)} />
+          locked={writeLocked} onLocked={onWriteLocked}          onClick={() => setChangeOwnerOpen(true)} />
+        {/* Remark and Key Opportunity had no lock at all. They write to the
+            lead just like the rest, so on a read-only lead they produced the
+            same refused request — only with no explanation attached. */}
+        <ActionBtn icon={<IconMsg />}      label="Remark"
+          locked={isReadOnlyLead} onLocked={onReadOnlyClick}          onClick={() => setRemarksOpen(true)} />
         <ActionBtn icon={<IconStar />}     label="Key Opportunity"
+          locked={isReadOnlyLead} onLocked={onReadOnlyClick}
           className={isKeyOpportunity ? 'smd-act-key' : ''}          onClick={() => setKeyOppOpen(true)} />
         <span className="smd-act-sep" aria-hidden="true" />
         <ActionBtn icon={<IconBell />}     label="Reminder"          onClick={() => setRemindersOpen(true)} />
@@ -1674,6 +1713,9 @@ export default function SalesMatrixDetail() {
         leadStage={furthestStage}
         customerSegments={customerSegments}
         customerCountry={customerCountry}
+        /* Opens for viewing, but Map / Edit / Unmap are gone — every one of
+           them is refused by the server for a former owner. */
+        readOnly={isReadOnlyLead}
         onClose={() => setProductDirectoryOpen(false)}
         onChanged={() => setProductsTick(t => t + 1)}
         onAddProduct={() => {
@@ -1726,10 +1768,18 @@ export default function SalesMatrixDetail() {
           if (!resolvedLeadId) return;
           try {
             await api.put(`/sales/leads/${resolvedLeadId}`, { salesperson_id: Number(opt.value) });
-            toast.success('Owner updated', `Reassigned to ${opt.label}`);
+            /* Re-read BEFORE the toast. The success message is the user's cue
+               that they can move on, so serverHeader.salespersonName has to be
+               populated by the time they see it — otherwise Save & Next reads
+               the pre-assignment header and refuses a lead that now has an
+               owner. The modal awaits this whole handler before closing. */
             await reloadLead();
-          } catch {
+            toast.success('Owner updated', `Reassigned to ${opt.label}`);
+          } catch (e) {
             toast.error('Update failed', 'Could not reassign the lead');
+            // Re-thrown so the modal stays open for a retry instead of
+            // closing on a write that never landed.
+            throw e;
           }
         }}
       />

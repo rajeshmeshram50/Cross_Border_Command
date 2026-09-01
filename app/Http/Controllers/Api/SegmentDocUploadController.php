@@ -216,6 +216,20 @@ class SegmentDocUploadController extends Controller
                 $path = urldecode($m[1]);
             }
         }
+
+        /* Drop any query string that rode along on the URL.
+         *
+         * `.+$` swallows it, so `…/kyc-001.png?sv=2021&sig=…` became part of
+         * the path, matched no stored row, and 404'd. The frontend then fell
+         * through to its last-resort `window.open`, which OPENS the file — the
+         * "Download opens the document instead of saving it" report.
+         *
+         * Only the server can produce this: locally the URL is a bare
+         * `/storage/…`, while on Azure it is an absolute blob URL that may
+         * carry a SAS token or a cache-buster. Stripping here costs nothing and
+         * removes a failure that cannot be reproduced on a dev box. */
+        $path = explode('?', $path)[0];
+
         // Hard guard against traversal / arbitrary reads — only our upload tree.
         if ($path === '' || str_contains($path, '..') || ! str_starts_with($path, 'segment_doc_uploads/')) {
             abort(404, 'File not found.');
