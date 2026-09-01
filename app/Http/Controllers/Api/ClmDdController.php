@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmAuthority;
 use App\Models\ClmDdDocument;
+use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -91,7 +92,7 @@ class ClmDdController extends Controller
         $lookup = ClmDdDocument::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'edit', 'clm.due_diligence')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
@@ -134,7 +135,7 @@ class ClmDdController extends Controller
         $lookup = ClmDdDocument::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'delete', 'clm.due_diligence')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 

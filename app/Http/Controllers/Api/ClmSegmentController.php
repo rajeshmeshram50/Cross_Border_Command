@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmSegment;
 use App\Support\MasterBundleCache;
+use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -189,7 +190,7 @@ class ClmSegmentController extends Controller
         $lookup = ClmSegment::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'edit', 'clm.segment')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
@@ -319,7 +320,7 @@ class ClmSegmentController extends Controller
         $lookup = ClmSegment::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'delete', 'clm.segment')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 

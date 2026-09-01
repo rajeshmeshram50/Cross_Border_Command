@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ClmAuthority;
 use App\Models\ClmKycDocument;
+use App\Support\ClmMasterAccess;
 use App\Support\MasterVisibility;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -93,7 +94,7 @@ class ClmKycController extends Controller
         $lookup = ClmKycDocument::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'edit')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'edit', 'clm.kyc')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
@@ -136,7 +137,7 @@ class ClmKycController extends Controller
         $lookup = ClmKycDocument::query()->whereKey($id);
         MasterVisibility::applyReadScope($lookup, $user, $user->branch_id ?: null);
         $row = $lookup->firstOrFail();
-        if ($msg = MasterVisibility::hierarchicalDenial($user, $row, 'delete')) {
+        if ($msg = ClmMasterAccess::denial($user, $row, 'delete', 'clm.kyc')) {
             return response()->json(['status' => false, 'message' => $msg], 403);
         }
 
