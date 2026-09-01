@@ -2027,11 +2027,25 @@ export default function AddProductModal(props: {
                       editDisabled={saving || !productId}
                       editTitle={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
                     >
-                      {/* Only show the stored gst_id when it still resolves to a
-                          live GST option. If that GST rate was deleted from the
-                          master, the id is orphaned — show the placeholder (blank)
-                          instead of the raw numeric id (QA #44). */}
-                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGstSorted} disabled />
+                      {/* Read-only input, NOT a disabled <select>: the rate is only ever
+                          set through the Map-GST popup, so the chevron was advertising a
+                          dropdown that could never open (QA #60). Matches the read-only
+                          GST % field in the Map Supplier popup and the auto-computed GST
+                          Amount / Total Selling Price directly below it.
+
+                          The label is read off the live options list, so a gst_id whose
+                          rate was deleted from the master resolves to nothing and falls
+                          back to the placeholder instead of showing the raw numeric id
+                          (QA #44). Reading the option label rather than gstPctStr also
+                          keeps a mapped 0% rate visible: gstPctStr is blank at 0, which
+                          would render a valid 0% rate as unmapped (QA #52). */}
+                      <input
+                        className="apm-input apm-readonly"
+                        value={optGst.find(o => o.value === gstId)?.label ?? ''}
+                        readOnly
+                        placeholder='Map from the "GST (%)" button above'
+                        title='GST % is mapped through the "GST (%)" button above'
+                      />
                     </Field>
                   </div>
                   <div className="apm-grid-2">

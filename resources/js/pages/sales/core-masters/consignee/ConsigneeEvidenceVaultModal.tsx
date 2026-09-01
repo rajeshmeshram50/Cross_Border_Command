@@ -956,6 +956,10 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   const numberHeader = tab === 'company-dd' ? 'License / Number' : tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-licenses' ? 'License Number' : 'Reference No';
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
+  /* Which attachment chip is mid-download. The chip saves the file rather than
+     opening it, and a save gives no visible response of its own — without a
+     spinner a large file reads as a dead click and gets clicked again. */
+  const [chipBusy, setChipBusy] = useState<string | null>(null);
   return (
     <div className="cnev-table-wrap">
       <div className="cnev-table-scroll">
@@ -996,16 +1000,44 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               <td>
                 {d.attachment ? (
                   d.attachment_url ? (
-                    <Tooltip label={`Open ${d.attachment}`}>
-                      <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cnev-attach" style={{ textDecoration: 'none' }}>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        {/* Uploaded file names can be very long (browser
-                            screen-capture names, exported ticket names…). The
-                            chip caps its width and ellipsises the text so the
-                            row stays one line; hover shows the full name. */}
-                        <span className="cnev-trunc">{d.attachment}</span>
-                      </a>
-                    </Tooltip>
+                    /* Saves the file instead of opening it in the browser's
+                       viewer — same change as the customer vault's chip, kept
+                       in step so the Attachment column behaves identically in
+                       both. The icon and tooltip now say "download" too: the
+                       old file icon + "Open" described a link that a user in
+                       an Attachment column reads as "get me this file".
+                       The eye action in this row still opens the document. */
+                    (() => {
+                      const key = String(d.db_id ?? d.doc_code ?? d.name ?? '');
+                      const busy = chipBusy === key;
+                      return (
+                        <Tooltip label={busy ? 'Downloading…' : `Download ${d.attachment}`}>
+                          <a
+                            href={d.attachment_url}
+                            rel="noreferrer"
+                            className="cnev-attach"
+                            style={{ textDecoration: 'none' }}
+                            aria-busy={busy}
+                            onClick={async (e) => {
+                              e.preventDefault();
+                              if (busy) return;
+                              setChipBusy(key);
+                              try { await downloadFile(d.attachment_url, d.attachment); }
+                              finally { setChipBusy(null); }
+                            }}
+                          >
+                            {busy
+                              ? <i className="ri-loader-4-line cnev-spin" style={{ fontSize: 11 }} aria-hidden />
+                              : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
+                            {/* Uploaded file names can be very long (browser
+                                screen-capture names, exported ticket names…). The
+                                chip caps its width and ellipsises the text so the
+                                row stays one line; hover shows the full name. */}
+                            <span className="cnev-trunc">{d.attachment}</span>
+                          </a>
+                        </Tooltip>
+                      );
+                    })()
                   ) : (
                   <Tooltip label={d.attachment}>
                     <span className="cnev-attach">

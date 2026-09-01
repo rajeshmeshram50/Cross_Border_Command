@@ -381,6 +381,15 @@ const TRACKER_CSS = `
 
 `;
 
+/* Raw Zoho action_status values meaning the mail never arrived. Mirrors
+   ClmSignatureController::UNDELIVERED_ACTION_STATUSES — kept here only as a
+   fallback for payloads served before the backend sent `delivery_failed`, so
+   an old cached response still renders the truth rather than "Viewed". */
+const UNDELIVERED_STATUSES = [
+  'UNDELIVERED', 'NOTDELIVERED', 'NOT_DELIVERED', 'DELIVERYFAILED', 'DELIVERY_FAILED',
+  'BOUNCED', 'MAILBOUNCED', 'MAIL_BOUNCED', 'EMAILBOUNCED', 'EMAIL_BOUNCED',
+];
+
 export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; code: string; onClose: () => void }) {
   const [data, setData]       = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -486,6 +495,23 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     .sort();
   const anyViewed  = viewedDates.length > 0;
   const firstViewed = anyViewed ? viewedDates[0] : null;
+
+  /* DELIVERY FAILURE — the e-sign mail bounced and no signer ever received it.
+   * Reported by the backend from Zoho's per-recipient action_status; the
+   * request-level roll-up is preferred, with a per-signer scan as the fallback
+   * for a payload served before that field existed.
+   * Deliberately distinct from "declined": a decline means the signer read the
+   * document and refused it. Conflating the two is the bug this replaces —
+   * it sent people to argue about a decision nobody had made. */
+  const undeliveredSigners = signers.filter((s: any) => !!s?.delivery_failed);
+  const deliveryFailed: boolean = data?.delivery_failed === true || undeliveredSigners.length > 0;
+  const undeliveredTo: string[] = Array.isArray(data?.undelivered_recipients) && data.undelivered_recipients.length > 0
+    ? data.undelivered_recipients
+    : undeliveredSigners.map((s: any) => String(s?.name || s?.email || 'signer'));
+  const firstDeliveryFail: string | null = undeliveredSigners
+    .map((s: any) => s?.delivery_failed_at)
+    .filter((v: any): v is string => !!v)
+    .sort()[0] ?? null;
   /* Label covering ALL recipients (not just the first) so a multi-signer
    * document reads e.g. "Oceanic Spices Co, OceanicSpicesCo" on the timeline,
    * matching the Signer Details table. Collapses to "Name +N" past 2 to keep
@@ -520,7 +546,11 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     const out: TStep[] = [
       { key: `att-${a.id}-sent`, icon: 'send', label: first ? 'Sent for signature' : 'Resent for signature', short: first ? 'Sent' : 'Resent', desc: first ? 'Document sent via secure e-sign link' : 'Document re-sent after the previous round', person: null, date: fmt(a.created_at), state: 'done', tone: 'ok', badge: 'Done' },
     ];
-    if (a.viewed_at) {
+    /* `!a.delivery_failed` covers rows stamped before the backend stopped
+       treating a bounce as an opening — those still carry a stale viewed_at,
+       and without this guard an undelivered round would claim it was reviewed
+       one line above the line saying it never arrived. */
+    if (a.viewed_at && !a.delivery_failed) {
       out.push({ key: `att-${a.id}-view`, icon: 'eye', label: 'Reviewed by signer(s)', short: 'Reviewed', desc: 'Opened & reviewed by the signer(s)', person: null, date: fmt(a.viewed_at), state: 'done', tone: 'ok', badge: 'Done' });
     }
     /* Each terminal state is matched EXPLICITLY. This used to be an else that
@@ -531,32 +561,46 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
        "Declined" is a statement about the customer: they read it and refused.
        Saying that about a mail that never arrived sends the salesperson to
        argue a decision nobody made, when the real job is to fix an address. */
-    if (st === 'recalled') {
+    /* Delivery failure outranks every other terminal state on a prior round.
+       The backend now reports it from Zoho's own per-recipient action_status
+       (persisted on the attempt), so this is a fact, not the "no viewed_at"
+       guess it replaces — that guess broke the moment anything else left
+       viewed_at empty, which is most of the time. */
+    if (a.delivery_failed) {
+      out.push({
+        key: `att-${a.id}-final`, icon: 'x',
+        label: 'Delivery Failed / Bounced', short: 'Bounced',
+        desc: 'The e-sign email could not be delivered to the signer. Correct the email address, then re-send.',
+        person: null, date: fmt(a.created_at), state: 'done', tone: 'bad',
+        badge: 'Delivery Failed',
+        // No declined copy exists for a mail that never arrived — offering a
+        // download here only produces a failed request.
+      });
+    } else if (st === 'recalled') {
       out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Recalled', short: 'Recalled', desc: a.recall_reason || 'The request was recalled', person: null, date: fmt(a.recalled_at || a.created_at), state: 'done', tone: 'warn', badge: 'Recalled', download: true, dlId: a.id });
     } else if (st === 'completed') {
       out.push({ key: `att-${a.id}-final`, icon: 'check', label: 'Signed & completed', short: 'Signed', desc: 'A previous round was completed', person: null, date: fmt(a.completed_at || a.created_at), state: 'done', tone: 'ok', badge: 'Done' });
     } else if (st === 'declined' || st === 'rejected' || a.declined_at) {
       out.push({ key: `att-${a.id}-final`, icon: 'x', label: 'Declined', short: 'Declined', desc: a.decline_reason || 'A signer declined the document', person: null, date: fmt(a.declined_at || a.created_at), state: 'done', tone: 'bad', badge: 'Declined', download: true, dlId: a.id });
     } else {
-      /* Ended without a decision. `viewed_at` separates the two cases we can
-         actually tell apart: opened and left alone, versus never opened at all
-         — the second is what an undelivered mail looks like from here.
-         No download: there is no declined copy, and offering one only produces
-         a failed request. */
-      const neverOpened = !a.viewed_at;
+      /* Ended without a decision and without a bounce — superseded by the
+         re-send that follows it.
+         This branch used to also guess "Not delivered" from a missing
+         viewed_at. That guess is gone: delivery failure is now reported by the
+         backend from Zoho's own action_status and handled above, so anything
+         reaching here genuinely is just an unfinished round.
+         No download — there is no declined copy to fetch. */
       out.push({
         key: `att-${a.id}-final`,
         icon: 'x',
-        label: neverOpened ? 'Not delivered' : 'Closed without signature',
-        short: neverOpened ? 'Not delivered' : 'Closed',
-        desc: neverOpened
-          ? 'The signer never opened this request — the e-sign mail may not have reached them. Check the address before re-sending.'
-          : 'This round ended without a signature and was replaced by a new request.',
+        label: 'Closed without signature',
+        short: 'Closed',
+        desc: 'This round ended without a signature and was replaced by a new request.',
         person: null,
         date: fmt(a.created_at),
         state: 'done',
-        tone: 'bad',
-        badge: neverOpened ? 'Not delivered' : 'Closed',
+        tone: 'warn',
+        badge: 'Closed',
       });
     }
     return out;
@@ -565,7 +609,22 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
 
   const currentSteps: TStep[] = [
     { key: 'sent', icon: 'send', label: isResend ? 'Resent for signature' : 'Sent for signature', short: isResend ? 'Resent' : 'Sent', desc: isResend ? 'Document re-sent after the previous round' : 'Document sent via secure e-sign link', person: null, date: fmt(data?.created_at), state: 'done', tone: 'ok', badge: 'Done' },
-    {
+    /* A bounce REPLACES the progress node rather than sitting beside it.
+       "Awaiting signature — in progress, with the signer(s)" is a claim about
+       where the document is, and on an undelivered mail that claim is false in
+       the most costly direction: the salesperson waits, then chases a customer
+       who was never contacted. The document is not with anyone. */
+    deliveryFailed ? {
+      key: 'progress', icon: 'x',
+      label: 'Delivery Failed / Bounced', short: 'Bounced',
+      desc: undeliveredTo.length > 0
+        ? `The e-sign email could not be delivered to ${undeliveredTo.join(', ')}. Correct the address, then re-send.`
+        : 'The e-sign email could not be delivered to the signer. Correct the address, then re-send.',
+      person: signerName, persons: signerNamesArr,
+      date: fmt(firstDeliveryFail ?? data?.updated_at ?? data?.created_at),
+      state: 'done', tone: 'bad',
+      badge: 'Delivery Failed',
+    } : {
       key: 'progress', icon: 'eye',
       // Three states: reviewed (signed/declined/recalled) → "Reviewed",
       // opened-but-unsigned → "Viewed document" with the real view time,
@@ -681,10 +740,17 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     </div>
   );
 
+  /* The underlying request status stays `inprogress` on a bounce — Zoho has an
+     open request, and changing the stored status would unlock Edit and re-arm
+     Send elsewhere in the app. Only the WORDING is corrected here: "In Progress"
+     on a mail that never arrived is the same false reassurance as the timeline's
+     "Awaiting signature". Ranked below signed/declined/recalled, which are
+     genuine outcomes that supersede a delivery problem. */
   const statusPill =
     isDone ? { cls: 'ok', txt: 'Completed' }
     : isDeclined ? { cls: 'bad', txt: 'Declined' }
     : isRecalled ? { cls: 'warn', txt: 'Recalled' }
+    : deliveryFailed ? { cls: 'bad', txt: 'Delivery Failed' }
     : status === 'inprogress' ? { cls: 'info', txt: 'In Progress' }
     : { cls: 'info', txt: status ? status.charAt(0).toUpperCase() + status.slice(1) : 'Sent' };
 
@@ -701,6 +767,12 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
     const a = String(sg?.action_status ?? '').toUpperCase();
     const s = String(sg?.status ?? '').toLowerCase();
     if (a === 'SIGNED'   || s === 'signed'   || sg?.signed_at) return { cls: 'ok',   txt: 'Signed' };
+    /* Checked BEFORE `opened`. UNDELIVERED is not in the not-opened list below,
+       so a bounced recipient used to fall through and show "Viewed" — the
+       single most misleading pill this table could print. */
+    if (sg?.delivery_failed || s === 'undelivered' || UNDELIVERED_STATUSES.includes(a)) {
+      return { cls: 'bad', txt: 'Delivery Failed' };
+    }
     if (a === 'DECLINED' || s === 'declined')                  return { cls: 'bad',  txt: 'Declined' };
     const opened = (a !== '' && !['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'].includes(a)) || s === 'viewed' || !!sg?.viewed_at;
     if (opened)          return { cls: 'info', txt: 'Viewed' };
@@ -712,7 +784,9 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
    * Reminder, Signed/Declined/Recalled), not just reminders. The table area
    * shows ~5 rows and scrolls for the rest. Per-event timestamps that the
    * backend doesn't persist (earlier reminders, view time) show "—". */
-  type Activity = { label: string; date: string; type: 'sent' | 'view' | 'reminder' | 'signed' | 'declined'; status: 'ok' | 'bad' | 'warn' };
+  /* `pill` overrides the status-derived wording in the table's last column.
+     Without it a 'bad' row can only ever say "Declined". */
+  type Activity = { label: string; date: string; type: 'sent' | 'view' | 'reminder' | 'signed' | 'declined'; status: 'ok' | 'bad' | 'warn'; pill?: string };
   const activity: Activity[] = [];
   activity.push({ label: 'Document sent', date: fmt(data?.created_at), type: 'sent', status: 'ok' });
   // Per-signer label, e.g. "Radhika (buyer)" — lets a multi-signer document
@@ -720,10 +794,19 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
   const sigLabel = (sg: any) => `${sg?.name || sg?.email || 'signer'}${sg?.role ? ` (${sg.role})` : ''}`;
   // Per-signer "Viewed by …" events — each recipient who has opened the
   // document shows here, so a 2-signer doc reads exactly who reviewed it.
-  const viewedSigners = signers.filter((sg: any) => sg?.viewed_at);
+  /* Bounced recipients first — the log is read top-down when someone asks
+     "why has this not been signed", and a delivery failure is the answer. */
+  undeliveredSigners.forEach((sg: any) => activity.push({
+    label: `Delivery failed — ${sigLabel(sg)}`,
+    date: fmt(sg.delivery_failed_at ?? data?.updated_at),
+    type: 'declined', status: 'bad', pill: '✕ Bounced',
+  }));
+  // A bounced signer never viewed it; the backend clears viewed_at, and this
+  // filter also covers rows stamped before it did.
+  const viewedSigners = signers.filter((sg: any) => sg?.viewed_at && !sg?.delivery_failed);
   if (viewedSigners.length > 0) {
     viewedSigners.forEach((sg: any) => activity.push({ label: `Viewed by ${sigLabel(sg)}`, date: fmt(sg.viewed_at), type: 'view', status: 'ok' }));
-  } else if (isDone || isDeclined || isRecalled) {
+  } else if (!deliveryFailed && (isDone || isDeclined || isRecalled)) {
     activity.push({ label: 'Viewed by signer', date: fmt(data?.updated_at ?? data?.created_at), type: 'view', status: 'ok' });
   }
   /* Per-reminder timestamps aren't stored — only count + last. The most recent
@@ -942,7 +1025,12 @@ export function SigningTrackerModal({ sigId, code, onClose }: { sigId: number; c
                           <tr key={i}>
                             <td><span className="qpi-trk-act-cell">{activityIcon(a.type)}{a.label}</span></td>
                             <td className="qpi-trk-muted">{a.date}</td>
-                            <td><span className={`qpi-trk-spill qpi-trk-spill-${a.status}`}>{a.status === 'ok' ? '✓ Done' : a.status === 'bad' ? '✕ Declined' : 'Recalled'}</span></td>
+                            {/* The pill used to be derived from tone alone, so
+                                EVERY 'bad' row printed "✕ Declined" — a
+                                delivery failure included. Tone says how bad it
+                                is, not what happened; the row's own `pill`
+                                carries the word. */}
+                            <td><span className={`qpi-trk-spill qpi-trk-spill-${a.status}`}>{a.pill ?? (a.status === 'ok' ? '✓ Done' : a.status === 'bad' ? '✕ Declined' : 'Recalled')}</span></td>
                           </tr>
                         ))}
                       </tbody>

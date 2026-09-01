@@ -53,12 +53,19 @@ class CandidateController extends Controller
      * alphanumeric, and a TLD of two or more letters. Kept identical to
      * EMAIL_RE / isValidEmail() in HrCandidates.tsx so the form and the API
      * refuse the same strings. Applies to the import too — a spreadsheet was
-     * the easier way to get junk in. */
+     * the easier way to get junk in.
+     *
+     * The local part is held to the same shape as the domain labels. It was
+     * `[A-Za-z0-9._%+-]+`, which allowed a leading or trailing dot, so
+     * `.test@gmail.com` cleared this regex and was caught only by `email:rfc`
+     * further along — the form's matching check let it through entirely and the
+     * address appeared to be accepted until save. Dots are separators now, so
+     * they cannot lead, trail, or double up. */
     private const EMAIL_RULES = [
         'nullable',
         'email:rfc',
         'max:191',
-        'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
+        'regex:/^[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/',
         'not_regex:/\.\./',
     ];
 

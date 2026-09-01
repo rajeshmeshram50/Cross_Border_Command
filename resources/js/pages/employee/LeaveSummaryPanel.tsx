@@ -151,8 +151,22 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         const s = String(info.getValue() ?? '');
         return (
           <span
+            /* Cancelled gets the NEUTRAL grey chip, not the amber pending one.
+               (#133)
+               Everything that wasn't Approved or Rejected fell through to
+               'pending', so a cancelled request sat in Leave History wearing the
+               amber "still waiting on someone" chip with the word Cancelled
+               printed inside it — a closed request dressed as an open one, which
+               is the pending-style marker on the report. The `--neutral` class
+               was already defined for exactly this and had no user.
+               Explicit per status, with neutral (not pending) as the fallback:
+               an unrecognised status is an unknown, and guessing "waiting" about
+               it is the mistake this had in the first place. */
             className={`rec-pill leave-status-badge leave-status-badge--${
-              s === 'Approved' ? 'approved' : s === 'Rejected' ? 'rejected' : 'pending'
+              s === 'Approved' ? 'approved'
+                : s === 'Rejected' ? 'rejected'
+                : s === 'Pending' ? 'pending'
+                : 'neutral'
             }`}
             style={{ fontSize: 11 }}
           >{s}</span>

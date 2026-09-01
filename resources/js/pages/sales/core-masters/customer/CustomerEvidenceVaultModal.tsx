@@ -1059,6 +1059,10 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onRowBusyChange?: (busy: boolean) => void;
 }) {
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
+  /* Which attachment chip is mid-download. The chip saves the file rather than
+     opening it, and a save gives no visible response of its own — without a
+     spinner a large file reads as a dead click and gets clicked again. */
+  const [chipBusy, setChipBusy] = useState<string | null>(null);
   /* Tab → SegmentDocUpload category for the re-upload endpoint. */
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
@@ -1099,7 +1103,35 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
               </td>
               <td>
                 {d.attachment_url ? (
-                  <a href={d.attachment_url} target="_blank" rel="noreferrer" className="cev-attach" title={d.attachment || 'View'}><i className="ri-download-2-line" /> <span className="cev-attach-name">{d.attachment || 'View'}</span></a>
+                  /* Carries a DOWNLOAD icon, so it has to download. It was a
+                     plain target="_blank" link, which opened the file in the
+                     browser's viewer — the reported bug. The href stays for
+                     middle-click / "copy link"; the click itself saves.
+                     Viewing is not lost: the eye action in this row still
+                     opens the document. */
+                  (() => {
+                    const key = String(d.db_id ?? d.doc_code ?? d.name ?? '');
+                    const busy = chipBusy === key;
+                    return (
+                      <a
+                        href={d.attachment_url}
+                        rel="noreferrer"
+                        className="cev-attach"
+                        title={busy ? 'Downloading…' : `Download ${d.attachment || 'attachment'}`}
+                        aria-busy={busy}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (busy) return;
+                          setChipBusy(key);
+                          try { await downloadFile(d.attachment_url, d.attachment ?? undefined); }
+                          finally { setChipBusy(null); }
+                        }}
+                      >
+                        <i className={busy ? 'ri-loader-4-line cev-spin' : 'ri-download-2-line'} />{' '}
+                        <span className="cev-attach-name">{d.attachment || 'Download'}</span>
+                      </a>
+                    );
+                  })()
                 ) : d.attachment ? (
                   <span className="cev-attach cev-attach-muted" title={d.attachment}><i className="ri-file-line" /> <span className="cev-attach-name">{d.attachment}</span></span>
                 ) : <span style={{ color: '#9ca3af' }}>—</span>}

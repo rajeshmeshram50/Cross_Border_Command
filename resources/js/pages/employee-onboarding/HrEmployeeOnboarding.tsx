@@ -898,8 +898,21 @@ export default function HrEmployeeOnboarding() {
     .filter(r => statusFilter === 'All' || r.status === statusFilter),
   [rows, deptFilter, statusFilter]);
 
-  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     4+18+8+9+10+8+7+11+9+8+8. */
+  /* Columns for the shared <DataTable>. The table runs table-layout:fixed, so
+     the widths — INCLUDING the serial column injected by <DataTable serial> —
+     must sum to exactly 100:
+
+       4 + 13+7+8+9+9+9+9+8+8+16 = 100
+
+     The tally in this comment used to read 4+18+8+9+10+8+7+11+9+8+8, a set the
+     columns had long since moved off, and the serial was taking DataTable's
+     56px default rather than the 4% budgeted here. A pixel column inside an
+     otherwise percentage grid over-constrains the row: the browser fits
+     56px + 96% into 100% of the table by rescaling every percentage column,
+     by a factor that shifts with the rendered width. The columns then slide out
+     from under their own headers as the table is scrolled and resized, which
+     is the misaligned/shifting header report. Recount this line whenever a
+     width changes. (#131, same defect as #207 on the Employee list) */
   const columns = useMemo<DataTableColumn<OnboardRow>[]>(() => [
     {
       header: 'Employee',
@@ -1201,7 +1214,10 @@ export default function HrEmployeeOnboarding() {
       <DataTable<OnboardRow>
         data={filtered}
         columns={columns}
-        serial
+        /* 4%, not DataTable's 56px default — see the width tally above the
+           column definitions. Mixing a pixel column into a percentage grid
+           under table-layout:fixed is what shifted the headers. (#131) */
+        serial={{ header: 'Sr No', width: '4%' }}
         accent="violet"
         minWidth={1500}
         fitToViewport

@@ -2287,6 +2287,37 @@ class SalesPdfController extends Controller
         // Walk products in sequence; for each product's segment, append every
         // matching T&C (deduped by id, so a segment shared by two products
         // doesn't repeat). Order therefore follows the product sequence.
+
+        /* Which PRODUCTS on this document belong to each segment.
+         *
+         * A T&C is matched by segment, but a segment can cover several line
+         * items — so naming only the product that happened to pull it in first
+         * would read as though the clause applied to that one product alone.
+         * Every product under the segment is listed instead.
+         *
+         * Built in a separate pass BEFORE the match loop: the T&Cs for a
+         * segment are all emitted at its FIRST product (later products dedupe
+         * away), so at emit time the remaining products have not been walked
+         * yet and the list would come out short.
+         *
+         * Keyed by the lower-cased segment name, matching how segments are
+         * compared everywhere else here — display uses $seg->name as typed. */
+        $segProducts = [];
+        foreach ($items as $it) {
+            $segId = $it->product_id ? ($prodToSeg[$it->product_id] ?? null) : null;
+            if (!$segId) continue;
+            $seg = $segById->get($segId);
+            if (!$seg) continue;
+            $name = trim((string) ($it->product_name ?? ''));
+            if ($name === '') continue;
+            $key = mb_strtolower((string) $seg->name);
+            // Unique, in on-document order — the same product can appear on
+            // more than one line (different rate / packing).
+            if (!in_array($name, $segProducts[$key] ?? [], true)) {
+                $segProducts[$key][] = $name;
+            }
+        }
+
         $matched = [];
         foreach ($items as $it) {
             $segId = $it->product_id ? ($prodToSeg[$it->product_id] ?? null) : null;
@@ -2309,6 +2340,12 @@ class SalesPdfController extends Controller
                     'code'     => $row->code,
                     'category' => $row->category,
                     'segment'  => $seg->name,   // the product segment that pulled it in
+                    // The line items this segment covers, so the PDF can say
+                    // WHICH product a clause is there for. Was computed and
+                    // discarded before — the PDF printed one flat list and a
+                    // customer with four segments could not tell which term
+                    // belonged to which purchase.
+                    'products' => $segProducts[$segNameLc] ?? [],
                     'content'  => $row->content,
                 ];
             }

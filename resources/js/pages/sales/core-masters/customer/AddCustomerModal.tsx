@@ -1741,9 +1741,30 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
    * the single-field rule against the post-change form and updates the
    * errors map with just that field's error — so inline red shows up
    * in real time instead of waiting for Save & Next. */
+  /* Per-field check. CORRECTS an error already on screen; never raises a new
+   * one on its own.
+   *
+   * It used to raise them, and every keystroke ran through it — so typing the
+   * first digit of a PIN code answered with "PIN Code must be 6 digits", and
+   * touching Customer Segment complained before the user had finished
+   * choosing. The form was arguing with input that was merely incomplete.
+   *
+   * Errors are RAISED by validateStage1() when the user clicks Save & Next.
+   * From that moment a field is in `errors`, this starts tracking it, and the
+   * red clears the instant the value becomes valid — which is the half of the
+   * behaviour worth keeping.
+   *
+   * Cascades still clear correctly without any special case: switch the
+   * country to international and stage1FieldRule('coGstNumber') returns null,
+   * so a GST error already on screen is removed as the field disappears.
+   *
+   * The GST field's 500ms debounce lower down was an earlier attempt at this
+   * same problem, solved for that one field. This covers the rest. */
   const validateField = (k: string, nextForm: typeof form) => {
     const msg = stage1FieldRule(k, nextForm);
     setErrors(prev => {
+      // Not flagged yet → say nothing.
+      if (!(k in prev)) return prev;
       const next = { ...prev };
       if (msg) next[k] = msg;
       else delete next[k];
@@ -3080,8 +3101,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
     setGstTakenBy(null);
     let cancelled = false;
     const t = window.setTimeout(() => {
-      // validateField publishes the inline red error for a malformed number
-      // (and clears it once valid) via the shared errors map.
+      /* Keeps an inline red already on screen in step with what is typed —
+         it no longer raises one. validateField only corrects fields that are
+         already flagged, so a GST number being typed for the first time stays
+         silent until Save & Next. `gstStatus` below still drives the field's
+         own valid / invalid / taken styling, which is a live availability
+         hint rather than a validation failure. */
       validateField('coGstNumber', { ...form, coGstNumber: gstRaw });
       if (gstNumberError(gstRaw, form.stateCode)) { setGstStatus('invalid'); return; }
       // Well-formed — now ask the server whether this branch already has it.
@@ -3243,10 +3268,12 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
             </Field>
             <Field label="Address" required error={errors.addr} fieldKey="addr"><input className={errors.addr ? 'acm-input-error' : ''} value={form.addr} onChange={e => set('addr', e.target.value)} placeholder="Street, building, area" maxLength={75} /></Field>
           </div>
-          {/* Address geography splits 3 + 3 rather than 4 + 1: it's Country →
-              State → State Code, then City / PIN / GST Number. A 4-col split
-              would strand GST Number alone on its own row (and leave City or PIN
-              alone once it's hidden for an international customer). */}
+          {/* Address geography — ONE 3-column grid that the fields flow
+              through, rather than fixed rows. Three of the six are
+              country-dependent (State Code, and GST Number vs Contact Person),
+              so any fixed row split leaves a gap the moment one drops out.
+              Three columns rather than four: a 4-col split would strand the
+              last field alone on its own line. */}
           <div className="acm-row acm-row-3">
             <Field label="Country" required error={errors.country} fieldKey="country">
               {/* This field decides domestic vs international, so it also decides
@@ -3331,18 +3358,46 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                 of sync (the GST state code is fixed per state). Shown for every
                 country, like the supplier form; it simply stays blank where the
                 master defines no code. */}
-            <Field label="State Code" fieldKey="stateCode">
-              <input
-                className="acm-input acm-input-ro"
-                placeholder="Auto-filled from State"
-                value={form.stateCode ?? ''}
-                readOnly
-                tabIndex={-1}
-                title="GST state code — automatically set from the selected State"
-              />
-            </Field>
-          </div>
-          <div className="acm-row acm-row-3">
+            {/* DOMESTIC ONLY. This is the GST state code — its own tooltip says
+                so — and GST does not apply outside India, which is why the GST
+                Number field below already disappears for an international
+                customer. State Code was the one address field that never got
+                the same guard, so an international form still showed a GST
+                artefact on a page where GST had otherwise been hidden.
+                `required` marks it as part of that GST identity: it is
+                readOnly and always filled the moment a State is picked, so the
+                asterisk describes a field that is genuinely always present —
+                every sibling in this row already carries one.
+                Switching country clears state + stateCode (see the Country
+                onChange above), so nothing stale is left behind when it hides.
+                The row is a 3-column grid; the empty third column keeps the
+                remaining fields aligned with the row beneath. */}
+            {domestic && (
+              <Field label="State Code" required fieldKey="stateCode">
+                <input
+                  className="acm-input acm-input-ro"
+                  placeholder="Auto-filled from State"
+                  value={form.stateCode ?? ''}
+                  readOnly
+                  tabIndex={-1}
+                  title="GST state code — automatically set from the selected State"
+                />
+              </Field>
+            )}
+            {/* ONE grid, not two rows of three.
+                State Code and the GST/Contact-Person slot both appear or vanish
+                with the country, so a fixed row boundary here left a hole in
+                the MIDDLE of the block whenever a field dropped out — an empty
+                third column beside Country and State on an international
+                customer, with City stranded on the next line.
+                Letting all six flow through a single 3-column grid means the
+                fields close ranks on their own:
+                  domestic      → Country · State · State Code
+                                  City · PIN · GST Number
+                  international → Country · State · City
+                                  Zip · Contact Person
+                Only the last row can now come up short, which reads as the end
+                of the block rather than a missing field. */}
             <Field label="City" required error={errors.city} fieldKey="city"><input className={errors.city ? 'acm-input-error' : ''} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City name" /></Field>
             <Field label={pinLabel(form.country)} required error={errors.pin} fieldKey="pin"><input className={errors.pin ? 'acm-input-error' : ''} value={form.pin} onChange={e => set('pin', pinSanitize(e.target.value, form.country))} inputMode={isDomesticCountry(form.country) ? 'numeric' : 'text'} maxLength={pinMaxLen(form.country)} placeholder={pinPlaceholder(form.country)} /></Field>
             {/* Third slot: GST Number for a domestic customer, otherwise Contact

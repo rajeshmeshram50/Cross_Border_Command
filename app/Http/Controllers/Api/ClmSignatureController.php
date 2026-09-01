@@ -2203,6 +2203,11 @@ class ClmSignatureController extends Controller
         // request state when an action carries no explicit per-signer signal).
         $normalize = function (string $raw) use ($overall): string {
             if (in_array($raw, ['signed', 'completed', 'approved'], true))  return 'signed';
+            /* Checked BEFORE the decline bucket. An undelivered action carries
+               no refusal — nobody read the document, let alone rejected it —
+               and calling it "declined" is the false state this whole change
+               exists to remove. */
+            if ($this->isUndeliveredStatus($raw))                           return 'undelivered';
             if (in_array($raw, ['declined', 'rejected', 'recalled'], true)) return 'declined';
             if ($raw === 'viewed')                                          return 'viewed';
             // No explicit signal — a completed request means everyone signed.
@@ -2233,12 +2238,33 @@ class ClmSignatureController extends Controller
             $s['signed_at'] = $storedSigned
                 ?: ($info['signed_at']
                     ?? ($status === 'signed' ? optional($fresh->completed_at)->toIso8601String() : null));
-            $s['viewed_at'] = $storedViewed ?: $info['viewed_at'];
+            /* A bounced recipient has no view time. Guard it here as well as in
+               syncSignerActivity, because this fallback reads `delivered_time`
+               into viewed_at — on a delivery failure that would resurrect the
+               very "Reviewed by signer(s)" claim we just removed. */
+            $s['viewed_at'] = $status === 'undelivered' ? null : ($storedViewed ?: $info['viewed_at']);
+
+            // Explicit, so the UI never has to re-derive it from raw Zoho words.
+            $s['delivery_failed']    = $status === 'undelivered';
+            $s['delivery_failed_at'] = $s['delivery_failed']
+                ? ($s['delivery_failed_at'] ?? optional($fresh->updated_at)->toIso8601String())
+                : null;
             return $s;
         })->values()->all();
 
         $payload = $fresh->toArray();
         $payload['signers'] = $signersOut;
+
+        /* Request-level roll-up. The timeline needs one boolean to decide
+           whether this round ended in a bounce, and naming the recipients is
+           what makes the message actionable — "fix this address", not "an email
+           failed somewhere". */
+        $undeliveredTo = collect($signersOut)
+            ->filter(fn ($s) => !empty($s['delivery_failed']))
+            ->map(fn ($s) => (string) ($s['name'] ?: $s['email'] ?: 'signer'))
+            ->values()->all();
+        $payload['delivery_failed']         = count($undeliveredTo) > 0;
+        $payload['undelivered_recipients']  = $undeliveredTo;
 
         // Attempt trail — a re-send after a decline is a fresh request, so the
         // full decline→resend history for ONE document is spread across sibling
@@ -2264,6 +2290,11 @@ class ClmSignatureController extends Controller
                     return [
                         'id'             => $r->id,
                         'status'         => $r->status,
+                        /* Whether THIS round bounced, read from its stored
+                           signers. The timeline used to infer it from a missing
+                           viewed_at, which was a guess — and a guess that broke
+                           as soon as anything else left viewed_at empty. */
+                        'delivery_failed' => $this->rowHasDeliveryFailure($r),
                         'created_at'     => optional($r->created_at)->toIso8601String(),
                         'viewed_at'      => $viewed ?: null,
                         'declined_at'    => optional($r->declined_at)->toIso8601String(),
@@ -3267,6 +3298,51 @@ class ClmSignatureController extends Controller
      *
      * @return bool true if any signer row changed (caller should re-fetch).
      */
+    /**
+     * Zoho action_status values that mean THE MAIL NEVER ARRIVED — a bounce, a
+     * dead address, a rejecting mail server.
+     *
+     * Zoho documents UNDELIVERED; the others are spellings seen across org
+     * versions and are matched defensively because getting this wrong in the
+     * unknown direction is what produced the original bug. A status we fail to
+     * recognise here falls back to "still waiting", which is merely uninformative.
+     * A delivery failure misread as progress is actively wrong: it tells the
+     * salesperson the customer is sitting on the document when the customer
+     * never received it.
+     *
+     * Note what is NOT here: DECLINED and RECALLED. A decline is the signer
+     * refusing a document they DID receive, and a recall is our own side
+     * withdrawing it. Neither is a delivery problem, and folding them together
+     * is exactly the conflation this list exists to prevent.
+     */
+    private const UNDELIVERED_ACTION_STATUSES = [
+        'UNDELIVERED', 'NOTDELIVERED', 'NOT_DELIVERED', 'DELIVERYFAILED', 'DELIVERY_FAILED',
+        'BOUNCED', 'MAILBOUNCED', 'MAIL_BOUNCED', 'EMAILBOUNCED', 'EMAIL_BOUNCED',
+    ];
+
+    /** True when a raw Zoho action_status means the e-sign mail never landed. */
+    private function isUndeliveredStatus(?string $raw): bool
+    {
+        $s = strtoupper(trim((string) $raw));
+        if ($s === '') return false;
+        return in_array($s, self::UNDELIVERED_ACTION_STATUSES, true);
+    }
+
+    /**
+     * True when ANY signer on a stored row is flagged as undelivered.
+     * Reads the persisted `signers` JSON (written by syncSignerActivity), so it
+     * works for historical attempts without re-querying Zoho.
+     */
+    private function rowHasDeliveryFailure(ClmSignatureRequest $row): bool
+    {
+        foreach ((array) ($row->signers ?? []) as $sg) {
+            $sg = (array) $sg;
+            if (!empty($sg['delivery_failed_at'])) return true;
+            if ($this->isUndeliveredStatus($sg['action_status'] ?? null)) return true;
+        }
+        return false;
+    }
+
     private function syncSignerActivity(ClmSignatureRequest $row, array $details): bool
     {
         $actions = data_get($details, 'requests.actions', []);
@@ -3292,14 +3368,38 @@ class ClmSignatureController extends Controller
             if ($email === '' || !array_key_exists($email, $statusByEmail)) continue;
             $st = $statusByEmail[$email];
 
-            // "Opened" = any status past UNOPENED/NOTVIEWED/UNRECEIVED. A
-            // SIGNED recipient has obviously also viewed it.
-            $opened = $st !== '' && !in_array($st, ['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'], true);
+            /* A bounce is NOT an opening.
+               "Opened" was defined as "any status that isn't UNOPENED /
+               NOTVIEWED / UNRECEIVED", which quietly swept UNDELIVERED into the
+               opened bucket — so a mail that bounced got a viewed_at stamp and
+               the tracker reported "Reviewed by signer(s)" on a document the
+               signer never received. That stamp is also what defeated the
+               downstream guess-work (which inferred non-delivery from a missing
+               viewed_at), so the wrong answer propagated. */
+            $undelivered = $this->isUndeliveredStatus($st);
+            $opened = $st !== ''
+                && !in_array($st, ['UNOPENED', 'NOTVIEWED', 'UNRECEIVED'], true)
+                && !$undelivered;
             $signed = $st === 'SIGNED';
 
             if (($signers[$i]['action_status'] ?? null) !== $st) { $signers[$i]['action_status'] = $st; $changed = true; }
             if ($opened && empty($signers[$i]['viewed_at'])) { $signers[$i]['viewed_at'] = $stamp; $changed = true; }
             if ($signed && empty($signers[$i]['signed_at'])) { $signers[$i]['signed_at'] = $stamp; $changed = true; }
+
+            /* Persist the failure so historical attempts keep it. The attempt
+               trail is built from stored rows, not from a fresh Zoho call —
+               without a stored flag an older bounced round is indistinguishable
+               from one that was simply superseded.
+               Cleared if a later poll shows the mail did get through (Zoho can
+               revise an action once a retry lands), so the flag can never
+               outlive the condition it describes. */
+            if ($undelivered && empty($signers[$i]['delivery_failed_at'])) {
+                $signers[$i]['delivery_failed_at'] = $stamp;
+                $changed = true;
+            } elseif (!$undelivered && !empty($signers[$i]['delivery_failed_at'])) {
+                $signers[$i]['delivery_failed_at'] = null;
+                $changed = true;
+            }
         }
 
         if ($changed) {

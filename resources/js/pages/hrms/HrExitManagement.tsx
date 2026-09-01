@@ -1257,6 +1257,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const earlyResignation = isEarlyResignation(employee?.dateOfJoiningIso, noticeDate);
   const earlyTenure      = tenureDays(employee?.dateOfJoiningIso, noticeDate);
   const noticeWaived     = onProbation || earlyResignation;
+  /* "Resignation without notice period" is an IMMEDIATE exit — the employee is
+     not serving anything, so the notice "start" can only be the day the exit is
+     recorded. Same carve-out the probation case already has below: the
+     tomorrow-or-later floor is lifted to TODAY and the field is seeded with it.
+     Without this the type was impossible to express — today was greyed out of
+     the picker and rejected on save. (#126)
+
+     Deliberately NOT folded into `noticeWaived`. That flag means "no notice
+     period exists", which zeroes the recovery — and the entire point of this
+     type is that the unserved days ARE recovered from the employee. The notice
+     period still has to derive from this start date; only the floor moves. */
+  const noNoticeExit     = exitType.trim() === 'Resignation without notice period';
 
   /* ── No settlement, no documents ─────────────────────────────────────
      An employee still ON PROBATION who leaves before completing
@@ -1593,8 +1605,13 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
    * immediate — so the field is frozen and auto-filled with TODAY on purpose.
    * Without this guard the new floor would reject that auto-filled value and
    * block Save on a field the user cannot even edit. */
+  /* The floor itself, so the rule, the picker `min`, the inline error and the
+     submit-time message can never state three different things. Tomorrow for a
+     notice that will be SERVED; today for an immediate exit, which is over
+     before a "tomorrow" exists. (#126) */
+  const noticeFloor = noNoticeExit ? todayIso : tomorrowIso;
   const noticeDateInvalid = !onProbation
-    && !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < tomorrowIso;
+    && !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < noticeFloor;
   /* Last working day bounds — these follow the EXIT TYPE, because the whole
      point of the non-standard types is that the notice period is NOT served:
 
@@ -1707,15 +1724,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      that flag (earlyResignation) is derived from this very field, so freezing
      on it would trap HR — one date typed inside the early-exit window would
      lock the field it was computed from, with no way back to correct it. */
+  /* Seeded for an immediate exit too (#126) — a resignation without notice is
+     effective the day it is recorded, so today is the answer rather than a
+     blank the user has to fill in with the only value the field will accept.
+     Unlike probation the field stays EDITABLE: the value is a default, not a
+     fact derived from the employee record.
+
+     Guarded on `!noticeDate`, so switching the exit type on a case that already
+     carries a date never overwrites what HR typed. */
   useEffect(() => {
-    if (onProbation && !noticeDate) setNoticeDate(todayIso);
-  }, [onProbation, noticeDate, todayIso]);
+    if ((onProbation || noNoticeExit) && !noticeDate) setNoticeDate(todayIso);
+  }, [onProbation, noNoticeExit, noticeDate, todayIso]);
 
   const ndLoaded   = loadedNoticeRef.current ? loadedNoticeRef.current.slice(0, 10) : '';
   const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
   // Picker floor matches the rule above — tomorrow, unless this case already
   // carries an earlier date of its own. (#125)
-  const noticeMin  = ndLoaded && ndLoaded < tomorrowIso ? ndLoaded : tomorrowIso;
+  const noticeMin  = ndLoaded && ndLoaded < noticeFloor ? ndLoaded : noticeFloor;
   const effLwdMin  = lwdLoaded && lwdLoaded < lwdMin ? lwdLoaded : lwdMin;
   /* Same protection on the ceiling as on the floor: a value already saved on
      the exit is never clamped away. An approved UNPAID leave during notice
@@ -2792,8 +2817,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             : settlement === 'pay_in_lieu'
               ? 'the last working day cannot be before the termination date'
               : 'the last working day cannot be before the notice start date';
-          if (noticeDateInvalid && lwdInvalid) return `Notice start date must be tomorrow or later, and ${lwdMsg}.`;
-          if (noticeDateInvalid) return 'Notice start date must be tomorrow or later.';
+          // Same split as the inline error: an immediate exit's floor is today,
+          // not tomorrow, so it must not be told to pick a future date. (#126)
+          const ndMsg = noNoticeExit
+            ? 'the notice start date cannot be in the past on an immediate exit'
+            : 'notice start date must be tomorrow or later';
+          if (noticeDateInvalid && lwdInvalid) {
+            return `${ndMsg.charAt(0).toUpperCase()}${ndMsg.slice(1)}, and ${lwdMsg}.`;
+          }
+          if (noticeDateInvalid) return `${ndMsg.charAt(0).toUpperCase()}${ndMsg.slice(1)}.`;
           return `${lwdMsg.charAt(0).toUpperCase()}${lwdMsg.slice(1)}.`;
         })(),
       );
@@ -3344,7 +3376,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         disabled={onProbation}
                         onChange={(v) => {
                           setNoticeDate(v); clearS1Err('noticeDate');
-                          if (v && v !== loadedNoticeRef.current && v < tomorrowIso) toast.warning('Invalid notice start date', 'Notice start date must be tomorrow or later — notice cannot begin on a day already under way.');
+                          if (v && v !== loadedNoticeRef.current && v < noticeFloor) {
+                            toast.warning(
+                              'Invalid notice start date',
+                              noNoticeExit
+                                ? 'This exit is effective immediately, so the notice start date cannot be in the past.'
+                                : 'Notice start date must be tomorrow or later — notice cannot begin on a day already under way.',
+                            );
+                          }
                         }}
                         min={noticeMin}
                         invalid={!onProbation && (s1Errors.has('noticeDate') || noticeDateInvalid)}
@@ -3356,7 +3395,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       ) : (s1Errors.has('noticeDate') || noticeDateInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
-                          {noticeDateInvalid ? 'Notice start date must be tomorrow or later.' : 'Notice start date is required.'}
+                          {noticeDateInvalid
+                            ? (noNoticeExit
+                                ? 'This exit is effective immediately — the notice start date cannot be in the past.'
+                                : 'Notice start date must be tomorrow or later.')
+                            : 'Notice start date is required.'}
+                        </div>
+                      )}
+                      {/* Says WHY the field arrived pre-filled, so today reads as
+                          the rule for this exit type rather than a stray value. */}
+                      {!onProbation && noNoticeExit && !s1Errors.has('noticeDate') && !noticeDateInvalid && (
+                        <div className="ep-hint" style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                          No notice is served on this exit type, so it is effective immediately — the start date defaults to today.
                         </div>
                       )}
                     </EpField>

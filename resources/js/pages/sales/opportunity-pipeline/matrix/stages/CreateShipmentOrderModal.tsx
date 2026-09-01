@@ -99,6 +99,9 @@ function downloadFile(file: File) {
  * post_max_size, so no server config is needed and "Post data is too long" can't
  * happen through this form. */
 const MAX_ATTACH_FILE = 2 * 1024 * 1024;    // 2 MB
+// Mirrors the server's `remarks => max:20000`. Kept as a named constant so the
+// textarea cap, the counter and the server rule can't drift apart.
+const MAX_REMARKS = 20000;
 
 const IcoDl = () => (
   <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
@@ -359,17 +362,56 @@ export default function CreateShipmentOrderModal({
         freight_cost: 'freightCost', shipping_mode: 'shippingMode', inco_term: 'incoTerm',
         port_of_loading: 'portOfLoading', port_of_unloading: 'portOfUnloading',
         final_destination: 'finalDestination', origin_country: 'originCountry', remarks: 'remarks',
+        /* DOMESTIC counterparts. The server validates pin_code / shipping_cost /
+           place_of_* on a domestic PI, but the form keeps a single state for
+           each pair — the PIN box IS the zip box, relabelled. Without these the
+           key stayed snake_case, no Field matched it, and the toast said "check
+           the fields marked in red" over a form with nothing marked. */
+        pin_code: 'zipCode', shipping_cost: 'freightCost',
+        place_of_dispatch: 'placeOfDispatch', place_of_delivery: 'placeOfDelivery',
+        attachments: 'attachments',
+      };
+      /* Human names for the toast. A raw key helps nobody, and the fields that
+         cannot be scrolled to (or that the user has collapsed out of view) are
+         exactly the ones worth naming out loud. */
+      const FIELD_LABELS: Record<string, string> = {
+        zipCode: isDomestic ? 'PIN Code' : 'Zip Code', shippingLiability: 'Shipping Liability',
+        coldChain: 'Cold Chain', freightCost: isDomestic ? 'Shipping Cost' : 'Freight Cost',
+        shippingMode: 'Mode of Transport', incoTerm: 'INCO Term',
+        portOfLoading: 'Port of Loading', portOfUnloading: 'Port of Unloading',
+        finalDestination: 'Final Destination', originCountry: 'Origin Country',
+        placeOfDispatch: 'Place of Dispatch', placeOfDelivery: 'Place of Delivery',
+        attachments: 'Attachment', remarks: 'Remarks',
       };
       const inline: Record<string, string> = {};
       if (fieldErrs) {
         for (const [k, v] of Object.entries(fieldErrs)) {
-          const key = KEY_MAP[k] ?? k;
-          inline[key] = Array.isArray(v) ? v[0] : String(v);
+          /* Per-item rules report as `attachments.0`, not `attachments`. The
+             dotted key matched no Field, so an oversized or wrong-type file
+             failed silently. Collapse the index onto the parent field. */
+          const base = k.split('.')[0];
+          const key = KEY_MAP[k] ?? KEY_MAP[base] ?? base;
+          // First message wins — a field with both a type and a size error
+          // should not have its inline text overwritten by the later one.
+          if (!inline[key]) inline[key] = Array.isArray(v) ? v[0] : String(v);
         }
       }
       if (Object.keys(inline).length) {
         setErrors(prev => ({ ...prev, ...inline }));
-        toast.warning('Please fix the highlighted fields', 'Check the fields marked in red below.');
+        /* Name the fields. "Check the fields marked in red below" was accurate
+           only when every failing field could actually turn red, and it left
+           the user hunting through a long scrolling form either way. */
+        const names = Object.keys(inline).map(k => FIELD_LABELS[k] ?? k);
+        const list = names.length <= 3
+          ? names.join(', ')
+          : `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+        toast.warning(
+          names.length === 1 ? `Check ${names[0]}` : 'Please fix the highlighted fields',
+          names.length === 1
+            // One field → show the server's actual reason, not a generic nudge.
+            ? inline[Object.keys(inline)[0]]
+            : `Marked in red: ${list}.`,
+        );
       } else {
         toast.error('Save failed', msg ?? 'Could not save the shipment order.');
       }
@@ -595,19 +637,21 @@ export default function CreateShipmentOrderModal({
                     value={finalDestination}
                     onChange={(e) => setFinalDest(e.target.value)} placeholder="e.g. Dubai, UAE" />
                 </Field>
-                <Field label="Origin Country">
+                <Field label="Origin Country" error={errors.originCountry}>
                   <MasterSelect
                     key={`oc-${masters.countries.length}`}
                     value={originCountry}
                     loading={masters.loading}
                     placeholder="— Select Country —"
                     options={withCurrent(masters.countries, originCountry)}
-                    onChange={(v) => setOrigin(String(v))}
+                    onChange={(v) => { setOrigin(String(v)); if (errors.originCountry) setErrors(p => ({ ...p, originCountry: '' })); }}
                   />
                 </Field>
               </>
             )}
-            <Field label="Attachment">
+            {/* `attachments.*` rejections (type / 2 MB cap) land here — the
+                server key is dotted, so it is folded onto `attachments` above. */}
+            <Field label="Attachment" error={errors.attachments}>
               <div className="cso-att-row">
                 <button type="button" className="cso-att-btn" onClick={() => fileRef.current?.click()}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
@@ -635,6 +679,9 @@ export default function CreateShipmentOrderModal({
                       return;
                     }
                     setAttachments([f]);   // replace — only one attachment per shipment
+                    // A fresh valid pick clears the previous rejection, same as
+                    // typing clears a text field's error.
+                    if (errors.attachments) setErrors(p => ({ ...p, attachments: '' }));
                   }} />
                 <ShpAttachChips
                   files={attachments}
@@ -645,10 +692,25 @@ export default function CreateShipmentOrderModal({
           </div>
 
           <div className="cso-remarks">
-            <Field label="Remarks">
-              <textarea className="cso-textarea" rows={3} maxLength={20000}
-                value={remarks} onChange={(e) => setRemarks(e.target.value)}
+            {/* The error prop was missing entirely, so a server rejection on
+                remarks set state that nothing rendered: no red border, no
+                message, and a toast pointing at fields "marked in red" when
+                nothing was. */}
+            <Field label="Remarks" error={errors.remarks}>
+              <textarea className="cso-textarea" rows={3} maxLength={MAX_REMARKS}
+                value={remarks}
+                onChange={(e) => { setRemarks(e.target.value); if (errors.remarks) setErrors(p => ({ ...p, remarks: '' })); }}
                 placeholder="Any additional notes or remarks for this Shipment ID…" />
+              {/* The cap is enforced by maxLength, which silently stops typing —
+                  the user just finds the field dead with no explanation. The
+                  counter appears once they're close enough for it to matter. */}
+              {remarks.length > MAX_REMARKS * 0.9 && (
+                <div className={`cso-charcount${remarks.length >= MAX_REMARKS ? ' cso-charcount-max' : ''}`}>
+                  {remarks.length >= MAX_REMARKS
+                    ? `Character limit reached — ${MAX_REMARKS.toLocaleString()} maximum`
+                    : `${remarks.length.toLocaleString()} / ${MAX_REMARKS.toLocaleString()} characters`}
+                </div>
+              )}
             </Field>
           </div>
           </>)}
@@ -737,7 +799,13 @@ const SCOPED_CSS = `
   padding: 16px;
 }
 .cso-modal {
-  width: min(1100px, 100%); max-height: 92vh;
+  width: min(1100px, 100%);
+  max-height: 92vh;
+  /* dvh tracks the space actually left by a mobile browser's collapsing
+     address bar; vh does not, so on a phone the modal was measured taller
+     than the visible viewport and its footer sat off-screen. Declared after
+     the vh line so browsers without dvh keep the fallback. */
+  max-height: 92dvh;
   background: #fffaf0;
   border-radius: 16px;
   box-shadow: 0 18px 48px rgba(15,23,42,.30);
@@ -795,7 +863,25 @@ const SCOPED_CSS = `
 }
 .cso-close:hover { background: rgba(255,255,255,.32); }
 
-.cso-body { flex: 1; overflow-y: auto; padding: 16px 22px; background: #fffaf0; }
+/* THE scroll fix. (No backticks in this block — it is a template literal.)
+   "flex: 1" alone was not enough: a flex item defaults to min-height auto,
+   which refuses to shrink below its own content. So the body grew to its full
+   natural height, the modal blew past its max-height, and overflow hidden on
+   the modal CLIPPED the excess instead of scrolling it — the Remarks block
+   sits last, so it was the part that disappeared, with no scrollbar anywhere to
+   reach it. Setting min-height to 0 lets the body shrink, which is what finally
+   hands the overflow to overflow-y auto here.
+   The shorter the screen, the more it clipped, which is why it showed up on
+   small screens first — but the same bug was there at every size. */
+.cso-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; padding: 16px 22px; background: #fffaf0;
+  /* Don't hand the scroll to the page behind once this hits its end. */
+  overscroll-behavior: contain;
+}
+/* Header and footer keep their height; the body absorbs all the shrinking.
+   Without this the footer's buttons get squeezed on a short viewport. */
+.cso-head, .cso-foot { flex-shrink: 0; }
 
 /* Top strip — 4×2 fact box */
 .cso-strip {
@@ -988,6 +1074,15 @@ const SCOPED_CSS = `
 
 /* Remarks (full-width) */
 .cso-remarks { margin-top: 16px; }
+/* Character counter — quiet until the cap is actually hit, then amber so it
+   reads as "this is why typing stopped", not as a validation failure. */
+.cso-charcount {
+  margin-top: 4px; text-align: right;
+  font-size: 11px; font-weight: 600; color: #94a3b8;
+}
+.cso-charcount-max { color: #d97706; }
+[data-bs-theme="dark"] .cso-charcount { color: #64748b; }
+[data-bs-theme="dark"] .cso-charcount-max { color: #fbbf24; }
 .cso-textarea {
   width: 100%;
   padding: 10px 12px;
@@ -1092,5 +1187,23 @@ const SCOPED_CSS = `
   .cso-grid { grid-template-columns: 1fr; }
   .cso-head { flex-direction: column; align-items: flex-start; }
   .cso-head-right { width: 100%; flex-wrap: wrap; }
+  /* Cancel + Save stop fighting the "Required fields" note for one row —
+     side by side they were shrinking to unreadable at this width. */
+  .cso-foot { flex-wrap: wrap; }
+  .cso-foot-actions { width: 100%; }
+  .cso-foot-actions .cso-btn { flex: 1; }
+  /* A stacked header on a phone eats most of a short screen. Give the modal
+     the full viewport there so the body keeps a usable amount of it. */
+  .cso-backdrop { padding: 8px; }
+  .cso-modal { max-height: 96vh; max-height: 96dvh; }
+  /* The textarea's own resize handle is unusable on touch and can be dragged
+     taller than the modal; the body scrolls instead. */
+  .cso-textarea { resize: none; }
+}
+/* Short-but-wide viewports (a laptop with dev-tools docked, a split screen) —
+   trim the vertical padding so the form keeps as much room as possible. */
+@media (max-height: 700px) {
+  .cso-body { padding-top: 10px; padding-bottom: 10px; }
+  .cso-strip { margin-bottom: 12px; }
 }
 `;

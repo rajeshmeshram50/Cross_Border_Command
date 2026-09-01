@@ -979,8 +979,19 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                             // Quotation converted to a PI (terminal) is locked too —
                             // the PI is the live doc now.
                             const convertedLock = docType === 'quotation' && terminal;
-                            const locked = st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock || piLocked;
-                            const lockLabel = convertedLock
+                            /* Locked until the signature status is known.
+                               `st` is undefined for the few seconds the signature
+                               fetch takes, so every lock below evaluated false and
+                               the pencil rendered fully enabled on an already-sent
+                               PI — for the whole load window. onEdit refused the
+                               click, but the button still LOOKED editable, which is
+                               the half of the bug the user actually sees.
+                               The Send button already greys out over the same
+                               window ("Checking…"); Edit now matches it. */
+                            const locked = !sigLoaded || st === 'completed' || (docType === 'pi' && st === 'inprogress') || convertedLock || piLocked;
+                            const lockLabel = !sigLoaded
+                              ? 'Checking signature status…'
+                              : convertedLock
                               ? (String(r.status).toLowerCase().includes('cancel') ? 'Quotation cancelled — editing locked' : 'Quotation converted to PI — editing locked')
                               : piLocked
                               ? 'A Proforma Invoice already exists — quotations are locked'
@@ -991,10 +1002,12 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                               <Tooltip label={locked ? lockLabel : 'Edit'}>
                                 <button
                                   type="button" className="s5-icn s5-icn-edit"
-                                  // piLocked quotations can't be opened at all (a PI
-                                  // already exists); signed/converted still call onEdit
-                                  // so it can explain why via a toast.
-                                  onClick={() => { if (piLocked) return; onEdit(docType, r.id); }} disabled={anyActing || piLocked}
+                                  // piLocked quotations (a PI already exists), and rows
+                                  // whose signature status hasn't loaded, can't be
+                                  // opened at all;
+                                  // signed/converted still call onEdit so it can
+                                  // explain why via a toast.
+                                  onClick={() => { if (piLocked || !sigLoaded) return; onEdit(docType, r.id); }} disabled={anyActing || piLocked || !sigLoaded}
                                   style={locked ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
                                 >
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
