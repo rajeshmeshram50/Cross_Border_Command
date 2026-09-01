@@ -110,9 +110,17 @@ interface Props {
   knownSegments?: Array<{ name: string; regulatory_status: 'highly' | 'less' }> | string[];
   onClose: () => void;
   onSaved: () => void;
+  /* Fired when the quick-add (+) creates a new Trade Document Type.
+   * The page owns the list this modal was handed, and it also renders that
+   * same list on its Document Name tab. Adding one here only ever updated the
+   * copy inside this modal, so the type existed and was selectable in the form
+   * while being absent from the list beside it — until the page was reloaded.
+   * Telling the page lets it re-fetch; the initialNames effect below then feeds
+   * the fresh list straight back here, so the two cannot drift. */
+  onNamesChanged?: () => void;
 }
 
-export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved }: Props) {
+export default function ClmTradeDocumentDraftModal({ open, existing, names: initialNames, nextCode, knownSegments = [], onClose, onSaved, onNamesChanged }: Props) {
   const toast = useToast();
   useScrollLock(open);   // lock the background scroll + selection while open
   // State (not a plain derived const) so "Save & Next" can persist a NEW draft
@@ -156,6 +164,13 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
 
   // Step 2 fields
   const [content, setContent] = useState('');
+  /* Content length as it was LOADED from the server.
+     The over-limit guard blocks GROWTH past the ceiling, not the mere fact of
+     being over it. Documents saved before that limit existed are already past
+     it, and Step 1's Save & Next is the only route to the editor — so blocking
+     on length alone locked those documents shut: the fix was on the far side of
+     the door it closed. */
+  const loadedLen = useRef(0);
   // Unsaved-changes flag — set on every editor edit/insert, cleared on load and
   // on a successful save. Download/Export are blocked while dirty so the user
   // never downloads a stale (last-saved) version of edits they can still see.
@@ -481,6 +496,10 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory(existing.regulatory ?? 'less');
       setSegments((existing.segment ?? '').split(',').map(s => s.trim()).filter(Boolean));
       setContent(existing.content ?? '');   // useCtcEditor seeds the editor from this
+      // Length as STORED. The save guard compares against this so a document
+      // that was already over the limit can still be opened and shortened —
+      // see persistDraft.
+      loadedLen.current = (existing.content ?? '').length;
       // Layer the saved zone config over the branded defaults. Rows that
       // pre-date these columns hit the spread with null and keep the
       // logged-in user's branch branding as their starting point.
@@ -495,6 +514,7 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setRegulatory('less');
       setSegments([]);
       setContent('');
+      loadedLen.current = 0;                // new draft — nothing stored yet
       setHeaderConfig(brandedDefaults.header);
       setFooterConfig(brandedDefaults.footer);
     }
@@ -571,6 +591,32 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
   // returned id (so the next save UPDATEs, not duplicates); on an existing doc
   // it PUTs. Returns false (and toasts) on failure so callers can stay put.
   const persistDraft = async (): Promise<boolean> => {
+    /* Stop at the render ceiling before the request goes out.
+       The limit was checked on paste and on Word upload, but not on save — so
+       content typed or built up past it stored fine and only failed later, at
+       the download it was written for. The server refuses this too; catching it
+       here means the user is told while the editor is still in front of them,
+       with a count they can act on rather than a rejected save. */
+    const html = ted.editor?.getHTML() ?? content ?? '';
+    if (html.length > TDW_RENDER_MAX_CHARS) {
+      // Refuse only if this save makes it LONGER. A document already past the
+      // ceiling has to stay savable or it can never be brought back under it.
+      if (html.length > loadedLen.current) {
+        toast.error(
+          'Too long to save',
+          `This document is ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+          + 'Past it the PDF and Word exports stop working. Shorten it, or split it into smaller documents.',
+        );
+        return false;
+      }
+      // Over, but not growing — let it save and say what is still owed.
+      toast.warning(
+        'Over the content limit',
+        `This document is ${html.length.toLocaleString()} characters — the limit is ${TDW_RENDER_MAX_CHARS.toLocaleString()}. `
+        + 'It has been saved, but the PDF and Word exports stay blocked until it is shortened.',
+      );
+    }
+
     const payload: Omit<TdLib, 'id' | 'code'> = {
       name: name.trim(),
       title: title.trim(),
@@ -580,7 +626,9 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       regulatory,
       segment: segments.length ? segments.join(', ') : null,
       file_path: null,
-      content: ted.editor?.getHTML() ?? content ?? null,
+      // The same string the length guard above measured — re-reading the
+      // editor here would let the check and the payload drift apart.
+      content: html || null,
       header_config: headerConfig,
       footer_config: footerConfig,
     };
@@ -643,6 +691,8 @@ export default function ClmTradeDocumentDraftModal({ open, existing, names: init
       setName(created.name);
       setQuickAddOpen(false);
       toast.success('Added', created.name);
+      // Let the page refresh the list it also renders on its Document Name tab.
+      onNamesChanged?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     }
@@ -1584,8 +1634,17 @@ const TDW_CSS = `
    produced lists with no bullets or numbers. */
 .tdw-editor ul { list-style: disc outside; padding-left: 1.6em; margin: .4em 0; }
 .tdw-editor ol { list-style: decimal outside; padding-left: 1.6em; margin: .4em 0; }
+/* Three levels: 1. -> a. -> i. (and disc -> circle -> square).
+   Only two were declared, so a third-level sub-point restarted at decimal and
+   read as another "1." under an "a.". Kept in step with the
+   .document-content rules in pdf/clm-signature-document.blade.php — that
+   template renders BOTH the live preview and the download, so any marker
+   declared on one side has to exist on the other or the draft and the output
+   disagree. */
 .tdw-editor ul ul { list-style: circle outside; }
+.tdw-editor ul ul ul { list-style: square outside; }
 .tdw-editor ol ol { list-style: lower-alpha outside; }
+.tdw-editor ol ol ol { list-style: lower-roman outside; }
 .tdw-editor li { margin: .15em 0; }
 .tdw-editor-foot {
   display: flex; align-items: center; justify-content: space-between;

@@ -9,6 +9,7 @@ import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, SimpleNameModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
 import ClmTradeDocumentDraftModal from './ClmTradeDocumentDraftModal';
+import { saveApiBlob } from '../../../utils/downloadFile';
 
 /* Central CLM → Trade Documents Master (two tabs: List + Library). */
 
@@ -306,16 +307,30 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
       const resp = await api.get(url, { responseType: 'blob' });
       window.clearInterval(timer);
       setDlProgress(100);
-      const blobUrl = URL.createObjectURL(new Blob([resp.data], { type: fmt === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }));
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      a.download = `${row.code || 'trade-document'}.${fmt}`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(blobUrl);
+      /* Check the bytes before writing them to disk.
+         With responseType 'blob' axios returns whatever arrived — a JSON error
+         body or an HTML page included — and if that came back with HTTP 200
+         nothing throws. The old code then wrapped those bytes in a Blob with a
+         Word MIME type and saved them as .docx, so Word opened a web page under
+         a document name and reported the file as corrupt. The failure was
+         upstream (a route that never matched, a session redirect, a proxy error
+         page), but every symptom pointed at the generator.
+         saveApiBlob compares the leading bytes against the format's signature
+         (%PDF, or PK.. for a docx zip) and throws a readable error instead of
+         producing a broken file. */
+      await saveApiBlob(
+        resp.data as Blob,
+        `${row.code || 'trade-document'}.${fmt}`,
+        fmt === 'pdf' ? 'pdf' : 'docx',
+      );
       await new Promise(res => setTimeout(res, 400)); // let 100% show briefly
     } catch (e: any) {
       window.clearInterval(timer);
-      let msg = 'Please try again.';
+      /* saveApiBlob throws a plain Error with no `response`, so its explanation
+         ("The server did not return a Word document…") would otherwise fall
+         through to the generic default and be lost — the one message that says
+         what actually went wrong. */
+      let msg = (typeof e?.message === 'string' && !e?.response) ? e.message : 'Please try again.';
       try {
         const blob = e?.response?.data;
         if (blob instanceof Blob) { const json = JSON.parse(await blob.text()); if (json?.message) msg = json.message; }
@@ -603,6 +618,9 @@ function LibraryPane({ rows, names, segments, loading, reload }: { rows: TdLib[]
         knownSegments={segments.map(s => ({ name: s.name, regulatory_status: s.regulatory_status }))}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
+        /* A type added from inside the wizard belongs in this page's list too —
+           without this it only appeared after a manual refresh. */
+        onNamesChanged={reload}
       />
 
       {/* "Download as Doc / PDF" menu, anchored under the row's download button. */}

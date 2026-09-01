@@ -1147,6 +1147,36 @@ type ContentLimitOptions = {
   onExceed?: (attempted: number, max: number) => void;
 };
 
+/* How much a paste will actually ADD to the document.
+ *
+ * `clipboardData.getData('text/html')` is not the content — it is the content
+ * inside a transport envelope the browser builds, and the envelope is discarded
+ * the moment ProseMirror parses it. Chrome prepends a <meta charset>, wraps the
+ * selection in <html><body> with StartFragment/EndFragment comments, and — when
+ * the copy came from another ProseMirror editor, which is exactly the
+ * Agreement-to-Trade-Document case — stamps a data-pm-slice attribute on the
+ * wrapper.
+ *
+ * Measuring the raw string counted all of that. So the same content reported
+ * one length in the editor it was copied from and a larger one on arrival, and
+ * a document at the ceiling could be refused over characters that were never
+ * going to be stored. Stripping the envelope first makes the number describe
+ * the document rather than the clipboard.
+ *
+ * Deliberately string-level, not a DOMParser pass: this runs on a payload up to
+ * a megabyte during a paste, and building a second document to measure the
+ * first would cost more than the guard saves. */
+export const pastedLength = (raw: string): number => {
+  if (!raw) return 0;
+  return raw
+    .replace(/<\/?(?:html|body|head)(?:\s[^>]*)?>/gi, '')  // transport wrapper
+    .replace(/<meta[^>]*>/gi, '')                          // Chrome's charset tag
+    .replace(/<!--\s*(?:Start|End)Fragment\s*-->/gi, '')   // Chrome's fragment marks
+    .replace(/\sdata-pm-slice="[^"]*"/gi, '')              // ProseMirror slice info
+    .trim()
+    .length;
+};
+
 const ContentLimit = Extension.create<ContentLimitOptions>({
   name: 'contentLimit',
   addOptions() {
@@ -1202,12 +1232,12 @@ const ContentLimit = Extension.create<ContentLimitOptions>({
         props: {
           handlePaste(_view, event) {
             const cd = (event as ClipboardEvent).clipboardData;
-            const len = (cd?.getData('text/html') || cd?.getData('text/plain') || '').length;
+            const len = pastedLength(cd?.getData('text/html') || cd?.getData('text/plain') || '');
             return wouldOverflow(len);
           },
           handleDrop(_view, event) {
             const dt = (event as DragEvent).dataTransfer;
-            const len = (dt?.getData('text/html') || dt?.getData('text/plain') || '').length;
+            const len = pastedLength(dt?.getData('text/html') || dt?.getData('text/plain') || '');
             return wouldOverflow(len);
           },
           /* Typing. A document sitting just under the ceiling walks past it one

@@ -231,6 +231,8 @@ class ClmTradeDocumentController extends Controller
             'footer_config' => 'nullable|array',
         ]);
 
+        if ($over = $this->contentOverLimit($data)) return $over;
+
         $row = DB::transaction(function () use ($user, $data) {
             DB::table('clients')->where('id', $user->client_id)->lockForUpdate()->first();
             // Library codes use the TDL- prefix (matching the create-popup
@@ -286,6 +288,11 @@ class ClmTradeDocumentController extends Controller
             'header_config' => 'nullable|array',
             'footer_config' => 'nullable|array',
         ]);
+
+        // Measured against what is already stored, so an over-limit document
+        // can still be saved while it is being cut back down.
+        if ($over = $this->contentOverLimit($data, mb_strlen((string) $row->content))) return $over;
+
         $data['updated_by'] = $user->id;
         // If the editor content was edited and saved, the previously-uploaded
         // Word file no longer matches it. downloadDocx() prefers that stored
@@ -384,6 +391,44 @@ class ClmTradeDocumentController extends Controller
      * clean "too large" message instead of letting the process die.
      */
     private const RENDER_MAX_CHARS = 1000000;   // 1,000,000 chars (~1 MB of HTML)
+
+    /**
+     * Refuse to STORE content past the render ceiling.
+     *
+     * The limit was enforced on the PDF render, the Word render and the docx
+     * upload — everywhere the document is read back, and nowhere it is written.
+     * So an over-long document saved without complaint and only revealed itself
+     * later, when every export it exists for refused to run. That is the worst
+     * possible order to find out: the work is finished and the record is
+     * already stored, and the only way forward is to cut it down.
+     *
+     * Returns a 422 response to return from the caller, or null to continue.
+     * mb_strlen matches the measure the render guards use, so anything that
+     * saves is by definition something that can still be exported.
+     *
+     * What is refused is GROWTH past the ceiling, not the state of being past
+     * it. Rows saved before this guard existed are already over, and on those
+     * a flat length check locks the record shut — every route to the editor
+     * runs through a save, so the only way to shorten the content sits behind
+     * the block. $storedLen lets an oversized document keep saving as long as
+     * it is getting smaller, which is the one direction that fixes it.
+     */
+    private function contentOverLimit(array $data, int $storedLen = 0): ?\Illuminate\Http\JsonResponse
+    {
+        if (!array_key_exists('content', $data) || $data['content'] === null) return null;
+
+        $len = mb_strlen((string) $data['content']);
+        if ($len <= self::RENDER_MAX_CHARS) return null;
+        if ($len <= $storedLen) return null;   // already over, and not growing
+
+        return response()->json([
+            'status'  => false,
+            'message' => 'This document is ' . number_format($len) . ' characters. The limit is '
+                . number_format(self::RENDER_MAX_CHARS) . ' characters (~1 MB) — past it the PDF '
+                . 'and Word exports stop working. Shorten it, or split it into smaller documents.',
+            'errors'  => ['content' => ['Over the ' . number_format(self::RENDER_MAX_CHARS) . '-character limit.']],
+        ], 422);
+    }
 
     public function downloadDocx(Request $request, $id)
     {

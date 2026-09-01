@@ -499,6 +499,24 @@ export const CLM_CSS = `
   border: 1px solid; white-space: nowrap;
   letter-spacing: .01em; line-height: 1.35;
 }
+/* Width-capped badge for values the user types, where one long entry would
+   otherwise set the column's width for the whole table — a segment named
+   "Healthcareeeee…" stretched the SEGMENT column until the rest of the row was
+   squeezed off screen.
+   A modifier rather than a change to .clm-badge itself: most badges hold short
+   fixed labels (Less / High / Customer) that should keep sizing to their text,
+   and this class is shared by every CLM page.
+   max-width only bites when the content exceeds it, so a normal segment name
+   still renders in full. Hover shows the whole value — the call sites already
+   wrap this badge in a Tooltip carrying the untruncated name.
+   vertical-align keeps the pill on the text baseline; inline-block with
+   overflow hidden otherwise sits low against its neighbours. */
+.clm-badge-trunc {
+  max-width: 180px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: middle;
+}
+
 /* Legacy dot kept in JSX but hidden — visual cleanup without
    touching markup. Light + dark mode both pick this up. */
 .clm-badge-dot { display: none; }

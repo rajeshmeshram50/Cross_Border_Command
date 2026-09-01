@@ -109,9 +109,12 @@ interface Props {
   nextCode: string;
   onClose: () => void;
   onSaved: () => void;
+  /* Fired when the quick-add (+) creates a new Agreement Type, so the page can
+     re-fetch the list it renders on its Agreement Types tab. */
+  onTypesChanged?: () => void;
 }
 
-export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved }: Props) {
+export default function ClmAgreementWizardModal({ open, existing, types: initialTypes, knownSegments, nextCode, onClose, onSaved, onTypesChanged }: Props) {
   const toast = useToast();
   useSelectionLock(open);   // block selecting/copying the background while open
   // Freeze the BACKGROUND page scroll, but exclude this modal's own subtree —
@@ -652,6 +655,11 @@ export default function ClmAgreementWizardModal({ open, existing, types: initial
       setAgreementType(created.name);
       setQuickAddTypeOpen(false);
       toast.success('Added', created.name);
+      /* The page owns this list and also renders it on its Agreement Types tab.
+         Adding one here only updated the wizard's own copy, so the type was
+         selectable in the form while missing from the list beside it until the
+         page was reloaded. */
+      onTypesChanged?.();
     } catch (e: any) {
       toast.error('Save failed', e?.response?.data?.message ?? 'Could not save');
     }
@@ -1833,7 +1841,10 @@ const AGW_CSS = `
 .agw-editor-area { position: relative; }
 .agw-editor { min-height: 280px; padding: 18px 22px; background: #fff; outline: none; font-size: 13.5px; line-height: 1.6; color: #0c4a6e; }
 .agw-editor:focus { outline: none; }
-.agw-editor p { margin: 0 0 .6em 0; }
+/* .55em — the shared CtcRichEditor default that the Trade Doc editor leaves
+   alone. Agreement was overriding it to .6em, so identical content sat on
+   slightly different line rhythms in the two editors and against the PDF. */
+.agw-editor p { margin: 0 0 .55em 0; }
 .agw-editor p:last-child { margin-bottom: 0; }
 .agw-editor h1, .agw-editor h2, .agw-editor h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0; line-height: 1.25; }
 .agw-editor h1 { font-size: 22px; }
@@ -1842,11 +1853,26 @@ const AGW_CSS = `
 /* Restore list markers — Tailwind's Preflight resets ul/ol to list-style:none,
    so execCommand insert(Un)orderedList produced lists with no visible bullet or
    number. Re-assert the marker type + position explicitly. */
-.agw-editor ul, .agw-editor ol { padding-left: 26px; margin: 0 0 .6em 0; list-style-position: outside; }
+/* Indent and spacing MATCH the Trade Doc editor (.tdw-editor) and the
+   .document-content rules in pdf/clm-signature-document.blade.php. The three
+   render the same content and any divergence shows up as a draft that does not
+   match its own preview: this used to be 26px against Trade Doc's 1.6em, so an
+   agreement's sub-points sat further right in the editor than the PDF put them,
+   and the gap compounded with every nesting level. em, not px, so the indent
+   tracks the font size the way the marker does. */
+.agw-editor ul, .agw-editor ol { padding-left: 1.6em; margin: .4em 0; list-style-position: outside; }
 .agw-editor ul { list-style-type: disc; }
 .agw-editor ol { list-style-type: decimal; }
+/* Three levels: 1. -> a. -> i. (and disc -> circle -> square).
+   list-style-type is INHERITED, so an unstated third level silently keeps its
+   parent's marker — sub-points read "a. b. c." at every depth below the first.
+   Kept in step with .tdw-editor (Trade Doc wizard) and the .document-content
+   rules in pdf/clm-signature-document.blade.php, which renders both the live
+   preview and the download for agreements too. */
 .agw-editor ul ul { list-style-type: circle; }
+.agw-editor ul ul ul { list-style-type: square; }
 .agw-editor ol ol { list-style-type: lower-alpha; }
+.agw-editor ol ol ol { list-style-type: lower-roman; }
 .agw-editor li { margin: .15em 0; }
 .agw-editor blockquote { border-left: 3px solid #67e8f9; padding-left: 12px; margin: .4em 0; color: #475569; font-style: italic; }
 /* Indent (execCommand) used to wrap blocks in <blockquote style="margin…">, so

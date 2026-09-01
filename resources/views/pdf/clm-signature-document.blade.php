@@ -390,9 +390,60 @@
       line-height: 1.5;
     }
 
+    /* Text highlight. Nothing here styled <mark> at all, so it fell through to
+     * dompdf's own default (background: yellow; color: black) — which carries
+     * no `display`, and dompdf then laid the element out as a BLOCK. Inside a
+     * centred paragraph that put the highlight on the far left as a solid bar
+     * of colour with the text it was supposed to sit behind centred separately
+     * beside it.
+     * `display: inline` puts it back in the text flow. The colour itself is
+     * left alone: the editor writes the chosen shade inline on the element, so
+     * background stays unset here rather than overriding the author's pick, and
+     * `color: inherit` stops dompdf's default black from recolouring text that
+     * was deliberately given another colour. */
+    .document-content mark {
+      display: inline;
+      color: inherit;
+    }
+
     .document-content li {
       line-height: 1.5;
     }
+
+    /* Nested list markers — 1. → a. → i. for ordered, disc → circle → square
+       for bullets.
+       These have to be declared, not left to the renderer. The editor styles
+       its own nesting (see .tdw-editor in ClmTradeDocumentDraftModal and the
+       matching block in CtcRichEditor), but this stylesheet only ever set list
+       MARGINS — so dompdf fell back to its default `decimal` at every depth.
+       The result was a draft showing "a. b. c." for its sub-points and a
+       preview and PDF showing "1. 2. 3." for the same content. Both the live
+       preview and the download render through this one blade, so the two
+       reports of that mismatch are the same missing rule.
+       Third level added on top: without an `ol ol ol` rule the numbering
+       restarted at decimal on the deepest level, in the editor as well.
+
+       NO :not() HERE — dompdf 3.1.5 does not implement that pseudo-class. Its
+       stylesheet parser handles `not` only as a media-query operator, so a
+       selector containing :not() is dropped without warning and the rule never
+       applies. An earlier version of this block used
+       `ol:not([data-legal])` to keep clear of the legal lists and simply did
+       nothing at all: the preview and PDF went on numbering sub-points 1. 2. 3.
+       while the editor showed a. b. c.
+
+       Plain descendant selectors instead. The ol[data-legal] rules below still
+       win on specificity — an attribute selector outranks an element, so
+       `ol[data-legal] ol` (0,2,2) beats `ol ol` (0,1,2) and even `ol ol ol`
+       (0,1,3) — so the counter-based 1.1.1 numbering is untouched.
+
+       list-style-type is INHERITED, which is why each depth must be stated: an
+       unstated third level silently keeps its parent's marker. */
+    .document-content ol          { list-style: decimal outside; }
+    .document-content ol ol       { list-style: lower-alpha outside; }
+    .document-content ol ol ol    { list-style: lower-roman outside; }
+    .document-content ul          { list-style: disc outside; }
+    .document-content ul ul       { list-style: circle outside; }
+    .document-content ul ul ul    { list-style: square outside; }
 
     /* Sub points — clause numbering (1 / 1.1 / 1.1.1).
      *
@@ -552,9 +603,23 @@
       max-width: 100%;
     }
 
+    /* Indent per level — must be stated as PADDING, and must reset it.
+     *
+     * dompdf's own default sheet gives ul and ol `padding-left: 40px`. Setting
+     * only a left MARGIN here added to that instead of replacing it, so every
+     * level indented 24 + 40 = 64px against the editor's 26px. Nesting
+     * compounds it, which is why sub-points looked progressively more wrong the
+     * deeper they went — level 3 sat ~114px further right in the PDF than in
+     * the draft.
+     *
+     * 1.6em with a zero left margin is exactly what .tdw-editor and
+     * .agw-editor use, so a list occupies the same width in all three. Keep
+     * them in step — the marker sits inside this padding
+     * (list-style-position: outside), so shrinking it clips the numbering. */
     .document-content ul,
     .document-content ol {
-      margin: 0 0 8px 24px;
+      margin: 0 0 8px 0;
+      padding-left: 1.6em;
     }
 
     /* Clause Library bodies routinely arrive wrapped in a <pre> (monospace

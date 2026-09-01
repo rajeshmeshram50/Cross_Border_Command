@@ -59,7 +59,12 @@ class ClmAgreementController extends Controller
         // Branch-scoped read: branch users see globals + client-level rows +
         // their own branch's rows; sibling branches stay hidden.
         $branchFilter = $request->integer('branch_id') ?: null;
-        $typeQuery = ClmAgreementType::query()->orderBy('id');
+        /* Newest first. The list is append-only in practice — a new type is
+           added and then immediately looked for — and ascending order buried it
+           on the last page, which is also why adding one "did nothing" from the
+           user's side. Ordering by id, not created_at: id is never null and
+           cannot tie, so the sequence is stable. */
+        $typeQuery = ClmAgreementType::query()->orderByDesc('id');
         MasterVisibility::applyReadScope($typeQuery, $user, $branchFilter);
         $rows = $typeQuery->get();
 

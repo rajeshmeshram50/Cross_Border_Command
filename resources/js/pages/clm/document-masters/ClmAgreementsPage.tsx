@@ -446,8 +446,11 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
                           const extra = segList.length - 1;
                           return (
                             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, verticalAlign: 'middle', lineHeight: 1 }}>
+                              {/* Truncated: the segment name is user-typed and a
+                                  long one was widening the whole column. The
+                                  Tooltip already carries the full value. */}
                               <Tooltip label={`Segment scope · ${segList[0]}`}>
-                                <span className="clm-badge clm-badge-teal">{segList[0]}</span>
+                                <span className="clm-badge clm-badge-teal clm-badge-trunc">{segList[0]}</span>
                               </Tooltip>
                               {extra > 0 && (
                                 <Tooltip label="View all segments">
@@ -592,6 +595,9 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
         nextCode={editing?.code ?? `A-${String(rows.length + 1).padStart(3, '0')}`}
         onClose={() => { setModalOpen(false); setEditing(null); }}
         onSaved={() => { setModalOpen(false); setEditing(null); reload(); }}
+        /* A type added from inside the wizard belongs in this page's Agreement
+           Types list too — without this it only appeared after a refresh. */
+        onTypesChanged={reload}
       />
 
       {/* Popup loader while a PDF is generated — a big/table-rich agreement can
