@@ -9,7 +9,11 @@ import api from '../api';
 // the CSS rules.
 import '../pages/employee/EmployeeProfile.css';
 
-export interface PayslipLine { label: string; amount: number }
+/* `monthly` is the salary structure's own figure for the component, before the
+   join/exit pro-ration that produces `amount`. Present only on earnings lines
+   built by payroll; absent on hand-made lines, in which case the two are the
+   same number and only one column is shown. (#133) */
+export interface PayslipLine { label: string; amount: number; monthly?: number }
 
 export interface PayslipEmployee {
   name: string;
@@ -84,6 +88,12 @@ export interface PayslipViewerModalProps {
   /** Fired when a "Recent Payslips" entry is clicked so the parent can load
    *  that month's payslip. */
   onSelectRecent?: (entry: PayslipRecentEntry) => void;
+  /** Server-supplied notes about the slip itself — currently the frozen-slip
+   *  explanation for a statutory deduction that is applicable today but was
+   *  not in force when the run was finalized. Shown above the Deductions
+   *  table, because that is where the reader is looking when they notice the
+   *  line is absent. Empty/undefined renders nothing. (#130) */
+  notices?: string[];
   /** When set, Download/Print hit the real server PDF for this payslip.
    *  Without it the buttons fall back to a toast (legacy EmployeeProfile use). */
   payslipId?: number;
@@ -152,6 +162,7 @@ export default function PayslipViewerModal({
   overtimeHourly,
   overtimeRate,
   overtimeRateName,
+  notices = [],
   recentMonths = [],
   companyName = '',
   companyMeta = '',
@@ -368,6 +379,16 @@ export default function PayslipViewerModal({
   const totalDeductions = deductions.reduce((s, r) => s + r.amount, 0);
   const netPay          = totalEarnings - totalDeductions;
 
+  /* Was this cycle pro-rated for a mid-month join or exit? Decided from the
+     lines themselves rather than from a date: if any component was paid at less
+     than its monthly figure, the amounts on screen are NOT the monthly ones and
+     the column must not claim they are. A rupee of tolerance absorbs rounding
+     on the pro-ration multiply. (#133) */
+  const isProrated = shownEarnings.some(
+    r => r.monthly !== undefined && Math.abs(r.monthly - r.amount) > 1,
+  );
+  const totalMonthly = shownEarnings.reduce((s, r) => s + (r.monthly ?? r.amount), 0);
+
   return createPortal(
     <div
       className="ep-modal-overlay"
@@ -400,8 +421,15 @@ export default function PayslipViewerModal({
               <span className="ep-pay-logo">
                 <i className="ri-file-text-line" />
               </span>
-              <div>
-                <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2" style={{ fontSize: 13 }}>
+              {/* Stacked, not stray inline boxes. The h5 is d-inline-flex so
+                  the PROVISIONAL badge can sit beside the title, but that also
+                  made it an INLINE box — the <small> below then flowed onto the
+                  same line right behind it, reading as one run-on string
+                  ("Payslip ViewerSelect month and year…"). A column flex here
+                  puts the description on its own line with a real gap, and the
+                  badge keeps sitting next to the title. (#129) */}
+              <div className="d-flex flex-column" style={{ gap: 2 }}>
+                <h5 className="mb-0 fw-bold d-inline-flex align-items-center gap-2 align-self-start" style={{ fontSize: 13, lineHeight: 1.3 }}>
                   Payslip Viewer
                   {provisional && (
                     <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.08em', color: '#a06f00', background: '#fdf3d6', border: '1px solid #f0d990', borderRadius: 999, padding: '2px 8px' }}>
@@ -409,7 +437,7 @@ export default function PayslipViewerModal({
                     </span>
                   )}
                 </h5>
-                <small className="text-muted" style={{ fontSize: 10.5 }}>
+                <small className="text-muted d-block" style={{ fontSize: 10.5, lineHeight: 1.4 }}>
                   {provisional ? 'Draft — approve the payroll run to finalize this slip' : 'Select month and year to view or download payslip'}
                 </small>
               </div>
@@ -563,14 +591,34 @@ export default function PayslipViewerModal({
                      salary is built from working days, which exclude them. But
                      with nothing on the slip naming them, "Paid Days 5" in a
                      31-day month read as if every Sunday had been docked. The
-                     note says what actually happened to them. */
+                     note says what actually happened to them.
+
+                     Worded "excl.", not "+ N week-offs". The plus sign read as
+                     an ADDITION into the figure above it — the opposite of what
+                     the note exists to say — and got raised as Paid Days
+                     wrongly including week-offs, citing this very caption as
+                     the evidence. It never did: paid_days + lop_days =
+                     working_days, and working_days excludes week-offs. Only
+                     the caption was wrong, so only the caption changes; no
+                     figure moves. Mirrors the "incl. …" note on Loss of Pay
+                     directly above, so the two read as a matched pair. (#131) */
                   { label: 'Paid Days',    value: paidDays,    tint: 'rgba(10,179,156,0.10)',  fg: '#0a8a78',
-                    note: weekOffDays > 0 ? `+ ${weekOffDays} week-off${weekOffDays === 1 ? '' : 's'} (not deducted)` : undefined },
+                    note: weekOffDays > 0 ? `excl. ${weekOffDays} week-off${weekOffDays === 1 ? '' : 's'} (not docked)` : undefined,
+                    hint: weekOffDays > 0
+                      ? `${weekOffDays} week-off day${weekOffDays === 1 ? '' : 's'} fall in this month. They are not counted in Paid Days and are not deducted either — salary is calculated on working days, which exclude them.`
+                      : undefined },
                   ...(overtimeApplicable
                     ? [{ label: 'OT Hours', value: otHoursLabel, tint: 'rgba(124,92,252,0.10)', fg: '#6d28d9' }]
                     : []),
                 ].map(k => (
-                  <div className="ep-pay-kpi" key={k.label} style={{ background: k.tint }}>
+                  <div
+                    className="ep-pay-kpi"
+                    key={k.label}
+                    style={{ background: k.tint }}
+                    /* The tile is small, so the caption has to be short. The
+                       full sentence lives here for anyone who wants it. (#131) */
+                    title={('hint' in k && k.hint) ? k.hint : undefined}
+                  >
                     <div className="ep-pay-kpi-label">{k.label}</div>
                     <div className="ep-pay-kpi-value" style={{ color: k.fg }}>{k.value}</div>
                     {'note' in k && k.note && (
@@ -590,7 +638,16 @@ export default function PayslipViewerModal({
                     </div>
                     <table className="ep-pay-table">
                       <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                        {/* Two columns only when the cycle was pro-rated. The
+                            single column was headed "Monthly" while carrying the
+                            pro-rated figure, so a mid-month joiner's payslip
+                            contradicted Stage 4 – Compensation with no way to
+                            reconcile the two. (#133) */}
+                        <tr>
+                          <th>Component</th>
+                          {isProrated && <th className="text-end">Monthly</th>}
+                          <th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th>
+                        </tr>
                       </thead>
                       <tbody>
                         {shownEarnings.map(r => {
@@ -614,6 +671,15 @@ export default function PayslipViewerModal({
                                   </div>
                                 )}
                               </td>
+                              {isProrated && (
+                                /* The structure's figure. Falls back to the
+                                   paid amount for lines that are not pro-rated
+                                   at all (overtime, bonus), so the column never
+                                   invents a monthly value for them. */
+                                <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
+                                  ₹{(r.monthly ?? r.amount).toLocaleString('en-IN')}
+                                </td>
+                              )}
                               <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
                             </tr>
                           );
@@ -622,6 +688,11 @@ export default function PayslipViewerModal({
                       <tfoot>
                         <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
                           <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
+                          {isProrated && (
+                            <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
+                              ₹{totalMonthly.toLocaleString('en-IN')}
+                            </td>
+                          )}
                           <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{totalEarnings.toLocaleString('en-IN')}</td>
                         </tr>
                       </tfoot>
@@ -636,7 +707,12 @@ export default function PayslipViewerModal({
                     </div>
                     <table className="ep-pay-table">
                       <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                        {/* Matches the earnings header. A deduction is always
+                            this cycle's figure — PF rides on the days actually
+                            paid and Loss of Pay exists only within the cycle —
+                            so "Monthly" was never the right word for a
+                            pro-rated slip. (#133) */}
+                        <tr><th>Component</th><th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th></tr>
                       </thead>
                       <tbody>
                         {deductions.map(r => (
@@ -653,6 +729,23 @@ export default function PayslipViewerModal({
                         </tr>
                       </tfoot>
                     </table>
+                    {/* Why an expected deduction is absent. Sits directly under
+                        the table the reader is questioning, not in a corner of
+                        the header. (#130) */}
+                    {notices.map(n => (
+                      <div
+                        key={n}
+                        className="d-flex align-items-start gap-2"
+                        style={{
+                          margin: '8px 10px 10px', padding: '7px 9px', borderRadius: 7,
+                          background: '#fdf3d6', border: '1px solid #f0d990',
+                          color: '#7a5300', fontSize: 10, lineHeight: 1.45,
+                        }}
+                      >
+                        <i className="ri-information-line" style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }} />
+                        <span>{n}</span>
+                      </div>
+                    ))}
                   </div>
                 </Col>
               </Row>

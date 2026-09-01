@@ -1383,6 +1383,23 @@ class PayrollService
         [$gross, $basic, $earnComponents, $structDeductions, $pfApplicable, $esiApplicable, $ptApplicable] =
             $this->resolveCompensation($employee, $structure, $exceptions);
 
+        /* The structure's OWN monthly component figures, captured before
+         * blendCompensation() re-weights them (Rule 19).
+         *
+         * The payslip shows these beside the amount actually paid so the slip
+         * reconciles against Stage 4 – Compensation (#133). They have to be
+         * read here: after the blend, a cycle containing a mid-month revision
+         * carries a day-weighted average — ₹38,333 between a ₹25,000 version
+         * and a ₹50,000 one — which is the correct thing to PAY but appears on
+         * no salary structure, so labelling it "Monthly" would send HR looking
+         * for a figure that does not exist on any version. Keyed by code, so a
+         * blended line still reports the monthly figure of the version in force
+         * at the end of the window — the one Salary Setup shows as current. */
+        $structureMonthly = [];
+        foreach ($earnComponents as $c) {
+            $structureMonthly[(string) ($c['code'] ?? 'comp')] = round((float) ($c['amount'] ?? 0), 2);
+        }
+
         /* A revision that has not taken effect yet, named on the slip. (QA #96)
          *
          * Salary Setup and the Employee form show the structure flagged
@@ -1675,6 +1692,45 @@ class PayrollService
         }
         // Everything else in the active window is loss-of-pay.
         $lopDays = max(0, round($effectiveWorkingDays - $paidDays, 2));
+
+        /* …but only across days that have actually HAPPENED. (#134)
+         *
+         * This subtracted attendance from the whole month's working days with
+         * no regard for the date, so generating a cycle while the month was
+         * still running charged loss of pay for every working day still to
+         * come — days with no attendance because nobody has worked them yet.
+         * An employee on ₹10,000 whose run was generated on the 21st lost ten
+         * unelapsed days and was paid ₹6,774.20, which is the ticket.
+         *
+         * The controller already refuses to judge an in-progress cycle on days
+         * that have not happened — elapsedWorkingDaysMap() clips the Absent
+         * column for exactly this reason — but the clip stopped at the display
+         * and never reached the money.
+         *
+         * Only the LOP DAY COUNT is capped. working_days still reports the
+         * month's full figure, because that is the denominator the salary is
+         * built on and the slip must keep stating it; and guardPeriodStarted()
+         * still blocks a period that has not begun at all. A finished month is
+         * untouched — winEnd is in the past, so this branch never runs and
+         * every historic payslip recomputes to the figure it already had. */
+        $lopToday = Carbon::today();
+        if ($winEnd->gt($lopToday)) {
+            $elapsedWorkingDays = $winStart->gt($lopToday)
+                ? 0.0
+                : (float) $this->employeeWorkingDays($employee, $winStart->copy(), $lopToday->copy());
+            $cappedLop = max(0, round($elapsedWorkingDays - $paidDays, 2));
+
+            if ($cappedLop < $lopDays) {
+                $remaining = round($effectiveWorkingDays - $elapsedWorkingDays, 2);
+                $exceptions = $this->withException(
+                    $exceptions,
+                    'info',
+                    "Cycle still in progress — {$remaining} working day(s) of this month have not happened yet "
+                        . 'and are not charged as loss of pay. Re-run payroll once the month is complete.'
+                );
+                $lopDays = $cappedLop;
+            }
+        }
         // Off-days sandwiched inside an UNPAID leave are unpaid too. They sit
         // outside the working-day denominator, so they are added rather than
         // subtracted — there is nothing in that denominator to take them from.
@@ -1862,11 +1918,50 @@ class PayrollService
         // Build earnings JSON from structure components (pro-rated for join/exit).
         $earnings = [];
         foreach ($earnComponents as $c) {
+            $code = (string) ($c['code'] ?? 'comp');
+            // Blend-safe: the structure's figure, not the re-weighted one.
+            $full = $structureMonthly[$code] ?? round((float) ($c['amount'] ?? 0), 2);
             $earnings[] = [
-                'code'   => $c['code'] ?? 'comp',
+                'code'   => $code,
                 'label'  => $c['label'] ?? 'Component',
                 'amount' => round(((float) ($c['amount'] ?? 0)) * $proration, 2),
+                /* The structure's own monthly figure, BEFORE the join/exit
+                 * pro-ration on the line above.
+                 *
+                 * Only the pro-rated amount was stored, and the payslip renders
+                 * it under a column headed "Monthly". For a mid-month joiner
+                 * that column then shows ₹3,387 against a Stage 4 – Compensation
+                 * screen reading ₹5,000, with nothing on the slip to connect the
+                 * two — reported as the payslip not fetching the salary
+                 * structure at all. Carrying the full figure lets the slip show
+                 * both and reconcile itself. Pro-ration is unchanged; this adds
+                 * a number, it does not alter one. (#133) */
+                'monthly' => $full,
             ];
+        }
+
+        /* Reconcile the pro-rated lines to the pro-rated gross.
+         *
+         * Each component is rounded to the paisa on its own, so their sum can
+         * miss $proratedGross — which is rounded once, from the whole. On a
+         * ₹10,000 salary at 20/30 days the lines come to ₹6,666.66 while Total
+         * Earnings reads ₹6,666.67, and a payslip whose components do not add
+         * up to its own total is exactly the kind of thing this ticket is
+         * about. The residue is at most a paisa per component and is absorbed
+         * by the LARGEST line, where it is proportionally smallest. Only the
+         * split moves; the total is untouched. (#134) */
+        if ($earnings && $proration < 1) {
+            $lineSum = round(array_sum(array_column($earnings, 'amount')), 2);
+            $residue = round(round($gross * $proration, 2) - $lineSum, 2);
+            if (abs($residue) > 0.001) {
+                $biggest = 0;
+                foreach ($earnings as $i => $line) {
+                    if ((float) $line['amount'] > (float) $earnings[$biggest]['amount']) {
+                        $biggest = $i;
+                    }
+                }
+                $earnings[$biggest]['amount'] = round((float) $earnings[$biggest]['amount'] + $residue, 2);
+            }
         }
         /* Overtime, priced as
              (BASIC ÷ working days ÷ shift hours) × OT multiplier × hours.

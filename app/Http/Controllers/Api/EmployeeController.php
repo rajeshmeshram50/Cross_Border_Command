@@ -1194,6 +1194,32 @@ class EmployeeController extends Controller
      * any malformed token reads as "no such employee" downstream once
      * resolveRow runs findOrFail.
      */
+    /**
+     * Earliest joining date this employee may carry. (#121)
+     *
+     * Ordinary staff: 50 years back, so a genuine historical hire can still be
+     * recorded. A RE-ONBOARDED employee: the day they were rehired — nobody
+     * joins before they are brought back, and without this floor the wizard's
+     * pre-filled old joining date saved straight through and re-dated the new
+     * employment to the previous one.
+     *
+     * Returns a Y-m-d string for `after_or_equal:`.
+     */
+    private function joiningFloorFor($employeeId): string
+    {
+        $default = now()->subYears(50)->toDateString();
+        if (!$employeeId) {
+            return $default;
+        }
+
+        $rehiredAt = \App\Models\EmployeeExit::where('employee_id', $employeeId)
+            ->whereNotNull('rehired_at')
+            ->orderByDesc('rehired_at')
+            ->value('rehired_at');
+
+        return $rehiredAt ? Carbon::parse($rehiredAt)->toDateString() : $default;
+    }
+
     private function resolveIdParam($id): int
     {
         if (is_numeric($id)) return (int) $id;
@@ -2267,19 +2293,50 @@ class EmployeeController extends Controller
          * faithfully recomputed the same zero. (#90)
          *
          * ESI is the same pairing and is mirrored with it. */
+        /* Mirrored onto EVERY structure payroll can still resolve, not just the
+         * newest active one.
+         *
+         * PayrollService::activeStructure() picks the version in force on the
+         * PERIOD date and deliberately includes 'superseded' rows, so a
+         * future-dated revision leaves payroll pricing an open cycle off the
+         * older version. Patching only `status=active orderByDesc(version)`
+         * then wrote the flag to a row payroll wasn't reading, and the change
+         * appeared to do nothing. (#90 reopen) */
         if (array_key_exists('pf_eligible', $data) || array_key_exists('esi_applicable', $data)) {
-            $activeStructure = \App\Models\SalaryStructure::where('employee_id', $row->id)
-                ->where('status', 'active')->orderByDesc('version')->first();
-            if ($activeStructure) {
+            $structures = \App\Models\SalaryStructure::where('employee_id', $row->id)
+                ->whereIn('status', ['active', 'superseded'])
+                ->get();
+
+            foreach ($structures as $structure) {
                 $patch = [];
                 if (array_key_exists('pf_eligible', $data)) {
-                    $patch['pf_applicable'] = (bool) $row->pf_eligible;
+                    $pfOn = (bool) $row->pf_eligible;
+                    $patch['pf_applicable'] = $pfOn;
+
+                    /* Turning PF off must also drop a MANUAL 'pf' deduction row.
+                     *
+                     * PayrollService takes a structure's own pf line BEFORE it
+                     * consults applicability (so hand-built structures aren't
+                     * silently stripped), which meant PF Applicable = No left
+                     * the deduction running and the Salary Report still showed
+                     * PF. Clearing the row here keeps that precedence intact
+                     * while making an explicit "No" actually mean no PF. */
+                    if (!$pfOn) {
+                        $deductions = (array) ($structure->deductions ?? []);
+                        $kept = array_values(array_filter(
+                            $deductions,
+                            fn ($d) => strtolower((string) ($d['code'] ?? '')) !== 'pf'
+                        ));
+                        if (count($kept) !== count($deductions)) {
+                            $patch['deductions'] = $kept;
+                        }
+                    }
                 }
                 if (array_key_exists('esi_applicable', $data)) {
                     $patch['esi_applicable'] = strtolower((string) $row->esi_applicable) === 'yes';
                 }
                 if ($patch) {
-                    $activeStructure->update($patch);
+                    $structure->update($patch);
                 }
             }
         }
@@ -2321,7 +2378,14 @@ class EmployeeController extends Controller
                     ->unique()
                     ->values();
             } catch (\Throwable $e) {
-                // Never block an employee save on a payroll recompute hiccup.
+                // Never block an employee save on a payroll recompute hiccup —
+                // but do not swallow it either. A failed sync used to report a
+                // plain "Updated" while the payslips kept the old PF, which is
+                // the same symptom as the flag not working. (#90 reopen)
+                \Log::warning('Payslip recompute after employee update failed', [
+                    'employee_id' => $row->id,
+                    'error'       => $e->getMessage(),
+                ]);
             }
         }
 
@@ -2347,6 +2411,24 @@ class EmployeeController extends Controller
             && Settings::shouldSendMail('newUser')
             && $row->user
             && !$row->user->last_login_at
+            /* …and only while the account still carries the password it was
+             * CREATED with. (#205)
+             *
+             * This block mints a fresh random password and overwrites
+             * users.password with it. Gated on last_login_at alone, it also
+             * fired for an account whose password had been set deliberately —
+             * by HR through Employee Profile → Login Password, or by the
+             * employee via Forgot Password — as long as they had not signed in
+             * yet. Saving the employee wizard past Step 4 then silently
+             * replaced that password with an emailed random one, which is the
+             * reported "the new password does not get updated": it did update,
+             * and a later unrelated save undid it.
+             *
+             * password_changed_at is stamped by recordPasswordHistory() on
+             * every deliberate write (setPassword, changePassword, reset), so a
+             * null here means "nobody has ever chosen this password" — the only
+             * case where minting one is safe. */
+            && !$row->user->password_changed_at
         ) {
             try {
                 $rawPassword = $this->generatePassword();
@@ -2844,7 +2926,20 @@ class EmployeeController extends Controller
 
         // Save the OLD hash to history BEFORE overwriting it.
         $this->recordPasswordHistory($target);
-        $target->update(['password' => Hash::make($data['password'])]);
+        /* `must_reset_password` is cleared with the write. (#205)
+         *
+         * Login hard-blocks on that flag (AuthController::login), and it is set
+         * whenever an employee's email is changed. So an HR reset on a flagged
+         * account reported "Password updated", mailed the new credential, and
+         * the employee still could not sign in — the new password was correct
+         * and refused. Setting a password IS the reset the flag is waiting for,
+         * which is exactly how the two working implementations treat it:
+         * AuthController::changePassword and ForgotPasswordController::reset
+         * both write the pair together. This was the only path that did not. */
+        $target->update([
+            'password'            => Hash::make($data['password']),
+            'must_reset_password' => false,
+        ]);
 
         // SMTP issue never rolls back the (already persisted) password change.
         if (Settings::shouldSendMail() && $target->email) {
@@ -3279,7 +3374,21 @@ class EmployeeController extends Controller
             // Sanity-bound the joining date: reject absurd historical values
             // (e.g. 1900) and far-future dates while still allowing genuine
             // historical join dates for existing staff being added.
-            'date_of_joining' => 'nullable|date|after_or_equal:' . now()->subYears(50)->toDateString() . '|before_or_equal:' . now()->addYears(2)->toDateString(),
+            /* Floor lifts to the REHIRE date for a re-onboarded employee. (#121)
+             *
+             * The 50-year window is right for ordinary staff — recording a
+             * genuine historical hire is legitimate. It is wrong for someone
+             * brought back through Exit Management: their record still carries
+             * the previous employment's joining date, the wizard offers it as
+             * the default, and saving it unchanged re-dated the new employment
+             * to the old one. Tenure, probation and the return month's payroll
+             * proration all key off this column, and Salary Effective From is
+             * locked equal to it, so one stale date moves all of them.
+             *
+             * You cannot have joined before you were rehired, so `rehired_at`
+             * is the floor. Employees with no rehire on record keep the
+             * 50-year window exactly as before. */
+            'date_of_joining' => 'nullable|date|after_or_equal:' . $this->joiningFloorFor($employeeId) . '|before_or_equal:' . now()->addYears(2)->toDateString(),
 
             'probation_policy'   => 'nullable|string|max:50',
             'probation_months'   => 'nullable|integer|min:0|max:60',

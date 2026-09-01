@@ -59,6 +59,8 @@ export interface AttLogsEmployee {
   logs: AttLog[];
   /** 'YYYY-MM-DD' — nothing before this is an attendance day (CBC #74). */
   dateOfJoining?: string | null;
+  /** 'YYYY-MM-DD' for an exited employee; null while still employed. (#87) */
+  lastWorkingDay?: string | null;
 }
 
 const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; label: string }> = {
@@ -333,16 +335,48 @@ export default function AttendanceLogsView({ employee, month, onMonthChange, onR
   const pageEnd    = Math.min(pageStart + pageSize, filteredLogs.length);
   const visibleLogs = filteredLogs.slice(pageStart, pageEnd);
 
+  /* The month shortcut rail, anchored on the EMPLOYMENT window rather than on
+     today. (#87)
+
+     It used to walk back seven months from today for everyone. For an exited
+     employee that is seven months of guaranteed-empty rail — a leaver whose
+     last day was in March, viewed in September, had no button that could reach
+     a single day they worked, and the only way back was the calendar's one-
+     month-at-a-time arrow. Ending the rail at the last worked month puts their
+     real history under the first button instead.
+
+     Months before the joining date are dropped for the same reason they are
+     blanked in the calendar (CBC #74): they are not days this person was
+     absent, they are days they did not work here. A short tenure therefore
+     shows a short rail, which is the honest shape of it. */
   const ranges = useMemo(() => {
     const out: { key: string; label: string; mk: string }[] = [];
-    const t = parseISO(TODAY_ISO);
+    const endIso = employee.lastWorkingDay && employee.lastWorkingDay < TODAY_ISO
+      ? employee.lastWorkingDay
+      : TODAY_ISO;
+    const t = parseISO(endIso);
+    const joinMk = employee.dateOfJoining ? employee.dateOfJoining.slice(0, 7) : null;
     for (let i = 0; i < 7; i++) {
       const d = new Date(t.getFullYear(), t.getMonth() - i, 1);
       const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      out.push({ key: mk, label: MONTHS_SHORT[d.getMonth()].toUpperCase(), mk });
+      /* `i > 0` guard: the anchor month is always offered, even when it sits
+         before the joining date. Bad data (a last working day earlier than the
+         joining date, or a joining date recorded after the fact) would
+         otherwise break on the first pass and render a rail with NO buttons at
+         all — a worse failure than showing one month that happens to be empty,
+         because it removes the only navigation there is. */
+      if (i > 0 && joinMk && mk < joinMk) break;
+      /* Year suffix once the rail leaves the current one. A leaver's rail can
+         sit entirely in a past year, where a bare "MAR" gives no clue which
+         March is being opened. */
+      const label = MONTHS_SHORT[d.getMonth()].toUpperCase()
+        + (d.getFullYear() !== parseISO(TODAY_ISO).getFullYear()
+            ? ` '${String(d.getFullYear()).slice(2)}`
+            : '');
+      out.push({ key: mk, label, mk });
     }
     return out;
-  }, []);
+  }, [employee.lastWorkingDay, employee.dateOfJoining]);
 
   const fmtClock = (raw: string): string => {
     if (!raw || raw === '—') return raw;

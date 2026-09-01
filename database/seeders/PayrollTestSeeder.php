@@ -100,13 +100,25 @@ class PayrollTestSeeder extends Seeder
 
     private function setSalary(Employee $emp, float $gross, bool $pf): void
     {
+        /* Read the outgoing version BEFORE superseding it, and bump. This
+         * superseded first and then hard-coded `version => 1`, so every re-run
+         * of the seeder added another row at version 1 — this database carries
+         * employees with seven of them, and PayrollService::activeStructure()
+         * has had to tie-break on id ever since to pick the right one. The
+         * controller path (SalaryStructureController::store) has always done
+         * it in this order; the seeder is now consistent with it. (#133) */
+        $prev = SalaryStructure::where('employee_id', $emp->id)
+            ->where('status', 'active')
+            ->orderByDesc('version')
+            ->first();
+        $version = $prev ? (int) $prev->version + 1 : 1;
         SalaryStructure::where('employee_id', $emp->id)->where('status', 'active')->update(['status' => 'superseded']);
         $basic = round($gross * 0.5);
         $hra = round($gross * 0.3);
         $special = $gross - $basic - $hra;
         SalaryStructure::create([
             'client_id' => $emp->client_id, 'branch_id' => $emp->branch_id, 'employee_id' => $emp->id,
-            'version' => 1, 'effective_from' => Carbon::now()->startOfYear()->toDateString(), 'status' => 'active',
+            'version' => $version, 'effective_from' => Carbon::now()->startOfYear()->toDateString(), 'status' => 'active',
             'earnings' => [
                 ['code' => 'basic', 'label' => 'Basic Salary', 'amount' => $basic],
                 ['code' => 'hra', 'label' => 'House Rent Allowance', 'amount' => $hra],
@@ -117,6 +129,13 @@ class PayrollTestSeeder extends Seeder
             'pf_applicable' => $pf, 'esi_applicable' => $gross <= 21000, 'pt_applicable' => true,
             'approval_status' => 'approved', 'approved_at' => now(),
         ]);
+
+        /* Keep the employee's own CTC in step with the structure, the way
+         * SalaryStructureController::store() does. Without this the seeded
+         * accounts opened Stage 4 – Compensation showing an annual_salary that
+         * had nothing to do with the gross payroll actually pays from, which
+         * reads on screen as the payslip ignoring the salary structure. (#133) */
+        $emp->forceFill(['annual_salary' => round($gross * 12, 2)])->save();
     }
 
     private function seedAttendanceAndLeave(Employee $emp, Carbon $start, Carbon $end, string $scenario, ?int $unpaidTypeId): void

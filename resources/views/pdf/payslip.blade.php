@@ -105,14 +105,22 @@
         <tr>
             <td><div class="lbl">Employee Number</div><div class="val">{{ $employee['code'] }}</div></td>
             <td><div class="lbl">Date Joined</div><div class="val">{{ $employee['date_joined'] }}</div></td>
-            <td><div class="lbl">Department</div><div class="val">{{ $employee['department'] }}</div></td>
-            <td><div class="lbl">Sub Department</div><div class="val">{{ $employee['sub_department'] }}</div></td>
+            {{-- No "Sub Department" cell: there is no such column on employees
+                 and no such field on the Employee form, so it could only ever
+                 print the hardcoded 'N/A' it was fed. Department spans the
+                 freed cell to keep the grid four columns wide. (#138) --}}
+            <td colspan="2"><div class="lbl">Department</div><div class="val">{{ $employee['department'] }}</div></td>
         </tr>
         <tr>
             <td><div class="lbl">Designation</div><div class="val">{{ $employee['designation'] }}</div></td>
             <td><div class="lbl">Payment Mode</div><div class="val">{{ $employee['payment_mode'] }}</div></td>
-            <td><div class="lbl">UAN</div><div class="val">{{ $employee['uan'] }}</div></td>
-            <td><div class="lbl">PF Number</div><div class="val">{{ $employee['pf_number'] }}</div></td>
+            {{-- UAN only. "PF Number" sat beside it as a second cell that was
+                 fed a hardcoded 'N/A' — there is no PF-account-number column on
+                 employees — so every payslip printed the same fact twice, once
+                 with a value and once permanently blank. Spans the freed cell
+                 the way the Bank Name row below already does, keeping the grid
+                 four columns wide. (#137) --}}
+            <td colspan="2"><div class="lbl">UAN</div><div class="val">{{ $employee['uan'] }}</div></td>
         </tr>
         <tr>
             <td><div class="lbl">PAN Number</div><div class="val">{{ $employee['pan'] }}</div></td>

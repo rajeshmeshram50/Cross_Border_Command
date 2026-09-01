@@ -98,8 +98,16 @@ const PER_PAGE_KEY = 'cbc.candidates.perPage';
  * The old check was /^[^\s@]+@[^\s@]+\.[^\s@]+$/ — "something, an @, something
  * with a dot" — which accepts plenty that is not an address: `a@b.c`,
  * `abc@abc.com.`, `test@-gmail.com` all passed it (QA #60). Each label must now
- * start and end alphanumeric and the TLD must be two or more letters. */
-const EMAIL_RE = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+ * start and end alphanumeric and the TLD must be two or more letters.
+ *
+ * The LOCAL part (before the @) is held to the same shape, which it was not:
+ * `[A-Za-z0-9._%+-]+` let a dot sit at either end, so `.test@gmail.com` and
+ * `test.@gmail.com` passed here and were then rejected by the API's `email:rfc`
+ * rule — the field appeared to accept the address and the failure only surfaced
+ * as a server error on save, which is the same thing as no validation from the
+ * user's side. Dots are now separators between segments, so they cannot lead,
+ * trail, or double up. (QA #60) */
+const EMAIL_RE = /^[A-Za-z0-9_%+-]+(?:\.[A-Za-z0-9_%+-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
 
 function isValidEmail(raw: string): boolean {
   const v = raw.trim();

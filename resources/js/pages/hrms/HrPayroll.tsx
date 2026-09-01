@@ -76,6 +76,16 @@ interface PayrollRow {
   attSource: AttSource;
   mismatch?: string;
   pfEmp: number;
+  /* The PF figure is a snapshot taken when the slip was generated; "PF
+     Applicable" on the employee master is live. Set by the server only when a
+     finalized cycle disagrees with the flag as it reads today. (#90) */
+  pfStale?: boolean;
+  pfNotice?: string | null;
+  /* Full monthly salary from the structure, and whether this cycle pays less
+     than it because of a mid-cycle join/exit. (#134) */
+  monthlyGross?: number | null;
+  prorated?: boolean;
+  prorationNote?: string | null;
   esi: number;
   pt: number;
   tds: number;
@@ -380,6 +390,7 @@ export default function HrPayroll() {
 
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
+  const [payslipNotices, setPayslipNotices] = useState<string[]>([]);
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
@@ -417,7 +428,7 @@ export default function HrPayroll() {
      * payslip's breakup, day counts and overtime stayed on screen while the new
      * month loaded, and any field the new response does not set kept the old
      * value indefinitely. Clearing here covers both entry points. (QA #94) */
-    setPayslipBreakup(null);
+    setPayslipBreakup(null); setPayslipNotices([]);
     setPayslipDays(null);
     setPayslipOt(null);
     setPayslipFinal(undefined);
@@ -428,9 +439,20 @@ export default function HrPayroll() {
       .then(res => {
         if (reqId !== payslipReqRef.current) return;   // superseded by a newer click
         const d = res.data?.data ?? {};
-        const e = (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
+        /* `monthly` carried through so the viewer can show the structure's own
+           figure beside the pro-rated one. Left undefined when the server does
+           not send it (older slips), which the viewer reads as "not pro-rated"
+           and renders exactly as before. (#133) */
+        const e = (d.earningsBreakup ?? []).map((c: any) => ({
+          label: c.label,
+          amount: Number(c.amount) || 0,
+          monthly: c.monthly === undefined || c.monthly === null ? undefined : Number(c.monthly),
+        }));
         const ded = (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
         setPayslipBreakup(e.length || ded.length ? { earnings: e, deductions: ded } : null);
+        // Server-side explanation for a deduction that applies today but was
+        // not in force when this slip was finalized. (#130)
+        setPayslipNotices(Array.isArray(d.notices) ? d.notices : []);
         setPayslipDays({
           present: typeof d.present === 'number' ? d.present : undefined,
           lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
@@ -491,7 +513,7 @@ export default function HrPayroll() {
       return;
     }
     setPaySlipRow(row);
-    setPayslipBreakup(null);
+    setPayslipBreakup(null); setPayslipNotices([]);
     setPayslipFinal(undefined);
     setPayslipCompany(null);
     setActivePayslipId(row.payslip_id);
@@ -516,7 +538,7 @@ export default function HrPayroll() {
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
-  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
   const [proceeding, setProceeding] = useState(false);
@@ -1160,6 +1182,8 @@ export default function HrPayroll() {
         'Gross': r.gross_earnings,
         'Basic': r.basic,
         'PF': r.pf_employee,
+        // Blank unless the frozen PF figure contradicts the live flag (#90).
+        'PF Note': r.pf_notice ?? '',
         'ESI': r.esi,
         'PT': r.pt,
         'TDS': r.tds,
@@ -1286,7 +1310,32 @@ export default function HrPayroll() {
     { header: 'Emp ID', accessorKey: 'empId', meta: { width: '9%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
     { header: 'Department',  accessorKey: 'department',  meta: { width: '10%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
     { header: 'Designation', accessorKey: 'designation', meta: { width: '11%' }, cell: info => <TruncCell value={info.getValue() as string} caseSensitive /> },
-    { header: 'Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
+    // "Gross Earnings", not "Earnings" — the figure is the month's gross, and
+    // the bare word read as though it might be one earnings component rather
+    // than their total. Matches what the Salary Report column, the payslip
+    // breakup and the Excel export have always called it. (#128)
+    /* A pro-rated cycle is marked, with the full monthly salary on hover.
+       Without it a mid-month joiner on ₹10,000 simply reads ₹6,774.20 in a
+       column the reader takes to BE their salary — which is how a correct
+       21/31 pro-ration got raised as the salary being calculated wrong. (#134) */
+    {
+      header: 'Gross Earnings', accessorKey: 'earnings', meta: { width: '9%', align: 'right' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>
+            ₹{fmtINR(r.earnings)}
+            {r.prorated && (
+              <i
+                className="ri-time-line ms-1"
+                style={{ color: '#a16207', cursor: 'help' }}
+                title={r.prorationNote ?? 'Pro-rated for a mid-cycle join or exit.'}
+              />
+            )}
+          </span>
+        );
+      },
+    },
     { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
     {
       header: 'Net Pay',
@@ -1393,6 +1442,17 @@ export default function HrPayroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [periodMeta?.working_days, pdfBusyId]);
 
+  /* Headers are PLAIN STRINGS, not `() => <div className="text-center">`. (#140)
+   *
+   * The wrapper was doing nothing for alignment — DataTable already centres a
+   * header from `meta.align`, via justify-content on .dt-th-inner, and the th
+   * and td take their text-align from the same alignToCss() call — so the div
+   * was a second, redundant centring mechanism layered on the first.
+   *
+   * It was not harmless, though: DataTable reads the header as the cell's
+   * `data-label` only when it is a STRING ("a JSX header has no text to borrow,
+   * so those cells simply show no label"). Six of this table's seven columns
+   * were JSX, so six of seven cells carried no label at all. */
   const biometricColumns = useMemo<DataTableColumn<PayrollRow>[]>(() => [
     {
       header: 'Employee',
@@ -1416,21 +1476,21 @@ export default function HrPayroll() {
         );
       },
     },
-    { header: () => <div className="text-center">Present</div>, accessorKey: 'present', meta: { width: '11%', align: 'center' }, cell: info => <span className="fs-13 fw-bold">{info.row.original.present}</span> },
+    { header: 'Present', accessorKey: 'present', meta: { width: '11%', align: 'center' }, cell: info => <span className="fs-13 fw-bold">{info.row.original.present}</span> },
     {
-      header: () => <div className="text-center">Absent</div>,
+      header: 'Absent',
       accessorKey: 'absent',
       meta: { width: '11%', align: 'center' },
       cell: info => <span className="fs-13 fw-bold" style={{ color: info.row.original.absent ? '#b1401d' : 'var(--vz-secondary-color)' }}>{info.row.original.absent}</span>,
     },
     {
-      header: () => <div className="text-center">Late Marks</div>,
+      header: 'Late Marks',
       accessorKey: 'lateMarks',
       meta: { width: '12%', align: 'center' },
       cell: info => <span className="fs-13 fw-semibold" style={{ color: info.row.original.lateMarks ? '#a06f00' : 'var(--vz-secondary-color)' }}>{info.row.original.lateMarks}</span>,
     },
     {
-      header: () => <div className="text-center">Missing Punch</div>,
+      header: 'Missing Punch',
       accessorKey: 'missingPunch',
       meta: { width: '13%', align: 'center' },
       cell: info => {
@@ -1448,7 +1508,7 @@ export default function HrPayroll() {
       },
     },
     {
-      header: () => <div className="text-center">Att. Status</div>,
+      header: 'Att. Status',
       accessorKey: 'attSource',
       meta: { width: '13%', align: 'center' },
       cell: info => {
@@ -1466,7 +1526,7 @@ export default function HrPayroll() {
       },
     },
     {
-      header: () => <div className="text-center">Mismatch</div>,
+      header: 'Mismatch',
       accessorKey: 'mismatch',
       meta: { width: '11%', align: 'center' },
       cell: info => {
@@ -1483,16 +1543,22 @@ export default function HrPayroll() {
     // Derived per row and reused by both the deductions total and Net Payable.
     const totalDeductionsOf = (r: PayrollRow) => r.pfEmp + r.esi + r.pt + r.tds + r.lopDeducted + r.advanceRec;
     return [
-      /* Emp ID 6% → 5% and Employee 10% → 9%: the two points fund the Payslip
-         column at the far right, which was too narrow for its own button (QA
-         #92). The budget has to total exactly 100% — see the serial-column note
-         above — and these two carry the most slack: an "EMP-001" code and a
-         truncating name column both sit comfortably one point smaller. */
-      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '5%' }, cell: info => <span style={{ color: '#5a3fd1', fontWeight: 600, fontSize: 12.5 }}>{String(info.getValue() ?? '')}</span> },
+      /* Employee first, then Emp ID — the same order as the Processing tab, so
+         the eye finds the code in the same place on both tables. This column
+         used to lead the row, which is why the two tables read as showing the
+         employee differently for the same person. (#132) */
       {
         header: 'Employee',
+        /* Emp ID 6% → 5% and Employee 10% → 9%: the two points fund the Payslip
+           column at the far right, which was too narrow for its own button (QA
+           #92). The budget has to total exactly 100% — see the serial-column
+           note above.
+           Employee 9% → 8%, with the point going to Emp ID below: the code is
+           now a pill, whose padding needs room the bare text did not. The name
+           already truncates by design, so it is the cell that can give it up.
+           (#132) */
         accessorKey: 'name',
-        meta: { width: '9%' },
+        meta: { width: '8%' },
         cell: info => {
           const r = info.row.original;
           return (
@@ -1508,8 +1574,35 @@ export default function HrPayroll() {
           );
         },
       },
+      /* Identical to the Processing tab's Emp ID cell — same `onb-id-pill`
+         chip, same position after Employee. It was plain purple text here, so
+         the same employee appeared as a chip on one table and bare text on the
+         other. The pill's own colour is already #5a3fd1, so nothing about the
+         hue changes — only the chip around it. (#132) */
+      { header: 'Emp ID', accessorKey: 'empId', meta: { width: '6%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
       { header: 'Gross Earnings',   accessorKey: 'earnings',    meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold">₹{fmtINR(info.row.original.earnings)}</span> },
-      { header: 'PF (Emp)',         accessorKey: 'pfEmp',       meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13" style={{ color: '#5a3fd1' }}>₹{fmtINR(info.row.original.pfEmp)}</span> },
+      /* A stale PF figure carries an inline marker rather than reading as a
+         plain ₹0. Without it the report was indistinguishable from "PF
+         Applicable doesn't work" — the explanation existed only on the payslip
+         screen, which is not where anyone checking PF was looking. (#90) */
+      {
+        header: 'PF (Emp)', accessorKey: 'pfEmp', meta: { width: '7%', align: 'right' },
+        cell: info => {
+          const r = info.row.original;
+          return (
+            <span className="fs-13" style={{ color: '#5a3fd1' }}>
+              ₹{fmtINR(r.pfEmp)}
+              {r.pfStale && (
+                <i
+                  className="ri-information-line ms-1"
+                  style={{ color: '#f7b84b', cursor: 'help' }}
+                  title={r.pfNotice ?? 'PF applicability changed after this cycle was finalized.'}
+                />
+              )}
+            </span>
+          );
+        },
+      },
       { header: 'ESI',              accessorKey: 'esi',         meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">{info.row.original.esi === 0 ? <span className="text-muted">₹0</span> : `₹${fmtINR(info.row.original.esi)}`}</span> },
       { header: 'PT',               accessorKey: 'pt',          meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">₹{fmtINR(info.row.original.pt)}</span> },
       {
@@ -2451,6 +2544,7 @@ export default function HrPayroll() {
             defaultYear={yStr}
             earnings={earnings}
             deductions={deductions}
+            notices={payslipNotices}
             /* Per-employee only. The old chain fell back to the cycle's
                company-wide figure and then to a hardcoded 26, either of which
                puts a number next to Paid Days that was never computed on the

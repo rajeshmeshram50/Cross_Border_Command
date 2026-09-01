@@ -898,8 +898,21 @@ export default function HrEmployeeOnboarding() {
     .filter(r => statusFilter === 'All' || r.status === statusFilter),
   [rows, deptFilter, statusFilter]);
 
-  /* Columns for the shared <DataTable>. Widths sum to 100 (fixed layout):
-     4+18+8+9+10+8+7+11+9+8+8. */
+  /* Columns for the shared <DataTable>. The table runs table-layout:fixed, so
+     the widths — INCLUDING the serial column injected by <DataTable serial> —
+     must sum to exactly 100:
+
+       4 + 13+7+8+9+9+9+9+8+8+16 = 100
+
+     The tally in this comment used to read 4+18+8+9+10+8+7+11+9+8+8, a set the
+     columns had long since moved off, and the serial was taking DataTable's
+     56px default rather than the 4% budgeted here. A pixel column inside an
+     otherwise percentage grid over-constrains the row: the browser fits
+     56px + 96% into 100% of the table by rescaling every percentage column,
+     by a factor that shifts with the rendered width. The columns then slide out
+     from under their own headers as the table is scrolled and resized, which
+     is the misaligned/shifting header report. Recount this line whenever a
+     width changes. (#131, same defect as #207 on the Employee list) */
   const columns = useMemo<DataTableColumn<OnboardRow>[]>(() => [
     {
       header: 'Employee',
@@ -1201,7 +1214,10 @@ export default function HrEmployeeOnboarding() {
       <DataTable<OnboardRow>
         data={filtered}
         columns={columns}
-        serial
+        /* 4%, not DataTable's 56px default — see the width tally above the
+           column definitions. Mixing a pixel column into a percentage grid
+           under table-layout:fixed is what shifted the headers. (#131) */
+        serial={{ header: 'Sr No', width: '4%' }}
         accent="violet"
         minWidth={1500}
         fitToViewport
@@ -2023,7 +2039,15 @@ const STAGE2_CATEGORIES: DocCategory[] = [
   {
     id: 'address', title: 'Address Proof', icon: 'ri-map-pin-line', tint: '#dceefe', fg: '#0c63b0',
     docs: [
-      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Pending' },
+      /* Optional, not Pending. A joiner's CURRENT address is routinely a rental
+       * or shared place they hold no utility bill or registered agreement for,
+       * so demanding one blocked Stage 2 on a document they cannot produce —
+       * while Permanent Address Proof, which is govt-issued and they do have,
+       * already establishes address. `status: 'Optional'` is the existing
+       * mechanism (see Post-graduation below): the row still renders and still
+       * accepts an upload, it just carries an "Optional" tag and is excluded
+       * from the required-document count that gates stage progress. (#132) */
+      { id: 'cur_addr',  name: 'Current Address Proof',   sub: 'Utility Bill / Rent Agreement — max 6 months old · 2 MB', maxMb: 2, status: 'Optional' },
       { id: 'perm_addr', name: 'Permanent Address Proof', sub: 'Govt-issued address proof · max 2 MB',                    maxMb: 2, status: 'Pending' },
     ],
   },
@@ -3144,7 +3168,22 @@ const joinTodayIso = _shiftYears(0);
 const joinDateOrig = emp?.raw?.date_of_joining
   ? String(emp.raw.date_of_joining).slice(0, 10)
   : '';
-const joinMin = (joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
+/* A RE-ONBOARDED employee — one brought back through Exit Management → Rehire
+ * → "Reactivate and re-onboard" — does not get the keep-your-existing-date
+ * exemption below. (#121)
+ *
+ * That exemption exists so an employee whose record legitimately carries a
+ * historical joining date can be re-saved without being forced to change it:
+ * `doj !== joinDateOrig` lets the stored value through, and joinMin opens the
+ * picker back to it. For a rehire that is precisely wrong — the stored value
+ * IS the old employment's joining date, so the wizard offered the past date as
+ * the default and then accepted it, which is this ticket. Their joining date
+ * has to move forward to the day they came back.
+ *
+ * Read off the exit row's `rehired_at`, which EmployeeController keeps in the
+ * payload for exactly this kind of "have they been brought back?" question. */
+const isRehired = !!emp?.raw?.exit?.rehired_at;
+const joinMin = (!isRehired && joinDateOrig && joinDateOrig < joinTodayIso) ? joinDateOrig : joinTodayIso;
 // Salary effective from: anchored to joining date when set, otherwise
 // allow up to 1 year before today. Hard cap at 1 year ahead so an
 // admin can schedule a near-future increment but not type "2012" or
@@ -3321,8 +3360,14 @@ const validateStage1 = (): boolean => {
   const doj = s1.date_of_joining?.trim() ?? '';
   if (!doj) {
     errors.date_of_joining = 'Joining date is required';
-  } else if (doj < joinTodayIso && doj !== joinDateOrig) {
-    errors.date_of_joining = 'Joining date can’t be in the past';
+    // `doj !== joinDateOrig` is the keep-your-existing-date exemption; a
+    // re-onboarded employee is excluded from it, because their existing date
+    // is the OLD employment's and is exactly the past value being rejected.
+    // (#121 — see the isRehired note above joinMin.)
+  } else if (doj < joinTodayIso && (isRehired || doj !== joinDateOrig)) {
+    errors.date_of_joining = isRehired
+      ? 'Joining date can’t be in the past — set the date this employee rejoined'
+      : 'Joining date can’t be in the past';
   } else if (doj > joinMax) {
     errors.date_of_joining = 'Joining date cannot be more than a year in the future';
   }

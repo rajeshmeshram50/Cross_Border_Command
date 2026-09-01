@@ -636,6 +636,13 @@ function HolidayModal({
   const handleSubmit = async () => {
     const local: Record<string, string> = {};
     if (!name.trim()) local.name = 'Holiday name is required';
+    /* A holiday name is a label, not a number. The input already strips special
+       characters, but a purely numeric value ("2026", "12345") still cleared the
+       required check and saved as a holiday name (CBC #59). Digits stay allowed
+       INSIDE a name ("Diwali 2026", "2nd October"), so the rule only demands at
+       least one letter. Mirrored server-side in HolidayController. */
+    else if (!/^(?=.*\p{L})[\p{L}\p{N} .'\-]+$/u.test(name.trim()))
+      local.name = 'Holiday name must include at least one letter — numbers alone are not a valid name';
     if (!groupId) local.group = 'Holiday group is required';
     if (!type) local.type = 'Type is required';
     if (!date) local.date = 'Date is required';

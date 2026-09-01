@@ -385,6 +385,14 @@ const C: Record<string, MasterConfig> = {
     icon: 'ri-verified-badge-line', iconColor: 'warning', iconBg: 'warning',
     desc: 'Job titles shown on letters, profiles & HR records',
     cat: 'Identity & Entity',
+    // Closed vocabulary: the six seeded levels (Director/CEO, HOD, Team
+    // Leader, Executive, Employee, Intern/Trainee) are the whole hierarchy,
+    // and every HR screen that reads a designation level assumes exactly
+    // this set. A tenant-added seventh title has no level to sit at, so it
+    // breaks the hierarchy strip and the level KPIs. Hides the Add button;
+    // MasterController blocks the POST so a direct API hit cannot add one
+    // either. Existing rows stay editable.
+    lockedFixed: true,
     fields: [
       { n: 'name', l: 'Designation Name', t: 'text', r: true, p: 'e.g., Senior Software Engineer' },
       { n: 'code', l: 'Designation Code', t: 'text', auto: true, hint: '(auto-generated)', p: 'DGN-XXX' },

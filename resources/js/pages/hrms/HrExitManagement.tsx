@@ -1257,6 +1257,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   const earlyResignation = isEarlyResignation(employee?.dateOfJoiningIso, noticeDate);
   const earlyTenure      = tenureDays(employee?.dateOfJoiningIso, noticeDate);
   const noticeWaived     = onProbation || earlyResignation;
+  /* "Resignation without notice period" is an IMMEDIATE exit — the employee is
+     not serving anything, so the notice "start" can only be the day the exit is
+     recorded. Same carve-out the probation case already has below: the
+     tomorrow-or-later floor is lifted to TODAY and the field is seeded with it.
+     Without this the type was impossible to express — today was greyed out of
+     the picker and rejected on save. (#126)
+
+     Deliberately NOT folded into `noticeWaived`. That flag means "no notice
+     period exists", which zeroes the recovery — and the entire point of this
+     type is that the unserved days ARE recovered from the employee. The notice
+     period still has to derive from this start date; only the floor moves. */
+  const noNoticeExit     = exitType.trim() === 'Resignation without notice period';
 
   /* ── No settlement, no documents ─────────────────────────────────────
      An employee still ON PROBATION who leaves before completing
@@ -1575,10 +1587,31 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
   };
   const fmtMoney = (n: number) =>
     '₹' + Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  // Notice start date may be today, but not in the past — UNLESS it's the value
-  // already saved on this exit (revisiting an in-progress case shouldn't flag a
-  // historical date the user never touched).
-  const noticeDateInvalid = !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < todayIso;
+  /* Notice starts TOMORROW at the earliest — never today, never in the past.
+   * (#125)
+   *
+   * The floor was `todayIso`, so today was accepted. Notice is a period the
+   * employee still has to serve, and a period cannot begin on a day already
+   * part-spent: starting it today prices a full day of notice against hours
+   * that have already gone, and the notice END is derived from this date
+   * (start + N − 1), so every downstream figure — days served, days unserved,
+   * the pay-in-lieu or recovery amount — inherits the error.
+   *
+   * The "already saved on this exit" exemption stays: a case filed last month
+   * legitimately carries a past notice date, and re-opening it must not flag a
+   * value nobody touched or force it forward on save. */
+  const tomorrowIso = addDaysIso(todayIso, 1);
+  /* Probation is exempt. There is no notice period to start — the exit is
+   * immediate — so the field is frozen and auto-filled with TODAY on purpose.
+   * Without this guard the new floor would reject that auto-filled value and
+   * block Save on a field the user cannot even edit. */
+  /* The floor itself, so the rule, the picker `min`, the inline error and the
+     submit-time message can never state three different things. Tomorrow for a
+     notice that will be SERVED; today for an immediate exit, which is over
+     before a "tomorrow" exists. (#126) */
+  const noticeFloor = noNoticeExit ? todayIso : tomorrowIso;
+  const noticeDateInvalid = !onProbation
+    && !!noticeDate && noticeDate !== loadedNoticeRef.current && noticeDate < noticeFloor;
   /* Last working day bounds — these follow the EXIT TYPE, because the whole
      point of the non-standard types is that the notice period is NOT served:
 
@@ -1691,13 +1724,23 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      that flag (earlyResignation) is derived from this very field, so freezing
      on it would trap HR — one date typed inside the early-exit window would
      lock the field it was computed from, with no way back to correct it. */
+  /* Seeded for an immediate exit too (#126) — a resignation without notice is
+     effective the day it is recorded, so today is the answer rather than a
+     blank the user has to fill in with the only value the field will accept.
+     Unlike probation the field stays EDITABLE: the value is a default, not a
+     fact derived from the employee record.
+
+     Guarded on `!noticeDate`, so switching the exit type on a case that already
+     carries a date never overwrites what HR typed. */
   useEffect(() => {
-    if (onProbation && !noticeDate) setNoticeDate(todayIso);
-  }, [onProbation, noticeDate, todayIso]);
+    if ((onProbation || noNoticeExit) && !noticeDate) setNoticeDate(todayIso);
+  }, [onProbation, noNoticeExit, noticeDate, todayIso]);
 
   const ndLoaded   = loadedNoticeRef.current ? loadedNoticeRef.current.slice(0, 10) : '';
   const lwdLoaded  = loadedLwdRef.current ? loadedLwdRef.current.slice(0, 10) : '';
-  const noticeMin  = ndLoaded && ndLoaded < todayIso ? ndLoaded : todayIso;
+  // Picker floor matches the rule above — tomorrow, unless this case already
+  // carries an earlier date of its own. (#125)
+  const noticeMin  = ndLoaded && ndLoaded < noticeFloor ? ndLoaded : noticeFloor;
   const effLwdMin  = lwdLoaded && lwdLoaded < lwdMin ? lwdLoaded : lwdMin;
   /* Same protection on the ceiling as on the floor: a value already saved on
      the exit is never clamped away. An approved UNPAID leave during notice
@@ -2774,8 +2817,15 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
             : settlement === 'pay_in_lieu'
               ? 'the last working day cannot be before the termination date'
               : 'the last working day cannot be before the notice start date';
-          if (noticeDateInvalid && lwdInvalid) return `Notice start date cannot be in the past, and ${lwdMsg}.`;
-          if (noticeDateInvalid) return 'Notice start date cannot be in the past.';
+          // Same split as the inline error: an immediate exit's floor is today,
+          // not tomorrow, so it must not be told to pick a future date. (#126)
+          const ndMsg = noNoticeExit
+            ? 'the notice start date cannot be in the past on an immediate exit'
+            : 'notice start date must be tomorrow or later';
+          if (noticeDateInvalid && lwdInvalid) {
+            return `${ndMsg.charAt(0).toUpperCase()}${ndMsg.slice(1)}, and ${lwdMsg}.`;
+          }
+          if (noticeDateInvalid) return `${ndMsg.charAt(0).toUpperCase()}${ndMsg.slice(1)}.`;
           return `${lwdMsg.charAt(0).toUpperCase()}${lwdMsg.slice(1)}.`;
         })(),
       );
@@ -3326,7 +3376,14 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                         disabled={onProbation}
                         onChange={(v) => {
                           setNoticeDate(v); clearS1Err('noticeDate');
-                          if (v && v !== loadedNoticeRef.current && v < todayIso) toast.warning('Invalid notice start date', 'Notice start date cannot be in the past.');
+                          if (v && v !== loadedNoticeRef.current && v < noticeFloor) {
+                            toast.warning(
+                              'Invalid notice start date',
+                              noNoticeExit
+                                ? 'This exit is effective immediately, so the notice start date cannot be in the past.'
+                                : 'Notice start date must be tomorrow or later — notice cannot begin on a day already under way.',
+                            );
+                          }
                         }}
                         min={noticeMin}
                         invalid={!onProbation && (s1Errors.has('noticeDate') || noticeDateInvalid)}
@@ -3338,7 +3395,18 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
                       ) : (s1Errors.has('noticeDate') || noticeDateInvalid) && (
                         <div className="ep-err" style={{ fontSize: 11.5, color: '#b91c1c', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
                           <i className="ri-error-warning-line" />
-                          {noticeDateInvalid ? 'Notice start date cannot be in the past.' : 'Notice start date is required.'}
+                          {noticeDateInvalid
+                            ? (noNoticeExit
+                                ? 'This exit is effective immediately — the notice start date cannot be in the past.'
+                                : 'Notice start date must be tomorrow or later.')
+                            : 'Notice start date is required.'}
+                        </div>
+                      )}
+                      {/* Says WHY the field arrived pre-filled, so today reads as
+                          the rule for this exit type rather than a stray value. */}
+                      {!onProbation && noNoticeExit && !s1Errors.has('noticeDate') && !noticeDateInvalid && (
+                        <div className="ep-hint" style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                          No notice is served on this exit type, so it is effective immediately — the start date defaults to today.
                         </div>
                       )}
                     </EpField>
@@ -4894,16 +4962,32 @@ function RehireModal({ employee, onClose, onDone }: {
   const [restart, setRestart] = useState(false);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  /* Rejoining date — the day they return, and the new joining date on the
+     record. Defaults to today and cannot be moved into the past: a rejoin
+     that already happened is not a rehire, it is a correction. Mirrors the
+     server rule in ExitController::rehire(). (#120) */
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const [rejoinDate, setRejoinDate] = useState(todayIso);
+  const [dateErr, setDateErr] = useState<string | null>(null);
 
-  useEffect(() => { if (employee) { setRestart(false); setNote(''); } }, [employee?.id]);
+  useEffect(() => {
+    if (employee) { setRestart(false); setNote(''); setRejoinDate(todayIso); setDateErr(null); }
+  }, [employee?.id]);
 
   const submit = async () => {
     if (!employee || busy) return;
+    if (!rejoinDate) { setDateErr('Rejoining date is required.'); return; }
+    if (rejoinDate < todayIso) {
+      setDateErr('The rejoining date cannot be in the past — it is the day this employee returns.');
+      return;
+    }
+    setDateErr(null);
     setBusy(true);
     try {
       const { data } = await api.post(`/employees/${employee.id}/rehire`, {
         restart_onboarding: restart,
         note: note.trim() || null,
+        rejoining_date: rejoinDate,
       });
       toast.success('Employee rehired', data?.message
         || 'Employee reactivated and now shows in the active employee list.');
@@ -4966,6 +5050,34 @@ function RehireModal({ employee, onClose, onDone }: {
                 </span>
               </span>
             </button>
+          </div>
+
+          {/* Rejoining date. Applies to BOTH ways back — "Reactivate only"
+              restores the record as it was, but the date they return is new
+              information either way, and payroll, tenure and probation all key
+              off it. `min` blocks the past in the picker; submit() re-checks it
+              because a typed value can bypass `min`, and the server checks it
+              again. (#120) */}
+          <div className="mt-3">
+            <label className="ep-label" style={{ fontSize: 11.5, fontWeight: 700 }}>
+              Rejoining Date <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <input
+              className={`ep-input${dateErr ? ' is-invalid' : ''}`}
+              type="date"
+              value={rejoinDate}
+              min={todayIso}
+              disabled={busy}
+              onChange={e => { setRejoinDate(e.target.value); setDateErr(null); }}
+            />
+            {dateErr
+              ? <small className="d-block" style={{ color: '#dc2626', fontSize: 11, marginTop: 3 }}>{dateErr}</small>
+              : (
+                <small className="d-block text-muted" style={{ fontSize: 11, marginTop: 3 }}>
+                  Becomes their joining date. Salary Effective From follows it, and the return
+                  month&apos;s payroll is pro-rated from it.
+                </small>
+              )}
           </div>
 
           <div className="mt-3">
@@ -5513,6 +5625,20 @@ function FnfSalaryBreakdown({ payroll, fmtMoney }: {
                 <td>Monthly Gross<em>Basic + allowances, as per the salary structure</em></td>
                 <td>{fmtMoney(monthlyFull)}</td>
               </tr>
+              {/* Annual CTC — the same package read as a year. (#124)
+                  Derived from the monthly gross above rather than from
+                  employees.annual_salary: the payslip and every figure in this
+                  card are built from the salary STRUCTURE, and the two columns
+                  can disagree (#133), so taking the annual from anywhere else
+                  would put a number here that does not reconcile with the row
+                  directly above it. Hidden when there is no package to
+                  annualise, rather than printing ₹0.00. */}
+              {monthlyFull > 0 && (
+                <tr className="is-earn">
+                  <td>Annual CTC<em>Monthly gross × 12</em></td>
+                  <td>{fmtMoney(monthlyFull * 12)}</td>
+                </tr>
+              )}
             </tfoot>
           </table>
 

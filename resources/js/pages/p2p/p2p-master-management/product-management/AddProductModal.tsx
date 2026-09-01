@@ -16,6 +16,8 @@ import {
   writeProductMasterBundle,
 } from './productBundleCache';
 import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
+import { MasterRecordModal } from '../../../master/MasterRecordModal';
+import { formatProductCode } from '../../../../utils/formatProductCode';
 export type VendorEntry = {
   id: string;
   vendorId: string;
@@ -165,7 +167,10 @@ export default function AddProductModal(props: {
   /* ─── Wizard nav ─── */
   const [step, setStep] = useState<1 | 2>(1);
   const [tab, setTab] = useState<Tab>('core');
-  const [previousOpen, setPreviousOpen] = useState(true);
+  /* Collapsed by default — the summary is a look-back, not the reason the
+     user opened this step, and expanded it pushed the actual form below
+     the fold. The header stays visible and toggles it open. */
+  const [previousOpen, setPreviousOpen] = useState(false);
   const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() =>
     new Set<Tab>(initialId ? ['core', 'sales', 'quality'] : ['core'])
   );
@@ -408,6 +413,12 @@ export default function AddProductModal(props: {
   const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
 
   const productCode = productCodeFromApi || (name ? 'P-NEW' : '');
+  /* Code shown beside the modal title. Uses the shared formatter so it
+     reads P-002 here exactly as it does on the product list and detail
+     pages (the raw DB code is only 2-digit). Deliberately NOT the
+     `productCode` above — that falls back to the 'P-NEW' placeholder,
+     which must never surface in the header. */
+  const headerProductCode = formatProductCode(productCodeFromApi);
 
   // Look up a master row's display label from its id — used by the
   // previous-stages summary and the QC popup's product header.
@@ -1024,7 +1035,7 @@ export default function AddProductModal(props: {
   }, [bundledQcUploads]);
 
   /**
-   * Called by the MasterQuickAddPopup after a successful POST. Pushes
+   * Called by the MasterRecordModal after a successful POST. Pushes
    * the new row into the matching opt* list and selects it on the
    * dropdown that triggered the popup, so the user can keep typing
    * without manually reopening the select.
@@ -1388,6 +1399,20 @@ export default function AddProductModal(props: {
      closing WITHOUT mapping means the product isn't created — return to Stage 1
      with the Core data intact and a hint that GST is required to add it. For an
      existing product (remap) it's just a plain close. */
+  /* Opens the "Map GST %" popup. Shared by the header "GST (%)" pill and the
+     edit icon beside the Sales tab's GST % field so both land on exactly the
+     same flow — a GST % is mapped onto a product row, which only exists once
+     Core has been saved, hence the productId gate. */
+  const openGstMap = () => {
+    if (!productId) {
+      toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
+      return;
+    }
+    setGstMapValue(gstId);
+    setGstMasterOpen(false);
+    setGstMapOpen(true);
+  };
+
   const closeGstMap = () => {
     setGstMapOpen(false);
     if (!productId) {
@@ -1678,6 +1703,12 @@ export default function AddProductModal(props: {
                 {step === 2
                   ? 'Map Product Supplier'
                   : (initialId ? 'Edit Product' : 'Add Product')}
+                {/* Only once the product actually exists — edit mode, or the
+                    supplier-mapping step, which is only reachable after Core
+                    has been saved. In a fresh Add the title stays bare. */}
+                {(initialId != null || step === 2) && headerProductCode && (
+                  <span className="apm-title-code">— {headerProductCode}</span>
+                )}
               </div>
               <div className="apm-sub">
                 {step === 2
@@ -1703,13 +1734,7 @@ export default function AddProductModal(props: {
               // product row, which only exists once Core has been saved.
               title={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
               disabled={saving || !productId}
-              onClick={() => {
-                if (!productId) {
-                  toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
-                  return;
-                }
-                setGstMapValue(gstId); setGstMasterOpen(false); setGstMapOpen(true);
-              }}
+              onClick={openGstMap}
             >
               {gstId && gstPctNum ? `GST ${gstPctNum}%` : 'GST (%)'}
             </button>
@@ -1880,7 +1905,9 @@ export default function AddProductModal(props: {
                 </SectionCard>
 
                 <SectionCard
-                  tone="amber"
+                  /* Violet, not amber — the amber icon tile and gold heading
+                     were the only warm note in an otherwise purple modal. */
+                  tone="violet"
                   icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></svg>}
                   title="PRODUCT GENERAL INFORMATION"
                   subtitle="Handling, classification, and packaging attributes"
@@ -1988,15 +2015,37 @@ export default function AddProductModal(props: {
                         <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => { setBasePrice(e.target.value); clearFieldError('basePrice'); }} />
                       </div>
                     </Field>
-                    {/* GST % is view-only here — it can only be mapped via the
-                        header "GST (%)" button (setGstMapOpen), which keeps the
-                        supplier GST calculation driven by a single source. */}
-                    <Field label="GST %" required error={fieldErrors.gstId}>
-                      {/* Only show the stored gst_id when it still resolves to a
-                          live GST option. If that GST rate was deleted from the
-                          master, the id is orphaned — show the placeholder (blank)
-                          instead of the raw numeric id (QA #44). */}
-                      <SelectInput value={optGst.some(o => o.value === gstId) ? gstId : ''} onChange={() => {}} placeholder='Map from the "GST (%)" button above' options={optGstSorted} disabled />
+                    {/* GST % is not typed here — it is mapped through the
+                        Map-GST popup, reachable from the header "GST (%)" pill
+                        or the edit icon on this label. Both call openGstMap, so
+                        the supplier GST calculation stays driven by one source. */}
+                    <Field
+                      label="GST %"
+                      required
+                      error={fieldErrors.gstId}
+                      onEdit={openGstMap}
+                      editDisabled={saving || !productId}
+                      editTitle={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
+                    >
+                      {/* Read-only input, NOT a disabled <select>: the rate is only ever
+                          set through the Map-GST popup, so the chevron was advertising a
+                          dropdown that could never open (QA #60). Matches the read-only
+                          GST % field in the Map Supplier popup and the auto-computed GST
+                          Amount / Total Selling Price directly below it.
+
+                          The label is read off the live options list, so a gst_id whose
+                          rate was deleted from the master resolves to nothing and falls
+                          back to the placeholder instead of showing the raw numeric id
+                          (QA #44). Reading the option label rather than gstPctStr also
+                          keeps a mapped 0% rate visible: gstPctStr is blank at 0, which
+                          would render a valid 0% rate as unmapped (QA #52). */}
+                      <input
+                        className="apm-input apm-readonly"
+                        value={optGst.find(o => o.value === gstId)?.label ?? ''}
+                        readOnly
+                        placeholder='Map from the "GST (%)" button above'
+                        title='GST % is mapped through the "GST (%)" button above'
+                      />
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -2632,10 +2681,24 @@ export default function AddProductModal(props: {
           />
         </>
       ) : quickAdd && (
-        <MasterQuickAddPopup
+        /* The master's OWN form (same one /master/{slug} renders), not a
+         * re-creation — see MasterRecordModal. Every "+" here therefore
+         * matches the master page field for field, including validation. */
+        <MasterRecordModal
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
+            /* The master form exposes a Status field, so the user can save an
+             * Inactive row. /products/master-bundle only returns Active rows
+             * (LOWER(status) = 'active'), so auto-selecting an Inactive one
+             * would put a value in the dropdown that vanishes on reload.
+             * Keep the save, skip the select, say why. */
+            if (row.status && String(row.status).toLowerCase() !== 'active') {
+              bustAllMasterBundles();
+              toast.info('Saved as Inactive', 'Only Active records appear in this dropdown. Set it to Active to select it here.');
+              setQuickAdd(null);
+              return;
+            }
             onMasterAdded(quickAdd, row);
             setQuickAdd(null);
           }}
@@ -2742,6 +2805,11 @@ function Field(props: {
   required?: boolean;
   addNew?: boolean;
   onAdd?: () => void;
+  /* Pencil pill beside the label, for a value that is set through a popup
+     rather than typed into the control (GST %). Independent of `addNew`. */
+  onEdit?: () => void;
+  editTitle?: string;
+  editDisabled?: boolean;
   icon?: ReactNode;
   error?: string;
   disabled?: boolean;
@@ -2766,6 +2834,19 @@ function Field(props: {
             title={`Add new ${props.label}`}
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
           >+</button>
+        )}
+        {props.onEdit && (
+          <button
+            type="button"
+            className="apm-field-edit"
+            aria-label={props.editTitle ?? `Edit ${props.label}`}
+            tabIndex={-1}
+            title={props.editTitle ?? `Edit ${props.label}`}
+            disabled={props.editDisabled}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onEdit?.(); }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+          </button>
         )}
       </span>
       {props.icon ? (
@@ -3243,221 +3324,6 @@ function QcAddPopup(props: {
             disabled={!draft.name || !draft.purpose || !draft.issuedBy}
           >
             Save
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Master Quick-Add popup — opens above the wizard when a "+" button is
- * clicked next to a master-backed field. Posts the new row directly to
- * /api/master/{slug} and hands the result back to the wizard so the
- * dropdown can refresh + auto-select it.
- *
- * Each slug declares its own minimal field list. Status is always sent
- * as "Active" so the new row immediately shows up in the dropdown
- * filter (which strips Inactive rows).
- * ────────────────────────────────────────────────────────────────────── */
-type QuickAddSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
-type QaField = { name: string; label: string; type?: 'text' | 'number'; required?: boolean; placeholder?: string; min?: number; max?: number };
-
-const QUICK_ADD_SCHEMAS: Record<QuickAddSlug, { title: string; fields: QaField[] }> = {
-  segments:           { title: 'Add Segment',            fields: [{ name: 'title', label: 'Segment Name', required: true, placeholder: 'e.g. Dry Fruits' }] },
-  haz_class:          { title: 'Add Haz Class',          fields: [{ name: 'name',  label: 'Haz Class Name', required: true, placeholder: 'e.g. Class 3 - Flammable Liquids' }] },
-  uom:                { title: 'Add Unit of Measurement', fields: [
-                          { name: 'title',      label: 'Title', required: true, placeholder: 'e.g. Kilogram' },
-                          { name: 'short_code', label: 'Short Code', required: true, placeholder: 'e.g. KG' },
-                          { name: 'unit_type',  label: 'Unit Type', placeholder: 'e.g. Weight / Volume / Count' },
-                        ] },
-  hsn_codes:          { title: 'Add HSN / SAC Code',     fields: [
-                          /* HSN / SAC are numeric per Indian GST notification
-                             (4, 6, 8 or 10 digit codes). Backend validates
-                             ^[0-9]{4,10}$; matched by submit() below, and the
-                             input strips non-digits as the user types. */
-                          { name: 'hsn_code',    label: 'HSN / SAC Code', required: true, placeholder: 'e.g. 08013100' },
-                          { name: 'description', label: 'Description', placeholder: 'Brief description' },
-                        ] },
-  conditions:         { title: 'Add Condition',          fields: [{ name: 'title', label: 'Condition Name', required: true, placeholder: 'e.g. New, Refurbished' }] },
-  packaging_material: { title: 'Add Packaging Material', fields: [
-                          { name: 'title',         label: 'Title', required: true, placeholder: 'e.g. Carton Box' },
-                          { name: 'material_type', label: 'Material Type', placeholder: 'e.g. Cardboard' },
-                        ] },
-  /* GST % is stored as numeric(18,4) — anything >= ~10^14 throws a raw
-     PostgreSQL overflow that used to surface as a stack trace in the toast.
-     A GST slab is realistically 0..100, so clamp it here (matches the
-     gst_percentage range in masterConfigs.ts) and the user sees a friendly
-     "GST % must be at most 100" instead of the SQL error. */
-  gst_percentage:     { title: 'Add GST Percentage',     fields: [{ name: 'percentage', label: 'GST %', type: 'number', required: true, placeholder: 'e.g. 18', min: 0, max: 100 }] },
-};
-
-function MasterQuickAddPopup(props: {
-  slug: QuickAddSlug;
-  onClose: () => void;
-  onSaved: (row: Record<string, unknown>) => void;
-}) {
-  const { slug, onClose, onSaved } = props;
-  const toast = useToast();
-  const schema = QUICK_ADD_SCHEMAS[slug];
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-
-  const set = (k: string, v: string) => {
-    setValues(prev => ({ ...prev, [k]: v }));
-    if (errors[k]) setErrors(prev => { const n = { ...prev }; delete n[k]; return n; });
-  };
-
-  const submit = async () => {
-    const errs: Record<string, string> = {};
-    /* Fields whose value is the master's primary label / code — held to a
-       conservative charset so a quick-add can't slip emoji, markup, or
-       symbol-soup into a Segment Name, UOM Title/Short Code, etc. Mirrors
-       the NAME_FIELD_NAMES whitelist in MasterPage.validateForm so the
-       quick-add popup and the full master page reject the same input. */
-    const NAME_FIELDS = new Set(['title', 'short_code', 'name', 'code']);
-    schema.fields.forEach(f => {
-      const raw = (values[f.name] ?? '').toString().trim();
-      if (f.required && !raw) {
-        errs[f.name] = `${f.label} is required`;
-        return;
-      }
-      if (!raw) return;
-      /* HSN/SAC code — mirrors the backend's ^[0-9]{4,10}$ pattern so
-         the user gets instant feedback if they typed a letter, a hyphen,
-         a space, or fewer than 4 digits, instead of hitting the server
-         with a 422 round-trip. */
-      if (f.name === 'hsn_code') {
-        if (!/^[0-9]{4,10}$/.test(raw)) errs[f.name] = 'HSN / SAC must be 4 to 10 digits';
-        return;
-      }
-      /* Numeric fields (e.g. GST %) — validate the value is a number and
-         within range BEFORE it hits the server, so a large value can't
-         overflow the backend column and leak a raw SQL error into the toast
-         (QA bug: GST % numeric overflow). Mirrors the number range guard in
-         MasterPage.validateForm; defaults to 0..999999999 when no per-field
-         min/max is set. */
-      if (f.type === 'number') {
-        const num = Number(raw);
-        if (isNaN(num)) {
-          errs[f.name] = `${f.label} must be a valid number`;
-          return;
-        }
-        const minOverride = typeof f.min === 'number' ? f.min : 0;
-        const maxOverride = typeof f.max === 'number' ? f.max : 999999999;
-        if (num < minOverride) errs[f.name] = `${f.label} must be at least ${minOverride}`;
-        else if (num > maxOverride) errs[f.name] = `${f.label} must be at most ${maxOverride}`;
-        return;
-      }
-
-      /* ── Text security + charset validation ──────────────────────────
-         The quick-add popup previously checked only "required", so SQL/XSS
-         payloads and arbitrary special characters were saved verbatim
-         (QA bugs: HSN Description, Segment Name, UOM Title/Short Code).
-         These rules mirror MasterPage.validateForm exactly so behaviour is
-         identical whether a master is added from its own page or from here.
-         Backend still parameterises queries; this stops the payload being
-         stored and resurfacing later in exports / reports. */
-      const cap = f.name === 'description' ? 150 : 50;
-      if (raw.length > cap) {
-        errs[f.name] = `${f.label} must be ${cap} characters or fewer`;
-        return;
-      }
-      if (/[<>]/.test(raw)) {
-        errs[f.name] = `${f.label} cannot contain HTML characters (< or >)`;
-        return;
-      }
-      if (/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i.test(raw)) {
-        errs[f.name] = `${f.label} contains disallowed patterns (possible SQL/JS injection)`;
-        return;
-      }
-      if (f.required && !/[A-Za-z0-9]/.test(raw)) {
-        errs[f.name] = `${f.label} must contain meaningful text (letters or numbers, not only symbols)`;
-        return;
-      }
-      if (f.name === 'description') {
-        if (!/^[A-Za-z0-9\s\-—–.,()&/'%]+$/.test(raw)) {
-          errs[f.name] = "Description may only contain letters, numbers, spaces, and . , - ( ) & / ' %";
-        }
-      } else if (NAME_FIELDS.has(f.name)) {
-        if (!/^[A-Za-z0-9\s\-.,()&/'%]+$/.test(raw)) {
-          errs[f.name] = `${f.label} may only contain letters, numbers, spaces, and . , - ( ) & / ' %`;
-        }
-      }
-    });
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      toast.error('Missing required fields', 'Please fix the highlighted fields');
-      return;
-    }
-    setSaving(true);
-    try {
-      const payload: Record<string, unknown> = { ...values, status: 'Active' };
-      // Numeric fields go in as Number so the master accepts the schema cast.
-      schema.fields.forEach(f => {
-        if (f.type === 'number' && payload[f.name] !== undefined) {
-          payload[f.name] = Number(payload[f.name]);
-        }
-      });
-      const res = await api.post<Record<string, unknown>>(`/master/${slug}`, payload);
-      toast.success('Saved', `${schema.title.replace('Add ', '')} added`);
-      onSaved(res.data);
-    } catch (e: unknown) {
-      const err = e as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } };
-      const fieldErr = err?.response?.data?.errors;
-      if (fieldErr) {
-        const flat: Record<string, string> = {};
-        Object.entries(fieldErr).forEach(([k, v]) => { if (v?.[0]) flat[k] = v[0]; });
-        setErrors(flat);
-      }
-      toast.error('Save failed', err?.response?.data?.message || `Could not add to ${slug}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return createPortal((
-    <div className="apm-qa-backdrop">
-      <div className="apm-qa-popup">
-        <div className="apm-qa-head">
-          <div className="apm-qa-title">
-            <i className="ri-add-circle-line" /> {schema.title}
-          </div>
-          <button className="apm-close apm-qa-close" onClick={onClose} aria-label="Close">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        <div className="apm-qa-body">
-          {schema.fields.map(f => {
-            /* HSN/SAC inputs accept only digits — strip everything else
-               on the fly so a paste of "0802-1200" becomes "08021200"
-               and the backend's ^[0-9]{4,10}$ validator never trips. */
-            const isHsn = f.name === 'hsn_code';
-            return (
-              <Field key={f.name} label={f.label} required={f.required} error={errors[f.name]}>
-                <input
-                  className="apm-input"
-                  type={f.type === 'number' ? 'number' : 'text'}
-                  placeholder={f.placeholder ?? ''}
-                  value={values[f.name] ?? ''}
-                  inputMode={isHsn ? 'numeric' : undefined}
-                  maxLength={isHsn ? 10 : undefined}
-                  min={f.type === 'number' ? f.min : undefined}
-                  max={f.type === 'number' ? f.max : undefined}
-                  onChange={(e) => set(
-                    f.name,
-                    isHsn ? e.target.value.replace(/\D/g, '') : e.target.value,
-                  )}
-                />
-              </Field>
-            );
-          })}
-        </div>
-        <div className="apm-qa-foot">
-          <button className="apm-btn-ghost" onClick={onClose} disabled={saving}>Cancel</button>
-          <button className="apm-btn-primary" onClick={submit} disabled={saving}>
-            {saving ? <span className="apm-spinner" /> : <i className="ri-save-line" />} Save
           </button>
         </div>
       </div>

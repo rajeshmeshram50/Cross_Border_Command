@@ -169,19 +169,44 @@ interface ApprovalNode {
   initials: string;
   name: string;
   role: 'Self' | 'Manager' | 'HR';
-  decision: 'approved' | 'viewed' | 'pending' | 'idle' | 'rejected' | 'skipped';
+  decision: 'approved' | 'viewed' | 'pending' | 'idle' | 'rejected' | 'skipped' | 'cancelled';
   detail?: string;
   actionAt?: string;
   comment?: string;
 }
 
 const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
+  /* A cancelled request never reached a decision, so its approver nodes stay
+   * 'Pending' on the record — and the timeline drew them as the amber clock,
+   * i.e. exactly like a request still waiting on someone. Nothing on the
+   * timeline said the request was over. (#207)
+   *
+   * Cancellation is resolved from the request's own stage rather than from any
+   * approver's answer, because that is what it is: the EMPLOYEE ended the
+   * request, no approver rejected it. Applied only to nodes that had not yet
+   * decided — a manager who genuinely approved before the employee cancelled
+   * keeps their green tick, because that did happen and the timeline is a
+   * history, not a summary. */
+  const isCancelled = r.stage === 'Cancelled';
+  const undecided = (d: ApprovalNode['decision']): ApprovalNode['decision'] =>
+    isCancelled && (d === 'pending' || d === 'idle') ? 'cancelled' : d;
+
   const self: ApprovalNode = {
     initials: r.empInitials,
     name: r.empName,
     role: 'Self',
+    /* Stays green: the submission genuinely happened, and this timeline is a
+       history rather than a summary of where the request ended up. */
     decision: 'approved',
-    detail: r.raisedBy === 'hr' ? 'HR raised on behalf' : 'Leave request submitted',
+    /* …but it must SAY that the request was withdrawn. (#133)
+       The approver nodes turn red on a cancellation while this one kept
+       reading "Leave request submitted", so nothing on the timeline named the
+       side the cancellation came from — and cancelling is the requester's
+       action, not an approver's. Only the requester or HR can call /cancel, and
+       no cancelled_by is recorded, so the wording stays neutral about which. */
+    detail: isCancelled
+      ? 'Submitted — later cancelled'
+      : r.raisedBy === 'hr' ? 'HR raised on behalf' : 'Leave request submitted',
     actionAt: r.appliedOn,
   };
 
@@ -202,8 +227,10 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     initials: r.reportingManager.initials,
     name: r.reportingManager.name,
     role: 'Manager',
-    decision: managerDecision,
-    detail: managerDetail,
+    decision: undecided(managerDecision),
+    // Says what actually happened to this step, instead of leaving "Awaiting
+    // decision" on a request nobody is waiting on any more. (#207)
+    detail: undecided(managerDecision) === 'cancelled' ? 'Not required — request cancelled' : managerDetail,
     actionAt: r.managerActionAt,
     comment: r.managerComment,
   };
@@ -222,8 +249,12 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
   const hrDecision: ApprovalNode['decision'] =
     !r.escalatedToHr ? (hrReviewed ? 'viewed' : 'idle')
     : hrStoodIn
-      ? (r.status === 'Approved' ? 'approved'
-        : r.status === 'Rejected' ? 'rejected'
+      /* `r.stage`, not `r.status` — LeaveRequest has no `status` field, so this
+         read was always undefined and the manager-unavailable node fell through
+         to 'pending' even on a request HR had already decided. Same timeline,
+         same class of fault as the cancelled case. (#207) */
+      ? (r.stage === 'Approved' ? 'approved'
+        : r.stage === 'Rejected' ? 'rejected'
         : 'pending')
     : r.hrStatus === 'Approved' ? 'approved'
     : r.hrStatus === 'Rejected' ? 'rejected'
@@ -234,8 +265,8 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Approved' ? 'Override approved'
     : r.escalationReason === 'manager_rejected' && r.hrStatus === 'Rejected' ? 'Concurred with manager'
     : r.escalationReason === 'manager_unavailable'
-      ? (r.status === 'Approved' ? 'Manager on leave — approved by HR'
-        : r.status === 'Rejected' ? 'Manager on leave — rejected by HR'
+      ? (r.stage === 'Approved' ? 'Manager on leave — approved by HR'
+        : r.stage === 'Rejected' ? 'Manager on leave — rejected by HR'
         : 'Manager on leave — awaiting HR')
     : r.escalationReason === 'aged_out'         ? 'Auto-escalated · 7-day rule'
     : r.escalationReason === 'hr_raised'        ? 'HR raised the request'
@@ -247,8 +278,8 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     initials: r.hrApprover?.initials || 'HR',
     name: r.hrApprover?.name || 'HR Team',
     role: 'HR',
-    decision: hrDecision,
-    detail: hrDetail,
+    decision: undecided(hrDecision),
+    detail: undecided(hrDecision) === 'cancelled' ? 'Not required — request cancelled' : hrDetail,
     actionAt: r.hrActionAt || (hrDecision === 'viewed' ? r.hrViewedAt : undefined),
     comment: r.hrComment,
   };
@@ -285,8 +316,20 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   let hrStatus: ApprovalState = 'Pending';
   if (status === 'Cancelled') {
     stage = 'Cancelled';
-    managerStatus = 'NA';
-    hrStatus = 'NA';
+    /* Each level keeps its REAL answer. (#133)
+     *
+     * Both were forced to 'NA', which threw away a decision that had actually
+     * happened. /cancel accepts any request whose OVERALL status is Pending,
+     * and on a two-level chain that includes one the manager has already
+     * approved while it waits on HR — so cancelling there erased the manager's
+     * approval and the timeline drew them as "cancelled" instead of the green
+     * tick they had earned.
+     *
+     * deriveChain() rewrites only nodes that had NOT decided, so passing the
+     * true statuses through is exactly what makes that rule work; blanking them
+     * here was defeating it one layer earlier. */
+    managerStatus = chain && chain.length > 0 ? mapNode(chain[0]?.status) : 'NA';
+    hrStatus      = chain && chain.length > 1 ? mapNode(chain[1]?.status) : 'NA';
   } else if (chain && chain.length > 0) {
     // Read EACH level's own status so a decision is attributed to whoever
     // actually acted — manager (level 1) vs HR (level 2) — instead of always
@@ -1360,7 +1403,10 @@ function LeaveDetailsModal({ row, onClose }: { row: LeaveRequest | null; onClose
               </span>
               <div className="min-w-0">
                 <h5 className="fw-bold mb-0" style={{ color: '#fff', fontSize: 15, lineHeight: 1.2 }}>
-                  {row.empName} <span style={{ opacity: 0.8 }}>· {row.id}</span>
+                  {/* Employee CODE, not `row.id` — the latter is the leave
+                      request's internal database id and read as a stray number
+                      beside the name (same leak as the approve modal, CBC #132). */}
+                  {row.empName} <span style={{ opacity: 0.8 }}>· {row.empCode}</span>
                 </h5>
                 <div style={{ fontSize: 11.5, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                   {row.empRole} · Reporting to {row.reportingManager.name}
@@ -1470,21 +1516,31 @@ function ApprovalTimelineList({
           const isPending  = n.decision === 'pending';
           const isRejected = n.decision === 'rejected';
           const isSkipped  = n.decision === 'skipped';
+          // Cancelled — the request was withdrawn, so this step never ran. (#207)
+          const isCancelledNode = n.decision === 'cancelled';
           const isGreen    = isApproved || isViewed;
           const isLast = i === chain.length - 1;
 
           const dotBg =
             isGreen ? 'linear-gradient(135deg,#0ab39c,#108548)'
             : isRejected ? 'linear-gradient(135deg,#f06548,#dc2626)'
+            /* Filled red, like a rejection — the request is CLOSED and the
+               marker has to read as an ending at a glance, which the amber
+               clock did not. Distinguished from a rejection by its icon
+               (a crossed circle, not a bare cross) and by its label, because
+               "withdrawn by the employee" and "refused by an approver" are
+               different facts and the timeline should not conflate them. */
+            : isCancelledNode ? 'linear-gradient(135deg,#f87171,#b91c1c)'
             : isPending  ? 'linear-gradient(135deg,#f59e0b,#d97706)'
             : isSkipped  ? (dark ? 'rgba(255,255,255,0.06)' : '#f3f4f6')
             : (dark ? 'rgba(255,255,255,0.08)' : '#fff');
-          const dotColor = isGreen || isRejected || isPending ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
-          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isGreen && !isRejected && !isPending ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
+          const dotColor = isGreen || isRejected || isPending || isCancelledNode ? '#fff' : (dark ? 'rgba(255,255,255,0.55)' : '#9ca3af');
+          const dotBorder = isSkipped ? `1.5px dashed ${dark ? 'rgba(255,255,255,0.20)' : '#d1d5db'}` : !isGreen && !isRejected && !isPending && !isCancelledNode ? `1.5px solid ${dark ? 'rgba(255,255,255,0.18)' : '#e5e7eb'}` : 'none';
           const dotIcon =
             isViewed   ? 'ri-eye-line'
             : isApproved ? 'ri-check-line'
             : isRejected ? 'ri-close-line'
+            : isCancelledNode ? 'ri-close-circle-line'
             : isSkipped  ? 'ri-subtract-line'
             : isPending  ? 'ri-time-line'
             : n.role === 'Self' ? 'ri-user-3-line'
@@ -1495,7 +1551,7 @@ function ApprovalTimelineList({
           const dateLabel = formatDate(n.actionAt || (n.role === 'Self' ? appliedOn : ''));
 
           const connectorColor =
-            isGreen ? '#10b981' : isRejected ? '#dc2626' : '#e5e7eb';
+            isGreen ? '#10b981' : isRejected ? '#dc2626' : isCancelledNode ? '#fca5a5' : '#e5e7eb';
 
           return (
             <div key={i} className="text-center position-relative" style={{ minWidth: 0, opacity: isSkipped ? 0.6 : 1 }}>
@@ -1617,8 +1673,13 @@ function ConfirmActionModal({
             </span>
             <div className="min-w-0 flex-grow-1">
               <div className="fw-semibold" style={{ fontSize: 13 }}>{row.empName}</div>
+              {/* Employee code · role — the SAME identity line the list row
+                  shows (see the `employee` column). `row.id` used to lead this
+                  line, but that is the leave REQUEST's internal database id,
+                  not anything the approver can act on: it read as a stray
+                  number glued in front of the Employee ID (CBC #132). */}
               <div className="text-muted" style={{ fontSize: 11.5 }}>
-                {row.id} · {row.empCode} · {row.empRole}
+                {row.empCode} · {row.empRole}
               </div>
             </div>
           </div>

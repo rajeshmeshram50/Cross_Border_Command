@@ -70,6 +70,12 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
   const [earnings, setEarnings] = useState<SalaryComponent[]>([]);
   const [deductions, setDeductions] = useState<SalaryComponent[]>([]);
   const [pfApplicable, setPfApplicable] = useState(false);
+  /* PF Type decides the base PF is charged on — Statutory caps the basic at the
+     ₹15,000 EPF ceiling, Standard uses the full basic. The Employee form has
+     always offered it; Revise Salary only ever displayed its effect, so HR
+     revising a salary here could not correct a wrong PF Type without leaving
+     for the employee record. Same two values, same lowercase storage. (#127) */
+  const [pfType, setPfType] = useState<'Statutory' | 'Standard'>('Statutory');
   const [esiApplicable, setEsiApplicable] = useState(false);
   const [ptApplicable, setPtApplicable] = useState(true);
   const [note, setNote] = useState('');
@@ -108,6 +114,8 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
     setPfApplicable(!!employee.pf_eligible);
     setEsiApplicable(!!employee.esi_applicable);
     setPtApplicable(true);
+    // Anything but an explicit 'standard' is statutory — matches PayrollService.
+    setPfType(String(employee.pf_type ?? '').toLowerCase() === 'standard' ? 'Standard' : 'Statutory');
 
     if (employee.structure_id) {
       // Revising — load the current active structure to prefill.
@@ -161,8 +169,10 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
      all three quote the one figure payroll will deduct. */
   const basicAmt = useMemo(() => Number(earnings.find(c => c.code === 'basic')?.amount) || 0, [earnings]);
   const pfAmt = useMemo(
-    () => pfDeduction(basicAmt, String(employee?.pf_type ?? ''), pfApplicable),
-    [basicAmt, employee?.pf_type, pfApplicable],
+    // Quotes the type SELECTED here, not the one on record, so the estimate
+    // tracks the dropdown as HR changes it. (#127)
+    () => pfDeduction(basicAmt, pfType, pfApplicable),
+    [basicAmt, pfType, pfApplicable],
   );
 
   // Ticking PF / ESI / Professional Tax drops a labelled row into Fixed
@@ -493,6 +503,9 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
         // are saved (payroll honours their manual amounts).
         deductions: deductions.filter(c => c.label.trim() && c.code !== 'pf').map((c, i) => ({ code: c.code || `ded_${i + 1}`, label: c.label.trim(), amount: c.amount })),
         pf_applicable: pfApplicable,
+        // Lowercase to match the employee column's storage; null when PF is
+        // off, mirroring the Employee form's payload exactly. (#127)
+        pf_type: pfApplicable ? pfType.toLowerCase() : null,
         esi_applicable: esiApplicable,
         pt_applicable: ptApplicable,
         revision_note: note.trim() || undefined,
@@ -751,6 +764,23 @@ export default function SalaryStructureModal({ open, onClose, employee, onSaved 
                     </label>
                   ))}
                 </div>
+                {/* Only meaningful while PF is applied — hidden otherwise, the
+                    same way the Employee form nests it under "PF Applicable".
+                    (#127) */}
+                {pfApplicable && (
+                  <div className="ssm-pf-type">
+                    <label className="ssm-label" htmlFor="ssm-pf-type">PF Type</label>
+                    <select
+                      id="ssm-pf-type"
+                      className="form-select"
+                      value={pfType}
+                      onChange={e => setPfType(e.target.value === 'Standard' ? 'Standard' : 'Statutory')}
+                    >
+                      <option value="Statutory">Statutory (₹15k cap)</option>
+                      <option value="Standard">Standard (full basic)</option>
+                    </select>
+                  </div>
+                )}
                 <span className="ssm-hint">Changing any of these here updates the Employee &amp; onboarding forms too, so the two stay in step.</span>
               </div>
               </div>
@@ -1021,6 +1051,10 @@ function SalaryModalStyles() {
 
       /* ── Statutory toggles ── */
       .ssm-toggles { display: flex; gap: 8px; flex-wrap: wrap; }
+      /* PF Type sits under the toggles it belongs to, narrow enough that it
+         reads as a detail of the PF tick rather than a fourth component. */
+      .ssm-pf-type { margin-top: 10px; max-width: 260px; }
+      .ssm-pf-type .ssm-label { margin-bottom: 4px; }
       .ssm-toggle {
         display: flex; align-items: center; gap: 8px;
         padding: 8px 12px 8px 10px;

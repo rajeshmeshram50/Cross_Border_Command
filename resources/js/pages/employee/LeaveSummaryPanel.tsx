@@ -151,8 +151,22 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
         const s = String(info.getValue() ?? '');
         return (
           <span
+            /* Cancelled gets the NEUTRAL grey chip, not the amber pending one.
+               (#133)
+               Everything that wasn't Approved or Rejected fell through to
+               'pending', so a cancelled request sat in Leave History wearing the
+               amber "still waiting on someone" chip with the word Cancelled
+               printed inside it — a closed request dressed as an open one, which
+               is the pending-style marker on the report. The `--neutral` class
+               was already defined for exactly this and had no user.
+               Explicit per status, with neutral (not pending) as the fallback:
+               an unrecognised status is an unknown, and guessing "waiting" about
+               it is the mistake this had in the first place. */
             className={`rec-pill leave-status-badge leave-status-badge--${
-              s === 'Approved' ? 'approved' : s === 'Rejected' ? 'rejected' : 'pending'
+              s === 'Approved' ? 'approved'
+                : s === 'Rejected' ? 'rejected'
+                : s === 'Pending' ? 'pending'
+                : 'neutral'
             }`}
             style={{ fontSize: 11 }}
           >{s}</span>
@@ -393,7 +407,35 @@ export default function LeaveSummaryPanel({ employeeId, canRequest = false, prob
               return (
                 <div key={t.leave_type_id} className="lsp-balance-card flex-grow-1" style={{ minWidth: 240, background: '#ffffff', border: '1px solid var(--vz-border-color)', borderRadius: 14, padding: 18, boxShadow: '0 1px 2px rgba(15,23,42,0.04), 0 6px 18px rgba(15,23,42,0.08)' }}>
                   <div className="d-flex justify-content-between align-items-start mb-2">
-                    <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>{t.name}</h6>
+                    {/* Paid / Unpaid sits with the name. (#129)
+                        The card showed the type and the day counts but never
+                        whether those days are PAID — the one thing that decides
+                        what taking them costs the employee. The API has always
+                        sent `paid_unpaid` (LeavePlanController); nothing
+                        rendered it. Unpaid is tinted amber because it is the
+                        answer that changes a decision; Paid stays neutral
+                        green. Omitted entirely when the master has no value,
+                        rather than guessing "Paid". */}
+                    <div className="d-flex align-items-center gap-2 flex-wrap" style={{ minWidth: 0 }}>
+                      <h6 className="fw-bold mb-0" style={{ fontSize: 14 }}>{t.name}</h6>
+                      {t.paid_unpaid && (
+                        <span
+                          title={t.paid_unpaid === 'Unpaid'
+                            ? 'Days taken under this type are not paid — they are deducted as loss of pay.'
+                            : 'Days taken under this type are paid.'}
+                          style={{
+                            fontSize: 9.5, fontWeight: 800, letterSpacing: '.06em',
+                            textTransform: 'uppercase', padding: '2px 7px', borderRadius: 999,
+                            whiteSpace: 'nowrap',
+                            ...(t.paid_unpaid === 'Unpaid'
+                              ? { background: '#fdf3d6', color: '#a06f00', border: '1px solid #f0d990' }
+                              : { background: '#d6f4e3', color: '#108548', border: '1px solid #a7e3c4' }),
+                          }}
+                        >
+                          {t.paid_unpaid}
+                        </span>
+                      )}
+                    </div>
                     <button
                       type="button"
                       className="btn btn-link p-0"

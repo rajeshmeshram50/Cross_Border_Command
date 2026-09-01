@@ -317,10 +317,50 @@ class PayrollController extends Controller
         if ($user && $user->user_type === 'employee') {
             $slipQ->where('employee_id', (int) ($user->employee_id ?? 0));
         }
-        $rows = $slipQ->orderByDesc('payroll_period_id')->orderBy('employee_name')
+        $slips = $slipQ->orderByDesc('payroll_period_id')->orderBy('employee_name')
             ->limit(8000)
-            ->get()
-            ->map(fn ($s) => [
+            ->with('run')
+            ->get();
+
+        /* PF applicability is LIVE master data; the PF column is a frozen
+         * snapshot of what the slip was generated with. Where a finalized cycle
+         * disagrees with the flag as it reads today, the Salary Report used to
+         * show a bare ₹0 (or a bare stale amount) with nothing to explain it —
+         * indistinguishable from "PF Applicable doesn't work". Only the payslip
+         * screen carried that explanation. (#90 reopen)
+         *
+         * Resolved in bulk rather than per row: the grid returns up to 8000
+         * slips and a per-row lookup would be 16k queries. */
+        $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
+        $pfEligible = \App\Models\Employee::whereIn('id', $empIds)
+            ->pluck('pf_eligible', 'id');
+        $pfStructure = \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
+            ->where('status', 'active')
+            ->where('pf_applicable', true)
+            ->pluck('employee_id')
+            ->flip();
+        $periodStatus = $periods->pluck('status', 'id');
+
+        $rows = $slips
+            ->map(function ($s) use ($labelMap, $pfEligible, $pfStructure, $periodStatus) {
+                // Same OR PayrollService::resolveCompensation() applies.
+                $pfAppliesNow = (bool) ($pfEligible[$s->employee_id] ?? false)
+                    || isset($pfStructure[$s->employee_id]);
+                // Frozen exactly where recomputeEmployeePayslips() gives up, so
+                // the flag never fires on a cycle that will self-correct.
+                $frozen = !in_array($s->run?->status, ['draft', 'generated'], true)
+                    || ($periodStatus[$s->payroll_period_id] ?? null) === 'locked';
+                $pfOnSlip = (float) $s->pf_employee > 0;
+
+                $pfNotice = null;
+                if ($frozen && $pfAppliesNow && !$pfOnSlip) {
+                    $pfNotice = 'PF is applicable now but this cycle was finalized before it was enabled — '
+                        . 'PF applies from the next payroll run.';
+                } elseif ($frozen && !$pfAppliesNow && $pfOnSlip) {
+                    $pfNotice = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
+                }
+
+                return [
                 'cycle'            => $labelMap[$s->payroll_period_id] ?? '',
                 'employee_code'    => $s->employee_code,
                 'employee_name'    => $s->employee_name,
@@ -348,7 +388,11 @@ class PayrollController extends Controller
                 'status'           => $s->status,
                 'bank_account'     => $s->bank_account_number,
                 'ifsc'             => $s->ifsc_code,
-            ])->values();
+                // Set only when the frozen PF figure contradicts the live flag.
+                'pf_stale'         => $pfNotice !== null,
+                'pf_notice'        => $pfNotice,
+            ];
+            })->values();
 
         return response()->json(['data' => ['cycles' => $cycles, 'rows' => $rows]]);
     }
@@ -410,7 +454,17 @@ class PayrollController extends Controller
         // A cycle still in progress can only be judged on the days that have
         // actually happened — see elapsedWorkingDaysMap().
         $elapsed = $this->elapsedWorkingDaysMap($period, $slips);
-        $rows = $slips->map(fn ($p) => $this->serializePayslip($p, false, $elapsed[$p->employee_id] ?? null));
+        $pfNotices = $this->pfNoticeMap($slips, $run, $period);
+        // Structure gross per employee, so slips generated before the monthly
+        // line data still caption the contractual CTC correctly. (#134)
+        $structureGross = $this->structureGrossMap($slips);
+        $rows = $slips->map(fn ($p) => $this->serializePayslip(
+            $p,
+            false,
+            $elapsed[$p->employee_id] ?? null,
+            $pfNotices[$p->id] ?? null,
+            $structureGross[$p->employee_id] ?? null,
+        ));
 
         /* Employees this cycle SHOULD pay who have no payslip in it yet. (#121)
          *
@@ -1169,7 +1223,103 @@ class PayrollController extends Controller
         // Real (branch-resolved) company letterhead for the on-screen viewer.
         $data['company'] = $this->pdf->letterhead($slip);
         $data['period_label'] = $this->periodLabelFor($slip);
+        $data['notices'] = $this->slipNotices($slip, $data['deductionsBreakup'] ?? []);
         return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Notes the payslip itself must carry to be readable. (#130)
+     *
+     * A payslip is a SNAPSHOT taken when the run was generated, and
+     * PayrollService::recomputeEmployeePayslips() deliberately refuses to
+     * rewrite one whose run is approved/paid or whose period is locked — that
+     * money is out of the door and re-deriving it later would silently restate
+     * a figure someone has already been paid.
+     *
+     * That freeze is right, but it was invisible. Tick PF in Salary Setup after
+     * a run is approved and the Salary Setup screen says PF applies while the
+     * slip carries no Provident Fund line and no explanation — indistinguishable
+     * from payroll having dropped the deduction, which is exactly how it was
+     * reported. A missing deduction has nothing to render, so there was no line
+     * to question.
+     *
+     * So the slip says so itself: PF is currently applicable, this slip is
+     * frozen, and it predates the change. Nothing is recomputed and no figure
+     * moves — the reader is simply told which of the two screens is the older
+     * truth, and what to do about it.
+     */
+    private function slipNotices(Payslip $slip, array $deductionLines): array
+    {
+        $notices = [];
+
+        /* The slip's components come from the salary STRUCTURE
+         * (PayrollService::resolveCompensation) — employees.annual_salary is
+         * only a no-structure fallback. The two are separate columns written
+         * by separate screens, and where they had drifted apart the payslip
+         * quietly paid one figure while Stage 4 – Compensation displayed the
+         * other, with nothing on either screen admitting the disagreement.
+         * That is what "the payslip doesn't match the salary structure" turned
+         * out to mean. New saves can no longer drift (see HrEmployees
+         * persistBreakup), but slips already generated against the old data
+         * still show it, so the slip names the gap and which figure it used
+         * rather than leaving the reader to spot it. (#133) */
+        $emp = $slip->relationLoaded('employee') ? $slip->employee : $slip->employee()->first();
+        $activeStructure = $emp
+            ? \App\Models\SalaryStructure::where('employee_id', $emp->id)
+                ->where('status', 'active')
+                // Duplicate version=1 rows exist from an old seeder, so tie-break
+                // on id exactly as PayrollService::activeStructure() does.
+                ->orderByDesc('version')->orderByDesc('id')
+                ->first()
+            : null;
+
+        /* Compared against the STRUCTURE's monthly gross, not the slip's.
+         * gross_earnings carries overtime and bonus and is prorated for a
+         * mid-month joiner, so ×12 is not this employee's CTC and would report
+         * a disagreement on perfectly consistent data. */
+        $recordedAnnual  = round((float) ($emp->annual_salary ?? 0), 2);
+        $structureAnnual = round((float) ($activeStructure->monthly_gross ?? 0) * 12, 2);
+        if ($recordedAnnual > 0 && $structureAnnual > 0
+            // A rupee or two is rounding, not a disagreement.
+            && abs($recordedAnnual - $structureAnnual) > 12
+        ) {
+            $notices[] = 'This payslip is calculated from the saved salary structure (₹'
+                . number_format($structureAnnual, 0) . '/year). The CTC on the employee record reads ₹'
+                . number_format($recordedAnnual, 0) . '/year. Payroll always pays from the structure — '
+                . 'open Salary Setup → Revise and save the correct CTC to bring the two back in step.';
+        }
+
+        $hasPfLine = collect($deductionLines)->contains(fn ($d) => ($d['code'] ?? null) === 'pf');
+        $pfOnSlip = $hasPfLine || (float) $slip->pf_employee > 0;
+
+        $employee = $slip->relationLoaded('employee') ? $slip->employee : $slip->employee()->first();
+        // Reuse the structure resolved above — same employee, same tie-break.
+        // This lookup previously omitted orderByDesc(version)->orderByDesc(id)
+        // and could read the wrong row out of the duplicate version=1 rows the
+        // old seeder left behind, silently suppressing the notice.
+        $pfStructure = $activeStructure;
+
+        // Same OR PayrollService::resolveCompensation() applies — the
+        // employee record is the master, the structure a cache of it.
+        $pfAppliesNow = $employee
+            && ((bool) ($pfStructure->pf_applicable ?? false) || (bool) $employee->pf_eligible);
+
+        // Frozen exactly where recomputeEmployeePayslips() gives up.
+        $frozen = !in_array($slip->run?->status, ['draft', 'generated'], true)
+            || ($slip->period?->status ?? null) === 'locked';
+
+        if ($frozen && $pfAppliesNow && !$pfOnSlip) {
+            $notices[] = 'Provident Fund is applicable for this employee but was not deducted in this cycle — '
+                . 'this payslip was finalized before PF was enabled, and a finalized slip is never recomputed. '
+                . 'PF will appear from the next payroll run.';
+        } elseif ($frozen && !$pfAppliesNow && $pfOnSlip) {
+            // The mirror image, which had no notice at all: PF switched off
+            // after the cycle was finalized still shows a PF deduction here.
+            $notices[] = 'Provident Fund is no longer applicable for this employee, but this cycle was already '
+                . 'finalized and keeps the PF it was paid with. No PF is deducted from the next payroll run.';
+        }
+
+        return $notices;
     }
 
     /** Salary-slip history for one employee across cycles (Rule 16). Only
@@ -1701,12 +1851,123 @@ class PayrollController extends Controller
         return $map;
     }
 
+    /**
+     * Per-payslip explanation for a PF figure that no longer matches the live
+     * "PF Applicable" flag, keyed by payslip id. Empty for an open cycle, which
+     * recomputeEmployeePayslips() keeps in step on its own.
+     *
+     * Salary Report reads the frozen payslip snapshot, Salary Setup reads the
+     * live employee master. When a cycle is finalized the two legitimately
+     * disagree, and the report used to show only a bare ₹0 — reported twice as
+     * "PF Applicable No→Yes does nothing". (#90 reopen)
+     */
+    private function pfNoticeMap($slips, $run, $period): array
+    {
+        $frozen = !in_array($run?->status, ['draft', 'generated'], true)
+            || ($period?->status ?? null) === 'locked';
+        if (!$frozen || $slips->isEmpty()) {
+            return [];
+        }
+
+        $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
+        // Resolved in bulk — a per-row lookup would be two queries per employee.
+        $pfEligible = \App\Models\Employee::whereIn('id', $empIds)->pluck('pf_eligible', 'id');
+        $pfStructure = \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
+            ->where('status', 'active')
+            ->where('pf_applicable', true)
+            ->pluck('employee_id')
+            ->flip();
+
+        $out = [];
+        foreach ($slips as $s) {
+            // Same OR PayrollService::resolveCompensation() applies.
+            $applies = (bool) ($pfEligible[$s->employee_id] ?? false)
+                || isset($pfStructure[$s->employee_id]);
+            $onSlip = (float) $s->pf_employee > 0;
+
+            if ($applies && !$onSlip) {
+                $out[$s->id] = 'PF is applicable now but this cycle was finalized before it was enabled — '
+                    . 'PF applies from the next payroll run.';
+            } elseif (!$applies && $onSlip) {
+                $out[$s->id] = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * Contractual monthly gross per employee, from the active salary structure,
+     * keyed by employee id. One query for the whole grid.
+     *
+     * Only used as a fallback for payslips generated before the components
+     * carried their own monthly figure — see serializePayslip(). (#134)
+     */
+    private function structureGrossMap($slips): array
+    {
+        $empIds = $slips->pluck('employee_id')->filter()->unique()->values();
+        if ($empIds->isEmpty()) {
+            return [];
+        }
+
+        return \App\Models\SalaryStructure::whereIn('employee_id', $empIds)
+            ->where('status', 'active')
+            // Same tie-break as PayrollService::activeStructure() (QA #96) —
+            // duplicate version=1 rows exist from an old seeder.
+            ->orderBy('version')->orderBy('id')
+            ->pluck('monthly_gross', 'employee_id')
+            ->map(fn ($g) => (float) $g)
+            ->all();
+    }
+
     /** Maps a Payslip into the shape the SPA's PayrollRow already consumes. */
-    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null): array
+    private function serializePayslip(Payslip $p, bool $full = false, ?float $elapsedWorkingDays = null, ?string $pfNotice = null, ?float $structureGross = null): array
     {
         $name = $p->employee_name ?: 'Employee';
         $parts = preg_split('/\s+/', trim($name));
         $initials = strtoupper(substr($parts[0] ?? '', 0, 1) . substr(end($parts) ?: '', 0, 1));
+
+        /* The structure's full monthly gross, and whether this cycle was
+         * pro-rated down from it.
+         *
+         * Payroll Processing shows the EARNED figure, so a mid-month joiner on
+         * ₹10,000 reads ₹6,774.20 in a column the reader takes to be their
+         * salary — reported as the salary being calculated wrong when it is the
+         * correct 21/31 of the month. The full figure and the reason travel
+         * with the row so the screen can say which is which. (#134)
+         *
+         * Summed only over lines that CARRY a monthly figure: overtime and
+         * bonus lines have none (they are not part of the monthly structure)
+         * and must not inflate it. Null on slips generated before this existed,
+         * which the grid reads as "nothing to show". */
+        $monthlyLines = collect((array) ($p->earnings ?? []))
+            ->filter(fn ($l) => isset($l['monthly']));
+        /* Falls back to the employee's salary structure when the slip predates
+         * the monthly line data.
+         *
+         * Without this the fix would only take effect on payslips generated
+         * AFTER it shipped: every slip already in the system would keep showing
+         * the pro-rated figure as the CTC, and a retest on the very cycle the
+         * bug was raised against would still fail. The caller resolves the
+         * structure gross in one batched query. (#134) */
+        $monthlyGross = $monthlyLines->isEmpty()
+            ? ($structureGross !== null && $structureGross > 0 ? round($structureGross, 2) : null)
+            : round($monthlyLines->sum(fn ($l) => (float) $l['monthly']), 2);
+        /* `structure_gross` is the pro-rated structure pay the slip was built
+           with — the right counterpart on a legacy slip, since it excludes the
+           overtime and bonus that gross_earnings carries. */
+        $earnedStructure = $monthlyLines->isEmpty()
+            ? round((float) ($p->structure_gross ?: $p->gross_earnings), 2)
+            : round($monthlyLines->sum(fn ($l) => (float) ($l['amount'] ?? 0)), 2);
+        /* gross_earnings is a safe last resort for the legacy case: loss of pay
+           does NOT reduce it (LOP is a deduction, so a fully-absent month still
+           reads the full gross), which is exactly the confusion this marker must
+           not add to. Overtime and bonus push it UP, so at worst the marker is
+           withheld on a pro-rated slip carrying OT — silent, never wrong. */
+        // A rupee of tolerance absorbs rounding on the pro-ration multiply.
+        $prorated = $monthlyGross !== null
+            && $earnedStructure !== null
+            && ($monthlyGross - $earnedStructure) > 1;
 
         $row = [
             'id'          => (string) $p->id,
@@ -1721,8 +1982,27 @@ class PayrollController extends Controller
             'accent'      => $this->accentFor($p->employee_id),
             'department'  => $p->department ?: '—',
             'designation' => $p->designation ?: '—',
-            'ctc'         => (float) $p->gross_earnings,
+            /* CTC is the CONTRACTUAL monthly figure, so it must be the salary
+             * structure's gross — never this cycle's earnings.
+             *
+             * It was gross_earnings, which is pro-rated for a mid-cycle join or
+             * exit. The two are identical on a full month, which hid it; on a
+             * part month the Payroll Processing list captioned a ₹10,000/mo
+             * employee "CTC ₹6,774/mo" — the screen stating the wrong salary
+             * for the employee, directly under their name. That caption is what
+             * this ticket is reporting. Falls back to the earned figure only on
+             * slips that predate the monthly line data. (#134) */
+            'ctc'         => $monthlyGross ?? (float) $p->gross_earnings,
             'earnings'    => (float) $p->gross_earnings,
+            // Full monthly salary + why this cycle pays less than it (#134).
+            'monthlyGross' => $monthlyGross,
+            'prorated'     => $prorated,
+            'prorationNote' => $prorated
+                ? 'Pro-rated for a mid-cycle join or exit — this cycle pays ₹'
+                    . number_format((float) $earnedStructure, 2) . ' of the ₹'
+                    . number_format((float) $monthlyGross, 2) . ' monthly salary. '
+                    . 'The full structure is on the payslip under "Monthly".'
+                : null,
             'deductions'  => (float) $p->total_deductions,
             'netPay'      => (float) $p->net_pay,
             'attendance'  => (float) $p->paid_days,
@@ -1752,6 +2032,9 @@ class PayrollController extends Controller
                 : ($p->att_source === 'Review' ? 'Late marks' : null),
             'attMismatch' => $p->att_source === 'Review',
             'pfEmp'       => (float) $p->pf_employee,
+            // Set only when the frozen PF figure contradicts the live flag.
+            'pfStale'     => $pfNotice !== null,
+            'pfNotice'    => $pfNotice,
             'esi'         => (float) $p->esi,
             'pt'          => (float) $p->pt,
             'tds'         => (float) $p->tds,
