@@ -1,14 +1,3 @@
-/* Product Management — shared styles.
-   Extracted from the SCOPED_CSS blocks that used to live inline in
-   Products.tsx / ProductView.tsx / AddProductModal.tsx so they are bundled
-   and cached once by Vite instead of re-injected on every render. All rules
-   are uniquely prefixed (prd- / pv2- / pv2pd- / apm-) so nothing leaks. */
-
-/* ============================ Products.tsx (list page) ============================ */
-/* Top gap comes from .page-content's 8px padding-top alone (see
-   velzon/Layouts/index.tsx), exactly like the Supplier Management page
-   (.sup-fig) — so no negative pull and no padding on top here, or the
-   header strip sits closer to the menu than the supplier one does. */
 .prd-root {
   font-family: var(--font-sans);
   background: #ffffff;
@@ -25,97 +14,6 @@
 .prd-root *::after {
   box-sizing: border-box;
 }
-
-/* Hero header */
-/* Header — purple-gradient hero strip, matching the Customers page
-   (.smc-cstrip) so the Sales Matrix top-level pages read as one design
-   language: lavender padding-box fill + violet→blue→pink gradient ring,
-   soft violet glow, and a violet icon tile. */
-.prd-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 10px 20px;
-  border: 1px solid #c4b5fd;
-  border-radius: 16px;
-  background:
-    linear-gradient(110deg, #faf7ff 0%, #f4eeff 45%, #efe8ff 75%, #ece4ff 100%) padding-box,
-    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.70) inset,
-    0 4px 18px rgba(124, 58, 237, 0.16),
-    0 1px 4px rgba(99, 102, 241, 0.10);
-}
-
-.prd-header-left {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-width: 0;
-}
-
-.prd-header-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  background: linear-gradient(135deg, #7c3aed, #5b21b6);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #fff;
-  font-size: 21px;
-  box-shadow: 0 4px 14px rgba(91, 33, 182, .40), 0 0 0 3px rgba(255, 255, 255, .50);
-  flex-shrink: 0;
-}
-
-.prd-header-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #2e1065;
-  margin: 0;
-  letter-spacing: -.01em;
-}
-
-.prd-header-sub {
-  font-size: 12.5px;
-  color: #6b7280;
-  margin-top: 2px;
-  font-weight: 500;
-}
-
-.prd-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 9px 18px;
-  border-radius: 99px;
-  border: none;
-  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 45%, #6d28d9 100%);
-  color: #fff;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 5px 16px rgba(124, 58, 237, .40), 0 1px 0 rgba(255, 255, 255, .22) inset;
-  transition: transform .15s, box-shadow .15s, filter .18s;
-}
-
-.prd-add-btn i {
-  font-size: 16px;
-}
-
-.prd-add-btn:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.05);
-  box-shadow: 0 9px 24px rgba(124, 58, 237, .48), 0 1px 0 rgba(255, 255, 255, .22) inset;
-}
-
-.prd-add-btn:active {
-  transform: translateY(0);
-}
-
-/* ═══ Container 1 — HERO (.cstrip ported from P2P prototype) ═══ */
 .prd-hero {
   position: relative;
   overflow: hidden;
@@ -255,8 +153,6 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, .18), transparent);
   border-radius: 12px 12px 0 0;
 }
-
-/* ═══ Container 2 — WHAT WE ARE DOING HERE (.bref-box ported) ═══ */
 .prd-bref {
   background: #fff;
   border: 1px solid #c4b5fd;
@@ -521,8 +417,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
-/* ═══ Container 3 — PANEL (.pl-panel: toolbar + card grid + pager in ONE box) ═══ */
 .prd-panel {
   display: flex;
   flex-direction: column;
@@ -551,8 +445,6 @@
 .prd-panel .prd-empty {
   margin: 16px 16px 24px;
 }
-
-/* Toolbar — the panel's top strip (borderless, divider below) */
 .prd-toolbar {
   display: flex;
   align-items: center;
@@ -561,8 +453,6 @@
   padding-bottom: 1px;
   flex-wrap: wrap;
 }
-
-/* ═══ Product detail popup — renders ProductView over the list ═══ */
 .prd-detail-overlay {
   position: fixed;
   inset: 0;
@@ -598,8 +488,6 @@
     opacity: 1;
   }
 }
-
-/* Neutralise ProductView's full-page chrome so it fits inside the modal. */
 .prd-detail-modal .pv2-root {
   margin: 0;
   min-height: 0;
@@ -951,30 +839,11 @@
   font-size: 10px;
   font-weight: 800;
 }
-
-/* ─── Toolbar + switch tabs — tablet portrait and below ───
-   Above this the toolbar is one row (tabs + search + Filter); on a wide tablet
-   or laptop it simply wraps, and the tabs keep their natural width, so nothing
-   here applies.
-   Once the toolbar stacks, the tabs stack with it. Each tab holds an icon + a
-   long label ("Supplier Mapped Products") + a status badge — roughly 275px of
-   `white-space: nowrap` content — so two of them cannot share a narrow row.
-   Full-width rows fit that content down to the smallest phones. */
-/* Above 640px this wrapper is not a box at all — `contents` hoists search and
-   the Filter button back up to be direct flex children of .prd-toolbar, so the
-   original one-row desktop layout is byte-for-byte unchanged. */
 .prd-toolbar-find {
   display: contents;
 }
 
 @media (max-width: 640px) {
-
-  /* flex-wrap: nowrap is required, not cosmetic. The base rule sets wrap; with
-     flex-direction: column that makes this a MULTI-LINE column, where each line
-     sizes to its widest item — so children take their own content width and
-     align-items: stretch never binds them to the toolbar. That is what let the
-     search+Filter row size itself to 338.8px and hang off a 360px screen.
-     Single-line column = children stretch to the toolbar and shrink properly. */
   .prd-toolbar {
     flex-direction: column;
     align-items: stretch;
@@ -992,9 +861,6 @@
     flex: none;
     justify-content: flex-start;
   }
-
-  /* Truncate rather than clip mid-word if a label still can't fit; the badge
-     carries the count, so it's pinned and never shrinks. */
   .prd-tab-label {
     flex: 1;
     min-width: 0;
@@ -1005,12 +871,6 @@
   .prd-tab-badge {
     flex-shrink: 0;
   }
-
-  /* Search + Filter share one row. min-width: 0 on the wrapper is what makes it
-     work: as a flex item it defaults to min-width: auto ("never shrink below my
-     content"), which floored it at search's 220px + Filter and pushed ~4px off
-     a 360px screen. Once the wrapper can shrink to the toolbar's width, search
-     is the one asked to give up the slack, and Filter keeps its natural size. */
   .prd-toolbar-find {
     display: flex;
     align-items: center;
@@ -1027,8 +887,6 @@
     flex: 0 0 auto;
   }
 }
-
-/* ─── Product list — tablet / mobile ─── */
 @media (max-width: 560px) {
   .prd-root {
     padding: 0 12px 20px;
@@ -1051,8 +909,6 @@
   .prd-bref-head-sub {
     display: none;
   }
-
-  /* Layout for the tabs is handled at 640px above — phones only tighten it. */
   .prd-tab {
     padding: 9px 12px;
   }
@@ -1060,10 +916,6 @@
   .prd-tab-label {
     font-size: 11.5px;
   }
-
-  /* Filter sits beside the search box (see .prd-toolbar-find at 640px), so it
-     keeps its natural width — a full-width Filter would force search onto its
-     own line again. Tighter padding buys the search box room. */
   .prd-filter-btn {
     padding: 0 14px;
   }
@@ -1086,8 +938,6 @@
     width: 100%;
   }
 }
-
-/* ═══ Product card (.pl-card ported from the P2P prototype) ═══ */
 .prd-pcard {
   position: relative;
   display: flex;
@@ -1105,10 +955,6 @@
   border-color: #c4b5fd;
   box-shadow: 0 4px 10px rgba(15, 23, 42, .05), 0 14px 32px rgba(124, 58, 237, .2), 0 28px 56px -20px rgba(76, 29, 149, .3);
 }
-
-/* Glossy glass sheen — a soft diagonal highlight across the whole card, plus a
-   brighter streak that sweeps on hover. Sits above the thumb but ignores
-   pointer events. */
 .prd-pcard::after {
   content: '';
   position: absolute;
@@ -1253,7 +1099,6 @@
   border-radius: 20px;
   padding: 3px 10px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, .25);
-  /* One line, clipped — a long segment must never wrap across the image. */
   white-space: nowrap;
   max-width: calc(100% - 20px);
   overflow: hidden;
@@ -1386,9 +1231,6 @@
   margin-right: auto;
   color: #7c3aed;
 }
-
-/* Keep the divider attached to the supplier count and centre the pair, so the
-   line sits between GST and "1 Supplier" — matching the HSN | GST divider. */
 .prd-pcard-info-div:has(+ .prd-pcard-info-item--supplier) {
   margin-left: auto;
 }
@@ -1498,28 +1340,6 @@
   transform: translateY(-1.5px);
   box-shadow: 0 8px 20px rgba(124, 58, 237, .58), 0 1px 0 rgba(255, 255, 255, .45) inset, 0 -2px 6px rgba(76, 29, 149, .35) inset;
 }
-
-/* ─── List card — grid / list + its pagination footer in ONE container,
-   matching the leads-list layout (rounded card, violet ring, footer band). */
-.prd-list-card {
-  display: flex;
-  flex-direction: column;
-  background: var(--vz-card-bg, #fff);
-  border: 1px solid #ddd6fe;
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 4px 16px rgba(124, 58, 237, .08), 0 1px 3px rgba(124, 58, 237, .06);
-}
-
-.prd-list-card .prd-grid,
-.prd-list-card .prd-list {
-  padding: 16px;
-  margin: 0;
-}
-
-/* Pagination footer — violet version of the leads-list pager: soft
-   lavender gradient band, a top accent border, pill "Showing X–Y of Z",
-   a Rows-per-page selector, the page/total pill, and round nav arrows. */
 .prd-pagination {
   display: flex;
   align-items: center;
@@ -1625,97 +1445,6 @@
   opacity: .4;
   cursor: not-allowed;
 }
-
-/* Status tabs */
-.prd-status-tabs {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background: #fff;
-  border: 1.5px solid #ddd6fe;
-  border-radius: 12px;
-  align-self: flex-start;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, .08);
-}
-
-.prd-status-tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
-  border-radius: 9px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 800;
-  color: #6b7280;
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-
-.prd-status-tab:hover {
-  background: #f5f3ff;
-  color: #5b21b6;
-}
-
-.prd-status-tab.on {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
-}
-
-.prd-status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-.prd-status-dot.is-active {
-  background: #22c55e;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, .25);
-}
-
-.prd-status-dot.is-inactive {
-  background: #f59e0b;
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, .25);
-}
-
-.prd-status-tab.on .prd-status-dot.is-active {
-  background: #4ade80;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .35);
-}
-
-.prd-status-tab.on .prd-status-dot.is-inactive {
-  background: #fbbf24;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, .35);
-}
-
-.prd-status-count {
-  min-width: 22px;
-  height: 20px;
-  padding: 0 8px;
-  border-radius: 99px;
-  background: #ede9fe;
-  color: #5b21b6;
-  font-size: 10.5px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.prd-status-tab.on .prd-status-count {
-  background: rgba(255, 255, 255, .25);
-  color: #fff;
-}
-
-/* Shimmer placeholders — light theme. The animated gradient is shared with
-   the rest of the app via the global .shimmer class in app.css, but the
-   product page renders enough cards that a local rule keeps the bundle
-   self-contained. */
 @keyframes prd-shim {
   0% {
     background-position: -400px 0;
@@ -1781,105 +1510,12 @@
 .prd-card-shimmer .prd-card-body {
   gap: 10px;
 }
-
-/* Filters */
-.prd-filters {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #ddd6fe;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, .08);
-  flex-wrap: wrap;
-}
-
-/* (Removed a stale duplicate .prd-search block whose absolute-positioned svg
-   rule forced the search icon and the clear button to the same spot,
-   overlapping them. The toolbar .prd-search rules above are the live ones.) */
-
-/* MasterSelect — sized to fit the 40px filter row, with the same violet
-   accent as the other prd-* controls. Same chrome the master modal uses. */
-.prd-ms-wrap {
-  min-width: 160px;
-}
-
-.prd-ms-wrap .master-select-wrap .master-select-toggle {
-  min-height: 40px !important;
-  height: 40px;
-  padding: 0 32px 0 12px !important;
-  font-size: 12px !important;
-  font-weight: 700;
-  background: #fff !important;
-  border: 1.5px solid #ddd6fe !important;
-  border-radius: 10px !important;
-  color: #5b21b6 !important;
-}
-
-.prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
-  /* Tint the background on hover (not just the border) so the dropdown
-     triggers give the same clear hover feedback as the Filters button —
-     QA reported the old border-only hover was not noticeable. */
-  background: #faf5ff !important;
-  border-color: #c4b5fd !important;
-}
-
-.prd-ms-wrap .master-select-wrap.show .master-select-toggle {
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, .12) !important;
-}
-
-.prd-ms-wrap .master-select-placeholder {
-  color: #94a3b8 !important;
-  font-weight: 700 !important;
-}
-
-.prd-view-toggle {
-  display: inline-flex;
-  gap: 4px;
-  padding: 4px;
-  background: #faf5ff;
-  border: 1.5px solid #ddd6fe;
-  border-radius: 10px;
-  height: 40px;
-}
-
-.prd-view-btn {
-  width: 32px;
-  height: 100%;
-  border-radius: 7px;
-  border: none;
-  background: transparent;
-  color: #7c3aed;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.prd-view-btn.on {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff;
-  box-shadow: 0 2px 6px rgba(124, 58, 237, .4);
-}
-
-/* Meta */
-/* ─── Applied-filter bar ───
-   Sits between the toolbar and the card grid and lists every active filter as
-   a removable chip. Uses the same violet language as the drawer it mirrors. */
 .prd-meta {
   display: flex;
   align-items: center;
   gap: 7px;
   padding: 0 4px;
   flex-wrap: wrap;
-}
-
-.prd-meta-count {
-  font-size: 13px;
-  font-weight: 800;
-  color: #5b21b6;
 }
 
 .prd-meta-label {
@@ -1931,8 +1567,6 @@
   background: #e4dcfd;
   border-color: #a78bfa;
 }
-
-/* Group name stays quiet so the VALUE is what the eye lands on. */
 .prd-meta-chip-g {
   color: #8b7bb8;
   font-weight: 700;
@@ -1989,8 +1623,6 @@
   border-color: transparent;
   color: #fff;
 }
-
-/* Vendor deep-link filter banner */
 .prd-vendor-banner {
   display: flex;
   align-items: center;
@@ -2069,26 +1701,11 @@
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(124, 58, 237, .45);
 }
-
-/* ─── Grid ─── */
 .prd-grid {
   display: grid;
-  /* Dynamic fill: each card is at least 280px, but the columns stretch (1fr)
-     to occupy the full container width, and the column count adjusts to the
-     available width as you zoom / resize. No fixed left/right gap. */
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 10px;
 }
-
-/* ─── Product card surface — ported from the Plans pricing card system
-   so the two grids feel like the same component family. Layers:
-   1. Soft white→violet gradient surface (light-mode) / deep accent
-      mesh (dark-mode).
-   2. Conic-gradient spinning border via ::before — same trick as
-      .plan-card-animated, paused on hover so users don't get motion
-      sickness while reading.
-   3. translateY lift + multi-stop shadow halo on hover, intensity
-      driven by --prd-accent (color-mix). */
 @property --prd-angle {
   syntax: '<angle>';
   initial-value: 0deg;
@@ -2173,63 +1790,6 @@
   overflow: hidden;
 }
 
-.prd-card-thumb-letter {
-  font-size: 48px;
-  font-weight: 800;
-  color: rgba(255, 255, 255, .92);
-  text-shadow: 0 4px 14px rgba(0, 0, 0, .15);
-  letter-spacing: -1px;
-}
-
-/* Image carousel — primary → secondary → … on a 1.8s loop.
-   All <img> are stacked; only the one with .on is opaque, the rest fade out. */
-.prd-card-thumb-slider {
-  position: absolute;
-  inset: 0;
-}
-
-.prd-card-thumb-img {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0;
-  transition: opacity .55s ease;
-  pointer-events: none;
-  user-select: none;
-}
-
-.prd-card-thumb-img.on {
-  opacity: 1;
-}
-
-.prd-card-thumb-dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  z-index: 2;
-}
-
-.prd-card-thumb-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, .55);
-  border: 1px solid rgba(0, 0, 0, .08);
-  transition: background .25s, transform .25s;
-}
-
-.prd-card-thumb-dot.on {
-  background: #fff;
-  transform: scale(1.25);
-}
-
 .prd-row-thumb-img {
   width: 100%;
   height: 100%;
@@ -2288,42 +1848,6 @@
   border-color: #fecaca;
 }
 
-.prd-card-badge {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  padding: 4px 10px;
-  border-radius: 99px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .04em;
-  background: #fff;
-  color: #5b21b6;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, .18);
-  z-index: 2;
-}
-
-.prd-badge-bestseller {
-  background: linear-gradient(135deg, #f59e0b, #d97706);
-  color: #fff;
-}
-
-.prd-badge-new {
-  background: linear-gradient(135deg, #22c55e, #15803d);
-  color: #fff;
-}
-
-.prd-badge-trending {
-  background: linear-gradient(135deg, #ef4444, #b91c1c);
-  color: #fff;
-}
-
-.prd-badge-toprated {
-  background: linear-gradient(135deg, #8b5cf6, #6d28d9);
-  color: #fff;
-}
-
 .prd-card-haz {
   position: absolute;
   bottom: 10px;
@@ -2347,47 +1871,6 @@
   flex: 1;
 }
 
-/* Aligned label : value meta rows. The labels share a fixed column so
-   every value lines up regardless of label length. */
-.prd-card-meta-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.prd-card-meta-line {
-  display: grid;
-  grid-template-columns: 74px 1fr;
-  align-items: center;
-  gap: 8px;
-  font-size: 11.5px;
-  min-width: 0;
-}
-
-.prd-card-meta-label {
-  color: #7c3aed;
-  font-weight: 700;
-  letter-spacing: .01em;
-}
-
-.prd-card-meta-value {
-  color: #1e1b4b;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.prd-card-meta-value.prd-card-vendor-cell {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #16a34a;
-  font-weight: 800;
-}
-
 .prd-card-vendor-cell {
   display: inline-flex;
   align-items: center;
@@ -2403,41 +1886,6 @@
   color: #16a34a;
   flex-shrink: 0;
 }
-
-/* GST + supplier count share one line: fixed label column, GST value, then
-   the supplier count pushed to the right edge. */
-.prd-card-meta-line-split {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.prd-card-meta-line-split .prd-card-meta-label {
-  width: 74px;
-  flex-shrink: 0;
-}
-
-.prd-card-meta-line-split .prd-card-vendor-cell {
-  margin-left: auto;
-}
-
-/* Hazard tag row */
-.prd-card-tags {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.prd-card-haz-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-  flex-shrink: 0;
-}
-
-/* ID|Name link */
 .prd-card-title-link {
   display: flex;
   align-items: baseline;
@@ -2481,8 +1929,6 @@
   min-width: 0;
   flex: 1;
 }
-
-/* HSN / GST / vendor row */
 .prd-card-info-row {
   display: flex;
   align-items: center;
@@ -2516,14 +1962,6 @@
 
 .prd-card-vendor-cell svg {
   color: #16a34a;
-}
-
-/* Haz pill */
-.prd-card-haz-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
 }
 
 .prd-card-haz-pill {
@@ -2562,13 +2000,6 @@
   min-width: 0;
 }
 
-.prd-card-haz-class-key {
-  color: #b91c1c;
-  font-weight: 800;
-  letter-spacing: .02em;
-  flex-shrink: 0;
-}
-
 .prd-card-haz-class-val {
   color: #1e1b4b;
   font-weight: 700;
@@ -2576,85 +2007,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-/* Haz status as text under the info row — green for non-haz, red for haz */
-.prd-card-haz-text {
-  font-size: 12px;
-  font-weight: 700;
-  margin-top: 2px;
-}
-
-.prd-card-haz-text.is-nonhaz {
-  color: #16a34a;
-}
-
-.prd-card-haz-text.is-haz {
-  color: #dc2626;
-}
-
-/* Small "Segment: Rice" line */
-.prd-card-segment {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  margin-top: 2px;
-}
-
-.prd-card-segment .prd-card-info-key {
-  color: #6b7280;
-  font-weight: 700;
-}
-
-.prd-card-segment .prd-card-info-val {
-  color: #1e1b4b;
-  font-weight: 700;
-}
-
-/* Active / Inactive / Draft pill that sits on top of the image */
-.prd-card-status-pill {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border-radius: 99px;
-  font-size: 10.5px;
-  font-weight: 800;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
-}
-
-.prd-card-status-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.prd-card-status-pill.status-active {
-  background: #fff;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-}
-
-.prd-card-status-pill.status-inactive {
-  background: #fff;
-  color: #b45309;
-  border: 1px solid #fde68a;
-}
-
-.prd-card-status-pill.status-draft {
-  background: #fff;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-}
-
-/* Price footer — label on the left, the price (with /uom) on the right,
-   separated from the meta by a dashed rule. Pushed to the card bottom so
-   prices align across a row of cards regardless of name length. */
 .prd-card-buyrow {
   display: flex;
   align-items: baseline;
@@ -2665,26 +2017,12 @@
   border-top: 1px dashed #d6c9ff;
 }
 
-.prd-card-price-block {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .prd-card-price-label {
   font-size: 11.5px;
   font-weight: 700;
   color: #6b7280;
   letter-spacing: .01em;
 }
-
-.prd-card-price-uom {
-  font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
-  margin-left: 2px;
-}
-
 
 .prd-card-id {
   font-size: 9.5px;
@@ -2706,46 +2044,6 @@
   overflow: hidden;
 }
 
-.prd-card-brand {
-  font-size: 11px;
-  color: #6b7280;
-}
-
-.prd-card-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-}
-
-.prd-card-rating {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #b45309;
-  padding: 2px 7px;
-  border-radius: 6px;
-  background: #fef3c7;
-  border: 1px solid #fde68a;
-}
-
-.prd-card-reviews {
-  font-size: 10.5px;
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.prd-card-status {
-  margin-left: auto;
-  padding: 2px 8px;
-  border-radius: 99px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: .02em;
-}
-
 .status-active {
   background: #dcfce7;
   color: #15803d;
@@ -2758,34 +2056,11 @@
   border: 1px solid #fde68a;
 }
 
-.status-draft {
-  background: #f3f4f6;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-}
-
-.prd-card-pricerow {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px dashed #ede9fe;
-}
-
 .prd-card-price {
   font-size: 17px;
   font-weight: 800;
   color: #5b21b6;
 }
-
-.prd-card-uom {
-  font-size: 10.5px;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-/* ─── List view ─── */
 .prd-list {
   display: flex;
   flex-direction: column;
@@ -2826,33 +2101,10 @@
   min-width: 0;
 }
 
-.prd-row-name {
-  font-size: 13.5px;
-  font-weight: 800;
-  color: #1e1b4b;
-  margin: 2px 0;
-}
-
-.prd-row-rating {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 .prd-row-status {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.prd-row-haz {
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: 9.5px;
-  font-weight: 800;
-  background: #fecaca;
-  color: #b91c1c;
-  border: 1px solid #f87171;
 }
 
 .prd-row-price {
@@ -2864,10 +2116,6 @@
   align-items: center;
   gap: 6px;
 }
-
-/* List-view View button needs a visible border + tinted background — on
- * a white row, the default near-transparent white-on-white styling that
- * works against the grid card's dark hover overlay disappears entirely. */
 .prd-row-actions .prd-card-hover-btn {
   background: #f5f3ff;
   border-color: #c4b5fd;
@@ -2890,8 +2138,6 @@
   color: #dc2626;
   border-color: #fecaca;
 }
-
-/* Empty */
 .prd-empty {
   background: #fff;
   border: 1.5px dashed #c4b5fd;
@@ -2926,8 +2172,6 @@
   font-size: 12px;
   color: #6b7280;
 }
-
-/* No-access screen */
 .prd-noaccess {
   background: #fff;
   border: 1.5px solid #fecaca;
@@ -2968,7 +2212,6 @@
     gap: 10px;
   }
 
-  .prd-row-rating,
   .prd-row-status,
   .prd-row-price {
     grid-column: 2 / -1;
@@ -2980,58 +2223,6 @@
   }
 }
 
-/* ─── Filter sidebar ─── */
-.prd-filter-toggle {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 40px;
-  padding: 0 14px;
-  border-radius: 10px;
-  border: 1.5px solid #ddd6fe;
-  background: #fff;
-  color: #5b21b6;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: background .15s, border-color .15s, box-shadow .15s, transform .12s;
-}
-
-.prd-filter-toggle:hover {
-  background: #f5f3ff;
-  border-color: #c4b5fd;
-  box-shadow: 0 4px 10px rgba(124, 58, 237, .18);
-  transform: translateY(-1px);
-}
-
-.prd-filter-toggle.on {
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-  color: #fff;
-  border-color: transparent;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, .35);
-}
-
-.prd-filter-toggle-badge {
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 99px;
-  background: #fef3c7;
-  color: #b45309;
-  font-size: 10px;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.prd-filter-toggle.on .prd-filter-toggle-badge {
-  background: #fff;
-  color: #5b21b6;
-}
-
 .prd-filter-overlay {
   position: fixed;
   inset: 0;
@@ -3040,8 +2231,6 @@
   opacity: 0;
   pointer-events: none;
   transition: opacity .25s ease;
-  /* Sit above Velzon's #page-topbar (z-index 1002) so clicks anywhere
-     outside the drawer — including the topbar/navbar area — close it. */
   z-index: 1090;
 }
 
@@ -3054,18 +2243,7 @@
   position: fixed;
   top: 0;
   bottom: 0;
-  /* Modal-style drawer: anchored to the viewport's left edge regardless
-     of sidebar layout. The overlay (z-index 1090) covers everything
-     beneath, including any visible sidebar/topbar, so the user has a
-     clear "you're in a focused filter flow, click anywhere to dismiss"
-     mental model. Earlier attempts to offset by --vz-vertical-menu-width
-     fought every Velzon layout variant (lg / md / sm / sm-hover /
-     horizontal / mobile) and broke in subtle ways — flat 0 is the only
-     position that's correct in all of them. */
   left: 0;
-  /* max-width keeps it a drawer rather than a full-screen takeover on small
-     viewports — the 480px block below hands phones the 88vw treatment.
-     Master-detail: a compact icon rail + a snug options pane. */
   width: 348px;
   max-width: 90vw;
   background: #fff;
@@ -3073,13 +2251,11 @@
   box-shadow: 14px 0 36px rgba(76, 29, 149, .18);
   transform: translateX(-100%);
   transition: transform .28s cubic-bezier(.4, 0, .2, 1);
-  /* Has to sit above the overlay (1090) and Velzon's topbar (1002). */
   z-index: 1091;
   display: flex;
   flex-direction: column;
   font-family: var(--font-sans);
   overflow: hidden;
-  /* hard-clip anything that tries to grow past the drawer */
   box-sizing: border-box;
 }
 
@@ -3099,7 +2275,6 @@
   justify-content: space-between;
   gap: 12px;
   padding: 15px 16px;
-  /* Faint purple wash + hairline so the header reads as a titled bar with depth. */
   background: linear-gradient(180deg, #f7f4ff 0%, #fff 100%);
   border-bottom: 1px solid #efeafa;
   box-shadow: 0 1px 0 rgba(124, 58, 237, .04);
@@ -3111,8 +2286,6 @@
   gap: 12px;
   min-width: 0;
 }
-
-/* Brand icon chip — the drawer's identity, purple gradient with a soft glow. */
 .prd-filter-head-icon {
   flex-shrink: 0;
   width: 38px;
@@ -3183,13 +2356,9 @@
   min-width: 0;
   width: 100%;
   overflow-y: scroll;
-  /* always-visible track */
   overflow-x: hidden;
-  /* never grow horizontally */
   padding: 8px 10px;
   background: #fff;
-  /* Flat, Linear-style list — rows sit flush, separated by their own hairline,
-     not by boxy cards. */
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3217,10 +2386,6 @@
 .prd-filter-body::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(180deg, #7c3aed, #5b21b6);
 }
-
-/* Each filter is a clean white CARD with a coloured left accent that lights up
-   when the panel is open — reads as a set of tidy, tappable modules rather than
-   a flat list. */
 .prd-filter-panel {
   position: relative;
   width: 100%;
@@ -3230,9 +2395,6 @@
   transition: background .14s;
   flex-shrink: 0;
 }
-
-/* Flat rows, so an open panel is set apart by a faint fill + rounded corners
-   rather than a heavy card outline. */
 .prd-filter-panel.open {
   background: #faf9ff;
 }
@@ -3260,9 +2422,6 @@
 .prd-filter-panel.open .prd-filter-panel-head {
   background: transparent;
 }
-
-/* Neutral, monochrome icon — slate on a soft grey square by default, purple
-   accent only when its section is active. Calm and refined, no rainbow. */
 .prd-fp-icon {
   flex-shrink: 0;
   width: 30px;
@@ -3290,9 +2449,6 @@
   background: #ede9fe;
   color: #7c3aed;
 }
-
-/* Two-line title block — label + muted hint. Grows to push the count/chevron
-   to the right; min-width:0 lets a long label ellipsize instead of overflowing. */
 .prd-fp-titles {
   flex: 1 1 auto;
   min-width: 0;
@@ -3332,8 +2488,6 @@
   color: #94a3b8;
   flex-shrink: 0;
 }
-
-/* "N Selected" pill — quiet purple status, only shows when something's picked. */
 .prd-filter-panel-count {
   height: 19px;
   padding: 0 8px;
@@ -3348,9 +2502,6 @@
   justify-content: center;
   white-space: nowrap;
 }
-
-/* Smooth expand/collapse via animatable grid rows (0fr → 1fr). No JS height
-   measuring, no layout jank — the body just eases open. */
 .prd-fp-collapse {
   display: grid;
   grid-template-rows: 0fr;
@@ -3365,8 +2516,6 @@
   overflow: hidden;
   min-height: 0;
 }
-
-/* Bare, muted chevron — no circle. Rotates + turns purple when open. */
 .prd-filter-chevron {
   width: 16px;
   height: 16px;
@@ -3386,8 +2535,6 @@
 .prd-filter-panel-body {
   width: 100%;
   min-width: 0;
-  /* Options align under the label and hang off a faint guide line, so they
-     clearly belong to the section above (Linear-style grouping). */
   margin: 2px 0 6px 20px;
   padding: 2px 10px 2px 20px;
   border-left: 1.5px solid #ece9f4;
@@ -3410,21 +2557,13 @@
   background: #ddd6fe;
   border-radius: 99px;
 }
-
-/* ═══════════════════ MASTER-DETAIL FILTER LAYOUT ═══════════════════
-   Left rail = category list, right pane = the chosen category's options.
-   Scales to any number of filters with almost no scrolling. */
 .prd-filter-body.prd-md {
   flex-direction: row;
   padding: 0;
   gap: 0;
   background: #fff;
   overflow: hidden;
-  /* each column scrolls on its own */
 }
-
-/* ── LEFT RAIL ── */
-/* Icon-only rail — compact strip; names live on hover + the detail header. */
 .prd-md-rail {
   flex: 0 0 60px;
   width: 60px;
@@ -3476,14 +2615,10 @@
 .prd-md-cat:hover {
   background: #f1f0f7;
 }
-
-/* Active = a raised, softly-shadowed chip with a purple wash + glow. */
 .prd-md-cat.active {
   background: linear-gradient(135deg, #f5f1ff 0%, #ece6fe 100%);
   box-shadow: 0 3px 10px rgba(124, 58, 237, .14), inset 0 0 0 1px rgba(124, 58, 237, .10);
 }
-
-/* Purple left accent on the active category. */
 .prd-md-cat.active::before {
   content: '';
   position: absolute;
@@ -3518,8 +2653,6 @@
   box-shadow: 0 3px 8px rgba(124, 58, 237, .38);
   animation: prd-md-glow 2.4s ease-in-out infinite;
 }
-
-/* Gentle breathing glow on the active category — a subtle sign of life. */
 @keyframes prd-md-glow {
 
   0%,
@@ -3537,8 +2670,6 @@
     animation: none;
   }
 }
-
-/* Count → tiny badge on the icon's top-right corner. */
 .prd-md-cat-ct {
   position: absolute;
   top: 3px;
@@ -3556,8 +2687,6 @@
   justify-content: center;
   box-shadow: 0 0 0 2px #fbfafd;
 }
-
-/* ── RIGHT PANE ── */
 .prd-md-detail {
   flex: 1 1 auto;
   min-width: 0;
@@ -3565,8 +2694,6 @@
   display: flex;
   flex-direction: column;
   background: #fff;
-  /* Soft inner shadow at the seam so the detail pane reads as a raised surface
-     over the rail — depth without a hard divider. */
   box-shadow: inset 7px 0 14px -8px rgba(76, 29, 149, .08);
 }
 
@@ -3576,7 +2703,6 @@
   gap: 11px;
   padding: 15px 16px 13px;
   border-bottom: 1px solid #f2f0f8;
-  /* Faint purple wash so the header feels like a titled section, not a raw edge. */
   background: linear-gradient(180deg, #faf8ff 0%, #fff 100%);
 }
 
@@ -3623,7 +2749,6 @@
   gap: 2px;
   scrollbar-width: thin;
   scrollbar-color: #e3e1ec transparent;
-  /* Soft fade+rise when the category switches (remounted via key). */
   animation: prd-md-fade .22s cubic-bezier(.4, 0, .2, 1);
 }
 
@@ -3659,9 +2784,6 @@
 .prd-md-dbody::-webkit-scrollbar-thumb:hover {
   background: #c4b5fd;
 }
-
-/* Premium option rows inside the detail pane — roomy hit area, crisp custom
-   checkbox, clear selected state. */
 .prd-md-dbody .prd-filter-row {
   position: relative;
   padding: 11px 14px;
@@ -3674,8 +2796,6 @@
   background: #fff;
   transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, color .15s ease, transform .12s ease;
 }
-
-/* The whole pill is the control — hide the raw checkbox/radio. */
 .prd-md-dbody .prd-filter-row input[type="checkbox"],
 .prd-md-dbody .prd-filter-row input[type="radio"] {
   position: absolute;
@@ -3694,8 +2814,6 @@
 .prd-md-dbody .prd-filter-row:active {
   transform: scale(.985);
 }
-
-/* Selected option — filled purple gradient pill + a crisp check on the right. */
 .prd-md-dbody .prd-filter-row:has(input:checked) {
   background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
   border-color: #7c3aed;
@@ -3706,8 +2824,6 @@
 .prd-md-dbody .prd-filter-row .prd-filter-row-txt {
   flex: 1 1 auto;
 }
-
-/* Check badge appears only when the pill is selected. */
 .prd-md-dbody .prd-filter-row::after {
   content: '';
   flex: 0 0 auto;
@@ -3728,17 +2844,12 @@
   opacity: 1;
   transform: scale(1);
 }
-
-/* Hovering an already-selected pill must keep the filled gradient + white text,
-   otherwise the light hover wash hides the white label. Just lift it a touch. */
 .prd-md-dbody .prd-filter-row:has(input:checked):hover {
   background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
   border-color: #6d28d9;
   color: #fff;
   box-shadow: 0 8px 20px rgba(124, 58, 237, .4), inset 0 1px 0 rgba(255, 255, 255, .24);
 }
-
-/* Staggered entrance so the options cascade in, not all at once. */
 .prd-md-dbody>* {
   animation: prd-md-row .26s cubic-bezier(.4, 0, .2, 1) both;
 }
@@ -3794,8 +2905,6 @@
     animation: none;
   }
 }
-
-/* Dark mode — master-detail. */
 [data-bs-theme="dark"] .prd-filter-body.prd-md {
   background: #14102a;
 }
@@ -3804,9 +2913,6 @@
   background: #17122e;
   border-right-color: #262041;
 }
-
-/* Dark scrollbar — thin + a muted dark thumb, so it doesn't glow against the
-   dark surface (the light-mode thumb read as a bright bar). */
 [data-bs-theme="dark"] .prd-md-dbody {
   scrollbar-color: #35304f transparent;
 }
@@ -3924,9 +3030,6 @@
 .prd-filter-row:hover {
   background: #f5f3ff;
 }
-
-/* Option text — one line, ellipsis. A long value shows in full on hover; it
-   must never wrap and blow out the row height. */
 .prd-filter-row-txt {
   flex: 1 1 auto;
   min-width: 0;
@@ -3942,9 +3045,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Selected row reads as selected at a glance — soft tint + purple label — not
-   only the tick. `:has()` keeps it CSS-only (no class toggling in JS). */
 .prd-filter-row:has(input:checked) {
   background: #f3eeff;
   color: #5b21b6;
@@ -3954,8 +3054,6 @@
 .prd-filter-row:has(input:checked):hover {
   background: #ece5fd;
 }
-
-/* Keyboard focus is visible without a permanent outline for mouse users. */
 .prd-filter-row:focus-within {
   background: #f5f3ff;
   box-shadow: inset 0 0 0 1.5px #c4b5fd;
@@ -4005,7 +3103,6 @@
   background: linear-gradient(135deg, #8b5cf6, #7c3aed);
   border-color: #7c3aed;
   box-shadow: 0 2px 5px rgba(124, 58, 237, .35);
-  /* A little pop on tick — satisfying, quick. */
   animation: prd-check-pop .22s cubic-bezier(.34, 1.56, .64, 1);
 }
 
@@ -4070,11 +3167,6 @@
 .prd-filter-clear-mini:hover {
   background: #fee2e2;
 }
-
-/* minmax(0, 1fr) instead of plain 1fr — without it, a grid track's
- * floor is min-content, so the date toggle (calendar icon + clear "×"
- * + the value text on a nowrap line) forces the TO column wider than
- * its share and bleeds past the right edge of the filter panel. */
 .prd-filter-date-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -4094,16 +3186,11 @@
   letter-spacing: .04em;
   text-transform: uppercase;
 }
-
-/* MasterDatePicker wrapper — sized to fit the compact filter row and
-   tinted with the page's violet accent (same chrome the other filter
-   controls use). */
 .prd-filter-date-picker {
   width: 100%;
   min-width: 0;
 }
 
-.prd-filter-date-picker .master-date-input,
 .prd-filter-date-picker input.form-control {
   height: 34px !important;
   padding: 0 32px 0 10px !important;
@@ -4115,11 +3202,6 @@
   font-family: inherit !important;
 }
 
-.prd-filter-date-picker .master-date-input:focus {
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, .12) !important;
-}
-
 .prd-filter-footer {
   display: flex;
   gap: 8px;
@@ -4127,14 +3209,6 @@
   border-top: 1px solid #ede9fe;
   background: #faf5ff;
 }
-
-/* Drawer footer buttons.
-   Named prd-fbtn rather than prd-filter-btn on purpose: that class is the
-   animated "Filter" trigger pill further up this file, and it carries a
-   ::before glow + an infinitely-looping ::after shine sweep. Sharing the name
-   meant both pseudo-elements rendered on Reset and Apply too, so Reset had a
-   shine animation running across a plain white button. Same base as Apply
-   below — the two differ only in colour, not in shape or motion. */
 .prd-fbtn {
   flex: 1;
   height: 40px;
@@ -4202,48 +3276,9 @@
     width: 88vw;
   }
 }
-
-/* ════════════════════════════════════════════════════════════════════════════
- * Dark mode — flips backgrounds, borders, and text while keeping the violet
- * accent on the per-card chrome. The page background falls back to the
- * Velzon body color (--vz-body-bg) so the Products page reads the same as
- * the Vendors list — a plain dark slate, not a violet gradient panel.
- * ════════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .prd-root {
   background: transparent;
   color: #e9e5ff;
-}
-
-/* Header — dark (keep the gradient ring; deep violet padding-box fill) */
-[data-bs-theme="dark"] .prd-header {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(110deg, #1e1b4b 0%, #2e1065 35%, #3b1675 70%, #4c1d95 100%) padding-box,
-    linear-gradient(125deg, #7c3aed 0%, #8b5cf6 22%, #6366f1 48%, #d946ef 76%, #ec4899 100%) border-box;
-  box-shadow:
-    0 1px 0 rgba(255, 255, 255, 0.05) inset,
-    0 6px 22px rgba(0, 0, 0, 0.45),
-    0 2px 8px rgba(124, 58, 237, 0.20);
-}
-
-[data-bs-theme="dark"] .prd-header-icon {
-  background: linear-gradient(135deg, #a78bfa, #7c3aed);
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.50), 0 0 0 3px rgba(167, 139, 250, 0.18);
-}
-
-[data-bs-theme="dark"] .prd-header-title {
-  color: #f5f3ff;
-}
-
-[data-bs-theme="dark"] .prd-header-sub {
-  color: #ede9fe;
-}
-
-/* List card + pagination — dark */
-[data-bs-theme="dark"] .prd-list-card {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .45);
 }
 
 [data-bs-theme="dark"] .prd-pagination {
@@ -4278,30 +3313,6 @@
   border-color: #a78bfa;
 }
 
-/* Status tabs — dark */
-[data-bs-theme="dark"] .prd-status-tabs {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
-}
-
-/* Was #a89fc7 — too dim against the dark tab strip, so the inactive (not
-   selected) Active / Inactive toggle text read as faded (QA report). Lift to
-   a light lavender for clear contrast; hover goes to full white. */
-[data-bs-theme="dark"] .prd-status-tab {
-  color: #d8d0f0;
-}
-
-[data-bs-theme="dark"] .prd-status-tab:hover {
-  background: #221852;
-  color: #ffffff;
-}
-
-[data-bs-theme="dark"] .prd-status-count {
-  background: #2a1d5c;
-  color: #c4b5fd;
-}
-
 [data-bs-theme="dark"] .prd-shim-thumb,
 [data-bs-theme="dark"] .prd-shim-bar,
 [data-bs-theme="dark"] .prd-shim-pill {
@@ -4311,13 +3322,6 @@
 
 [data-bs-theme="dark"] .prd-card-shimmer:hover {
   border-color: #3b2a6b;
-}
-
-/* Top filters bar */
-[data-bs-theme="dark"] .prd-filters {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
 }
 
 [data-bs-theme="dark"] .prd-search {
@@ -4332,8 +3336,6 @@
 [data-bs-theme="dark"] .prd-search input::placeholder {
   color: #6d6391;
 }
-
-/* Dark — hero */
 [data-bs-theme="dark"] .prd-hero {
   background: #34216b;
   border-color: rgba(167, 139, 250, .28);
@@ -4352,8 +3354,6 @@
 [data-bs-theme="dark"] .prd-hero-sub {
   color: #c4b5fd;
 }
-
-/* Dark — What We Are Doing Here stepper */
 [data-bs-theme="dark"] .prd-bref {
   background: #1c1633;
   border-color: rgba(167, 139, 250, .22);
@@ -4411,8 +3411,6 @@
   border-color: rgba(167, 139, 250, .25);
   color: #c4b5fd;
 }
-
-/* Dark — panel + toolbar tabs + Filter */
 [data-bs-theme="dark"] .prd-panel {
   background: #1a1430;
   border-color: #3b2a6b;
@@ -4472,8 +3470,6 @@
   background: #ede9fe;
   color: #5b21b6;
 }
-
-/* Dark — product card */
 [data-bs-theme="dark"] .prd-pcard {
   background: linear-gradient(180deg, #1c2333 0%, #171d2b 100%);
   border-color: rgba(167, 139, 250, .18);
@@ -4484,8 +3480,6 @@
   border-color: rgba(167, 139, 250, .4);
   box-shadow: 0 14px 34px rgba(0, 0, 0, .55), 0 28px 60px -22px rgba(124, 58, 237, .35);
 }
-
-/* Sheen is barely-there on the dark surface so it reads as a glass edge, not a fog. */
 [data-bs-theme="dark"] .prd-pcard::after {
   background: linear-gradient(135deg, rgba(255, 255, 255, .06) 0%, rgba(255, 255, 255, 0) 34%);
 }
@@ -4557,43 +3551,6 @@
   border-color: rgba(167, 139, 250, .5);
 }
 
-[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle {
-  background: #110c25 !important;
-  border-color: #3b2a6b !important;
-  color: #d8c9ff !important;
-}
-
-[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap .master-select-toggle:hover {
-  /* Match the Filters button's dark hover (bg + border) so all three
-     dropdown triggers show clear, consistent hover feedback in dark mode. */
-  background: #221852 !important;
-  border-color: #7c3aed !important;
-}
-
-[data-bs-theme="dark"] .prd-ms-wrap .master-select-wrap.show .master-select-toggle {
-  background: #1a1430 !important;
-  border-color: #a78bfa !important;
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18) !important;
-}
-
-[data-bs-theme="dark"] .prd-ms-wrap .master-select-placeholder {
-  color: #6d6391 !important;
-}
-
-[data-bs-theme="dark"] .prd-view-toggle {
-  background: #110c25;
-  border-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .prd-view-btn {
-  color: #c4b5fd;
-}
-
-/* Meta */
-[data-bs-theme="dark"] .prd-meta-count {
-  color: #c4b5fd;
-}
-
 [data-bs-theme="dark"] .prd-meta-chip {
   background: #2a1d5c;
   border-color: #4c1d95;
@@ -4633,9 +3590,6 @@
   border-color: transparent;
   color: #fff;
 }
-
-/* Grid cards — dark variant mirrors .plan-card-v2's deep accent mesh
-   so the spinning border still pops against a near-black surface. */
 [data-bs-theme="dark"] .prd-card {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, .05) 0%, transparent 18%),
@@ -4667,28 +3621,12 @@
   color: #ede9fe;
 }
 
-[data-bs-theme="dark"] .prd-card-brand {
-  color: #a89fc7;
-}
-
 [data-bs-theme="dark"] .prd-card-id {
   color: #8579b5;
 }
 
-[data-bs-theme="dark"] .prd-card-uom {
-  color: #a89fc7;
-}
-
 [data-bs-theme="dark"] .prd-card-price {
   color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .prd-card-pricerow {
-  border-top-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .prd-card-reviews {
-  color: #8579b5;
 }
 
 [data-bs-theme="dark"] .prd-card-hover-btn {
@@ -4700,12 +3638,6 @@
 [data-bs-theme="dark"] .prd-card-hover-btn:hover {
   background: #1a1430;
 }
-
-/* Edit (primary) button — in dark mode it had a transparent border + no hover
-   feedback, so it read as flat / un-highlighted against the dark row. Give it
-   a soft violet border + glow at rest, a brighter gradient + ring on hover,
-   and a focus ring. Delete (danger) gets a translucent-red treatment instead
-   of the light-pink light-mode fill so it doesn't glare on the dark surface. */
 [data-bs-theme="dark"] .prd-card-hover-btn.primary {
   border-color: rgba(167, 139, 250, .55);
   box-shadow: 0 2px 8px rgba(124, 58, 237, .35);
@@ -4733,13 +3665,6 @@
   outline: none;
   box-shadow: 0 0 0 3px rgba(167, 139, 250, .40);
 }
-
-/* GRID card hover-overlay buttons — the overlay sits on a dark scrim in BOTH
-   themes, so the dark-mode dark-fill buttons above rendered nearly invisible
-   (dark-on-dark) inside the card hover. Force a light, high-contrast
-   treatment here regardless of theme so View / Edit / Delete pop on the
-   scrim. (List-view rows keep the dark-mode dark buttons — only the hover
-   overlay is overridden.) */
 [data-bs-theme="dark"] .prd-card-hover .prd-card-hover-btn {
   background: rgba(255, 255, 255, .96);
   color: #5b21b6;
@@ -4767,8 +3692,6 @@
   background: #fee2e2;
   border-color: #fca5a5;
 }
-
-/* New card pieces — dark */
 [data-bs-theme="dark"] .prd-card-title-link {
   color: #c4b5fd;
 }
@@ -4793,14 +3716,6 @@
   color: #ede9fe;
 }
 
-[data-bs-theme="dark"] .prd-card-meta-label {
-  color: #a78bfa;
-}
-
-[data-bs-theme="dark"] .prd-card-meta-value {
-  color: #ede9fe;
-}
-
 [data-bs-theme="dark"] .prd-card-vendor-cell,
 [data-bs-theme="dark"] .prd-card-vendor-cell svg {
   color: #4ade80;
@@ -4818,54 +3733,8 @@
   border-color: #7f1d1d;
 }
 
-[data-bs-theme="dark"] .prd-card-price-uom {
-  color: #a89fc7;
-}
-
-[data-bs-theme="dark"] .prd-card-haz-class-key {
-  color: #fca5a5;
-}
-
 [data-bs-theme="dark"] .prd-card-haz-class-val {
   color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .prd-card-haz-text.is-nonhaz {
-  color: #4ade80;
-}
-
-[data-bs-theme="dark"] .prd-card-haz-text.is-haz {
-  color: #fca5a5;
-}
-
-[data-bs-theme="dark"] .prd-card-segment .prd-card-info-key {
-  color: #a89fc7;
-}
-
-[data-bs-theme="dark"] .prd-card-segment .prd-card-info-val {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .prd-card-status-pill {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, .4);
-}
-
-[data-bs-theme="dark"] .prd-card-status-pill.status-active {
-  background: #14241a;
-  color: #4ade80;
-  border-color: #14532d;
-}
-
-[data-bs-theme="dark"] .prd-card-status-pill.status-inactive {
-  background: #3f2c0a;
-  color: #fde68a;
-  border-color: #78350f;
-}
-
-[data-bs-theme="dark"] .prd-card-status-pill.status-draft {
-  background: #1a1430;
-  color: #c4b5fd;
-  border-color: #3b2a6b;
 }
 
 [data-bs-theme="dark"] .prd-card-buyrow {
@@ -4875,8 +3744,6 @@
 [data-bs-theme="dark"] .prd-card-price-label {
   color: #a89fc7;
 }
-
-/* List rows */
 [data-bs-theme="dark"] .prd-row {
   background: #1a1430;
   border-color: #3b2a6b;
@@ -4886,12 +3753,6 @@
   border-color: #7c3aed;
   box-shadow: 0 6px 18px rgba(0, 0, 0, .5);
 }
-
-[data-bs-theme="dark"] .prd-row-name {
-  color: #ede9fe;
-}
-
-/* Empty + no-access */
 [data-bs-theme="dark"] .prd-empty {
   background: #1a1430;
   border-color: #4c1d95;
@@ -4916,23 +3777,6 @@
 
 [data-bs-theme="dark"] .prd-noaccess-desc {
   color: #a89fc7;
-}
-
-/* ─── Filter sidebar — dark mode ─── */
-[data-bs-theme="dark"] .prd-filter-toggle {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .prd-filter-toggle:hover {
-  background: #221852;
-  border-color: #7c3aed;
-}
-
-[data-bs-theme="dark"] .prd-filter-toggle-badge {
-  background: #4c1d95;
-  color: #ede9fe;
 }
 
 [data-bs-theme="dark"] .prd-filter-overlay {
@@ -5012,8 +3856,6 @@
 [data-bs-theme="dark"] .prd-filter-panel.open .prd-filter-panel-head {
   background: transparent;
 }
-
-/* Neutral slate chip, purple accent when active — no rainbow. */
 [data-bs-theme="dark"] .prd-fp-icon {
   background: #232037;
   color: #94a3b8;
@@ -5114,16 +3956,10 @@
   color: #c4b5fd;
 }
 
-[data-bs-theme="dark"] .prd-filter-date-picker .master-date-input,
 [data-bs-theme="dark"] .prd-filter-date-picker input.form-control {
   background: #110c25 !important;
   border-color: #3b2a6b !important;
   color: #ede9fe !important;
-}
-
-[data-bs-theme="dark"] .prd-filter-date-picker .master-date-input:focus {
-  border-color: #a78bfa !important;
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18) !important;
 }
 
 [data-bs-theme="dark"] .prd-filter-date-field input {
@@ -5153,9 +3989,6 @@
   background: #221852;
   border-color: #7c3aed;
 }
-
-
-/* ============================ ProductView.tsx (detail popup) ============================ */
 .pv2-root {
   font-family: var(--font-sans);
   background: #f8fafc;
@@ -5173,17 +4006,6 @@
 .pv2-root *::after {
   box-sizing: border-box;
 }
-
-.pv2-loading {
-  padding: 60px 20px;
-  text-align: center;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-/* Shimmer placeholder — animated gradient sweep that approximates the
-   loaded layout. Mirrors the real .pv2pd-* detail layout (hero + two-column
-   body); see the `if (loading)` branch in ProductView.tsx. */
 @keyframes pv2-shimmer-sweep {
   0% {
     background-position: -200% 0;
@@ -5200,15 +4022,6 @@
   animation: pv2-shimmer-sweep 1.4s ease-in-out infinite;
   border-radius: 6px;
 }
-
-/* ─── Skeleton blocks (.pv2pd-skel) ───────────────────────────────────
-   Sizes are deliberately the same as their loaded counterparts so the
-   layout does not shift when the real content swaps in. The skeleton
-   borrows the real containers (.pv2pd-hero / -body / -gallery / -sec /
-   -highlights / -tabs), so only the leaf blocks need rules here. */
-
-/* Hero sits on the dark purple gradient — the lavender .pv2-shimmer fill
-   would disappear into it, so the bars there sweep in translucent white. */
 .pv2pd-skel .pv2pd-hero .pv2-shimmer {
   background: linear-gradient(90deg, rgba(255, 255, 255, .12) 25%, rgba(255, 255, 255, .3) 37%, rgba(255, 255, 255, .12) 63%);
   background-size: 200% 100%;
@@ -5268,9 +4081,6 @@
   height: 11px;
   border-radius: 4px;
 }
-
-/* Neutralise the highlight tile's purple accent strip + corner glow while
-   loading — a coloured accent reads as real data. */
 .pv2pd-skel .pv2pd-hl {
   --acc: #d9d0f0;
   --acc2: #ece6f9;
@@ -5322,1045 +4132,10 @@
   background: linear-gradient(90deg, #1a1430 25%, #2a1d5c 37%, #1a1430 63%);
   background-size: 200% 100%;
 }
-
-/* Surface card */
-.pv2-card {
-  background: #fff;
-  border: 1px solid var(--vz-border-color, #e9ebec);
-  border-radius: 14px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .04);
-  position: relative;
-  overflow: hidden;
-}
-
-/* ── Top card ── */
-.pv2-top {
-  padding: 0;
-}
-
-.pv2-top-grid {
-  /* Shared hero height — image (left) and info column (right) both pin to
-     this so they end at the same baseline. Tune here to change both. */
-  --pv2-hero-h: 400px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-  gap: 24px;
-  padding: 18px 20px 20px;
-}
-
-/* Gallery */
-.pv2-gallery {
-  display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 12px;
-  min-width: 0;
-  align-items: start;
-}
-
-.pv2-thumbs {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: 110px;
-  max-height: var(--pv2-hero-h, 400px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: #c4b5fd transparent;
-  scrollbar-gutter: stable;
-}
-
-.pv2-thumbs::-webkit-scrollbar {
-  width: 6px;
-  height: 0;
-}
-
-.pv2-thumbs::-webkit-scrollbar:horizontal {
-  display: none;
-  height: 0;
-}
-
-.pv2-thumbs::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.pv2-thumbs::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a78bfa, #7c3aed);
-  border-radius: 99px;
-}
-
-.pv2-thumbs::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #7c3aed, #5b21b6);
-}
-
-.pv2-thumb {
-  width: 110px;
-  height: 90px;
-  border-radius: 10px;
-  border: 1.5px solid #e2e8f0;
-  background: #f8fafc;
-  cursor: pointer;
-  padding: 0;
-  overflow: hidden;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color .15s, transform .12s;
-}
-
-.pv2-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.pv2-thumb.on {
-  border-color: #7c3aed;
-  transform: scale(1.03);
-}
-
-.pv2-thumb:hover {
-  border-color: #c4b5fd;
-}
-
-.pv2-thumb-empty {
-  color: #94a3b8;
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.pv2-main-image {
-  /* Fixed hero height — the right-side info column is pinned to this same
-     value (--pv2-hero-h) so the two columns end at the same baseline and
-     the product info is arranged within the image's height. */
-  height: var(--pv2-hero-h, 400px);
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1.5px solid #e2e8f0;
-  background: #f8fafc;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-}
-
-.pv2-main-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.pv2-main-empty {
-  font-size: 80px;
-  font-weight: 800;
-  color: #c4b5fd;
-}
-
-/* Head row */
-.pv2-right {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
-  /* Same height as the hero image so the info column ends at the same
-     baseline; the info-grid below flexes to fill the leftover space. */
-  height: var(--pv2-hero-h, 400px);
-  min-height: 0;
-}
-
-.pv2-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.pv2-head-text {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.pv2-title {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 17px;
-  font-weight: 800;
-  color: #1e293b;
-}
-
-.pv2-code {
-  color: #5b21b6;
-}
-
-.pv2-sep {
-  color: #cbd5e1;
-}
-
-.pv2-name {
-  color: #1e293b;
-}
-
-/* "Sold N — This product sold out N times" */
-.pv2-meta-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pv2-sold-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 99px;
-  background: linear-gradient(135deg, #22c55e, #15803d);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.pv2-sold-chip i {
-  font-size: 11px;
-}
-
-.pv2-sold-text {
-  font-size: 12px;
-  color: #6b7280;
-}
-
-/* "Total Selling Price: ₹900  ● Active" */
-.pv2-price-row {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.pv2-price-label {
-  font-size: 14px;
-  font-weight: 800;
-  color: #1e293b;
-}
-
-.pv2-price-val {
-  font-size: 16px;
-  font-weight: 800;
-  color: #5b21b6;
-}
-
-.pv2-status-text {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.pv2-status-text.is-active {
-  color: #16a34a;
-}
-
-.pv2-status-text.is-inactive {
-  color: #b45309;
-}
-
-.pv2-head-actions {
-  display: inline-flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.pv2-back,
-.pv2-edit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 38px;
-  padding: 0 18px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  border-radius: 8px;
-  transition: transform .15s, box-shadow .15s, background .15s, border-color .15s;
-}
-
-.pv2-back i,
-.pv2-edit i {
-  font-size: 15px;
-}
-
-.pv2-back {
-  background: #fff;
-  border: 1.5px solid var(--vz-border-color, #e9ebec);
-  color: #475569;
-}
-
-.pv2-back:hover {
-  background: #f5f7fb;
-  border-color: #c0cffb;
-  color: #405189;
-  transform: translateY(-1px);
-}
-
-/* Edit Product — matches the rounded gradient "Add Product" button */
-.pv2-edit {
-  background: linear-gradient(120deg, #405189 0%, #6691e7 100%);
-  color: #fff;
-  border: none;
-  border-radius: 99px;
-  box-shadow: 0 4px 12px rgba(64, 81, 137, .3);
-}
-
-.pv2-edit:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 18px rgba(64, 81, 137, .4);
-}
-
-.pv2-edit:active {
-  transform: translateY(0);
-}
-
-/* Info grid — flat text-heading style (no coloured header strips).
-   Three side-by-side columns of key/value rows separated by light
-   dividers. Each column scrolls internally if rows overflow. */
-.pv2-info-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 20px;
-  padding-top: 12px;
-  border-top: 1px solid #e2e8f0;
-  /* Fill the space under the head block; no scrollbars — the rows are
-     spaced to fit the hero height naturally. */
-  flex: 1;
-  min-height: 0;
-}
-
-.pv2-info-block {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  height: 100%;
-  min-width: 0;
-}
-
-.pv2-info-heading {
-  font-size: 14px;
-  font-weight: 800;
-  color: #5b21b6;
-  margin: 0 0 8px 0;
-  letter-spacing: -.01em;
-}
-
-.pv2-info-heading-sub {
-  margin-top: 14px;
-}
-
-.pv2-info-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  overflow: visible;
-}
-
-/* Each label : value pair sits on a row with a faint dotted separator so
-   values line up in a clean right-hand column and the eye can track
-   across long rows. */
-.pv2-info-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 12.5px;
-  padding: 4px 0;
-  border-bottom: 1px dashed #eef2f7;
-}
-
-.pv2-info-row:last-child {
-  border-bottom: none;
-}
-
-.pv2-info-key {
-  color: #64748b;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.pv2-info-val {
-  color: #1e293b;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 60%;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.pv2-info-val-success {
-  color: #16a34a;
-  font-weight: 700;
-}
-
-.pv2-info-val-danger {
-  color: #dc2626;
-  font-weight: 700;
-}
-
-.pv2-info-divider {
-  height: 1px;
-  background: #e2e8f0;
-  margin: 6px 0;
-}
-
-.pv2-total-line {
-  border-bottom: none;
-}
-
-.pv2-total-line .pv2-info-key {
-  font-weight: 800;
-  color: #1e293b;
-}
-
-.pv2-total-strong {
-  color: #5b21b6;
-  font-size: 15px;
-  font-weight: 800;
-  text-align: right;
-}
-
-/* ── Bottom row ── */
-.pv2-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
-  gap: 14px;
-}
-
-.pv2-tabs-card,
-.pv2-vendors-card {
-  padding: 14px 16px;
-}
-
-.pv2-tabs {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  border-bottom: 1.5px solid #e2e8f0;
-  margin-bottom: 14px;
-}
-
-.pv2-tab {
-  background: none;
-  border: none;
-  padding: 8px 14px;
-  font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #94a3b8;
-  cursor: pointer;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -1.5px;
-  transition: color .15s, border-color .15s;
-}
-
-.pv2-tab:hover {
-  color: #4f46e5;
-}
-
-.pv2-tab.on {
-  color: #4f46e5;
-  border-bottom-color: #4f46e5;
-}
-
-.pv2-tab-body {
-  min-height: 80px;
-}
-
-.pv2-tab-text {
-  font-size: 13px;
-  color: #475569;
-  line-height: 1.55;
-  margin: 0;
-}
-
-.pv2-tab-rich {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.pv2-tab-h {
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: .01em;
-  color: #4338ca;
-  margin: 8px 0 2px;
-}
-
-.pv2-tab-rich .pv2-tab-h:first-child {
-  margin-top: 0;
-}
-
-.pv2-tab-rich .pv2-info-body {
-  margin-top: 2px;
-}
-
-.pv2-muted {
-  color: #94a3b8;
-  font-style: italic;
-}
-
-.pv2-vendors-head {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #1e293b;
-  margin-bottom: 12px;
-}
-
-.pv2-vendors-head i {
-  color: #4f46e5;
-  font-size: 18px;
-}
-
-.pv2-vendors-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 99px;
-  background: #4f46e5;
-  color: #fff;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.pv2-vendors-empty {
-  padding: 22px;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 12.5px;
-  border: 1.5px dashed #e2e8f0;
-  border-radius: 10px;
-}
-
-/* Vendor table — flat list of every mapped vendor (replaces the
-   per-vendor cards). Header gets the navy/indigo strip used on the
-   list pages for visual continuity. */
-.pv2-vendor-table-wrap {
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  /* The Product Vendors table carries 10 columns (Sr · Code · Name ·
-     Contact Person · Contact No · Purchase Price · GST % · GST Amount ·
-     Total · Map Date) — on narrow card widths that overflows. Switch
-     the wrapper to a horizontal scroller and pin a min table width
-     so columns never crush into a single character each. */
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin;
-  scrollbar-color: #c7d2fe transparent;
-}
-
-.pv2-vendor-table-wrap::-webkit-scrollbar {
-  height: 8px;
-}
-
-.pv2-vendor-table-wrap::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.pv2-vendor-table-wrap::-webkit-scrollbar-thumb {
-  background: #c7d2fe;
-  border-radius: 99px;
-}
-
-.pv2-vendor-table-wrap::-webkit-scrollbar-thumb:hover {
-  background: #818cf8;
-}
-
-.pv2-vendor-table {
-  width: 100%;
-  min-width: 980px;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-}
-
-.pv2-vendor-table thead th {
-  background: linear-gradient(180deg, #2b3a85 0%, #1e2a5f 100%);
-  color: #fff;
-  font-weight: 700;
-  letter-spacing: .02em;
-  padding: 8px 10px;
-  text-align: left;
-  white-space: nowrap;
-  border-bottom: 1px solid #1e2a5f;
-}
-
-.pv2-vendor-table tbody td {
-  white-space: nowrap;
-}
-
-.pv2-vendor-table tbody td {
-  padding: 8px 10px;
-  color: #1e293b;
-  border-top: 1px solid #eef2ff;
-  background: #fff;
-}
-
-.pv2-vendor-table tbody tr:nth-child(even) td {
-  background: #faf9ff;
-}
-
-.pv2-vendor-table tbody tr:hover td {
-  background: #f5f3ff;
-}
-
-.pv2-vendor-table .pv2-vt-num {
-  text-align: center;
-  white-space: nowrap;
-}
-
-.pv2-vendor-table .pv2-vt-strong {
-  font-weight: 700;
-  color: #4338ca;
-}
-
-.pv2-vendor-table .pv2-vt-total {
-  font-weight: 800;
-  color: #5b21b6;
-}
-
-.pv2-vendor-table .pv2-vendor-code {
-  color: #5b21b6;
-  font-family: ui-monospace, monospace;
-  font-weight: 700;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table-wrap {
-  border-color: #1f2937;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table tbody td {
-  background: #0f172a;
-  color: #e5e7eb;
-  border-top-color: #1f2937;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table tbody tr:nth-child(even) td {
-  background: #111827;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table tbody tr:hover td {
-  background: #1e293b;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-strong {
-  color: #a5b4fc;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vt-total {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-table .pv2-vendor-code {
-  color: #c4b5fd;
-}
-
-/* Vendor cards — show every mapped-vendor field */
-.pv2-vendor-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-height: 500px;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-width: thin;
-  scrollbar-color: #cbd5e1 transparent;
-}
-
-.pv2-vendor-cards::-webkit-scrollbar {
-  width: 6px;
-}
-
-.pv2-vendor-cards::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 99px;
-}
-
-.pv2-vendor-card {
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 10px 12px;
-  background: #fafbff;
-}
-
-.pv2-vendor-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px dashed #e2e8f0;
-}
-
-.pv2-vendor-card-title {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.pv2-vendor-sr {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 26px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 99px;
-  background: #ede9fe;
-  color: #5b21b6;
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.pv2-vendor-code {
-  color: #5b21b6;
-  font-family: ui-monospace, monospace;
-  font-size: 12.5px;
-}
-
-.pv2-vendor-name {
-  color: #1e293b;
-}
-
-.pv2-vendor-card-total {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.pv2-vendor-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px 14px;
-}
-
-.pv2-vendor-remarks {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #e2e8f0;
-  font-size: 12px;
-}
-
-.pv2-vendor-remarks-text {
-  color: #475569;
-  margin-left: 6px;
-}
-
-.pv2-vendor-attach {
-  margin-top: 8px;
-}
-
-/* Attachment link (QC + vendor) */
-.pv2-attach-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #4f46e5;
-  text-decoration: none;
-}
-
-.pv2-attach-link:hover {
-  color: #3730a3;
-  text-decoration: underline;
-}
-
-/* QC Auto-Code badge — Bootstrap's bg-light/text-dark goes muddy on the
- * dark-theme card (light grey on near-black) and the code becomes hard
- * to read. Custom class so the dark-mode override below can give it
- * proper contrast. */
-.pv2-qc-code {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 700;
-  font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
-  letter-spacing: 0.02em;
-  background: #f3f4f6;
-  color: #1f2937;
-  border: 1px solid #e5e7eb;
-}
-
-@media (max-width: 1200px) {
-  .pv2-top-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .pv2-bottom {
-    grid-template-columns: 1fr;
-  }
-
-  /* Stacked layout — drop the equal-height pin so the info column can grow
-     naturally below the image instead of being clipped/scrolled. */
-  .pv2-right {
-    height: auto;
-  }
-
-  .pv2-info-grid {
-    overflow: visible;
-    flex: none;
-  }
-
-  .pv2-info-block {
-    height: auto;
-  }
-}
-
-@media (max-width: 720px) {
-  .pv2-info-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .pv2-gallery {
-    grid-template-columns: 56px 1fr;
-  }
-
-  .pv2-thumb {
-    width: 56px;
-    height: 56px;
-  }
-}
-
-/* ════════════════════════════════════════════════════════════════════════
- * Dark mode
- * ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .pv2-root {
   background: #161c24;
   color: #ced4da;
 }
-
-[data-bs-theme="dark"] .pv2-card {
-  background: #1c2531;
-  border-color: rgba(255, 255, 255, .08);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .4);
-}
-
-[data-bs-theme="dark"] .pv2-thumb {
-  background: #161c24;
-  border-color: rgba(255, 255, 255, .1);
-}
-
-[data-bs-theme="dark"] .pv2-thumbs {
-  scrollbar-color: #4c1d95 transparent;
-}
-
-[data-bs-theme="dark"] .pv2-thumbs::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #a78bfa, #6d28d9);
-}
-
-[data-bs-theme="dark"] .pv2-main-image {
-  background: #161c24;
-  border-color: rgba(255, 255, 255, .1);
-}
-
-[data-bs-theme="dark"] .pv2-name {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .pv2-code {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-sep {
-  color: rgba(255, 255, 255, .2);
-}
-
-[data-bs-theme="dark"] .pv2-back {
-  background: #1c2531;
-  border-color: rgba(255, 255, 255, .1);
-  color: #ced4da;
-}
-
-[data-bs-theme="dark"] .pv2-back:hover {
-  background: #232c38;
-}
-
-[data-bs-theme="dark"] .pv2-sold-text {
-  color: #adb5bd;
-}
-
-[data-bs-theme="dark"] .pv2-price-label {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .pv2-price-val {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-edit {
-  box-shadow: 0 4px 12px rgba(64, 81, 137, .45);
-}
-
-[data-bs-theme="dark"] .pv2-edit:hover {
-  box-shadow: 0 6px 18px rgba(64, 81, 137, .55);
-}
-
-/* Back-to-Products — the base rule is background:#fff, which rendered as a
-   bright/near-white pill in dark mode. Give it the violet-dark surface used
-   across the product pages, with a clearly visible hover. */
-[data-bs-theme="dark"] .pv2-back {
-  background: #1a1430;
-  border-color: #3b2a6b;
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-back:hover {
-  background: #221852;
-  border-color: #4c1d95;
-  color: #ddd6fe;
-}
-
-[data-bs-theme="dark"] .pv2-info-grid {
-  border-top-color: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-info-heading {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-info-row {
-  border-bottom-color: rgba(255, 255, 255, .06);
-}
-
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-key {
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-[data-bs-theme="dark"] .pv2-info-row .pv2-info-val {
-  color: #f1f5f9;
-  font-weight: 700;
-}
-
-[data-bs-theme="dark"] .pv2-info-divider {
-  background: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-total-line .pv2-info-key {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .pv2-total-strong {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-tabs {
-  border-bottom-color: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-tab {
-  color: #6b7280;
-}
-
-[data-bs-theme="dark"] .pv2-tab:hover {
-  color: #a8b6e9;
-}
-
-[data-bs-theme="dark"] .pv2-tab.on {
-  color: #a8b6e9;
-  border-bottom-color: #6366f1;
-}
-
-[data-bs-theme="dark"] .pv2-tab-text {
-  color: #ced4da;
-}
-
-[data-bs-theme="dark"] .pv2-tab-h {
-  color: #a5b4fc;
-}
-
-[data-bs-theme="dark"] .pv2-vendors-head {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .pv2-vendors-empty {
-  border-color: rgba(255, 255, 255, .08);
-  color: #6b7280;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-card {
-  background: #161c24;
-  border-color: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-vendor-card-head {
-  border-bottom-color: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-vendor-sr {
-  background: rgba(139, 92, 246, .15);
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-code {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-name {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .pv2-vendor-remarks {
-  border-top-color: rgba(255, 255, 255, .08);
-}
-
-[data-bs-theme="dark"] .pv2-vendor-remarks-text {
-  color: #ced4da;
-}
-
-[data-bs-theme="dark"] .pv2-attach-link {
-  color: #a8b6e9;
-}
-
-[data-bs-theme="dark"] .pv2-attach-link:hover {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .pv2-qc-code {
-  background: rgba(139, 92, 246, .18);
-  color: #ddd6fe;
-  border-color: rgba(167, 139, 250, .35);
-}
-
-[data-bs-theme="dark"] .pv2-status.is-active {
-  background: rgba(34, 197, 94, .12);
-  color: #4ade80;
-  border-color: rgba(34, 197, 94, .3);
-}
-
-[data-bs-theme="dark"] .pv2-status.is-inactive {
-  background: rgba(245, 158, 11, .12);
-  color: #fcd34d;
-  border-color: rgba(245, 158, 11, .3);
-}
-
-/* ═══ Product detail — prototype pd-* popup design (ported as pv2pd-*) ═══ */
 .pv2pd-root {
   padding: 0;
   gap: 0;
@@ -6506,15 +4281,6 @@
   display: flex;
   flex-direction: column;
 }
-
-/* min-width: 0 is load-bearing, exactly as on .pv2pd-infocol above.
-   As a grid item this defaults to min-width: auto, i.e. "never shrink below my
-   content" — and the content is .pv2pd-thumbs, whose natural width is the whole
-   thumbnail strip (8 x 50px + gaps = 456px). That floored the single-column
-   grid at 456px on a 360px phone, stretching the info column with it and
-   clipping the price card and buy bar off-screen. Letting the gallery shrink
-   lets the strip scroll horizontally instead, which is what the dot indicators
-   below it are for. */
 .pv2pd-gallery {
   display: flex;
   flex-direction: column;
@@ -6558,9 +4324,7 @@
   overflow-y: hidden;
   scroll-behavior: smooth;
   scrollbar-width: none;
-  /* Firefox — hide the scrollbar */
   -ms-overflow-style: none;
-  /* old Edge */
 }
 
 .pv2pd-thumbs::-webkit-scrollbar {
@@ -6568,8 +4332,6 @@
   width: 0;
   height: 0;
 }
-
-/* Dot indicators replace the scrollbar — one per scrollable page of thumbs. */
 .pv2pd-thumb-dots {
   display: flex;
   justify-content: center;
@@ -6597,9 +4359,6 @@
   width: 20px;
   background: linear-gradient(90deg, #8b5cf6, #7c3aed);
 }
-
-/* Overlaid on the main image — floating pill at the bottom centre, styled to
-   stay visible over any photo. */
 .pv2pd-thumb-dots--onimg {
   position: absolute;
   left: 50%;
@@ -6934,8 +4693,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
-/* ─── Detail popup — tablet / mobile ─── */
 @media (max-width: 820px) {
   .pv2pd-hero {
     padding: 12px 16px;
@@ -6964,12 +4721,6 @@
     gap: 14px;
   }
 }
-
-/* Hero actions — keep Edit / Suppliers / Back on ONE row.
-   All three carry long labels (~396px together), so below this they wrapped and
-   "Back to Product List" dropped onto a line of its own. Collapsing the
-   optional words (.pv2pd-hbtn-more) gets the set to ~215px, which holds one row
-   down to 360px. Above 480px the labels are full and there's room to spare. */
 @media (max-width: 480px) {
   .pv2pd-hero-btns {
     flex-wrap: nowrap;
@@ -6988,21 +4739,11 @@
 }
 
 @media (max-width: 520px) {
-
-  /* Product Details tiles stay 2-up on phones — the 560px rule above already
-     sets that, and dropping to a single column just made the section twice as
-     long to scroll for no gain; each tile only holds a short label + value. */
   .pv2pd-hl {
     padding: 12px 9px 12px 10px;
     gap: 8px;
     border-radius: 13px;
   }
-
-  /* Buy bar — stepper + Wishlist + Cart share ONE row.
-     They used to stack (column / width:100%), which pushed the primary Cart
-     action a full screen-height down. Fitting three controls across ~340px
-     means the stepper shrinks to its digits and the buttons drop the "Add to"
-     verb (.pv2pd-act-verb) — the icons already carry the meaning. */
   .pv2pd-buybar {
     flex-direction: row;
     align-items: center;
@@ -7024,9 +4765,6 @@
   .pv2pd-qty input {
     width: 28px;
   }
-
-  /* flex-basis 0 (not the base rule's 100% on Cart) so both buttons divide
-     whatever the stepper leaves, instead of Cart claiming its own row. */
   .pv2pd-act,
   .pv2pd-act--cart {
     flex: 1 1 0;
@@ -7053,9 +4791,6 @@
     height: 260px;
   }
 }
-
-/* No drop shadow on the tiles (per request) — the left strip + right-side
-   accent shade carry the styling instead. */
 .pv2pd-hl {
   --acc: #7c3aed;
   --acc2: #8b5cf6;
@@ -7082,12 +4817,6 @@
   background: linear-gradient(180deg, var(--acc2), var(--acc));
   opacity: .9;
 }
-
-/* Per-tile radial glow in the top-right corner, tinted with the tile's own
-   accent — ported from the P2P Figma prototype (.pd-hl::after). */
-/* Soft light-accent shade filling the RIGHT side of each card (the tint you
-   see in the Figma — purple/green/red/… fading in from the right edge). Large
-   radial anchored to the right, clipped by the card's overflow:hidden. */
 .pv2pd-hl::after {
   content: '';
   position: absolute;
@@ -7105,9 +4834,6 @@
   transform: translateY(-2px);
   border-color: color-mix(in srgb, var(--acc) 35%, #efe9fb);
 }
-
-/* Icon shadow is tinted per-accent (green tile → green glow, amber → amber,
-   …) via color-mix, matching the Figma prototype instead of a flat purple. */
 .pv2pd-hl__ico {
   width: 32px;
   height: 32px;
@@ -7255,12 +4981,6 @@
 [data-bs-theme="dark"] .pv2pd-tab-body::-webkit-scrollbar-thumb {
   background: rgba(167, 139, 250, .3);
 }
-
-/* Description / brand / confidential are free-text fields typed or pasted into
-   a textarea, so their newlines and blank lines ARE the author's paragraph
-   structure. Without pre-wrap the browser collapses every run of whitespace and
-   the whole thing renders as one blob. break-word keeps a pasted URL or an
-   unbroken code string from overflowing the tab body sideways. */
 .pv2pd-tab-text {
   margin: 0 0 9px;
   white-space: pre-wrap;
@@ -7275,84 +4995,12 @@
   display: flex;
   flex-direction: column;
 }
-
-.pv2pd-tab-h {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #4c1d95;
-  margin: 12px 0 5px;
-}
-
-.pv2pd-tab-rich .pv2pd-tab-h:first-child {
-  margin-top: 0;
-}
-
-.pv2pd-tab-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 6px 0;
-  border-bottom: 1px dashed #eee6fa;
-  font-size: 11.5px;
-}
-
-.pv2pd-tab-row:last-child {
-  border-bottom: none;
-}
-
-.pv2pd-tab-row__k {
-  color: #7c8499;
-  font-weight: 600;
-}
-
-.pv2pd-tab-row__v {
-  color: #1e1b4b;
-  font-weight: 800;
-  text-align: right;
-}
-
-.pv2pd-tab-row__v--green {
-  color: #059669;
-}
-
-.pv2pd-tab-row__v--amber {
-  color: #b45309;
-}
-
-.pv2pd-supplier {
-  border: 1px solid #efe9fb;
-  border-radius: 11px;
-  padding: 10px 12px;
-  margin-bottom: 9px;
-}
-
-.pv2pd-supplier-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  color: #1e1b4b;
-  font-size: 12.5px;
-}
-
-.pv2pd-supplier-code {
-  font-size: 10px;
-  font-weight: 800;
-  color: #5b21b6;
-  background: #f5f1fe;
-  border: 1px solid #e2d4fa;
-  border-radius: 6px;
-  padding: 2px 7px;
-}
-
-/* Dark mode */
 [data-bs-theme="dark"] .pv2pd-root {
   background: #1c1633;
 }
 
 [data-bs-theme="dark"] .pv2pd-sec,
-[data-bs-theme="dark"] .pv2pd-hl,
-[data-bs-theme="dark"] .pv2pd-supplier {
+[data-bs-theme="dark"] .pv2pd-hl {
   background: #241a47;
   border-color: rgba(167, 139, 250, .16);
 }
@@ -7361,8 +5009,7 @@
   color: #ede9fe;
 }
 
-[data-bs-theme="dark"] .pv2pd-sec__title,
-[data-bs-theme="dark"] .pv2pd-tab-h {
+[data-bs-theme="dark"] .pv2pd-sec__title {
   color: #c4b5fd;
 }
 
@@ -7372,14 +5019,6 @@
 
 [data-bs-theme="dark"] .pv2pd-tab-body {
   color: #ced4da;
-}
-
-[data-bs-theme="dark"] .pv2pd-tab-row__k {
-  color: #9a93b3;
-}
-
-[data-bs-theme="dark"] .pv2pd-tab-row__v {
-  color: #ede9fe;
 }
 
 [data-bs-theme="dark"] .pv2pd-qty {
@@ -7401,14 +5040,9 @@
   border-color: rgba(167, 139, 250, .3);
   color: #d6c9f5;
 }
-
-
-
-/* ============================ AddProductModal.tsx ============================ */
 .apm-backdrop {
   position: fixed;
   inset: 0;
-  /* Above Velzon topbar (1002) and vertical-menu overlays (1003-1004). */
   z-index: 1090;
   background: rgba(66, 65, 71, 0.6);
   ;
@@ -7423,10 +5057,6 @@
 }
 
 .apm-modal {
-  /* Capped at 1224 to match the Customer and Consignee wizards
-     (both reduced from their original ~1440 cap to the same 1224
-     value for visual consistency across the three onboarding
-     forms). */
   width: 100%;
   max-width: 1300px;
   max-height: calc(100vh - 48px);
@@ -7443,7 +5073,6 @@
   box-shadow: 0 40px 90px rgba(45, 20, 90, .5), 0 0 0 1px rgba(255, 255, 255, .5) inset;
   color: #1e1b4b;
   animation: apmPop .26s cubic-bezier(.22, 1, .36, 1);
-  /* Anchor for the save-time busy veil (.apm-busy-veil, inset:0). */
   position: relative;
 }
 
@@ -7458,12 +5087,6 @@
     opacity: 1;
   }
 }
-
-/* Save-time interaction lock — while a step save is in flight, this
-   transparent veil covers the whole card and swallows every click so the
-   user can't fire a second action (open Map Supplier, switch tab, close the
-   modal, etc.) mid-save. It clears automatically because every saver resets
-   `saving` in a finally block. The footer's "Saving…" spinner shows through. */
 .apm-busy-veil {
   position: absolute;
   inset: 0;
@@ -7481,8 +5104,6 @@
 .apm-modal *::after {
   box-sizing: border-box;
 }
-
-/* ─── Header ─── */
 .apm-head {
   position: relative;
   overflow: hidden;
@@ -7549,10 +5170,6 @@
   font-weight: 800;
   letter-spacing: -.2px;
 }
-
-/* Product code beside the title — "Edit Product — P-002". Same weight and
-   size as the title (it's part of the same phrase); tabular figures stop the
-   digits shifting as the code changes between products. */
 .apm-title-code {
   margin-left: 7px;
   font-variant-numeric: tabular-nums;
@@ -7583,9 +5200,6 @@
   background: rgba(255, 255, 255, .22);
   transform: rotate(90deg);
 }
-
-/* ─── Header quick-action pills (GST (%) / Map Supplier) — glassy buttons
-   sitting to the left of the close ✕, mirroring the prototype's sf-head-btn. */
 .apm-head-actions {
   display: flex;
   align-items: center;
@@ -7617,10 +5231,6 @@
   transform: translateY(-1px);
   box-shadow: 0 6px 16px rgba(0, 0, 0, .22), 0 1px 0 rgba(255, 255, 255, .4) inset;
 }
-
-/* Both header pills stay disabled until Stage 1 (Product Core) is saved —
-   they act on a product row that doesn't exist yet. Without this they read as
-   fully active against the purple header and still lift on hover. */
 .apm-head-btn:disabled {
   opacity: .45;
   cursor: not-allowed;
@@ -7630,27 +5240,13 @@
   box-shadow: none;
   text-shadow: none;
 }
-
-/* ─── Stepper — pill-card style matching the Customer Legal Identity sample.
-   Each step is its own rounded card with a coloured icon tile + step number
-   badge in the corner. Active step gets a violet border + glow + tinted
-   background; idle steps fade out so the focus reads at a glance. */
 .apm-stepper {
   display: flex;
   align-items: stretch;
-  /* No gap: the connector IS the space between the two stage cards, so the
-     line meets both card edges instead of floating with 14px of dead air on
-     either side. The stacked mobile layout re-sets its own gap (and hides the
-     connector) in the breakpoint block near the end of this file. */
   gap: 0;
   padding: 12px 22px;
   background: #faf5ff;
 }
-
-/* Purchase has no Sales step — keep the single Core step at its original
-   (two-step) width instead of stretching it to fill the whole strip. 17px is
-   half the 34px connector, which is now the only thing between the two cards
-   (.apm-stepper contributes no gap). */
 .apm-stepper--solo .apm-step {
   flex: 0 1 calc(50% - 17px);
 }
@@ -7723,8 +5319,6 @@
   color: #7c3aed;
   margin-top: 1px;
 }
-
-/* Active step — violet tinted card */
 .apm-step-active {
   border-color: #7c3aed;
   background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
@@ -7744,8 +5338,6 @@
 .apm-step-active .apm-step-title {
   color: #3b0764;
 }
-
-/* Done step — soft green */
 .apm-step-done {
   border-color: #86efac;
   background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
@@ -7763,31 +5355,11 @@
 .apm-step-done .apm-step-title {
   color: #15803d;
 }
-
-/* Idle step — fade so the active step pops */
 .apm-step-idle {
   opacity: .8;
 }
-
-.apm-step-line {
-  flex: 1;
-  height: 2px;
-  background: #ddd6fe;
-  border-radius: 2px;
-  transition: background .25s;
-}
-
-.apm-step-line.done {
-  background: #16a34a;
-}
-
-/* Connector line drawn BETWEEN the two step cards — turns green once the
-   first step is complete (step 2 reached), matching sf-stage-link. */
 .apm-step-connector {
   align-self: center;
-  /* The full run between the two cards — .apm-stepper sets gap: 0, so this
-     34px is the entire space and the line touches both card edges. Fixed
-     (no shrink) so the two stages stay symmetrical at every width. */
   flex: 0 0 34px;
   height: 3px;
   border-radius: 3px;
@@ -7798,9 +5370,6 @@
 .apm-step-connector.done {
   background: linear-gradient(90deg, #22c55e, #86efac);
 }
-
-/* Status flag on each card — "In Progress" (violet) on the active card,
-   "Completed" (green) once passed. Mirrors sf-stage-flag. */
 .apm-step-flag {
   flex-shrink: 0;
   margin-left: auto;
@@ -7819,8 +5388,6 @@
   background: linear-gradient(135deg, #22c55e, #16a34a);
   box-shadow: 0 3px 8px rgba(34, 197, 94, .35);
 }
-
-/* ─── Body ─── */
 .apm-body {
   flex: 1;
   overflow-y: auto;
@@ -7838,11 +5405,6 @@
   background: #c4b5fd;
   border-radius: 99px;
 }
-
-/* ─── Shimmer skeleton (light theme) — shown while masters/edit prefill load.
-   Uses a single keyframes definition (apm-shim-sweep) so every shimmer block
-   stays in sync with the surrounding section cards. Dark-theme overrides
-   live in the [data-bs-theme="dark"] block at the bottom of this stylesheet. */
 @keyframes apm-shim-sweep {
   0% {
     background-position: -400px 0;
@@ -7942,54 +5504,6 @@
   height: 38px;
   border-radius: 10px;
 }
-
-/* ─── Tabs ─── */
-.apm-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 14px;
-  border-bottom: 1.5px solid #ddd6fe;
-  padding-bottom: 0;
-}
-
-.apm-tab {
-  background: none;
-  border: none;
-  padding: 10px 16px;
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  color: #94a3b8;
-  cursor: pointer;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -1.5px;
-  transition: color .15s, border-color .15s;
-}
-
-.apm-tab:hover {
-  color: #6d28d9;
-}
-
-.apm-tab.on {
-  color: #5b21b6;
-  border-bottom-color: #7c3aed;
-}
-
-.apm-tab.is-locked {
-  color: #cbd5e1;
-  cursor: not-allowed;
-}
-
-.apm-tab.is-locked:hover {
-  color: #94a3b8;
-}
-
-/* ─── Section card ─── */
-/* Matches the Figma .sf-section / the Supplier form's .avm-section: a soft
-   white card with a hairline tinted border and a 4px vertical GRADIENT strip
-   down the left edge (drawn as ::before, not a flat border-left — a border
-   can't hold a gradient). `position: relative` + `overflow: hidden` are what
-   let the strip sit inside the 14px radius. */
 .apm-section {
   position: relative;
   background: #fff;
@@ -8010,9 +5524,6 @@
   opacity: .85;
   background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
 }
-
-/* Per tone only the border tint changes; the strip keeps the purple gradient
-   except on the green section, which carries its own green one. */
 .apm-section-blue {
   border-color: #ece7f8;
 }
@@ -8057,8 +5568,6 @@
   gap: 10px;
   min-width: 0;
 }
-
-/* Inline "TITLE | note" sub-heading (matches the prototype sf-section-head) */
 .apm-section-titles {
   display: flex;
   align-items: baseline;
@@ -8066,11 +5575,6 @@
   flex-wrap: wrap;
   min-width: 0;
 }
-
-/* The Figma .sf-section-ico tile: a small pale-lavender square with a violet
-   glyph, not the saturated filled chip this used to be. One rule for every
-   section — the per-tone background overrides (violet / amber / green / navy
-   gradients) are gone, so all six headings carry the same icon. */
 .apm-section-icon {
   width: 25px;
   height: 25px;
@@ -8084,9 +5588,6 @@
   box-shadow: 0 2px 5px rgba(124, 58, 237, .1);
   color: #7c3aed;
 }
-
-/* The section glyphs are authored as 16px SVGs, which crowd a 25px tile once
-   the 1px border is on it. Scaled here rather than in the six JSX call sites. */
 .apm-section-icon svg {
   width: 14px;
   height: 14px;
@@ -8130,61 +5631,6 @@
   flex-direction: column;
   gap: 12px;
 }
-
-.apm-section-add-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 14px;
-  border-radius: 8px;
-  background: #16a34a;
-  color: #fff;
-  border: none;
-  font-family: inherit;
-  font-size: 12px;
-  font-weight: 800;
-  cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-
-.apm-section-add-btn:hover {
-  background: #15803d;
-  transform: translateY(-1px);
-}
-
-.apm-section-add-btn span {
-  font-size: 14px;
-  line-height: 1;
-}
-
-/* ─── Inner section heading (e.g. "PRODUCT GENERAL INFORMATION") ─── */
-.apm-inner-section {
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: #fafafa;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.apm-inner-title {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .08em;
-  color: #475569;
-  padding-bottom: 6px;
-  border-bottom: 1px dashed #cbd5e1;
-}
-
-.apm-inner-note {
-  font-weight: 600;
-  letter-spacing: .01em;
-  color: #94a3b8;
-  margin-left: 4px;
-}
-
-/* ─── Form layout grids ─── */
 .apm-grid-2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -8197,45 +5643,34 @@
   gap: 12px;
 }
 
-.apm-grid-4 {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-}
-
 .apm-grid-5 {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 12px;
 }
-
-/* Inventory (2x2) + Confidential Info side-by-side row */
-.apm-inv-conf-row {
-  align-items: stretch;
-}
-
-.apm-inv-conf-row>.apm-field {
-  display: flex;
-}
-
-.apm-inv-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.apm-conf-textarea {
-  flex: 1;
-  min-height: 100%;
-  resize: vertical;
-}
-
-/* ─── Field ─── */
 .apm-field {
   display: flex;
   flex-direction: column;
   gap: 5px;
   min-width: 0;
+}
+
+/* Live character counter for a length-capped textarea. Deliberately in normal
+   flow rather than absolutely positioned: .apm-field establishes no containing
+   block of its own, so an absolute counter resolves against .apm-section and
+   drifts to the bottom-right of the whole section card instead of sitting
+   under the field it counts. */
+.apm-char-count {
+  align-self: flex-end;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--vz-secondary-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.apm-char-count.is-full {
+  color: #dc2626;
+  font-weight: 600;
 }
 
 .apm-field-label {
@@ -8253,10 +5688,6 @@
   color: #ef4444;
   font-weight: 700;
 }
-
-/* The Figma .sf-add-mini pill: gradient chip sized by padding rather than the
-   fixed 18px square it used to be. `align-items: center` is ours — sf-add-mini
-   relies on the flex default, which stretches a bare "+" off-centre here. */
 .apm-field-plus {
   display: inline-flex;
   align-items: center;
@@ -8274,9 +5705,6 @@
   box-shadow: 0 3px 9px rgba(124, 58, 237, .42);
   transition: transform .14s, box-shadow .14s;
 }
-
-/* Lift on hover — the rule above declares a transform/box-shadow transition,
-   so the old flat background swap would have left it animating nothing. */
 .apm-field-plus:hover {
   transform: translateY(-1px);
   box-shadow: 0 5px 14px rgba(124, 58, 237, .5);
@@ -8285,11 +5713,6 @@
 .apm-field-plus:active {
   transform: translateY(0);
 }
-
-/* Pencil pill beside a field label — the same chip as .apm-field-plus, one
-   step larger so the glyph reads, for values set through a popup instead of
-   typed (GST %). Greys out while a save is in flight or before the product
-   exists, matching the header "GST (%)" pill it opens. */
 .apm-field-edit {
   width: 20px;
   height: 20px;
@@ -8314,12 +5737,6 @@
   background: #c4b5fd;
   cursor: not-allowed;
 }
-
-/* Inline per-field error — small red row right under the input, with a
-   warning icon. Pairs with .apm-field.has-error flipping the input
-   border to red so the user can spot every wrong field at a glance.
-   Specificity is bumped so the parent label / root colour can't bleed
-   through and turn the message dark. */
 .apm-field .apm-field-error,
 .apm-modal .apm-field-error,
 .apm-field-error {
@@ -8346,17 +5763,6 @@
   border-color: #ef4444 !important;
 }
 
-/* Live character counter shown under a bounded textarea (e.g. vendor
-   Remarks). Right-aligned, muted, so it reads as a hint not a value. */
-.apm-char-count {
-  display: block;
-  text-align: right;
-  font-size: 10.5px;
-  font-weight: 600;
-  color: #94a3b8;
-  margin-top: 2px;
-}
-
 .apm-field.has-error .apm-input:focus,
 .apm-field.has-error textarea:focus {
   box-shadow: 0 0 0 3px rgba(239, 68, 68, .15) !important;
@@ -8369,8 +5775,6 @@
 .apm-field.has-error .apm-field-label {
   color: #ef4444 !important;
 }
-
-/* Disabled field — gated dropdown (e.g. Haz Class until Haz Type is chosen) */
 .apm-field.is-disabled {
   opacity: .55;
 }
@@ -8384,48 +5788,13 @@
   background: #f1f5f9 !important;
   cursor: not-allowed !important;
 }
-
-/* ─── Master-form-style field container (with leading icon) ─── */
 .apm-master-field {
   position: relative;
-}
-
-.apm-master-field-icon {
-  position: absolute;
-  left: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 15px;
-  color: #6b7280;
-  pointer-events: none;
-  z-index: 3;
-  line-height: 1;
-  transition: color .18s ease, transform .18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.apm-master-field:has(.apm-input-mf:focus) .apm-master-field-icon {
-  color: #7c3aed;
-  transform: translateY(-50%) scale(1.08);
-}
-
-/* Lift the icon up for multi-line fields so it sits in the first row. */
-.apm-master-field:has(textarea.apm-input-mf) .apm-master-field-icon {
-  top: 13px;
-  transform: none;
-}
-
-.apm-master-field:has(textarea.apm-input-mf:focus) .apm-master-field-icon {
-  transform: scale(1.08);
 }
 
 .apm-input-mf {
   padding-left: 12px !important;
 }
-
-/* ─── MasterSelect inside the modal — restyle the trigger to match apm-input ─── */
 .apm-master-select .master-select-wrap .master-select-toggle {
   min-height: 38px !important;
   height: 38px;
@@ -8453,9 +5822,6 @@
   color: #94a3b8 !important;
   font-size: 13px !important;
 }
-
-/* View-only select (e.g. GST % — mapped only from the header "GST (%)" button).
-   Matches the .apm-readonly look of the sibling GST Amount / Total fields. */
 .apm-master-select .master-select-wrap.disabled .master-select-toggle {
   background: #f5f3ff !important;
   color: #5b21b6 !important;
@@ -8466,27 +5832,6 @@
 .apm-master-select .master-select-wrap.disabled .master-select-toggle:hover {
   border-color: color-mix(in srgb, #7c3aed 18%, #e2e8f0) !important;
 }
-
-/* ─── MasterDatePicker inside the modal ─── */
-.apm-master-date .master-date-input,
-.apm-master-date input.form-control {
-  min-height: 38px !important;
-  height: 38px !important;
-  padding-left: 12px !important;
-  font-size: 13px !important;
-  background: color-mix(in srgb, #7c3aed 4%, #f8fafc) !important;
-  border: 1.5px solid color-mix(in srgb, #7c3aed 18%, #e2e8f0) !important;
-  border-radius: 10px !important;
-  color: #1e1b4b !important;
-}
-
-.apm-master-date .master-date-input:focus {
-  background: #fff !important;
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, .12) !important;
-}
-
-/* ─── Input ─── */
 .apm-input {
   height: 38px;
   width: 100%;
@@ -8522,15 +5867,6 @@
   min-height: 64px;
   padding: 9px 12px;
   resize: vertical;
-}
-
-.apm-select {
-  appearance: none;
-  -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237c3aed' stroke-width='2.4'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  padding-right: 32px;
 }
 
 .apm-readonly {
@@ -8573,8 +5909,6 @@
 .apm-input.has-prefix {
   padding-left: 28px;
 }
-
-/* ─── Upload dropzone ─── */
 .apm-upload-field {
   position: relative;
 }
@@ -8647,10 +5981,6 @@
   justify-content: center;
   padding: 0;
 }
-
-/* Generic file chip — used by the Product Attachment card, which can hold any
-   document type (PDF / Word / image / etc.). A file icon + filename pill sized
-   to content, instead of the 64px image square used for photo uploads. */
 .apm-upload-filechip {
   width: auto;
   height: auto;
@@ -8686,9 +6016,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* Remove button sits inline in the pill (not the absolute top-right corner the
-   image square uses). */
 .apm-upload-filechip button {
   position: static;
   width: 18px;
@@ -8716,8 +6043,6 @@
   background: rgba(167, 139, 250, .2);
   color: #ddd6fe;
 }
-
-/* "+N more" overflow tile — reuses the chip footprint but is a button */
 .apm-upload-more {
   padding: 0;
   cursor: pointer;
@@ -8740,8 +6065,6 @@
   letter-spacing: .2px;
   pointer-events: none;
 }
-
-/* View-all images popup */
 .apm-imgmodal-backdrop {
   position: fixed;
   inset: 0;
@@ -8841,16 +6164,12 @@
   justify-content: center;
   padding: 0;
 }
-
-/* ─── QC empty state ─── */
 .apm-empty {
   padding: 24px;
   text-align: center;
   color: #94a3b8;
   font-size: 12.5px;
 }
-
-/* ─── Map Vendor popup (Step 2) ─── */
 .apm-mv-backdrop {
   position: fixed;
   inset: 0;
@@ -8879,13 +6198,6 @@
   color: #1e1b4b;
   max-height: calc(100vh - 48px);
 }
-
-/* Same header as the Figma .sf-pop-head / the "Mapped Suppliers" popup
-   (.apm-sup-head). This one used a 3-stop gradient starting at #5b21b6, which
-   read visibly lighter than the 5-stop one beside it. justify-content stays —
-   unlike .sf-pop-head this header carries a close button on the right.
-   flex-shrink is load-bearing here: .apm-mv-popup IS a capped-height flex
-   column, so without it the header squashes when the body is tall. */
 .apm-mv-popup-head {
   position: relative;
   overflow: hidden;
@@ -8902,10 +6214,6 @@
   background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
   text-shadow: 0 1px 3px rgba(0, 0, 0, .18);
 }
-
-/* Same Figma .sf-pop-head highlights as .apm-sup-head — this popup opens
-   directly on top of that one, so a mismatch between the two headers is
-   visible side by side. */
 .apm-mv-popup-head::before {
   content: '';
   position: absolute;
@@ -8999,8 +6307,6 @@
   background: #1a1538;
   border-top-color: #2a2150;
 }
-
-/* ─── QC Add popup ─── */
 .apm-qc-backdrop {
   position: fixed;
   inset: 0;
@@ -9234,8 +6540,6 @@
     grid-template-columns: 1fr;
   }
 }
-
-/* ─── Previous stages summary ─── */
 .apm-prev {
   position: relative;
   border: 1px solid #d6cbf7;
@@ -9388,11 +6692,6 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
-
-/* Extras row — sits BELOW the field grid for stages that ship
-   richer per-item data (QC records carry name/purpose/issuer +
-   an attachment link). Renders inline so multiple key:value
-   pairs sit on one line and wrap on narrow viewports. */
 .apm-prev-extras {
   display: flex;
   flex-direction: column;
@@ -9457,149 +6756,9 @@
 .apm-prev-extra-attach:hover {
   color: #312e81;
 }
-
-/* ─── Vendor toolbar ─── */
-.apm-vendor-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  background: #fff;
-  border: 1px solid #ddd6fe;
-  border-radius: 12px;
-  margin-bottom: 12px;
-}
-
-.apm-vendor-toolbar-title {
-  font-size: 13px;
-  font-weight: 800;
-  color: #1e1b4b;
-}
-
-/* ─── Vendor info read-only grid ─── */
-.apm-vendor-info {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px 18px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-}
-
-.apm-info-cell {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  font-size: 12px;
-  min-width: 0;
-}
-
-.apm-info-key {
-  color: #6b7280;
-  font-weight: 700;
-}
-
-.apm-info-val {
-  color: #1e1b4b;
-  font-weight: 700;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* ─── Vendor draft footer ─── */
-.apm-vendor-draft-foot {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-/* ─── Vendor mapped table — Velzon table-card shell ─── */
-.apm-vendor-table-card {
-  margin-top: 12px;
-  background: #fff;
-  border: 1px solid #ddd6fe;
-  border-radius: 12px;
-  padding: 12px;
-}
-
-/* Reserves dedicated vertical space + a divider rule so the title pill
- * (icon + "Mapped Vendors" + count) no longer sits flush against the
- * inner table's top border. The 16px icon's bottom edge visually merged
- * with the table-light header row directly below it, especially in dark
- * mode where the two backgrounds contrast sharply. */
-.apm-vendor-table-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 12px;
-  margin-bottom: 14px;
-  border-bottom: 1px solid #ede9fe;
-}
-
-.apm-vendor-table-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 800;
-  color: #1e1b4b;
-}
-
-.apm-vendor-table-title i {
-  color: #7c3aed;
-  font-size: 16px;
-}
-
-.apm-vendor-table-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 22px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 99px;
-  background: #ede9fe;
-  color: #5b21b6;
-  font-size: 11px;
-  font-weight: 800;
-  border: 1px solid #c4b5fd;
-}
-
-/* Lighten the table chrome inside the modal so it reads as a sub-table,
-   not the page's main table. */
-.apm-vendor-table-card .table-responsive {
-  border-radius: 10px;
-}
-
-.apm-vendor-table-card .table thead th {
-  font-size: 11.5px;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #475569;
-}
-
-.apm-vendor-table-card .table tbody td {
-  vertical-align: middle;
-}
-
-/* Velzon's .table-card rule applies a negative margin equal to the
- * Bootstrap card spacer (roughly -1rem on each side) so the table sits
- * flush to a parent .card's edges — see velzon/components/_table.scss.
- * We reuse the .table-card class for the Map-Vendor and QC tables in
- * this wizard, but those wrappers AREN'T Bootstrap cards. The negative
- * margin then leaks out and the table bleeds past its container by
- * about 1rem on each side (the "glitch" on the Map Vendor form).
- * Neutralise it for any .table-card living inside the wizard modal. */
-.apm-modal .table-card,
-.apm-vendor-table-card .table-card,
-.apm-qc-table-wrap .table-card {
+.apm-modal .table-card {
   margin: 0 !important;
 }
-
-/* ─── Footer ─── */
 .apm-foot {
   display: flex;
   align-items: center;
@@ -9608,12 +6767,6 @@
   padding: 14px 22px;
   background: #fff;
   border-top: 1px solid #ede9fe;
-}
-
-/* When Cancel is gone the action cluster sits flush right so the
-   right column doesn't visually drift toward center. */
-.apm-foot.apm-foot-actions-only {
-  justify-content: flex-end;
 }
 
 .apm-foot-left {
@@ -9629,8 +6782,6 @@
   align-items: center;
   gap: 8px;
 }
-
-/* "Fields marked with * are required" hint — dot + red star, mirrors sf-req. */
 .apm-req-hint {
   display: inline-flex;
   align-items: center;
@@ -9651,20 +6802,6 @@
 
 .apm-req-hint .apm-req {
   text-transform: none;
-}
-
-.apm-foot-error {
-  font-size: 12.5px;
-  font-weight: 700;
-  color: #b91c1c;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
-  padding: 6px 10px;
-  border-radius: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 480px;
 }
 
 .apm-spinner {
@@ -9704,11 +6841,6 @@
   border-radius: 10px;
   transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
 }
-
-/* Cancel button — the old #e2e8f0 border was nearly invisible against the
-   white popup surface in light mode (QA: "border very faint / hard to
-   identify"). Use a stronger slate border + subtle shadow so it reads as a
-   clickable button, matching the .avm-btn-ghost fix in AddVendorModal. */
 .apm-btn-ghost {
   background: #fff;
   border: 1.5px solid #94a3b8;
@@ -9756,18 +6888,11 @@
   font-size: 16px;
   line-height: 1;
 }
-
-/* ─── Responsive ─── */
 @media (max-width: 880px) {
 
   .apm-grid-2,
   .apm-grid-3,
-  .apm-grid-4,
   .apm-grid-5 {
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .apm-vendor-info {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -9813,17 +6938,9 @@
 
   .apm-grid-2,
   .apm-grid-3,
-  .apm-grid-4,
   .apm-grid-5 {
     grid-template-columns: 1fr;
   }
-
-  .apm-vendor-info {
-    grid-template-columns: 1fr;
-  }
-
-  /* Stack the two stepper cards vertically and keep their labels visible
-     (hiding the text left them looking empty). Drop the connector. */
   .apm-stepper {
     flex-direction: column;
     align-items: stretch;
@@ -9848,8 +6965,6 @@
   .apm-step-connector {
     display: none;
   }
-
-  /* Footer: primary actions on top (full-width), the required hint below. */
   .apm-foot {
     flex-direction: column-reverse;
     align-items: stretch;
@@ -9870,10 +6985,6 @@
     justify-content: center;
   }
 }
-
-/* ════════════════════════════════════════════════════════════════════════
- * Dark mode
- * ════════════════════════════════════════════════════════════════════ */
 [data-bs-theme="dark"] .apm-modal {
   background: #14102a;
   color: #ede9fe;
@@ -9941,10 +7052,6 @@
 [data-bs-theme="dark"] .apm-body::-webkit-scrollbar-thumb {
   background: #4c1d95;
 }
-
-/* Shimmer skeleton — dark theme. Uses the same keyframes but swaps the
-   base/highlight stops to match the navy/violet body background so the
-   sweep stays visible against the darker section cards. */
 [data-bs-theme="dark"] .apm-shim {
   background: linear-gradient(90deg, #1a1430 0%, #2a1d5c 50%, #1a1430 100%);
   background-size: 800px 100%;
@@ -9959,23 +7066,6 @@
 [data-bs-theme="dark"] .apm-shim-section-head {
   background: linear-gradient(180deg, #1a1430 0%, #221852 100%);
   border-bottom-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-tabs {
-  border-bottom-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-tab {
-  color: #6d6391;
-}
-
-[data-bs-theme="dark"] .apm-tab:hover {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .apm-tab.on {
-  color: #c4b5fd;
-  border-bottom-color: #a78bfa;
 }
 
 [data-bs-theme="dark"] .apm-section {
@@ -9995,9 +7085,6 @@
 [data-bs-theme="dark"] .apm-section-green {
   border-color: #14532d;
 }
-
-/* Lift the strip on the dark surface — the light-mode #5b21b6 tail reads as
-   a dead patch against #1a1430. */
 [data-bs-theme="dark"] .apm-section::before {
   background: linear-gradient(180deg, #c4b5fd, #a78bfa, #7c3aed);
 }
@@ -10014,9 +7101,6 @@
   background: #1c1633;
   border-bottom-color: #3b2a6b;
 }
-
-/* The light-mode tile is a pale lavender chip — left as-is it glares against
-   the #1a1430 card. Same shape, dark-surface palette. */
 [data-bs-theme="dark"] .apm-section-icon {
   background: linear-gradient(135deg, #2e2352, #251c45);
   border-color: #4c3a86;
@@ -10048,25 +7132,7 @@
   color: #86efac;
 }
 
-[data-bs-theme="dark"] .apm-inner-section {
-  background: #110c25;
-  border-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-inner-title {
-  color: #a89fc7;
-  border-bottom-color: #3b2a6b;
-}
-
 [data-bs-theme="dark"] .apm-field-label {
-  color: #a78bfa;
-}
-
-[data-bs-theme="dark"] .apm-master-field-icon {
-  color: #8579b5;
-}
-
-[data-bs-theme="dark"] .apm-master-field:has(.apm-input-mf:focus) .apm-master-field-icon {
   color: #a78bfa;
 }
 
@@ -10088,19 +7154,6 @@
 
 [data-bs-theme="dark"] .apm-master-select .master-select-placeholder {
   color: #6d6391 !important;
-}
-
-[data-bs-theme="dark"] .apm-master-date .master-date-input,
-[data-bs-theme="dark"] .apm-master-date input.form-control {
-  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
-  border-color: #3b2a6b !important;
-  color: #ede9fe !important;
-}
-
-[data-bs-theme="dark"] .apm-master-date .master-date-input:focus {
-  background: #1a1430 !important;
-  border-color: #a78bfa !important;
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18) !important;
 }
 
 [data-bs-theme="dark"] .apm-input {
@@ -10148,15 +7201,6 @@
 
 [data-bs-theme="dark"] .apm-input-icon-prefix {
   color: #a78bfa;
-}
-
-[data-bs-theme="dark"] .apm-select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a78bfa' stroke-width='2.4'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-}
-
-[data-bs-theme="dark"] .apm-select option {
-  background: #1a1430;
-  color: #ede9fe;
 }
 
 [data-bs-theme="dark"] .apm-dropzone {
@@ -10255,17 +7299,6 @@
 [data-bs-theme="dark"] .apm-qc-save:hover:not(:disabled) {
   box-shadow: 0 8px 20px rgba(67, 56, 202, .6);
 }
-
-[data-bs-theme="dark"] .apm-vendor-toolbar {
-  background: #1a1430;
-  border-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-vendor-toolbar-title {
-  color: #ede9fe;
-}
-
-/* Previous stages — dark */
 [data-bs-theme="dark"] .apm-prev {
   background: #1c1633;
   border-color: rgba(167, 139, 250, .28);
@@ -10294,10 +7327,6 @@
 [data-bs-theme="dark"] .apm-prev-sumv {
   color: #ede9fe;
 }
-
-/* QC summary rows in the read-only "previous stages" block — the
-   light-mode value text uses #1e1b4b which disappears on dark green.
-   Lift k/v/attach contrast so each QC row reads clearly in dark mode. */
 [data-bs-theme="dark"] .apm-prev-extras {
   border-top-color: rgba(34, 197, 94, 0.30);
 }
@@ -10321,50 +7350,6 @@
 [data-bs-theme="dark"] .apm-prev-extra-attach:hover {
   color: #c7d2fe;
 }
-
-[data-bs-theme="dark"] .apm-vendor-info {
-  background: #110c25;
-  border-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-info-key {
-  color: #a89fc7;
-}
-
-[data-bs-theme="dark"] .apm-info-val {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .apm-vendor-table-card {
-  background: #1a1430;
-  border-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-vendor-table-title {
-  color: #ede9fe;
-}
-
-[data-bs-theme="dark"] .apm-vendor-table-title i {
-  color: #a78bfa;
-}
-
-[data-bs-theme="dark"] .apm-vendor-table-count {
-  background: #2a1d5c;
-  color: #c4b5fd;
-  border-color: #4c1d95;
-}
-
-[data-bs-theme="dark"] .apm-vendor-table-card .table thead th {
-  color: #a89fc7;
-}
-
-/* ── Embedded tables (QC & Compliance + mapped suppliers) — dark mode ──
-   These render as plain Bootstrap .table + thead.table-light, which had no
-   dark handling: the header stayed light, the QC rows carry an inline
-   background:#fafafa that showed as bright-white strips, and the Auto Code
-   badge (.bg-light.text-dark) collapsed to dark-on-dark. Recolour header,
-   cells, badge, links and row hover for the dark modal surface. Scoped to
-   [data-bs-theme="dark"] so light mode is unchanged. */
 [data-bs-theme="dark"] .apm-modal .table {
   --bs-table-bg: transparent;
 }
@@ -10375,10 +7360,6 @@
   color: #a89fc7 !important;
   border-bottom-color: #3b2a6b !important;
 }
-
-/* Neutralise the inline background:#fafafa on not-yet-uploaded QC rows so
-   they inherit the dark surface instead of rendering as white strips. The
-   inline style has no !important, so this wins. */
 [data-bs-theme="dark"] .apm-modal .table tbody tr {
   background-color: transparent !important;
 }
@@ -10399,17 +7380,12 @@
 [data-bs-theme="dark"] .apm-modal .table tbody tr:hover td {
   background-color: rgba(124, 92, 252, .16) !important;
 }
-
-/* Auto-code badge — .bg-light.text-dark was a light pill with dark text;
-   in dark mode that read as an empty dark blob. */
 [data-bs-theme="dark"] .apm-modal .table .badge.bg-light.text-dark,
 [data-bs-theme="dark"] .apm-modal .table .badge.bg-light {
   background-color: rgba(255, 255, 255, .08) !important;
   color: #ddd6fe !important;
   border-color: rgba(255, 255, 255, .16) !important;
 }
-
-/* Teal "view file" link (inline #0d9488) — too dim on the dark surface. */
 [data-bs-theme="dark"] .apm-modal .table a[style*="0d9488"] {
   color: #5eead4 !important;
 }
@@ -10417,12 +7393,6 @@
 [data-bs-theme="dark"] .apm-foot {
   background: #14102a;
   border-top-color: #3b2a6b;
-}
-
-[data-bs-theme="dark"] .apm-foot-error {
-  background: #3f1d1d;
-  border-color: #7f1d1d;
-  color: #fca5a5;
 }
 
 [data-bs-theme="dark"] .apm-req-hint {
@@ -10455,8 +7425,6 @@
   background: #221852;
   border-color: #a78bfa;
 }
-
-/* Supplier-only mode — hide the wizard so only the Map Supplier popup shows. */
 .apm-modal-hidden {
   display: none;
 }
@@ -10466,13 +7434,6 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-
-/* ═══ Mapped Suppliers list popup (compact, opened from "Map Supplier") ═══ */
-
-/* Both of these overlays are portaled to document.body, so they land outside
-   .prd-root and .apm-modal and miss both of those scoped border-box resets.
-   The Figma prototype gets it from a global `*, *::before, *::after` rule;
-   scoping it to the two overlays keeps it off the rest of the host app. */
 .apm-sup-overlay *,
 .apm-sup-overlay *::before,
 .apm-sup-overlay *::after,
@@ -10520,6 +7481,44 @@
     opacity: 1;
   }
 }
+.apm-sup-modal-narrow {
+  max-width: 760px;
+}
+.apm-seg-gate-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 11px 13px;
+  border: 1px solid #fde68a;
+  border-radius: 11px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.apm-seg-gate-note i {
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  color: #d97706;
+}
+
+.apm-seg-gate-note b {
+  font-weight: 800;
+  color: #78350f;
+}
+
+[data-bs-theme="dark"] .apm-seg-gate-note {
+  background: rgba(120, 53, 15, .28);
+  border-color: rgba(217, 119, 6, .45);
+  color: #fcd34d;
+}
+
+[data-bs-theme="dark"] .apm-seg-gate-note b {
+  color: #fde68a;
+}
 
 .apm-sup-head {
   position: relative;
@@ -10536,12 +7535,6 @@
   background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
   text-shadow: 0 1px 3px rgba(0, 0, 0, .18);
 }
-
-/* The two radial highlights the Figma header (.sf-pop-head) paints over the
-   flat gradient — a warm glow bottom-left, a violet one off the top-right.
-   Without them this header reads as a flat purple band next to the wizard's
-   own .apm-head, which has carried the same treatment all along.
-   The parent already sets position/overflow, so inset: 0 clips to the bar. */
 .apm-sup-head::before {
   content: '';
   position: absolute;
@@ -10552,9 +7545,6 @@
     radial-gradient(circle at 16% 130%, rgba(255, 255, 255, .2), transparent 42%),
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
 }
-
-/* An absolutely-positioned ::before paints above static in-flow siblings, so
-   the icon, title and ✕ have to be lifted out from under the tint. */
 .apm-sup-head-ico,
 .apm-sup-head-txt,
 .apm-sup-close {
@@ -10947,10 +7937,6 @@
   color: #fff;
   border-color: transparent;
 }
-
-/* Edit button was missing its dark override — kept the light lavender fill
-   (#f5f1fe) and read as a white box on the dark table. Mirror the delete
-   button's translucent treatment in the brand violet. */
 [data-bs-theme="dark"] .apm-sup-edit {
   background: rgba(124, 58, 237, .18);
   border-color: rgba(167, 139, 250, .35);
@@ -10962,8 +7948,6 @@
   color: #fff;
   border-color: transparent;
 }
-
-/* ═══ Map GST (%) + GST (%) Master popups ═══ */
 .apm-gst-overlay {
   position: fixed;
   inset: 0;

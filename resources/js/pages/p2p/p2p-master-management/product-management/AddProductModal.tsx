@@ -18,6 +18,7 @@ import {
 import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { formatProductCode } from '../../../../utils/formatProductCode';
+
 export type VendorEntry = {
   id: string;
   vendorId: string;
@@ -70,19 +71,19 @@ export type AddProductPayload = {
 
 export type QcRecord = {
   id: number;
-  name: string;            // QC Name (dropdown: COA, MSDS, FSSC, etc.)
-  purpose: string;         // QC Purpose
-  issuedBy: string;        // Issuing authority
+  name: string;
+  purpose: string;
+  issuedBy: string;
   testingParameter: string;
   minAcceptance: string;
-  attachmentName: string;  // single attachment filename
+  attachmentName: string;
   attachmentUrl?: string;
   attachmentFile?: File | null;
   attachmentPath?: string;
 };
 
 const HAZ_TYPES = ['Non-Haz', 'Haz'];
-const BOTTOM_OPTIONS = ['Bottom', 'Non Bottom'];
+
 const QC_NAMES = ['COA', 'MSDS', 'FSSAI', 'AGMARK', 'ISO 9001', 'ISO 22000', 'HACCP', 'HALAL', 'KOSHER', 'FSSC 22000'];
 
 export type VendorOpt = {
@@ -95,17 +96,12 @@ export type VendorOpt = {
   email: string;
   designation: string;
   status: string;
-  type: string;   // supplier type (vendor_type_name) — shown in Map Supplier
-  state: string;  // supplier's state (primaryAddress) — shown in Map Supplier
-  segmentIds: number[];  // segments the supplier deals in — gates product↔supplier mapping
+  type: string;
+  state: string;
+  segmentIds: number[];
 };
 
 type Tab = 'core' | 'sales' | 'quality';
-const formatCode = (raw: string): string => {
-  const m = raw.match(/^(.*?)(\d+)\s*$/);
-  if (!m) return raw;
-  return `${m[1] || 'S-'}${m[2].padStart(3, '0')}`;
-};
 
 const formatSupplierCode = (raw: string): string => {
   const m = String(raw ?? '').match(/(\d+)\s*$/);
@@ -143,9 +139,6 @@ const extractError = (e: unknown, fallback: string): string => {
   return err?.response?.data?.message || fallback;
 };
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Component
- * ────────────────────────────────────────────────────────────────────── */
 type MasterOpt = { value: string; label: string; extra?: Record<string, unknown> };
 
 export default function AddProductModal(props: {
@@ -164,18 +157,9 @@ export default function AddProductModal(props: {
   const isSalesDept    = dept === 'sales';
   const isPurchaseDept = dept === 'purchase';
 
-  /* ─── Wizard nav ─── */
   const [step, setStep] = useState<1 | 2>(1);
   const [tab, setTab] = useState<Tab>('core');
-  /* Collapsed by default — the summary is a look-back, not the reason the
-     user opened this step, and expanded it pushed the actual form below
-     the fold. The header stays visible and toggles it open. */
   const [previousOpen, setPreviousOpen] = useState(false);
-  const [reachedTabs, setReachedTabs] = useState<Set<Tab>>(() =>
-    new Set<Tab>(initialId ? ['core', 'sales', 'quality'] : ['core'])
-  );
-  const markTabReached = (t: Tab) => setReachedTabs(prev => new Set(prev).add(t));
-  const canSwitchToTab = (t: Tab) => reachedTabs.has(t);
   const [productId, setProductId] = useState<number | null>(initialId ?? null);
   const [loadingEdit, setLoadingEdit] = useState<boolean>(!!initialId);
   const [productCodeFromApi, setProductCodeFromApi] = useState<string>('');
@@ -207,7 +191,6 @@ export default function AddProductModal(props: {
     }
   };
 
- 
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
   const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
   const handleDescriptionChange = (raw: string) => {
@@ -236,21 +219,9 @@ export default function AddProductModal(props: {
     setConfidential(cleaned);
   };
 
-  
-  const TRACKING_MAX = 20;
-  const handleNumericTrackingChange = (
-    raw: string,
-    setter: (v: string) => void,
-  ) => {
-    const digitsOnly = raw.replace(/\D/g, '').slice(0, TRACKING_MAX);
-    setter(digitsOnly);
-  };
-
-  
   type MasterSlug = 'segments' | 'haz_class' | 'uom' | 'hsn_codes' | 'conditions' | 'packaging_material' | 'gst_percentage';
   const [quickAdd, setQuickAdd] = useState<MasterSlug | null>(null);
 
-  /* ─── Master options (loaded from API on mount) ─── */
   const [optSegments, setOptSegments] = useState<MasterOpt[]>([]);
   const [optHazClasses, setOptHazClasses] = useState<MasterOpt[]>([]);
   const [optUoms, setOptUoms] = useState<MasterOpt[]>([]);
@@ -260,7 +231,6 @@ export default function AddProductModal(props: {
   const [optGst, setOptGst] = useState<MasterOpt[]>([]);
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
 
-  /* ─── Step 1: Core ─── */
   const [name, setName] = useState('');
   const [genericName, setGenericName] = useState('');
   const [description, setDescription] = useState('');
@@ -302,21 +272,21 @@ export default function AddProductModal(props: {
     return sep >= 0 ? last.slice(sep + 2) : last;
   })();
 
-  /* ─── Step 1: Sales ─── */
   const [basePrice, setBasePrice] = useState<string>('');
   const [gstId, setGstId] = useState<string>('');
   const [markBottom, setMarkBottom] = useState('');
 
   const basePriceNum = parseFloat(basePrice) || 0;
-  const gstPctNum = useMemo(() => {
-    const row = optGst.find(o => o.value === gstId);
-    return parseFloat(String(row?.extra?.percentage ?? '0')) || 0;
-  }, [optGst, gstId]);
-  /* GST rates sorted ascending by percentage for every DISPLAY surface (the
-     Map GST dropdown, the read-only Sales select, and the GST Master table).
-     The raw `optGst` appends newly-added rates at the end (QA #48 — a new rate
-     showed at the bottom instead of in order); sorting here fixes all three at
-     once. `find`/`some` lookups keep using `optGst` since order is irrelevant. */
+  /* The MAPPED rate row, or undefined when nothing is mapped — or when the
+     mapped id was deleted from the GST master (QA #44). Everything that shows
+     a GST value keys off this rather than off gstPctNum, because a 0% rate and
+     "no rate at all" both give gstPctNum === 0 and a truthiness test on the
+     number renders a valid 0% rate as blank / — (QA #67). */
+  const gstRow = useMemo(() => optGst.find(o => o.value === gstId), [optGst, gstId]);
+  const gstPctNum = useMemo(
+    () => parseFloat(String(gstRow?.extra?.percentage ?? '0')) || 0,
+    [gstRow],
+  );
   const optGstSorted = useMemo(() => {
     const pct = (o: MasterOpt) => {
       const n = parseFloat(String(o.extra?.percentage ?? o.label));
@@ -324,15 +294,11 @@ export default function AddProductModal(props: {
     };
     return [...optGst].sort((a, b) => pct(a) - pct(b));
   }, [optGst]);
-  const gstPctStr = gstPctNum ? `${gstPctNum.toFixed(2)}%` : '';
-  // A supplier can be mapped once a GST RATE is chosen for the product — a 0% rate
-  // is a valid selection (QA #52). Gating on gstPctNum > 0 wrongly blocked 0%-GST
-  // products, since a chosen 0% rate and "no rate" both read as gstPctNum === 0.
+  const gstPctStr = gstRow ? `${gstPctNum.toFixed(2)}%` : '';
   const canMapSupplier = !!gstId;
   const gstAmt    = +(basePriceNum * (gstPctNum / 100)).toFixed(2);
   const totalPrice = +(basePriceNum + gstAmt).toFixed(2);
 
-  /* ─── Step 1: Quality ─── */
   const [netWeight,   setNetWeight]   = useState<string>('');
   const [grossWeight, setGrossWeight] = useState<string>('');
   const [length,      setLength]      = useState<string>('');
@@ -391,6 +357,8 @@ export default function AddProductModal(props: {
   const [vendors, setVendors] = useState<VendorEntry[]>([]);
   const [vendorDraftOpen, setVendorDraftOpen] = useState(false);
   const [supplierPopupOpen, setSupplierPopupOpen] = useState(false);
+  const [segGatePending, setSegGatePending] = useState('');
+  const [segChecking, setSegChecking] = useState(false);
   const [gstMapOpen, setGstMapOpen] = useState(false);
   const [gstMapValue, setGstMapValue] = useState('');
   const [gstMasterOpen, setGstMasterOpen] = useState(false);
@@ -399,7 +367,6 @@ export default function AddProductModal(props: {
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
   const [vendorSelectedCode, setVendorSelectedCode] = useState('');
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
-  const [vendorGstPct, setVendorGstPct] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
 
@@ -413,21 +380,13 @@ export default function AddProductModal(props: {
   const vendorTota = +(vendorPp + vendorGsta).toFixed(2);
 
   const productCode = productCodeFromApi || (name ? 'P-NEW' : '');
-  /* Code shown beside the modal title. Uses the shared formatter so it
-     reads P-002 here exactly as it does on the product list and detail
-     pages (the raw DB code is only 2-digit). Deliberately NOT the
-     `productCode` above — that falls back to the 'P-NEW' placeholder,
-     which must never surface in the header. */
   const headerProductCode = formatProductCode(productCodeFromApi);
 
-  // Look up a master row's display label from its id — used by the
-  // previous-stages summary and the QC popup's product header.
   const labelOf = (opts: MasterOpt[], id: string, fallback = '—') =>
     opts.find(o => o.value === id)?.label || fallback;
   const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
   const ALLOWED_IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.jfif', '.jpe', '.pjpeg'];
   const ALLOWED_IMAGE_MIMES = /^image\/(png|jpeg|pjpeg)$/i;
-  /* Shared 2 MB size gate (matches `max:2048` on storeCore). */
   const validateFileSize = (file: File): boolean => {
     if (file.size <= MAX_IMAGE_BYTES) return true;
     const mb = (file.size / (1024 * 1024)).toFixed(2);
@@ -462,8 +421,8 @@ export default function AddProductModal(props: {
     if (!f) return;
     if (!validateImageFile(f)) { e.target.value = ''; return; }
     setPrimaryImageFile(f);
-    setPrimaryImagePath(null); // queued file supersedes any stored path
-    setPrimaryImageUrl(null);  // and its display URL
+    setPrimaryImagePath(null);
+    setPrimaryImageUrl(null);
   };
 
   const onSecondaryUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -473,7 +432,6 @@ export default function AddProductModal(props: {
   };
   const removeSecondary = (i: number) => {
     if (i < secondaryImagePaths.length) {
-      // Path-backed slot — drop the path AND its parallel display URL.
       setSecondaryImagePaths(prev => prev.filter((_, idx) => idx !== i));
       setSecondaryImageUrls(prev => prev.filter((_, idx) => idx !== i));
     } else {
@@ -517,7 +475,6 @@ export default function AddProductModal(props: {
       return;
     }
     if (qcEditingId !== null) {
-      // Update-in-place when the user opened an existing row via Edit.
       setQcRecords(prev => prev.map(q => q.id === qcEditingId ? { ...q, ...qcDraft } : q));
       toast.success('QC updated', `${qcDraft.name} updated`);
     } else {
@@ -530,8 +487,6 @@ export default function AddProductModal(props: {
   const removeQc = (id: number) =>
     setQcRecords(prev => prev.filter(q => q.id !== id));
  const [qcDeleteTarget, setQcDeleteTarget] = useState<QcRecord | null>(null);
-  // Supplier (vendor mapping) pending removal — drives the un-map confirm modal.
-  const [vendorDeleteTarget, setVendorDeleteTarget] = useState<VendorEntry | null>(null);
  const [qcEditingId, setQcEditingId] = useState<number | null>(null);
 
   const openQcViewer = (q: QcRecord) => {
@@ -585,27 +540,12 @@ export default function AddProductModal(props: {
   const REMARKS_MAX = 250;
   const vendorRemarksError = (val: string): string | undefined => {
     const t = val.trim();
-    if (t.length === 0)          return undefined;                                  // optional — blank is fine
+    if (t.length === 0)          return undefined;
     if (t.length < REMARKS_MIN)  return `Remarks must be at least ${REMARKS_MIN} characters`;
     if (val.length > REMARKS_MAX) return `Remarks must be ${REMARKS_MAX} characters or fewer`;
     return undefined;
   };
 
-  /* Commit a mutated supplier list and report the outcome.
-   *
-   * On an EXISTING product the write hits the server immediately, so the
-   * success toast must wait for it to land — and a failed write rolls the list
-   * back, or the popup would keep showing a change the server never took
-   * (persistVendors has already toasted the reason). This covers both ways in:
-   * the Mapped Suppliers popup (supplierOnly) and the Edit Product wizard.
-   * They render the same list, so a change made through one has to be real by
-   * the time the other is opened — staging it in the wizard meant a removal
-   * there never reached the server and the two lists disagreed.
-   *
-   * While ADDING a product the list is still a draft that Save Product
-   * persists: the product exists (Core was saved to get an id) but Sales may
-   * not be, and step/vendors activates whatever it writes — auto-saving here
-   * would flip a half-entered product to Active. */
   const persistsImmediately = initialId != null;
 
   const commitVendorList = async (newList: VendorEntry[], successTitle: string, successMsg: string): Promise<boolean> => {
@@ -619,10 +559,6 @@ export default function AddProductModal(props: {
     return true;
   };
 
-  /* Unmap a supplier from this product (QA #56). Allowed only while 2+ suppliers
-   * are mapped — the last mapping can't be removed (a product needs at least one
-   * supplier once mapped; clear the product instead). Auto-persists on an
-   * existing product via commitVendorList. */
   const removeVendor = async (v: VendorEntry) => {
     if (vendors.length <= 1) {
       toast.info('Cannot remove', 'A product must keep at least one mapped supplier. Add another supplier first, or remove the product.');
@@ -637,32 +573,94 @@ export default function AddProductModal(props: {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    // If the row being edited is the one removed, drop out of edit mode.
     if (vendorEditingId === v.id) setVendorEditingId(null);
     await commitVendorList(vendors.filter(row => row.id !== v.id), 'Supplier removed', `${v.vendorName} unmapped from this product`);
   };
 
+  const requestSegmentChange = async (v: string) => {
+    if (v === segmentId || segChecking) return;
+
+    if (productId) {
+      setSegChecking(true);
+      let usage: {
+        in_po_or_spi?: boolean;
+        latest_po_code?: string | null;
+        latest_spi_code?: string | null;
+        blocking_leads?: [
+          { opp_code: string; lead_id: number; product_id: number; }
+        ];
+      } = {};
+      try {
+        usage = (await api.get(`/products/${productId}/usage`)).data?.data ?? {};
+      } catch {
+       
+        toast.error('Could not verify', 'Please try again.');
+        setSegChecking(false);
+        return;
+      }
+      setSegChecking(false);
+
+      if (usage.in_po_or_spi) {
+        /* Name only the most recent document of each type the product is on:
+           both when it is on a PO and an SPI, one when it is on either. The
+           codes carry their own PO/ and SPI/ prefix, so no extra label. */
+        const used = [usage.latest_po_code, usage.latest_spi_code].filter(Boolean);
+        toast.error('Segment locked', `This product is used in ${used.join(' and ')}.`);
+        return;
+      }
+      if (usage.blocking_leads?.length) {
+        toast.error('Segment locked', `Remove it from the product directory first ${usage.blocking_leads[0].opp_code}.`);
+        return;
+      }
+    }
+
+    if (vendors.length > 0) {
+      setSegGatePending(v);
+      return;
+    }
+    setSegmentId(v);
+    clearFieldError('segmentId');
+  };
+
+  const applyPendingSegment = (pending: string) => {
+    setSegmentId(pending);
+    clearFieldError('segmentId');
+    setSegGatePending('');
+    toast.success('Segment changed', 'Save this step to persist it.');
+  };
+
+  const unmapForSegmentChange = async (v: VendorEntry) => {
+    const pending = segGatePending;
+    const ok = await confirm({
+      title: 'Unmap supplier to change segment?',
+      message: persistsImmediately
+        ? `“${v.vendorName}” will be unmapped now. The segment change still needs Save & Next.`
+        : `“${v.vendorName}” will be removed from the list.`,
+      confirmLabel: 'Unmap',
+      cancelLabel: 'Cancel',
+      tone: 'danger',
+      icon: 'delete-bin-line',
+    });
+    if (!ok) return;
+    if (vendorEditingId === v.id) setVendorEditingId(null);
+    const next = vendors.filter(row => row.id !== v.id);
+    if (!(await commitVendorList(next, 'Supplier unmapped', `${v.vendorName} unmapped from this product`))) return;
+    if (next.length === 0) applyPendingSegment(pending);
+  };
+
   const saveVendorDraft = async () => {
-    // Belt to the button/auto-open guards: never persist a mapping without a
-    // product GST RATE selected (the inherited rate the GST amount + total depend
-    // on). A 0% rate is valid (QA #52) — only an unselected rate is blocked.
     if (!canMapSupplier) {
       toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
       return;
     }
     const missing: string[] = [];
     if (!vendorSelected)        missing.push('Vendor');
-    // Only treat an EMPTY price as "missing". A price that was entered but is
-    // 0 / negative gets a clearer "must be greater than 0" message below
-    // instead of the misleading "Please fill: Purchase Price" (QA #51).
     if (String(vendorPurchasePrice ?? '').trim() === '') missing.push('Purchase Price');
     if (missing.length) {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
-    if (!vendorSelected) return; // type-guard after the check
-    // Purchase Price must be at least 1 — reject 0 and sub-1 values like
-    // 0.12345678 (QA #55).
+    if (!vendorSelected) return;
     if (!(vendorPp >= 1)) {
       toast.error('Invalid Purchase Price', 'Purchase Price must be 1 or greater.');
       return;
@@ -674,10 +672,6 @@ export default function AddProductModal(props: {
       return;
     }
 
-    /* No duplicate suppliers on one product — the SAME supplier can't be
-     * mapped twice. Matches on vendor id (primary) or code (fallback for
-     * server-loaded rows). In edit mode the row being edited is excluded, so
-     * you can still re-save its own supplier while changing price/GST. */
     const selId   = String(vendorSelected.id);
     const selCode = String(vendorSelected.code ?? '');
     const alreadyMapped = vendors.some(row =>
@@ -690,12 +684,6 @@ export default function AddProductModal(props: {
       return;
     }
 
-    /* Segment gate — a supplier can only be mapped to a product in the SAME
-     * segment. The product's segment must be one the supplier deals in
-     * (vendor_segments). Only enforced on the client when we actually have the
-     * supplier's segment data (an older cached master bundle may lack it) — the
-     * backend enforces the same rule on save and is the authoritative gate, so
-     * nothing slips through even when the client can't check here. */
     if (segmentId) {
       const prodSeg = Number(segmentId);
       const vendorSegs = vendorSelected.segmentIds ?? [];
@@ -706,10 +694,6 @@ export default function AddProductModal(props: {
       }
     }
 
-    /* Edit mode — overlay the editable fields onto the existing row
-     * and keep its id so the change is in-place rather than producing
-     * a duplicate "added" row. Map date is preserved from the original
-     * row in edit mode (the row was already mapped at that date). */
     if (vendorEditingId) {
       const newList = vendors.map(row =>
         row.id !== vendorEditingId ? row : {
@@ -729,7 +713,6 @@ export default function AddProductModal(props: {
           remarks:       vendorRemarks,
         }
       );
-      // Keep the form open on a failed save so the edits aren't lost.
       if (await commitVendorList(newList, 'Supplier updated', `${vendorSelected.name} mapping updated`)) {
         closeVendorDraft();
       }
@@ -752,8 +735,6 @@ export default function AddProductModal(props: {
       gstPct: vendorGp,
       gstAmt: vendorGsta,
       totalAmt: vendorTota,
-      // Map Date is auto-stamped at save time — server replaces this
-      // with the server's own clock anyway.
       mapDate: today(),
       remarks: vendorRemarks,
     };
@@ -763,45 +744,29 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Open the Map Vendor draft in EDIT mode — preselect the vendor in
-   * the dropdown and prefill purchase price, GST %, and remarks from
-   * the row. saveVendorDraft sees vendorEditingId and updates in place. */
   const openVendorEdit = (v: VendorEntry) => {
     setVendorEditingId(v.id);
-    /* The dropdown keys off the master's code, so match on vendor id first —
-       a row whose code drifted from the master would otherwise open the form
-       with an empty Supplier Name. */
     const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
     setVendorSelectedCode(opt?.code ?? v.vendorCode);
     setVendorPurchasePrice(v.purchasePrice ? String(v.purchasePrice) : '');
-    setVendorGstPct(v.gstPct ? String(v.gstPct) : '');
     setVendorRemarks(v.remarks ?? '');
     setVendorDraftOpen(true);
   };
 
-  /* Close the draft without saving — wipes any in-flight edits so the
-   * next "+ Map New Vendor" click opens a clean form. */
   const closeVendorDraft = () => {
     setVendorDraftOpen(false);
     setVendorEditingId(null);
     setVendorSelectedCode('');
     setVendorPurchasePrice('');
-    setVendorGstPct('');
     setVendorRemarks('');
   };
 
-  /* Close the Mapped Suppliers popup. In supplier-only mode (opened from a
-     product's "Map Supplier" action) the wizard is hidden, so dismissing the
-     popup must close the whole modal and return to the product view. */
   const closeSupplierPopup = () => {
-    // Never tear the popup down mid-write — the save would land with no UI
-    // left to report the outcome to.
     if (saving) return;
     setSupplierPopupOpen(false);
     if (supplierOnly) onClose();
   };
 
-  /* ── GST (%) master — add / remove available rates from the popup ── */
   const addGstRate = async () => {
     const val = newGstRate.trim();
     const num = Number(val);
@@ -840,28 +805,12 @@ export default function AddProductModal(props: {
     }
   };
 
-  // Lock the page scroll so the modal feels like a true overlay rather
-  // than a panel that floats above scrollable content.
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  /* ─── Load master options on mount ───
-   *
-   * Single bundled fetch: /products/master-bundle returns every dropdown
-   * (segments, haz_class, uom, hsn_codes, conditions, packaging_material,
-   * gst_percentage, vendors) in ONE round-trip. Replaces the previous
-   * 8-call Promise.all and the per-call status filter — server now returns
-   * active rows only and the lean vendor projection.
-   *
-   * Caching: the bundle is also cached client-side via productBundleCache
-   * (sessionStorage, 5-min TTL). If a fresh cached copy exists we hydrate
-   * the dropdowns synchronously — the modal feels instant on reopens. Any
-   * inline master add inside the modal busts the cache (see add* handlers
-   * around line ~915) so freshly-created entries persist across reopens.
-   */
   useEffect(() => {
     type Row = { id: number | string; status?: string | null };
     type Bundle = {
@@ -898,8 +847,6 @@ export default function AddProductModal(props: {
         return { value: String(r.id), label: String(r[labelKey] ?? ''), extra };
       });
 
-    // Single hydration path — used for both cache-hit and freshly-fetched
-    // bundles so the dropdown-label transforms stay consistent.
     const hydrate = (b: Bundle) => {
       setOptSegments(toOpt(b.segments,                            'title'));
       setOptHazClasses(toOpt(b.haz_class,                         'name'));
@@ -916,8 +863,6 @@ export default function AddProductModal(props: {
       setOptGst(
         toOpt(b.gst_percentage, 'percentage', ['percentage'])
           .map(o => {
-            // Trim noisy trailing zeros (40.0000 → 40) on the dropdown
-            // label while keeping the % suffix.
             const n = parseFloat(o.label);
             const clean = Number.isFinite(n) ? String(Number(n.toFixed(2))) : o.label;
             return { ...o, label: `${clean}%` };
@@ -939,44 +884,24 @@ export default function AddProductModal(props: {
       })));
     };
 
-    // Cache hit — hydrate immediately for an instant render, then STILL refetch
-    // fresh below (stale-while-revalidate) so a newly-added master — e.g. a NEW
-    // SEGMENT — appears instead of being stuck behind the cached bundle.
     const cached = readProductMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
       setMastersLoading(false);
     }
 
-    // Cache miss — fetch the bundle and persist it for next time.
     (async () => {
       try {
         const res = await api.get<Bundle>('/products/master-bundle');
         hydrate(res.data);
         writeProductMasterBundle(res.data);
       } catch {
-        // Leave dropdowns empty — the form still renders; the user will
-        // see a toast from individual save attempts if a required option
-        // is missing.
       } finally {
         setMastersLoading(false);
       }
     })();
   }, []);
 
-  /* QC reference-upload wipe. Runs ONLY on genuine segment changes (not
-   * on tab transitions, not on initial hydration). Used to live inside
-   * the segment-rules fetch effect below, but lazy-gating that effect
-   * on `tab === 'quality'` means `tab` enters its dep array — and a
-   * Core → Quality tab click would then wipe the bundled qcRefUploads.
-   *
-   * Split here with [segmentId] dep alone so tab clicks are no-ops.
-   * The skip-first-fire ref handles the initial hydration case: when
-   * the main edit-mode fetch calls setSegmentId(...), segment changes
-   * from '' → '<id>' which would otherwise wipe what bundledQcUploads
-   * is about to write. Marking the ref true on first fire skips
-   * exactly once — subsequent user-driven changes wipe as expected.
-   * Mirrors the wipe-split shipped on AddVendorModal. */
   const qcDirtyRef = useRef(false);
   useEffect(() => {
     if (!qcDirtyRef.current) {
@@ -989,11 +914,6 @@ export default function AddProductModal(props: {
     });
   }, [segmentId]);
 
-  /* Segment-rule QC fetch. Lazy-gated to fire only when the user
-   * actually opens the Quality sub-tab — previously fired on every
-   * segmentId hydration (i.e. every edit-mode open), adding ~500ms
-   * to the Stage 1 open even for users who only edit Core or Sales
-   * fields. Bails out to an empty list when no segment is picked. */
   useEffect(() => {
     if (tab !== 'quality') return;
     if (!segmentId) { setSegmentQcDocs([]); return; }
@@ -1012,13 +932,6 @@ export default function AddProductModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, segmentId]);
 
-  /* Apply the bundled segment_uploads payload to qcRefUploads.
-   * Declared AFTER the wipe + segment-rules effects above so it fires
-   * LATER in the same commit cycle — the wipe is gated by the skip-
-   * first-fire ref on the initial hydration, but if any wipe DID run
-   * we still want this effect to overwrite it with the hydrated map.
-   * Fires once per change to bundledQcUploads. Main hydration sets it
-   * exactly once on edit-mode open. */
   useEffect(() => {
     if (!bundledQcUploads || bundledQcUploads.length === 0) return;
     const hydrated: Record<string, SegRefUpload> = {};
@@ -1034,28 +947,15 @@ export default function AddProductModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundledQcUploads]);
 
-  /**
-   * Called by the MasterRecordModal after a successful POST. Pushes
-   * the new row into the matching opt* list and selects it on the
-   * dropdown that triggered the popup, so the user can keep typing
-   * without manually reopening the select.
-   */
   const onMasterAdded = (slug: MasterSlug, row: Record<string, unknown>) => {
     const id = String(row.id ?? '');
     if (!id) return;
-    // Inline master add — the cached bundles are now stale (missing this row).
-    // Bust ALL of them, not just the product one: masters added here (segments
-    // especially) also feed the Customer/Consignee/Vendor dropdowns, which
-    // would otherwise serve a stale list until their 5-min TTL expired
-    // (QA #23). The in-memory opt* arrays below already get the new row
-    // appended, so the CURRENT dropdown updates instantly without a refetch.
     bustAllMasterBundles();
     const labelOf = (key: string) => String(row[key] ?? '');
     switch (slug) {
       case 'segments':
         setOptSegments(prev => [...prev, { value: id, label: labelOf('title') }]);
-        setSegmentId(id);
-        clearFieldError('segmentId');
+        void requestSegmentChange(id);
         break;
       case 'haz_class':
         setOptHazClasses(prev => [...prev, { value: id, label: labelOf('name') }]);
@@ -1100,7 +1000,6 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* ─── If editing, load the product and prefill ─── */
   useEffect(() => {
     if (!initialId) return;
     (async () => {
@@ -1122,19 +1021,9 @@ export default function AddProductModal(props: {
           vendor_maps?: Array<Record<string, unknown>>;
           segment_uploads?: { data?: any[] };
         };
-        /* Skip the refetch when the parent (e.g. ProductView) handed us
-         * the already-loaded product as a prop. Eliminates the duplicate
-         * /products/{id} round-trip the prod network panel showed on
-         * the Edit Product flow. Falls back to fetching when called
-         * from contexts that don't have the data in hand (e.g. opened
-         * from the Products list with only an id). */
         const p: ProductDto = initialProduct
           ? (initialProduct as ProductDto)
           : (await api.get<ProductDto>(`/products/${initialId}`)).data;
-        /* QC reference uploads — now arrive bundled in the same response
-         * (top-level `segment_uploads` key alongside the product fields).
-         * Stash for the downstream hydration effect to apply AFTER the
-         * segment-rules wipe runs. */
         setBundledQcUploads(Array.isArray(p.segment_uploads?.data) ? p.segment_uploads!.data! : []);
         setProductId(p.id);
         setProductCodeFromApi(p.product_code ?? '');
@@ -1156,8 +1045,6 @@ export default function AddProductModal(props: {
         setSecondaryImagePaths(p.secondary_images ?? []);
         setSecondaryImageUrls(p.secondary_images_url ?? (p.secondary_images ?? []).map(s => resolveFileUrl(s)));
         setSecondaryImageFiles([]);
-        // Product attachment — hydrate the stored path + resolved URL so the
-        // file chip reappears when editing (this was never loaded before).
         setProdAttachmentPath(p.product_attachment ?? null);
         setProdAttachmentUrl(p.product_attachment_url ?? (p.product_attachment ? resolveFileUrl(p.product_attachment) : null));
         setProdAttachmentFile(null);
@@ -1182,9 +1069,6 @@ export default function AddProductModal(props: {
           minAcceptance: q.min_acceptance_criteria ?? '',
           attachmentName: q.attachment_path
             ? (() => {
-                // Stored filenames are `{rand}__{original}.{ext}` so the
-                // display name strips the random prefix. Legacy uploads
-                // without the separator are surfaced verbatim.
                 const last = q.attachment_path.split('/').pop() ?? '';
                 const sep = last.indexOf('__');
                 return sep >= 0 ? last.slice(sep + 2) : last;
@@ -1198,10 +1082,6 @@ export default function AddProductModal(props: {
           id: String(v.id),
           vendorId: (v as Record<string, unknown>).vendor_id ? String((v as Record<string, unknown>).vendor_id) : '',
           productCode: p.product_code ?? '',
-          /* A mapping's stored vendor_code is a snapshot from map time and goes
-             stale when the supplier is renamed / recoded. Prefer the live code
-             off the eager-loaded vendor relation so the list, the Map Supplier
-             dropdown preselect, and the save payload all track the master. */
           vendorCode: String(
             (v.vendor as { vendor_code?: string | null } | null | undefined)?.vendor_code
             ?? v.vendor_code
@@ -1221,13 +1101,6 @@ export default function AddProductModal(props: {
           mapDate: v.map_date ? formatDate(String(v.map_date)) : '',
           remarks: String(v.remarks ?? ''),
         })));
-
-        // Wizard starts at Core (the useState defaults already do this)
-        // and all three tabs are pre-unlocked via reachedTabs's initial
-        // value when initialId is set. Resetting step/tab here would
-        // override the user if they Save&Next'd while the prefill was
-        // still loading — that was the source of the "stuck on Core"
-        // glitch reported from the Single Product View edit flow.
       } catch {
         toast.error('Not found', 'Failed to load product. Closing…');
         setTimeout(onClose, 1200);
@@ -1238,16 +1111,7 @@ export default function AddProductModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Per-step save handlers
-   *
-   * Each "Save & Next" call writes the relevant slice to the server and
-   * advances the wizard only after a 2xx response. If the call fails we
-   * keep the user on the current tab so they can correct the error.
-   * ────────────────────────────────────────────────────────────── */
   const saveCore = async () => {
-    // Per-field validation — collect errors keyed by field so the matching
-    // `Field` wrapper can render a red border + inline message.
     const errs: Record<string, string> = {};
     if (!name.trim())            errs.name              = 'Product name is required';
     if (!genericName.trim())     errs.genericName       = 'Generic name is required';
@@ -1262,11 +1126,6 @@ export default function AddProductModal(props: {
     if (!hsnId)                  errs.hsnId             = 'HSN / SAC Code is required';
     if (!conditionId)            errs.conditionId       = 'Condition is required';
     if (!packagingMaterialId)    errs.packagingMaterialId = 'Packaging Material is required';
-    // Primary image — required either via newly-picked file OR an already
-    // stored path (kept on edit-load). Secondary images — at least one
-    // file or kept path. Mirrors the backend validators that exist for
-    // the rest of the core fields and matches the user-facing copy that
-    // the image slot is mandatory at stage 1.
     const hasPrimary = !!primaryImageFile || !!primaryImagePath;
     const hasSecondary = secondaryImageFiles.length > 0 || secondaryImagePaths.length > 0;
     if (!hasPrimary)   errs.primaryImage   = 'Primary image is required';
@@ -1277,15 +1136,7 @@ export default function AddProductModal(props: {
       return;
     }
     setFieldErrors({});
-    // New product (non-Purchase): the GST % must be mapped BEFORE the product
-    // is created. Hold the validated Core data in state and open the Map GST
-    // popup; the product is only inserted (and shows in the list) once GST is
-    // saved there — see the "Map GST" handler, which calls commitCore(gst).
-    // Editing an existing product, or the Purchase dept (no Sales step),
-    // commits straight away as before.
     if (!productId && !isPurchaseDept) {
-      // GST is mandatory before the product reaches Stage 2 — surface the spec
-      // message when it hasn't been picked yet, then open the master-driven picker.
       if (!gstId) toast.info('GST is mandatory', 'Please select a GST rate from the GST Master before proceeding to Stage 2.');
       setGstMapValue(gstId);
       setGstMasterOpen(false);
@@ -1295,14 +1146,9 @@ export default function AddProductModal(props: {
     await commitCore();
   };
 
-  // The real Core insert/update, split out of saveCore so the deferred
-  // "map GST first" flow can trigger it from the Map GST popup, passing the
-  // chosen gst so a brand-new product is created together WITH its GST %.
   const commitCore = async (gstToCommit?: string): Promise<boolean> => {
     setSaving(true);
     try {
-      // Always send multipart so file uploads work; Laravel handles either
-      // JSON or multipart against the same validation rules.
       const fd = new FormData();
       const put = (k: string, v: unknown) => {
         if (v === null || v === undefined) return;
@@ -1321,27 +1167,15 @@ export default function AddProductModal(props: {
       put('condition_id', conditionId ? Number(conditionId) : null);
       put('packaging_material_id', packagingMaterialId ? Number(packagingMaterialId) : null);
       put('confidential_info', confidential);
-      // Deferred-create path passes the just-mapped GST so the product is
-      // committed together with its GST %. Omitted on edit-mode core re-saves,
-      // leaving the existing gst_id untouched (the Sales step owns it there).
       if (gstToCommit) put('gst_id', Number(gstToCommit));
 
-      // Primary image: send the kept-path if any, plus the new file if one
-      // was just picked. Backend prefers the file when both are present.
       fd.append('primary_image', primaryImagePath ?? '');
       if (primaryImageFile) fd.append('primary_image_file', primaryImageFile);
 
-      // Secondary images: kept paths as a repeating field + new files.
-      // The frontend always sends the FULL intended secondary set, so tell the
-      // backend to replace the column even when the list is empty (removing the
-      // last secondary image sends no `secondary_images[]` at all — FormData
-      // omits empty arrays — which the backend would otherwise read as "no
-      // change" and keep the deleted images).
       fd.append('secondary_images_replace', '1');
       secondaryImagePaths.forEach(p => fd.append('secondary_images[]', p));
       secondaryImageFiles.forEach(f => fd.append('secondary_image_files[]', f));
 
-      // Product attachment (optional supporting document/certificate).
       fd.append('product_attachment', prodAttachmentPath ?? '');
       if (prodAttachmentFile) fd.append('product_attachment_file', prodAttachmentFile);
 
@@ -1357,7 +1191,6 @@ export default function AddProductModal(props: {
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
 
-      // Mirror the persisted state — pending files have now become paths.
       setProductId(res.data.id);
       setProductCodeFromApi(res.data.product_code ?? '');
       setPrimaryImagePath(res.data.primary_image ?? null);
@@ -1366,24 +1199,17 @@ export default function AddProductModal(props: {
       setSecondaryImagePaths(res.data.secondary_images ?? []);
       setSecondaryImageUrls(res.data.secondary_images_url ?? (res.data.secondary_images ?? []).map(s => resolveFileUrl(s)));
       setSecondaryImageFiles([]);
-      // Attachment — pending file is now a stored path; mirror it so the chip
-      // keeps showing the persisted file (and survives a re-save on Step 2).
       setProdAttachmentPath(res.data.product_attachment ?? null);
       setProdAttachmentUrl(res.data.product_attachment_url ?? (res.data.product_attachment ? resolveFileUrl(res.data.product_attachment) : null));
       setProdAttachmentFile(null);
 
-      // Purchase has no "For Sales Department" step — saving Core finalises the
-      // product and closes the popup (no advance to Step 2).
       if (isPurchaseDept) {
         onSaved(res.data.id, true);
         toast.success('Product saved', 'Product created successfully');
         return true;
       }
       onSaved(res.data.id, false);
-      // Deferred-create path shows its own "Product added" toast (with the GST);
-      // don't double-toast here.
       if (!gstToCommit) toast.success('Core saved', 'Product Core Information saved');
-      markTabReached('sales');
       setTab('sales');
       return true;
     } catch (e: unknown) {
@@ -1395,14 +1221,6 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Close the Map GST popup. In the deferred-create flow (no productId yet)
-     closing WITHOUT mapping means the product isn't created — return to Stage 1
-     with the Core data intact and a hint that GST is required to add it. For an
-     existing product (remap) it's just a plain close. */
-  /* Opens the "Map GST %" popup. Shared by the header "GST (%)" pill and the
-     edit icon beside the Sales tab's GST % field so both land on exactly the
-     same flow — a GST % is mapped onto a product row, which only exists once
-     Core has been saved, hence the productId gate. */
   const openGstMap = () => {
     if (!productId) {
       toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
@@ -1426,11 +1244,9 @@ export default function AddProductModal(props: {
     }
     const errs: Record<string, string> = {};
     if (!basePrice || basePriceNum <= 0) errs.basePrice  = 'Selling Price is required (must be greater than 0)';
-    // GST is mandatory and master-driven — block the save until a rate is picked.
     if (!gstId)                          errs.gstId      = 'GST is mandatory. Please select a valid GST rate from the GST Master.';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
-      // A GST-only miss gets the spec's precise message; otherwise the generic one.
       if (errs.gstId && !errs.basePrice) {
         toast.error('GST is mandatory', 'Product cannot be saved because the GST field is mandatory. Please select a GST rate from the GST Master.');
       } else {
@@ -1448,9 +1264,6 @@ export default function AddProductModal(props: {
         total_price: totalPrice || null,
         mark_bottom: markBottom || null,
       });
-      // Stage 2 is the final stage now — saving Sales finalises the product
-      // and closes the wizard (the parent refreshes the list). Suppliers are
-      // mapped afterwards via the header "Map Supplier" popup.
       onSaved(productId, true);
       toast.success('Product saved', 'Product created successfully');
     } catch (e: unknown) {
@@ -1473,8 +1286,6 @@ export default function AddProductModal(props: {
     if (!length      || parseFloat(length)      <= 0) errs.length      = 'Length is required (must be greater than 0)';
     if (!width       || parseFloat(width)       <= 0) errs.width       = 'Width is required (must be greater than 0)';
     if (!height      || parseFloat(height)      <= 0) errs.height      = 'Height is required (must be greater than 0)';
-    // Gross must exceed Net — gross includes packaging weight on top of
-    // the net product weight, so they can't be equal or inverted.
     if (!errs.netWeight && !errs.grossWeight && grossN <= netN) {
       errs.grossWeight = 'Gross Weight must be greater than Net Weight.';
     }
@@ -1491,11 +1302,6 @@ export default function AddProductModal(props: {
     setFieldErrors({});
     setSaving(true);
     try {
-      /* Switch the request to multipart only when a QC row carries a
-         newly-picked File. Pure-text saves stay on the JSON path so
-         existing call sites don't pay the multipart overhead.
-         Laravel reads array-indexed file inputs as
-         `qc_records.{idx}.attachment_file`. */
       const hasNewFiles = qcRecords.some(q => q.attachmentFile instanceof File);
       const qcRows = qcRecords.map(q => ({
         qc_name: q.name,
@@ -1503,18 +1309,6 @@ export default function AddProductModal(props: {
         issued_by: q.issuedBy,
         qa_testing_parameter: q.testingParameter,
         min_acceptance_criteria: q.minAcceptance,
-        /* attachment_path rules:
-         *   • A real server path (saved on a previous round-trip, e.g.
-         *     "products/qc/<hash>__file.jpg") → send it so the backend
-         *     preserves the existing upload after the delete-and-recreate.
-         *   • A pending File pick → null. The multipart branch below
-         *     uploads the file and the backend fills the path itself.
-         *   • Otherwise → null. The previous version fell back to the
-         *     bare attachmentName (the display label, like "Bhuvan.jpg"),
-         *     which the backend then stored as the path — producing
-         *     /storage/Bhuvan.jpg on local and .../cbc-saas/Bhuvan.jpg
-         *     on Azure, neither of which exists. Never trust the
-         *     basename as a storage path. */
         attachment_path: (q.attachmentPath && q.attachmentPath.includes('/'))
           ? q.attachmentPath
           : null,
@@ -1532,20 +1326,12 @@ export default function AddProductModal(props: {
         height_cm: parseFloat(height) || null,
       };
 
-      /* Both PUT branches return the refreshed product with its
-       * regenerated qc_records (the server replaces them every save).
-       * We capture that response so we can sync our in-memory rows to
-       * the new server-side attachment_path / attachment_url — without
-       * this, a freshly-uploaded row keeps attachmentPath='' locally,
-       * and the NEXT save would fall through to a bare-filename
-       * attachment_path and corrupt the row's storage pointer. */
       type QualitySaveResponse = {
         qc_records?: Array<{ id: number; attachment_path?: string | null; attachment_url?: string | null }>;
       };
       let saveRes: { data: QualitySaveResponse };
       if (hasNewFiles) {
         const fd = new FormData();
-        // Laravel needs a method override since the route is PUT.
         fd.append('_method', 'PUT');
         Object.entries(qualityFields).forEach(([k, v]) => {
           if (v === null || v === undefined) return;
@@ -1571,11 +1357,6 @@ export default function AddProductModal(props: {
         });
       }
 
-      /* Map the response's qc_records back over our local rows by row
-       * index — the backend re-creates them in the same order we sent,
-       * so the index alignment is stable. Clears the in-memory File
-       * and pulls the canonical attachment_path / attachment_url from
-       * the server. */
       const serverQc = saveRes.data.qc_records ?? [];
       setQcRecords(prev => prev.map((q, idx) => {
         const sv = serverQc[idx];
@@ -1588,7 +1369,6 @@ export default function AddProductModal(props: {
         };
       }));
 
-      // Step 1 fully complete — product is now Inactive on the server.
       onSaved(productId, false);
       toast.success('Quality saved', 'Product is now Inactive — map a vendor to activate');
       setStep(2);
@@ -1600,11 +1380,6 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Persist a vendor list to the product (full replace on the server).
-     Shared by the add-wizard "Save Product" button and — when the popup is
-     opened from an existing product ("Mapped Suppliers") — by the direct
-     auto-save on each map / edit / remove, so no separate save click is
-     needed there. Returns whether the write succeeded. */
   const persistVendors = async (list: VendorEntry[]): Promise<boolean> => {
     if (!productId) return false;
     try {
@@ -1633,13 +1408,11 @@ export default function AddProductModal(props: {
     }
   };
 
-  /* Auto-save the vendor list to the product and silently refresh the parent
-     (supplier-only mode = managing an existing product's suppliers). */
   const autoPersistVendors = async (list: VendorEntry[]): Promise<boolean> => {
     if (!productId) return false;
     setSaving(true);
     const ok = await persistVendors(list);
-    if (ok) onSaved(productId, false); // silent refresh, keep the popup open
+    if (ok) onSaved(productId, false);
     setSaving(false);
     return ok;
   };
@@ -1653,8 +1426,6 @@ export default function AddProductModal(props: {
     const ok = await persistVendors(vendors);
     if (ok) {
       onSaved(productId, true);
-      // Saving with no suppliers is allowed — it just can't activate the
-      // product, so say so rather than claiming it went Active.
       toast.success('Product saved', vendors.length
         ? 'Suppliers mapped — product is now Active'
         : 'Saved with no suppliers — map one to activate the product.');
@@ -1662,10 +1433,6 @@ export default function AddProductModal(props: {
     setSaving(false);
   };
 
-  /* One-shot: in supplier-only mode, open the Mapped Suppliers popup once the
-     product and masters have loaded — the popup needs the vendor master to
-     resolve each row's type / state. The popup's own "Map Supplier" button
-     takes it from there. */
   const supplierPopupFiredRef = useRef(false);
   useEffect(() => {
     if (supplierOnly && !supplierPopupFiredRef.current && productId && !mastersLoading && !loadingEdit) {
@@ -1675,21 +1442,9 @@ export default function AddProductModal(props: {
   }, [supplierOnly, productId, mastersLoading, loadingEdit]);
 
   return createPortal((
-    // Backdrop click intentionally does NOT close the wizard — the
-    // user has multi-step form data in flight; an accidental click
-    // outside would wipe everything. The Cancel button and the
-    // top-right X are the only dismissal paths.
     <div className={`apm-backdrop ${supplierOnly ? 'apm-backdrop-supplieronly' : ''}`}>
-      {/* Supplier-only mode (opened from a product's "Mapped Suppliers" /
-          "Map Supplier" action): the full edit wizard is hidden so only the
-          standalone Mapped Suppliers popup shows over the dim backdrop. */}
       <div className={`apm-modal ${supplierOnly ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
-        {/* Save-time interaction lock — swallows every click while a step save
-            is in flight so no second action can be triggered mid-save (bug:
-            "buttons remain clickable during a loading action"). Auto-clears
-            since every saver resets `saving` in a finally block. */}
         {saving && <div className="apm-busy-veil" aria-hidden />}
-        {/* ─── Gradient header ─── */}
         <div className="apm-head">
           <div className="apm-head-left">
             <div className="apm-head-icon">
@@ -1703,9 +1458,6 @@ export default function AddProductModal(props: {
                 {step === 2
                   ? 'Map Product Supplier'
                   : (initialId ? 'Edit Product' : 'Add Product')}
-                {/* Only once the product actually exists — edit mode, or the
-                    supplier-mapping step, which is only reachable after Core
-                    has been saved. In a fresh Add the title stays bare. */}
                 {(initialId != null || step === 2) && headerProductCode && (
                   <span className="apm-title-code">— {headerProductCode}</span>
                 )}
@@ -1719,34 +1471,20 @@ export default function AddProductModal(props: {
               </div>
             </div>
           </div>
-          {/* Header quick-action pills — reuse the modal's EXISTING handlers:
-              · GST (%)      → the same GST-master quick-add used by the Sales
-                               tab's GST "+" (setQuickAdd('gst_percentage')).
-              · Map Supplier → the same supplier-mapping draft used on Step 2
-                               (setVendorDraftOpen). On Step 1 we only jump to
-                               Step 2 when the product already exists so we
-                               never bypass the save gating. */}
           <div className="apm-head-actions">
             <button
               type="button"
               className="apm-head-btn"
-              // Same Stage-1 gate as Map Supplier: a GST % is mapped onto a
-              // product row, which only exists once Core has been saved.
               title={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
               disabled={saving || !productId}
               onClick={openGstMap}
             >
-              {gstId && gstPctNum ? `GST ${gstPctNum}%` : 'GST (%)'}
+              {gstRow ? `GST ${gstPctNum}%` : 'GST (%)'}
             </button>
-            {/* Sales can't map suppliers — hide the button entirely (no dead
-                control / denial toast). */}
             {!isSalesDept && (
               <button
                 type="button"
                 className="apm-head-btn"
-                // Stay disabled until Stage 1 (Product Core) is saved — a
-                // productId only exists after a successful core save, and a
-                // supplier can't be mapped to an unsaved product.
                 title={productId ? 'Map a supplier to this product' : 'Save Product Core Information (Stage 1) before mapping suppliers'}
                 disabled={saving || !productId}
                 onClick={() => {
@@ -1771,7 +1509,6 @@ export default function AddProductModal(props: {
           </div>
         </div>
 
-        {/* ─── Step strip — the prototype's two stages: Core → Sales ─── */}
         <div className={`apm-stepper${isPurchaseDept ? ' apm-stepper--solo' : ''}`}>
           <StepperItem
             n={1}
@@ -1780,8 +1517,6 @@ export default function AddProductModal(props: {
             current={tab === 'core' ? 1 : 2}
             icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>}
           />
-          {/* "For Sales Department" (Step 2) is hidden for the Purchase
-              department — they finish at Core (Save & Close). */}
           {!isPurchaseDept && (
             <>
               <div className={`apm-step-connector${tab !== 'core' ? ' done' : ''}`} />
@@ -1796,13 +1531,11 @@ export default function AddProductModal(props: {
           )}
         </div>
 
-        {/* ─── Body ─── */}
         <div className="apm-body">
           {(mastersLoading || loadingEdit) ? (
             <FormSkeleton />
           ) : step === 1 && (
             <>
-              {/* Previous stages summary — visible once user moves past Core */}
               {tab !== 'core' && (
                 <PreviousStages
                   open={previousOpen}
@@ -1867,7 +1600,7 @@ export default function AddProductModal(props: {
                       maxLength={10000}
                       rows={3}
                     />
-                    <div style={{ position: 'absolute', right: 10, bottom: 8, fontSize: 11, color: description.length >= 10000 ? '#dc2626' : 'var(--vz-secondary-color)', pointerEvents: 'none' }}>
+                    <div className={`apm-char-count${description.length >= 10000 ? ' is-full' : ''}`}>
                       {description.length} / 10000 characters
                     </div>
                   </Field>
@@ -1877,7 +1610,7 @@ export default function AddProductModal(props: {
                       <input className="apm-input apm-input-mf" placeholder="Make / Brand / Specifications" value={brand} onChange={e => { setBrand(e.target.value); clearFieldError('brand'); }} />
                     </Field>
                     <Field label="Segment" required addNew onAdd={() => setQuickAdd('segments')} error={fieldErrors.segmentId}>
-                      <SelectInput value={segmentId} onChange={(v) => { setSegmentId(v); clearFieldError('segmentId'); }} placeholder="Select" options={optSegments} />
+                      <SelectInput value={segmentId} onChange={(v) => { void requestSegmentChange(v); }} placeholder="Select" options={optSegments} disabled={segChecking} />
                     </Field>
                   </div>
 
@@ -1905,8 +1638,6 @@ export default function AddProductModal(props: {
                 </SectionCard>
 
                 <SectionCard
-                  /* Violet, not amber — the amber icon tile and gold heading
-                     were the only warm note in an otherwise purple modal. */
                   tone="violet"
                   icon={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /></svg>}
                   title="PRODUCT GENERAL INFORMATION"
@@ -1919,9 +1650,6 @@ export default function AddProductModal(props: {
                           onChange={(v) => {
                             setHazType(v);
                             clearFieldError('hazType');
-                            // Switching away from Haz wipes any previously
-                            // picked Haz Class so we never persist a stale
-                            // (and now hidden) classification.
                             if (v !== 'Haz') {
                               setHazClassId('');
                               clearFieldError('hazClassId');
@@ -1971,6 +1699,9 @@ export default function AddProductModal(props: {
                         maxLength={CONFIDENTIAL_MAX}
                         rows={4}
                       />
+                      <div className={`apm-char-count${confidential.length >= CONFIDENTIAL_MAX ? ' is-full' : ''}`}>
+                        {confidential.length} / {CONFIDENTIAL_MAX} characters
+                      </div>
                     </Field>
                 </SectionCard>
 
@@ -1984,8 +1715,6 @@ export default function AddProductModal(props: {
                     label="Product Attachment"
                     hint="Click to upload attachment (PDF, Word or image)"
                     multiple={false}
-                    /* Supported document types only — PDF, Word and images.
-                       Excel/PPT/CSV/TXT are intentionally excluded. */
                     fileMode
                     fileName={attachmentName}
                     accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/png,image/jpeg,image/gif,image/webp"
@@ -2015,10 +1744,6 @@ export default function AddProductModal(props: {
                         <input className="apm-input has-prefix" placeholder="Enter base price" type="number" value={basePrice} onChange={e => { setBasePrice(e.target.value); clearFieldError('basePrice'); }} />
                       </div>
                     </Field>
-                    {/* GST % is not typed here — it is mapped through the
-                        Map-GST popup, reachable from the header "GST (%)" pill
-                        or the edit icon on this label. Both call openGstMap, so
-                        the supplier GST calculation stays driven by one source. */}
                     <Field
                       label="GST %"
                       required
@@ -2027,18 +1752,6 @@ export default function AddProductModal(props: {
                       editDisabled={saving || !productId}
                       editTitle={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
                     >
-                      {/* Read-only input, NOT a disabled <select>: the rate is only ever
-                          set through the Map-GST popup, so the chevron was advertising a
-                          dropdown that could never open (QA #60). Matches the read-only
-                          GST % field in the Map Supplier popup and the auto-computed GST
-                          Amount / Total Selling Price directly below it.
-
-                          The label is read off the live options list, so a gst_id whose
-                          rate was deleted from the master resolves to nothing and falls
-                          back to the placeholder instead of showing the raw numeric id
-                          (QA #44). Reading the option label rather than gstPctStr also
-                          keeps a mapped 0% rate visible: gstPctStr is blank at 0, which
-                          would render a valid 0% rate as unmapped (QA #52). */}
                       <input
                         className="apm-input apm-readonly"
                         value={optGst.find(o => o.value === gstId)?.label ?? ''}
@@ -2121,13 +1834,6 @@ export default function AddProductModal(props: {
                               const uploaded = qcRefUploads[refKey];
                               const onPick = (f: File | undefined, inputEl?: HTMLInputElement | null) => {
                                 if (!f) return;
-                                /* Three-layer file validation — deny list first
-                                 * (kills .exe/.bat/.js even if MIME claims
-                                 * otherwise), then allow-list by extension or
-                                 * MIME (OR because some browsers ship an empty
-                                 * `file.type` for legit office docs), then size
-                                 * cap. Reset the input on rejection so the user
-                                 * can re-pick the same name after fixing. */
                                 const reset = () => { if (inputEl) inputEl.value = ''; };
                                 if (QC_COMPLIANCE_DENY_EXT_RE.test(f.name)) {
                                   toast.error('Unsafe file type blocked', `${f.name} — executable / script files are not allowed`);
@@ -2147,10 +1853,6 @@ export default function AddProductModal(props: {
                                   reset();
                                   return;
                                 }
-                                /* Show the blob URL immediately for instant feedback,
-                                 * then fire the server upload — the persist callback
-                                 * swaps the blob URL for the permanent attachment_url
-                                 * once the row hits segment_doc_uploads. */
                                 setQcRefUploads(prev => {
                                   const existing = prev[refKey];
                                   if (existing?.url && existing.url.startsWith('blob:')) {
@@ -2191,10 +1893,6 @@ export default function AddProductModal(props: {
                                         <a href={uploaded.url} target="_blank" rel="noreferrer" className="btn btn-sm btn-soft-info" title={`View ${uploaded.name}`}>
                                           <i className="ri-eye-line" />
                                         </a>
-                                        {/* Force a real download via blob fetch — the native
-                                            `download` attr is ignored for cross-origin files
-                                            (Azure Blob / different API origin), which made the
-                                            button open the file inline instead of saving it. */}
                                         <button
                                           type="button"
                                           onClick={() => void downloadFile(uploaded.url, uploaded.name)}
@@ -2264,9 +1962,6 @@ export default function AddProductModal(props: {
               </div>
 
               {vendorDraftOpen && createPortal((
-                /* Backdrop click does NOT close — the Map Vendor form
-                   collects pricing input that's easy to lose on a stray
-                   outside click. Header ✕ and footer Cancel only. */
                 <div className="apm-mv-backdrop">
                   <div className="apm-mv-popup">
                     <div className="apm-mv-popup-head">
@@ -2283,17 +1978,11 @@ export default function AddProductModal(props: {
                     </div>
 
                     <div className="apm-mv-popup-body">
-                      {/* 3-column grid (prototype "Map Supplier" form) */}
                       <div className="apm-grid-3">
                         <Field label="Supplier Name" required>
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             disabled={saving}
                             options={vendorOpts.map(v => {
-                              // Show the supplier's segment(s) as violet pills beside the
-                              // name so the right supplier is easy to pick. Only the first
-                              // segment shows inline; the rest collapse into a "+N" pill
-                              // that opens a mini popup listing them on click (keeps the
-                              // row compact).
                               const segNames = (v.segmentIds ?? [])
                                 .map(id => labelOf(optSegments, String(id), ''))
                                 .filter(Boolean);
@@ -2333,21 +2022,19 @@ export default function AddProductModal(props: {
                           </div>
                         </Field>
 
-                        {/* GST% is inherited from the product's Sales Config step —
-                            locked so a vendor mapping can't carry a different rate. */}
                         <Field label="GST %">
                           <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly title="GST % comes from the product's Sales Config (Step 2)" />
                         </Field>
                         <Field label="GST Amount (₹)">
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly" value={vendorGsta > 0 ? vendorGsta.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
+                            <input className="apm-input has-prefix apm-readonly" value={vendorPurchasePrice.trim() === '' ? '' : vendorGsta.toFixed(2)} readOnly placeholder="Auto-computed" />
                           </div>
                         </Field>
                         <Field label="Total Amount (₹)">
                           <div className="apm-input-icon">
                             <span className="apm-input-icon-prefix">₹</span>
-                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorTota > 0 ? vendorTota.toFixed(2) : ''} readOnly placeholder="Auto-computed" />
+                            <input className="apm-input has-prefix apm-readonly apm-total" value={vendorPurchasePrice.trim() === '' ? '' : vendorTota.toFixed(2)} readOnly placeholder="Auto-computed" />
                           </div>
                         </Field>
                       </div>
@@ -2355,11 +2042,6 @@ export default function AddProductModal(props: {
 
                     <div className="apm-mv-popup-foot">
                       <button className="apm-btn-ghost" onClick={closeVendorDraft} disabled={saving}>Cancel</button>
-                      {/* Not disabled on missing fields — saveVendorDraft validates
-                          and toasts exactly what's missing (e.g. Purchase Price), so
-                          the user isn't left staring at a silently-dead button.
-                          It IS disabled mid-save: in supplier-only mode this writes
-                          to the server, so a second click would fire a duplicate PUT. */}
                       <button className="apm-btn-primary" onClick={saveVendorDraft} disabled={saving}>
                         {saving ? <span className="apm-spinner" /> : null}
                         {saving ? 'Saving…' : (vendorEditingId ? 'Save Changes' : 'Save')}
@@ -2369,7 +2051,6 @@ export default function AddProductModal(props: {
                 </div>
               ), document.body)}
 
-              {/* Compact mapped-suppliers table (prototype design) */}
               {vendors.length === 0 ? (
                 <div className="apm-sup-empty">No suppliers mapped yet. Click &quot;Map Supplier&quot; to begin.</div>
               ) : (
@@ -2383,10 +2064,6 @@ export default function AddProductModal(props: {
                     </thead>
                     <tbody>
                       {vendors.map((v, i) => {
-                        // Type + State aren't stored on the mapping row — look the
-                        // supplier up in the master options (which now carry them)
-                        // by id (primary) or code (fallback) so both freshly-mapped
-                        // and server-loaded rows show the current values.
                         const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
                         return (
                         <tr key={v.id}>
@@ -2409,8 +2086,6 @@ export default function AddProductModal(props: {
                               <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
                                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                               </button>
-                              {/* Unmap — only when 2+ suppliers are mapped, so a product
-                                  never drops to zero suppliers via this table (QA #56). */}
                               {vendors.length > 1 && (
                                 <button type="button" className="apm-sup-del" title="Remove supplier" aria-label="Remove supplier" disabled={saving} onClick={() => removeVendor(v)}>
                                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
@@ -2428,12 +2103,6 @@ export default function AddProductModal(props: {
                 </div>
                 <div className="apm-sup-foot">
                   <button className="apm-btn-ghost" onClick={closeSupplierPopup} disabled={saving}>Close</button>
-                  {/* Managing an existing product's suppliers auto-saves each
-                      map/edit/remove, so no separate "Save Product" is needed —
-                      only the add-wizard flow shows it. It stays enabled at zero
-                      suppliers: an empty list is a valid save (it just leaves the
-                      product inactive), and disabling it there stranded a staged
-                      removal with no way to apply it. */}
                   {!persistsImmediately && (
                     <button className="apm-btn-primary" onClick={saveVendorsAndFinish} disabled={saving}>
                       {saving ? 'Saving…' : 'Save Product'}
@@ -2445,10 +2114,6 @@ export default function AddProductModal(props: {
           ), document.body)}
         </div>
 
-        {/* ─── Footer ─── */}
-        {/* Footer Cancel removed — the header ✕ already dismisses the
-            modal, and shipping two Cancel paths confused users. The
-            action cluster (Previous + Save) now sits flush right. */}
         <div className="apm-foot">
           <div className="apm-foot-left">
             <span className="apm-req-hint">
@@ -2527,22 +2192,69 @@ export default function AddProductModal(props: {
         }}
       />
 
-      <DeleteConfirmModal
-        open={vendorDeleteTarget !== null}
-        itemName={vendorDeleteTarget?.vendorName}
-        title="Remove Supplier"
-        subMessage={persistsImmediately
-          ? 'This unmaps the supplier from this product and saves immediately.'
-          : 'This removes the supplier from the list. The product must be saved (Save Product) for the change to persist.'}
-        onClose={() => setVendorDeleteTarget(null)}
-        onConfirm={() => {
-          const t = vendorDeleteTarget;
-          setVendorDeleteTarget(null);
-          if (t) void removeVendor(t);
-        }}
-      />
+      {segGatePending && createPortal((
+        <div className="apm-sup-overlay" onClick={() => { if (!saving) setSegGatePending(''); }}>
+          <div className="apm-sup-modal apm-sup-modal-narrow" onClick={(e) => e.stopPropagation()}>
+            <div className="apm-sup-head">
+              <div className="apm-sup-head-ico">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
+              </div>
+              <div className="apm-sup-head-txt">
+                <div className="apm-sup-title">Suppliers are mapped to this segment</div>
+                <div className="apm-sup-sub">Unmap them before moving this product to another segment</div>
+              </div>
+              <button className="apm-sup-close" onClick={() => setSegGatePending('')} disabled={saving} aria-label="Close">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+            <div className="apm-sup-body">
+              <div className="apm-seg-gate-note">
+                <i className="ri-error-warning-line" />
+                <span>
+                  <b>{vendors.length}</b> supplier{vendors.length !== 1 ? 's' : ''} mapped under{' '}
+                  <b>{labelOf(optSegments, segmentId)}</b>. Unmap {vendors.length !== 1 ? 'them' : 'it'} to move this
+                  product to <b>{labelOf(optSegments, segGatePending)}</b>.
+                </span>
+              </div>
+              <div className="apm-sup-tablewrap">
+                <table className="apm-sup-table">
+                  <thead>
+                    <tr>
+                      <th>Sr No</th><th>Supplier</th><th>Code</th><th>Contact</th><th>Total (₹)</th><th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vendors.map((v, i) => (
+                      <tr key={v.id}>
+                        <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
+                        <td className="apm-sup-cname">
+                          {v.vendorName.length > 22
+                            ? <Tooltip label={v.vendorName}><span>{v.vendorName.slice(0, 22) + '…'}</span></Tooltip>
+                            : (v.vendorName || '—')}
+                        </td>
+                        <td><span className="apm-sup-code">{formatSupplierCode(v.vendorCode)}</span></td>
+                        <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
+                        <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
+                        <td>
+                          <button type="button" className="apm-sup-del" title="Unmap supplier" aria-label="Unmap supplier" disabled={saving} onClick={() => unmapForSegmentChange(v)}>
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="apm-sup-foot">
+              <button className="apm-btn-ghost" onClick={() => setSegGatePending('')} disabled={saving}>
+                Keep “{labelOf(optSegments, segmentId)}”
+              </button>
+            </div>
+          </div>
+        </div>
+      ), document.body)}
 
-      {/* ── Map GST (%) popup — pick a rate from the master ── */}
       {gstMapOpen && createPortal((
         <div className="apm-gst-overlay" onClick={closeGstMap}>
           <div className="apm-gst-modal" onClick={(e) => e.stopPropagation()}>
@@ -2575,10 +2287,6 @@ export default function AddProductModal(props: {
                 setGstId(chosen); clearFieldError('gstId');
                 const rate = optGst.find(o => o.value === chosen)?.label;
                 if (!productId) {
-                  // Deferred create: THIS is where the brand-new product is
-                  // actually saved — the held Core data + the mapped GST are
-                  // committed together, so it never lands in the list without a
-                  // GST. Keep the popup open on failure so the user can retry.
                   const ok = await commitCore(chosen);
                   if (ok) {
                     setGstMapOpen(false);
@@ -2586,7 +2294,6 @@ export default function AddProductModal(props: {
                   }
                   return;
                 }
-                // Existing product: just remap locally; the Sales step persists it.
                 setGstMapOpen(false);
                 toast.success('GST mapped', rate ? `GST ${rate} is mapped to this product.` : 'GST is mapped to this product.');
               }}>Map GST</button>
@@ -2595,7 +2302,6 @@ export default function AddProductModal(props: {
         </div>
       ), document.body)}
 
-      {/* ── GST (%) Master popup — add / remove available rates ── */}
       {gstMasterOpen && createPortal((
         <div className="apm-gst-overlay apm-gst-overlay--master" onClick={() => setGstMasterOpen(false)}>
           <div className="apm-gst-modal" onClick={(e) => e.stopPropagation()}>
@@ -2652,11 +2358,6 @@ export default function AddProductModal(props: {
       ), document.body)}
 
       {quickAdd === 'segments' ? (
-        /* Segments quick-add now opens the full CLM segment form (name +
-         * regulatory status + buyer/consignee rule) and POSTs to the CLM
-         * endpoint so the new row lands on the unified `clm_segments`
-         * table that downstream segment rules + DCP read from. The CLM
-         * styles get injected here too since the modal portals to body. */
         <>
           <style>{CLM_CSS}</style>
           <SegmentModal
@@ -2667,10 +2368,6 @@ export default function AddProductModal(props: {
               try {
                 const { data } = await api.post('/clm/segments', form);
                 const row = (data?.data ?? data) as Record<string, unknown>;
-                /* ClmSegmentController returns `name` (not `title`),
-                 * but `onMasterAdded('segments', …)` reads `row.title`.
-                 * Normalise so the option label lines up with the rest
-                 * of the segments dropdown (which also displays name). */
                 onMasterAdded('segments', { ...row, title: row.title ?? row.name });
                 setQuickAdd(null);
                 toast.success('Segment added', String(row.name ?? row.title ?? form.name));
@@ -2681,18 +2378,10 @@ export default function AddProductModal(props: {
           />
         </>
       ) : quickAdd && (
-        /* The master's OWN form (same one /master/{slug} renders), not a
-         * re-creation — see MasterRecordModal. Every "+" here therefore
-         * matches the master page field for field, including validation. */
         <MasterRecordModal
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
-            /* The master form exposes a Status field, so the user can save an
-             * Inactive row. /products/master-bundle only returns Active rows
-             * (LOWER(status) = 'active'), so auto-selecting an Inactive one
-             * would put a value in the dropdown that vanishes on reload.
-             * Keep the save, skip the select, say why. */
             if (row.status && String(row.status).toLowerCase() !== 'active') {
               bustAllMasterBundles();
               toast.info('Saved as Inactive', 'Only Active records appear in this dropdown. Set it to Active to select it here.');
@@ -2708,9 +2397,6 @@ export default function AddProductModal(props: {
   ), document.body);
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Sub-components
- * ────────────────────────────────────────────────────────────────────── */
 function StepperItem(props: { n: number; title: string; sub: string; current: number; icon?: ReactNode }) {
   const { n, title, sub, current, icon } = props;
   const state = current > n ? 'done' : current === n ? 'active' : 'idle';
@@ -2762,11 +2448,6 @@ function SectionCard(props: {
   );
 }
 
-/* Shimmer skeleton shown inside the modal body while the 8 parallel master
- * fetches (or the edit-mode product prefill) are in flight. Mirrors the real
- * Core-tab layout — section card + 2-column grid of fields — so the user
- * sees structure instead of an empty modal. Light/dark themes are handled
- * by the .apm-shim CSS rules below. */
 function FormSkeleton() {
   const Field = ({ wide = false }: { wide?: boolean }) => (
     <div className={`apm-shim-field${wide ? ' wide' : ''}`}>
@@ -2805,8 +2486,6 @@ function Field(props: {
   required?: boolean;
   addNew?: boolean;
   onAdd?: () => void;
-  /* Pencil pill beside the label, for a value that is set through a popup
-     rather than typed into the control (GST %). Independent of `addNew`. */
   onEdit?: () => void;
   editTitle?: string;
   editDisabled?: boolean;
@@ -2815,12 +2494,6 @@ function Field(props: {
   disabled?: boolean;
   children: ReactNode;
 }) {
-  /* Renders as a <div>, NOT a <label>. A <label> proxies clicks
-     anywhere within it to the first form control inside — when
-     `addNew` is set, that first control is the "+" button, so
-     clicking the field area or even the label text was firing the
-     quick-add popup. Using a plain <div> keeps the visual layout
-     but breaks the click-association entirely. */
   return (
     <div className={`apm-field${props.error ? ' has-error' : ''}${props.disabled ? ' is-disabled' : ''}`}>
       <span className="apm-field-label">
@@ -2863,11 +2536,10 @@ function Field(props: {
   );
 }
 
-/* A pill shown beside an option label — mirrors MasterSelect's OptBadgeSpec.
-   `title` is the hover tooltip; `items` makes a "+N more" pill clickable,
-   popping a mini list of the hidden tags. */
 type OptBadge = { text: string; tone?: 'green' | 'red' | 'gray' | 'violet'; title?: string; items?: string[] };
+
 type Opt = string | { value: string; label: string; badges?: OptBadge[] };
+
 function SelectInput(props: {
   value: string;
   onChange: (v: string) => void;
@@ -2899,25 +2571,10 @@ function UploadDropzone(props: {
   preview: string[];
   onPick: (e: ChangeEvent<HTMLInputElement>) => void;
   onRemove: (index: number) => void;
-  /* File mode — the upload can hold ANY document type (PDF / Word / image /
-     etc.), so render a generic file chip (icon + filename) instead of an
-     image thumbnail. `fileName` is the label shown on that chip. */
   fileMode?: boolean;
   fileName?: string;
-  /* Override the `accept` list on the file input. Defaults to the PNG/JPG
-     image-only set used by the Primary / Secondary image uploads. */
   accept?: string;
 }) {
-  /* Outer is a <div>, NOT a <label>. The previous label wrapped the
-     title, the dashed dropzone AND the preview chips — so clicking the
-     "Primary Image" / "Secondary Image" title text or any blank area
-     beside the previews would pop the OS file picker. Mirrors the same
-     fix used on the Field component above. The `<label>` is now scoped
-     to just the dashed dropzone so only that region triggers picking. */
-
-  /* When many images are attached, cap the inline thumbnails and roll the
-     overflow into a "+N more" tile that opens a popup with the full set.
-     Keeps the form compact instead of wrapping into several rows. */
   const MAX_VISIBLE = 6;
   const [showAll, setShowAll] = useState(false);
   const total = props.preview.length;
@@ -2945,9 +2602,6 @@ function UploadDropzone(props: {
         <span>{props.hint}</span>
       </label>
       {total > 0 && props.fileMode && (
-        /* Generic file chip — any document type (PDF / Word / image / etc.),
-           so a paperclip icon + filename replaces the image thumbnail. The
-           chip links to the file so it can still be viewed/downloaded. */
         <div className="apm-upload-preview">
           <a
             className="apm-upload-chip apm-upload-filechip"
@@ -3016,30 +2670,16 @@ function UploadDropzone(props: {
   );
 }
 
-function InfoCell(props: { label: string; value: string }) {
-  return (
-    <div className="apm-info-cell">
-      <span className="apm-info-key">{props.label}:</span>
-      <span className="apm-info-val">{props.value}</span>
-    </div>
-  );
-}
-
 type PrevStage = {
   name: string;
   tone: 'violet' | 'amber' | 'green';
   fields: { label: string; value: string }[];
-  /** Optional extra rows that render BELOW the field grid for the
-   *  stage. Used by QUALITY & COMPLIANCE to show per-QC details +
-   *  the (clickable) attachment link instead of just a row count. */
   extras?: PrevStageExtra[];
 };
+
 type PrevStageExtra = {
-  /** Row label (e.g. "QC Record 1" or the QC's name). */
   label: string;
-  /** Inline `key : value` pairs flowed in a row. */
   pairs: { k: string; v: string }[];
-  /** Optional clickable attachment link rendered at the row end. */
   attachment?: { name: string; href: string } | null;
 };
 
@@ -3117,35 +2757,28 @@ function PreviousStages(props: {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * QC Add popup — opens above the parent modal
- * ────────────────────────────────────────────────────────────────────── */
-/* QC attachment guardrails — backend ProductController accepts the same
- * set, so rejecting at the picker level avoids round-trip 422s and the
- * worse case of an unsafe upload hitting storage. */
 const QC_ALLOWED_EXTS = ['.pdf', '.png', '.jpg', '.jpeg'];
+
 const QC_ALLOWED_MIMES = /^(application\/pdf|image\/(png|jpe?g))$/i;
-const QC_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
-/* QC Compliance (segment-rule) uploads accept a broader business set:
- * PDF + Office documents in addition to images. Defence-in-depth deny
- * list rejects executable / script files even if the MIME is missing
- * (some OSes ship empty `file.type` for rare formats). 10 MB cap fits
- * full-scan COA / MSDS PDFs without inviting paragraph-sized garbage. */
+const QC_MAX_BYTES = 5 * 1024 * 1024;
+
 const QC_COMPLIANCE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,image/jpeg,image/png';
-const QC_COMPLIANCE_ALLOWED_EXT_RE = /\.(pdf|docx?|xlsx?|jpe?g|png)$/i;
-const QC_COMPLIANCE_ALLOWED_MIME_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|vnd\.ms-excel)|image\/(jpeg|png))$/i;
-const QC_COMPLIANCE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
-const QC_COMPLIANCE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
-/* Free-text sanitisers for QC modal fields. Strip XSS angle brackets +
- * SQL signatures regardless of which field they were pasted into, then
- * apply per-field length caps so a paragraph paste can't blow past the
- * column width. Issued By also enforces a charset whitelist (authority
- * names are short identifiers, not free prose). */
+const QC_COMPLIANCE_ALLOWED_EXT_RE = /\.(pdf|docx?|xlsx?|jpe?g|png)$/i;
+
+const QC_COMPLIANCE_ALLOWED_MIME_RE = /^(application\/(pdf|msword|vnd\.openxmlformats-officedocument\.(?:wordprocessingml\.document|spreadsheetml\.sheet)|vnd\.ms-excel)|image\/(jpeg|png))$/i;
+
+const QC_COMPLIANCE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
+
+const QC_COMPLIANCE_MAX_BYTES = 10 * 1024 * 1024;
+
 const QC_SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
+
 const QC_ISSUED_BY_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+
 const QC_ISSUED_BY_MAX = 80;
+
 const QC_PURPOSE_MAX = 200;
 
 function QcAddPopup(props: {
@@ -3197,8 +2830,6 @@ function QcAddPopup(props: {
   const onPickFile = (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
-    /* Reset the input so the user can re-pick the same file after a
-     * rejection (browsers swallow change events for identical values). */
     const resetInput = () => { e.target.value = ''; };
 
     const lower = f.name.toLowerCase();
@@ -3216,10 +2847,6 @@ function QcAddPopup(props: {
       return;
     }
 
-    /* Build an in-memory blob URL right away so the freshly-added
-       row's "View Attachment" link works before the file is saved
-       to the server. The server URL replaces this on the next
-       /products/{id} prefill once Save Quality finishes uploading. */
     const previewUrl = URL.createObjectURL(f);
     setDraft({
       ...draft,
@@ -3230,9 +2857,6 @@ function QcAddPopup(props: {
   };
 
   return createPortal((
-    /* Backdrop click does NOT close — the QC form holds in-flight
-       record + attachment input that an accidental outside click
-       would discard. Header ✕ and footer Cancel only. */
     <div className="apm-qc-backdrop">
       <div className="apm-qc-popup">
         <div className="apm-qc-popup-head">
@@ -3245,7 +2869,6 @@ function QcAddPopup(props: {
           </button>
         </div>
 
-        {/* Product summary strip */}
         <div className="apm-qc-product-bar">
           <QcProd label="Product Code"  value={product.code} />
           <QcProd label="Product Name"  value={product.name} />

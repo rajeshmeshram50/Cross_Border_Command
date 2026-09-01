@@ -170,6 +170,7 @@ Route::middleware(['auth:sanctum', 'user.active'])->group(function () {
     Route::get('/products/master-bundle',        [ProductController::class, 'masterBundle']);
     Route::get('/products',                      [ProductController::class, 'index']);
     Route::get('/products/{id}',                 [ProductController::class, 'show'])->whereNumber('id');
+    Route::get('/products/{id}/usage',           [ProductController::class, 'usage'])->whereNumber('id');
     Route::get('/products/{id}/vendor-maps',     [ProductController::class, 'vendorMaps'])->whereNumber('id');
     Route::patch('/products/{id}/vendor-maps/{mapId}', [ProductController::class, 'updateVendorMapPrice'])->whereNumber('id')->whereNumber('mapId');
     Route::delete('/products/{id}/vendor-maps/{mapId}', [ProductController::class, 'destroyVendorMap'])->whereNumber('id')->whereNumber('mapId');
