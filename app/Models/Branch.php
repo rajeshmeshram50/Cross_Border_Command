@@ -164,12 +164,29 @@ class Branch extends Model
      * absent the whole month still takes home the entire allowance half of
      * their salary. That is a legitimate policy — plenty of employers run it —
      * but it has to be a decision somebody made, not an accident of the code.
-     * Hence this switch, defaulted to the legacy behaviour so no existing
-     * payslip moves until an admin changes it.
+     * Hence this switch.
+     *
+     * DEFAULT CHANGED to gross ÷ working (#135).
+     *
+     * It was basic ÷ calendar, chosen so that no existing payslip moved when
+     * the switch was introduced. No branch has ever stored a policy, so every
+     * tenant was silently running the legacy rule, and its arithmetic reads as
+     * broken payroll: an employee present 0 of 26 working days still took home
+     * 56% of gross (₹28,133 of ₹50,000), because absence only ever came off
+     * the basic and the allowances were paid in full. Reported as earnings,
+     * deductions and net pay all being calculated incorrectly — every figure
+     * was internally consistent, it was the RULE producing them that nobody
+     * had chosen.
+     *
+     * gross ÷ working charges an absent day what a worked day actually earns,
+     * so a fully-absent month nets ₹0 and a part-absent month loses exactly
+     * the days missed. A branch that wants the old behaviour still selects it
+     * on Branch → LOP Policy; this only changes what applies when nothing has
+     * been chosen.
      */
     public const LOP_DEFAULTS = [
-        'basis'   => 'basic',
-        'divisor' => 'calendar',
+        'basis'   => 'gross',
+        'divisor' => 'working',
     ];
 
     public const LOP_BASES    = ['basic', 'gross'];

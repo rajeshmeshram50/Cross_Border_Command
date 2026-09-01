@@ -389,6 +389,24 @@ class AttendanceController extends Controller
         }
         $leaveDays = count($leaveDaySet);
 
+        /* The far end of the employment window, resolved once. (#87)
+         *
+         * Null for anyone still employed, and for a REHIRED case — that exit is
+         * spent and the person is on the books again, so their window has no
+         * end. Same rule the roster in index() applies. */
+        $empExit = $emp->exit;
+        $lastWorkingIso = ($empExit && $empExit->rehired_at === null && $empExit->last_working_day)
+            ? $empExit->last_working_day->toDateString()
+            : null;
+        /* No exit record, but the row is soft-deleted — removed from Employee
+         * Management instead of exited (EmployeeController::destroy). The
+         * removal date is the only end-of-employment marker there is, and
+         * without it this tab opens on the current month for someone who
+         * stopped appearing months ago. Mirrors the roster arm in index(). */
+        if ($lastWorkingIso === null && !$empExit && $emp->deleted_at) {
+            $lastWorkingIso = $emp->deleted_at->toDateString();
+        }
+
         return response()->json([
             'employee' => [
                 'id'              => $emp->id,
@@ -400,6 +418,17 @@ class AttendanceController extends Controller
                 // Calendar cells before this date are not attendance days
                 // (CBC #74) — the SPA needs the date to blank them out.
                 'date_of_joining' => $this->joiningIso($emp),
+                /* The other end of the employment window. (#87)
+                 *
+                 * withTrashed() above made an exited employee's history
+                 * REACHABLE, but the tab still opened on the current month and
+                 * offered a month rail anchored on today — so a leaver whose
+                 * last day was in March read as "no attendance" all through
+                 * September, which is the same report from the UI side. Sending
+                 * the last working day lets the SPA open on the last month the
+                 * employee actually worked and bound the rail to their real
+                 * employment window. */
+                'last_working_day' => $lastWorkingIso,
             ],
             'month' => $monthQ,
             'stats' => [
@@ -580,6 +609,23 @@ class AttendanceController extends Controller
                     $x->whereNull('rehired_at')
                       ->whereNotNull('last_working_day')
                       ->whereDate('last_working_day', '>=', $date);
+                })->orWhere(function ($removed) use ($date) {
+                    /* Removed from Employee Management rather than exited. (#87)
+                     *
+                     * EmployeeController::destroy() soft-deletes the row without
+                     * creating an employee_exits record, so the arm above cannot
+                     * match and the person vanished from every past date — the
+                     * same disappearing history, reached by a different door.
+                     * There is no last working day to bound them by, so the
+                     * removal date stands in for it: they were on the books
+                     * until the day they were deleted.
+                     *
+                     * Narrow on purpose — only rows with NO exit record. Anyone
+                     * who went through Exit Management is judged on their last
+                     * working day above, which stays the authority. */
+                    $removed->whereNotNull('deleted_at')
+                            ->whereDate('deleted_at', '>=', $date)
+                            ->whereDoesntHave('exit');
                 });
             })
             // Never before they joined: a date preceding the joining date is

@@ -2293,19 +2293,50 @@ class EmployeeController extends Controller
          * faithfully recomputed the same zero. (#90)
          *
          * ESI is the same pairing and is mirrored with it. */
+        /* Mirrored onto EVERY structure payroll can still resolve, not just the
+         * newest active one.
+         *
+         * PayrollService::activeStructure() picks the version in force on the
+         * PERIOD date and deliberately includes 'superseded' rows, so a
+         * future-dated revision leaves payroll pricing an open cycle off the
+         * older version. Patching only `status=active orderByDesc(version)`
+         * then wrote the flag to a row payroll wasn't reading, and the change
+         * appeared to do nothing. (#90 reopen) */
         if (array_key_exists('pf_eligible', $data) || array_key_exists('esi_applicable', $data)) {
-            $activeStructure = \App\Models\SalaryStructure::where('employee_id', $row->id)
-                ->where('status', 'active')->orderByDesc('version')->first();
-            if ($activeStructure) {
+            $structures = \App\Models\SalaryStructure::where('employee_id', $row->id)
+                ->whereIn('status', ['active', 'superseded'])
+                ->get();
+
+            foreach ($structures as $structure) {
                 $patch = [];
                 if (array_key_exists('pf_eligible', $data)) {
-                    $patch['pf_applicable'] = (bool) $row->pf_eligible;
+                    $pfOn = (bool) $row->pf_eligible;
+                    $patch['pf_applicable'] = $pfOn;
+
+                    /* Turning PF off must also drop a MANUAL 'pf' deduction row.
+                     *
+                     * PayrollService takes a structure's own pf line BEFORE it
+                     * consults applicability (so hand-built structures aren't
+                     * silently stripped), which meant PF Applicable = No left
+                     * the deduction running and the Salary Report still showed
+                     * PF. Clearing the row here keeps that precedence intact
+                     * while making an explicit "No" actually mean no PF. */
+                    if (!$pfOn) {
+                        $deductions = (array) ($structure->deductions ?? []);
+                        $kept = array_values(array_filter(
+                            $deductions,
+                            fn ($d) => strtolower((string) ($d['code'] ?? '')) !== 'pf'
+                        ));
+                        if (count($kept) !== count($deductions)) {
+                            $patch['deductions'] = $kept;
+                        }
+                    }
                 }
                 if (array_key_exists('esi_applicable', $data)) {
                     $patch['esi_applicable'] = strtolower((string) $row->esi_applicable) === 'yes';
                 }
                 if ($patch) {
-                    $activeStructure->update($patch);
+                    $structure->update($patch);
                 }
             }
         }
@@ -2347,7 +2378,14 @@ class EmployeeController extends Controller
                     ->unique()
                     ->values();
             } catch (\Throwable $e) {
-                // Never block an employee save on a payroll recompute hiccup.
+                // Never block an employee save on a payroll recompute hiccup —
+                // but do not swallow it either. A failed sync used to report a
+                // plain "Updated" while the payslips kept the old PF, which is
+                // the same symptom as the flag not working. (#90 reopen)
+                \Log::warning('Payslip recompute after employee update failed', [
+                    'employee_id' => $row->id,
+                    'error'       => $e->getMessage(),
+                ]);
             }
         }
 

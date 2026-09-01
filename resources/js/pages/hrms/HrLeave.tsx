@@ -195,8 +195,18 @@ const deriveChain = (r: LeaveRequest): ApprovalNode[] => {
     initials: r.empInitials,
     name: r.empName,
     role: 'Self',
+    /* Stays green: the submission genuinely happened, and this timeline is a
+       history rather than a summary of where the request ended up. */
     decision: 'approved',
-    detail: r.raisedBy === 'hr' ? 'HR raised on behalf' : 'Leave request submitted',
+    /* …but it must SAY that the request was withdrawn. (#133)
+       The approver nodes turn red on a cancellation while this one kept
+       reading "Leave request submitted", so nothing on the timeline named the
+       side the cancellation came from — and cancelling is the requester's
+       action, not an approver's. Only the requester or HR can call /cancel, and
+       no cancelled_by is recorded, so the wording stays neutral about which. */
+    detail: isCancelled
+      ? 'Submitted — later cancelled'
+      : r.raisedBy === 'hr' ? 'HR raised on behalf' : 'Leave request submitted',
     actionAt: r.appliedOn,
   };
 
@@ -306,8 +316,20 @@ function apiToLeaveRequest(api: ApiLeaveRequest, idx: number): LeaveRequest {
   let hrStatus: ApprovalState = 'Pending';
   if (status === 'Cancelled') {
     stage = 'Cancelled';
-    managerStatus = 'NA';
-    hrStatus = 'NA';
+    /* Each level keeps its REAL answer. (#133)
+     *
+     * Both were forced to 'NA', which threw away a decision that had actually
+     * happened. /cancel accepts any request whose OVERALL status is Pending,
+     * and on a two-level chain that includes one the manager has already
+     * approved while it waits on HR — so cancelling there erased the manager's
+     * approval and the timeline drew them as "cancelled" instead of the green
+     * tick they had earned.
+     *
+     * deriveChain() rewrites only nodes that had NOT decided, so passing the
+     * true statuses through is exactly what makes that rule work; blanking them
+     * here was defeating it one layer earlier. */
+    managerStatus = chain && chain.length > 0 ? mapNode(chain[0]?.status) : 'NA';
+    hrStatus      = chain && chain.length > 1 ? mapNode(chain[1]?.status) : 'NA';
   } else if (chain && chain.length > 0) {
     // Read EACH level's own status so a decision is attributed to whoever
     // actually acted — manager (level 1) vs HR (level 2) — instead of always

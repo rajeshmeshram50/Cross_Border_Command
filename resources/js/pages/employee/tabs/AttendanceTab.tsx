@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import { Row, Col, Card, CardBody } from 'reactstrap';
 import api from '../../../api';
 import { Shimmer } from '../../../components/ui/Shimmer';
@@ -27,7 +27,13 @@ interface AttendancePanelRecord {
   punches: AttendancePanelPunch[];
 }
 interface AttendancePanelResponse {
-  employee: { id: number; emp_code: string | null; name: string; face_registered: boolean; shift_start?: string | null; shift_end?: string | null };
+  employee: {
+    id: number; emp_code: string | null; name: string; face_registered: boolean;
+    shift_start?: string | null; shift_end?: string | null;
+    date_of_joining?: string | null;
+    /** 'YYYY-MM-DD' for an exited employee; null while still employed. (#87) */
+    last_working_day?: string | null;
+  };
   month: string;
   stats: { present_days: number; late_marks: number; missing_biometric: number; total_leaves: number };
   today: AttendancePanelRecord | null;
@@ -39,6 +45,7 @@ interface AttendancePanelResponse {
   weekly_off?: string | null;
   expected_minutes?: number;
   logs?: AttLog[];
+  date_of_joining?: string | null;
 }
 
 
@@ -92,6 +99,40 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
   const [regPageSize, setRegPageSize] = useState(5);
   const [regPage, setRegPage]         = useState(1);
   const numericEmployeeId = data?.employee?.id ?? null;
+  /* Which month the tab OPENS on, for an employee who has already left. (#87)
+   *
+   * The initial state above is always the current month, which is correct for
+   * current staff and useless for a leaver: someone whose last working day was
+   * in March has no rows in September, so the tab opened on an empty month and
+   * read as "previous attendance not displayed" even though every row was
+   * there and reachable. Snapped once, to the last month they actually worked.
+   *
+   * `monthPinnedRef` makes it a ONE-TIME redirect, not a clamp — HR can still
+   * browse to any month afterwards, including empty ones, and the snap never
+   * fights their choice or loops against the fetch it triggers. */
+  const monthPinnedRef = useRef(false);
+  /* Everything above is per-EMPLOYEE, so it all has to reset when the profile
+     switches to a different person without this component unmounting.
+     Without this the pin stayed spent — the second leaver opened on the FIRST
+     one's exit month and never snapped to their own — and `data` still held the
+     previous employee's rows, which the snap below would then have pinned
+     against. Clearing `data` also stops one employee's attendance from being
+     painted under another's name for the duration of the fetch. */
+  useEffect(() => {
+    monthPinnedRef.current = false;
+    setData(null);
+    const d = new Date();
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }, [employeeId]);
+
+  useEffect(() => {
+    if (monthPinnedRef.current) return;
+    const lwd = data?.employee?.last_working_day;
+    if (!lwd) return;                       // still employed — today is right
+    monthPinnedRef.current = true;
+    const exitMonth = lwd.slice(0, 7);
+    if (exitMonth < month) setMonth(exitMonth);
+  }, [data?.employee?.last_working_day, month]);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,6 +222,8 @@ export default function AttendanceTab({ employeeId }: { employeeId: string }) {
     logs:       data.logs || [],
     // Blanks out calendar cells from before the employee joined (CBC #74).
     dateOfJoining: data.date_of_joining || data.employee?.date_of_joining || null,
+    // Anchors the month rail to the end of the employment window (#87).
+    lastWorkingDay: data.employee?.last_working_day || null,
   } : null;
   const recForIso = (iso: string): AttendancePanelRecord | null => {
     if (today && today.attendance_date.slice(0, 10) === iso) return today;

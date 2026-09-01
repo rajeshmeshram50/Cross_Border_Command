@@ -76,6 +76,16 @@ interface PayrollRow {
   attSource: AttSource;
   mismatch?: string;
   pfEmp: number;
+  /* The PF figure is a snapshot taken when the slip was generated; "PF
+     Applicable" on the employee master is live. Set by the server only when a
+     finalized cycle disagrees with the flag as it reads today. (#90) */
+  pfStale?: boolean;
+  pfNotice?: string | null;
+  /* Full monthly salary from the structure, and whether this cycle pays less
+     than it because of a mid-cycle join/exit. (#134) */
+  monthlyGross?: number | null;
+  prorated?: boolean;
+  prorationNote?: string | null;
   esi: number;
   pt: number;
   tds: number;
@@ -429,7 +439,15 @@ export default function HrPayroll() {
       .then(res => {
         if (reqId !== payslipReqRef.current) return;   // superseded by a newer click
         const d = res.data?.data ?? {};
-        const e = (d.earningsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
+        /* `monthly` carried through so the viewer can show the structure's own
+           figure beside the pro-rated one. Left undefined when the server does
+           not send it (older slips), which the viewer reads as "not pro-rated"
+           and renders exactly as before. (#133) */
+        const e = (d.earningsBreakup ?? []).map((c: any) => ({
+          label: c.label,
+          amount: Number(c.amount) || 0,
+          monthly: c.monthly === undefined || c.monthly === null ? undefined : Number(c.monthly),
+        }));
         const ded = (d.deductionsBreakup ?? []).map((c: any) => ({ label: c.label, amount: Number(c.amount) || 0 }));
         setPayslipBreakup(e.length || ded.length ? { earnings: e, deductions: ded } : null);
         // Server-side explanation for a deduction that applies today but was
@@ -1164,6 +1182,8 @@ export default function HrPayroll() {
         'Gross': r.gross_earnings,
         'Basic': r.basic,
         'PF': r.pf_employee,
+        // Blank unless the frozen PF figure contradicts the live flag (#90).
+        'PF Note': r.pf_notice ?? '',
         'ESI': r.esi,
         'PT': r.pt,
         'TDS': r.tds,
@@ -1294,7 +1314,28 @@ export default function HrPayroll() {
     // the bare word read as though it might be one earnings component rather
     // than their total. Matches what the Salary Report column, the payslip
     // breakup and the Excel export have always called it. (#128)
-    { header: 'Gross Earnings',   accessorKey: 'earnings',   meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>₹{fmtINR(info.row.original.earnings)}</span> },
+    /* A pro-rated cycle is marked, with the full monthly salary on hover.
+       Without it a mid-month joiner on ₹10,000 simply reads ₹6,774.20 in a
+       column the reader takes to BE their salary — which is how a correct
+       21/31 pro-ration got raised as the salary being calculated wrong. (#134) */
+    {
+      header: 'Gross Earnings', accessorKey: 'earnings', meta: { width: '9%', align: 'right' },
+      cell: info => {
+        const r = info.row.original;
+        return (
+          <span className="fs-13 fw-semibold" style={{ color: '#108548' }}>
+            ₹{fmtINR(r.earnings)}
+            {r.prorated && (
+              <i
+                className="ri-time-line ms-1"
+                style={{ color: '#a16207', cursor: 'help' }}
+                title={r.prorationNote ?? 'Pro-rated for a mid-cycle join or exit.'}
+              />
+            )}
+          </span>
+        );
+      },
+    },
     { header: 'Deductions', accessorKey: 'deductions', meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold" style={{ color: '#b1401d' }}>−₹{fmtINR(info.row.original.deductions)}</span> },
     {
       header: 'Net Pay',
@@ -1540,7 +1581,28 @@ export default function HrPayroll() {
          hue changes — only the chip around it. (#132) */
       { header: 'Emp ID', accessorKey: 'empId', meta: { width: '6%' }, cell: info => <span className="onb-id-pill">{String(info.getValue() ?? '')}</span> },
       { header: 'Gross Earnings',   accessorKey: 'earnings',    meta: { width: '9%', align: 'right' }, cell: info => <span className="fs-13 fw-semibold">₹{fmtINR(info.row.original.earnings)}</span> },
-      { header: 'PF (Emp)',         accessorKey: 'pfEmp',       meta: { width: '7%', align: 'right' }, cell: info => <span className="fs-13" style={{ color: '#5a3fd1' }}>₹{fmtINR(info.row.original.pfEmp)}</span> },
+      /* A stale PF figure carries an inline marker rather than reading as a
+         plain ₹0. Without it the report was indistinguishable from "PF
+         Applicable doesn't work" — the explanation existed only on the payslip
+         screen, which is not where anyone checking PF was looking. (#90) */
+      {
+        header: 'PF (Emp)', accessorKey: 'pfEmp', meta: { width: '7%', align: 'right' },
+        cell: info => {
+          const r = info.row.original;
+          return (
+            <span className="fs-13" style={{ color: '#5a3fd1' }}>
+              ₹{fmtINR(r.pfEmp)}
+              {r.pfStale && (
+                <i
+                  className="ri-information-line ms-1"
+                  style={{ color: '#f7b84b', cursor: 'help' }}
+                  title={r.pfNotice ?? 'PF applicability changed after this cycle was finalized.'}
+                />
+              )}
+            </span>
+          );
+        },
+      },
       { header: 'ESI',              accessorKey: 'esi',         meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">{info.row.original.esi === 0 ? <span className="text-muted">₹0</span> : `₹${fmtINR(info.row.original.esi)}`}</span> },
       { header: 'PT',               accessorKey: 'pt',          meta: { width: '6%', align: 'right' }, cell: info => <span className="fs-13">₹{fmtINR(info.row.original.pt)}</span> },
       {

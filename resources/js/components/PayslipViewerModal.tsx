@@ -9,7 +9,11 @@ import api from '../api';
 // the CSS rules.
 import '../pages/employee/EmployeeProfile.css';
 
-export interface PayslipLine { label: string; amount: number }
+/* `monthly` is the salary structure's own figure for the component, before the
+   join/exit pro-ration that produces `amount`. Present only on earnings lines
+   built by payroll; absent on hand-made lines, in which case the two are the
+   same number and only one column is shown. (#133) */
+export interface PayslipLine { label: string; amount: number; monthly?: number }
 
 export interface PayslipEmployee {
   name: string;
@@ -375,6 +379,16 @@ export default function PayslipViewerModal({
   const totalDeductions = deductions.reduce((s, r) => s + r.amount, 0);
   const netPay          = totalEarnings - totalDeductions;
 
+  /* Was this cycle pro-rated for a mid-month join or exit? Decided from the
+     lines themselves rather than from a date: if any component was paid at less
+     than its monthly figure, the amounts on screen are NOT the monthly ones and
+     the column must not claim they are. A rupee of tolerance absorbs rounding
+     on the pro-ration multiply. (#133) */
+  const isProrated = shownEarnings.some(
+    r => r.monthly !== undefined && Math.abs(r.monthly - r.amount) > 1,
+  );
+  const totalMonthly = shownEarnings.reduce((s, r) => s + (r.monthly ?? r.amount), 0);
+
   return createPortal(
     <div
       className="ep-modal-overlay"
@@ -624,7 +638,16 @@ export default function PayslipViewerModal({
                     </div>
                     <table className="ep-pay-table">
                       <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                        {/* Two columns only when the cycle was pro-rated. The
+                            single column was headed "Monthly" while carrying the
+                            pro-rated figure, so a mid-month joiner's payslip
+                            contradicted Stage 4 – Compensation with no way to
+                            reconcile the two. (#133) */}
+                        <tr>
+                          <th>Component</th>
+                          {isProrated && <th className="text-end">Monthly</th>}
+                          <th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th>
+                        </tr>
                       </thead>
                       <tbody>
                         {shownEarnings.map(r => {
@@ -648,6 +671,15 @@ export default function PayslipViewerModal({
                                   </div>
                                 )}
                               </td>
+                              {isProrated && (
+                                /* The structure's figure. Falls back to the
+                                   paid amount for lines that are not pro-rated
+                                   at all (overtime, bonus), so the column never
+                                   invents a monthly value for them. */
+                                <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
+                                  ₹{(r.monthly ?? r.amount).toLocaleString('en-IN')}
+                                </td>
+                              )}
                               <td className="text-end fw-semibold">₹{r.amount.toLocaleString('en-IN')}</td>
                             </tr>
                           );
@@ -656,6 +688,11 @@ export default function PayslipViewerModal({
                       <tfoot>
                         <tr style={{ background: 'rgba(16,185,129,0.06)' }}>
                           <td className="fw-bold" style={{ color: '#108548' }}>Total Earnings</td>
+                          {isProrated && (
+                            <td className="text-end" style={{ color: 'var(--vz-secondary-color)' }}>
+                              ₹{totalMonthly.toLocaleString('en-IN')}
+                            </td>
+                          )}
                           <td className="text-end fw-bold" style={{ color: '#108548' }}>₹{totalEarnings.toLocaleString('en-IN')}</td>
                         </tr>
                       </tfoot>
@@ -670,7 +707,12 @@ export default function PayslipViewerModal({
                     </div>
                     <table className="ep-pay-table">
                       <thead>
-                        <tr><th>Component</th><th className="text-end">Monthly</th></tr>
+                        {/* Matches the earnings header. A deduction is always
+                            this cycle's figure — PF rides on the days actually
+                            paid and Loss of Pay exists only within the cycle —
+                            so "Monthly" was never the right word for a
+                            pro-rated slip. (#133) */}
+                        <tr><th>Component</th><th className="text-end">{isProrated ? 'This Cycle' : 'Monthly'}</th></tr>
                       </thead>
                       <tbody>
                         {deductions.map(r => (
