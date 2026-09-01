@@ -8880,13 +8880,47 @@
   max-height: calc(100vh - 48px);
 }
 
+/* Same header as the Figma .sf-pop-head / the "Mapped Suppliers" popup
+   (.apm-sup-head). This one used a 3-stop gradient starting at #5b21b6, which
+   read visibly lighter than the 5-stop one beside it. justify-content stays —
+   unlike .sf-pop-head this header carries a close button on the right.
+   flex-shrink is load-bearing here: .apm-mv-popup IS a capped-height flex
+   column, so without it the header squashes when the body is tall. */
 .apm-mv-popup-head {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 15px 20px;
-  background: linear-gradient(115deg, #5b21b6 0%, #7c3aed 55%, #8b5cf6 100%);
+  gap: 12px;
+  padding: 17px 22px;
+  font-size: 16px;
+  font-weight: 800;
   color: #fff;
+  letter-spacing: -.2px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+
+/* Same Figma .sf-pop-head highlights as .apm-sup-head — this popup opens
+   directly on top of that one, so a mismatch between the two headers is
+   visible side by side. */
+.apm-mv-popup-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .55;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 16% 130%, rgba(255, 255, 255, .2), transparent 42%),
+    radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
+}
+
+.apm-mv-popup-title,
+.apm-mv-close {
+  position: relative;
+  z-index: 1;
 }
 
 .apm-mv-popup-title {
@@ -10434,6 +10468,20 @@
 }
 
 /* ═══ Mapped Suppliers list popup (compact, opened from "Map Supplier") ═══ */
+
+/* Both of these overlays are portaled to document.body, so they land outside
+   .prd-root and .apm-modal and miss both of those scoped border-box resets.
+   The Figma prototype gets it from a global `*, *::before, *::after` rule;
+   scoping it to the two overlays keeps it off the rest of the host app. */
+.apm-sup-overlay *,
+.apm-sup-overlay *::before,
+.apm-sup-overlay *::after,
+.apm-mv-backdrop *,
+.apm-mv-backdrop *::before,
+.apm-mv-backdrop *::after {
+  box-sizing: border-box;
+}
+
 .apm-sup-overlay {
   position: fixed;
   inset: 0;
@@ -10476,6 +10524,7 @@
 .apm-sup-head {
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -10486,6 +10535,31 @@
   letter-spacing: -.2px;
   background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
   text-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+}
+
+/* The two radial highlights the Figma header (.sf-pop-head) paints over the
+   flat gradient — a warm glow bottom-left, a violet one off the top-right.
+   Without them this header reads as a flat purple band next to the wizard's
+   own .apm-head, which has carried the same treatment all along.
+   The parent already sets position/overflow, so inset: 0 clips to the bar. */
+.apm-sup-head::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  opacity: .55;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 16% 130%, rgba(255, 255, 255, .2), transparent 42%),
+    radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
+}
+
+/* An absolutely-positioned ::before paints above static in-flow siblings, so
+   the icon, title and ✕ have to be lifted out from under the tint. */
+.apm-sup-head-ico,
+.apm-sup-head-txt,
+.apm-sup-close {
+  position: relative;
+  z-index: 1;
 }
 
 .apm-sup-head-ico {

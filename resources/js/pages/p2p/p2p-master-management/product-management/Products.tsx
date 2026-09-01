@@ -1031,10 +1031,9 @@ export default function Products() {
         />
       )}
 
-      {/* Product detail — opens as a popup over the list (not a full page). */}
       {detailId != null && createPortal((
-        <div className="prd-detail-overlay" onClick={() => setDetailId(null)}>
-          <div className="prd-detail-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="prd-detail-overlay">
+          <div className="prd-detail-modal">
             <ProductView
               productId={detailId}
               onClose={() => { setDetailId(null); refresh(); }}
