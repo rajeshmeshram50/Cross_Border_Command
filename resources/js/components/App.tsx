@@ -110,7 +110,7 @@ const GenerateDocument = lazy(() => import('../pages/hrms/doc-templates/Generate
 const HrEmployeeOnboarding = lazy(() => import('../pages/employee-onboarding/HrEmployeeOnboarding'));
 const EmployeePermissions = lazy(() => import('../pages/employee/EmployeePermissions'));
 const EmployeeProfile = lazy(() => import('../pages/employee/EmployeeProfile'));
-import { ShimmerEmployeeProfile } from './ui/Shimmer';
+import { Shimmer, ShimmerTable, ShimmerEmployeeProfile } from './ui/Shimmer';
 const PublicOnboarding = lazy(() => import('../pages/PublicOnboarding'));
 const ClockIn = lazy(() => import('../pages/ClockIn'));
 const ModuleStubPage = lazy(() => import('../pages/ModuleStubPage'));
@@ -146,19 +146,52 @@ const Gmail = lazy(() => import('../pages/Gmail'));
  * looks instant and only a genuinely slow fetch ever shows the spinner.
  */
 function RouteFallback() {
+  /* A page-SHAPED skeleton, not a spinner.
+   *
+   * A centred spinner said "something is happening" but nothing about what,
+   * so a route switch read as a blank hole for however long the chunk took.
+   * Most pages in this app resolve into the same silhouette — a header strip
+   * with a title and an action button, a toolbar, then a table — so drawing
+   * that silhouette means the layout is already on screen and only the values
+   * arrive late. Deliberately generic: this stands in for ~108 routes, and a
+   * skeleton that promised any one page's specific layout would be wrong on
+   * the other 107.
+   *
+   * The 180ms delayed fade-in is kept from the spinner version and matters
+   * more now, not less: a full-page skeleton flashing for 40ms on an
+   * already-cached chunk is far more jarring than a spinner doing the same.
+   * Warm navigations still look instant; only a genuinely slow chunk fetch
+   * ever paints this. */
   return (
     <div
       style={{
-        padding: 48,
-        textAlign: 'center',
-        color: 'var(--vz-secondary-color)',
+        padding: 24,
         animation: 'cbcRouteFallbackIn 0s linear 180ms forwards',
         opacity: 0,
       }}
+      role="status"
+      aria-live="polite"
+      aria-label="Loading page"
     >
       <style>{'@keyframes cbcRouteFallbackIn{to{opacity:1}}'}</style>
-      <i className="ri-loader-4-line ri-spin" style={{ fontSize: 28, display: 'block', marginBottom: 8 }} />
-      <div style={{ fontSize: 13, fontWeight: 600 }}>Loading…</div>
+      {/* Page header — icon tile + title/subtitle on the left, action on the right. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 18 }}>
+        <Shimmer width={46} height={46} radius={13} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, flex: 1, minWidth: 0 }}>
+          <Shimmer width={220} height={17} />
+          <Shimmer width={320} height={11} />
+        </div>
+        <Shimmer width={132} height={38} radius={10} />
+      </div>
+      {/* Toolbar — tab pills on the left, search on the right. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+        <Shimmer width={104} height={34} radius={10} />
+        <Shimmer width={104} height={34} radius={10} />
+        <Shimmer width={104} height={34} radius={10} />
+        <div style={{ flex: 1 }} />
+        <Shimmer width={260} height={34} radius={10} />
+      </div>
+      <ShimmerTable rows={8} cols={7} />
     </div>
   );
 }
@@ -767,8 +800,24 @@ function DashboardRoutes({ user }: { user: any }) {
               <AccessDenied />
             ) : (
             /* One boundary for every page route. Each page below is a lazy()
-               chunk; this is the only thing that has to catch their suspend. */
-            <Suspense fallback={<RouteFallback />}>
+               chunk; this is the only thing that has to catch their suspend.
+
+               `key` is the fix for "switching pages shows the OLD page, then
+               jumps to the new one, with no loader in between".
+
+               React deliberately does NOT re-show a fallback for a Suspense
+               boundary that has already revealed content — during a transition
+               it keeps the previous UI on screen instead, to avoid flashing a
+               spinner over something the user is already reading. React Router
+               wraps navigations in exactly such a transition, so this single
+               long-lived boundary never showed RouteFallback again after the
+               first page: you sat looking at the old page for the whole chunk
+               download, then it swapped.
+
+               Keying by pathname makes each route a DIFFERENT boundary, so
+               navigating mounts a fresh one that has revealed nothing yet —
+               and a fresh boundary does show its fallback. */
+            <Suspense key={location.pathname} fallback={<RouteFallback />}>
             <Routes>
               <Route path="/dashboard" element={<DefaultDashboard />} />
               <Route path="/clients" element={<Clients onNavigate={navigateFn} />} />
