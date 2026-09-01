@@ -214,24 +214,61 @@ class VendorController extends Controller
         // Purchase Order. The vendor form keys segments by ID, so resolve the
         // locked NAMES to IDS here so the UI can disable only those chips' ×.
         $data = $this->shape($vendor);
-        $lockedNames = array_values(array_unique(array_merge(
-            \App\Support\SegmentGuard::lockedSegmentNames(
-                \App\Models\Vendor::class,
-                (int) $vendor->id,
-                (int) $vendor->client_id,
-            ),
-            // Also lock segments the supplier is mapped to via a product (blocks
-            // removal before any PO/SPI exists).
-            \App\Support\SegmentGuard::productMappingSegmentNames(
-                \App\Models\Vendor::class,
-                (int) $vendor->id,
-                (int) $vendor->client_id,
-            ),
-        )));
-        $data['locked_segments'] = empty($lockedNames) ? [] : DB::table('clm_segments')
-            ->whereIn('name', $lockedNames)
+        /* Segments whose product is actually ON an issued Purchase Order, and
+         * separately those on a committed Supplier Invoice. Kept apart so the
+         * form can name the ONE document that is holding the segment — telling
+         * someone it is "used in a PO / Invoice" sends them looking through both
+         * when the server already knows which. */
+        $lockSrc  = \App\Support\SegmentGuard::vendorLockSources((int) $vendor->id, (int) $vendor->client_id);
+        $poNames  = $lockSrc['po'];
+        $spiNames = $lockSrc['spi'];
+        // Segments the supplier is merely MAPPED to via a product, with no PO or
+        // SPI raised yet. Also a lock, but a different one — and the user can
+        // clear it themselves by unmapping the product.
+        $prodNames = \App\Support\SegmentGuard::productMappingSegmentNames(
+            \App\Models\Vendor::class,
+            (int) $vendor->id,
+            (int) $vendor->client_id,
+        );
+
+        /* Resolved to IDS separately, and WHY each is locked is reported
+         * alongside (QA #94).
+         *
+         * The two lists used to be merged into one flat array before the
+         * name→id lookup, which threw away the reason. The form then had no way
+         * to tell the two apart and reported every lock as "used in a PO /
+         * Invoice" — false for a supplier whose product is only mapped, and
+         * unactionable either way, because it named a document the user cannot
+         * find and says nothing about the mapping they could actually remove.
+         * CustomerController::show already reports its reasons this way; this
+         * brings the supplier in line.
+         *
+         * Keyed by segment ID because the vendor form keys segments by id
+         * (Customer keys by name). 'po' wins when a segment hits both: it is the
+         * stronger lock and the one that must be cleared last. */
+        $allNames = array_values(array_unique(array_merge($poNames, $spiNames, $prodNames)));
+        $rows = empty($allNames) ? collect() : DB::table('clm_segments')
+            ->whereIn('name', $allNames)
             ->where(fn ($q) => $q->where('client_id', $vendor->client_id)->orWhereNull('client_id'))
-            ->pluck('id')->map(fn ($i) => (string) $i)->values()->all();
+            ->get(['id', 'name']);
+        $idsFor = function (array $names) use ($rows) {
+            $want = array_map(fn ($n) => mb_strtolower(trim((string) $n)), $names);
+            return $rows->filter(fn ($r) => in_array(mb_strtolower(trim((string) $r->name)), $want, true))
+                ->pluck('id')->map(fn ($i) => (string) $i)->values()->all();
+        };
+        $poIds   = $idsFor($poNames);
+        $spiIds  = $idsFor($spiNames);
+        $prodIds = $idsFor($prodNames);
+
+        $data['locked_segments'] = array_values(array_unique(array_merge($poIds, $spiIds, $prodIds)));
+        /* Strongest-wins ordering: a PO is the hardest to undo, then a Supplier
+         * Invoice, then a bare product mapping (which the user can clear
+         * themselves). Assigned last-wins, so the writes run weakest → strongest. */
+        $reasons = [];
+        foreach ($prodIds as $i) { $reasons[$i] = 'product'; }
+        foreach ($spiIds  as $i) { $reasons[$i] = 'spi'; }
+        foreach ($poIds   as $i) { $reasons[$i] = 'po'; }
+        $data['locked_segment_reasons'] = $reasons;
 
         // Once this supplier is mapped to a Purchase Order, its STATE is baked into
         // that PO's GST/tax classification (intra vs inter-state). Changing it later
@@ -842,7 +879,7 @@ class VendorController extends Controller
             return response()->json(['message' => $denial], 403);
         }
 
-        $data = $this->validateBank($request);
+        $data = $this->validateBank($request, $vendor);
 
         // No duplicate account number for this supplier (account number uniquely
         // identifies a bank account; the same one can't be added twice).
@@ -880,7 +917,7 @@ class VendorController extends Controller
         }
 
         $row = VendorBankAccount::where('vendor_id', $vendor->id)->findOrFail($bankId);
-        $data = $this->validateBank($request);
+        $data = $this->validateBank($request, $vendor);
 
         // No duplicate account number for this supplier (excluding this row).
         if (VendorBankAccount::where('vendor_id', $vendor->id)
@@ -930,22 +967,63 @@ class VendorController extends Controller
         return response()->json(['message' => 'Bank account deleted']);
     }
 
-    private function validateBank(Request $request): array
+    /**
+     * @param  Vendor|null $vendor  Whose bank account this is. An INTERNATIONAL
+     *   supplier's bank has no IFSC — it routes on SWIFT/BIC — so the `ifsc`
+     *   column takes a SWIFT code and the rule changes with it (QA #103). The
+     *   column name is left alone deliberately: renaming it would be a migration
+     *   plus every read site, for a field that means "how this bank is routed"
+     *   either way. Null vendor keeps the stricter Indian rule.
+     */
+    private function validateBank(Request $request, ?Vendor $vendor = null): array
     {
+        $isIntl = $vendor !== null && !$this->vendorIsIndian($vendor);
+
+        // SWIFT/BIC: 8–11 chars — 6 letters (bank + ISO country) then 2–5
+        // alphanumeric. IFSC: standard RBI format — 4 letters + 0 + 6 alphanumeric.
+        $routingRule = $isIntl
+            ? 'regex:/^[A-Za-z]{6}[A-Za-z0-9]{2,5}$/'
+            : 'regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/';
+        $routingMsg = $isIntl
+            ? 'SWIFT Code is invalid (8–11 characters: 6 letters then alphanumeric, e.g. HDFCINBBXXX).'
+            : 'IFSC Code is invalid (format: 4 letters + 0 + 6 characters, e.g. HDFC0001234).';
+
+        /* Account number splits the same way as the routing code above.
+           Domestic is 9–18 DIGITS (QA #98 — a 36-digit value was being accepted);
+           international is 8–34 alphanumeric, because an IBAN opens with two
+           country letters and runs to 34 (QA #103). Both tickets are right for
+           their own case, so the supplier's country decides which applies. */
+        $accountRule = $isIntl
+            ? 'regex:/^[A-Za-z0-9]{8,34}$/'
+            : 'regex:/^[0-9]{9,18}$/';
+        $accountMsg = $isIntl
+            ? 'Account Number must be 8–34 letters or digits, with no spaces.'
+            : 'Account Number must be 9–18 digits.';
+
         return $request->validate([
             'bank_name'      => 'required|string|max:255',
             'branch_name'    => 'required|string|max:255',
-            // Account number: 9–18 digits (matches the frontend validator).
-            // IFSC: standard RBI format — 4 letters + 0 + 6 alphanumerics.
-            'account_number' => ['required', 'string', 'regex:/^[0-9]{9,18}$/'],
-            'ifsc'           => ['required', 'string', 'regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/'],
+            'account_number' => ['required', 'string', $accountRule],
+            'ifsc'           => ['required', 'string', $routingRule],
             'branch_address' => 'nullable|string|max:500',
             'cheque'         => 'nullable|file|mimes:jpg,jpeg,png,webp,pdf|max:' . self::MAX_UPLOAD_KB,
             'cheque_path'    => 'nullable|string|max:500',
         ], [
-            'account_number.regex' => 'Account Number must be 9–18 digits.',
-            'ifsc.regex'           => 'IFSC Code is invalid (format: 4 letters + 0 + 6 characters, e.g. HDFC0001234).',
+            'account_number.regex' => $accountMsg,
+            'ifsc.regex'           => $routingMsg,
         ]);
+    }
+
+    /** Is this supplier's primary address in India? Drives IFSC vs SWIFT. */
+    private function vendorIsIndian(Vendor $vendor): bool
+    {
+        $countryId = $vendor->primaryAddress?->country_id
+            ?? $vendor->addresses()->where('is_primary', true)->value('country_id');
+        if (!$countryId) return true;   // unknown → keep the stricter Indian rule
+        return DB::table('master_countries')
+            ->where('id', $countryId)
+            ->whereRaw('LOWER(name) = ?', ['india'])
+            ->exists();
     }
 
     private function shapeBank(VendorBankAccount $b): array

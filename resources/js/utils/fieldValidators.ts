@@ -91,9 +91,41 @@ export function validateIfsc(value: string, label = 'IFSC Code'): string {
   return '';
 }
 
-/* Bank account number — digits only, 9 to 18 long (covers most Indian banks). */
-export function validateAccountNumber(value: string, label = 'Account Number'): string {
+/* SWIFT / BIC — the international counterpart of IFSC (QA #103).
+ *
+ * 8 to 11 characters: 6 letters (4 bank + 2 ISO country) followed by 2 to 5
+ * alphanumeric (2 location + an optional 3-char branch). The ISO standard
+ * allows only 8 or 11, but the spec for this field is a range, so 9 and 10 are
+ * accepted rather than rejected — a bank that prints a 9-character code on its
+ * own letterhead is not a data-entry error the form should refuse. */
+export function validateSwift(value: string, label = 'SWIFT Code'): string {
   if (!value.trim()) return '';
+  if (!/^[A-Z]{6}[A-Z0-9]{2,5}$/.test(value.trim().toUpperCase())) {
+    return `${label} must be 8–11 characters: 6 letters then alphanumeric (e.g. HDFCINBB or HDFCINBBXXX)`;
+  }
+  return '';
+}
+
+/* Bank account number — the rule depends on where the bank is.
+ *
+ *   domestic (India)  9–18 DIGITS            (QA #98)
+ *   international     8–34 alphanumeric      (QA #103)
+ *
+ * The two tickets pull in opposite directions and both are right, for their own
+ * case. An Indian account number is numeric and bounded, and #98 is precisely
+ * about a 36-digit value being accepted. An IBAN opens with two country letters
+ * (GB29NWBK…) and runs to 34, so the Indian rule makes a foreign supplier's real
+ * account number unenterable. Splitting on the supplier's country satisfies
+ * both, and mirrors what the IFSC/SWIFT field beside it already does.
+ *
+ * Spaces and punctuation are rejected either way, so the stored value stays a
+ * single token. */
+export function validateAccountNumber(value: string, label = 'Account Number', international = false): string {
+  if (!value.trim()) return '';
+  if (international) {
+    if (!/^[A-Za-z0-9]{8,34}$/.test(value.trim())) return `${label} must be 8–34 letters or digits, with no spaces`;
+    return '';
+  }
   if (!/^[0-9]{9,18}$/.test(value.trim())) return `${label} must be 9–18 digits`;
   return '';
 }

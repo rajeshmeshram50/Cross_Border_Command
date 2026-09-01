@@ -19,7 +19,7 @@ import { downloadFile } from '../../../../utils/downloadFile';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import {
   validateEmail, validatePincode, validateWebsite,
-  validateGstin, validateIfsc, validateAccountNumber,
+  validateGstin, validateIfsc, validateSwift, validateAccountNumber,
 } from '../../../../utils/fieldValidators';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
@@ -41,7 +41,18 @@ function validateContactNumber(value: string, label = 'Contact No', isIndia = fa
   if (!v) return '';
   if (!/^\d+$/.test(v))           return `${label} must contain digits only (no spaces, +, or punctuation)`;
   if (isIndia) {
-    if (!/^[6-9]\d{9}$/.test(v))  return `${label} must be a valid 10-digit mobile number (after +91)`;
+    /* Say WHICH rule failed (QA #100).
+     *
+     * This used to answer every failure with "must be a valid 10-digit mobile
+     * number (after +91)". For 1234568769 that reads as a bug rather than a
+     * rejection: the number IS ten digits, so the message appears to describe
+     * something the user has already done. The real problem is the leading 1 —
+     * TRAI allocates Indian mobile series 6, 7, 8 and 9 only, so a number
+     * starting 0-5 is not a mobile number however many digits it has.
+     * Length and prefix are now reported separately, so the message always
+     * names the thing that is actually wrong. */
+    if (v.length !== 10)          return `${label} must be exactly 10 digits (after +91) — you entered ${v.length}`;
+    if (!/^[6-9]/.test(v))        return `${label} must start with 6, 7, 8 or 9 — Indian mobile numbers do not begin with ${v[0]}`;
     return '';
   }
   if (v.length < 7 || v.length > 15) return `${label} must be 7 to 15 digits`;
@@ -568,6 +579,16 @@ export default function AddVendorModal(props: {
   // Segment IDS locked against removal because a product on an issued Purchase
   // Order belongs to them (server-driven, per-segment).
   const [lockedSegments, setLockedSegments] = useState<string[]>([]);
+  /* WHY each locked segment is locked, keyed by segment ID: 'po' = its product
+     is on an issued PO / Supplier Invoice, 'product' = a product in it is merely
+     mapped to this supplier. The removal guard names the real blocker instead
+     of blaming a PO that may not exist (QA #94). */
+  const [lockedSegmentReasons, setLockedSegmentReasons] = useState<Record<string, string>>({});
+  /* The segment set as the SERVER last knew it. When a save is refused because
+     a removed segment owns an uploaded document, the chip has already gone from
+     the picker — leaving the form showing a removal that did not happen. This
+     puts it back, so what is on screen matches what is stored. */
+  const savedSegmentRef = useRef<string[]>([]);
   // Server-provided data for the unique-document removal guard (condition 2):
   // required doc keys (category|code) per segment ID, and the keys uploaded.
   const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
@@ -839,6 +860,36 @@ export default function AddVendorModal(props: {
       return !!t && t.size > 0 && !t.has(supplierDocType);  // wrong trade type
     });
   }, [segRulesLoaded, segmentOpts, ruledSegIds, country, segment, segTypesById, supplierDocType]);
+
+  /* Dropdown ORDER — the pickable segments first, for THIS supplier's trade type.
+   *
+   * The list arrives in master order, which scatters the handful a given
+   * supplier can actually choose among rows it may not: on an international
+   * supplier the first thing under the cursor was "Tobacco & Tobacco Products —
+   * No rule", greyed out, while the INT-ruled segments sat further down past a
+   * scroll. Ranking puts the answer where the eye lands and leaves the dead
+   * rows at the bottom, still visible (they are disabled, never hidden — a
+   * supplier saved earlier against what is now the wrong scope must keep
+   * showing its chip).
+   *
+   *   0  already on this supplier — never make someone hunt for their own data
+   *   1  selectable: a rule covering this supplier's trade type (INT / DOM / both)
+   *   2  ruled, but for the other trade type
+   *   3  no Document Control Panel rule at all
+   *
+   * Alphabetical inside each band so the order is stable between renders. */
+  const sortedSegmentOpts = useMemo(() => {
+    const disabled = new Set(disabledSegmentIds);
+    const rank = (v: string): number => {
+      if (segment.includes(v)) return 0;
+      if (!disabled.has(v)) return 1;
+      return ruledSegIds.has(v) ? 2 : 3;
+    };
+    return [...segmentOpts].sort((a, b) => {
+      const d = rank(a.value) - rank(b.value);
+      return d !== 0 ? d : String(a.label).localeCompare(String(b.label));
+    });
+  }, [segmentOpts, disabledSegmentIds, segment, ruledSegIds]);
 
   /* The hint the dropdown shows on a greyed row. Which of the two reasons
      applies depends on the row, so the wording covers the one the user is most
@@ -1610,7 +1661,10 @@ export default function AddVendorModal(props: {
         // (an empty array would otherwise sync the pivot to nothing on save).
         const segIds: string[] = fromIds.length ? fromIds : (v.segment_id ? [String(v.segment_id)] : []);
         setSegment(segIds);
+        savedSegmentRef.current = segIds;
         setLockedSegments(Array.isArray((v as any).locked_segments) ? (v as any).locked_segments.map(String) : []);
+        setLockedSegmentReasons((v as any).locked_segment_reasons && typeof (v as any).locked_segment_reasons === 'object' ? (v as any).locked_segment_reasons : {});
+        setLockedSegmentReasons((v as any).locked_segment_reasons && typeof (v as any).locked_segment_reasons === 'object' ? (v as any).locked_segment_reasons : {});
         setStateLocked(!!(v as any).state_locked);
         setSegReqKeys((v as any).segment_required_doc_keys && typeof (v as any).segment_required_doc_keys === 'object' ? (v as any).segment_required_doc_keys : {});
         setUploadedKeys(Array.isArray((v as any).uploaded_doc_keys) ? (v as any).uploaded_doc_keys : []);
@@ -1805,12 +1859,36 @@ export default function AddVendorModal(props: {
     googleLocation: 'Google Location',
   };
 
-  /* Set the field errors, name them in the toast, and scroll the first bad
-     field into view so an off-screen required field is never a mystery. */
+  /* Set the field errors, SAY WHAT IS WRONG, and scroll the first bad field
+     into view so an off-screen problem is never a mystery.
+
+     This used to print the field LABELS under a hardcoded "Missing required
+     fields" heading, throwing away the message each validator had already
+     produced. A badly-formatted website therefore reported "Missing required
+     fields — Please check: Company Website" (QA #97): wrong on both counts,
+     since the field was filled in and the real problem was its format. The
+     validators know exactly what is wrong; the toast just has to repeat it.
+
+     Only when EVERY error is a plain "… is required" does the old
+     name-the-fields wording still fit, so that case is kept — a list of five
+     "X is required" sentences is worse than a list of five field names. */
   const flagErrors = (errs: Record<string, string>) => {
     setFieldErrors(prev => ({ ...prev, ...errs }));
-    const names = Object.keys(errs).map(k => FIELD_LABELS[k] ?? k);
-    toast.error('Missing required fields', `Please check: ${names.join(', ')}`);
+    const keys = Object.keys(errs);
+    const isRequiredMsg = (m: string) => /\bis required$/i.test((m ?? '').trim());
+    const allRequired = keys.length > 0 && keys.every(k => isRequiredMsg(errs[k]));
+    if (allRequired) {
+      toast.error('Missing required fields', `Please check: ${keys.map(k => FIELD_LABELS[k] ?? k).join(', ')}`);
+    } else {
+      // Prefix the field name onto any message that doesn't already open with
+      // it, so a lone "Enter a valid website…" still says which field it means.
+      const lines = keys.map(k => {
+        const label = FIELD_LABELS[k] ?? k;
+        const msg = (errs[k] ?? '').trim() || `${label} is invalid`;
+        return msg.toLowerCase().startsWith(label.toLowerCase()) ? msg : `${label}: ${msg}`;
+      });
+      toast.error(keys.length === 1 ? 'Invalid value' : 'Please fix these fields', lines.join(' · '));
+    }
     setTimeout(() => {
       document.querySelector('.avm-field.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 50);
@@ -1870,10 +1948,15 @@ export default function AddVendorModal(props: {
     if (googleLocation.trim() && !mapsLinkOk) {
       errs.googleLocation = 'Enter a full link starting with https://';
     }
-    // State + State Code are GST (Indian) constructs — required only for a domestic
-    // supplier. An international (non-India) supplier has neither, so skip them.
+    /* State is required for EVERY supplier. An overseas address has a state,
+       province or emirate just as an Indian one does, and the field already
+       offers the chosen country's own list (United States → Alabama, …), so
+       there was never a reason to let it through empty.
+       STATE CODE is the part that is genuinely GST-specific — the 2-digit
+       Indian code — so it stays domestic-only and keeps rendering disabled as
+       "Not applicable (international)". */
+    if (!state) errs.state = 'State is required';
     if (supplierDocType === 'domestic') {
-      if (!state)            errs.state     = 'State is required';
       if (!stateCode.trim()) errs.stateCode = 'State Code is required';
       else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
     }
@@ -1917,47 +2000,51 @@ export default function AddVendorModal(props: {
         },
       };
 
-      // Inner attempt so a segment-removal 409 (a removed segment has documents
-      // unique to it) can prompt the user, then retry with the confirm flag.
-      const attempt = async (confirmDocRemoval: boolean): Promise<boolean> => {
-        const res = await api.post<{ data: { id: number } }>(
-          '/vendors/step/identity',
-          confirmDocRemoval ? { ...identityPayload, confirm_segment_doc_removal: true } : identityPayload,
-        );
+      /* The `confirm_segment_doc_removal` flag is deliberately never sent. The
+         server still accepts it (see VendorController::storeIdentity), but this
+         form no longer offers to delete a supplier's uploaded documents as a
+         side effect of editing a dropdown — it refuses the removal instead and
+         sends the user to delete the file where they can see it. */
+      const attempt = async (): Promise<boolean> => {
+        const res = await api.post<{ data: { id: number } }>('/vendors/step/identity', identityPayload);
         setVendorId(res.data?.data?.id ?? vendorId);
         // Capture the server-assigned vendor_code so the header on later steps
         // can render it without another roundtrip.
         const returnedCode = (res.data?.data as Record<string, unknown> | undefined)?.vendor_code;
         if (typeof returnedCode === 'string' && returnedCode) setVendorCode(returnedCode);
         setFieldErrors({});
+        savedSegmentRef.current = segment;
         toast.success('Identity saved', 'Vendor identity details captured');
         return true;
       };
 
       try {
-        return await attempt(false);
+        return await attempt();
       } catch (e: any) {
         const d = e?.response?.data;
         if (e?.response?.status === 409 && d?.requires_doc_confirmation) {
+          /* Refuse, don't offer to delete.
+           *
+           * This used to open a "Remove segment & delete its documents?" dialog
+           * with a red "Delete & Remove" button, which made destroying an
+           * uploaded compliance document a single click inside what the user
+           * thought was an edit to a dropdown. It also read as the form asking
+           * permission to do something it should not be doing at all: the file
+           * is evidence attached to this supplier, and deleting it is a separate,
+           * deliberate act that belongs in KYC / Due Diligence where the document
+           * can actually be seen.
+           *
+           * So the save is simply refused and the reason is stated. The removed
+           * chip goes back into the picker, because the removal did not happen
+           * and the form must not imply it did. */
           const docs = (d.orphan_documents ?? []) as Array<{ name: string; category?: string }>;
-          const ok = await confirm({
-            title: 'Remove segment & delete its documents?',
-            tone: 'danger',
-            confirmLabel: 'Delete & Remove',
-            cancelLabel: 'Keep Segment',
-            message: (
-              <div>
-                <div>{d.message}</div>
-                {docs.length > 0 && (
-                  <ul style={{ margin: '10px 0 0 18px', padding: 0 }}>
-                    {docs.map((x, i) => <li key={i}>{x.name}{x.category ? ` (${x.category})` : ''}</li>)}
-                  </ul>
-                )}
-              </div>
-            ),
-          });
-          if (ok) return await attempt(true);
-          return false;   // user kept the segment
+          const list = docs.map(x => `${x.name}${x.category ? ` (${x.category})` : ''}`).join(', ');
+          toast.error(
+            'Cannot remove segment',
+            `${docs.length > 1 ? 'Documents are' : 'A document is'} uploaded against ${docs.length > 1 ? 'segments' : 'a segment'} you removed${list ? `: ${list}` : ''}. Delete ${docs.length > 1 ? 'them' : 'it'} in KYC / Due Diligence first, then remove the segment.`,
+          );
+          setSegment(savedSegmentRef.current);
+          return false;   // segment kept, nothing deleted
         }
         throw e;   // fall through to the outer handler
       }
@@ -2000,9 +2087,10 @@ export default function AddVendorModal(props: {
     if (googleLocation.trim() && !mapsLinkOk) {
       errs.googleLocation = 'Enter a full link starting with https://';
     }
-    // State + State Code are Indian GST constructs — domestic-only (see identity validation).
+    // State is required for every supplier; only State Code is GST/domestic-only
+    // (see the identity validation above for the reasoning).
+    if (!state) errs.state = 'State is required';
     if (supplierDocType === 'domestic') {
-      if (!state)            errs.state     = 'State is required';
       if (!stateCode.trim()) errs.stateCode = 'State Code is required';
       else if (!/^\d{1,2}$/.test(stateCode.trim())) errs.stateCode = 'State Code must be a 1–2 digit GST code';
     }
@@ -2449,11 +2537,14 @@ export default function AddVendorModal(props: {
     if (!bankDraft.bankName.trim())      { toast.error('Missing field', 'Bank Name is required'); return; }
     if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
-    if (!bankDraft.ifsc.trim())          { toast.error('Missing field', 'IFSC Code is required'); return; }
+    const routingLabel = supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code';
+    if (!bankDraft.ifsc.trim())          { toast.error('Missing field', routingLabel + ' is required'); return; }
     // On edit the previously-saved cheque stands in for a fresh upload.
     if (!bankDraft.chequeFile && !bankDraft.existingPath) { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
-    const accErr = validateAccountNumber(bankDraft.accountNumber); if (accErr) { toast.error('Invalid Account Number', accErr); return; }
-    const ifscErr = validateIfsc(bankDraft.ifsc); if (ifscErr) { toast.error('Invalid IFSC', ifscErr); return; }
+    const accErr = validateAccountNumber(bankDraft.accountNumber, 'Account Number', supplierDocType === 'international');
+    if (accErr) { toast.error('Invalid Account Number', accErr); return; }
+    const ifscErr = supplierDocType === 'international' ? validateSwift(bankDraft.ifsc) : validateIfsc(bankDraft.ifsc);
+    if (ifscErr) { toast.error('Invalid ' + routingLabel, ifscErr); return; }
     // No-duplicate guard — the same account number can't be added twice for this
     // supplier (the account number uniquely identifies a bank account). The row
     // being edited is excluded so re-saving it unchanged doesn't trip the guard.
@@ -3374,7 +3465,7 @@ export default function AddVendorModal(props: {
                   { label: 'Bank Name',      value: bank.bankName || '—' },
                   { label: 'Branch',         value: bank.branchName || '—' },
                   { label: 'Account Number', value: bank.accountNumber || '—' },
-                  { label: 'IFSC Code',      value: bank.ifsc || '—' },
+                  { label: supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code', value: bank.ifsc || '—' },
                 ]);
               }
               if (dd) {
@@ -3488,8 +3579,14 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Company Website">
-                      <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => setWebsite(e.target.value)} />
+                    {/* `error` was missing entirely (QA #97): flagErrors set
+                        fieldErrors.website, but with nothing bound here the
+                        message never rendered and the input never got
+                        .has-error — so the scroll-to-first-bad-field couldn't
+                        find it either. The user was told to "check Company
+                        Website" and then shown a field with no mark on it. */}
+                    <Field label="Company Website" error={fieldErrors.website}>
+                      <input className="avm-input" placeholder="https://abclogistics.com" value={website} onChange={e => { setWebsite(e.target.value); clearFieldError('website'); }} />
                     </Field>
                     <Field label="Supplier Segment" required addNew addLoading={segAddLoading} onAdd={openSegmentAdd} error={fieldErrors.segment}>
                       {/* masterFormKit's MasterMultiSelect renders visible violet
@@ -3501,7 +3598,7 @@ export default function AddVendorModal(props: {
                       <div className="avm-master-select">
                         <MasterMultiSelect
                           value={segment}
-                          options={segmentOpts}
+                          options={sortedSegmentOpts}
                           placeholder="Select Segment"
                           disabledValues={disabledSegmentIds}
                           disabledHint={segmentDisabledHint}
@@ -3560,13 +3657,53 @@ export default function AddVendorModal(props: {
                               const keepKeys = new Set(vs.flatMap(s => segReqKeys[String(s)] ?? []));
                               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                                 && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
+                              /* Name the REAL blocker (QA #94).
+                                 A segment is locked for one of two reasons, and
+                                 they need different messages: its product is on
+                                 an issued PO / Supplier Invoice (nothing the user
+                                 can undo here), or a product is merely mapped to
+                                 this supplier in that segment (which they CAN
+                                 clear, by unmapping it). Both used to print
+                                 "used in a PO / Invoice", so a supplier with no
+                                 PO at all was told one existed — and given no
+                                 hint about the mapping that was actually
+                                 blocking them. The server reports the reason per
+                                 segment id in locked_segment_reasons. */
                               if (lockedRemoved.length) {
-                                const names = lockedRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
-                                toast.error('Cannot remove segment', `${names.join(', ')} — used in a PO / Invoice.`);
+                                const label = (id: string) => segmentOpts.find(o => o.value === id)?.label ?? id;
+                                const by = (r: string) => lockedRemoved.filter(s => lockedSegmentReasons[String(s)] === r).map(label);
+                                // Unknown reason falls in with the PO bucket — the
+                                // stronger, safer claim if the server ever omits
+                                // the map (e.g. an older cached response).
+                                const poNames   = lockedRemoved.filter(s => !['spi', 'product'].includes(lockedSegmentReasons[String(s)] ?? '')).map(label);
+                                const spiNames  = by('spi');
+                                const prodNames = by('product');
+                                const plural = (n: string[], one: string, many: string) => (n.length > 1 ? many : one);
+                                if (poNames.length) {
+                                  toast.error('Cannot remove segment', `${poNames.join(', ')} — ${plural(poNames, 'this segment has', 'these segments have')} a product on an issued Purchase Order.`);
+                                }
+                                if (spiNames.length) {
+                                  toast.error('Cannot remove segment', `${spiNames.join(', ')} — ${plural(spiNames, 'this segment has', 'these segments have')} a product on a Supplier Invoice.`);
+                                }
+                                if (prodNames.length) {
+                                  toast.error('Cannot remove segment', `${prodNames.join(', ')} — a product in ${plural(prodNames, 'this segment is', 'these segments is')} mapped to this supplier. Unmap it under Map Product first.`);
+                                }
                               }
                               if (docRemoved.length) {
-                                const names = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
-                                toast.error('Cannot remove segment', `${names.join(', ')} — has its own uploaded document.`);
+                                /* "has its own uploaded document" did not say what
+                                   to do, or which document. The condition is
+                                   specific: a document was uploaded against a
+                                   requirement that ONLY this segment asks for, so
+                                   dropping the segment would orphan the file. Say
+                                   that, and say where to clear it. Applies to
+                                   mandatory and optional requirements alike —
+                                   the uploaded file is what matters, not whether
+                                   it was compulsory. */
+                                const n = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
+                                toast.error(
+                                  'Cannot remove segment',
+                                  `${n.join(', ')} — ${n.length > 1 ? 'documents have' : 'a document has'} been uploaded against ${n.length > 1 ? 'requirements only these segments ask for' : 'a requirement only this segment asks for'}. Delete ${n.length > 1 ? 'those files' : 'that file'} in KYC / Due Diligence first.`,
+                                );
                               }
                               const blocked = [...lockedRemoved, ...docRemoved];
                               if (blocked.length) vs = [...vs, ...blocked.filter(s => !vs.includes(s))];
@@ -3626,7 +3763,9 @@ export default function AddVendorModal(props: {
                         />
                       </LockField>
                     </Field>
-                    <Field label="State" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.state}>
+                    {/* Required for domestic AND international — only State Code
+                        below is GST-specific and drops out for international. */}
+                    <Field label="State" required error={fieldErrors.state}>
                       <LockField locked={stateLocked} onLockClick={lockToast}>
                         <SelectInput
                           value={state}
@@ -3791,14 +3930,20 @@ export default function AddVendorModal(props: {
                         </div>
                       </Field>
                       <Field label="Attachment (Business Card)">
-                        {/* Business card stays uploadable even when the primary
-                            contact's identity fields are locked (mirrors the Bank
-                            attachment). A new / replaced / removed file persists
-                            on Save Contact or Update & Next via saveContacts().
-                            imagesPdfOnly matches the backend's `primary_attachment`
-                            rule (mimes:jpg,jpeg,png,webp,pdf) so a .docx is rejected
-                            the moment it's picked, not after a round-trip. */}
-                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" imagesPdfOnly />
+                        {/* Locked along with the rest of the primary contact.
+                            This used to stay live while the card said
+                            "Saved - locked", so the business card could be
+                            replaced or deleted without ever pressing Edit — a
+                            saved contact's attachment was the one field anyone
+                            could change by accident, and the header claimed
+                            otherwise. Read-only still shows the file and keeps
+                            its view link; Edit on the primary row unlocks it
+                            with everything else.
+                            imagesPdfOnly matches the backend's primary_attachment
+                            rule (mimes:jpg,jpeg,png,webp,pdf) so a .docx is
+                            rejected the moment it is picked, not after a
+                            round-trip. */}
+                        <FileChooser file={attachment} onPick={(f) => { setAttachment(f); if (!f) { setPrimaryAttachmentPath(''); setPrimaryAttachmentUrl(''); } }} existingPath={primaryAttachmentPath} existingUrl={primaryAttachmentUrl || undefined} placeholder="No files attached" imagesPdfOnly readOnly={primaryLocked} />
                       </Field>
                     </div>
                   </SectionCard>
@@ -4071,6 +4216,8 @@ export default function AddVendorModal(props: {
                 <BankTable
                   rows={bankRows}
                   onRemove={removeBankRow}
+                  lockRemove={isEdit}
+                  international={supplierDocType === "international"}
                   onEdit={openBankEdit}
                   onClearFile={(id) => setBankRows(prev => prev.map(r => r.id === id ? { ...r, chequeFile: null, chequeFileName: '', existingPath: undefined } : r))}
                 />
@@ -4183,6 +4330,7 @@ export default function AddVendorModal(props: {
           onSave={saveBankDraft}
           isEdit={editingBankId !== null}
           existingAccounts={bankRows.filter(b => b.id !== editingBankId).map(b => b.accountNumber.trim())}
+          international={supplierDocType === 'international'}
         />
       )}
       {gstPopupOpen && (
@@ -5747,7 +5895,7 @@ function TradeLicenseTable(props: {
   );
 }
 
-function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; onEdit?: (row: BankRow) => void; onClearFile?: (id: string) => void }) {
+function BankTable(props: { rows: BankRow[]; /** International supplier — the routing column is SWIFT, not IFSC (QA #103). */ international?: boolean; onRemove?: (id: string) => void; onEdit?: (row: BankRow) => void; onClearFile?: (id: string) => void; /** Hide the per-row Remove action (edit mode — see QA #99 below). */ lockRemove?: boolean }) {
   if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
   return (
     <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
@@ -5758,7 +5906,7 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
             <th>BANK NAME</th>
             <th>BRANCH</th>
             <th>ACCOUNT NO</th>
-            <th>IFSC CODE</th>
+            <th>{props.international ? "SWIFT CODE" : "IFSC CODE"}</th>
             <th>BRANCH ADDRESS</th>
             <th>PROOF ATTACHMENT</th>
             <th>ACTION</th>
@@ -5795,11 +5943,22 @@ function BankTable(props: { rows: BankRow[]; onRemove?: (id: string) => void; on
                       </button>
                     </Tooltip>
                   )}
-                  <Tooltip label="Remove">
-                    <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
-                      <i className="ri-close-line" />
-                    </button>
-                  </Tooltip>
+                  {/* No Remove while EDITING an existing supplier (QA #99).
+                      Bank details are mandatory to create a supplier, so letting
+                      them be deleted on edit left saved suppliers in a state the
+                      create form would have refused — payout details missing on a
+                      record an invoice can already be raised against. Editing a
+                      wrong account is still possible via the pencil; removing the
+                      last means of paying the supplier is not. Add mode keeps the
+                      button so a row typed by mistake can be dropped before the
+                      supplier exists. */}
+                  {!props.lockRemove && (
+                    <Tooltip label="Remove">
+                      <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
+                        <i className="ri-close-line" />
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
               </td>
             </tr>
@@ -6839,6 +6998,9 @@ function BankAddPopup(props: {
   /** Account numbers already on this supplier — used to highlight a duplicate
    *  on the field itself (not just a toast). */
   existingAccounts: string[];
+  /** International supplier — the routing field becomes SWIFT / BIC instead of
+   *  IFSC, which is an Indian-only construct (QA #103). */
+  international?: boolean;
   /** Edit mode — retitles the popup and lets the existing cheque stand in for
    *  a fresh upload. */
   isEdit?: boolean;
@@ -6854,9 +7016,16 @@ function BankAddPopup(props: {
     if (!draft.bankName.trim())      e.bankName = 'Bank Name is required';
     if (!draft.branchName.trim())    e.branchName = 'Branch is required';
     if (!draft.accountNumber.trim()) e.accountNumber = 'Account Number is required';
-    else { const accErr = validateAccountNumber(draft.accountNumber); if (accErr) e.accountNumber = accErr; }
-    if (!draft.ifsc.trim())          e.ifsc = 'IFSC Code is required';
-    else { const ifscErr = validateIfsc(draft.ifsc); if (ifscErr) e.ifsc = ifscErr; }
+    else { const accErr = validateAccountNumber(draft.accountNumber, 'Account Number', !!props.international); if (accErr) e.accountNumber = accErr; }
+    /* Same COLUMN, two formats. An international bank has no IFSC — it routes on
+       SWIFT/BIC — so the field keeps its storage but swaps label and rule with
+       the supplier's trade type (QA #103). */
+    const routingLabel = props.international ? 'SWIFT Code' : 'IFSC Code';
+    if (!draft.ifsc.trim()) e.ifsc = `${routingLabel} is required`;
+    else {
+      const err = props.international ? validateSwift(draft.ifsc) : validateIfsc(draft.ifsc);
+      if (err) e.ifsc = err;
+    }
     if (!draft.chequeFile && !draft.existingPath) e.cheque = 'Cancelled Cheque is required';
     // Duplicate account number — highlight the field itself, not just a toast.
     if (!e.accountNumber && existingAccounts.includes(draft.accountNumber.trim())) {
@@ -6902,10 +7071,25 @@ function BankAddPopup(props: {
           />
         </Field>
         <Field label="Account Number" required error={errors.accountNumber}>
-          <input className="avm-input" placeholder="Enter account number" value={draft.accountNumber} onChange={e => { set('accountNumber', e.target.value); setErrors(p => ({ ...p, accountNumber: undefined })); }} />
+          {/* maxLength caps the field at its own limit, so the 36-digit value in
+              QA #98 can no longer even be typed — the validator was the only
+              thing stopping it, and only at Save. */}
+          <input
+            className="avm-input"
+            placeholder={props.international ? 'Enter account / IBAN number' : 'Enter account number'}
+            maxLength={props.international ? 34 : 18}
+            value={draft.accountNumber}
+            onChange={e => { set('accountNumber', e.target.value); setErrors(p => ({ ...p, accountNumber: undefined })); }}
+          />
         </Field>
-        <Field label="IFSC Code" required error={errors.ifsc}>
-          <input className="avm-input" placeholder="Enter IFSC code" value={draft.ifsc} onChange={e => { set('ifsc', e.target.value.toUpperCase()); setErrors(p => ({ ...p, ifsc: undefined })); }} />
+        <Field label={props.international ? 'SWIFT Code' : 'IFSC Code'} required error={errors.ifsc}>
+          <input
+            className="avm-input"
+            placeholder={props.international ? 'e.g. HDFCINBBXXX' : 'Enter IFSC code'}
+            maxLength={11}
+            value={draft.ifsc}
+            onChange={e => { set('ifsc', e.target.value.toUpperCase()); setErrors(p => ({ ...p, ifsc: undefined })); }}
+          />
         </Field>
       </div>
       <div className="avm-grid-2">
@@ -7246,7 +7430,32 @@ export const SCOPED_CSS = `
   border-bottom: 1px solid rgba(255, 255, 255, .22);
   box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
 }
-.avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+/* The two light layers the Figma header carries on top of its gradient, ported
+   verbatim from .sf-head::before / ::after. Without them the bar is a flat
+   five-stop ramp; these give it the corner bloom and the top sheen that make it
+   read as lit rather than painted.
+     ::before — a warm white glow rising from the lower left plus a lavender one
+                falling in from the upper right, both fading to nothing;
+     ::after  — a soft highlight down the top half only.
+   Both pointer-events:none so nothing in the header stops being clickable.
+   .avm-head already sets position:relative + overflow:hidden, so the layers are
+   anchored and clipped to the bar. */
+.avm-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
+}
+.avm-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+/* Both pseudo-elements are absolutely positioned, so they paint ABOVE the
+   static header content and would wash the title out. The Figma raises its
+   header content the same way (z-index on .sf-head-left / .sf-head-actions).
+   These are flex items, which honour z-index without needing position. */
+.avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; z-index: 1; }
 .avm-head-icon {
   width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
   background: rgba(255,255,255,.18);
@@ -7255,7 +7464,7 @@ export const SCOPED_CSS = `
 }
 .avm-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; line-height: 1.1; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
 .avm-sub   { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
-.avm-head-right { display: inline-flex; align-items: center; gap: 8px; }
+.avm-head-right { display: inline-flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
 .avm-map-btn {
   display: inline-flex; align-items: center; gap: 6px;
   height: 34px; padding: 0 12px;
