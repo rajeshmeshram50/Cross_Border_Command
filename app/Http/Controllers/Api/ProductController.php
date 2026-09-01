@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\LeadProduct;
+use App\Models\PurchaseOrderItem;
+use App\Models\SupplierPurchaseInvoiceItem;
 use App\Models\Masters\Conditions;
 use App\Models\Masters\GstPercentage;
 use App\Models\Masters\HazClass;
@@ -749,6 +752,102 @@ class ProductController extends Controller
      * (vendor identity + purchase / gst / total amounts); the UI flags the
      * lowest-total row as L1 (best price).
      * ────────────────────────────────────────────────────────────── */
+    /* ──────────────────────────────────────────────────────────────────
+     * GET /products/{id}/usage
+     * Where this product is referenced outside its own record, so the edit
+     * UI can decide whether a segment change is safe.
+     *
+     * Today that means the Sales Matrix product directory (lead_products).
+     * The rule the UI applies: a lead that has already been tied to a
+     * customer BLOCKS the change — quotations/PIs price off the segment, so
+     * moving it under a live customer would rewrite what was quoted. A lead
+     * with no customer yet is reported but does not block.
+     *
+     * It also reports purchase orders and supplier purchase invoices holding
+     * the product. Those block outright: a PO/SPI is an issued document and
+     * its lines were priced and compliance-checked under the segment the
+     * product had at the time, so there is no in-app way to make a change
+     * safe after the fact.
+     *
+     * Shaped as a general "usage" report rather than a yes/no so further
+     * blockers can be added here without another round-trip.
+     * ────────────────────────────────────────────────────────────── */
+    public function usage(Request $request, int $id)
+    {
+        $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
+
+        // client_id comes from the token, never the request — a product id
+        // alone must not expose another tenant's leads.
+        $clientId = $request->user()->client_id;
+
+        $rows = LeadProduct::query()
+            ->where('lead_products.product_id', $product->id)
+            ->where('lead_products.client_id', $clientId)
+            ->join('leads', 'leads.id', '=', 'lead_products.lead_id')
+            ->whereNull('leads.deleted_at')
+            ->leftJoin('customers', 'customers.id', '=', 'leads.customer_id')
+            ->distinct()
+            ->orderBy('leads.opp_code')
+            ->get([
+                'leads.id as lead_id',
+                'leads.opp_code',
+                'leads.sender_company',
+                'leads.customer_id',
+                'customers.company_name as customer_name',
+            ]);
+
+        $leads = $rows->map(fn ($r) => [
+            'lead_id'       => (int) $r->lead_id,
+            'opp_code'      => $r->opp_code,
+            'has_customer'  => $r->customer_id !== null,
+            'customer_name' => $r->customer_name ?: $r->sender_company,
+        ])->values();
+
+        /* Newest first, by id rather than by code: the code is only
+         * lexicographically sortable while the sequence stays 3 digits
+         * (PO/2026-27/1000 sorts before .../999), whereas the id is always
+         * creation order. The id has to be in the SELECT list for Postgres to
+         * accept it in ORDER BY alongside DISTINCT — selecting the pair is
+         * also what collapses a document that lists the product twice. */
+        $poCodes = PurchaseOrderItem::query()
+            ->where('purchase_order_items.product_id', $product->id)
+            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
+            ->where('purchase_orders.client_id', $clientId)
+            ->whereNull('purchase_orders.deleted_at')
+            ->distinct()
+            ->orderByDesc('purchase_orders.id')
+            ->get(['purchase_orders.id', 'purchase_orders.code'])
+            ->pluck('code');
+
+        $spiCodes = SupplierPurchaseInvoiceItem::query()
+            ->where('supplier_purchase_invoice_items.product_id', $product->id)
+            ->join('supplier_purchase_invoices', 'supplier_purchase_invoices.id', '=', 'supplier_purchase_invoice_items.supplier_purchase_invoice_id')
+            ->where('supplier_purchase_invoices.client_id', $clientId)
+            ->whereNull('supplier_purchase_invoices.deleted_at')
+            ->distinct()
+            ->orderByDesc('supplier_purchase_invoices.id')
+            ->get(['supplier_purchase_invoices.id', 'supplier_purchase_invoices.code'])
+            ->pluck('code');
+
+        return response()->json([
+            'status' => true,
+            'data'   => [
+                'leads'          => $leads,
+                'lead_count'     => $leads->count(),
+                'blocking_leads' => $leads->where('has_customer', true)->values(),
+                'po_codes'         => $poCodes,
+                'spi_codes'        => $spiCodes,
+                // The one to name in the UI: most recent of each, null when
+                // the product has never been on that document type.
+                'latest_po_code'   => $poCodes->first(),
+                'latest_spi_code'  => $spiCodes->first(),
+                'in_po_or_spi'   => $poCodes->isNotEmpty() || $spiCodes->isNotEmpty(),
+                'segment_locked' => $leads->contains('has_customer', true)
+                    || $poCodes->isNotEmpty() || $spiCodes->isNotEmpty(),
+            ],
+        ]);
+    }
+
     public function vendorMaps(Request $request, int $id)
     {
         $product = $this->applyScope(Product::query(), $request)->findOrFail($id);
