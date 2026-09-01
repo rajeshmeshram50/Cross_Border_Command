@@ -1006,14 +1006,20 @@ function Stage1(p: {
   // End date must not be in the past — a new agreement that already expired makes
   // no sense. Only flagged when it isn't already caught by the end<eff rule.
   const endBeforeToday = !!p.endDate && p.endDate < todayISO;
+  /* Effective date must not be in the past either — the End Date already had
+     this guard, the start date never did, so an agreement could be dated to
+     begin before it existed. Same string compare on ISO values as the two
+     rules above: exact, and free of any timezone parsing. */
+  const effBeforeToday = !!p.effDate && p.effDate < todayISO;
   const validateStep2 = (): boolean => {
     // Mark every invalid required field so all of them highlight inline at once…
-    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate, endDate: !p.endDate || endBeforeEff || endBeforeToday };
+    const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate || effBeforeToday, endDate: !p.endDate || endBeforeEff || endBeforeToday };
     setErrors(e);
     // …while the toaster still calls out the first one (unchanged behaviour).
     if (e.title)        { toast.error('Agreement name required', 'Enter the agreement title.'); setMidStep(2); return false; }
     if (e.type)         { toast.error('Agreement type required', 'Select the agreement type.'); setMidStep(2); return false; }
-    if (e.effDate)      { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (!p.effDate)     { toast.error('Effective date required', 'Select the effective date.'); setMidStep(2); return false; }
+    if (effBeforeToday) { toast.error('Invalid effective date', 'Effective date cannot be earlier than today.'); setMidStep(2); return false; }
     if (!p.endDate)     { toast.error('End date required', 'Select the end date.'); setMidStep(2); return false; }
     if (endBeforeEff)   { toast.error('Invalid end date', 'End date cannot be earlier than the effective date.'); setMidStep(2); return false; }
     if (endBeforeToday) { toast.error('Invalid end date', 'End date cannot be earlier than today.'); setMidStep(2); return false; }
@@ -1315,7 +1321,11 @@ function Stage1(p: {
                   </div>
                   <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, alignItems: 'start' }}>
-                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} disabled={prevLocked} placeholder="Select date" /></Field>
+                      {/* minDate stops a past date being PICKED; effBeforeToday
+                          still has to exist because an already-saved draft can
+                          carry one from before this guard, and the picker alone
+                          would let it through untouched on the next save. */}
+                      <Field t={t} label="Effective Date *" green error={errors.effDate && !p.effDate ? 'Effective date is required' : effBeforeToday ? 'Effective date cannot be earlier than today' : undefined}><MasterDatePicker value={p.effDate} onChange={p.setEffDate} minDate={todayISO} disabled={prevLocked} placeholder="Select date" /></Field>
                       {/* The inverted-range error is NOT gated on `errors` — it is a live
                           invariant, so it surfaces the instant the user creates the bad
                           combination (typically by moving Effective Date past End Date)

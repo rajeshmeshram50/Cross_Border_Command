@@ -2735,6 +2735,17 @@ export const CTC_EDITOR_CSS = `
 [data-bs-theme="dark"] .ctcte-btn { color: #c4b5fd; }
 [data-bs-theme="dark"] .ctcte-btn:hover { background: rgba(124,58,237,.18); }
 [data-bs-theme="dark"] .ctcte-content .ProseMirror { color: #e8eaed; }
+/* List markers in dark mode.
+   ::marker takes its colour from its OWN list item, and inherits only a small
+   set of properties — the colour set on .ProseMirror above reaches the text
+   inside each <li> (which TipTap wraps in a <p>) but not the marker the <li>
+   draws itself. So the numbering stayed near-black on the dark page: the
+   sub-point text was readable while its "1." / "a." / "i." was invisible.
+   Stated on the list item, which is the only element ::marker listens to.
+   The counter-drawn legal list (1.1.1) uses ::before, not ::marker, and picks
+   up the inherited colour already — hence the separate rule below. */
+[data-bs-theme="dark"] .ctcte-content .ProseMirror li::marker { color: #e8eaed; }
+[data-bs-theme="dark"] .ctcte-content .ProseMirror ol[data-legal] li::before { color: #e8eaed; }
 [data-bs-theme="dark"] .ctcte-linkpop { background: #1b2230; border-color: rgba(124,58,237,.35); }
 [data-bs-theme="dark"] .ctcte-linkinput { background: rgba(255,255,255,.05); border-color: rgba(124,58,237,.3); color: #e8eaed; }
 `;
