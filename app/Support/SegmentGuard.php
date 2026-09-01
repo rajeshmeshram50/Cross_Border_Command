@@ -181,6 +181,20 @@ class SegmentGuard
     public const PO_COMMITTED = ['Sent for Sign', 'Signed', 'Approved'];
 
     /**
+     * Supplier-Purchase-Invoice statuses that count as committed (QA #94).
+     *
+     * The SPI branch of lockedSegmentNames() had NO status filter while the PO
+     * branch beside it excluded drafts — so a supplier with nothing but a Draft
+     * SPI had its segment locked and was told the segment was "used in a PO /
+     * Invoice". Nothing had been issued; someone had merely started typing one.
+     *
+     * Vocabulary is Draft / Approved / Paid (see the `status` column comment in
+     * 2026_07_09_000010_create_supplier_purchase_invoices_tables). Draft is the
+     * default on insert, and is the one state that commits nothing.
+     */
+    public const SPI_COMMITTED = ['Approved', 'Paid'];
+
+    /**
      * The segment NAMES present before the edit but not after (case-insensitive).
      *
      * @return string[]
@@ -206,33 +220,55 @@ class SegmentGuard
      * @param  string $partyType  App\Models\Customer|Consignee|Vendor ::class
      * @return string[]
      */
+    /**
+     * A supplier's locked segment names, kept SPLIT BY SOURCE (QA #94).
+     *
+     * lockedSegmentNames() merges these into one list, which is all the save
+     * guard needs — but the edit form has to tell the user which document is
+     * actually holding the segment. "used in a PO / Invoice" names two
+     * different documents and leaves them hunting through both, when the server
+     * knows perfectly well which one it found.
+     *
+     * @return array{po: string[], spi: string[]}
+     */
+    public static function vendorLockSources(int $vendorId, int $clientId): array
+    {
+        $po = \Illuminate\Support\Facades\DB::table('purchase_orders as po')
+            ->join('purchase_order_items as poi', 'poi.purchase_order_id', '=', 'po.id')
+            ->join('products as p', 'p.id', '=', 'poi.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('po.client_id', $clientId)
+            ->where('po.vendor_id', $vendorId)
+            ->whereIn('po.status', self::PO_COMMITTED)
+            ->whereNull('po.deleted_at')
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
+
+        $spi = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
+            ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
+            ->join('products as p', 'p.id', '=', 'si.product_id')
+            ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
+            ->where('spi.client_id', $clientId)
+            ->where('spi.vendor_id', $vendorId)
+            // Mirrors the PO_COMMITTED filter above — a Draft SPI commits
+            // nothing and must not lock the segment (QA #94).
+            ->whereIn('spi.status', self::SPI_COMMITTED)
+            ->whereNull('spi.deleted_at')
+            ->distinct()
+            ->pluck('cs.name')
+            ->all();
+
+        return ['po' => array_values(array_unique($po)), 'spi' => array_values(array_unique($spi))];
+    }
+
     public static function lockedSegmentNames(string $partyType, int $partyId, int $clientId): array
     {
         // Supplier/Vendor: segments of the products on an issued Purchase Order
         // OR a Supplier Purchase Invoice (a Direct SPI has no PO, so both count).
         if ($partyType === \App\Models\Vendor::class) {
-            $poNames = \Illuminate\Support\Facades\DB::table('purchase_orders as po')
-                ->join('purchase_order_items as poi', 'poi.purchase_order_id', '=', 'po.id')
-                ->join('products as p', 'p.id', '=', 'poi.product_id')
-                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
-                ->where('po.client_id', $clientId)
-                ->where('po.vendor_id', $partyId)
-                ->whereIn('po.status', self::PO_COMMITTED)
-                ->whereNull('po.deleted_at')
-                ->distinct()
-                ->pluck('cs.name')
-                ->all();
-            $spiNames = \Illuminate\Support\Facades\DB::table('supplier_purchase_invoices as spi')
-                ->join('supplier_purchase_invoice_items as si', 'si.supplier_purchase_invoice_id', '=', 'spi.id')
-                ->join('products as p', 'p.id', '=', 'si.product_id')
-                ->join('clm_segments as cs', 'cs.id', '=', 'p.segment_id')
-                ->where('spi.client_id', $clientId)
-                ->where('spi.vendor_id', $partyId)
-                ->whereNull('spi.deleted_at')
-                ->distinct()
-                ->pluck('cs.name')
-                ->all();
-            return array_values(array_unique(array_merge($poNames, $spiNames)));
+            $src = self::vendorLockSources($partyId, $clientId);
+            return array_values(array_unique(array_merge($src['po'], $src['spi'])));
         }
 
         // Customer / Consignee: which party column identifies the party (same

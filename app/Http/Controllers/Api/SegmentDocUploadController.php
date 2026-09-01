@@ -1696,9 +1696,26 @@ class SegmentDocUploadController extends Controller
     private function fetchMasters(string $modelClass, array $codes, int $cid): array
     {
         if (empty($codes)) return [];
+        /* orderBy('id') is load-bearing, not tidiness (QA #102).
+         *
+         * The KYC / DD / TL / QC catalogues each hold TWO rows for codes
+         * ...-001 to ...-020, seeded on different dates with DIFFERENT names
+         * (KYC-020 is both "Digital Signature Certificate" and "Latest ITR").
+         * The loop below keys by code, so with no ORDER BY whichever row the
+         * database happened to return last silently won — and Postgres is free
+         * to change that between plans. The Evidence Vault therefore listed a
+         * different document for the same rule from one load to the next, while
+         * the Document Control Panel (which does order by id) showed the first.
+         *
+         * Ordering by id and keeping the FIRST occurrence makes the vault
+         * deterministic AND agree with the DCP. It does not fix the underlying
+         * duplication — that is a data cleanup, and which set to keep is not
+         * this function's call — but it stops the same rule rendering as two
+         * different documents. */
         $rows = $modelClass::query()
             ->where('client_id', $cid)
             ->whereIn('code', $codes)
+            ->orderBy('id')
             ->get();
         // Document masters store the issuing authority by id (comma-joined for
         // multi-authority docs) — resolve to current names so the Evidence
@@ -1707,6 +1724,9 @@ class SegmentDocUploadController extends Controller
         $authMap = ClmAuthority::idNameMap($cid);
         $byCode = [];
         foreach ($rows as $r) {
+            // First row per code wins (see the orderBy note above) — a later
+            // duplicate must not overwrite it.
+            if (isset($byCode[$r->code])) continue;
             $attrs = $r->getAttributes();
             $byCode[$r->code] = [
                 // Master row primary key. For the Trade Documents bucket this
