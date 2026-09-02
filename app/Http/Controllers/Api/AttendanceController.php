@@ -1011,6 +1011,16 @@ class AttendanceController extends Controller
             foreach ($mRows as $r) {
                 $mByIso[\Carbon\Carbon::parse($r->attendance_date)->toDateString()] = $r;
                 $st = strtolower((string) $r->status);
+                /* A rest-day label with real attendance under it counts as a
+                   WORKED day here too (#89/#90).
+                   These KPIs read the stored status, while the day on screen is
+                   resolved by resolveDayStatus(). Without this the two disagree
+                   the moment someone works a holiday: the row reads Present or
+                   Late, and "Present Days" does not include it — the same
+                   contradiction the ticket reports, moved into the counters. */
+                if ($this->workedARestDay($st, $r)) {
+                    $st = 'present';
+                }
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
                 }
@@ -1371,13 +1381,17 @@ class AttendanceController extends Controller
              * punch to justify it, so a genuine holiday with no attendance is
              * untouched.
              *
-             * Returned as plain 'Present', deliberately skipping the Late
-             * promotion below: lateness is measured against an expected shift
-             * start, and on a day the company was closed there is no shift to
-             * be late for. Promoting it would brand a volunteer as Late and
-             * feed the late-mark count that drives the LOP deduction. */
+             * Falls THROUGH to the Late promotion below rather than returning
+             * 'Present' outright. An earlier revision returned early, reasoning
+             * that a closed day has no shift to be late against and that Late
+             * would feed the LOP deduction — the second half of which is simply
+             * wrong: the late-mark KPI and payroll both count the STORED status
+             * (see the MTD loop in dailyView), never this resolved one, so
+             * returning Present suppressed nothing. It only hid a late arrival
+             * the Attendance Log was reporting two rows away, and #90 asks for
+             * "Present/Worked (or Late, if applicable)". */
             if ($this->workedARestDay($stored, $row)) {
-                return 'Present';
+                $stored = 'Present';
             }
 
             // Auto-promote Present → Late based on the local first-in. 10-min
@@ -1567,10 +1581,10 @@ class AttendanceController extends Controller
                 // face-clock flow always writes 'Present' on first punch
                 // and doesn't know about shifts, so the heuristic has to
                 // run at read time.
-                // Skipped for a worked rest day: there is no expected shift on
-                // a closed day, so "Late" would be measured against nothing —
-                // same reasoning as resolveDayStatus().
-                if (!$workedRestDay && strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
+                // Applies to a worked rest day too — see resolveDayStatus():
+                // the late-mark KPI counts the STORED status, so promoting the
+                // display costs nothing and #90 asks for Late where it applies.
+                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
                     && $this->minutesBetween($shiftStart, $firstIn) > 10) {
                     $status = 'Late';
                 }
