@@ -804,6 +804,35 @@ class AttendanceController extends Controller
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
 
+        /* Pending regularizations for the selected date — the "Correction
+         * Pending" pill in the employee list (#92).
+         *
+         * The pill used to be pure client state: the SPA set it optimistically
+         * when a request was filed and this payload never carried it, so every
+         * refresh copied the stale value forward rather than re-reading it.
+         * Nothing could clear it once the request was approved — the label
+         * survived until the page was reloaded from scratch.
+         *
+         * Sending it makes the server the source of truth: still Pending while
+         * it is pending, gone the moment it is approved or rejected. Only the
+         * 'Pending' status is selected, so an approved row simply produces no
+         * entry and the pill disappears on the next poll.
+         *
+         * One query for the whole roster, keyed by employee, so this stays O(1)
+         * rather than a lookup per card. */
+        $pendingCorrections = [];
+        $empIdsForCorrection = $employees->pluck('id')->filter()->all();
+        if ($empIdsForCorrection) {
+            $pendingCorrections = DB::table('attendance_regularizations')
+                ->whereIn('employee_id', $empIdsForCorrection)
+                ->whereDate('regularization_date', $date)
+                ->where('status', 'Pending')
+                ->orderByDesc('id')
+                ->get(['id', 'employee_id', 'regularization_date', 'type', 'reason', 'created_at'])
+                ->keyBy('employee_id')
+                ->all();
+        }
+
         // Approved-leave overlay — an employee with an approved leave covering
         // the selected date should read "Leave", not "Absent", even though they
         // have no attendance row for the day. (Bug: on-leave employees showed
@@ -885,7 +914,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -1105,6 +1134,22 @@ class AttendanceController extends Controller
                 'missingPunch'      => $missingPunch,
                 'compliancePct'     => $compliancePct,
                 'logs'              => $logs,
+                /* Null unless a regularization for THIS date is still awaiting
+                   a decision (#92). The SPA shows its pill on
+                   `correction.status === 'Pending'`, so an approved or rejected
+                   request sends null and the pill clears itself. */
+                'correction'        => (function () use ($pendingCorrections, $emp, $date) {
+                    $c = $pendingCorrections[$emp->id] ?? null;
+                    if (!$c) return null;
+                    return [
+                        'id'       => (string) $c->id,
+                        'date'     => $date,
+                        'type'     => (string) ($c->type ?? 'Correction'),
+                        'reason'   => (string) ($c->reason ?? ''),
+                        'status'   => 'Pending',
+                        'raisedAt' => (string) ($c->created_at ?? ''),
+                    ];
+                })(),
             ];
         })->values();
 
