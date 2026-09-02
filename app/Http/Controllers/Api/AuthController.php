@@ -878,7 +878,7 @@ class AuthController extends Controller
             'permissions' => $permissions,
             'plan' => $planInfo,
         ];
-    }
+    } 
 
     /**
      * Pick the first non-empty value that looks like a 7-char hex color.
