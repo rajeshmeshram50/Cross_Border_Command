@@ -336,7 +336,7 @@ export function expenseClaimColumns({
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: 110, align: 'center' },
+      meta: { width: 110, align: 'center', wrap: true },
       cell: info => {
         const s = info.row.original.status;
         const tone = STATUS_TONE[s];
@@ -355,7 +355,7 @@ export function expenseClaimColumns({
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
-      meta: { width: 130, align: 'center' },
+      meta: { width: 130, align: 'center', wrap: true },
       cell: info => {
         /* A rejected claim is never paid — "N/A" rather than a bare "—", which
            reads as a value that failed to load (QA #122, same as advances). */
@@ -388,7 +388,7 @@ export function expenseClaimColumns({
          already over-allocate at 110%, and widening one without narrowing
          another just squeezes every neighbour a little harder. Description is
          free text that reflows, so it is the column that can spare it. */
-      meta: { width: 120, align: 'center' },
+      meta: { width: 120, align: 'center', wrap: true },
       cell: info => {
         // Nothing is booked in Zoho for a rejected claim (QA #122).
         if (info.row.original.status === 'rejected') {
