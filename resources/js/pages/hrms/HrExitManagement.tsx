@@ -1450,11 +1450,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
+    /* Divisor = the real length of the applicable month, never a flat 30 (#129).
+     *
+     * The applicable month is the one the shortfall is settled in: the last
+     * working day's month, falling back to the notice start's month and finally
+     * to the current month. It used to fall back to a hard-coded 30 whenever
+     * the LWD had not been picked yet, which is the ₹15,000 ÷ 30 = ₹500 on the
+     * report — the card renders as soon as a monthly figure exists, so the
+     * wrong rate was on screen (and saved with the stage) before the date that
+     * would have corrected it was ever entered.
+     *
+     * A calendar month is the right basis here because that is what the salary
+     * engine uses: PayrollService prices the FnF per-day rate over the period's
+     * actual days (÷30 or ÷31), and a notice recovery has to agree with the
+     * payslip it is recovered against. */
     const monthDays = (() => {
-      if (!lwd) return 30;
-      const d = new Date(lwd + 'T00:00:00');
+      const ref = lwd || noticeDate;
+      const d = ref ? new Date(ref + 'T00:00:00') : new Date();
       const n = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      return n > 0 ? n : 30;
+      // Guard only against an unparseable date, not against a real month.
+      return Number.isFinite(n) && n > 0 ? n : 30;
     })();
     const perDay   = monthly > 0 ? monthly / monthDays : 0;
     const amount   = settlement === 'served' ? 0 : Math.round(unserved * perDay * 100) / 100;
