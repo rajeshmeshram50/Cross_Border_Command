@@ -333,6 +333,15 @@ export default function Vendors() {
   /* Client-side pagination — rows-per-page auto-fits the viewport height
      (same dynamic behaviour as the CLM Segment Master). */
   const [page, setPage] = useState(1);
+  /* Row count across ALL pages, from the server. The pager can no longer derive
+     it from the rows in hand, because the rows in hand are one page. */
+  const [total, setTotal] = useState(0);
+  /* Newest-request token. rpp changes on every window resize, so two fetches can
+     be in flight at once and the slower must not overwrite the newer. */
+  const reqRef = useRef(0);
+  /* Search is a network call now, so it waits for a pause in typing instead of
+     firing per keystroke. 350ms is the same delay HrEmployees uses. */
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [rpp, setRpp] = useState(10);
   const autoFitRef = useRef(true); // false once the user picks a rows-per-page manually
   // Stretch the card to the viewport while auto-fitting (default / empty state) so
@@ -401,29 +410,58 @@ export default function Vendors() {
     };
   };
 
+  useEffect(() => {
+    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     // `silent` = refresh in the background WITHOUT flashing the loading skeleton
     // (used after closing the Edit/Add modal — the list is already on screen, so
     // showing the full skeleton again reads as a slow reload). Initial mount and
     // manual reloads still show the skeleton.
     if (!opts?.silent) setLoading(true);
+    /* SERVER-side pagination (was ?per_page=200 + slice-in-the-browser).
+       200 was a ceiling, not a page: a tenant with 201 suppliers silently lost
+       the rest, and every load shipped the whole table and its eager-loaded
+       relations to render ten rows. Page, size, search and both tab filters now
+       go to the API, which returns one page plus a total.
+       Mirrors HrEmployees.reloadEmployees. */
+    const token = ++reqRef.current;
     try {
-      const res = await api.get<{ data: ApiVendor[] }>('/vendors?per_page=200');
-      const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+      const res = await api.get<{ data: ApiVendor[]; total?: number }>('/vendors', {
+        params: {
+          page,
+          per_page: rpp,
+          ...(debouncedSearch ? { q: debouncedSearch } : {}),
+          scope: scopeTab,
+          tab,
+        },
+      });
+      // Stale-response guard: rpp changes on every resize, so two fetches can be
+      // in flight and the slower one must not overwrite the newer.
+      if (token !== reqRef.current) return;
+      const body: any = res.data ?? {};
+      const rows: ApiVendor[] = Array.isArray(body) ? body : (body.data ?? []);
       setVendors(rows.map(apiToVendor));
+      setTotal(Number(body.total ?? rows.length) || 0);
     } catch {
+      if (token !== reqRef.current) return;
       toast.error('Load failed', 'Could not load suppliers');
     } finally {
-      if (!opts?.silent) setLoading(false);
+      if (token === reqRef.current && !opts?.silent) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [page, rpp, debouncedSearch, scopeTab, tab]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
   /* Reset to page 1 whenever the tab or search changes so the user never
      lands on an out-of-range page after the result set shrinks. */
-  useEffect(() => { setPage(1); }, [tab, search]);
+  /* scopeTab joins tab/search here: with server pagination, switching
+     Domestic → International while on page 3 would ask the API for page 3 of a
+     one-page result and render an empty table. */
+  useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
@@ -462,9 +500,30 @@ export default function Vendors() {
       // the whole thing fits WITHOUT the page itself scrolling. Auto-fit the row
       // count into that space; the card always stretches to fill it (footer pinned
       // to the bottom) — mirrors CLM Segment Master.
-      const cardH = Math.max(0, window.innerHeight - top - 16);
-      const avail = cardH - THEAD - PAGER;
-      const fit = Math.max(4, Math.floor(avail / ROW));
+      /* Reserve the APP FOOTER, measured live — same rule as DataTable's
+         bottomReserve() (see components/ui/DataTable.tsx), which is what the
+         HRMS Employees / Onboarding tables use. The flat 16px here assumed no
+         footer, so on any page that has one the card was sized ~40px too tall
+         and its last row sat behind "2026 © IGC Group". Measured rather than
+         hardcoded so it stays right at any zoom level or footer height; 15px
+         is the fallback when there is no footer (e.g. inside a modal). */
+      const footerEl = document.querySelector('footer.footer') as HTMLElement | null;
+      const footerH = footerEl?.offsetHeight ?? 0;
+      const bottomReserve = footerH > 0 ? footerH + 8 : 15;
+
+      /* The HORIZONTAL scrollbar occupies height inside the scroll box and was
+         never subtracted. This table is 15 columns wide, so that bar is always
+         there — ~12-15px, which is exactly enough for the last row to miss the
+         cut and the box to grow a VERTICAL scrollbar as well. */
+      const scrollbarH = Math.min(20, Math.max(0, el.offsetHeight - el.clientHeight));
+
+      const cardH = Math.max(240, window.innerHeight - top - bottomReserve);
+      const avail = cardH - THEAD - PAGER - scrollbarH;
+      /* Floor of 10, matching minAutoRows on the HRMS tables. At the old floor
+         of 4 a laptop viewport (or any zoom that left the table short) served a
+         four-row page, which reads as a broken list rather than a fitted one
+         and makes the same tenant look different on every machine. */
+      const fit = Math.max(10, Math.floor(avail / ROW));
       if (autoFitRef.current) setRpp(prev => (prev === fit ? prev : fit));
       setFillH(prev => (prev === cardH ? prev : cardH));
     };
@@ -521,42 +580,15 @@ useEffect(() => {
 }, [allowed]);
  
 
-  const filtered = useMemo(() => {
-    const lo = search.trim().toLowerCase();
-    const inTab = (v: Vendor) => tab === 'all' ? true : tab === 'fresh' ? v.opportunityCount === 0 : v.opportunityCount > 0;
-    /* Country arrives as the resolved master name. Compared lower-cased: the
-       master is user-editable and "india" / "INDIA" both occur. A supplier with
-       no country yet counts as neither, so it only shows under All rather than
-       being silently filed as international. */
-    const inScope = (v: Vendor) => {
-      const c = (v.country ?? '').trim().toLowerCase();
-      // No country on record yet — file it under Domestic rather than dropping
-      // it from both tabs. With no "All" left there is nowhere else for it to
-      // appear, and a supplier that shows in neither list is a supplier nobody
-      // ever finds again.
-      if (!c) return scopeTab === 'domestic';
-      return scopeTab === 'domestic' ? c === 'india' : c !== 'india';
-    };
-    return vendors
-      .filter(inTab)
-      .filter(inScope)
-      .filter(v => !lo
-        || v.code.toLowerCase().includes(lo)
-        || v.companyName.toLowerCase().includes(lo)
-        || v.contactName.toLowerCase().includes(lo)
-        || v.email.toLowerCase().includes(lo)
-        || v.phone.toLowerCase().includes(lo)
-        || v.city.toLowerCase().includes(lo)
-        || v.state.toLowerCase().includes(lo)
-        || (v.stateCode ?? '').toLowerCase().includes(lo));
-  }, [vendors, search, tab, scopeTab]);
-
-  /* Client-side pagination math — page size is the dynamic `rpp`. */
-  const total = filtered.length;
+  /* SERVER-side pagination math. `vendors` IS the current page — the search,
+     the Fresh/Recurring tab and the Domestic/International scope are all applied
+     by VendorController::index now, so there is nothing left to filter or slice
+     here. `total` is the server's count across every page, which is what the
+     pager needs to know how many pages exist. */
   const pages = Math.max(1, Math.ceil(total / rpp));
   const curPage = Math.min(page, pages);
-  const start = (curPage - 1) * rpp;
-  const pageRows = filtered.slice(start, start + rpp);
+  const start = (curPage - 1) * rpp;   // Sr No offset for the rows on this page
+  const pageRows = vendors;
 
   /* The wizard now persists each step to /api/vendors/* directly, so
      this handler only re-fetches and closes the modal. The payload is

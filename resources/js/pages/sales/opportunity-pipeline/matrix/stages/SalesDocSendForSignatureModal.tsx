@@ -526,8 +526,17 @@ export default function SalesDocSendForSignatureModal({
           <div className="ssf-foot-left" />
           <div className="ssf-foot-right">
             <button type="button" className="ssf-btn ssf-btn-ghost" onClick={onClose} disabled={sending}>Cancel</button>
-            <button type="button" className="ssf-btn ssf-btn-primary" disabled={sending} onClick={send}>
-              {sending ? 'Sending…' : `Send ${label} for Signature`}
+            {/* Blocked while the preview is still rendering. The modal already
+                tracked that state to show "Rendering preview…", but this button
+                never read it — so the document could be sent for signature
+                before the version being previewed had finished building, and
+                the signer would receive something the sender never saw.
+                Gated on previewLoading alone, not on a successful render:
+                setPreviewLoading(false) runs in a finally, so a preview that
+                fails still releases the button rather than sealing the send
+                shut. The label names what it is waiting for. */}
+            <button type="button" className="ssf-btn ssf-btn-primary" disabled={sending || previewLoading} onClick={send}>
+              {sending ? 'Sending…' : previewLoading ? 'Rendering preview…' : `Send ${label} for Signature`}
             </button>
           </div>
         </div>

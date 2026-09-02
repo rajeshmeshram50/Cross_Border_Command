@@ -14,6 +14,10 @@ import LeadDetailsModal from './LeadDetailsModal';
 import LeadActivityModal from './LeadActivityModal';
 import LeadFilterModal, { type LeadFilters, countFilterValues } from './LeadFilterModal';
 
+/* Where the worksheet's filters are parked while the user is inside a lead.
+   sessionStorage-scoped, so a new tab starts unfiltered. */
+const LEAD_FILTERS_KEY = 'cbc.leadWorksheet.filters';
+
 /* Shape returned by GET /sales/leads — Laravel paginator items. Mapped to
  * the table's Lead type below via mapServerToLead(). */
 type ServerLead = {
@@ -415,7 +419,28 @@ export default function SalesLeadWorksheet() {
     countries: Array<{ value: string; label: string }>;
     customers: Array<{ value: string; label: string; code?: string | null }>;
   }>({ stages: [], platforms: [], queryTypes: [], countries: [], customers: [] });
-  const [activeFilters, setActiveFilters] = useState<LeadFilters>({});
+  /* Filters survive a trip into a lead and back.
+   *
+   * They lived only in component state, and opening a lead unmounts this page —
+   * so Back re-mounted it empty and the user landed on the full list again,
+   * with the filter they had just set silently gone. Nothing told them; the
+   * chips simply were not there.
+   *
+   * sessionStorage, not localStorage: a filter is about the task in hand, so it
+   * should outlive a navigation but not the tab. Read lazily on mount and
+   * written on every change, so the two can never fall out of step.
+   * Both sides are wrapped — a private window can throw on access, and losing
+   * the filter must never take the page down with it. */
+  const [activeFilters, setActiveFilters] = useState<LeadFilters>(() => {
+    try {
+      const raw = sessionStorage.getItem(LEAD_FILTERS_KEY);
+      return raw ? (JSON.parse(raw) as LeadFilters) : {};
+    } catch { return {}; }
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem(LEAD_FILTERS_KEY, JSON.stringify(activeFilters)); }
+    catch { /* private mode — the filter just won't survive the hop */ }
+  }, [activeFilters]);
 
   /* When the user picks "View Leads" on the Lead Distribution page they
    * land back here with `?sp=<id>&sp_name=<name>` in the URL. Apply the

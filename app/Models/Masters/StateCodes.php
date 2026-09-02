@@ -46,4 +46,11 @@ class StateCodes extends Model
     {
         return $this->belongsTo(States::class, 'state_id');
     }
+
+    public function scopeStatutoryFirst($query)
+    {
+        return $query
+            ->orderByRaw('CASE WHEN client_id IS NULL THEN 0 WHEN branch_id IS NULL THEN 1 ELSE 2 END')
+            ->orderBy('id');
+    }
 }

@@ -55,7 +55,17 @@
    chevron, inside .bref-box__header-right. */
 .sup-fig .sup-scope{display:inline-flex;align-items:stretch;gap:3px;padding:3px;margin:4px 0;background:rgba(255,255,255,.62);border:1px solid rgba(124,58,237,.28);border-radius:10px;box-shadow:0 1px 3px rgba(91,33,182,.12) inset;flex-shrink:0;}
 .sup-fig .sup-scope__tab{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-size:10.5px;font-weight:800;letter-spacing:-.1px;color:#6d28d9;background:transparent;border:none;border-radius:8px;padding:7px 12px;cursor:pointer;white-space:nowrap;transition:all .18s cubic-bezier(.22,1,.36,1);}
-.sup-fig .sup-scope__tab i{font-size:12px;flex-shrink:0;}
+/* font-weight:400 is the fix for "the icons look too bold".
+   The tab sets font-weight:800 for its LABEL, and the icon, being a font glyph,
+   inherited it. Remix Icon ships a single weight, so the browser had nothing to
+   switch to and SYNTHESISED the bold — smearing each stroke a fraction wider.
+   Resetting the weight on the glyph turns that off and gives the icon back its
+   real outline; the label keeps its 800. Antialiasing is Remix Icon's own
+   recommendation and stops the thin strokes rendering chunky on Windows. */
+.sup-fig .sup-scope__tab i{
+  font-size:12px;flex-shrink:0;font-weight:400;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+}
 .sup-fig .sup-scope__tab:hover{color:#5b21b6;background:rgba(124,58,237,.12);}
 .sup-fig .sup-scope__tab.is-active{color:#fff;background:linear-gradient(135deg,#a78bfa,#7c3aed 60%,#5b21b6);box-shadow:0 3px 9px -3px rgba(91,33,182,.6),0 1px 0 rgba(255,255,255,.25) inset;}
 .sup-fig .sup-scope__tab.is-active:hover{color:#fff;}
@@ -135,12 +145,13 @@
 .sup-fig .sl-tab svg,.sup-fig .sl-tab span{position:relative;z-index:1;}
 .sup-fig .sl-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;padding:0 7px;border-radius:99px;font-size:10px;font-weight:800;color:#7c3aed;background:#fff;border:1px solid #ddd0f7;}
 .sup-fig .sl-tab.is-active .sl-tab-count{color:#7c3aed;background:#fff;border-color:transparent;}
-/* Capped, not flex:1. Filling the toolbar made the field a full-width slab
-   that read as the page header rather than a control — and removing the
-   Filter button beside it made that worse. flex-basis with shrink lets it
+/* Capped, not flex:1. Filling the toolbar edge-to-edge made the field read as
+   a page header rather than a control. 660px is the middle ground asked for:
+   long enough to reach back across the table (roughly to the Contact No
+   column) without swallowing the whole strip. flex-basis with shrink lets it
    give way on narrow screens; margin-left:auto keeps it at the right end,
-   where the button used to sit. */
-.sup-fig .sl-search{flex:0 1 400px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
+   where the Filter button used to sit. */
+.sup-fig .sl-search{flex:0 1 660px;margin-left:auto;display:flex;align-items:center;gap:9px;min-width:0;background:rgba(255,255,255,.8);border:1.5px solid rgba(139,92,246,.28);border-radius:11px;padding:9px 12px 9px 14px;box-shadow:0 1px 0 rgba(255,255,255,.95) inset;transition:border-color .16s,box-shadow .16s;}
 .sup-fig .sl-search:focus-within{border-color:#a78bfa;box-shadow:0 0 0 3px rgba(167,139,250,.18);}
 .sup-fig .sl-search-ico{flex-shrink:0;}
 .sup-fig .sl-search input{flex:1;min-width:0;border:none;outline:none;background:transparent;font-family:inherit;font-size:13px;font-weight:500;color:#3b0764;}

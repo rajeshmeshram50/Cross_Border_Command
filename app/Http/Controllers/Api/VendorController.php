@@ -113,16 +113,62 @@ class VendorController extends Controller
             // ])
             ->orderByDesc('id');
 
+        /* Search widened to every column the list actually renders.
+         *
+         * The supplier list used to pull ?per_page=200 and filter in the
+         * browser, so its search box already matched contact name, phone, city,
+         * state and state code. Moving pagination to the server (below) means
+         * anything not matched HERE silently stops being findable — so the
+         * address-side fields are joined in rather than dropped. */
         if ($search = trim((string) $request->query('q', ''))) {
             $q->where(function ($w) use ($search) {
                 $w->where('company_name', 'ilike', "%{$search}%")
                   ->orWhere('legal_name',   'ilike', "%{$search}%")
                   ->orWhere('vendor_code',  'ilike', "%{$search}%")
-                  ->orWhere('primary_email','ilike', "%{$search}%");
+                  ->orWhere('primary_email','ilike', "%{$search}%")
+                  ->orWhereHas('addresses', function ($a) use ($search) {
+                      $a->where('contact_name', 'ilike', "%{$search}%")
+                        ->orWhere('contact_no', 'ilike', "%{$search}%")
+                        ->orWhere('email',      'ilike', "%{$search}%")
+                        ->orWhere('city',       'ilike', "%{$search}%")
+                        ->orWhere('state_code', 'ilike', "%{$search}%");
+                  })
+                  ->orWhereHas('primaryAddress.state', fn ($s) => $s->where('name', 'ilike', "%{$search}%"));
             });
         }
         if ($status = $request->query('status')) {
             $q->where('status', $status);
+        }
+
+        /* Domestic / International scope — the list's own tab pair, previously
+         * applied in the browser on the RESOLVED country name. It has to move
+         * with pagination: filtering a single page client-side would show "12
+         * suppliers" and then render three of them.
+         *
+         * A supplier with no country on record counts as DOMESTIC, exactly as
+         * the client-side rule did — with no "All" tab left, a row that appears
+         * under neither is a row nobody ever finds again. */
+        $scope = $request->query('scope');
+        if ($scope === 'domestic' || $scope === 'international') {
+            $india = fn ($a) => $a->whereHas('country', fn ($c) => $c->whereRaw('LOWER(name) = ?', ['india']));
+            if ($scope === 'domestic') {
+                $q->where(fn ($w) => $w->whereHas('primaryAddress', $india)
+                    ->orWhereDoesntHave('primaryAddress')
+                    ->orWhereHas('primaryAddress', fn ($a) => $a->whereNull('country_id')));
+            } else {
+                $q->whereHas('primaryAddress', fn ($a) => $a->whereNotNull('country_id')
+                    ->whereHas('country', fn ($c) => $c->whereRaw('LOWER(name) <> ?', ['india'])));
+            }
+        }
+
+        /* Fresh / Recurring. opportunity_count is hardcoded to 0 above until the
+         * case-to-case procurement flow lands, so Fresh is everything and
+         * Recurring is empty — the same answer the browser was computing from
+         * the same zero. Kept explicit so that when the subquery above is
+         * restored this filter starts working without a second change here. */
+        $tab = $request->query('tab');
+        if ($tab === 'recurring') {
+            $q->whereRaw('1 = 0');
         }
 
         return response()->json($q->paginate((int) $request->query('per_page', 24)));
@@ -1706,7 +1752,7 @@ class VendorController extends Controller
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->tap($scope)
                 ->with('state:id,name,country_id')
-                ->orderBy('id')
+                ->statutoryFirst()
                 ->get(['id', 'state_id', 'state_code', 'status']);
 
             return [

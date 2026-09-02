@@ -1,0 +1,2119 @@
+/* ─────────────────────────────────────────────────────────────────────
+ * Add / Edit Supplier modal styles.
+ *
+ * Extracted from a SCOPED_CSS template literal that lived at the bottom of
+ * AddVendorModal.tsx and was injected with <style>{SCOPED_CSS}</style>.
+ * As a string inside JS it could not be minified (esbuild does not look
+ * inside a string literal, so every comment and indent shipped to the
+ * browser), could not be cached apart from the component, and could not
+ * apply until the JS had downloaded, parsed and executed. A stray backtick
+ * anywhere in it also broke the entire module.
+ *
+ * Same selectors, same order, same output — Vite now extracts, minifies and
+ * hashes it, and it loads in parallel with the chunk that needs it.
+ * ───────────────────────────────────────────────────────────────────── */
+.avm-hint { font-size: 11px; font-weight: 600; color: #b45309; margin-top: 5px; line-height: 1.3; }
+.avm-lockwrap { position: relative; cursor: not-allowed; }
+.avm-lockwrap-inner { pointer-events: none; }
+/* Make a DISABLED / locked field clearly read-only (greyed + not-allowed cursor).
+   The base MasterSelect disabled style is too subtle (opacity .85), so a locked
+   Country/State on a PO-mapped supplier looked editable. */
+.avm-master-select .master-select-toggle:disabled,
+.avm-master-select .master-select-wrap.disabled .master-select-toggle {
+  background: #eef2f6 !important; color: #94a3b8 !important; opacity: 1 !important;
+  cursor: not-allowed !important; box-shadow: none !important;
+}
+.avm-input:disabled, .avm-input[disabled] {
+  background: #eef2f6 !important; color: #94a3b8 !important; cursor: not-allowed !important;
+}
+.avm-backdrop {
+  position: fixed; inset: 0; z-index: 1090;
+  /* 100dvh, not the implicit height of inset:0. On mobile Safari the URL bar
+     is counted OUT of dvh but IN of vh/layout height, so a dialog sized off
+     vh comes out taller than the screen actually is — which is what pushed
+     the "Add Supplier" header above the top of the phone. Same reason the app
+     shell uses dvh (velzon/Layouts/index.tsx). vh first as the fallback for
+     browsers without dvh. */
+  height: 100vh;
+  height: 100dvh;
+  background: rgba(40, 44, 52, .42);
+  backdrop-filter: blur(7px) saturate(118%);
+  -webkit-backdrop-filter: blur(7px) saturate(118%);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+}
+.avm-modal {
+  width: 100%; max-width: 1200px;
+  /* Sized to its content between a floor and the viewport.
+     It used to be a flat height of calc(100vh - 48px) — full height, always.
+     That was chosen so the dialog would not resize when you switch tabs, and
+     it holds on a laptop where every tab overflows anyway. On a tall monitor
+     it does not: Step 1 ends around two-thirds down and the rest of the
+     dialog is empty lavender, which is what makes the popup look broken on
+     the server and fine locally.
+     The floor is what keeps the anti-jump property that fixed height was
+     protecting — every tab with a normal amount of content lands on it, so
+     switching between them still moves nothing. Only a genuinely long tab
+     grows, and it stops at the viewport and scrolls inside (.avm-body). */
+  height: auto;
+  /* No margin:auto here. Auto margins absorb free space in both directions and
+     override align-items — including NEGATIVE free space, so the moment the
+     dialog is taller than the backdrop its top is pushed out of the scroll
+     range and cannot be reached. The backdrop centres it instead (safe now
+     that max-height keeps it inside the viewport). */
+  min-height: min(660px, calc(100vh - 48px));
+  min-height: min(660px, calc(100dvh - 48px));
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
+     white section cards read as elevated, not flat on plain white. */
+  background:
+    radial-gradient(ellipse at 12% 0%, rgba(196,181,253,.25), transparent 45%),
+    radial-gradient(ellipse at 100% 8%, rgba(167,139,250,.22), transparent 50%),
+    linear-gradient(180deg, #fbf9ff 0%, #f5f1fe 55%, #efe9fd 100%);
+  border-radius: 22px;
+  /* Soft white frame so the modal (and the purple header's top edge) reads
+     as a bordered card — like the Add Customer modal, but no dotted texture. */
+  border: 1.5px solid rgba(255, 255, 255, .65);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
+  color: #1e1b4b;
+}
+.avm-modal *, .avm-modal *::before, .avm-modal *::after { box-sizing: border-box; }
+
+/* ── Narrow screens ───────────────────────────────────────────────────────
+   The dialog is a desktop wizard — a header carrying two buttons, a two-across
+   stepper, a tab strip of full-sentence labels, and 4-up field grids — all
+   sized against ~1200px. Two tiers below that, each giving up the row that
+   stops fitting.
+
+   Rule followed throughout: nothing that a user must be able to REACH is
+   allowed to wrap or scroll out of view. The close button therefore never
+   leaves the title row; the Map Product button loses its words instead. */
+@media (max-width: 820px) {
+  .avm-backdrop { padding: 10px; }
+  .avm-modal { max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); border-radius: 18px; }
+  /* One step per row. Side by side these got ~150px each, which is narrower
+     than "Supplier Legal Identity" can wrap into. min-width has to be cleared
+     with them or the column itself overflows a 360px phone. */
+  .avm-stepper { flex-direction: column; gap: 8px; }
+  .avm-step { min-width: 0; }
+  .avm-stepper-wrap { padding: 10px 12px 2px; }
+  /* Both tab labels are full sentences. Let the strip swipe rather than clip
+     the second one. flex-start, not centre: a centred overflowing flex row
+     spills out of BOTH ends and the leading one cannot be scrolled back to. */
+  .avm-tabs { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
+  .avm-tabs::-webkit-scrollbar { display: none; }
+  .avm-tab { flex: 0 0 auto; padding: 8px 10px; font-size: 11.5px; }
+}
+
+@media (max-width: 700px) {
+  .avm-backdrop { padding: 6px; }
+  .avm-modal {
+    /* No floor on a phone. The 660px minimum exists to stop the dialog
+       jumping between DESKTOP tabs; here it only forces empty space under a
+       short form. */
+    min-height: 0;
+    max-height: calc(100vh - 12px);
+    max-height: calc(100dvh - 12px);
+    border-radius: 14px;
+  }
+  .avm-head { padding: 10px 12px; gap: 8px; }
+  .avm-head-left { min-width: 0; flex: 1; }
+  .avm-head-icon { width: 32px; height: 32px; border-radius: 9px; }
+  .avm-title { font-size: 15px; }
+  .avm-sub { display: none; }
+  /* Words go, icon stays — the button keeps working and the close button
+     keeps its place. Wrapping the whole group onto a second row instead would
+     push the only way out of the dialog below the fold on a short screen. */
+  .avm-map-btn-label { display: none; }
+  .avm-map-btn { padding: 0 9px; }
+  .avm-body { padding: 10px 12px 12px; overflow-x: hidden; }
+  /* Full-width stacked buttons — a 13px label in a 90px button is a miss on
+     a thumb. */
+  .avm-foot { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
+  .avm-foot > * { flex: 1 1 100%; }
+  .avm-foot-right { display: flex; gap: 8px; }
+  .avm-foot-right > * { flex: 1; justify-content: center; }
+}
+
+/* Anything below this is a small phone in portrait. */
+@media (max-width: 420px) {
+  .avm-title { font-size: 14px; }
+  .avm-tab { padding: 7px 8px; font-size: 11px; }
+  .avm-step { padding: 10px 12px; gap: 10px; }
+  .avm-step-title { font-size: 12.5px; }
+  .avm-step-sub { font-size: 10px; }
+}
+
+/* Header — purple gradient bar (.sf-head spec from the Figma) with a
+   subtle white hairline border so the bar reads as a framed strip. */
+.avm-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 22px;
+  position: relative; overflow: hidden;
+  /* Exact Figma header gradient — deep violet → light violet across 5 stops. */
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
+  color: #fff;
+  border-bottom: 1px solid rgba(255, 255, 255, .22);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
+/* The two light layers the Figma header carries on top of its gradient, ported
+   verbatim from .sf-head::before / ::after. Without them the bar is a flat
+   five-stop ramp; these give it the corner bloom and the top sheen that make it
+   read as lit rather than painted.
+     ::before — a warm white glow rising from the lower left plus a lavender one
+                falling in from the upper right, both fading to nothing;
+     ::after  — a soft highlight down the top half only.
+   Both pointer-events:none so nothing in the header stops being clickable.
+   .avm-head already sets position:relative + overflow:hidden, so the layers are
+   anchored and clipped to the bar. */
+.avm-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
+    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
+}
+.avm-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+/* Both pseudo-elements are absolutely positioned, so they paint ABOVE the
+   static header content and would wash the title out. The Figma raises its
+   header content the same way (z-index on .sf-head-left / .sf-head-actions).
+   These are flex items, which honour z-index without needing position. */
+.avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; z-index: 1; }
+.avm-head-icon {
+  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
+  background: rgba(255,255,255,.18);
+  border: 1px solid rgba(255,255,255,.25);
+  display: flex; align-items: center; justify-content: center;
+}
+.avm-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; line-height: 1.1; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
+.avm-sub   { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
+.avm-head-right { display: inline-flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
+.avm-map-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 12px;
+  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
+  color: #fff; border-radius: 9px;
+  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.25); transform: translateY(-1px); }
+.avm-map-btn:disabled { opacity: .45; cursor: not-allowed; }
+.avm-close {
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+
+/* Stepper */
+/* Stepper, body and footer share ONE continuous light-lavender surface so
+   the modal reads as a single sheet (Figma) — the white section cards float
+   on top. No dividing band between the stepper and the form. */
+.avm-stepper-wrap { padding: 14px 18px 2px; background: transparent; }
+.avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+
+/* Step card — matches the Figma two-card stepper: icon chip with a small
+   number badge, title + sub, and a status pill pushed to the right. */
+.avm-step {
+  flex: 1; min-width: 240px;
+  display: flex; align-items: center; gap: 13px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(245,241,254,.55));
+  border: 1.5px solid rgba(196,181,253,.5); border-radius: 15px;
+  box-shadow: 0 1px 3px rgba(124,58,237,.05);
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.avm-step-ico {
+  position: relative; width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; color: #fff;
+  background: linear-gradient(135deg, #c4b5fd, #a78bfa);
+  box-shadow: 0 4px 12px rgba(167,139,250,.4), 0 1px 0 rgba(255,255,255,.4) inset;
+  transition: all .25s;
+}
+.avm-step-ico i { font-size: 18px; line-height: 1; }
+.avm-step-ico-num {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
+  /* The ring is WHITE, and the definition comes from a violet hairline plus a
+     drop shadow OUTSIDE it. The ring used to be 1.5px solid #ede9fe — the same
+     lavender as the active card behind it — so it disappeared into the card,
+     the white disc lost its edge, and the digit read as floating loose beside
+     the icon tile rather than pinned to its corner. Same construction as
+     .avm-step-ico-check below, which never had the problem because its white
+     ring sits against a green fill. */
+  background: #fff; color: #6d28d9; border: 1.5px solid #fff;
+  box-shadow: 0 0 0 1px rgba(167,139,250,.55), 0 1px 3px rgba(76,29,149,.28);
+  font-size: 9.5px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+}
+.avm-step-text { flex: 1; min-width: 0; }
+.avm-step-title { font-size: 13.5px; font-weight: 700; color: #1e1b4b; letter-spacing: -0.01em; }
+.avm-step-sub   { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
+.avm-step-badge {
+  flex-shrink: 0; padding: 4px 11px; border-radius: 99px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+}
+.avm-step-badge-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.4); }
+.avm-step-badge-done   { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 3px 8px rgba(22,163,74,.35); }
+
+/* Active card — purple wash + glow (universal, regardless of tone) */
+.avm-step-active {
+  border-color: #a78bfa;
+  background: linear-gradient(135deg, #f6f2ff, #ece4fb);
+  box-shadow: 0 10px 26px rgba(124,58,237,.2), 0 0 0 1px rgba(167,139,250,.3), 0 1px 0 rgba(255,255,255,.8) inset;
+}
+.avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
+
+/* Completed card — green wash + green check chip. Matches Figma exactly:
+   vivid green border, mint gradient, and the green elevation glow + inset
+   white highlight (this glow was missing, which made dev look flat). */
+.avm-step-done {
+  border-color: #86efac;
+  background: linear-gradient(135deg, #f0fdf4, #d6fadf);
+  box-shadow: 0 8px 22px rgba(34, 197, 94, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
+}
+.avm-step-done .avm-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
+.avm-step-done .avm-step-ico > i { font-size: 22px; }
+/* Small green check sub-badge at the icon corner (Figma) — mirrors the
+   number badge slot but renders a green tick on white. */
+.avm-step-ico-check {
+  position: absolute; right: -4px; bottom: -4px;
+  width: 17px; height: 17px; border-radius: 50%;
+  /* Figma: green gradient fill, white tick, white ring. */
+  background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; border: 1.5px solid #fff;
+  box-shadow: 0 1px 3px rgba(22,163,74,.3);
+  display: flex; align-items: center; justify-content: center;
+}
+.avm-step-ico-check i { font-size: 11px; font-weight: 800; line-height: 1; }
+.avm-step-done .avm-step-title { color: #15803d; }
+.avm-step-done .avm-step-sub   { color: #4d9e6a; }
+
+/* Connector — short line between cards (the › glyph is hidden via font-size:0) */
+.avm-step-arrow { flex: 0 0 26px; align-self: center; height: 2px; background: #ddd6fe; font-size: 0; border-radius: 2px; }
+
+/* Body — plain white surface like the Client / Master forms */
+.avm-body {
+  flex: 1; overflow-y: auto;
+  padding: 12px 22px 14px;
+  background: transparent;   /* show the modal's lavender wash (Figma) */
+  scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
+  position: relative;  /* anchor for the .avm-load-overlay during edit-load */
+}
+.avm-body::-webkit-scrollbar { width: 8px; }
+.avm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
+
+/* Previous-stage summary */
+/* Step 2 / 3 / 4 carried-over summary header — restyled to match the
+ * lavender Stage 1 vendor header (.avm-id-summary) so every read-only
+ * header in the wizard reads as one component family. Previously this
+ * was a green "completed" panel; design feedback wanted the same calm
+ * violet palette applied across all stages. */
+.avm-prev {
+  position: relative;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border: 1px solid #e9d5ff; border-radius: 12px;
+  margin-bottom: 14px; overflow: hidden;
+}
+/* Purple left accent strip — matches the section cards' ::before (Figma). */
+.avm-prev::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+}
+.avm-prev-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 14px;
+  background: transparent;
+}
+.avm-prev-ico {
+  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
+  box-shadow: 0 3px 9px rgba(124,58,237,.35);
+}
+.avm-prev-headtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.avm-prev-title { font-size: 13px; font-weight: 700; color: #3b0764; letter-spacing: -0.01em; }
+.avm-prev-subtitle { font-size: 10.5px; font-weight: 500; color: #7c3aed; }
+/* Pill + chevron are split: the chevron sits OUTSIDE the purple pill (Figma).
+   The button itself is a transparent wrapper. */
+.avm-prev-toggle {
+  flex-shrink: 0;
+  display: inline-flex; align-items: center; gap: 8px;
+  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
+}
+.avm-prev-toggle-pill {
+  z-index: 1; flex-shrink: 0;
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
+  border-radius: 20px;
+  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  box-shadow: 0 3px 8px rgba(124,58,237,.35);
+  transition: filter .15s, box-shadow .15s;
+}
+.avm-prev-toggle-chev { font-size: 20px; color: #7c3aed; line-height: 1; }
+.avm-prev-toggle:hover .avm-prev-toggle-pill { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
+/* White body under a lavender header — Figma .sf-prevbar-body.
+   The panel's own gradient stays on the HEAD only; once the body carries real
+   content (grids, boxed address lines) a tinted ground behind it muddied both,
+   and the boxed lines lost their edge because they were a tint on a tint. */
+.avm-prev-body {
+  padding: 14px 16px 16px;
+  display: flex; flex-direction: column; gap: 14px;
+  border-top: 1px solid rgba(196,181,253,.4);
+  background: #fff;
+}
+/* Step-grouped summary — each stage's label uses the same muted violet
+ * tone so the header reads as a single block rather than several panels
+ * fighting for attention. */
+.avm-prev-stage { display: flex; flex-direction: column; gap: 8px; }
+.avm-prev-stage + .avm-prev-stage { margin-top: 6px; padding-top: 10px; border-top: 1px dashed rgba(196,181,253,.55); }
+/* Stage title — green check + name (Figma .sf-sum-title / .sf-sum-check). The
+   green is the same completed-state green the stepper uses above. */
+.avm-prev-stage-label {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em;
+  text-transform: uppercase; color: #166534;
+}
+.avm-prev-check {
+  width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  box-shadow: 0 2px 5px rgba(22,163,74,.3);
+}
+
+/* Group heading (Figma .sf-sum-label) — the piece the old layout had none of.
+   Thirteen fields ran edge to edge with nothing telling the eye where company
+   details stopped and the address began. */
+.avm-prev-group { display: flex; flex-direction: column; gap: 6px; }
+.avm-prev-glabel {
+  font-size: 9.5px; font-weight: 800; letter-spacing: .1em;
+  text-transform: uppercase; color: #a78bfa;
+}
+
+/* 3-up grid of STACKED pairs (Figma .sf-sum-grid). Label above value, not
+   "LABEL : value" side by side: at four columns the inline form gave the label
+   and the value the same weight on one line, so neither could be scanned. */
+.avm-prev-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+.avm-prev-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.avm-prev-k {
+  font-size: 9px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: #94a3b8;
+}
+.avm-prev-v {
+  font-size: 13px; font-weight: 700; color: #1e1b2e; line-height: 1.35;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.avm-prev-link { color: #6d28d9; text-decoration: underline; }
+.avm-prev-link:hover { color: #4c1d95; }
+.avm-prev-suffix { font-size: 10.5px; font-weight: 500; color: #64748b; }
+
+/* Address / contact — one boxed line rather than four separate cells, because
+   they read as a single fact (Figma .sf-sum-address). */
+.avm-prev-line {
+  font-size: 12.5px; font-weight: 600; color: #334155; line-height: 1.5;
+  background: #f7f4ff; border: 1px solid #ece7f8; border-radius: 9px;
+  padding: 11px 14px;
+}
+.avm-prev-dot { color: #c4b5fd; padding: 0 8px; font-weight: 700; }
+.avm-prev-empty { color: #94a3b8; font-weight: 500; font-style: italic; }
+
+@media (max-width: 900px) {
+  .avm-prev-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  .avm-prev-grid { grid-template-columns: 1fr; }
+}
+
+/* Tabs */
+.avm-tabs {
+  display: flex; gap: 6px; margin-bottom: 14px;
+  border-bottom: 1.5px solid #e2d4fa;
+}
+.avm-tab {
+  background: none; border: none; padding: 8px 14px;
+  font-family: "DM Sans", system-ui, sans-serif; font-size: 12px; font-weight: 700;
+  color: #8b7bb8; cursor: pointer;
+  border-bottom: 2.5px solid transparent;
+  margin-bottom: -1.5px;
+  white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.avm-tab:hover { color: #5b21b6; }
+.avm-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; font-weight: 700; }
+
+/* Pill tabs (Step 2 sub-tabs) */
+/* Sub-tab strip (Figma): a light lavender container; only the ACTIVE tab is a
+   purple gradient pill, inactive tabs are plain muted text. Scoped under
+   .avm-pill-tabs so it doesn't collide with the table status .avm-pill badges. */
+.avm-pill-tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px;
+  padding: 5px;
+  background: #f3eefc;
+  /* Crisper outline + subtle lift so the strip reads as a defined card on the
+     lavender modal body (Figma). The old #e9e2f7 was near-invisible against it. */
+  border: 1px solid #ddd6fe;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(124, 58, 237, .07);
+}
+.avm-pill-tabs .avm-pill {
+  display: inline-flex; align-items: center;
+  background: transparent; color: #6b7280;
+  border: none; border-radius: 9px;
+  padding: 8px 16px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; line-height: 1.2;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.08); color: #6d28d9; }
+.avm-pill-tabs .avm-pill.on {
+  color: #fff;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  border: none;
+  box-shadow: 0 4px 12px rgba(124, 58, 237, .42);
+}
+.avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.avm-sub-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #fff; color: #475569;
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
+}
+.avm-sub-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; display: inline-block; }
+.avm-sub-pill.on { color: #15803d; border-color: #86efac; background: #ecfdf5; }
+.avm-sub-pill.on::before { background: #16a34a; }
+
+/* Section card */
+.avm-section {
+  position: relative;
+  background: #fff;
+  border: 1px solid #ece4fb;
+  border-radius: 14px; margin-bottom: 8px; overflow: hidden;   /* Figma .sf-section radius */
+}
+/* Left accent strip — a vertical GRADIENT bar (Figma), not a flat border. */
+.avm-section::before {
+  content: '';
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; opacity: .85;
+  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
+}
+/* All section strips use the same purple gradient (.avm-section::before).
+   Only the outer border tint + icon/title colour vary per section. */
+.avm-section-violet { border-color: #ece4fb; }
+.avm-section-amber  { border-color: #fbeccb; }
+.avm-section-teal   { border-color: #cdf6f1; }
+.avm-section-green  { border-color: #d6f5df; }
+.avm-section-purple { border-color: #ece4fb; }
+
+.avm-section-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 7px 14px;
+  background: #fff;
+  border-bottom: 1px solid #f1ecfb;
+}
+/* Subtle tinted section heads — keep the coloured left-border accent but
+   use a near-white head so it doesn't fight the white form surface. */
+/* Section header sits on the same white as the body (seamless card, like the
+   Figma) — separated only by the thin divider line from .avm-section-head. */
+.avm-section-amber .avm-section-head { border-bottom-color: #fef3c7; }
+.avm-section-teal  .avm-section-head { border-bottom-color: #ccfbf1; }
+.avm-section-green .avm-section-head { border-bottom-color: #dcfce7; }
+.avm-section-head-left { display: flex; align-items: center; gap: 10px; }
+.avm-section-icon {
+  width: 25px; height: 25px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; border: 1px solid transparent;
+}
+.avm-section-violet .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
+.avm-section-amber  .avm-section-icon { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+.avm-section-teal   .avm-section-icon { background: #f0fdfa; color: #0d9488; border-color: #99f6e4; }
+.avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+.avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
+.avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.avm-section-title { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
+.avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
+.avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
+/* Amber section keeps its amber icon, but the title + subtitle use the same
+   purple as every other section heading (user request). */
+.avm-section-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px; }
+/* Additional Contact Persons card — stretch its body so the card fills the
+   empty space below in the modal instead of leaving a big gap. */
+.avm-section-grow .avm-section-body { min-height: 230px; }
+
+.avm-section-add-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 12px; border-radius: 9px;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); color: #fff; border: none;
+  font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
+  box-shadow: 0 3px 9px rgba(124,58,237,.42);
+  transition: transform .14s, box-shadow .14s;
+}
+.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
+
+/* Additional-contacts table = Figma .sf-mini-table: PURPLE header text, NO
+   gradient band (just a thin divider) — distinct from the DD/KYC tables, which
+   keep the lavender-gradient gray header. */
+.avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
+.avm-modal .table.avm-mini-table thead th {
+  color: #7c3aed; font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
+  padding: 11px 14px; border-bottom: 1px solid #ece7f8;
+}
+/* Figma spacing — airier rows: larger cell padding + 13px body text. */
+.avm-modal .table.avm-mini-table tbody td {
+  padding: 13px 14px; font-size: 13px; vertical-align: middle;
+  border-bottom: 1px solid #f3eefc;
+}
+.avm-modal .table.avm-mini-table tbody tr:last-child td { border-bottom: none; }
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead th { color: #c4b5fd; border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-modal .table.avm-mini-table tbody td { border-bottom-color: #2a2150; }
+
+/* Row action buttons — match the Customer form (acm-row-btn): pastel square. */
+.avm-row-actions { display: inline-flex; gap: 5px; }
+.avm-row-btn {
+  width: 28px; height: 28px; border-radius: 7px; border: 1px solid #e0d9f7;
+  background: #fff; color: #7c3aed; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background .15s, border-color .15s;
+}
+.avm-row-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
+.avm-row-btn-del { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
+.avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
+[data-bs-theme="dark"] .avm-row-btn-del { color: #fca5a5; border-color: rgba(220,38,38,.4); background: rgba(220,38,38,.14); }
+[data-bs-theme="dark"] .avm-row-btn { background: #1a1430; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-row-btn:hover { background: #2a1d5c; border-color: #6d28d9; }
+
+/* WhatsApp pills + Primary tag — Customer-form gradient style. */
+.avm-wa-yes, .avm-wa-no { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; }
+.avm-wa-yes { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #15803d; border: 1px solid #86efac; }
+.avm-wa-no  { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
+.avm-primary-tag {
+  display: inline-block; padding: 2px 9px; border-radius: 20px;
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd;
+}
+/* Additional Contacts list — show ~3 rows then scroll; min-height stops the
+   card collapsing to a single thin row (fills the empty space a bit). The
+   header stays pinned while the body scrolls. */
+/* Show ~3 contact rows + the sticky header, then scroll for the rest. */
+.avm-contacts-scroll { max-height: 250px; overflow-y: auto; }
+.avm-contacts-scroll thead th {
+  position: sticky; top: 0; z-index: 3;
+  /* The base rule ".avm-modal .table thead th" sets background:transparent — the
+     header's visible colour normally comes from the thead TR gradient, which does
+     NOT stick (only the TH does). So !important gives the sticky TH its OWN opaque
+     fill; without it the header is see-through and rows bleed up into it. */
+  background: #f7f3fd !important;
+  box-shadow: inset 0 -1px 0 0 #ece7f8;
+}
+[data-bs-theme="dark"] .avm-contacts-scroll thead th {
+  background: #251d47 !important;
+  box-shadow: inset 0 -1px 0 0 rgba(167,139,250,.22);
+}
+
+/* "N documents" count badge on the KYC section header (Figma) */
+.avm-doc-count {
+  display: inline-flex; align-items: center;
+  padding: 5px 13px; border-radius: 99px;
+  background: #f5f1fe; color: #6d28d9;
+  border: 1px solid #e2d4fa;
+  font-size: 11.5px; font-weight: 700; white-space: nowrap;
+}
+
+/* Form */
+.avm-grid-1 { display: grid; grid-template-columns: 1fr; gap: 11px; }
+.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
+
+.avm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+/* Labels match the Client / Recruitment master forms: small, uppercase,
+   modest letter-spacing, navy color, lighter weight (500) so the
+   surrounding form chrome doesn't shout at the user. */
+.avm-field-label {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700;
+  letter-spacing: 0; text-transform: none;
+  color: #3b0764;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .avm-field-label,
+[data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
+.avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
+/* Segment picker lock note — shown when uploaded docs pin the segment set. */
+.avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
+.avm-segment-lock-note i { font-size: 12px; }
+[data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
+/* Inline lock hint beside the Supplier Segment label (no extra row → no gap). */
+.avm-seg-hint { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; font-size: 9.5px; font-weight: 500; color: #b45309; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: help; }
+.avm-seg-hint i { font-size: 11px; }
+[data-bs-theme="dark"] .avm-seg-hint { color: #fbbf24; }
+/* Inline quick-add (+) buttons — let the user add a new master entry
+   (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
+   without leaving the form. */
+.avm-field-plus {
+  width: 18px; height: 18px;
+  border: none; border-radius: 5px;
+  background: #7c3aed; color: #fff;
+  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.avm-field-plus:disabled { opacity: .85; cursor: progress; }
+/* Read-only input (State Code auto-fill) — light in light mode, dark in dark mode. */
+.avm-input-ro { background: #f1f5f9; color: #475569; cursor: default; }
+[data-bs-theme="dark"] .avm-input-ro { background: #1a1430; color: #9db3c1; border-color: #3b2a6b; }
+.avm-spinner-sm { width: 10px; height: 10px; border-width: 1.5px; vertical-align: 0; }
+/* Inputs — mirror .master-modal .form-control from masterFormKit so the
+   wizard reads as part of the same form family as Clients / Recruitment.
+   Subtle blue-tinted surface, indigo focus ring, 10px radius. */
+.avm-input {
+  height: 38px; width: 100%;   /* Figma .sf-input height */
+  padding: 5px 12px;
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
+  border-radius: 10px;
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
+  color: var(--vz-body-color, #495057);
+  font-family: inherit; font-size: 13px; font-weight: 400; outline: none;
+  box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
+  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+}
+/* +91 country-code prefix shown on the Contact No field for Indian suppliers.
+   The addon sits flush-left of the input; the input loses its left radius so
+   the two read as a single control. */
+.avm-phone-in { display: flex; align-items: stretch; width: 100%; }
+.avm-phone-cc {
+  display: inline-flex; align-items: center; padding: 0 11px;
+  height: 38px; white-space: nowrap;
+  font-size: 13px; font-weight: 600;
+  color: var(--vz-body-color, #495057);
+  background: color-mix(in srgb, #a78bfa 14%, var(--vz-card-bg, #fff));
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+}
+.avm-phone-field { border-radius: 0 10px 10px 0 !important; }
+.avm-cp-body .avm-phone-cc { height: 42px; border-radius: 11px 0 0 11px; }
+.avm-cp-body .avm-phone-field { border-radius: 0 11px 11px 0 !important; }
+[data-bs-theme="dark"] .avm-phone-cc {
+  background: color-mix(in srgb, #a78bfa 18%, #110c25);
+  border-color: #3b2a6b; color: #ede9fe;
+}
+.avm-input::placeholder,
+.avm-modal input::placeholder,
+.avm-modal textarea::placeholder,
+.avm-modal .master-select-placeholder {
+  color: #94a3b8 !important;
+  opacity: 0.45 !important;
+  font-weight: 400 !important;
+  font-size: 13px !important;   /* one uniform placeholder size everywhere */
+}
+.avm-input:hover:not(:disabled):not([readonly]) {
+  border-color: rgba(124,58,237,0.55);
+  box-shadow: 0 2px 6px rgba(124,58,237,0.08);
+}
+.avm-input:focus {
+  background: var(--vz-card-bg, #fff);
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.15), 0 4px 12px rgba(124,58,237,0.12);
+}
+[data-bs-theme="dark"] .avm-input,
+[data-layout-mode="dark"] .avm-input {
+  background: color-mix(in srgb, #a78bfa 12%, var(--vz-card-bg));
+}
+
+/* Inline per-field error — red text + warning icon under the input,
+   plus a red border on the input itself (matches the Add Product form). */
+.avm-field .avm-field-error,
+.avm-modal .avm-field-error,
+.avm-field-error {
+  display: inline-flex !important; align-items: center; gap: 4px;
+  font-size: 11.5px; font-weight: 600; color: #ef4444 !important;
+  margin-top: 4px; line-height: 1.2;
+}
+.avm-field .avm-field-error i,
+.avm-field-error i { font-size: 13px; color: #ef4444 !important; }
+.avm-field.has-error .avm-input,
+.avm-field.has-error textarea {
+  border-color: #ef4444 !important;
+}
+.avm-field.has-error .avm-input:focus,
+.avm-field.has-error textarea:focus {
+  box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important;
+}
+.avm-field.has-error .master-select-wrap .master-select-toggle {
+  border-color: #ef4444 !important;
+}
+.avm-field.has-error .avm-field-label { color: #ef4444 !important; }
+
+/* MasterSelect inside this modal — match Velzon form-select chrome */
+.avm-master-select .master-select-wrap .master-select-toggle {
+  min-height: 38px !important; height: 38px;   /* match Figma .sf-input 38px */
+  /* Right padding trimmed 32px -> 12px: the chevron is a flex item pushed to
+     the right by the toggle's space-between, so the extra 32px right padding
+     was holding it ~20px in from the edge, making it look centred. 12px sits
+     it flush near the right edge like a normal select. */
+  padding: 0 12px !important;
+  font-size: 13px !important;
+  /* Match .avm-input exactly so dropdowns and text fields look identical. */
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff)) !important;
+  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec)) !important;
+  border-radius: 10px !important;
+  color: var(--vz-body-color, #495057) !important;
+}
+.avm-master-select .master-select-wrap.show .master-select-toggle {
+  border-color: #7c3aed !important;
+  box-shadow: 0 0 0 3px rgba(124,58,237,.15) !important;
+}
+
+/* Radios */
+.avm-radio-row { display: inline-flex; align-items: center; gap: 16px; height: 32px; }
+.avm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1e1b4b; cursor: pointer; }
+.avm-radio input { width: 16px; height: 16px; accent-color: #7c3aed; }
+/* Dark-theme: navy text turns invisible on the modal's dark background.
+ * Lift Yes / No labels to a high-contrast off-white and tint the radio
+ * accent to the indigo used elsewhere in the wizard. */
+[data-bs-theme="dark"] .avm-radio { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-radio input { accent-color: #a78bfa; }
+
+/* File chooser — same chrome as the inputs, dashed border to signal upload */
+.avm-filechooser {
+  position: relative;
+  height: 32px; padding: 0 8px 0 12px;
+  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 8px;
+  background: var(--vz-card-bg, #fff); color: #6b7280;
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12.5px; font-weight: 500; cursor: pointer;
+  width: 100%;
+}
+.avm-filechooser:hover { border-color: #7c3aed; }
+.avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.avm-filechooser-icon { color: #7c3aed; font-size: 15px; flex-shrink: 0; }
+.avm-filechooser-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: #1e1b4b;
+}
+/* Filename as a link — applies the indigo affordance only when a
+   view URL exists (fresh blob or hydrated server path). Clicking
+   the name opens the file in a new tab, same as the 👁 button. */
+.avm-filechooser-link {
+  color: #6d28d9;
+  text-decoration: underline;
+  text-decoration-color: rgba(124, 58, 237, .35);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.avm-filechooser-link:hover {
+  color: #5b21b6;
+  text-decoration-color: #6d28d9;
+}
+[data-bs-theme="dark"] .avm-filechooser-link {
+  color: #c4b5fd;
+  text-decoration-color: rgba(196, 181, 253, .35);
+}
+[data-bs-theme="dark"] .avm-filechooser-link:hover { color: #e9d5ff; }
+
+/* Populated state — the hidden <input> is gone, so the strip is no
+   longer a "click anywhere to choose" affordance. Border switches to
+   solid + a subtle indigo tint, and the View / Delete buttons sit on
+   the right as proper pill-style action chips. */
+.avm-filechooser.avm-filechooser-has-file {
+  cursor: default;
+  border: 1px solid #ddd6fe;
+  background: #faf5ff;
+}
+.avm-filechooser.avm-filechooser-has-file:hover { border-color: #a78bfa; }
+.avm-filechooser-actions {
+  display: inline-flex; align-items: center; gap: 4px;
+  flex-shrink: 0; align-self: center;
+}
+.avm-fc-action {
+  width: 26px; height: 26px; box-sizing: border-box; vertical-align: middle;
+  margin: 0; line-height: 1; font-size: 0; appearance: none; -webkit-appearance: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: #6b7280;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+  padding: 0;
+  text-decoration: none;
+}
+.avm-fc-action i { font-size: 14px; line-height: 1; }
+.avm-fc-view:hover {
+  background: rgba(124, 58, 237, .10);
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+.avm-fc-replace { position: relative; }
+.avm-fc-replace:hover {
+  background: rgba(124, 58, 237, .10);
+  border-color: #7c3aed;
+  color: #7c3aed;
+}
+.avm-fc-delete:hover {
+  background: rgba(240, 101, 72, .10);
+  border-color: #f06548;
+  color: #f06548;
+}
+
+[data-bs-theme="dark"] .avm-filechooser.avm-filechooser-has-file {
+  background: #1a1538; border-color: #3b2a6b;
+}
+[data-bs-theme="dark"] .avm-filechooser-text { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-fc-action {
+  background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
+}
+[data-bs-theme="dark"] .avm-fc-view:hover,
+[data-bs-theme="dark"] .avm-fc-replace:hover {
+  background: rgba(124, 58, 237, .18); border-color: #a78bfa; color: #ddd6fe;
+}
+[data-bs-theme="dark"] .avm-fc-delete:hover {
+  background: rgba(248, 113, 113, .18); border-color: #f87171; color: #fecaca;
+}
+
+/* Extra contact rows */
+.avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
+.avm-extra-contact { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
+.avm-extra-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: #7c3aed; }
+.avm-extra-remove {
+  width: 28px; height: 28px; border-radius: 7px;
+  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
+  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+
+.avm-empty { padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px; border: 1.5px dashed #e2e8f0; border-radius: 10px; background: #fff; }
+
+/* Doc table */
+.avm-doctable-wrap { display: flex; flex-direction: column; gap: 10px; }
+.avm-doctable-banner {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 8px;
+  font-size: 12.5px; font-weight: 500; letter-spacing: .04em;
+  align-self: flex-start;
+}
+.avm-doctable-banner.tone-amber { background: linear-gradient(135deg, #fef3c7, #fef9c3); color: #92400e; border: 1px solid #fde68a; }
+.avm-doctable-banner.tone-teal  { background: linear-gradient(135deg, #ccfbf1, #f0fdfa); color: #0f766e; border: 1px solid #99f6e4; }
+.avm-doctable-icon {
+  width: 24px; height: 24px; border-radius: 6px;
+  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.avm-doctable-banner-label { color: inherit; }
+.avm-doctable-banner-sub { font-weight: 600; letter-spacing: 0; color: #b45309; }
+.avm-doctable-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.avm-doctable-search {
+  flex: 1; max-width: 360px;
+  position: relative;
+  height: 36px;
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
+  display: inline-flex; align-items: center; padding: 0 12px 0 36px;
+}
+.avm-doctable-search i { position: absolute; left: 12px; color: #94a3b8; font-size: 14px; }
+.avm-doctable-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-size: 13px; }
+.avm-doctable-count { font-size: 12px; color: #7c3aed; font-weight: 700; }
+
+/* Doc tables — keep the plain Velzon table-light header (same as the
+   Clients master) so the chrome stays consistent across the app. */
+.avm-doctable-wrap .table thead th {
+  font-size: 11.5px; letter-spacing: .04em; font-weight: 700;
+}
+
+/* ───── Global table chrome inside the Vendor modal ─────
+   Mirrors the Clients list table (resources/js/pages/client/Clients.tsx)
+   so every embedded table here — DD, Owner KYC, Trade License, Bank,
+   GST Scrutiny, Product Mappings — reads with the same tight header /
+   cell rhythm. The vendor modal was rendering Velzon's default 13.5px
+   bold uppercase headers, which dwarfed everything around them. */
+.avm-modal .table {
+  --bs-table-bg: transparent;
+  font-size: 13px;
+  margin-bottom: 0;
+}
+/* Exact match to the Figma prototype's .sf-doc-table header (P2P_Sourcing). */
+.avm-modal .table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
+.avm-modal .table thead.table-light th,
+.avm-modal .table thead th {
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #8b7bb8;
+  padding: 10px 13px;
+  background: transparent;
+  border-bottom: 1.5px solid #ece7f8;
+  white-space: nowrap;
+}
+/* KYC / DD / License / Bank / GST document tables — Figma header th is
+   "9px DM Sans" which is weight 400 (normal). The general rule above uses 800,
+   so even at the same 9px the dev headers read heavier/larger. Match the Figma
+   weight here; scoped to avm-kyc-table so contacts and mapped tables keep theirs. */
+.avm-modal .table.avm-kyc-table thead th { font-weight: 400; letter-spacing: 0.04em; }
+.avm-modal .table tbody td {
+  font-size: 13px;
+  font-weight: 400;
+  /* Theme-adaptive — was hardcoded #495057 (dark text), which on the modal's
+     dark surface in dark mode rendered the KYC cell text nearly invisible.
+     var(--vz-body-color) is dark in light mode and light in dark mode, so the
+     cells stay readable in BOTH without depending on theme-prefixed overrides. */
+  color: var(--vz-body-color, #495057);
+  padding: 10px 12px;
+  vertical-align: middle;
+  border-top: 1px solid #f3f4f6;
+}
+.avm-modal .table tbody td strong {
+  font-weight: 600;
+  /* was #1e293b (near-black) — invisible on the dark modal. Emphasis colour
+     adapts per theme (near-black in light, near-white in dark). */
+  color: var(--vz-emphasis-color, var(--vz-heading-color, #1e293b));
+}
+/* Issuing Authority column reads in the brand purple (Figma), not body grey. */
+.avm-modal .table tbody td.avm-cell-authority { color: #7c3aed; font-weight: 500; }
+[data-bs-theme="dark"] .avm-modal .table tbody td.avm-cell-authority { color: #c4b5fd; }
+
+/* Action buttons inside vendor-modal tables — 30x30 outline pills,
+   identical to the Clients ActionBtn component
+   (resources/js/pages/client/Clients.tsx#L131). Replaces the larger
+   Velzon .btn-soft-* defaults that were oversized in this context. */
+.avm-modal .table .btn.btn-sm.btn-soft-primary,
+.avm-modal .table .btn.btn-sm.btn-soft-danger,
+.avm-modal .table .btn.btn-sm.btn-soft-info,
+.avm-modal .table .btn.btn-sm.btn-soft-success,
+.avm-modal .table .btn.btn-sm.btn-soft-warning {
+  width: 30px; height: 30px; padding: 0;
+  border-radius: 8px;
+  background: var(--vz-secondary-bg, #f3f4f6);
+  border: 1px solid var(--vz-border-color, #e5e7eb);
+  color: var(--vz-secondary-color, #6c757d);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-primary i,
+.avm-modal .table .btn.btn-sm.btn-soft-danger i,
+.avm-modal .table .btn.btn-sm.btn-soft-info i,
+.avm-modal .table .btn.btn-sm.btn-soft-success i,
+.avm-modal .table .btn.btn-sm.btn-soft-warning i {
+  font-size: 14px;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-primary:hover {
+  background: rgba(124, 58, 237, 0.10); border-color: #7c3aed; color: #7c3aed;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-danger:hover {
+  background: rgba(240, 101, 72, 0.10); border-color: #f06548; color: #f06548;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-info:hover {
+  background: rgba(41, 156, 219, 0.10); border-color: #299cdb; color: #299cdb;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-success:hover {
+  background: rgba(10, 179, 156, 0.10); border-color: #0ab39c; color: #0ab39c;
+}
+.avm-modal .table .btn.btn-sm.btn-soft-warning:hover {
+  background: rgba(247, 184, 75, 0.10); border-color: #f7b84b; color: #f7b84b;
+}
+
+/* Hover row tint — same subtle gray the Clients table uses. */
+.avm-modal .table tbody tr:hover td { background: #f8f9fc; }
+
+/* Auto-code monospace badge — keep it tight & lower-key. */
+.avm-modal .table .badge.bg-light {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  background: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+/* Dark-mode table header — the .table-light Bootstrap class forces a light bg
+   even in dark mode, so override with !important; the row carries a dark
+   gradient (mirrors the light-mode lavender gradient) and cells stay transparent. */
+[data-bs-theme="dark"] .avm-modal .table thead tr { background: linear-gradient(135deg, #251d47, #2a2150) !important; }
+[data-bs-theme="dark"] .avm-modal .table thead.table-light th,
+[data-bs-theme="dark"] .avm-modal .table thead th {
+  background: transparent !important; color: #a89fc7; border-bottom-color: #3b2a6b;
+}
+/* Section header icon tiles — translucent tinted chips instead of the bright
+   light-mode tiles, so they sit on the dark surface. */
+[data-bs-theme="dark"] .avm-section-violet .avm-section-icon,
+[data-bs-theme="dark"] .avm-section-purple .avm-section-icon { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-section-amber  .avm-section-icon { background: rgba(217,119,6,.22);  color: #fbbf24; border-color: rgba(251,191,36,.35); }
+[data-bs-theme="dark"] .avm-section-teal   .avm-section-icon { background: rgba(13,148,136,.22); color: #5eead4; border-color: rgba(94,234,212,.3); }
+[data-bs-theme="dark"] .avm-section-green  .avm-section-icon { background: rgba(22,163,74,.22);  color: #86efac; border-color: rgba(134,239,172,.3); }
+[data-bs-theme="dark"] .avm-modal .table tbody td {
+  color: #cbd5e1; border-top-color: #2a2150;
+}
+[data-bs-theme="dark"] .avm-modal .table tbody td strong { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-modal .table tbody tr:hover td { background: #1a1538; }
+/* Table wrapper outer border — Bootstrap .border uses a light --bs-border-color
+   in dark mode, which reads as a stark white box around the table. Mute it to a
+   subtle dark purple so the table blends (Contact Persons, KYC, DD, etc.). */
+[data-bs-theme="dark"] .avm-modal .table-responsive { border-color: rgba(167,139,250,.16) !important; }
+
+/* Bank grid */
+.avm-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+/* Product list (Step 4) */
+.avm-product-list { display: flex; flex-direction: column; gap: 8px; }
+.avm-product-row {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
+  padding: 12px 14px;
+  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.avm-product-row.on { border-color: #16a34a; background: #ecfdf5; }
+.avm-product-row input { width: 18px; height: 18px; accent-color: #16a34a; }
+.avm-product-code { font-size: 11px; font-weight: 600; color: #7c3aed; letter-spacing: .06em; }
+.avm-product-name { font-size: 13px; font-weight: 500; color: #1e1b4b; }
+.avm-product-info { display: inline-flex; gap: 6px; }
+.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #f5f1fe; color: #7c3aed; font-size: 10.5px; font-weight: 500; }
+
+/* Footer */
+.avm-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 22px;
+  background: #f5f2fc; border-top: 1px solid #e9e2f7;
+}
+.avm-foot-right { display: flex; align-items: center; gap: 8px; }
+.avm-foot-note { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: #64748b; }
+.avm-foot-dot { width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; display: inline-block; flex-shrink: 0; }
+[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
+.avm-btn-ghost, .avm-btn-outline, .avm-btn-primary {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 40px; padding: 0 18px;
+  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border-radius: 10px;
+  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
+}
+/* Cancel button — the old #e2e8f0 border was nearly invisible against
+ * the modal's white surface, so the button read as a floating label.
+ * Use a stronger slate border + subtle shadow so it's recognisable as
+ * a clickable affordance without competing with the primary CTA. */
+.avm-btn-ghost {
+  background: #fff;
+  border: 1.5px solid #94a3b8;
+  color: #334155;
+  box-shadow: 0 1px 2px rgba(15,23,42,.06);
+}
+.avm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
+.avm-btn-outline { background: #fff; border: 1.5px solid #ddd6fe; color: #7c3aed; }
+.avm-btn-outline:hover { background: #f5f1fe; border-color: #7c3aed; }
+.avm-btn-primary {
+  position: relative; overflow: hidden;
+  color: #fff; border: none;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
+  text-shadow: 0 1px 2px rgba(0,0,0,.18);
+}
+.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
+.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 6px 18px rgba(124,58,237,.32), 0 1px 0 rgba(255,255,255,.2) inset; }
+
+/* Inline spinner shown in Save & Next / Save Vendor while the network
+ * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
+ * so it sits flush with the 13px button text. */
+.avm-spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: avm-spinner-spin .7s linear infinite;
+  vertical-align: -2px;
+}
+@keyframes avm-spinner-spin { to { transform: rotate(360deg); } }
+/* Spin any icon in place — used on the row Download button while the file
+   streams through the backend, so the user sees it's working. */
+.avm-spin { animation: avm-spinner-spin .7s linear infinite; display: inline-block; }
+.avm-spinner-lg {
+  width: 36px; height: 36px;
+  border-width: 3px;
+  border-color: rgba(124,58,237,.20);
+  border-top-color: #7c3aed;
+}
+
+/* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
+ * is in flight. Form-shaped skeleton bars convey "data is loading" while
+ * preserving the user's mental map of the form layout (no centred modal
+ * card covering the geometry). */
+.avm-load-overlay {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  z-index: 5;
+  overflow: hidden;
+  padding: 22px 26px;
+}
+/* avm-load-overlay-static — used when the skeleton REPLACES the form
+   (mutually-exclusive render) rather than sitting on top of it. Drops
+   the absolute positioning so the skeleton flows normally inside the
+   scrollable body, which guarantees full coverage regardless of body
+   height or scroll offset. */
+.avm-load-overlay-static {
+  position: static;
+  inset: auto;
+  z-index: auto;
+  min-height: 100%;
+  /* Inherited from .avm-load-overlay, and both are wrong once the skeleton
+     flows INSIDE .avm-body rather than covering it:
+       • padding 22/26 stacked on top of the body's own 12/22, so the skeleton
+         cards sat ~26px narrower on each side than the section cards that
+         replaced them — the form visibly widened as it loaded;
+       • the white fill hid the body's lavender wash, so the whole panel went
+         from white to tinted at the same moment. */
+  padding: 0;
+  background: transparent;
+}
+[data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
+/* The skeleton content now uses the shared <Shimmer> component (same as the
+   Client/Branch forms); only the overlay wrapper above stays local. */
+
+/* KYC table layout — Bootstrap's table-nowrap was forcing every cell
+ * onto a single line, so long document names / addresses / red flags
+ * would overflow the column and break the table layout. Allow text
+ * cells to wrap with sane per-cell limits, but keep nowrap for the
+ * status badges and the action button column so they stay aligned. */
+/* These tables live inside the modal, NOT a Velzon .card — so Velzon's
+   .table-card negative margin (margin: -card-spacer) bleeds them wider than the
+   card and forces a horizontal scrollbar. Neutralize the margin so the table
+   fits the card width and sizes to the popup dynamically. */
+/* 12px radius + overflow clip so the gradient header curves at the top
+   corners, matching the Figma .sf-doc-scroll wrapper. */
+/* overflow:visible (not hidden) so a centred action-column tooltip isn't clipped
+   at the table edge. Fixed-layout tables fill 100% width, so nothing else spills.
+   Mobile still gets overflow-x:auto below for horizontal scroll. */
+.avm-kyc-table-wrap { overflow: visible; border-radius: 12px !important; border-color: #f1ecfb !important; margin: 0 !important; }
+.avm-kyc-table-wrap.table-card { margin: 0 !important; }
+/* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
+.avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
+/* Segment-rule reference table (Company DD / Owner KYC / Trade Licence): a
+   FIXED layout so the explicit per-column th widths are authoritative and the
+   header lines up exactly over its data. Auto layout stretched the columns
+   unevenly, which read as header/content misalignment. The Document Name
+   column carries no width, so it soaks up the remaining space. */
+.avm-kyc-table-wrap .avm-segref-table { table-layout: fixed; width: 100%; }
+.avm-segref-table td, .avm-segref-table th { max-width: none; }
+/* On small / mobile screens the table can't compress to readable widths, so let
+   it keep a min width and scroll HORIZONTALLY instead of clipping the columns. */
+@media (max-width: 820px) {
+  .avm-kyc-table-wrap { overflow-x: auto !important; }
+  .avm-kyc-table-wrap .avm-kyc-table { min-width: 700px; }
+  .avm-kyc-table th, .avm-kyc-table td { white-space: nowrap; max-width: none; }
+}
+/* KYC step card (purple tone) — extend down to fill the modal body instead of
+   floating short with empty space below. Step-1 sections (violet) are untouched. */
+.avm-section-purple { min-height: calc(100vh - 430px); }
+/* width:auto so the table hugs its content — columns sit tight together
+   instead of stretching across the full card (no wasted gaps / no scroll). */
+.avm-kyc-table {
+  table-layout: auto;
+  width: auto;
+}
+.avm-kyc-table th, .avm-kyc-table td {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  vertical-align: middle;
+  max-width: 280px;
+  padding: 9px 14px;
+  font-size: 12px;
+}
+/* Tighten the inter-column rhythm: first/last cells hug the card edges. */
+.avm-kyc-table th:first-child, .avm-kyc-table td:first-child { padding-left: 14px; }
+.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child  { padding-right: 14px; text-align: right; }
+.avm-kyc-table th { white-space: nowrap; }  /* headers stay on one line */
+.avm-kyc-table td .badge,
+.avm-kyc-table td .avm-pill,
+.avm-kyc-table td .btn,
+.avm-kyc-table td .hstack,
+.avm-kyc-table td .font-monospace,
+/* td.font-monospace — the numeric columns (PRICE, GST %, GST AMT, TOTAL) put
+   the class on the <td> itself, not a child, so the descendant selector above
+   missed them and the cells inherited word-break/overflow-wrap. In a narrow
+   column that broke "12.00%" so the % dropped to a second line (QA report).
+   Matching the td directly keeps the value + % on one line. */
+.avm-kyc-table td.font-monospace { white-space: nowrap; }
+/* Action / SR / status columns stay narrow so they don't fight the
+ * text columns for horizontal space. The last column is action icons
+ * across every KYC table; first is the row number. */
+.avm-kyc-table th:first-child, .avm-kyc-table td:first-child,
+.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child {
+  white-space: nowrap;
+  max-width: none;
+  width: 1%;
+}
+/* …except where the table has NO actions column.
+ *
+ * Both the rule above and the right-align on :last-child were written for
+ * tables that end in action icons — squeeze that column to its content and push
+ * it to the edge. GST Scrutiny no longer has one (a compliance record is not
+ * deletable), so its last DATA column, Red Flags, was being crushed to width:1%
+ * and flung against the card edge while the columns before it stretched to fill
+ * the gap. This hands the last column back its normal share and alignment. */
+.avm-kyc-table.avm-no-actions th:last-child,
+.avm-kyc-table.avm-no-actions td:last-child {
+  width: auto;
+  text-align: left;
+  white-space: normal;
+}
+
+/* GST Scrutiny alignment.
+ *
+ * Columns 1-5 — Sr No, Scrutiny Date, GST Number, Status, Last Filing — are
+ * centred, header and value together. They are short, fixed-shape values (a
+ * number, two dates, a GSTIN, a pill), and centring them keeps each column
+ * reading as one stack rather than text drifting left of a header.
+ *
+ * Columns 6-7 — Prev 2A Invoice and Red Flags — stay LEFT. Those are free-text
+ * notes of no fixed length, and centred prose has a ragged left edge that is
+ * hard to scan down.
+ *
+ * Doubled class for specificity: .avm-kyc-table th:first-child already sets
+ * this column's alignment, so a single-class selector would tie and lose. */
+.avm-kyc-table.avm-gst-table th:nth-child(-n+5),
+.avm-kyc-table.avm-gst-table td:nth-child(-n+5) { text-align: center; }
+.avm-kyc-table.avm-gst-table th:nth-child(n+6),
+.avm-kyc-table.avm-gst-table td:nth-child(n+6) { text-align: left; }
+/* Mapped Products table — match the Figma .sf-doc-table typography: small
+   uppercase muted-purple headers on a soft gradient, compact cells, and a
+   rounded "01" SR pill. Scoped to this table so the KYC/DD tables are untouched. */
+/* Full-width + all-left-aligned headers/cells to mirror the Figma .sf-doc-table
+   (it left-aligns every column, including the numeric ones). */
+.avm-mapped-table { width: 100%; }
+/* The row fits the body, so kill the spurious table-responsive scrollbar — the
+   table then spans the full body width (aligned with the toolbar: pill left →
+   +Map Product right) and the action icons sit INSIDE as the last column. */
+/* visible: the compacted table fits the popup so no scrollbar is needed, and
+   visible lets the SEGMENT "+N" segment popover overflow the row instead of
+   being clipped (overflow-x:auto would force overflow-y:auto and cut it off). */
+.avm-mapped-wrap { overflow: visible !important; border-color: #f1ecfb !important; border-radius: 12px !important; }
+.avm-mapped-table th.text-end, .avm-mapped-table td.text-end { text-align: left !important; }
+.avm-mapped-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
+.avm-mapped-table thead th {
+  background: transparent;
+  font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #8b7bb8; padding: 10px 7px; border-bottom: 1.5px solid #ece7f8;
+}
+.avm-mapped-table tbody td { padding: 9px 7px; font-size: 12px; color: #475569; }
+.avm-mapped-table tbody td strong { font-weight: 800; color: #1e293b; }
+/* Money and percent columns — the app's own DM Sans, not Bootstrap's
+   .font-monospace.
+   That class resolves to Consolas on Windows, which is a CODE face: it gives
+   the rupee amounts a typewriter look that belongs to nothing else on the
+   screen, and its wide fixed advance made the columns broader than the numbers
+   in them. The reason mono was reached for is column alignment, and
+   font-variant-numeric:tabular-nums buys exactly that from DM Sans — every
+   digit the same width, decimal points lining up down the column — while the
+   figures still read as part of the interface.
+   HSN/SAC keeps .font-monospace deliberately: that is an identifier, not a
+   quantity, and mono is the right cue for one. */
+.avm-num {
+  font-family: var(--font-sans, 'DM Sans', system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  white-space: nowrap;
+  letter-spacing: -.01em;
+}
+/* Numeric + CODE columns stay on one line (server showed "P-18" wrapping to two
+   lines). Smaller mono font keeps the wide ₹ amounts narrow so all 10 columns
+   fit the popup with NO horizontal scroll; PRODUCT & SEGMENT still wrap. */
+/* .avm-num joins this so the money columns keep the size they had — swapping
+   the family alone would have jumped them from 11px to the fs-13 default. */
+.avm-mapped-table td.font-monospace,
+.avm-mapped-table td.avm-num { white-space: nowrap; font-size: 11px; }
+.avm-mapped-table th.text-end { white-space: nowrap; }
+.avm-mapped-table .avm-auto-code { white-space: nowrap; }
+/* SEGMENT column — SegmentTags: first segment as a teal chip + a "+N" pill that
+   opens a popover listing every segment (for multi-segment products). */
+.avm-mapped-table .seg-tags { position: relative; display: inline-flex; align-items: center; gap: 4px; }
+.avm-seg-tag { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
+.avm-mapped-table .seg-more-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 19px; padding: 0 6px; border-radius: 6px; border: 1px solid #bdf0f7; background: #e0fbff; color: #0e7490; font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; line-height: 1; transition: background .15s, border-color .15s; }
+.avm-mapped-table .seg-more-pill:hover { background: #cffafe; border-color: #67e8f9; }
+.avm-mapped-table .seg-more-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; min-width: 150px; max-width: 240px; padding: 8px; border-radius: 10px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(15,23,42,.18); }
+.avm-mapped-table .seg-more-pop-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
+.avm-mapped-table .seg-more-pop-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.avm-mapped-table .seg-more-pop-item { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; }
+[data-bs-theme="dark"] .avm-seg-tag,
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-item { background: rgba(8,145,178,.15); border-color: rgba(103,232,249,.25); color: #a5f3fc; }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pill { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.3); color: #67e8f9; }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop { background: #0f1e2e; border-color: rgba(255,255,255,.12); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-hdr { color: #94a3b8; }
+.avm-sr-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 7px;
+  font-size: 10.5px; font-weight: 800; color: #7c3aed;
+  background: #f5f1fe; border: 1px solid #e7defb;
+}
+/* CODE pill — match Figma .sf-doc-code--company (mono 10px, radius 7px). */
+.avm-mapped-table .avm-auto-code { font-size: 10px; padding: 3px 9px; border-radius: 7px; color: #7c3aed; border-color: #ddd6fe; }
+/* Compact 29px action buttons (Figma .sf-doc-act) so the row fits — no scroll. */
+.avm-mapped-table tbody td .btn { width: 29px; height: 29px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+/* + Map Product — match Figma .sf-add-mini (11px/700, radius 9px, 3-stop gradient). */
+.avm-mapped-toolbar .avm-section-add-btn {
+  padding: 7px 12px; border-radius: 9px; font-size: 11px; font-weight: 700;
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
+  box-shadow: 0 3px 9px rgba(124,58,237,.42);
+}
+/* Popup Close/Cancel — match Figma .sf-btn-cancel (light slate border, radius 12px). */
+/* Footer buttons — exact Figma .sf-pop-foot .sf-btn: 13px / 700, padding
+   10px 22px, radius 12px. Cancel = white + #475569 text; Save keeps the base
+   violet gradient (which already matches Figma's .sf-btn-primary). */
+.avm-cp-foot .avm-btn-ghost { color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; box-shadow: none; }
+.avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
+.avm-cp-foot .avm-btn-primary { font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; border-radius: 12px; }
+[data-bs-theme="dark"] .avm-mapped-table thead tr { background: rgba(124,58,237,.12); }
+[data-bs-theme="dark"] .avm-mapped-table thead th { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
+[data-bs-theme="dark"] .avm-mapped-table tbody td { color: #cbd5e1; }
+[data-bs-theme="dark"] .avm-mapped-table tbody td strong { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-sr-pill { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+/* Dark mode: the light #f1ecfb wrapper border + any inner table borders read as
+   a stark white outline — swap to a muted dark-purple so the table blends. */
+[data-bs-theme="dark"] .avm-mapped-wrap { border-color: rgba(167,139,250,.18) !important; }
+[data-bs-theme="dark"] .avm-mapped-table,
+[data-bs-theme="dark"] .avm-mapped-table td,
+[data-bs-theme="dark"] .avm-mapped-table th { border-color: rgba(167,139,250,.12); }
+/* Dark-mode KYC tables — cell text + row hover. The DD document name and
+   plain cells rendered too dim on the modal's dark surface, and the inherited
+   (Velzon/Bootstrap) row-hover background washed them out to near-invisible.
+   Brighten the cell text and pin a subtle violet hover wash with readable
+   white text. Pills / badges / buttons keep their own colours (they set
+   their own colour on their own element, so the td colour does not override
+   them); muted secondary cells also keep their muted tone. */
+[data-bs-theme="dark"] .avm-kyc-table {
+  --bs-table-color: #e5e7eb;
+  --bs-table-bg: transparent;
+  --bs-table-border-color: rgba(255,255,255,.10);
+  color: #e5e7eb;
+}
+/* Force readable cell text (the inherited table colour was rendering as a
+   faint purple on the dark gradient). !important + the strong override so the
+   DD document name and plain cells are clearly visible. */
+[data-bs-theme="dark"] .avm-kyc-table tbody td {
+  color: #e5e7eb !important;
+}
+[data-bs-theme="dark"] .avm-kyc-table tbody td strong {
+  color: #f5f3ff !important;
+}
+/* Secondary / muted cells (issuing authority, expiry, "Not uploaded") — keep
+   them dimmer than the main text but still legible. */
+[data-bs-theme="dark"] .avm-kyc-table tbody td .text-muted,
+[data-bs-theme="dark"] .avm-kyc-table tbody td .avm-prev-v {
+  color: rgba(255,255,255,.62) !important;
+}
+[data-bs-theme="dark"] .avm-kyc-table tbody tr:hover td {
+  background-color: rgba(124,92,252,.16) !important;
+  color: #ffffff !important;
+}
+
+@media (max-width: 880px) {
+  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
+  .avm-bank-grid { grid-template-columns: 1fr 1fr; }
+  .avm-stepper { flex-direction: column; }
+  .avm-step-arrow { display: none; }
+}
+@media (max-width: 540px) {
+  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
+  .avm-bank-grid { grid-template-columns: 1fr; }
+
+  /* Header — was cramped: the long title wrapped and the Map Product + close
+     buttons overlapped it. Tighten padding, shrink the title, drop the long
+     descriptive subtitle, and make the action buttons compact so they sit
+     cleanly beside the title. */
+  .avm-head { padding: 12px 14px; gap: 8px; align-items: flex-start; }
+  .avm-head-left { gap: 9px; }
+  .avm-title { font-size: 15px; line-height: 1.25; }
+  .avm-sub { display: none; }
+  .avm-head-right { flex-shrink: 0; gap: 6px; }
+  .avm-map-btn { padding: 6px 9px; font-size: 11px; }
+  .avm-map-btn i { font-size: 12px; }
+
+  /* Footer — the "Fields required" note and the Update/Prev buttons were
+     squished side by side. Stack them: note on top, full-width buttons below. */
+  .avm-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
+  .avm-foot-right { width: 100%; }
+  .avm-foot-right button { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Dark mode
+ * ════════════════════════════════════════════════════════════════════ */
+[data-bs-theme="dark"] .avm-modal { background: #14102a; color: #ede9fe; }
+/* Flat solid surfaces in dark — no gradient sweeps (clean + clear). */
+[data-bs-theme="dark"] .avm-head { background: #4c1d95; box-shadow: none; border-bottom-color: rgba(167,139,250,.30); }
+[data-bs-theme="dark"] .avm-step-active { background: #2a1d5c; border-color: #7c3aed; box-shadow: none; }
+[data-bs-theme="dark"] .avm-step-active .avm-step-ico { background: #6d28d9; box-shadow: none; }
+[data-bs-theme="dark"] .avm-stepper-wrap { background: #1a1430; border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-step { background: #221852; }
+[data-bs-theme="dark"] .avm-step-title { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-step-sub   { color: #a89fc7; }
+/* Was .avm-step-num — a class this file no longer renders, so the badge had no
+   dark rule at all and kept its light white-on-white ring. Dark inverts it:
+   a dark disc on the lighter card, same violet hairline doing the separating. */
+[data-bs-theme="dark"] .avm-step-ico-num {
+  background: #1a1430; color: #c4b5fd; border-color: #1a1430;
+  box-shadow: 0 0 0 1px rgba(167,139,250,.45), 0 1px 3px rgba(0,0,0,.5);
+}
+/* Attractive dark mode — soft purple glow gives the flat form depth (mirrors
+   the CLM Segment Master recipe, in purple instead of teal). */
+[data-bs-theme="dark"] .avm-body {
+  background:
+    radial-gradient(ellipse 78% 46% at 50% -6%, rgba(124,58,237,.17), transparent 60%),
+    radial-gradient(ellipse 55% 42% at 100% 106%, rgba(167,139,250,.09), transparent 55%),
+    #0e0a20;
+  scrollbar-color: #4c1d95 transparent;
+}
+[data-bs-theme="dark"] .avm-body::-webkit-scrollbar-thumb { background: #4c1d95; }
+[data-bs-theme="dark"] .avm-section {
+  background: linear-gradient(180deg, rgba(124,58,237,.10), rgba(124,58,237,.035));
+  border: 1px solid rgba(167,139,250,.14);
+  box-shadow: 0 6px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
+}
+[data-bs-theme="dark"] .avm-section-violet,
+[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-section-amber  { border-color: #78350f; border-left-color: #f59e0b; }
+[data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
+[data-bs-theme="dark"] .avm-section-green  { border-color: #14532d; border-left-color: #4ade80; }
+[data-bs-theme="dark"] .avm-section-violet .avm-section-head,
+[data-bs-theme="dark"] .avm-section-purple .avm-section-head { background: #241a47; }
+/* The head/body divider was a light lavender line (#f1ecfb) with no dark
+   override — it read as an ugly white line. Subtle purple instead. */
+[data-bs-theme="dark"] .avm-section-head { border-bottom-color: rgba(167,139,250,.15); }
+/* Cleaner dark borders — these had light (near-white / bright-lavender) borders
+   that read as harsh outlines in dark. Soften to subtle purple. Light mode is
+   untouched (these only apply under [data-bs-theme="dark"]). */
+[data-bs-theme="dark"] .avm-kyc-table-wrap { border-color: rgba(167,139,250,.14) !important; }
+[data-bs-theme="dark"] .avm-step { border-color: rgba(167,139,250,.16); }
+[data-bs-theme="dark"] .avm-step-done { border-color: rgba(74,222,128,.30); }
+[data-bs-theme="dark"] .avm-mapped-wrap,
+[data-bs-theme="dark"] .table-card.border,
+[data-bs-theme="dark"] .avm-modal .border { border-color: rgba(167,139,250,.14) !important; }
+[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
+[data-bs-theme="dark"] .avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #0c2522, #133e3a); }
+[data-bs-theme="dark"] .avm-section-green  .avm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
+[data-bs-theme="dark"] .avm-section-title { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-section-sub   { color: #a89fc7; }
+[data-bs-theme="dark"] .avm-section-amber .avm-section-title { color: #fde68a; }
+[data-bs-theme="dark"] .avm-section-amber .avm-section-sub   { color: #fcd34d; }
+[data-bs-theme="dark"] .avm-field-label { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-input { background: #110c25; border-color: #3b2a6b; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-input:focus { background: #1a1430; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .avm-master-select .master-select-wrap .master-select-toggle {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
+  border-color: #3b2a6b !important; color: #ede9fe !important;
+}
+[data-bs-theme="dark"] .avm-filechooser { background: #110c25; border-color: #4c1d95; color: #a89fc7; }
+[data-bs-theme="dark"] .avm-pill { background: #221852; color: #c4b5fd; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-pill.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
+[data-bs-theme="dark"] .avm-sub-pill { background: #1a1430; border-color: #3b2a6b; color: #a89fc7; }
+[data-bs-theme="dark"] .avm-sub-pill.on { background: #14241a; border-color: #14532d; color: #4ade80; }
+[data-bs-theme="dark"] .avm-tabs { border-bottom-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-tab { color: #6d6391; }
+[data-bs-theme="dark"] .avm-tab.on { color: #c4b5fd; border-bottom-color: #a78bfa; }
+[data-bs-theme="dark"] .avm-extra-contact { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-empty { background: #110c25; border-color: #3b2a6b; color: #6d6391; }
+[data-bs-theme="dark"] .avm-foot { background: #14102a; border-top-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
+/* Dark-mode hover — without this the light .avm-btn-ghost:hover rule is
+   overridden by the dark base rule above (equal specificity, defined later),
+   so the Cancel button showed no hover feedback in dark mode (QA report). */
+[data-bs-theme="dark"] .avm-btn-ghost:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-product-row { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-product-row.on { background: #14241a; border-color: #14532d; }
+[data-bs-theme="dark"] .avm-product-name { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-product-tag { background: #2a1d5c; color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
+/* Dark mode — mirrors .avm-id-summary palette so all read-only headers
+ * (Stage 1 + carried-over Stage 2/3/4) share the same dark violet shell. */
+[data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
+/* The light theme puts a WHITE body under the tinted header; dark needs the
+   same separation, so the body drops to the modal's own surface rather than
+   inheriting the panel gradient — without this the hard-coded #fff above would
+   paint a white slab in dark mode. */
+[data-bs-theme="dark"] .avm-prev-body { background: #171126; border-top-color: rgba(167,139,250,.22); }
+[data-bs-theme="dark"] .avm-prev-head { background: transparent; border-bottom-color: rgba(167,139,250,.25); }
+[data-bs-theme="dark"] .avm-prev-title { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-toggle-pill { background: #221940; color: #c4b5fd; box-shadow: none; }
+[data-bs-theme="dark"] .avm-prev-toggle:hover .avm-prev-toggle-pill { background: #2a1d5c; }
+[data-bs-theme="dark"] .avm-prev-toggle-chev { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-k { color: #8d86a8; }
+/* The value is the thing being read here, so in dark it goes near-white rather
+   than the muted lavender the old inline pair used. */
+[data-bs-theme="dark"] .avm-prev-v { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-prev-link { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-prev-link:hover { color: #ddd6fe; }
+[data-bs-theme="dark"] .avm-prev-suffix { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-prev-glabel { color: #a78bfa; }
+[data-bs-theme="dark"] .avm-prev-line { background: rgba(124,58,237,.12); border-color: rgba(167,139,250,.22); color: #cdc6e3; }
+[data-bs-theme="dark"] .avm-prev-dot { color: #6d5f9e; }
+[data-bs-theme="dark"] .avm-prev-empty { color: #8d86a8; }
+/* Stage title keeps its GREEN in dark — it means "completed", the same thing
+   the stepper's completed card means, and recolouring it to lavender would
+   lose that. Lightened for contrast on the dark ground. */
+[data-bs-theme="dark"] .avm-prev-stage-label { color: #86efac; }
+[data-bs-theme="dark"] .avm-prev-stage + .avm-prev-stage { border-top-color: rgba(167,139,250,.20); }
+
+/* ─── Master Quick-Add popup ─── */
+.avm-qa-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  font-family: var(--font-sans);
+}
+.avm-qa-popup {
+  width: 100%; max-width: 480px;
+  background: #fff; border-radius: 16px; overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+}
+.avm-qa-head {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 16px 18px;
+  background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%);
+  color: #fff;
+}
+/* Soft radial glow — same accent the master Add modal header uses. */
+.avm-qa-head-glow {
+  position: absolute; bottom: -50px; left: -30px; width: 160px; height: 160px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.avm-qa-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; }
+.avm-qa-head-ico {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
+  backdrop-filter: blur(6px);
+}
+.avm-qa-head-ico i { font-size: 20px; color: #fff; }
+.avm-qa-head-text { min-width: 0; }
+.avm-qa-title { font-size: 16px; font-weight: 800; letter-spacing: .01em; line-height: 1.2; }
+.avm-qa-sub { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 1px; }
+.avm-qa-close {
+  position: relative; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.25);
+  background: rgba(255,255,255,.12); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
+/* position:relative so .avm-cp-saving-veil (absolute; inset:0) sizes to THIS
+   body. Without it the veil's containing block is .avm-qa-backdrop (fixed;
+   inset:0) and the 45% wash covers the whole viewport instead of the popup. */
+.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+.avm-qa-foot {
+  display: flex; justify-content: flex-end; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid #ede9fe;
+}
+
+[data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%); }
+[data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
+
+/* ─── Contact Person popup ─── */
+.avm-cp-backdrop {
+  position: fixed; inset: 0; z-index: 1100;
+  background: rgba(15, 23, 42, .6);
+  backdrop-filter: blur(3px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px 20px;
+  font-family: var(--font-sans);
+}
+.avm-cp-popup {
+  width: 100%; max-width: 880px;
+  background: #fff;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex; flex-direction: column;
+  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
+}
+/* Mapped Products list popup — wider to fit the mapping table columns. */
+.avm-cp-popup-wide { max-width: 1040px; }
+.avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
+.avm-mapped-count {
+  font-size: 12px; font-weight: 700; color: #6d28d9;
+  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 5px 13px;
+}
+.avm-empty-accent { color: #7c3aed; border-color: #ddd6fe; background: #faf7ff; }
+.avm-cp-head {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 17px 22px;
+  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0,0,0,.18);
+  /* Crisp white highlight line along the top edge — same as the Add Supplier
+     header (.avm-head). Sits above the ::after gloss. */
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
+}
+/* Figma .sf-pop-head sheen — soft radial highlights + a top gloss band.
+ *
+ * The circle CENTRES are pulled closer to the box than on .avm-head (110% /
+ * -20%, against 130% / -40% before). Both are anchored outside the element, so
+ * how much of each glow actually lands inside depends on the element's height —
+ * and this header is roughly half the height of the Add Supplier one, which
+ * carries a title AND a subtitle. At the old offsets most of each circle fell
+ * outside a single-line popup header and the bar read flat, even though the
+ * layers were present and set slightly stronger than the ones on .avm-head.
+ * Same effect, geometry corrected for a short header. */
+.avm-cp-head::before {
+  content: ''; position: absolute; inset: 0; opacity: .6; pointer-events: none;
+  background-image:
+    radial-gradient(circle at 14% 110%, rgba(255,255,255,.22), transparent 48%),
+    radial-gradient(circle at 90% -20%, rgba(216,180,254,.5), transparent 52%);
+}
+.avm-cp-head::after {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
+}
+/* Amber-toned popup (GST Scrutiny) — orange header + orange Save button. */
+.avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #b45309 0%, #d97706 45%, #f59e0b 100%); }
+.avm-btn-amber {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706) !important;
+  box-shadow: 0 4px 12px rgba(217,119,6,.4) !important;
+}
+.avm-btn-amber:hover { box-shadow: 0 6px 18px rgba(217,119,6,.5) !important; }
+/* Amber "+ Add" section button (GST tab). */
+.avm-section-add-btn.amber { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 9px rgba(217, 119, 6, .42); }
+.avm-section-add-btn.amber:hover { box-shadow: 0 6px 14px rgba(217,119,6,.5); }
+/* Figma .sf-pop-head layout — icon chip beside a tight title/subtitle column,
+   vertically centred. Keeps the header compact (no taller than the icon). */
+/* font-size here drives the Add Contact Person popup title (it renders text
+   directly in .avm-cp-title, not .avm-cp-htitle) — match Figma's 16px DM Sans.
+   PopupShell titles use .avm-cp-htitle, which keeps its own size. */
+.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
+.avm-cp-title i {
+  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; font-size: 18px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, rgba(255,255,255,.3), rgba(255,255,255,.12));
+  border: 1px solid rgba(255,255,255,.38);
+  box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset;
+}
+.avm-cp-htext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.avm-cp-htitle { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.1; }
+.avm-cp-subtitle { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.82); text-shadow: none; line-height: 1.2; }
+.avm-cp-close {
+  position: relative; z-index: 1;
+  width: 32px; height: 32px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.32);
+  background: rgba(255,255,255,.16); color: #fff;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  transition: background .15s, transform .12s;
+}
+.avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
+/* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
+   (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
+.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; position: relative; }
+/* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
+   dark-purple (the main form uses a lighter slate medium-weight label). */
+/* No margin-bottom here — the .avm-field flex gap (5px) already spaces the
+   label from the input. The extra 5px margin doubled the gap (Figma is ~5px). */
+.avm-cp-body .avm-field-label { font-size: 11.5px; font-weight: 700; color: #3b0764; margin-bottom: 0; }
+[data-bs-theme="dark"] .avm-cp-body .avm-field-label,
+[data-layout-mode="dark"] .avm-cp-body .avm-field-label { color: #c4b5fd; }
+/* Figma .sf-pop-body .sf-input — popup inputs sit a touch taller/rounder than
+   the main form's, and popup grids breathe a little more. */
+.avm-cp-body .avm-input { height: 42px; border-radius: 11px; }
+/* Upload box (Cancelled Cheque etc.) matches the sibling inputs inside the
+   popup — same 42px height, radius, lavender tint and purple-tinted border —
+   so it doesn't sit shorter/whiter than the fields next to it (Figma). */
+.avm-cp-body .avm-filechooser {
+  height: 42px; border-radius: 11px;
+  border-color: color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
+  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
+}
+/* Dark mode — the light tint above outranks the global dark .avm-filechooser
+   rule (same specificity, declared later), so re-darken it explicitly here. */
+[data-bs-theme="dark"] .avm-cp-body .avm-filechooser {
+  background: color-mix(in srgb, #a78bfa 12%, #110c25);
+  border-color: rgba(167,139,250,.3); color: #a89fc7;
+}
+.avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 12px; }
+/* Interaction-blocking veil shown over the popup body while a save is in flight
+ * so no field can be edited and no attachment opened until it resolves. */
+.avm-cp-saving-veil { position: absolute; inset: 0; z-index: 20; background: rgba(255,255,255,.45); cursor: progress; border-radius: inherit; }
+[data-bs-theme="dark"] .avm-cp-saving-veil { background: rgba(10,6,24,.45); }
+/* Whole-modal veil during a step save — blocks Map Product / tabs / everything. */
+.avm-busy-veil { position: absolute; inset: 0; z-index: 60; background: rgba(245,243,255,.35); cursor: progress; border-radius: inherit; }
+[data-bs-theme="dark"] .avm-busy-veil { background: rgba(10,6,24,.4); }
+.avm-cp-foot {
+  display: flex; justify-content: flex-end; gap: 11px;
+  padding: 14px 22px 20px;
+  border-top: 1px solid #f1ecfb;
+  background: linear-gradient(180deg, transparent, rgba(245,241,254,.5));
+}
+
+/* Readonly Step-1 summary strip — now rendered ON the Address &
+   Contact Person sub-tab itself (not inside the contact popup). It
+   surfaces every field captured on the Vendor Identification sub-tab
+   so the user can verify they're entering the right vendor's address
+   / extra contacts without tab-flipping. */
+/* Read-only identity summary — aligned with the customer & consignee
+ * modals' .acm-hs-grid / .acg-hs-grid look: dense 4-column grid of
+ * "LABEL : Value" pairs, hover affordance, and ellipsis on long values.
+ * Old layout was flex-wrap rows which produced uneven column widths
+ * and mismatched the rest of the suite. */
+.avm-id-summary {
+  padding: 14px 18px 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
+  border: 1px solid #e9d5ff;
+  border-radius: 12px;
+  display: flex; flex-direction: column; gap: 13px;
+}
+.avm-id-summary-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  column-gap: 28px;
+  row-gap: 13px;
+  align-items: baseline;
+}
+.avm-id-pair {
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 12px; line-height: 1.4;
+  min-width: 0;
+  cursor: default; padding: 1px 2px; border-radius: 4px;
+  transition: background .12s;
+}
+.avm-id-pair:hover { background: rgba(124,58,237,0.06); }
+.avm-id-k {
+  font-size: 12px; font-weight: 600; letter-spacing: .01em;
+  color: #64748b;
+  white-space: nowrap; flex-shrink: 0;
+}
+.avm-id-v {
+  font-weight: 600; color: #6d28d9; line-height: 1.4;
+  min-width: 0; flex: 1 1 auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+@media (max-width: 900px) {
+  .avm-id-summary-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+[data-bs-theme="dark"] .avm-id-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
+[data-bs-theme="dark"] .avm-id-pair:hover { background: rgba(167,139,250,0.10); }
+[data-bs-theme="dark"] .avm-id-k { color: #94a3b8; }
+[data-bs-theme="dark"] .avm-id-v { color: #c4b5fd; }
+
+[data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
+[data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
+[data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; background: linear-gradient(180deg, transparent, rgba(124,58,237,.08)); }
+/* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
+   the rule block above. The dark-mode overrides used to live here. */
+
+/* Bootstrap "subtle" badge palette inside the modal's tables.
+ * Bootstrap 5.3's bg-*-subtle / text-* tokens swap via --bs-* vars,
+ * which depend on Bootstrap's own CSS being applied BEFORE this
+ * scoped block. In Edge those vars resolved fine, but in Chrome (and
+ * in some cache states) the dark-mode swap was missing — the STATUS
+ * pill rendered as pale-on-pale and the user reported the table
+ * "looks empty" in Chrome. Pin solid colours per state so the
+ * rendering is identical in every Chromium-based browser. */
+.avm-modal .badge.bg-success-subtle,
+.avm-modal .badge.bg-success-subtle.text-success {
+  background-color: #d1fae5 !important;
+  color: #065f46 !important;
+}
+.avm-modal .badge.bg-warning-subtle,
+.avm-modal .badge.bg-warning-subtle.text-warning {
+  background-color: #fef3c7 !important;
+  color: #854d0e !important;
+}
+.avm-modal .badge.bg-danger-subtle,
+.avm-modal .badge.bg-danger-subtle.text-danger {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+}
+.avm-modal .badge.bg-primary-subtle,
+.avm-modal .badge.bg-primary-subtle.text-primary {
+  background-color: #dbeafe !important;
+  color: #1e40af !important;
+}
+.avm-modal .badge.bg-light,
+.avm-modal .badge.bg-light.text-muted {
+  background-color: #f1f5f9 !important;
+  color: #475569 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle.text-success {
+  background-color: #0c2e1d !important;
+  color: #4ade80 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle.text-warning {
+  background-color: #3a2a08 !important;
+  color: #fbbf24 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle.text-danger {
+  background-color: #3a0e0e !important;
+  color: #f87171 !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle,
+[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle.text-primary {
+  background-color: #0f1e3a !important;
+  color: #60a5fa !important;
+}
+[data-bs-theme="dark"] .avm-modal .badge.bg-light,
+[data-bs-theme="dark"] .avm-modal .badge.bg-light.text-muted {
+  background-color: rgba(255,255,255,0.06) !important;
+  color: #94a3b8 !important;
+}
+
+/* Auto-code badge (e.g. KYC-001, V-001-P-002). Uses solid hex
+ * colours (no rgba alpha, no Bootstrap CSS vars) so it renders the
+ * SAME in Chrome and Edge — the rgba variant the badge used before
+ * composited to different perceived shades when Chrome cached an
+ * older Bootstrap layer, producing a faded "barely visible" look.
+ * Solid backgrounds avoid that drift entirely. */
+.avm-auto-code {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #f5f1fe;
+  color: #6d28d9;
+  border: 1px solid #e2d4fa;
+  font-family: 'DM Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: .02em;
+}
+
+/* KYC reference table (Figma): SR-No badge, expiry pills, Mandatory/Optional
+   pair, upload/download action buttons, and a search bar above the table. */
+.avm-sr-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; height: 24px; padding: 0 6px;
+  border-radius: 7px; background: #f5f1fe; color: #6d28d9;
+  border: 1px solid #e2d4fa; font-size: 11px; font-weight: 800; font-family: 'DM Mono', monospace;
+}
+.avm-exp-pill { display: inline-block; padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; }
+.avm-exp-pill.is-na   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+.avm-exp-pill.is-date { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-exp-pill.is-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-exp-pill.is-valid   { background: #ecfdf5; color: #16a34a; border: 1px solid #bbf7d0; }
+/* Issuing-authority badges + "+N" overflow popover (reused AuthorityBadges component).
+   These .clm-* classes live in the CLM shared CSS, which isn't loaded in this modal,
+   so mirror the ones AuthorityBadges needs here. */
+.clm-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid; white-space: nowrap; letter-spacing: .01em; line-height: 1.35; }
+.clm-badge-teal { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
+.clm-code-pill { display: inline-block; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #0891b2; background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(6,182,212,.25); white-space: nowrap; }
+.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.clm-pop::-webkit-scrollbar { width: 8px; }
+.clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
+.clm-pop-title { color: #0d9488; }
+.clm-pop-row-alt { background: #f0fdfa; }
+[data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
+[data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
+[data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
+[data-bs-theme="dark"] .clm-badge-teal { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(6,182,212,.4); }
+.avm-req-pair { display: inline-flex; align-items: center; gap: 4px; }
+.avm-req-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.avm-req-pill.on-m { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22,163,74,.3); }
+.avm-req-pill.on-o { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.3); }
+.avm-req-pill.off  { background: #f5f3fb; color: #9b94b3; border: 1px solid #e9e2f7; }
+.avm-kyc-actions { display: inline-flex; align-items: center; gap: 5px; }
+/* Action-column tooltips stay ABOVE the button and CENTRED (default). They were
+   clipping at the card's right edge because the table wrapper clipped overflow —
+   the wrappers below are set to overflow:visible so the centred tooltip shows in
+   full. (These tables are table-layout:fixed / width:100%, so nothing else spills.) */
+.avm-kyc-act {
+  width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
+  /* margin:0 — the Upload is a <label>, which Bootstrap gives a default
+     margin-bottom, pushing it ~4px higher than the Download (<a>). Zeroing it
+     makes the two action buttons line up. */
+  margin: 0; vertical-align: middle;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: transform .14s, box-shadow .14s, filter .14s; text-decoration: none;
+}
+.avm-kyc-act i { font-size: 14px; }
+.avm-kyc-act.up   { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
+.avm-kyc-act.up:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.down { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.avm-kyc-act.down:hover { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
+/* View (eye) + Re-upload (refresh) — shown once a file exists, like Evidence Vault. */
+.avm-kyc-act.view { background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; }
+.avm-kyc-act.view:hover { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.reup { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.avm-kyc-act.reup:hover { background: #d97706; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.edit { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
+.avm-kyc-act.edit:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
+.avm-kyc-act.del { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.avm-kyc-act.del:hover { background: #dc2626; color: #fff; border-color: transparent; transform: translateY(-1px); }
+/* Green "file uploaded" tick that fronts the action group. */
+.avm-uploaded-dot { display: inline-flex; align-items: center; color: #16a34a; font-size: 16px; margin-right: 1px; }
+.avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
+.avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
+/* The Upload / Re-upload actions are now <button>s that open a popup (no
+   longer <label>s wrapping a hidden <input>) — strip the native button
+   padding so they stay square inside the fixed 27x27 chip. */
+button.avm-kyc-act { padding: 0; font: inherit; }
+/* Expiry field: the Yes/No control and, once Yes is chosen, the date picker
+   sit on ONE inline row — the calendar opens right beside the buttons. */
+.avm-expiry-row { display: flex; align-items: center; gap: 10px; }
+.avm-expiry-date { flex: 1 1 auto; min-width: 0; }
+/* Yes/No segmented toggle — a single joined pill (shared border, no gap)
+   so it reads as one compact control instead of two loose buttons. */
+.avm-yesno {
+  display: inline-flex; flex-shrink: 0; height: 38px; border-radius: 9px;
+  border: 1.5px solid #e9e2f7; background: #faf8ff; overflow: hidden;
+}
+.avm-yesno-btn {
+  min-width: 46px; padding: 0 15px; border: 0; background: transparent; cursor: pointer;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #6b7280;
+  border-right: 1.5px solid #e9e2f7; transition: background .14s, color .14s;
+}
+.avm-yesno-btn:last-child { border-right: 0; }
+.avm-yesno-btn:hover { background: #f1ebfe; color: #7c3aed; }
+.avm-yesno-btn.on { background: #7c3aed; color: #fff; }
+.avm-yesno-btn.on:hover { background: #6d28d9; color: #fff; }
+[data-bs-theme="dark"] .avm-yesno { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-yesno-btn { color: #adb5bd; border-right-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-yesno-btn.on { background: #7c3aed; color: #fff; }
+.avm-field-hint { margin-left: 6px; font-size: 11px; font-weight: 500; color: #94a3b8; }
+.avm-kyc-search {
+  position: relative; display: flex; align-items: center; gap: 9px;
+  height: 38px; margin-bottom: 6px; padding: 0 12px 0 14px;
+  background: #faf8ff; border: 1.5px solid #e9e2f7; border-radius: 11px;
+  transition: border-color .16s, box-shadow .16s;
+}
+.avm-kyc-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
+.avm-kyc-search > i { color: #a78bfa; font-size: 16px; flex-shrink: 0; }
+.avm-kyc-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #3b0764; }
+.avm-kyc-search input::placeholder { color: #a78bfa; opacity: .7; }
+.avm-kyc-search-clear { flex-shrink: 0; width: 22px; height: 22px; border: none; border-radius: 6px; background: rgba(124,58,237,.1); color: #7c3aed; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.avm-kyc-search-clear:hover { background: #7c3aed; color: #fff; }
+[data-bs-theme="dark"] .avm-auto-code {
+  background: #3a2a08;
+  color: #fde68a;
+  border-color: #78521a;
+}
+
+/* Status / mandatory / whatsapp pills used inside the vendor modal tables.
+ * Custom-named classes (no collision with Bootstrap utility classes like
+ * .bg-success-subtle / .text-muted) so the rendering is identical across
+ * Chrome, Edge and any cache state. Earlier the badges depended on
+ * Bootstrap's --bs-*-subtle CSS vars that Chrome could resolve to a
+ * near-white background, producing the "empty pill" the user reported. */
+.avm-pill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.avm-pill-success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+.avm-pill-warning { background: #fef3c7; color: #854d0e; border-color: #fde68a; }
+.avm-pill-danger  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.avm-pill-primary { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+.avm-pill-muted   { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
+[data-bs-theme="dark"] .avm-pill-success { background: #0c2e1d; color: #4ade80; border-color: #15803d; }
+[data-bs-theme="dark"] .avm-pill-warning { background: #3a2a08; color: #fbbf24; border-color: #b45309; }
+[data-bs-theme="dark"] .avm-pill-danger  { background: #3a0e0e; color: #f87171; border-color: #b91c1c; }
+[data-bs-theme="dark"] .avm-pill-primary { background: #0f1e3a; color: #60a5fa; border-color: #1d4ed8; }
+[data-bs-theme="dark"] .avm-pill-muted   { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Dark mode — completeness pass across every stage of the Supplier wizard.
+ * Each element below either carried a hardcoded light value with no dark
+ * counterpart, or an inline style on the element that the earlier dark
+ * rules could not reach. Every override is gated on [data-bs-theme="dark"]
+ * so light mode is byte-for-byte unchanged.
+ * ════════════════════════════════════════════════════════════════════ */
+
+/* The segment / DD reference rows carry an inline background:#fafafa on the
+   <tr> (near-white). In dark mode that washed the whole row to near-white
+   beneath the light cell text, leaving the document names unreadable.
+   Neutralise it so the row inherits the dark table surface; !important is
+   required to beat the inline style, which otherwise wins on specificity. */
+[data-bs-theme="dark"] .avm-kyc-table tbody tr { background-color: transparent !important; }
+
+/* File links inside the KYC / segment tables were hardcoded inline as teal
+   (#0d9488) or indigo (#6d28d9) — both too dim against the dark surface.
+   Substring matching on the inline colour lifts each to its lighter
+   counterpart without touching any other anchor. */
+[data-bs-theme="dark"] .avm-modal a[style*="0d9488"] { color: #5eead4 !important; }
+[data-bs-theme="dark"] .avm-modal a[style*="4338ca"] { color: #c4b5fd !important; }
+
+/* Doc-table banners (Trade Document Management, Steps 3 & 4) were light
+   amber / teal panels with no dark variant — bright blocks on the dark body. */
+[data-bs-theme="dark"] .avm-doctable-banner.tone-amber {
+  background: linear-gradient(135deg, #3a2a08, #2a2105); color: #fcd34d; border-color: #78521a;
+}
+[data-bs-theme="dark"] .avm-doctable-banner.tone-teal {
+  background: linear-gradient(135deg, #0c2522, #08201d); color: #5eead4; border-color: #155e56;
+}
+[data-bs-theme="dark"] .avm-doctable-banner-sub { color: #fbbf24; }
+
+/* Purple section tone — the only section colour left without a dark border. */
+[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
+
+/* Extra-contact card: the navy heading + light-red remove button were tuned
+   for the white card and disappeared / glared on the dark card surface. */
+[data-bs-theme="dark"] .avm-extra-head   { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-extra-remove { background: #3a0e0e; border-color: #b91c1c; color: #fca5a5; }
+
+/* Remaining navy (#7c3aed) accents that dim out against the dark surface. */
+[data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
+[data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
+
+/* ───── Dark mode for the NEW Step-2 / Figma elements ───── */
+[data-bs-theme="dark"] .avm-pill-tabs { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.18); }
+[data-bs-theme="dark"] .avm-pill-tabs .avm-pill { color: #a89fc7; }
+[data-bs-theme="dark"] .avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.18); color: #ede9fe; }
+[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-sr-badge  { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-exp-pill.is-na   { background: rgba(255,255,255,.06); color: #adb5bd; border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-exp-pill.is-date { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-exp-pill.is-expired { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-exp-pill.is-valid   { background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(22,163,74,.4); }
+[data-bs-theme="dark"] .avm-req-pill.off { background: rgba(255,255,255,.05); color: #9a93b3; border-color: rgba(255,255,255,.12); }
+[data-bs-theme="dark"] .avm-kyc-act.up   { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-kyc-act.down { background: rgba(22,163,74,.18); color: #4ade80; border-color: rgba(22,163,74,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.view { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.reup { background: rgba(217,119,6,.18); color: #fbbf24; border-color: rgba(251,191,36,.4); }
+[data-bs-theme="dark"] .avm-kyc-act.edit { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-kyc-act.del  { background: rgba(220,38,38,.18); color: #f87171; border-color: rgba(220,38,38,.4); }
+[data-bs-theme="dark"] .avm-uploaded-dot { color: #4ade80; }
+[data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
+[data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
+[data-bs-theme="dark"] .avm-mapped-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-empty-accent { background: rgba(124,58,237,.08); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
+[data-bs-theme="dark"] .avm-section-headtext .avm-section-sub { color: #a89fc7; }
+[data-bs-theme="dark"] .avm-section-sub::before { color: rgba(167,139,250,.4); }
+[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
+
+/* ───── Responsive — collapse the form/table grids on narrow screens ───── */
+@media (max-width: 820px) {
+  .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 520px) {
+  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
+  .avm-tabs { overflow-x: auto; }
+  .avm-pill-tabs { overflow-x: auto; flex-wrap: nowrap; }
+}
