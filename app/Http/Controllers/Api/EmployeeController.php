@@ -13,6 +13,7 @@ use App\Models\Module;
 use App\Models\Permission;
 use App\Models\User;
 use App\Support\OnboardingGuard;
+use App\Support\PositionHierarchy;
 use App\Support\Settings;
 use App\Traits\PasswordHistory;
 use Carbon\Carbon;
@@ -2985,6 +2986,33 @@ class EmployeeController extends Controller
     public function setPassword(Request $request, $id)
     {
         $this->authorize($request, 'can_edit');
+
+        /* Resetting somebody else's login password is a TENANT-ADMIN action,
+         * not an HR-editing one (CBC #209).
+         *
+         * can_edit on hr.employee is the flag for ordinary record editing, and
+         * a Team Leader legitimately holds it. That let a Team Leader take over
+         * a colleague's login: set a known password, sign in as them, and act
+         * with their permissions. guardHierarchicalAction() did not stop it —
+         * it ranks by users.user_type alone, so it cannot tell a Team Leader
+         * from a rank-and-file Employee, and it returns early whenever the
+         * target row has no created_by (imported/seeded/legacy rows) or was
+         * created by another employee-type login.
+         *
+         * Gate on the login tier instead: PositionHierarchy::rankForUserType()
+         * returns TOP_RANK only for branch_user / client_admin / client_user /
+         * super_admin — the tenant logins that sit above every designation.
+         * Any employee-type login, whatever their designation, is refused.
+         * Reused rather than re-listing the user types so this cannot drift
+         * from the hierarchy the rest of the module is built on.
+         *
+         * Self-service is unaffected: changing your OWN password goes to
+         * AuthController::changePassword via POST /change-password, which
+         * requires the current password and is not this endpoint.
+         */
+        if (PositionHierarchy::rankForUserType($request->user()?->user_type) === null) {
+            abort(403, 'Only a Branch User or tenant admin can reset an employee\'s login password.');
+        }
 
         $employee = $this->resolveRow($request, $this->resolveIdParam($id));
         $this->guardHierarchicalAction($request->user(), $employee, 'reset the password for');
