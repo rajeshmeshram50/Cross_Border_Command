@@ -1846,6 +1846,11 @@ const AGW_CSS = `
    slightly different line rhythms in the two editors and against the PDF. */
 .agw-editor p { margin: 0 0 .55em 0; }
 .agw-editor p:last-child { margin-bottom: 0; }
+/* Bold / italic restored on the wrapper too — the global reset flattens
+   b/strong/i/em, and this element sits between .ctcte-content and the text.
+   Kept in step with the .ctcte-content rules in CtcRichEditor. */
+.agw-editor strong, .agw-editor b { font-weight: 700; }
+.agw-editor em, .agw-editor i { font-style: italic; }
 .agw-editor h1, .agw-editor h2, .agw-editor h3 { color: #0c4a6e; font-weight: 800; margin: .4em 0; line-height: 1.25; }
 .agw-editor h1 { font-size: 22px; }
 .agw-editor h2 { font-size: 18px; }

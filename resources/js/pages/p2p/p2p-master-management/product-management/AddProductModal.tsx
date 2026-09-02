@@ -11,10 +11,7 @@ import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { SegmentModal, type SegmentForm } from '../../../clm/compliance/ClmSegmentPage';
 import { CLM_CSS } from '../../../clm/shared/clmShared';
-import {
-  readProductMasterBundle,
-  writeProductMasterBundle,
-} from './productBundleCache';
+import { readProductMasterBundle,  writeProductMasterBundle,} from './productBundleCache';
 import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { formatProductCode } from '../../../../utils/formatProductCode';
@@ -277,11 +274,6 @@ export default function AddProductModal(props: {
   const [markBottom, setMarkBottom] = useState('');
 
   const basePriceNum = parseFloat(basePrice) || 0;
-  /* The MAPPED rate row, or undefined when nothing is mapped — or when the
-     mapped id was deleted from the GST master (QA #44). Everything that shows
-     a GST value keys off this rather than off gstPctNum, because a 0% rate and
-     "no rate at all" both give gstPctNum === 0 and a truthiness test on the
-     number renders a valid 0% rate as blank / — (QA #67). */
   const gstRow = useMemo(() => optGst.find(o => o.value === gstId), [optGst, gstId]);
   const gstPctNum = useMemo(
     () => parseFloat(String(gstRow?.extra?.percentage ?? '0')) || 0,
@@ -601,9 +593,6 @@ export default function AddProductModal(props: {
       setSegChecking(false);
 
       if (usage.in_po_or_spi) {
-        /* Name only the most recent document of each type the product is on:
-           both when it is on a PO and an SPI, one when it is on either. The
-           codes carry their own PO/ and SPI/ prefix, so no extra label. */
         const used = [usage.latest_po_code, usage.latest_spi_code].filter(Boolean);
         toast.error('Segment locked', `This product is used in ${used.join(' and ')}.`);
         return;
@@ -929,7 +918,6 @@ export default function AddProductModal(props: {
       })
       .catch(() => { if (!cancelled) setSegmentQcDocs([]); });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, segmentId]);
 
   useEffect(() => {
