@@ -1276,6 +1276,29 @@ class AttendanceController extends Controller
      * about which days are off. */
 
    
+    /**
+     * Does this row carry a rest-day LABEL but real attendance underneath?
+     *
+     * Shared by the daily list (resolveDayStatus, #89) and the Attendance Log /
+     * Calendar (buildHistoryLogs, #90) so the two describe the same day the
+     * same way — they disagreed before, which is how the Updated Record could
+     * read "Late" while the log row for the very same date read "Holiday".
+     *
+     * A stored 'Holiday' / 'Weekly Off' is not proof the employee was off; it
+     * is sometimes just what the row was stamped with when it was created (see
+     * PayrollService::restDayKind via the regularization path), and
+     * AttendancePunchService reuses an existing row without revisiting its
+     * status. A punch on the row settles the question.
+     */
+    private function workedARestDay(?string $status, ?Attendance $row): bool
+    {
+        if (!$row || $status === null) return false;
+        if (!in_array(strtolower(trim($status)), ['holiday', 'weekly off'], true)) return false;
+
+        return (bool) $row->check_in_at
+            || ($row->relationLoaded('punches') && $row->punches->isNotEmpty());
+    }
+
     private function resolveDayStatus(
         ?Attendance $row,
         bool $weeklyOff,
@@ -1308,9 +1331,7 @@ class AttendanceController extends Controller
              * start, and on a day the company was closed there is no shift to
              * be late for. Promoting it would brand a volunteer as Late and
              * feed the late-mark count that drives the LOP deduction. */
-            $hasAttendance = $row->check_in_at
-                || ($row->relationLoaded('punches') && $row->punches->isNotEmpty());
-            if ($hasAttendance && in_array(strtolower($stored), ['holiday', 'weekly off'], true)) {
+            if ($this->workedARestDay($stored, $row)) {
                 return 'Present';
             }
 
@@ -1485,6 +1506,14 @@ class AttendanceController extends Controller
 
             if ($r) {
                 $status  = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
+                /* A punched rest day is a worked day here too (#90).
+                   Without this the log row kept the stamped 'Holiday' while the
+                   Updated Record panel above it — which resolves through
+                   resolveDayStatus — already said Late/Present, so one screen
+                   described the same date two ways. */
+                $workedRestDay = $this->workedARestDay($status, $r);
+                if ($workedRestDay) $status = 'Present';
+
                 $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
                 $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
                 $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
@@ -1493,7 +1522,10 @@ class AttendanceController extends Controller
                 // face-clock flow always writes 'Present' on first punch
                 // and doesn't know about shifts, so the heuristic has to
                 // run at read time.
-                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
+                // Skipped for a worked rest day: there is no expected shift on
+                // a closed day, so "Late" would be measured against nothing —
+                // same reasoning as resolveDayStatus().
+                if (!$workedRestDay && strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
                     && $this->minutesBetween($shiftStart, $firstIn) > 10) {
                     $status = 'Late';
                 }
