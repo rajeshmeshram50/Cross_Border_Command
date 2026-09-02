@@ -504,6 +504,13 @@ function ClauseLibModal(props: {
     <>
     <div className="clm-modal-bd">
       <div className="clm-modal clm-modal-xwide">
+        {/* Blocks the whole card while the save is in flight — the clause type,
+            name and rich-text body stayed editable mid-request, so edits made
+            after submitting were never sent and the stored clause no longer
+            matched the form. Same guard the other CLM masters already use
+            (ClmKycPage, ClmSegmentPage, ClmAuthorityPage …); the buttons keep
+            their own `disabled` as the real lock. */}
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         {/* ── HEADER ── */}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
@@ -519,7 +526,9 @@ function ClauseLibModal(props: {
               <div className="clm-modal-id-label">Clause ID</div>
               <div className="clm-modal-id-val">{isEdit ? existing!.code : nextCode}</div>
             </div>
-            <button className="clm-modal-close" onClick={onClose} aria-label="Close">✕</button>
+            {/* Locked too — dismissing mid-save leaves the user unsure whether
+                the clause was stored, and a retry then creates a duplicate. */}
+            <button className="clm-modal-close" onClick={onClose} disabled={saving} aria-label="Close">✕</button>
           </div>
         </div>
 
@@ -679,6 +688,8 @@ function ClauseTypeModal(props: {
   return createPortal((
     <div className="clm-modal-bd">
       <div className="clm-modal">
+        {/* Same in-flight blocker as the Clause modal above. */}
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         <div className="clm-modal-head">
           <div className="clm-modal-head-left">
             <div className="clm-modal-head-ico"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div>
@@ -687,7 +698,7 @@ function ClauseTypeModal(props: {
               <div className="clm-modal-head-sub">Define a clause type for the Clause Library.</div>
             </div>
           </div>
-          <button className="clm-modal-close" onClick={onClose} aria-label="Close">✕</button>
+          <button className="clm-modal-close" onClick={onClose} disabled={saving} aria-label="Close">✕</button>
         </div>
         <div className="clm-modal-body">
           <div className="clm-autocode">
