@@ -804,6 +804,35 @@ class AttendanceController extends Controller
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
 
+        /* Pending regularizations for the selected date — the "Correction
+         * Pending" pill in the employee list (#92).
+         *
+         * The pill used to be pure client state: the SPA set it optimistically
+         * when a request was filed and this payload never carried it, so every
+         * refresh copied the stale value forward rather than re-reading it.
+         * Nothing could clear it once the request was approved — the label
+         * survived until the page was reloaded from scratch.
+         *
+         * Sending it makes the server the source of truth: still Pending while
+         * it is pending, gone the moment it is approved or rejected. Only the
+         * 'Pending' status is selected, so an approved row simply produces no
+         * entry and the pill disappears on the next poll.
+         *
+         * One query for the whole roster, keyed by employee, so this stays O(1)
+         * rather than a lookup per card. */
+        $pendingCorrections = [];
+        $empIdsForCorrection = $employees->pluck('id')->filter()->all();
+        if ($empIdsForCorrection) {
+            $pendingCorrections = DB::table('attendance_regularizations')
+                ->whereIn('employee_id', $empIdsForCorrection)
+                ->whereDate('regularization_date', $date)
+                ->where('status', 'Pending')
+                ->orderByDesc('id')
+                ->get(['id', 'employee_id', 'regularization_date', 'type', 'reason', 'created_at'])
+                ->keyBy('employee_id')
+                ->all();
+        }
+
         // Approved-leave overlay — an employee with an approved leave covering
         // the selected date should read "Leave", not "Absent", even though they
         // have no attendance row for the day. (Bug: on-leave employees showed
@@ -885,7 +914,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -982,6 +1011,16 @@ class AttendanceController extends Controller
             foreach ($mRows as $r) {
                 $mByIso[\Carbon\Carbon::parse($r->attendance_date)->toDateString()] = $r;
                 $st = strtolower((string) $r->status);
+                /* A rest-day label with real attendance under it counts as a
+                   WORKED day here too (#89/#90).
+                   These KPIs read the stored status, while the day on screen is
+                   resolved by resolveDayStatus(). Without this the two disagree
+                   the moment someone works a holiday: the row reads Present or
+                   Late, and "Present Days" does not include it — the same
+                   contradiction the ticket reports, moved into the counters. */
+                if ($this->workedARestDay($st, $r)) {
+                    $st = 'present';
+                }
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
                 }
@@ -1105,6 +1144,22 @@ class AttendanceController extends Controller
                 'missingPunch'      => $missingPunch,
                 'compliancePct'     => $compliancePct,
                 'logs'              => $logs,
+                /* Null unless a regularization for THIS date is still awaiting
+                   a decision (#92). The SPA shows its pill on
+                   `correction.status === 'Pending'`, so an approved or rejected
+                   request sends null and the pill clears itself. */
+                'correction'        => (function () use ($pendingCorrections, $emp, $date) {
+                    $c = $pendingCorrections[$emp->id] ?? null;
+                    if (!$c) return null;
+                    return [
+                        'id'       => (string) $c->id,
+                        'date'     => $date,
+                        'type'     => (string) ($c->type ?? 'Correction'),
+                        'reason'   => (string) ($c->reason ?? ''),
+                        'status'   => 'Pending',
+                        'raisedAt' => (string) ($c->created_at ?? ''),
+                    ];
+                })(),
             ];
         })->values();
 
@@ -1326,13 +1381,17 @@ class AttendanceController extends Controller
              * punch to justify it, so a genuine holiday with no attendance is
              * untouched.
              *
-             * Returned as plain 'Present', deliberately skipping the Late
-             * promotion below: lateness is measured against an expected shift
-             * start, and on a day the company was closed there is no shift to
-             * be late for. Promoting it would brand a volunteer as Late and
-             * feed the late-mark count that drives the LOP deduction. */
+             * Falls THROUGH to the Late promotion below rather than returning
+             * 'Present' outright. An earlier revision returned early, reasoning
+             * that a closed day has no shift to be late against and that Late
+             * would feed the LOP deduction — the second half of which is simply
+             * wrong: the late-mark KPI and payroll both count the STORED status
+             * (see the MTD loop in dailyView), never this resolved one, so
+             * returning Present suppressed nothing. It only hid a late arrival
+             * the Attendance Log was reporting two rows away, and #90 asks for
+             * "Present/Worked (or Late, if applicable)". */
             if ($this->workedARestDay($stored, $row)) {
-                return 'Present';
+                $stored = 'Present';
             }
 
             // Auto-promote Present → Late based on the local first-in. 10-min
@@ -1522,10 +1581,10 @@ class AttendanceController extends Controller
                 // face-clock flow always writes 'Present' on first punch
                 // and doesn't know about shifts, so the heuristic has to
                 // run at read time.
-                // Skipped for a worked rest day: there is no expected shift on
-                // a closed day, so "Late" would be measured against nothing —
-                // same reasoning as resolveDayStatus().
-                if (!$workedRestDay && strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
+                // Applies to a worked rest day too — see resolveDayStatus():
+                // the late-mark KPI counts the STORED status, so promoting the
+                // display costs nothing and #90 asks for Late where it applies.
+                if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
                     && $this->minutesBetween($shiftStart, $firstIn) > 10) {
                     $status = 'Late';
                 }

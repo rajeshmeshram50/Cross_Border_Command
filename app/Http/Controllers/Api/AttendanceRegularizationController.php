@@ -437,6 +437,19 @@ class AttendanceRegularizationController extends Controller
                 'employee.department:id,name',
                 'employee.reportingManager:id,first_name,middle_name,last_name,display_name',
                 'employee.reportingManagerUser:id,name',
+                /* Who DECIDED it, not just who it was routed to (#91).
+                 *
+                 * index() has loaded this all along; this queue never did, so
+                 * on the Approved tab `row.approver` arrived undefined. The
+                 * detail modal falls back to the approval chain for the name,
+                 * but a request decided directly (rather than stepped through
+                 * a chain) has no decided chain row either — so the whole
+                 * "Approved by …" line was suppressed and the approving
+                 * manager's name simply never appeared.
+                 *
+                 * approved_by holds the acting USER's id (see approve()), which
+                 * is what this relation is keyed on. */
+                'approver:id,name',
             ])
             ->orderByDesc('created_at');
 
