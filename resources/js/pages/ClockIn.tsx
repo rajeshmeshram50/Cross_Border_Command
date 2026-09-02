@@ -347,6 +347,20 @@ export default function ClockIn() {
         </div>
       </div>
 
+      {/* This wrapper is load-bearing (#213).
+          app.css zeroes the gutters of any row that is a DIRECT child of
+          `.page-content > .container-fluid`, so the page's outermost row sits
+          flush to the viewport edge. That also stripped the padding BETWEEN the
+          columns, leaving the Clock IN/OUT card and Today's Summary touching
+          with no visible channel.
+          Nesting the row one level deeper is the escape hatch that rule
+          documents ("nested rows deeper in a page are untouched"), and it
+          restores the g-3 gutter without a new !important override.
+          Outer alignment is unchanged: the wrapper starts at the page's 8px
+          padding, the row's -8px gutter margin pulls it back to the viewport
+          edge, and the column's 8px padding puts the cards back at 8px —
+          exactly where they sat before. Only the 16px between them is new. */}
+      <div className="clockin-grid">
       <Row className="g-3">
         {/* LEFT — webcam + label picker + capture */}
         <Col lg={7}>
@@ -585,6 +599,7 @@ export default function ClockIn() {
           </Card>
         </Col>
       </Row>
+      </div>
 
       <FaceRegistrationModal
         open={showRegister}
