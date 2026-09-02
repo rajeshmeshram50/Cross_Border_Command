@@ -33,6 +33,32 @@ class Candidate extends Model
     ];
 
     /**
+     * Store candidate emails folded to lowercase and trimmed (CBC #67).
+     *
+     * A mutator rather than a normalise step in the controller because there
+     * are three write paths — store(), update() and the CSV import — and a
+     * per-controller fix would leave whichever one is added next writing mixed
+     * case again. Every path funnels through the model, so this is the single
+     * choke point.
+     *
+     * The existing duplicate guards already compare with LOWER(email) on both
+     * sides, so this does not change who counts as a duplicate; it stops the
+     * two representations from being persisted in the first place, which is
+     * what makes exports, mail-merge and any future raw `=` join consistent.
+     *
+     * Blank/null is passed through untouched so "no email given" stays
+     * distinguishable from an empty string on an update.
+     */
+    public function setEmailAttribute($value): void
+    {
+        $trimmed = trim((string) $value);
+
+        $this->attributes['email'] = $trimmed === ''
+            ? $value
+            : mb_strtolower($trimmed);
+    }
+
+    /**
      * Append the computed CV URL + initials/accent helpers to every JSON
      * payload. The frontend's CandidateRow shape relies on these.
      */

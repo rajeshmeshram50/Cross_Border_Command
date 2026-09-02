@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Branch;
 use App\Models\Masters\StateCodes;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -45,20 +46,15 @@ final class Gst
         return self::isDomestic($country) ? 'Yes' : 'No';
     }
 
-    /**
-     * GST state code for a state NAME (e.g. "Maharashtra" → "27").
-     *
-     * Matched case-insensitively on the name because addresses store the
-     * state as free text, not as an id. Returns null when the master has no
-     * code for the state — callers must treat that as "unknown", not "0".
-     *
-     * Only reads globally-seeded rows (client_id IS NULL): GST state codes
-     * are statutory, identical for every tenant, and seeded that way.
-     */
-    public static function stateCodeFor(?string $stateName): ?string
+
+    public static function stateCodeFor(?string $stateName, $user = null): ?string
     {
         $name = trim((string) $stateName);
         if ($name === '') return null;
+
+        $user     = $user ?: Auth::user();
+        $clientId = $user?->client_id ?? optional($user?->branch)->client_id;
+        $branchId = $user?->branch_id;
 
         /* Explicit join with a ::text cast rather than whereHas('state', …).
          * master_state_codes.state_id is varchar while master_states.id is
@@ -68,9 +64,29 @@ final class Gst
         $code = StateCodes::query()
             ->from('master_state_codes as sc')
             ->join('master_states as s', DB::raw('s.id::text'), '=', DB::raw('sc.state_id::text'))
-            ->whereNull('sc.client_id')
             ->whereRaw('LOWER(sc.status) = ?', ['active'])
             ->whereRaw('LOWER(s.name) = ?', [mb_strtolower($name)])
+            /* Visible = the statutory globals, plus this tenant's own rows.
+             * Mirrors MasterVisibility::applyBranchScope, hand-written here
+             * because that helper writes unqualified column names and this
+             * query is aliased + joined, which would make `client_id`
+             * ambiguous to Postgres. */
+            ->where(function ($w) use ($clientId, $branchId) {
+                $w->whereNull('sc.client_id');
+                if ($clientId !== null) {
+                    $w->orWhere(function ($ww) use ($clientId, $branchId) {
+                        $ww->where('sc.client_id', $clientId)
+                            ->where(function ($wb) use ($branchId) {
+                                $wb->whereNull('sc.branch_id');
+                                if ($branchId !== null) $wb->orWhere('sc.branch_id', $branchId);
+                            });
+                    });
+                }
+            })
+            // Global > client-level > branch-level. Keep in step with
+            // StateCodes::scopeStatutoryFirst().
+            ->orderByRaw('CASE WHEN sc.client_id IS NULL THEN 0 WHEN sc.branch_id IS NULL THEN 1 ELSE 2 END')
+            ->orderBy('sc.id')
             ->value('sc.state_code');
 
         return $code !== null ? (string) $code : null;

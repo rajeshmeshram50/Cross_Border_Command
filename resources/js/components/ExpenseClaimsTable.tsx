@@ -187,11 +187,32 @@ function withAuthToken(url: string): string {
  * Management page can compose its own tabs / search / pager around exactly
  * these columns while the employee-profile tab keeps using the wrapper
  * component below — one definition of an expense row, two layouts.
- * Widths sum to 100 (fixed layout): 8+14+11+16+10+9+13+9+10. The Proof of
- * Payment column was added after the original split without the others giving
- * anything back, which pushed the total to 104% — in a fixed layout that
- * over-constraint silently shrinks every column. Rebalanced, with the extra
- * going to Proof so a real file name + extension fits. */
+ *
+ * PIXEL widths, not percentages (#176).
+ *
+ * These were percentages mixed with two pixel columns (Exp ID 104, Action 240)
+ * and DataTable's 56px serial. Percentages resolve against the table's own
+ * width, so ~400px of fixed columns pushed the total past 100% and the browser
+ * rescaled every remaining column to fit — the declared widths were never the
+ * rendered ones. The percentages had also drifted to 110%: this comment used to
+ * record a rebalance back from 104%, and Payment Status and Zoho Sync were
+ * added afterwards without anyone giving room back. In a fixed layout that
+ * over-constraint is re-resolved as the table re-renders, which is why headers
+ * appeared displaced and columns dropped out while scrolling.
+ *
+ * Pixels remove the negotiation: every column gets exactly what it asks for and
+ * .dt-scroll scrolls when the viewport cannot fit the total.
+ *
+ * The total is EXPORTED as expenseClaimsMinWidth() rather than restated as a
+ * literal at each call site — the Action column is mode-dependent, so the two
+ * tables built from these columns need different totals, and a hand-copied
+ * number is exactly how the percentages drifted in the first place. */
+const ACTION_W = (mode: 'mine' | 'team' | 'hr') => (mode === 'hr' || mode === 'team' ? 240 : 120);
+
+/** Sum of every column width below, including DataTable's 56px serial column. */
+export const expenseClaimsMinWidth = (mode: 'mine' | 'team' | 'hr' = 'mine') =>
+  56 + 104 + 170 + 130 + 150 + 110 + 120 + 110 + 150 + 110 + 130 + 120 + ACTION_W(mode);
+
 export function expenseClaimColumns({
   accent = '#7c5cfc', fallbackName, fallbackInitials,
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, onAct, onRecordPayment, onViewPayments, onReview, onEmailReimbursement,
@@ -233,7 +254,7 @@ export function expenseClaimColumns({
       header: 'Employee',
       id: 'employee',
       accessorFn: (c: ExpenseClaimRow) => c.employee_name || fallbackName || `#${c.employee_id}`,
-      meta: { width: '14%', align: 'left' },
+      meta: { width: 170, align: 'left' },
       cell: info => {
         const c = info.row.original;
         const empName = c.employee_name || fallbackName || ('#' + c.employee_id);
@@ -249,7 +270,7 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Category</div>,
       id: 'category',
       accessorFn: (c: ExpenseClaimRow) => c.category_name ?? '',
-      meta: { width: '11%', align: 'center' },
+      meta: { width: 130, align: 'center' },
       cell: info => (
         <span
           className="d-inline-flex align-items-center gap-1 fw-semibold exp-cat-badge"
@@ -266,7 +287,7 @@ export function expenseClaimColumns({
       /* 13%, down from 15% — the 2% went to Zoho Sync. (#170) This cell is a
          TruncCell that already ellipsises at 70 chars and shows the full text
          on hover, so it degrades gracefully; a fixed status pill does not. */
-      meta: { width: '13%' },
+      meta: { width: 150 },
       cell: info => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     {
@@ -274,7 +295,7 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Linked Advance</div>,
       id: '__linked_advance',
       accessorFn: (c: ExpenseClaimRow) => c.reimbursement_for?.advance_no ?? '',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 110, align: 'center' },
       cell: info => {
         const adv = info.row.original.reimbursement_for;
         return adv?.advance_no
@@ -288,20 +309,20 @@ export function expenseClaimColumns({
       header: () => <div className="text-center">Expense Date</div>,
       id: 'expense_date',
       accessorFn: (c: ExpenseClaimRow) => (c.expense_date ? new Date(c.expense_date).getTime() : 0),
-      meta: { width: '10%', align: 'center' },
+      meta: { width: 120, align: 'center' },
       cell: info => <span className="text-muted">{fmtDate(info.row.original.expense_date)}</span>,
     },
     {
       header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 110, align: 'center' },
       cell: info => <span className="fw-bold">₹{Number(info.row.original.amount || 0).toLocaleString('en-IN')}</span>,
     },
     {
       header: 'Proof of Payment',
       id: '__proof',
       enableSorting: false,
-      meta: { align: 'left', width: '13%' },
+      meta: { align: 'left', width: 150 },
       /* Only the first receipt shows in the cell; extras collapse into a
          "+N more" popover so multiple uploads can't expand the row height. */
       cell: info => (
@@ -315,7 +336,7 @@ export function expenseClaimColumns({
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 110, align: 'center', wrap: true },
       cell: info => {
         const s = info.row.original.status;
         const tone = STATUS_TONE[s];
@@ -334,7 +355,7 @@ export function expenseClaimColumns({
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (c: ExpenseClaimRow) => paymentStatusOf(c) ?? '',
-      meta: { width: '11%', align: 'center' },
+      meta: { width: 130, align: 'center', wrap: true },
       cell: info => {
         /* A rejected claim is never paid — "N/A" rather than a bare "—", which
            reads as a value that failed to load (QA #122, same as advances). */
@@ -367,7 +388,7 @@ export function expenseClaimColumns({
          already over-allocate at 110%, and widening one without narrowing
          another just squeezes every neighbour a little harder. Description is
          free text that reflows, so it is the column that can spare it. */
-      meta: { width: '11%', align: 'center' },
+      meta: { width: 120, align: 'center', wrap: true },
       cell: info => {
         // Nothing is booked in Zoho for a rejected claim (QA #122).
         if (info.row.original.status === 'rejected') {
@@ -402,7 +423,7 @@ export function expenseClaimColumns({
       // Approve" CTA, so the column reserves room for it — otherwise the fixed
       // table layout squeezed the button and the action group wrapped on some
       // rows but not others, leaving the column misaligned row-to-row (QA).
-      meta: { align: 'center', width: (mode === 'hr' || mode === 'team') ? 240 : '10%', wrap: true },
+      meta: { align: 'center', width: ACTION_W(mode), wrap: true },
       cell: info => (
         <ExpenseActionCell
           claim={info.row.original}
@@ -440,7 +461,7 @@ export default function ExpenseClaimsTable({
         data={rows}
         columns={columns}
         accent="violet"
-        minWidth={1150}
+        minWidth={expenseClaimsMinWidth(mode)}
         loading={!!loading}
         searchable={false}
         paginate={false}

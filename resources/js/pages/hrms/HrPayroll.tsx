@@ -340,11 +340,10 @@ export default function HrPayroll() {
   };
   /* Loaded on mount, not on first visit to the tab.
    *
-   * The Salary Setup badge counts employees with no salary structure, which it
-   * reads straight off this roster — so while the fetch was deferred until the
-   * tab was opened, the badge sat at 0 and only corrected itself once someone
-   * clicked it. The count exists precisely to tell HR there is something to
-   * deal with in there, so it has to be right before the tab is visited.
+   * The Salary Setup badge is the length of this roster, so while the fetch was
+   * deferred until the tab was opened the badge sat at 0 and only corrected
+   * itself once someone clicked it. A count that is only right after you have
+   * already gone looking is no count at all.
    *
    * The other three tabs already have their counts on mount (they come from
    * the payroll rows), so this also stops Salary Setup being the odd one out. */
@@ -2229,7 +2228,17 @@ export default function HrPayroll() {
               { key: 'processing' as const, label: 'Payroll Processing', icon: 'ri-money-rupee-circle-line', count: counts.totalEmployees },
               { key: 'biometric'  as const, label: 'Biometric Input',    icon: 'ri-fingerprint-line',         count: counts.totalEmployees },
               { key: 'report'     as const, label: 'Salary Report',      icon: 'ri-file-chart-line',          count: counts.totalEmployees },
-              { key: 'salary'     as const, label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line',  count: roster.filter(r => !r.has_structure).length },
+              /* The roster's LENGTH, not the not-yet-configured subset (#141).
+                 The tab lists every employee in the cycle, so counting only
+                 those without a structure made the badge contradict the rows
+                 underneath it — it read 0 while EMP-004/005/007 sat in the
+                 list, which looks like a broken count rather than a filter.
+                 The other three tabs all badge the number of rows they show;
+                 this one was the odd one out.
+                 Nothing is lost by dropping the "needs setup" reading: every
+                 row already says which it is, offering "Set Salary" when there
+                 is no structure and "Revise" when there is. */
+              { key: 'salary'     as const, label: 'Salary Setup',       icon: 'ri-money-rupee-circle-line',  count: roster.length },
             ].map(t => {
               const on = tab === t.key;
               return (

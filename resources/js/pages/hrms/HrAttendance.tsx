@@ -444,12 +444,20 @@ export default function HrAttendance() {
           punches: Array.isArray(e.punches) ? e.punches : [],
           logs:    Array.isArray(e.logs)    ? e.logs    : [],
         }));
-        setEmployees(prev => hydrated.map(e => {
-          // `correction` is set optimistically after filing and the roster
-          // payload doesn't carry it — a refresh must not wipe the pill.
-          const had = prev.find(p => p.id === e.id);
-          return had?.correction ? { ...e, correction: had.correction } : e;
-        }));
+        /* Trust the server's `correction` (#92).
+         *
+         * This used to carry the previous render's value forward, because the
+         * pill was set optimistically on filing and the roster payload had no
+         * field to replace it with. That made it one-way: once shown it could
+         * never be withdrawn, so "Correction Pending" stayed on the card long
+         * after the request had been approved — until a full page reload
+         * dropped the in-memory state.
+         *
+         * dailyView now returns `correction`, null unless a request for the
+         * selected date is still Pending, so each refresh re-reads the truth
+         * and an approval clears the pill on the next poll. The optimistic set
+         * after filing still works — it just no longer outlives the answer. */
+        setEmployees(hydrated);
         setSelectedId((prev) => {
           if (prev != null && hydrated.some((e) => e.id === prev)) return prev;
           return hydrated[0]?.id ?? null;
@@ -574,10 +582,12 @@ export default function HrAttendance() {
      the second one's header for as long as the request takes. */
   const detailReady = !!listEntry && !!detail && detail.id === listEntry.id;
 
-  /* Merged so every panel keeps taking one employee object. `accent` and
-     `correction` are client-side — the avatar colour is assigned by list index
-     and the correction pill is set optimistically after filing — and the
-     server payload carries an empty accent that would otherwise clobber it. */
+  /* Merged so every panel keeps taking one employee object. `accent` stays
+     client-side — it is assigned by list index and the server payload carries
+     an empty one that would otherwise clobber it.
+     `correction` is taken from the LIST entry because that is the roster the
+     pill is drawn from; both sides now carry the server's value (#92), so this
+     is a choice of source rather than the client overriding the server. */
   const selected = useMemo(() => {
     if (!listEntry || !detail || detail.id !== listEntry.id) return listEntry;
     return { ...listEntry, ...detail, accent: listEntry.accent, correction: listEntry.correction };

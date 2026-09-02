@@ -1521,8 +1521,13 @@ function CandidateFormModal({
                     placeholder="name@email.com"
                     value={email}
                     disabled={readOnly}
+                    /* Fold to lowercase as it is typed (#67) so what the field
+                       shows is what gets stored — the model lowercases on save
+                       either way, and echoing that here avoids the value
+                       appearing to change after the record is reopened.
+                       Caret position is safe: the string length is unchanged. */
                     onChange={e => {
-                      const v = e.target.value;
+                      const v = e.target.value.toLowerCase();
                       setEmail(v);
                       if (errors.email && v.trim() && isValidEmail(v)) setFieldError('email', null);
                     }}
@@ -2009,7 +2014,7 @@ function CandidateConfirmModal({
               : (isReject ? 'Confirm Rejection' : 'Confirm Selection')}
           </button>
         </div>
-      </ModalBody>
+      </ModalBody>  
     </Modal>
   );
 }

@@ -499,6 +499,25 @@
   top: 50%;
   transform: translateY(-50%);
 }
+/* …and the label has to keep OFF the parked arrow. (#179)
+   Taking the arrow out of the flow above also took it out of the flex row's
+   sizing, so nothing reserved room for it any more: a label wide enough to
+   fill the cell ran straight underneath the glyph and the two printed on top
+   of each other. Expense Management shows it worst — "Payment Status",
+   "Recovery Status", "Linked Advance" and "Advance Type" are all centred,
+   sortable and nearly as wide as their columns.
+   The inset is SYMMETRIC on purpose. Padding only on the right would reserve
+   the space but shift the label left of centre, which is precisely the
+   misalignment #171 removed the arrow from the flow to fix. Equal padding
+   keeps the label centred on the column while guaranteeing it can never reach
+   the arrow: the glyph is ~13px wide and parked 6px from the border edge, so
+   16px inside the cell's own 9px padding clears it with room to spare.
+   Sortable only — a centred header with no arrow has nothing to avoid and
+   keeps the full width for its text. */
+.dt-table thead th[data-align="center"].dt-sortable .dt-th-inner {
+  padding-left: 16px;
+  padding-right: 16px;
+}
 
 /* A RIGHT-aligned sortable header puts its arrow BEFORE the label. (#139)
    #171 fixed the centred case and explicitly left right-aligned headers alone,
