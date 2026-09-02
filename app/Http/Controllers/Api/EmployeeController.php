@@ -276,9 +276,11 @@ class EmployeeController extends Controller
         // — the HR document-template generator filters its recipient list by
         // designation.level === template.role_type, so it must be selected.
         'designation:id,name,level',
-        // role_category / role_type are needed so role-aware pickers (e.g. the
-        // Recruitment "Assigned HR" = HR-category only, "Hiring Manager" =
-        // exclude HR/Intern) can filter employees by their primary role.
+        // role_category / role_type are surfaced for display only. They are NOT
+        // a filtering signal: both are NULL for every row of master_roles in
+        // practice, so the pickers that once filtered on them matched nobody
+        // (bugs #38/#39). Recruitment's Hiring Manager instead excludes
+        // trainees by designation level — see excludeTrainees().
         'primaryRole:id,name,role_category,role_type',
         'ancillaryRole:id,name',
         // Legal entity = the employing BRANCH (holds the GST/PAN/CIN + banks).
@@ -945,6 +947,88 @@ class EmployeeController extends Controller
      *
      * @param  \Illuminate\Database\Eloquent\Builder  $q
      */
+    /**
+     * Free-text values of `work_type` that mean "this person is a trainee".
+     * `employee_type` is a closed vocabulary, but it was backfilled from this
+     * column and left NULL wherever the old free text didn't map cleanly, so
+     * both have to be consulted.
+     */
+    private const TRAINEE_WORDS = ['intern', 'trainee', 'apprentice', 'articleship'];
+
+    /** The canonical `master_designations.level` tier for trainees. */
+    public const TRAINEE_LEVEL = 'Intern / Trainee';
+
+    /**
+     * Is this employee an intern / trainee?
+     *
+     * Deliberately a positive-match test used to EXCLUDE, never to include:
+     * an employee counts as a trainee only when a field concretely says so,
+     * and anyone whose designation level, employee_type and work_type are all
+     * blank is treated as a normal employee.
+     *
+     * That direction matters. The previous attempt at this rule (bugs #38/#39)
+     * narrowed the Recruitment pickers DOWN to employees whose ROLE said
+     * HR / non-Intern, but `master_roles.role_category` and `role_type` are
+     * NULL for every role in practice, so the include-filter matched nobody
+     * and the dropdowns came back empty — which is why it was reverted and
+     * bug #65 opened. Excluding only on a positive signal cannot empty a list.
+     *
+     * Callers: RecruitmentController's hiring_manager_id rule, and the mirror
+     * of this rule in HrRecruitment.tsx (isTraineeRow) that hides trainees from
+     * the Hiring Manager dropdown.
+     */
+    public static function isTrainee(?Employee $e): bool
+    {
+        if (!$e) return false;
+
+        return $e->designation?->level === self::TRAINEE_LEVEL
+            || self::mentionsAny($e->employee_type, self::TRAINEE_WORDS)
+            || self::mentionsAny($e->work_type, self::TRAINEE_WORDS);
+    }
+
+    /** Department / designation / role wording that means "this person is HR". */
+    private const HR_WORDS = ['human resource', 'hr'];
+
+    /**
+     * Is this employee eligible to be a recruitment's Assigned HR? (CBC #66)
+     *
+     * HR-ness is read from the DEPARTMENT first, then designation and primary
+     * role name, because `master_roles.role_category` — the field the original
+     * attempt at this rule used (bug #38) — is NULL for every role, so keying
+     * off it matched nobody and emptied the dropdown.
+     *
+     * Matching is on the role/department NAME, not a category enum, and 'hr'
+     * is matched as a whole word so "Warehouse"/"Chairman" don't false-positive.
+     * Trainees are never eligible regardless of department.
+     */
+    public static function isHrEligible(?Employee $e): bool
+    {
+        if (!$e || self::isTrainee($e)) return false;
+
+        return self::mentionsAny($e->department?->name, self::HR_WORDS)
+            || self::mentionsAny($e->designation?->name, self::HR_WORDS)
+            || self::mentionsAny($e->primaryRole?->name, self::HR_WORDS);
+    }
+
+    /**
+     * Does $value contain any of $words? Blank is always false, so a missing
+     * field never counts as a positive classification. Single-letter-ish tokens
+     * like "hr" are matched on a word boundary; longer phrases as substrings.
+     */
+    private static function mentionsAny($value, array $words): bool
+    {
+        $s = strtolower(trim((string) $value));
+        if ($s === '') return false;
+
+        foreach ($words as $w) {
+            $hit = strlen($w) <= 3
+                ? preg_match('/\b' . preg_quote($w, '/') . '\b/', $s) === 1
+                : str_contains($s, $w);
+            if ($hit) return true;
+        }
+        return false;
+    }
+
     private function applySearch($q, ?string $search): void
     {
         if (!$search = trim((string) $search)) {
