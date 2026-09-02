@@ -9,7 +9,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { expenseClaimColumns, expenseClaimsMinWidth, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
 import BatchPaymentModal from '../../components/BatchPaymentModal';
-import { advanceRequestColumns, DeclineReasonModal, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
+import { advanceRequestColumns, advanceRequestsMinWidth, DeclineReasonModal, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
 import { MasterSelect, MasterFormStyles } from '../master/masterFormKit';
 import DataTable from '../../components/ui/DataTable';
 import { useChartTheme } from '../../hooks/useChartTheme';
@@ -1200,7 +1200,9 @@ export default function HrExpenseManagement() {
             autoFitRows
             fitToViewport
             minAutoRows={8}
-            minWidth={1500}
+            /* From the column definitions, not restated here — the total moves
+               with both the Company/Self toggle and the mode (#177). */
+            minWidth={advanceRequestsMinWidth('hr', advUsedFor)}
             loading={advanceLoading || switching}
             searchValue={search}
             onSearchChange={setSearch}
