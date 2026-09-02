@@ -8,7 +8,7 @@ import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
-import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
@@ -383,6 +383,12 @@ export default function HrRecruitment() {
   const [recStats, setRecStats] = useState(ZERO_REC_STATS);
 
   const fetchRecruitments = async () => {
+    /* Raise the flag on EVERY fetch, not just the first (#68).
+       `loadingRecruitments` starts true and the finally below drops it, but
+       nothing ever set it back — so switching In Progress -> Cancelled left
+       the previous tab's rows on screen with no indication a request was in
+       flight. This drives both the KPI shimmers and the DataTable loader. */
+    setLoadingRecruitments(true);
     try {
       const [listRes, recStatsRes, statsRes, hrRes] = await Promise.all([
         api.get('/recruitments', {
