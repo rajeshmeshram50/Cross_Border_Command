@@ -6,7 +6,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { expenseClaimColumns, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
+import { expenseClaimColumns, expenseClaimsMinWidth, type ExpenseClaimRow } from '../../components/ExpenseClaimsTable';
 import ExpenseSettlementModal from '../../components/ExpenseSettlementModal';
 import BatchPaymentModal from '../../components/BatchPaymentModal';
 import { advanceRequestColumns, DeclineReasonModal, type AdvanceRequestRow } from '../../components/AdvanceRequestsTable';
@@ -1225,7 +1225,9 @@ export default function HrExpenseManagement() {
             autoFitRows
             fitToViewport
             minAutoRows={8}
-            minWidth={1150}
+            /* Taken from the column definitions rather than restated here —
+               the two used to be maintained separately and drifted (#176). */
+            minWidth={expenseClaimsMinWidth('hr')}
             loading={loading || switching}
             searchValue={search}
             onSearchChange={setSearch}
