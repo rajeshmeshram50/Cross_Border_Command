@@ -8,6 +8,7 @@ import { CLM_CSS, PER_PAGE, paginate } from '../shared/clmShared';
 import { ClmPageHeader, ClmBrefBox, ICO } from '../shared/ClmPageShell';
 import { ClmSkeletonRows, DeleteConf, SimpleDescModal } from '../shared/clmCommon';
 import Tooltip from '../../../components/ui/Tooltip';
+import { saveApiBlob } from '../../../utils/downloadFile';
 import ClmAgreementWizardModal from './ClmAgreementWizardModal';
 
 /* Central CLM → Agreements Master (two tabs: Types + Library). */
@@ -347,21 +348,35 @@ function LibraryPane({ rows, types, segs, loading, reload }: { rows: AgrLib[]; t
       const resp = await api.get(endpoint, { responseType: 'blob' });
       window.clearInterval(timer);
       setDlProgress(100);
-      const url  = URL.createObjectURL(resp.data as Blob);
-      const a    = document.createElement('a');
-      a.href = url;
-      a.download = `${r.code}-${slugForFile(r.title)}.${fmt === 'docx' ? 'docx' : 'pdf'}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      /* Check the bytes before writing them to disk.
+         With responseType 'blob' axios returns whatever arrived — a JSON error
+         body or an HTML page included — and if that came back with HTTP 200
+         nothing throws. Saving those bytes under a .docx name is what makes
+         Word report "we found a problem with its contents": the failure is
+         upstream (a route that never matched, a session redirect, a proxy error
+         page, or a DOCX the writer could not finish), but every symptom points
+         at the file.
+         saveApiBlob compares the leading bytes against the format's signature
+         (PK.. for a docx zip, %PDF for a PDF) and raises a readable error
+         instead of producing a broken download. Same guard the Trade Documents
+         list already uses. */
+      await saveApiBlob(
+        resp.data as Blob,
+        `${r.code}-${slugForFile(r.title)}.${fmt === 'docx' ? 'docx' : 'pdf'}`,
+        fmt === 'docx' ? 'docx' : 'pdf',
+      );
       await new Promise(res => setTimeout(res, 400)); // let the 100% show briefly
     } catch (e) {
       window.clearInterval(timer);
       // The request is responseType:'blob', so an error body arrives as a Blob —
       // read + parse it to surface the server's real message (e.g. "too large").
-      let msg = 'Please try again.';
-      const data = (e as { response?: { data?: unknown } })?.response?.data;
+      /* saveApiBlob throws a plain Error with no `response`, so its explanation
+         ("The server did not return a Word document…") would otherwise fall
+         through to the generic default — the one message that says what
+         actually went wrong. */
+      const err = e as { response?: { data?: unknown }; message?: string };
+      let msg = (!err?.response && typeof err?.message === 'string') ? err.message : 'Please try again.';
+      const data = err?.response?.data;
       if (data instanceof Blob) {
         try { msg = JSON.parse(await data.text())?.message || msg; } catch { /* keep default */ }
       } else if (data && typeof data === 'object' && 'message' in data) {
