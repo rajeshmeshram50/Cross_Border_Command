@@ -6190,7 +6190,11 @@
   max-width: 1060px;
   margin: auto;
   background: #fff;
-  border-radius: 16px;
+  /* 22px to match .avm-modal in AddVendorModal — the two popups sit in the
+     same flow and a 6px difference in corner radius reads as one of them
+     being from a different design. overflow:hidden below is what lets the
+     gradient header take the rounded top corners. */
+  border-radius: 22px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -6223,6 +6227,20 @@
   background-image:
     radial-gradient(circle at 16% 130%, rgba(255, 255, 255, .2), transparent 42%),
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
+}
+/* The second Figma layer — a soft highlight down the TOP HALF only. The corner
+   bloom above was already here; without this the bar still reads a little flat
+   against the supplier form's header, which carries both (.avm-head::before /
+   ::after in AddVendorModal). Same values, so the two headers match. */
+.apm-mv-popup-head::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
 }
 
 .apm-mv-popup-title,
@@ -7464,7 +7482,9 @@
   margin: auto;
   background: #fff;
   border: 1px solid rgba(196, 181, 253, .6);
-  border-radius: 18px;
+  /* 22px — same as .avm-modal and .apm-mv-popup, so every popup in this
+     flow has the same corner. */
+  border-radius: 22px;
   overflow: hidden;
   box-shadow: 0 30px 80px rgba(20, 10, 60, .45);
   animation: apmSupPop .24s cubic-bezier(.22, 1, .36, 1);
@@ -7544,6 +7564,19 @@
   background-image:
     radial-gradient(circle at 16% 130%, rgba(255, 255, 255, .2), transparent 42%),
     radial-gradient(circle at 90% -40%, rgba(216, 180, 254, .45), transparent 46%);
+}
+/* Top-half sheen — the second Figma layer, matching .avm-head::after in
+   AddVendorModal and .apm-mv-popup-head::after above. This header had the
+   corner bloom but not this, so it sat flatter than the two beside it. */
+.apm-sup-head::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 50%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .16), transparent);
 }
 .apm-sup-head-ico,
 .apm-sup-head-txt,
