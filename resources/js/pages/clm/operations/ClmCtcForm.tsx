@@ -966,6 +966,22 @@ function Stage1(p: {
   // each field's red state auto-clears once it has a value (see the `error`
   // props on the Fields below), so we never have to manually reset them.
   const [errors, setErrors] = useState<{ title?: boolean; type?: boolean; effDate?: boolean; endDate?: boolean }>({});
+
+  /* Are any counterparty compliance fetches still running?
+   *
+   * validateStep1 already refused to advance while they were, but only after
+   * the click — the button stayed live and answered with an error toast for a
+   * condition that was never the user's fault and that they could do nothing
+   * about except wait. Lifted to component scope so the button can show the
+   * state instead of reporting it afterwards.
+   *
+   * Same "verifiable" narrowing the guard below uses: a party with no
+   * resolvable db_id can never be fetched, so it must not hold the button
+   * disabled forever. */
+  const docsChecking = p.cps
+    .filter(cp => cpVaultType(cp) && cp.sourceDbId)
+    .some(cp => { const c = cpCompliance[cpKey(cp)]; return !c || c.loading; });
+
   const validateStep1 = (): boolean => {
     if (!p.cps.length) { toast.error('Counterparty required', 'Add at least one counterparty before continuing.'); setMidStep(1); return false; }
     if (!p.org)        { toast.error('Organisation required', 'Select your organisation details before continuing.'); setMidStep(1); return false; }
@@ -976,8 +992,10 @@ function Stage1(p: {
     // legacy manual entry) can never be fetched, so it must not block forever
     // (this is what left rejected agreements stuck on "Checking documents…").
     const verifiable = p.cps.filter(cp => cpVaultType(cp) && cp.sourceDbId);
-    const stillLoading = verifiable.some(cp => { const c = cpCompliance[cpKey(cp)]; return !c || c.loading; });
-    if (stillLoading) { toast.error('Checking documents…', 'Please wait — verifying each counterparty\'s compliance documents.'); return false; }
+    // Kept as the server-side-of-the-UI guard: the button is disabled while
+    // docsChecking is true, but a keyboard submit or a race between the last
+    // fetch resolving and the re-render could still land here.
+    if (docsChecking) { toast.error('Checking documents…', 'Please wait — verifying each counterparty\'s compliance documents.'); return false; }
     const incomplete = verifiable.find(cp => !cpCompliance[cpKey(cp)]?.complete);
     if (incomplete) {
       const c = cpCompliance[cpKey(incomplete)];
@@ -999,6 +1017,15 @@ function Stage1(p: {
   const endBeforeEff = !!p.effDate && !!p.endDate && p.endDate < p.effDate;
   // Today as an ISO (YYYY-MM-DD) LOCAL date so it string-compares against the
   // picker values exactly like endBeforeEff (no Date parsing / timezone drift).
+  /* The effective date this agreement ARRIVED with — the first non-empty value
+     seen, which is the hydrated one on an existing record. Null on a new draft
+     until the user picks a date, and there the picker's minDate has already
+     ruled a past one out, so whatever lands here is today or later. */
+  const loadedEffDate = useRef<string | null>(null);
+  useEffect(() => {
+    if (loadedEffDate.current === null && p.effDate) loadedEffDate.current = p.effDate;
+  }, [p.effDate]);
+
   const todayISO = (() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1006,11 +1033,17 @@ function Stage1(p: {
   // End date must not be in the past — a new agreement that already expired makes
   // no sense. Only flagged when it isn't already caught by the end<eff rule.
   const endBeforeToday = !!p.endDate && p.endDate < todayISO;
-  /* Effective date must not be in the past either — the End Date already had
-     this guard, the start date never did, so an agreement could be dated to
-     begin before it existed. Same string compare on ISO values as the two
-     rules above: exact, and free of any timezone parsing. */
-  const effBeforeToday = !!p.effDate && p.effDate < todayISO;
+  /* Effective date must not be MOVED into the past — the End Date already had a
+     past-date guard, the start date never did.
+     What is refused is setting a past date, not the fact of holding one. An
+     agreement drafted for 07-Aug and then rejected is edited and re-sent after
+     that date has gone by; every route back to the reviewer runs through this
+     save, so a flat "is it before today" check would seal a rejected draft shut
+     — the correction would sit behind the block meant to prevent it.
+     So: past AND changed from what was stored. An untouched date passes; the
+     picker's minDate below stops a new one being chosen. */
+  const effBeforeToday = !!p.effDate && p.effDate < todayISO && p.effDate !== loadedEffDate.current;
+
   const validateStep2 = (): boolean => {
     // Mark every invalid required field so all of them highlight inline at once…
     const e = { title: !p.agTitle.trim(), type: !p.agType, effDate: !p.effDate || effBeforeToday, endDate: !p.endDate || endBeforeEff || endBeforeToday };
@@ -1450,12 +1483,20 @@ function Stage1(p: {
               </button>
             ) : <span />}
             {midStep < 3 ? (
-              <button onClick={midNext} disabled={navBusy} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: navBusy ? 'wait' : 'pointer', opacity: navBusy ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
-                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{navBusy ? 'Loading…' : MID_STEPS[midStep - 1].next}</span>
-                {navBusy
+              (() => {
+              /* Blocked while the counterparty compliance fetches are still
+                 running — only on step 1, which is the step they gate. The
+                 label names what it is waiting for rather than a bare
+                 "Loading…", so the wait is explained, not just enforced. */
+              const waiting = navBusy || (midStep === 1 && docsChecking);
+              return (
+              <button onClick={midNext} disabled={waiting} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', borderRadius: 9, background: 'linear-gradient(135deg,#4F46E5,#7C3AED)', border: 'none', cursor: waiting ? 'wait' : 'pointer', opacity: waiting ? .8 : 1, fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(79,70,229,.35)' }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff' }}>{navBusy ? 'Loading…' : (midStep === 1 && docsChecking) ? 'Checking documents…' : MID_STEPS[midStep - 1].next}</span>
+                {waiting
                   ? <svg className="ctc-spin" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>
                   : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.8" strokeLinecap="round"><polyline points="9 18 15 12 9 6" /></svg>}
               </button>
+              ); })()
             ) : p.editLock ? (
               // Draft is locked (awaiting approval / out for signature / signed).
               // View only — no edit, resubmit or approval from here.
