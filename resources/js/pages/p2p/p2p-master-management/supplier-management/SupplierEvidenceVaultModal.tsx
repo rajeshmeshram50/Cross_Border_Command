@@ -1,7 +1,10 @@
 import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
+/* TYPE-only. The runtime values are imported inside the export handler below,
+   so 155 KB of zip machinery is fetched when someone clicks Export — not when
+   the vault opens, and certainly not when the supplier LIST opens. A type
+   import is erased at compile time and pulls in nothing. */
+import type JSZipType from 'jszip';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
@@ -510,9 +513,14 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         return fromUrl || `${d.name || 'document'}.pdf`;
       };
 
+      /* Both libraries land here, on the click, in parallel. */
+      const [{ default: JSZip }, { saveAs }] = await Promise.all([
+        import('jszip'),
+        import('file-saver'),
+      ]);
       const zip = new JSZip();
       // Drop every doc with a file into `folder`, numbered to avoid name clashes.
-      const addDocs = async (folder: JSZip, docs: VaultDoc[]) => {
+      const addDocs = async (folder: JSZipType, docs: VaultDoc[]) => {
         let i = 0;
         for (const d of docs) {
           i++;

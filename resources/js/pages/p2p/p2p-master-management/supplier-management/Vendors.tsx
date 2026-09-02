@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
-import AddVendorModal, { MappedProductsViewPopup } from './AddVendorModal';
-import SupplierScopeGate, { type SupplierScope } from './SupplierScopeGate';
-import SupplierEvidenceVaultModal, { type SupplierVaultTarget } from './SupplierEvidenceVaultModal';
+import type { SupplierScope } from './SupplierScopeGate';
+import type { SupplierVaultTarget } from './SupplierEvidenceVaultModal';
+
 import { ShimmerTable, ShimmerClmMaster } from '../../../../components/ui/Shimmer';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
@@ -16,6 +16,33 @@ import {
   writeVendorMasterBundle,
 } from './vendorBundleCache';
 import './supplier-management.css';
+
+/* LAZY, not static. These three are only ever rendered behind a click, but a
+   static import pulls them into the module graph the moment the list route
+   loads — the browser downloaded the whole wizard, the whole vault (and its
+   jszip + file-saver) before the table had a single row on it.
+
+   Conditional RENDERING (which was already here) does not help: it decides
+   what to mount, not what to fetch. Only a dynamic import moves the code out
+   of this route's chunk, which is what Vite splits on.
+
+   MappedProductsViewPopup is a named export of AddVendorModal, so it is
+   mapped onto .default — both specifiers resolve to the SAME module, so the
+   wizard chunk is fetched once and shared, not twice. */
+const AddVendorModal = lazy(() => import('./AddVendorModal'));
+const MappedProductsViewPopup = lazy(() =>
+  import('./AddVendorModal').then(m => ({ default: m.MappedProductsViewPopup })));
+const SupplierScopeGate = lazy(() => import('./SupplierScopeGate'));
+const SupplierEvidenceVaultModal = lazy(() => import('./SupplierEvidenceVaultModal'));
+
+/* Hover-prefetch. Making the wizard lazy moves its ~45 KB (gzipped) off page
+   load, but it has to arrive sometime — and 'sometime' would otherwise be
+   after the click, as a visible pause. Pointer-enter on the Add button fires
+   the same import ~300ms early, so the chunk is usually cached by the time the
+   click lands. Fire-and-forget: the import is idempotent and React.lazy reuses
+   the very same promise, so an in-flight prefetch is awaited rather than
+   repeated, and a failure here is retried by lazy() at render time. */
+const warmVendorWizard = () => { void import('./AddVendorModal'); };
 
 /* ────────────────────────────────────────────────────────────────────────────
  * Vendors — front-end only master list
@@ -650,7 +677,7 @@ useEffect(() => {
               </div>
             </div>
             <div className="cstrip__right">
-              <button type="button" className="cstrip__action-btn" onClick={() => { setEditingId(null); setEditingStep(null); setAddScope(null); setScopeGateOpen(true); }}>
+              <button type="button" className="cstrip__action-btn" onPointerEnter={warmVendorWizard} onFocus={warmVendorWizard} onClick={() => { setEditingId(null); setEditingStep(null); setAddScope(null); setScopeGateOpen(true); }}>
                 <span className="cstrip__action-btn-sheen" />
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
                 Add Supplier
@@ -977,13 +1004,16 @@ useEffect(() => {
 
       {/* Scope first, form second. */}
       {scopeGateOpen && (
+        <Suspense fallback={null}>
         <SupplierScopeGate
           onClose={() => setScopeGateOpen(false)}
           onChoose={scope => { setAddScope(scope); setScopeGateOpen(false); setAddOpen(true); }}
         />
+        </Suspense>
       )}
 
       {addOpen && (
+        <Suspense fallback={null}>
         <AddVendorModal
           vendorId={editingId}
           /* The row already shows the code, so hand it over rather than making
@@ -997,6 +1027,7 @@ useEffect(() => {
           onClose={() => { setAddOpen(false); setEditingId(null); setEditingStep(null); setAddScope(null); returnToRef.current = null; void refresh({ silent: true }); }}
           onSubmit={handleSave}
         />
+        </Suspense>
       )}
 
       {/* Segment "+N" popover — small anchored card at the badge (mirrors the
@@ -1079,12 +1110,14 @@ useEffect(() => {
           Mapped Products popup, minus the "Map Product" CTA and the per-row
           edit/remove icons. Mappings are edited in the supplier form. */}
       {mappedTarget && (
+        <Suspense fallback={null}>
         <MappedProductsViewPopup
           vendorId={mappedTarget.id}
           code={mappedTarget.code}
           name={mappedTarget.companyName}
           onClose={() => setMappedTarget(null)}
         />
+        </Suspense>
       )}
 
       {/* Read-only Supplier Evidence Vault popup — pulls
@@ -1093,11 +1126,20 @@ useEffect(() => {
           Trade Documents, Shipment Agreements). Rows are the union of
           the supplier's segment-rule docs and any files uploaded
           against them in Stage 2. */}
-      <SupplierEvidenceVaultModal
-        open={!!vaultTarget}
-        supplier={vaultTarget}
-        onClose={() => setVaultTarget(null)}
-      />
+      {/* Mounted only while a vault is open. It already returned null when
+          closed (`if (!open || !supplier || !vault) return null`) and every
+          effect inside it short-circuits on !open, so gating the mount changes
+          nothing on screen — but it is what stops the chunk, jszip and
+          file-saver being fetched on page load. */}
+      {vaultTarget && (
+        <Suspense fallback={null}>
+          <SupplierEvidenceVaultModal
+            open
+            supplier={vaultTarget}
+            onClose={() => setVaultTarget(null)}
+          />
+        </Suspense>
+      )}
 
     </>
   );
