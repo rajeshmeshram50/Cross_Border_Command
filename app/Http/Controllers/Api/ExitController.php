@@ -2225,6 +2225,9 @@ class ExitController extends Controller
                Employee model, so the employees LIST doesn't take a structure
                lookup per row. */
             'monthly_basic'         => $this->resolveMonthlyBasic($employee),
+            // Notice-period recovery is priced on GROSS (#130); basic stays in
+            // the payload because the FnF breakdown still reports on it.
+            'monthly_gross'         => $this->resolveMonthlyGross($employee),
         ];
     }
 
@@ -2261,5 +2264,41 @@ class ExitController extends Controller
 
         $annual = (float) ($employee->annual_salary ?? 0);
         return $annual > 0 ? round(($annual / 12) * 0.5, 2) : 0.0;
+    }
+
+    /**
+     * Monthly GROSS — what the notice-period recovery is priced on (CBC #130).
+     *
+     * Recovery is a charge against the whole package the employee would have
+     * earned during the notice they did not serve, not against the basic
+     * component alone, so it is quoted on gross.
+     *
+     * Same structure lookup as resolveMonthlyBasic() — deliberately duplicated
+     * rather than parameterised so the two read identically at a glance; the
+     * point of matching PayrollService::structureFor() is that the exit and
+     * payroll price off the same in-force structure.
+     *
+     * Precedence: the structure's gross, then a structure that only carries a
+     * basic (doubled back out of the engine's 50% split), then annual ÷ 12.
+     */
+    private function resolveMonthlyGross(Employee $employee): float
+    {
+        $structure = \App\Models\SalaryStructure::where('employee_id', $employee->id)
+            ->whereIn('status', ['active', 'superseded'])
+            ->whereDate('effective_from', '<=', \Carbon\Carbon::now(self::DISPLAY_TZ))
+            ->orderByDesc('effective_from')
+            ->orderByDesc('version')
+            ->first();
+        if ($structure) {
+            $gross = (float) $structure->monthly_gross;
+            if ($gross > 0) return round($gross, 2);
+            // Structure with a basic but no gross — invert the 50% split the
+            // basic fallback uses, so the two resolvers stay consistent.
+            $basic = (float) $structure->basicAmount();
+            if ($basic > 0) return round($basic * 2, 2);
+        }
+
+        $annual = (float) ($employee->annual_salary ?? 0);
+        return $annual > 0 ? round($annual / 12, 2) : 0.0;
     }
 }
