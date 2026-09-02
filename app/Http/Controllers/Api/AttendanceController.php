@@ -270,8 +270,27 @@ class AttendanceController extends Controller
         // so a null client_id must NOT count as "same tenant" for admins (that
         // let any tenant read a client-less employee's attendance).
         $sameTenant = (int) $emp->client_id === (int) $user->client_id;
+
+        /* HR staff are employee-type logins too (CBC #88).
+         *
+         * This used to admit only client_admin / client_user / branch_user, so
+         * an HR user opening a colleague's Attendance tab was refused however
+         * many permissions they had been granted — the rest of the profile
+         * loaded and only this tab said "You do not have access to this
+         * employee", which is what made it read as a bug rather than a policy.
+         *
+         * Honour the same grant the controller already trusts everywhere else:
+         * can_view on hr.attendance, the exact check authorizeAttendanceView()
+         * applies to the list endpoints. Extracted to a helper so the two
+         * cannot drift apart.
+         *
+         * Tenant isolation is unchanged: $sameTenant still has to hold, so this
+         * widens WHO inside the tenant may look, never ACROSS tenants. */
+        $isAdminLogin = in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
+        $isPermittedStaff = $user->user_type === 'employee' && $this->hasAttendanceViewPermission($user);
+
         if (!$isSelf && $user->user_type !== 'super_admin' && !(
-            in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true) && $sameTenant
+            ($isAdminLogin || $isPermittedStaff) && $sameTenant
         )) {
             abort(403, 'You do not have access to this employee.');
         }
@@ -463,19 +482,31 @@ class AttendanceController extends Controller
         ]);
     }
 
+    /**
+     * Does this employee-type login hold can_view on the Attendance module?
+     *
+     * Extracted so the list endpoints (authorizeAttendanceView) and the
+     * per-employee summary gate ask the identical question — they disagreed
+     * before, which is how an HR user could open the Attendance list but not a
+     * colleague's Attendance tab (#88).
+     */
+    private function hasAttendanceViewPermission($user): bool
+    {
+        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
+
+        return (bool) $moduleId && Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+    }
+
     private function authorizeAttendanceView(Request $request): void
     {
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
         if ($user->user_type !== 'employee') return;
 
-        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
-        $allowed  = $moduleId && Permission::where('user_id', $user->id)
-            ->where('module_id', $moduleId)
-            ->where('can_view', true)
-            ->exists();
-
-        if (!$allowed) abort(403, 'Access Denied');
+        if (!$this->hasAttendanceViewPermission($user)) abort(403, 'Access Denied');
     }
 
     private function isBranchPinned($user): bool
