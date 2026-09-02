@@ -1752,7 +1752,7 @@ class VendorController extends Controller
                 ->whereRaw('LOWER(status) = ?', ['active'])
                 ->tap($scope)
                 ->with('state:id,name,country_id')
-                ->orderBy('id')
+                ->statutoryFirst()
                 ->get(['id', 'state_id', 'state_code', 'status']);
 
             return [

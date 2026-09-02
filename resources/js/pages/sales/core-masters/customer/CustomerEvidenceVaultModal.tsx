@@ -9,7 +9,7 @@ import { CLM_CSS } from '../../../clm/shared/clmShared';
 import { useToast } from '../../../../contexts/ToastContext';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
-import { downloadFile } from '../../../../utils/downloadFile';
+import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal, {
   type AgreementContext, type AgreementSigner, type AgreementSendRow, type SendForSignatureCustomer,
 } from './SalesCustomerSendForSignatureModal';
@@ -963,7 +963,29 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
                                   onClick={async () => {
                                     if (!url) return;
                                     setOvDownloadingKey(dlKey);
-                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                    try {
+                                      /* A SIGNED document goes through the
+                                         signature endpoint that already exists
+                                         for it, not through its raw storage URL.
+                                         signed_url points into
+                                         uploads/signed_documents/, a tree
+                                         downloadFile has no API route for — so
+                                         it fell through to a direct fetch, which
+                                         Azure blocks cross-origin, and landed on
+                                         the window.open fallback. The file
+                                         opened in the browser instead of saving.
+                                         This route is same-origin, tenant-checked
+                                         and already sets an attachment
+                                         disposition, so nothing new has to be
+                                         built or secured. */
+                                      const sigId = (d as VaultShipmentDoc).signature_request_id;
+                                      if (!isStd && sigId) {
+                                        const resp = await api.get(`/clm/signature-requests/${sigId}/download-file/0`, { responseType: 'blob' });
+                                        await saveApiBlob(resp.data as Blob, fname, 'pdf');
+                                      } else {
+                                        await downloadFile(url, fname);
+                                      }
+                                    } finally { setOvDownloadingKey(null); }
                                   }}
                                 >
                                   {dling

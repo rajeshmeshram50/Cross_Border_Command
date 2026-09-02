@@ -270,8 +270,27 @@ class AttendanceController extends Controller
         // so a null client_id must NOT count as "same tenant" for admins (that
         // let any tenant read a client-less employee's attendance).
         $sameTenant = (int) $emp->client_id === (int) $user->client_id;
+
+        /* HR staff are employee-type logins too (CBC #88).
+         *
+         * This used to admit only client_admin / client_user / branch_user, so
+         * an HR user opening a colleague's Attendance tab was refused however
+         * many permissions they had been granted — the rest of the profile
+         * loaded and only this tab said "You do not have access to this
+         * employee", which is what made it read as a bug rather than a policy.
+         *
+         * Honour the same grant the controller already trusts everywhere else:
+         * can_view on hr.attendance, the exact check authorizeAttendanceView()
+         * applies to the list endpoints. Extracted to a helper so the two
+         * cannot drift apart.
+         *
+         * Tenant isolation is unchanged: $sameTenant still has to hold, so this
+         * widens WHO inside the tenant may look, never ACROSS tenants. */
+        $isAdminLogin = in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true);
+        $isPermittedStaff = $user->user_type === 'employee' && $this->hasAttendanceViewPermission($user);
+
         if (!$isSelf && $user->user_type !== 'super_admin' && !(
-            in_array($user->user_type, ['client_admin', 'client_user', 'branch_user'], true) && $sameTenant
+            ($isAdminLogin || $isPermittedStaff) && $sameTenant
         )) {
             abort(403, 'You do not have access to this employee.');
         }
@@ -463,19 +482,31 @@ class AttendanceController extends Controller
         ]);
     }
 
+    /**
+     * Does this employee-type login hold can_view on the Attendance module?
+     *
+     * Extracted so the list endpoints (authorizeAttendanceView) and the
+     * per-employee summary gate ask the identical question — they disagreed
+     * before, which is how an HR user could open the Attendance list but not a
+     * colleague's Attendance tab (#88).
+     */
+    private function hasAttendanceViewPermission($user): bool
+    {
+        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
+
+        return (bool) $moduleId && Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_view', true)
+            ->exists();
+    }
+
     private function authorizeAttendanceView(Request $request): void
     {
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
         if ($user->user_type !== 'employee') return;
 
-        $moduleId = Module::where('slug', self::MODULE_SLUG)->value('id');
-        $allowed  = $moduleId && Permission::where('user_id', $user->id)
-            ->where('module_id', $moduleId)
-            ->where('can_view', true)
-            ->exists();
-
-        if (!$allowed) abort(403, 'Access Denied');
+        if (!$this->hasAttendanceViewPermission($user)) abort(403, 'Access Denied');
     }
 
     private function isBranchPinned($user): bool
@@ -773,6 +804,35 @@ class AttendanceController extends Controller
         $defaultShiftStart = '09:30';
         $defaultShiftEnd   = '18:30';
 
+        /* Pending regularizations for the selected date — the "Correction
+         * Pending" pill in the employee list (#92).
+         *
+         * The pill used to be pure client state: the SPA set it optimistically
+         * when a request was filed and this payload never carried it, so every
+         * refresh copied the stale value forward rather than re-reading it.
+         * Nothing could clear it once the request was approved — the label
+         * survived until the page was reloaded from scratch.
+         *
+         * Sending it makes the server the source of truth: still Pending while
+         * it is pending, gone the moment it is approved or rejected. Only the
+         * 'Pending' status is selected, so an approved row simply produces no
+         * entry and the pill disappears on the next poll.
+         *
+         * One query for the whole roster, keyed by employee, so this stays O(1)
+         * rather than a lookup per card. */
+        $pendingCorrections = [];
+        $empIdsForCorrection = $employees->pluck('id')->filter()->all();
+        if ($empIdsForCorrection) {
+            $pendingCorrections = DB::table('attendance_regularizations')
+                ->whereIn('employee_id', $empIdsForCorrection)
+                ->whereDate('regularization_date', $date)
+                ->where('status', 'Pending')
+                ->orderByDesc('id')
+                ->get(['id', 'employee_id', 'regularization_date', 'type', 'reason', 'created_at'])
+                ->keyBy('employee_id')
+                ->all();
+        }
+
         // Approved-leave overlay — an employee with an approved leave covering
         // the selected date should read "Leave", not "Absent", even though they
         // have no attendance row for the day. (Bug: on-leave employees showed
@@ -854,7 +914,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -951,6 +1011,16 @@ class AttendanceController extends Controller
             foreach ($mRows as $r) {
                 $mByIso[\Carbon\Carbon::parse($r->attendance_date)->toDateString()] = $r;
                 $st = strtolower((string) $r->status);
+                /* A rest-day label with real attendance under it counts as a
+                   WORKED day here too (#89/#90).
+                   These KPIs read the stored status, while the day on screen is
+                   resolved by resolveDayStatus(). Without this the two disagree
+                   the moment someone works a holiday: the row reads Present or
+                   Late, and "Present Days" does not include it — the same
+                   contradiction the ticket reports, moved into the counters. */
+                if ($this->workedARestDay($st, $r)) {
+                    $st = 'present';
+                }
                 if (in_array($st, ['present', 'late', 'on duty', 'work from home', 'corrected', 'half day'], true)) {
                     $presentDays++;
                 }
@@ -1074,6 +1144,22 @@ class AttendanceController extends Controller
                 'missingPunch'      => $missingPunch,
                 'compliancePct'     => $compliancePct,
                 'logs'              => $logs,
+                /* Null unless a regularization for THIS date is still awaiting
+                   a decision (#92). The SPA shows its pill on
+                   `correction.status === 'Pending'`, so an approved or rejected
+                   request sends null and the pill clears itself. */
+                'correction'        => (function () use ($pendingCorrections, $emp, $date) {
+                    $c = $pendingCorrections[$emp->id] ?? null;
+                    if (!$c) return null;
+                    return [
+                        'id'       => (string) $c->id,
+                        'date'     => $date,
+                        'type'     => (string) ($c->type ?? 'Correction'),
+                        'reason'   => (string) ($c->reason ?? ''),
+                        'status'   => 'Pending',
+                        'raisedAt' => (string) ($c->created_at ?? ''),
+                    ];
+                })(),
             ];
         })->values();
 
@@ -1245,6 +1331,29 @@ class AttendanceController extends Controller
      * about which days are off. */
 
    
+    /**
+     * Does this row carry a rest-day LABEL but real attendance underneath?
+     *
+     * Shared by the daily list (resolveDayStatus, #89) and the Attendance Log /
+     * Calendar (buildHistoryLogs, #90) so the two describe the same day the
+     * same way — they disagreed before, which is how the Updated Record could
+     * read "Late" while the log row for the very same date read "Holiday".
+     *
+     * A stored 'Holiday' / 'Weekly Off' is not proof the employee was off; it
+     * is sometimes just what the row was stamped with when it was created (see
+     * PayrollService::restDayKind via the regularization path), and
+     * AttendancePunchService reuses an existing row without revisiting its
+     * status. A punch on the row settles the question.
+     */
+    private function workedARestDay(?string $status, ?Attendance $row): bool
+    {
+        if (!$row || $status === null) return false;
+        if (!in_array(strtolower(trim($status)), ['holiday', 'weekly off'], true)) return false;
+
+        return (bool) $row->check_in_at
+            || ($row->relationLoaded('punches') && $row->punches->isNotEmpty());
+    }
+
     private function resolveDayStatus(
         ?Attendance $row,
         bool $weeklyOff,
@@ -1254,6 +1363,37 @@ class AttendanceController extends Controller
     ): string {
         if ($row && !empty($row->status)) {
             $stored = (string) $row->status;
+
+            /* Working a rest day beats the rest-day label. (#89)
+             *
+             * A stored 'Holiday' / 'Weekly Off' is not always a statement that
+             * the employee was off — it is sometimes just what the row was
+             * STAMPED with when it was created. AttendanceRegularization's
+             * exemption path seeds a new row from PayrollService::restDayKind(),
+             * which returns 'Holiday' on a holiday, and AttendancePunchService
+             * reuses an existing row without touching its status. So once such
+             * a row exists, later punches attach to it and the day keeps
+             * reading "Holiday" while the Attendance Log lists the punches
+             * right next to it — the contradiction in the report.
+             *
+             * If the row carries real attendance, the person worked; say so.
+             * Only a rest-day label is overridden, and only when there is a
+             * punch to justify it, so a genuine holiday with no attendance is
+             * untouched.
+             *
+             * Falls THROUGH to the Late promotion below rather than returning
+             * 'Present' outright. An earlier revision returned early, reasoning
+             * that a closed day has no shift to be late against and that Late
+             * would feed the LOP deduction — the second half of which is simply
+             * wrong: the late-mark KPI and payroll both count the STORED status
+             * (see the MTD loop in dailyView), never this resolved one, so
+             * returning Present suppressed nothing. It only hid a late arrival
+             * the Attendance Log was reporting two rows away, and #90 asks for
+             * "Present/Worked (or Late, if applicable)". */
+            if ($this->workedARestDay($stored, $row)) {
+                $stored = 'Present';
+            }
+
             // Auto-promote Present → Late based on the local first-in. 10-min
             // grace matches the heuristic used by the MTD late-marks loop.
             if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
@@ -1425,6 +1565,14 @@ class AttendanceController extends Controller
 
             if ($r) {
                 $status  = $r->status ?: ($isWO ? 'Weekly Off' : 'Absent');
+                /* A punched rest day is a worked day here too (#90).
+                   Without this the log row kept the stamped 'Holiday' while the
+                   Updated Record panel above it — which resolves through
+                   resolveDayStatus — already said Late/Present, so one screen
+                   described the same date two ways. */
+                $workedRestDay = $this->workedARestDay($status, $r);
+                if ($workedRestDay) $status = 'Present';
+
                 $firstIn = $r->check_in_at  ? $r->check_in_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i')  : '—';
                 $lastOut = $r->check_out_at ? $r->check_out_at->copy()->setTimezone(self::DISPLAY_TZ)->format('H:i') : '—';
                 $worked  = (int) floor(((int) $r->total_worked_seconds) / 60);
@@ -1433,6 +1581,9 @@ class AttendanceController extends Controller
                 // face-clock flow always writes 'Present' on first punch
                 // and doesn't know about shifts, so the heuristic has to
                 // run at read time.
+                // Applies to a worked rest day too — see resolveDayStatus():
+                // the late-mark KPI counts the STORED status, so promoting the
+                // display costs nothing and #90 asks for Late where it applies.
                 if (strcasecmp($status, 'Present') === 0 && $firstIn !== '—' && $shiftStart
                     && $this->minutesBetween($shiftStart, $firstIn) > 10) {
                     $status = 'Late';

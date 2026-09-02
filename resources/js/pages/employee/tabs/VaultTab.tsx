@@ -1,7 +1,7 @@
 // Evidence Vault tab — Employee Documents (uploaded KYC/education/etc.) and
 // Organizational Documents (signed agreements/policies), with a sub-tab switch.
 // Extracted from EmployeeProfile.tsx; shared state via useEmployeeProfile().
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, Col, Row } from 'reactstrap';
 import { Shimmer } from '../../../components/ui/Shimmer';
 import DataTable, { type DataTableColumn } from '../../../components/ui/DataTable';
@@ -31,6 +31,39 @@ export default function VaultTab() {
      alone is still null on the first pass and the box would never mount). */
   const [uploadedSearchHost, setUploadedSearchHost] = useState<HTMLDivElement | null>(null);
   const [signedSearchHost, setSignedSearchHost]     = useState<HTMLDivElement | null>(null);
+
+  /* In-app preview for an uploaded file (#212).
+   *
+   * The Attachment cell only offered "Open", an <a target="_blank"> that hands
+   * the file to the browser and takes the user out of the profile — to check
+   * one document they lost their place in the vault and came back through a
+   * new tab. "View" renders it in a lightbox over the tab instead: images
+   * inline, PDFs in a frame. "Open" is kept alongside it, since a new tab is
+   * still the better answer for printing or for a type we cannot render. */
+  const [previewDoc, setPreviewDoc] = useState<any | null>(null);
+
+  const previewUrl  = previewDoc ? (resolveFileUrl(previewDoc.url) || previewDoc.url) : '';
+  /* Trust mime_type, which the API returns for every row, and fall back to the
+     extension only when it is missing (older rows predate the column). */
+  const previewKind = (() => {
+    if (!previewDoc) return 'other';
+    const mime = String(previewDoc.mime_type || '').toLowerCase();
+    const name = String(previewDoc.original_name || previewDoc.url || '').toLowerCase();
+    if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg)$/.test(name)) return 'image';
+    if (mime === 'application/pdf' || /\.pdf$/.test(name)) return 'pdf';
+    return 'other';
+  })();
+
+  /* Esc closes, and the page behind must not scroll while the overlay is up —
+     otherwise the wheel scrolls the vault table under the preview. */
+  useEffect(() => {
+    if (!previewDoc) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPreviewDoc(null); };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [previewDoc]);
 
   /* Both vault tables are the shared DataTable now, so they carry the same
      header band, sortable columns and "Showing X–Y of Z / Rows per page"
@@ -79,14 +112,27 @@ export default function VaultTab() {
       id: 'attachment',
       header: 'Attachment',
       enableSorting: false,
-      meta: { width: 120, wrap: true },
+      meta: { width: 150, wrap: true },
       cell: info => {
         const d = info.row.original;
-        return d.url
-          ? <a href={resolveFileUrl(d.url) || d.url} target="_blank" rel="noopener noreferrer" className="d-inline-flex align-items-center gap-1 text-decoration-none vt-open-link">
-              <i className="ri-file-text-line" /> Open
+        if (!d.url) return <span className="text-muted">—</span>;
+        return (
+          <span className="d-inline-flex align-items-center gap-2">
+            {/* View = preview in place; Open = hand off to the browser. Both are
+                offered because they answer different needs (#212). */}
+            <button
+              type="button"
+              onClick={() => setPreviewDoc(d)}
+              className="d-inline-flex align-items-center gap-1 vt-view-btn"
+              title={`Preview ${d.original_name || 'document'}`}
+            >
+              <i className="ri-eye-line" /> View
+            </button>
+            <a href={resolveFileUrl(d.url) || d.url} target="_blank" rel="noopener noreferrer" className="d-inline-flex align-items-center gap-1 text-decoration-none vt-open-link">
+              <i className="ri-external-link-line" /> Open
             </a>
-          : <span className="text-muted">—</span>;
+          </span>
+        );
       },
     },
     {
@@ -520,6 +566,46 @@ export default function VaultTab() {
                     </>
                   }
                 />
+              </div>
+            </div>
+          )}
+
+          {/* ── Document preview lightbox (#212) ──
+              Click-outside and Esc both close; the bar keeps Open/Download so
+              the preview is not a dead end for a file the browser cannot
+              render inline. */}
+          {previewDoc && (
+            <div className="vt-preview-backdrop" onClick={() => setPreviewDoc(null)}>
+              <div className="vt-preview-bar" onClick={e => e.stopPropagation()}>
+                <span className="vt-preview-name" title={previewDoc.original_name || ''}>
+                  <i className="ri-file-text-line" /> {previewDoc.original_name || prettyDocKey(previewDoc.document_key)}
+                </span>
+                <span className="d-inline-flex align-items-center gap-1">
+                  <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="vt-preview-btn" title="Open in new tab">
+                    <i className="ri-external-link-line" />
+                  </a>
+                  <a href={previewUrl} download={previewDoc.original_name || undefined} className="vt-preview-btn" title="Download">
+                    <i className="ri-download-2-line" />
+                  </a>
+                  <button type="button" className="vt-preview-btn" title="Close" onClick={() => setPreviewDoc(null)}>
+                    <i className="ri-close-line" />
+                  </button>
+                </span>
+              </div>
+              <div className="vt-preview-stage" onClick={e => e.stopPropagation()}>
+                {previewKind === 'image' ? (
+                  <img src={previewUrl} alt={previewDoc.original_name || 'Document'} className="vt-preview-img" />
+                ) : previewKind === 'pdf' ? (
+                  <iframe title={previewDoc.original_name || 'Document'} src={previewUrl} className="vt-preview-frame" />
+                ) : (
+                  <div className="vt-preview-fallback">
+                    <i className="ri-file-unknow-line" />
+                    <p>This file type cannot be previewed here.</p>
+                    <a href={previewUrl} target="_blank" rel="noopener noreferrer" className="vt-preview-fallback-btn">
+                      Open in a new tab <i className="ri-external-link-line" />
+                    </a>
+                  </div>
+                )}
               </div>
             </div>
           )}

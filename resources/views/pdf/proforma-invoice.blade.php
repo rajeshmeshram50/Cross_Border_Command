@@ -1138,7 +1138,7 @@
                                     @if(($tnc['segment'] ?? null) !== $lastTncSeg)
                                         @php($lastTncSeg = $tnc['segment'] ?? null)
                                         <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
-                                            {{ $tnc['segment'] }}@if(!empty($tnc['products']))<span style="font-weight: 600; color: #555;"> &middot; {{ implode(', ', $tnc['products']) }}</span>@endif
+                                            {{ $tnc['segment'] }}
                                         </div>
                                     @endif
                                     <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">
@@ -1359,7 +1359,7 @@
                                             @if(($tnc['segment'] ?? null) !== $lastTncSeg2)
                                                 @php($lastTncSeg2 = $tnc['segment'] ?? null)
                                                 <div style="font-size: 9px; font-weight: 700; color: #000; margin-top: 8px; word-wrap: break-word; overflow-wrap: break-word;">
-                                                    {{ $tnc['segment'] }}@if(!empty($tnc['products']))<span style="font-weight: 600; color: #555;"> &middot; {{ implode(', ', $tnc['products']) }}</span>@endif
+                                                    {{ $tnc['segment'] }}
                                                 </div>
                                             @endif
                                             <div style="font-size: 9px; color: #555; line-height: 14px; margin-top: 4px;">

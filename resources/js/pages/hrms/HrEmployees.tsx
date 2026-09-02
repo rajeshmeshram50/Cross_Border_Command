@@ -456,15 +456,6 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
       .map(d => ({ value: String(d.id), label: d.name })),
     [mDesignations],
   );
-  // Id of the "Head of Department (HOD)" designation — drives the
-  // HOD ⇄ Reporting-Manager rule (an HOD must report to a Branch User).
-  const hodDesignationId = useMemo(
-    () => {
-      const h = mDesignations.find(d => d?.name === 'Head of Department (HOD)');
-      return h ? String(h.id) : '';
-    },
-    [mDesignations],
-  );
   // Reporting-manager position hierarchy (mirrors app/Support/PositionHierarchy):
   // Branch User (top) > HOD > Team Leader > Executive > Employee > Intern/Trainee.
   // Lower number = higher position; a manager must rank strictly higher.
@@ -3189,26 +3180,24 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
     [managerCandidates, editingDbId, savedMgrOption, mDesignations, eDesignation]
   );
 
-  // Auto-point a non-HOD hire at their department's HOD when one exists — only
-  // when the manager is empty or the "temporary" Branch User the HOD supersedes;
-  // never overrides a manager deliberately chosen (keeps edit mode intact).
-  const deptHodValue = useMemo(() => {
-    const deptId = String(eDept || '');
-    const isHod = !!hodDesignationId && String(eDesignation) === hodDesignationId;
-    if (isHod || !deptId) return '';
-    const hod = managerCandidates.find(m => m.is_hod && m.department_id != null && String(m.department_id) === deptId);
-    return hod ? `${hod.kind}:${hod.id}` : '';
-  }, [managerCandidates, eDept, eDesignation, hodDesignationId]);
-  useEffect(() => {
-    if (!deptHodValue) return;
-    /* Fills an EMPTY field only. It used to overwrite a Branch User manager as
-       well, treating one as a placeholder the HOD supersedes — but a Branch
-       User is a deliberate choice, and together with the designation handler
-       clearing the field, that is what made the manager change by itself when
-       a designation was edited. A default may fill a blank; it may not
-       overrule an answer somebody gave. */
-    setEReportingMgr(prev => (prev ? prev : deptHodValue));
-  }, [deptHodValue]);
+  /* Reporting Manager is NEVER defaulted (#208).
+   *
+   * Picking a department used to auto-point a non-HOD hire at that
+   * department's HOD whenever the field was blank. It filled a blank rather
+   * than overruling a pick, so it read as harmless — but the field is
+   * REQUIRED, and pre-filling a required field turns the operator's inaction
+   * into an apparent answer. An intern added to a department was silently
+   * parented to its HOD, and because the value arrived without anyone
+   * choosing it, the wrong manager saved as easily as the right one.
+   *
+   * Interns were the reported case, but the objection is not intern-specific:
+   * whoever the correct manager is, the form should not guess. This file
+   * already holds that line for the eligibility rule below ("nothing is ever
+   * silently chosen on the operator's behalf") — the default was the one
+   * remaining place that broke it.
+   *
+   * The picker is still narrowed by rank, so the HOD stays one click away for
+   * the common case; the click just has to happen. */
 
   /* A manager the new designation no longer allows leaves the field BLANK.
    *
@@ -4787,13 +4776,12 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                       </Col>
                       <Col md={4}>
                         <label className="emp-label">Department<span className="req">*</span></label>
-                        {/* The other half of the same pair: this used to CLEAR a
-                            chosen manager whenever the new department did not
-                            match theirs. Department and manager are independent,
-                            so it now only sets the department. An empty manager
-                            is still auto-pointed at the department's HOD by
-                            `deptHodValue`, which fills a blank but never
-                            overwrites a deliberate pick. */}
+                        {/* Sets the department and nothing else. This used to
+                            CLEAR a chosen manager when the new department did
+                            not match theirs, and later to auto-fill a blank one
+                            with the department's HOD (#208). Department and
+                            manager are independent: neither direction is
+                            inferred any more. */}
                         <MasterSelect value={eDept} onChange={(v) => { setEDept(v); clearEErr('department_id'); }} placeholder="Select department" options={departmentOptions} invalid={!!eErrors.department_id} />
                         {eErrors.department_id && <small className="emp-err">{eErrors.department_id}</small>}
                       </Col>

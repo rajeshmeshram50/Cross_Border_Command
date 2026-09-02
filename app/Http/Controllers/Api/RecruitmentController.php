@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
+use App\Models\Employee;
 use App\Models\Module;
 use App\Models\Permission;
 use App\Models\Recruitment;
@@ -615,7 +616,16 @@ class RecruitmentController extends Controller
             'ctc_range'         => ['nullable', 'string', 'max:50', 'regex:/^\d+(\.\d+)?(\s*-\s*\d+(\.\d+)?)?$/'],
             'priority'          => ['nullable', Rule::in(self::PRIORITIES)],
 
-            'hiring_manager_id' => 'nullable|integer|exists:employees,id',
+            // An intern / trainee cannot own a hire (CBC #65). The picker
+            // already hides them; this closes the same hole for a payload that
+            // bypasses the SPA, and for someone who became a trainee after
+            // being assigned.
+            'hiring_manager_id' => ['nullable', 'integer', 'exists:employees,id', function ($attr, $value, $fail) {
+                $emp = Employee::with('designation:id,level')->find($value);
+                if (EmployeeController::isTrainee($emp)) {
+                    $fail('An intern or trainee cannot be set as the Hiring Manager.');
+                }
+            }],
             'assigned_hr_id'    => 'nullable|integer|exists:employees,id',
             'start_date'        => 'nullable|date',
             // TAT/Deadline must be strictly later than the start date — the

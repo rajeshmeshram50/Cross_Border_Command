@@ -1340,9 +1340,17 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
      the salary basis; only the basis, the monthly figure and the payment
      record are actually entered. `settleStatus` is the gate Final
      Deactivation & Closure reads. */
-  /* Always monthly BASIC — the recovery is priced on basic ÷ days-in-month. A gross/basic
-     choice only invited two different figures for the same settlement. */
-  const noticeBasis = 'basic' as const;
+  /* Always monthly GROSS — the recovery is priced on gross ÷ days-in-month
+     (#130). Unserved notice is a charge against the whole package the employee
+     would have earned over those days, not against the basic component alone,
+     so basic under-recovered: on a ₹33,333 gross it quoted ₹500/day off a
+     ₹15,000 basic instead of ₹1,111/day.
+     Still a CONSTANT, not a picker. This was a gross/basic choice once and the
+     option was removed because two selectable bases meant two different figures
+     for the same settlement; that reasoning holds — only the correct basis has
+     changed. Anything stored against the old 'basic' basis is ignored on load
+     for the same reason. */
+  const noticeBasis = 'gross' as const;
   const [monthlyAmount, setMonthlyAmount] = useState('');
   const [settleStatus, setSettleStatus]   = useState('NA');
   // Recovery side: what the employee paid + HR's verdict on it.
@@ -1409,25 +1417,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     if (stage > stageCount) setStage(stageCount);
   }, [stageCount, stage]);
 
-  /* Monthly basic resolved by the server (GET /exit → monthly_basic), which
+  /* Monthly GROSS resolved by the server (GET /exit → monthly_gross), which
      reads the employee's in-force SALARY STRUCTURE first and only falls back to
-     annual_salary ÷ 12 × 50% — the same precedence PayrollService uses.
+     annual_salary ÷ 12 — the same precedence PayrollService uses (#130).
      Held separately from the list row's `monthlySalary`, which knows only about
      annual_salary: an employee paid through a structure with no annual figure
-     had no package to derive from, so Monthly Basic, the per-day rate and the
-     payable all showed ₹0 (bug #82). */
-  const [serverMonthlyBasic, setServerMonthlyBasic] = useState<number | null>(null);
+     had no package to derive from, so the monthly figure, the per-day rate and
+     the payable all showed ₹0 (bug #82). */
+  const [serverMonthlyGross, setServerMonthlyGross] = useState<number | null>(null);
 
   // Prefill the monthly figure the first time the settlement is looked at; HR
   // can overwrite it. Server figure wins — the row's annual-only derivation is
   // the fallback for a case whose exit record hasn't loaded yet.
   useEffect(() => {
     if (monthlyAmount) return;
-    const basis = serverMonthlyBasic && serverMonthlyBasic > 0
-      ? serverMonthlyBasic
+    const basis = serverMonthlyGross && serverMonthlyGross > 0
+      ? serverMonthlyGross
       : employee?.monthlySalary;
     if (basis) setMonthlyAmount(String(basis));
-  }, [serverMonthlyBasic, employee?.monthlySalary, monthlyAmount]);
+  }, [serverMonthlyGross, employee?.monthlySalary, monthlyAmount]);
 
   /* The settlement figures. Overtime-style rule set:
        · days served  = last working day − notice start, clamped to the period
@@ -1450,11 +1458,26 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
     }
     const unserved = Math.max(0, required - served);
     const monthly  = Math.max(0, Number(monthlyAmount) || 0);
+    /* Divisor = the real length of the applicable month, never a flat 30 (#129).
+     *
+     * The applicable month is the one the shortfall is settled in: the last
+     * working day's month, falling back to the notice start's month and finally
+     * to the current month. It used to fall back to a hard-coded 30 whenever
+     * the LWD had not been picked yet, which is the ₹15,000 ÷ 30 = ₹500 on the
+     * report — the card renders as soon as a monthly figure exists, so the
+     * wrong rate was on screen (and saved with the stage) before the date that
+     * would have corrected it was ever entered.
+     *
+     * A calendar month is the right basis here because that is what the salary
+     * engine uses: PayrollService prices the FnF per-day rate over the period's
+     * actual days (÷30 or ÷31), and a notice recovery has to agree with the
+     * payslip it is recovered against. */
     const monthDays = (() => {
-      if (!lwd) return 30;
-      const d = new Date(lwd + 'T00:00:00');
+      const ref = lwd || noticeDate;
+      const d = ref ? new Date(ref + 'T00:00:00') : new Date();
       const n = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      return n > 0 ? n : 30;
+      // Guard only against an unparseable date, not against a real month.
+      return Number.isFinite(n) && n > 0 ? n : 30;
     })();
     const perDay   = monthly > 0 ? monthly / monthDays : 0;
     const amount   = settlement === 'served' ? 0 : Math.round(unserved * perDay * 100) / 100;
@@ -2139,13 +2162,20 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
         const savedStage = Number(data.current_stage);
         if (savedStage >= 1 && savedStage <= 6) setStage(savedStage);
 
-        // Monthly basic resolved from the salary structure (or the annual
-        // fallback) server-side — feeds the settlement prefill (#82).
+        /* Monthly GROSS resolved from the salary structure (or the annual
+           fallback) server-side — feeds the settlement prefill (#82, #130).
+           Falls back to monthly_basic only for an exit record saved before the
+           API carried a gross, so an older case still prices off something
+           rather than showing ₹0. */
+        const mg = Number(data.monthly_gross);
         const mb = Number(data.monthly_basic);
-        setServerMonthlyBasic(Number.isFinite(mb) && mb > 0 ? mb : null);
+        const monthlyForNotice = Number.isFinite(mg) && mg > 0
+          ? mg
+          : (Number.isFinite(mb) && mb > 0 ? mb : null);
+        setServerMonthlyGross(monthlyForNotice);
 
         // Notice-period settlement + FnF. The basis is no longer loaded — it's
-        // always monthly basic now, so a stored 'gross' must not resurrect.
+        // always monthly gross now, so a stored 'basic' must not resurrect.
         setSettleStatus(String(data.notice_settlement_status ?? 'NA'));
         setNoticePayment(data.notice_payment && typeof data.notice_payment === 'object' ? data.notice_payment : null);
         const savedFnf = data.fnf && typeof data.fnf === 'object' ? data.fnf : null;
@@ -5357,19 +5387,21 @@ function SettlementSummary({
         <div><span>Days served</span><strong>{settle.served}</strong></div>
         <div><span>{settlement === 'pay_in_lieu' ? 'Days to pay' : 'Days unserved'}</span><strong>{settle.unserved}</strong></div>
         {/* Fixed, not a choice: the notice recovery is always priced on monthly
-            BASIC ÷ the exit month's days, so offering "gross" only invited an
-            inconsistent figure. */}
-        <div><span>Salary basis</span><strong>Monthly Basic</strong></div>
+            GROSS ÷ the exit month's days (#130). Unserved notice is a charge
+            against the whole package those days would have earned, not the
+            basic component alone. Kept a constant rather than a picker because
+            two selectable bases meant two different figures for one settlement. */}
+        <div><span>Salary basis</span><strong>Monthly Gross</strong></div>
         <div>
-          {/* Read-only: derived from the employee's package (annual ÷ 12 × 50%),
-              so an editable box here only let the recovery be priced off a
-              figure that doesn't match payroll. */}
-          <span>Monthly basic</span><strong>{fmtMoney(Number(monthly) || 0)}</strong>
+          {/* Read-only: resolved from the employee's in-force salary structure
+              (annual ÷ 12 as the fallback), so an editable box here only let the
+              recovery be priced off a figure that doesn't match payroll. */}
+          <span>Monthly gross</span><strong>{fmtMoney(Number(monthly) || 0)}</strong>
         </div>
         {/* The divisor is on screen: a per-day rate with no stated basis is the
             one number on this card nobody can verify by eye, and it is exactly
             the one that was wrong. */}
-        <div><span>Per-day rate <span style={{ opacity: 0.7 }}>(basic ÷ {settle.monthDays})</span></span><strong>{fmtMoney(settle.perDay)}</strong></div>
+        <div><span>Per-day rate <span style={{ opacity: 0.7 }}>(gross ÷ {settle.monthDays})</span></span><strong>{fmtMoney(settle.perDay)}</strong></div>
       </div>
     </div>
   );

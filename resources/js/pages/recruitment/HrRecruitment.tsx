@@ -8,7 +8,7 @@ import { useModulePermission } from '../../hooks/useModulePermission';
 import api from '../../api';
 import Tooltip from '../../components/ui/Tooltip';
 import DataTable, { TruncCell, type DataTableColumn } from '../../components/ui/DataTable';
-import { Shimmer, ShimmerTableRows } from '../../components/ui/Shimmer';
+import { Shimmer } from '../../components/ui/Shimmer';
 import '../../../css/recruitment.css';
 
 type RecruitmentStatus = 'In Progress' | 'Completed' | 'Cancelled' | 'Expired';
@@ -383,6 +383,12 @@ export default function HrRecruitment() {
   const [recStats, setRecStats] = useState(ZERO_REC_STATS);
 
   const fetchRecruitments = async () => {
+    /* Raise the flag on EVERY fetch, not just the first (#68).
+       `loadingRecruitments` starts true and the finally below drops it, but
+       nothing ever set it back — so switching In Progress -> Cancelled left
+       the previous tab's rows on screen with no indication a request was in
+       flight. This drives both the KPI shimmers and the DataTable loader. */
+    setLoadingRecruitments(true);
     try {
       const [listRes, recStatsRes, statsRes, hrRes] = await Promise.all([
         api.get('/recruitments', {
@@ -1695,24 +1701,31 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
     return (
       <div style={{ padding: '10px 14px', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginBottom: 10 }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-        {/* Clamped to 2 lines, then ellipsised, with the full text on hover.
-            Two separate problems were showing here:
+        {/* Long content scrolls inside its own section (#69).
+            This previously clamped to 2 lines and hung the whole value off a
+            `title` attribute, so reading a long Job Description meant waiting
+            for the browser's native tooltip — which can't be scrolled, is
+            truncated by the OS on very long strings, and vanishes on the
+            slightest pointer move. A bounded, scrollable block keeps the text
+            in place and readable.
+
+            Still solves the two problems the clamp was there for:
               1. an unbroken run of characters (no spaces) never found a wrap
-                 point, so it ran straight off the card — `overflowWrap:
-                 anywhere` forces a break mid-word;
-              2. a genuinely long description grew the block without limit and
-                 pushed the sections below it out of the modal.
-            -webkit-line-clamp is the only cross-browser 2-line ellipsis, and it
-            needs the -webkit-box display + orient pair to engage; pre-wrap is
-            swapped for pre-line so the clamp isn't defeated by trailing
-            whitespace while newlines in the value still break. */}
+                 point and ran off the card — `overflowWrap: anywhere` forces a
+                 break mid-word;
+              2. a long description grew the block without limit and pushed the
+                 sections below it out of the modal — `maxHeight` bounds it and
+                 hands the overflow to a scrollbar instead of an ellipsis.
+
+            `pre-line` reverts to `pre-wrap`: it was only downgraded so trailing
+            whitespace couldn't defeat the line clamp, and with no clamp the
+            author's blank lines are worth preserving. */}
         <div
-          title={String(value)}
+          className="rec-longtext-body"
           style={{
             fontSize: 13, color: 'var(--vz-body-color)', lineHeight: 1.5,
-            whiteSpace: 'pre-line', overflowWrap: 'anywhere', wordBreak: 'break-word',
-            display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
-            overflow: 'hidden',
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word',
+            maxHeight: 132, overflowY: 'auto',
           }}
         >{value}</div>
       </div>
@@ -1979,6 +1992,33 @@ function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: 
     .map(r => ({ value: String(r.id), label: r.name as string }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  /* Mirror of EmployeeController::isTrainee(). Kept in step with these three
+   * signals: designation.level is the canonical, actually-populated tier;
+   * employee_type is a closed vocabulary that was backfilled from the free-text
+   * work_type and left NULL wherever the old text didn't map, so all three have
+   * to be consulted. Returns false when every signal is blank — an employee is
+   * hidden only when something concretely says "trainee". */
+  const TRAINEE_WORDS = ['intern', 'trainee', 'apprentice', 'articleship'];
+  const saysTrainee = (v: unknown) => {
+    const s = String(v ?? '').toLowerCase();
+    return s !== '' && TRAINEE_WORDS.some(w => s.includes(w));
+  };
+  const isTraineeRow = (e: any) =>
+    saysTrainee(e?.designation?.level) || saysTrainee(e?.employee_type) || saysTrainee(e?.work_type);
+
+  /* Mirror of EmployeeController::isHrEligible(). HR-ness comes from the
+   * DEPARTMENT first, then designation / primary role NAME — never from
+   * role_category, which is NULL for every role and is what made the original
+   * attempt at this filter (#38) match nobody. 'hr' is matched as a whole word
+   * so "Warehouse" and "Chairman" don't false-positive. */
+  const saysHr = (v: unknown) => {
+    const s = String(v ?? '').toLowerCase();
+    return s !== '' && (s.includes('human resource') || /\bhr\b/.test(s));
+  };
+  const isHrRow = (e: any) =>
+    !isTraineeRow(e)
+    && (saysHr(e?.department?.name) || saysHr(e?.designation?.name) || saysHr(e?.primary_role?.name));
+
   const empToOpt = (e: any) => {
     const name = e.display_name
       || [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' ')
@@ -1987,24 +2027,27 @@ function buildRecMasters(deptData: any, desigData: any, roleData: any, empData: 
     return { value: String(e.id), label: `${name}${desig}` };
   };
   const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label);
-  /* Every employee of the branch is selectable for BOTH roles.
-   *
-   * `empRows` comes from GET /employees, which the Axios interceptor scopes to
+  /* `empRows` comes from GET /employees, which the Axios interceptor scopes to
    * the active branch, so "all employees" already means "all employees of this
-   * branch" — no extra filter needed here.
+   * branch" — no extra branch filter needed here.
    *
-   * This replaces two earlier role filters: Assigned HR used to be restricted
-   * to employees whose primary role read HR (bug #38), and Hiring Manager
-   * excluded HR and Intern/Trainee roles (bug #39). Tenants staff these two
-   * fields from whoever is actually running the hire — often someone whose
-   * role master entry says nothing about HR — and the filters left those people
-   * unpickable. The three lists are now the same list; they stay separate names
-   * because edit-mode injects an already-assigned person into each
-   * independently (see the *ForEdit memos).
+   * Assigned HR lists only HR staff (bug #66) — see isHrRow. The earlier
+   * attempt at this (#38) filtered on primary_role.role_category, which is
+   * NULL for every role, so it matched nobody; this reads the department and
+   * the role/designation NAME instead. If a tenant has nobody in an HR
+   * department the list is legitimately empty, and the field renders a hint
+   * saying so rather than silently offering the whole company.
+   *
+   * Hiring Manager DOES exclude interns / trainees (bug #65) — a trainee can't
+   * be accountable for a hire. The rule is an exclude-on-positive-match (see
+   * isTraineeRow), never an include-on-match, so it can't repeat #38's failure
+   * of emptying the list when the classifying field is blank. The backend
+   * applies the same rule via ?exclude_trainees=1; this mirror keeps the list
+   * correct even if a cached/legacy response arrives unfiltered.
    */
   const employeeOptions = empRows.map(empToOpt).sort(byLabel);
-  const hrEmployeeOptions = employeeOptions;
-  const hiringManagerOptions = employeeOptions;
+  const hrEmployeeOptions = empRows.filter(isHrRow).map(empToOpt).sort(byLabel);
+  const hiringManagerOptions = empRows.filter(e => !isTraineeRow(e)).map(empToOpt).sort(byLabel);
 
   return { deptOptions, desigOptions, desigByDept, roleOptions, employeeOptions, hrEmployeeOptions, hiringManagerOptions };
 }
@@ -2042,8 +2085,8 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
   const [desigByDept, setDesigByDept]   = useState<Record<string, { value: string; label: string }[]>>({});
   const [roleOptions, setRoleOptions]   = useState<{ value: string; label: string }[]>([]);
   const [employeeOptions, setEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
-  // Role-scoped picker lists: HR-only for Assigned HR (#38), everyone-except-
-  // HR/Intern for Hiring Manager (#39).
+  // Assigned HR lists everyone; Hiring Manager lists everyone except interns
+  // and trainees (#65).
   const [hrEmployeeOptions, setHrEmployeeOptions] = useState<{ value: string; label: string }[]>([]);
   const [hiringManagerOptions, setHiringManagerOptions] = useState<{ value: string; label: string }[]>([]);
   const [mastersLoading, setMastersLoading] = useState(false);
@@ -2072,12 +2115,13 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
     return [...base, { value: v, label: name ? `${name}${suffix}` : `Unavailable employee${suffix}` }];
   };
 
-  // The role-scoped pickers list only employees that match the role rule (HR
-  // for Assigned HR; non-HR/non-Intern for Hiring Manager). A recruitment being
-  // edited may point at someone who no longer matches (role changed / resigned)
-  // — inject just that saved person so the dropdown still shows their name,
-  // flagged "(unavailable)" when relevant, without loosening the filter for new
-  // recruitments.
+  // A recruitment being edited may point at someone the picker no longer
+  // lists — they resigned, or (for Hiring Manager) their designation was
+  // changed to a trainee tier after they were assigned. Inject just that saved
+  // person so the dropdown still shows their name, flagged "(unavailable)"
+  // when relevant, without loosening the filter for new recruitments. Note the
+  // server-side rule still rejects a trainee on SAVE, so a re-save of such a
+  // row surfaces the validation error rather than silently keeping them.
   const hiringManagerOptionsForEdit = useMemo(
     () => (editing ? ensureInList(hiringManagerOptions, editing.hiringManagerId, editing.hiringManagerName, editing.hiringManagerState) : hiringManagerOptions),
     [hiringManagerOptions, editing],
@@ -2679,9 +2723,19 @@ function CreateRecruitmentModal({ isOpen, mode, editingId, recruitments, prefill
                   value={assignedHrId}
                   onChange={(v) => { setAssignedHrId(v); clear('assignedHr'); }}
                   options={hrEmployeeOptionsForEdit}
-                  placeholder={employeeOptions.length === 0 ? 'Loading employees…' : '— Select —'}
+                  placeholder={
+                    employeeOptions.length === 0 ? 'Loading employees…'
+                      : hrEmployeeOptionsForEdit.length === 0 ? 'No HR employees found'
+                      : '— Select —'
+                  }
                   invalid={!!errors.assignedHr}
                 />
+                {/* An empty list here means the branch has nobody in an HR
+                    department — a data gap, not a glitch. Say so, otherwise the
+                    field reads as broken. */}
+                {!errors.assignedHr && employeeOptions.length > 0 && hrEmployeeOptionsForEdit.length === 0 && (
+                  <div className="rec-hint"><i className="ri-information-line" /> Nobody in this branch is in an HR department or role. Set an employee's department to Human Resources to make them selectable.</div>
+                )}
                 {errors.assignedHr && <div className="rec-error"><i className="ri-error-warning-line" />{errors.assignedHr}</div>}
               </Col>
               <Col md={3}>

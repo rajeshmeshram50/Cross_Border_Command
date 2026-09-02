@@ -583,7 +583,16 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
 
   return (
     <div onClick={e => { if (e.target === e.currentTarget) close(); }} style={{ position: 'fixed', inset: 0, zIndex: 9999999, background: 'rgba(8,3,28,.82)', backdropFilter: 'blur(14px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: 'var(--font-sans)' }}>
-      <div style={{ width: '100%', maxWidth: 520, borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ width: '100%', maxWidth: 520, position: 'relative', borderRadius: 24, overflow: 'hidden', boxShadow: '0 50px 100px rgba(8,3,28,.5),0 20px 40px rgba(6,182,212,.12)', border: '1px solid rgba(255,255,255,.1)', animation: 'ataSlideUp .24s cubic-bezier(.22,1,.36,1) both', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        {/* Frozen while Reject / Raise Clarification is being processed.
+            Only the buttons were disabled, so the comment box and the
+            reject-vs-clarify choice stayed live during the request: text typed
+            after submitting was never sent, and switching the choice changed
+            nothing that had already gone. Covers the card head-to-foot; the
+            buttons keep their own `disabled` as the real guard. */}
+        {submitting && (
+          <div aria-hidden style={{ position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(8,3,28,.35)', cursor: 'progress', borderRadius: 'inherit' }} />
+        )}
         {/* Header — red for reject, cyan for clarify / default. */}
         <div style={{ background: choice === 'reject' ? 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#7f1d1d 0%,#b91c1c 42%,#dc2626 78%,#ef4444 100%)' : 'radial-gradient(rgba(255,255,255,.16) 1.1px, transparent 1.1px), linear-gradient(135deg,#0e7490 0%,#0891b2 45%,#06b6d4 80%,#22d3ee 100%)', backgroundSize: '14px 14px, auto', padding: '22px 24px 20px', position: 'relative', overflow: 'hidden', flexShrink: 0 }}>
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '55%', background: 'linear-gradient(180deg,rgba(255,255,255,.18),transparent)', pointerEvents: 'none' }} />

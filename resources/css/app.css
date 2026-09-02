@@ -126,6 +126,12 @@ body { overflow-x: hidden; }
 .page-content > .container-fluid { padding-left: 0 !important; padding-right: 0 !important; }
 .page-content > .container-fluid > .row { margin-left: 0 !important; margin-right: 0 !important; }
 .page-content > .container-fluid > .row > [class*="col"] { padding-left: 0 !important; padding-right: 0 !important; }
+/* Watch out: the rule above removes the gap BETWEEN side-by-side columns too,
+   not just the page's outer margin. A page whose outermost row puts two cards
+   next to each other gets them touching (#213 — Clock In/Out vs Today's
+   Summary). Fix it by nesting that row one level deeper, as ClockIn.tsx's
+   `.clockin-grid` wrapper does — not by adding another !important here, which
+   would re-break the flush-to-edge alignment this chain exists to produce. */
 
 /* ── One gap, everywhere on a page: 8px ───────────────────────────────────
    The four bands a page stacks — menu to header strip, strip to KPI cards,

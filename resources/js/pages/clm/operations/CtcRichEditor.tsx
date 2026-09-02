@@ -2394,8 +2394,34 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content.ctcte-pageview .ProseMirror h1 { font-size: 20px; line-height: 33.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h2 { font-size: 17px; line-height: 28.3px; }
 .ctcte-content.ctcte-pageview .ProseMirror h3 { font-size: 15px; line-height: 25.0px; }
+/* Markers need PADDING to sit in, and a list-style to draw.
+   This was padding-left 0 with no list-style at all: the app's global reset
+   strips list-style off ul/ol, and a marker is drawn "outside" the content box —
+   that is, inside this padding — so with zero padding and nothing to draw, an
+   ordered list rendered with no numbers whatsoever. Colour was never the
+   problem; there was no marker to colour.
+   1.6em with a zero left margin matches .tdw-editor, .agw-editor and the
+   .document-content rules in pdf/clm-signature-document.blade.php, so a list
+   occupies the same width in the editor as it does in the preview and the PDF.
+   Each depth is stated because list-style-type is inherited — an unstated third
+   level silently keeps its parent's marker. */
 .ctcte-content.ctcte-pageview .ProseMirror ul,
-.ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px 24px; padding-left: 0; }
+.ctcte-content.ctcte-pageview .ProseMirror ol { margin: 0 0 8px 0; padding-left: 1.6em; }
+/* Bold and italic, stated explicitly.
+   The mark itself was always applied — the live preview rendered it bold from
+   the same HTML — but the editor showed no change, so the button read as dead.
+   The app's global reset normalises b/strong/i/em (the same reset that strips
+   list-style off ul/ol, below), and nothing here put the weight back. */
+.ctcte-content .ProseMirror strong,
+.ctcte-content .ProseMirror b { font-weight: 700; }
+.ctcte-content .ProseMirror em,
+.ctcte-content .ProseMirror i { font-style: italic; }
+.ctcte-content .ProseMirror ul       { list-style: disc outside; }
+.ctcte-content .ProseMirror ul ul    { list-style: circle outside; }
+.ctcte-content .ProseMirror ul ul ul { list-style: square outside; }
+.ctcte-content .ProseMirror ol       { list-style: decimal outside; }
+.ctcte-content .ProseMirror ol ol    { list-style: lower-alpha outside; }
+.ctcte-content .ProseMirror ol ol ol { list-style: lower-roman outside; }
 .ctcte-content.ctcte-pageview .ProseMirror li { line-height: 21.1px; }
 /* Tables, matched to the PDF the same way the body text is.
    The page view carried NO table CSS — cells fell back to whatever the DOCX

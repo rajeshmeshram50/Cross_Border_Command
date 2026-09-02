@@ -412,6 +412,14 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
     >
       <style>{TNW_CSS}</style>
       <div className="tnw-shell">
+        {/* Blocks the whole card while the save is in flight. Only the buttons
+            were disabled, so the Regulatory Type radios, the document name and
+            the segment stayed live mid-request: switching High to Less after
+            pressing Save changed nothing that was sent, and the stored T&C no
+            longer matched the form. Same guard the other CLM masters use
+            (ClmKycPage, ClmSegmentPage, ClmClauseLibraryPage …) — the buttons
+            keep their own `disabled` as the real lock. */}
+        {saving && <div className="clm-saving-veil" aria-hidden />}
         {/* ── Header ── */}
         <div className="tnw-head">
           <div className="tnw-head-left">
@@ -1209,6 +1217,9 @@ const TNW_CSS = `
 .tnw-shell {
   width: 100%; max-width: 1100px; max-height: calc(100vh - 48px);
   display: flex; flex-direction: column;
+  /* Anchors the .clm-saving-veil (position: absolute; inset: 0) to this card
+     rather than the viewport — see the veil in the JSX below. */
+  position: relative;
   border-radius: 18px; overflow: hidden;
   background: #fff;
   margin: auto;

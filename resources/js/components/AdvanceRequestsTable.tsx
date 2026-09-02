@@ -174,7 +174,48 @@ function withAuthToken(url: string): string {
 /* Column set for the shared <DataTable>. Exported so the HR Expense
  * Management page can wrap its own tabs / search / pager around exactly these
  * columns, while the employee-profile advance tab uses the component below.
- * Widths sum to 100 (fixed layout): 4+8+13+11+14+8+8+9+8+8+5+7+9 → see below. */
+ *
+ * PIXEL widths, not percentages (#177).
+ *
+ * These were percentages alongside a 112px Adv ID, a 240px Action (hr/team)
+ * and DataTable's 56px serial, under table-layout: fixed. Percentages resolve
+ * against the table's own width, so the fixed columns pushed the total past
+ * 100% and the browser rescaled everything to fit — the declared widths were
+ * never the rendered ones, and the arithmetic in the line this comment
+ * replaced had not matched the column list for a long time.
+ *
+ * The overflow was large in both views: Self Used reached 143% and Company
+ * Used 113% once the Action column was counted. A fixed layout re-resolves
+ * that over-constraint as the table re-renders, which is why Employee, Reason,
+ * Recovery Start, Recovery, Monthly EMI and Attachments drifted out of their
+ * columns while scrolling.
+ *
+ * Pixels remove the negotiation: every column gets exactly what it asks for
+ * and .dt-scroll scrolls when the viewport cannot fit the total.
+ *
+ * The total is EXPORTED as advanceRequestsMinWidth() because it depends on
+ * BOTH switches — `usedFor` adds or drops four columns and `mode` resizes
+ * Action — so no single literal can be right at every call site. Restating it
+ * by hand is how the old sum drifted out of date. */
+const ADV_ACTION_W = (mode: 'mine' | 'team' | 'hr') => (mode === 'hr' || mode === 'team' ? 240 : 130);
+
+/**
+ * Sum of every column width below, including DataTable's 56px serial.
+ *
+ * `usedFor === 'company'` drops Reason / Recovery Start / Recovery / Monthly
+ * EMI (a company advance is not recovered from salary) and adds Confirmation.
+ */
+export const advanceRequestsMinWidth = (
+  mode: 'mine' | 'team' | 'hr' = 'mine',
+  usedFor: 'self' | 'company' = 'self',
+) => {
+  const always = 56 + 112 + 170 + 130 + 110 + 120 + 150 + 110 + 130 + 140 + 120;
+  const variant = usedFor === 'company'
+    ? 130                      // Confirmation
+    : 170 + 120 + 110 + 120;   // Reason, Recovery Start, Recovery, Monthly EMI
+  return always + variant + ADV_ACTION_W(mode);
+};
+
 export function advanceRequestColumns({
   accent = '#6366f1', fallbackName, fallbackInitials,
   mode = 'mine', currentEmployeeId = null, canHrApprove = false, usedFor = 'self', onAct,
@@ -202,7 +243,7 @@ export function advanceRequestColumns({
       header: 'Employee',
       id: 'employee',
       accessorFn: (r: AdvanceRequestRow) => r.employee_name || fallbackName || `#${r.employee_id}`,
-      meta: { width: '13%' },
+      meta: { width: 170 },
       cell: info => {
         const r = info.row.original;
         const empName = r.employee_name || fallbackName || ('#' + r.employee_id);
@@ -219,7 +260,7 @@ export function advanceRequestColumns({
       id: 'advance_type',
       // "Other" carries the free-text detail, so sort/search see the full label.
       accessorFn: (r: AdvanceRequestRow) => (r.advance_type === 'Other' && r.advance_type_other ? `Other · ${r.advance_type_other}` : r.advance_type),
-      meta: { width: '11%', align: 'center' },
+      meta: { width: 130, align: 'center' },
       cell: info => {
         const label = String(info.getValue() ?? '');
         return (
@@ -242,14 +283,14 @@ export function advanceRequestColumns({
     {
       header: 'Reason',
       accessorKey: 'reason',
-      meta: { width: '14%' },
+      meta: { width: 170 },
       cell: (info: any) => <TruncCell value={info.getValue() as string} caseSensitive max={70} />,
     },
     ] as DataTableColumn<AdvanceRequestRow>[]),
     {
       header: () => <div className="text-center">Amount</div>,
       accessorKey: 'amount',
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 110, align: 'center' },
       /* Once HR sanctions a different net, THAT is the figure being disbursed
          and recovered, so it leads. The requested amount stays visible beneath
          it — dropping it would hide that the request was adjusted at all. */
@@ -274,7 +315,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Requested</div>,
       id: 'requested_date',
       accessorFn: (r: AdvanceRequestRow) => (r.requested_date ? new Date(r.requested_date).getTime() : 0),
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 120, align: 'center' },
       cell: info => <Tooltip label={fmtDate(info.row.original.requested_date)}><span className="text-muted">{fmtDate(info.row.original.requested_date)}</span></Tooltip>,
     },
     // Recovery Start / Recovery / Monthly EMI apply to a SELF advance only — a
@@ -285,7 +326,7 @@ export function advanceRequestColumns({
       header: 'Recovery Start',
       id: 'recovery_start',
       accessorFn: (r: AdvanceRequestRow) => (r.recovery_start ? new Date(r.recovery_start).getTime() : 0),
-      meta: { width: '9%' },
+      meta: { width: 120 },
       // A rejected advance is never recovered — read "N/A" instead of a value /
       // bare "—" so it looks intentional (QA #134).
       cell: info => info.row.original.status === 'rejected'
@@ -296,7 +337,7 @@ export function advanceRequestColumns({
       header: 'Recovery',
       id: 'recovery_mode',
       accessorFn: (r: AdvanceRequestRow) => RECOVERY_LABEL[r.recovery_mode] || r.recovery_mode,
-      meta: { width: '8%' },
+      meta: { width: 110 },
       cell: info => {
         if (info.row.original.status === 'rejected') {
           return <span className="text-muted fst-italic" style={{ fontSize: 11 }}>N/A</span>;
@@ -320,7 +361,7 @@ export function advanceRequestColumns({
       header: 'Monthly EMI',
       id: 'monthly_emi',
       accessorFn: (r: AdvanceRequestRow) => (r.recovery_mode === 'emi' ? Number(r.monthly_emi || 0) : 0),
-      meta: { width: '9%' },
+      meta: { width: 120 },
       cell: info => {
         const r = info.row.original;
         if (r.status === 'rejected') {
@@ -387,7 +428,7 @@ export function advanceRequestColumns({
       header: 'Attachments',
       id: '__attachments',
       enableSorting: false,
-      meta: { align: 'left', width: '11%' },
+      meta: { align: 'left', width: 150 },
       /* First receipt inline; extras collapse into a "+N more" popover so
          multiple uploads never expand the row height. */
       cell: info => (
@@ -401,7 +442,7 @@ export function advanceRequestColumns({
     {
       header: 'Status',
       accessorKey: 'status',
-      meta: { width: '8%', align: 'center', wrap: true },
+      meta: { width: 110, align: 'center', wrap: true },
       cell: info => {
         const s = info.row.original.status;
         const tone = STATUS_TONE[s];
@@ -421,7 +462,7 @@ export function advanceRequestColumns({
       id: 'payment_status',
       enableSorting: false,
       accessorFn: (r: AdvanceRequestRow) => paymentStatusOf(r) ?? '',
-      meta: { width: '10%', align: 'center', wrap: true },
+      meta: { width: 130, align: 'center', wrap: true },
       cell: info => {
         // A rejected request is never paid — read "N/A" rather than a bare "—"
         // so it looks intentional, not like a missing value (QA #122).
@@ -450,7 +491,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Confirmation</div>,
       id: 'settle',
       enableSorting: false,
-      meta: { width: '10%', align: 'center', wrap: true },
+      meta: { width: 130, align: 'center', wrap: true },
       cell: (info: any) => {
         const r = info.row.original;
         // A rejected request is never settled — "N/A" instead of a bare "—" (QA #122).
@@ -521,7 +562,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Recovery Status</div>,
       id: 'recovery_status',
       enableSorting: false,
-      meta: { width: '11%', align: 'center', wrap: true },
+      meta: { width: 140, align: 'center', wrap: true },
       cell: (info: any) => {
         const r = info.row.original;
         const pill = (icon: string, label: string, bg: string, fg: string) => (
@@ -551,7 +592,7 @@ export function advanceRequestColumns({
       header: () => <div className="text-center">Zoho Sync</div>,
       id: 'zoho_sync',
       enableSorting: false,
-      meta: { width: '9%', align: 'center', wrap: true },
+      meta: { width: 120, align: 'center', wrap: true },
       cell: (info: any) => {
         /* A rejected advance is never booked in Zoho — nothing was paid out.
            "N/A" matches the Advance Paid / Confirmation / Recovery Status
@@ -593,7 +634,7 @@ export function advanceRequestColumns({
        * 240px reservation there would be dead space. */
       meta: {
         align: 'center',
-        width: (mode === 'hr' || mode === 'team') ? 240 : '12%',
+        width: ADV_ACTION_W(mode),
         wrap: true,
       },
       cell: info => (
@@ -636,7 +677,7 @@ export default function AdvanceRequestsTable({
         data={rows}
         columns={columns}
         accent="violet"
-        minWidth={1500}
+        minWidth={advanceRequestsMinWidth(mode, usedFor)}
         loading={!!loading}
         searchable={false}
         paginate={false}

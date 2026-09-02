@@ -67,6 +67,128 @@ class ProductController extends Controller
         return $query;
     }
 
+    private function applyListFilters($query, Request $request)
+    {
+        // Free-text search across the four identifying columns.
+        if ($q = trim((string) $request->query('q', ''))) {
+            $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
+            $query->where(function ($w) use ($like) {
+                $w->where('name', 'ilike', $like)
+                    ->orWhere('product_code', 'ilike', $like)
+                    ->orWhere('brand', 'ilike', $like)
+                    ->orWhere('generic_name', 'ilike', $like);
+            });
+        }
+
+        if ($status = $request->query('status')) {
+            $status = strtolower((string) $status);
+            if ($status === 'inactive') {
+                $query->whereIn('status', ['inactive', 'draft']);
+            } elseif (in_array($status, ['active', 'draft'], true)) {
+                $query->where('status', $status);
+            }
+        }
+
+        // Vendor deep-link (/products?vendor_id=…) — one specific supplier.
+        if ($vendorId = $request->query('vendor_id')) {
+            $query->whereHas('vendorMaps', fn($w) => $w->where('vendor_id', $vendorId));
+        }
+
+        $inRelation = function (string $relation, array $columns, ?array $values) use ($query) {
+            if (!$values) {
+                return;
+            }
+            $query->whereHas($relation, function ($w) use ($columns, $values) {
+                $w->where(function ($inner) use ($columns, $values) {
+                    foreach ($columns as $i => $column) {
+                        $i === 0
+                            ? $inner->whereIn($column, $values)
+                            : $inner->orWhereIn($column, $values);
+                    }
+                });
+            });
+        };
+
+        $list = fn(string $key) => array_values(array_filter(
+            (array) $request->query($key, []),
+            fn($v) => $v !== null && $v !== ''
+        ));
+
+        $inRelation('segment',   ['name'],                 $list('segment'));
+        /* The toolbar's single-select segment is a SEPARATE condition from the
+         * sidebar's multi-select — folding them into one IN list would turn an
+         * AND into an OR and widen the result instead of narrowing it. */
+        if ($segmentEq = $request->query('segment_eq')) {
+            $query->whereHas('segment', fn ($w) => $w->where('name', $segmentEq));
+        }
+        $inRelation('hsn',       ['hsn_code'],             $list('hsn'));
+        $inRelation('uom',       ['short_code', 'title'],  $list('uom'));
+        $inRelation('condition', ['title'],                $list('condition'));
+        $inRelation('hazClass',  ['name'],                 $list('haz_class'));
+
+        if ($gst = $list('gst_rate')) {
+            $rates = array_values(array_filter(array_map(
+                fn($v) => is_numeric($n = preg_replace('/[^\d.]/', '', (string) $v)) ? (float) $n : null,
+                $gst
+            ), fn($v) => $v !== null));
+
+            if ($rates) {
+                $query->whereHas('gstPercentage', fn($w) => $w->whereIn('percentage', $rates));
+            }
+        }
+
+        // Mapped supplier company names (product_vendor_maps.vendor_name).
+        if ($vendors = $list('vendor')) {
+            $query->whereHas('vendorMaps', fn($w) => $w->whereIn('vendor_name', $vendors));
+        }
+
+        $hazTypes = array_map('strtoupper', $list('haz_type'));
+        $wantsHaz = in_array('HAZ', $hazTypes, true);
+        $wantsNon = in_array('NON HAZ', $hazTypes, true);
+
+        if ($wantsHaz !== $wantsNon) {
+            $isHaz = fn($w) => $w
+                ->where('haz_type', 'ilike', 'haz%')
+                ->where('haz_type', 'not ilike', '%non%');
+
+            if ($wantsHaz) {
+                $query->where($isHaz);
+            } else {
+                // NULL never satisfies a NOT-ilike in SQL, so spell it out —
+                // otherwise every product with no haz_type would vanish.
+                $query->where(fn($w) => $w->whereNull('haz_type')->orWhereNot($isHaz));
+            }
+        }
+
+        // Product owner — the dropdown's values are users.id (created_by).
+        if ($owners = $list('owner')) {
+            $query->whereIn('created_by', array_map('intval', $owners));
+        }
+
+        // Inclusive created-at window; either side may be omitted.
+        if ($from = $request->query('created_from')) {
+            $query->whereDate('created_at', '>=', $from);
+        }
+        if ($to = $request->query('created_to')) {
+            $query->whereDate('created_at', '<=', $to);
+        }
+
+        return $query;
+    }
+
+    /**
+     * The Active / Inactive tabs split on SUPPLIER MAPPING, not on the status
+     * column: "Supplier Mapped Products" vs "Zero Supplier Products".
+     */
+    private function applySupplierTab($query, Request $request)
+    {
+        return match (strtolower((string) $request->query('supplier', ''))) {
+            'mapped' => $query->has('vendorMaps'),
+            'zero'   => $query->doesntHave('vendorMaps'),
+            default  => $query,
+        };
+    }
+
     private function ownershipFor(Request $request): array
     {
         $user = $request->user();
@@ -245,11 +367,18 @@ class ProductController extends Controller
                     // risks a wrong column name per table (e.g. clm_segments has
                     // no `title`), so load them whole. The real win is dropping
                     // the heavy hasMany relations below.
-                    'hsn', 'segment', 'gstPercentage',
+                    'hsn',
+                    'segment',
+                    'gstPercentage',
                 ]
                 : [
-                    'segment', 'hazClass', 'uom', 'hsn', 'condition',
-                    'packagingMaterial', 'gstPercentage',
+                    'segment',
+                    'hazClass',
+                    'uom',
+                    'hsn',
+                    'condition',
+                    'packagingMaterial',
+                    'gstPercentage',
                     'vendorMaps:id,product_id,vendor_name',
                     'qcRecords:id,product_id',
                     // creator + their branch so the product-owner filter can
@@ -262,47 +391,35 @@ class ProductController extends Controller
 
         $query = $this->applyScope($query, $request, true); // opt-in BranchSwitcher narrowing
 
-        if ($status = $request->query('status')) {
-            // Frontend sends 'active' / 'inactive'. Inactive = inactive + draft
-            // both (anything not yet activated).
-            if ($status === 'inactive') {
-                $query->whereIn('status', ['inactive', 'draft']);
-            } else {
-                $query->where('status', $status);
-            }
-        }
+        // Every narrowing the Products page can apply, shared verbatim with
+        // stats() so the tab badges and the rows always agree.
+        $query = $this->applyListFilters($query, $request);
+        $query = $this->applySupplierTab($query, $request);
 
-        if ($q = $request->query('q')) {
-            $like = '%' . str_replace('%', '\%', $q) . '%';
-            $query->where(function ($w) use ($like) {
-                $w->where('name', 'like', $like)
-                  ->orWhere('product_code', 'like', $like)
-                  ->orWhere('brand', 'like', $like)
-                  ->orWhere('generic_name', 'like', $like);
-            });
-        }
+        /* Sorting. 'recent' (the default) keeps the historical newest-first
+         * order. Price sorts use total_price — the figure the card prints.
+         * The UI also offers "rating", which has no column behind it; it
+         * falls through to the default rather than silently doing nothing
+         * different from price. */
+        match ($request->query('sort')) {
+            'price-asc'  => $query->orderBy('total_price'),
+            'price-desc' => $query->orderByDesc('total_price'),
+            default      => $query->orderByDesc('id'),
+        };
 
-        // Optional vendor filter — narrows the result to products
-        // mapped to one specific vendor. Used by the Vendors page
-        // "Map Products" deep-link, which navigates to
-        // /products?vendor_id=<id> so the user sees only that
-        // vendor's existing mappings (or an empty state offering to
-        // add the first one).
-        if ($vendorId = $request->query('vendor_id')) {
-            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
-                $w->where('vendor_id', $vendorId);
-            });
-        }
+        /* Page size is capped: the page asks for 12 by default, but a crafted
+         * per_page=100000 would eager-load ten relations across every row and
+         * hand the tenant a multi-second query. */
+        $perPage = max(1, min((int) $request->query('per_page', 24), 200));
 
-        $products = $query->orderByDesc('id')
-            ->paginate((int) $request->query('per_page', 24));
+        $products = $query->paginate($perPage);
 
         // Department information wall — Purchase hides selling price, Sales hides
         // vendor details. Transform each row into its masked array form.
         $hide = $this->departmentHiddenGroups($request);
         if ($hide['selling'] || $hide['vendor']) {
             $products->setCollection(
-                $products->getCollection()->map(fn ($p) => $this->maskProductArray($p->toArray(), $hide))
+                $products->getCollection()->map(fn($p) => $this->maskProductArray($p->toArray(), $hide))
             );
         }
 
@@ -316,9 +433,16 @@ class ProductController extends Controller
     {
         $product = $this->applyScope(Product::query(), $request)
             ->with([
-                'segment', 'hazClass', 'uom', 'hsn', 'condition',
-                'packagingMaterial', 'gstPercentage',
-                'qcRecords', 'vendorMaps', 'vendorMaps.vendor:id,vendor_code',
+                'segment',
+                'hazClass',
+                'uom',
+                'hsn',
+                'condition',
+                'packagingMaterial',
+                'gstPercentage',
+                'qcRecords',
+                'vendorMaps',
+                'vendorMaps.vendor:id,vendor_code',
             ])
             ->findOrFail($id);
 
@@ -471,8 +595,10 @@ class ProductController extends Controller
             if ($newPath !== null && str_starts_with($newPath, 'blob:')) {
                 $newPath = null;
             }
-            if ($product->primary_image && $product->primary_image !== $newPath
-                && !str_starts_with((string) $product->primary_image, 'blob:')) {
+            if (
+                $product->primary_image && $product->primary_image !== $newPath
+                && !str_starts_with((string) $product->primary_image, 'blob:')
+            ) {
                 Storage::disk('public')->delete($this->relativePath($product->primary_image));
             }
             $product->primary_image = $newPath;
@@ -502,7 +628,7 @@ class ProductController extends Controller
             // send — those don't resolve on the server.
             $kept = array_values(array_filter(
                 $kept,
-                fn ($v) => is_string($v) && $v !== '' && !str_starts_with($v, 'blob:')
+                fn($v) => is_string($v) && $v !== '' && !str_starts_with($v, 'blob:')
             ));
 
             // Drop files the user removed (skip blob: entries, nothing to
@@ -543,8 +669,10 @@ class ProductController extends Controller
             if ($newPath !== null && str_starts_with($newPath, 'blob:')) {
                 $newPath = null;
             }
-            if ($product->product_attachment && $product->product_attachment !== $newPath
-                && !str_starts_with((string) $product->product_attachment, 'blob:')) {
+            if (
+                $product->product_attachment && $product->product_attachment !== $newPath
+                && !str_starts_with((string) $product->product_attachment, 'blob:')
+            ) {
                 Storage::disk('public')->delete($this->relativePath($product->product_attachment));
             }
             $product->product_attachment = $newPath;
@@ -796,7 +924,7 @@ class ProductController extends Controller
                 'customers.company_name as customer_name',
             ]);
 
-        $leads = $rows->map(fn ($r) => [
+        $leads = $rows->map(fn($r) => [
             'lead_id'       => (int) $r->lead_id,
             'opp_code'      => $r->opp_code,
             'has_customer'  => $r->customer_id !== null,
@@ -998,13 +1126,13 @@ class ProductController extends Controller
         // product has no segment (nothing to match against).
         if ($product->segment_id) {
             $prodSeg   = (int) $product->segment_id;
-            $vendorIds = array_values(array_filter(array_map(fn ($v) => $v['vendor_id'] ?? null, $data['vendors'])));
+            $vendorIds = array_values(array_filter(array_map(fn($v) => $v['vendor_id'] ?? null, $data['vendors'])));
             if ($vendorIds) {
                 $mismatches = [];
                 foreach (Vendor::with('segments:id')->whereIn('id', $vendorIds)->get(['id', 'company_name', 'segment_id']) as $ven) {
                     $segs = array_values(array_unique(array_filter(array_merge(
                         [$ven->segment_id ? (int) $ven->segment_id : null],
-                        $ven->segments->pluck('id')->map(fn ($x) => (int) $x)->all(),
+                        $ven->segments->pluck('id')->map(fn($x) => (int) $x)->all(),
                     ))));
                     if (!in_array($prodSeg, $segs, true)) {
                         $mismatches[] = $ven->company_name ?: ('Vendor #' . $ven->id);
@@ -1087,7 +1215,7 @@ class ProductController extends Controller
             // that USED to be mapped to this product but isn't in the
             // current submit.
             \App\Models\VendorProductMapping::where('product_id', $product->id)
-                ->when(!empty($nowMappedVendorIds), fn ($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
+                ->when(!empty($nowMappedVendorIds), fn($q) => $q->whereNotIn('vendor_id', $nowMappedVendorIds))
                 ->delete();
 
             if (empty($data['vendors'])) {
@@ -1123,29 +1251,28 @@ class ProductController extends Controller
      * ────────────────────────────────────────────────────────────── */
     public function stats(Request $request)
     {
-        // Match the list: header chip counts must reflect the BranchSwitcher
-        // narrowing so "Active N / Inactive M" stays in sync with the rows.
+        /* Counts for the two header tabs. They describe the WHOLE filtered
+         * catalogue, not the page on screen, so they cannot be derived from
+         * the paginated rows — hence a second, cheap COUNT-only query.
+         *
+         * The split is by SUPPLIER MAPPING, matching the tab labels
+         * ("Supplier Mapped Products" / "Zero Supplier Products") and what
+         * Products.tsx used to compute client-side from the full fetch. It is
+         * deliberately NOT the status column: an `active` product with no
+         * supplier belongs under "Zero Supplier Products".
+         *
+         * Every filter except the tab itself is applied, so ticking a sidebar
+         * filter moves BOTH badges rather than only the visible list. */
         $query = $this->applyScope(Product::query(), $request, true);
+        $query = $this->applyListFilters($query, $request);
 
-        // Mirror the index endpoint's vendor filter so the
-        // Active / Inactive tab counts stay in sync with the rows
-        // the user is actually seeing. Without this, the deep-link
-        // (/products?vendor_id=…) showed e.g. "Active 24 / Inactive 9"
-        // — the org-wide numbers — even though only 2 products were
-        // listed below them.
-        if ($vendorId = $request->query('vendor_id')) {
-            $query->whereHas('vendorMaps', function ($w) use ($vendorId) {
-                $w->where('vendor_id', $vendorId);
-            });
-        }
-
-        $active   = (clone $query)->where('status', 'active')->count();
-        $inactive = (clone $query)->whereIn('status', ['inactive', 'draft'])->count();
+        $mapped = (clone $query)->has('vendorMaps')->count();
+        $zero   = (clone $query)->doesntHave('vendorMaps')->count();
 
         return response()->json([
-            'active'   => $active,
-            'inactive' => $inactive,
-            'total'    => $active + $inactive,
+            'active'   => $mapped,   // "Supplier Mapped Products" tab
+            'inactive' => $zero,     // "Zero Supplier Products" tab
+            'total'    => $mapped + $zero,
         ]);
     }
 
@@ -1184,7 +1311,7 @@ class ProductController extends Controller
             ->with('branch:id,name')
             ->orderBy('name');
 
-        $rows = $q->get(['id', 'name', 'branch_id'])->map(fn ($u) => [
+        $rows = $q->get(['id', 'name', 'branch_id'])->map(fn($u) => [
             'id'              => $u->id,
             'name'            => $u->name,
             'branch_id'       => $u->branch_id,
@@ -1245,7 +1372,7 @@ class ProductController extends Controller
             $active = function (string $modelClass, array $cols) use ($user) {
                 return $modelClass::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
-                    ->tap(fn ($q) => MasterVisibility::applyReadScope($q, $user))
+                    ->tap(fn($q) => MasterVisibility::applyReadScope($q, $user))
                     ->orderBy('id')
                     ->get($cols);
             };
@@ -1263,7 +1390,7 @@ class ProductController extends Controller
                 ])
                 ->orderByDesc('id')
                 ->get(['id', 'vendor_code', 'company_name', 'website', 'primary_email', 'status', 'vendor_type_id', 'segment_id'])
-                ->map(fn ($v) => [
+                ->map(fn($v) => [
                     'id'             => $v->id,
                     'vendor_code'    => $v->vendor_code,
                     'company_name'   => $v->company_name,
@@ -1275,12 +1402,12 @@ class ProductController extends Controller
                     // scalar first-segment), so the frontend can enforce the match.
                     'segment_ids'    => array_values(array_unique(array_filter(array_merge(
                         [$v->segment_id ? (int) $v->segment_id : null],
-                        $v->segments->pluck('id')->map(fn ($x) => (int) $x)->all(),
+                        $v->segments->pluck('id')->map(fn($x) => (int) $x)->all(),
                     )))),
                     // Supplier's state — name (from the state relation) with the
                     // 2-letter state_code as a fallback when the relation is empty.
                     'state'          => optional(optional($v->primaryAddress)->state)->name
-                                        ?? (optional($v->primaryAddress)->state_code ?: null),
+                        ?? (optional($v->primaryAddress)->state_code ?: null),
                     'primary_address' => $v->primaryAddress ? [
                         'contact_name' => $v->primaryAddress->contact_name,
                         'contact_no'   => $v->primaryAddress->contact_no,
