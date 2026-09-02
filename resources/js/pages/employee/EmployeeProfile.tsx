@@ -194,6 +194,23 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
     :                                          { bg: 'rgba(255,255,255,0.18)', dot: '#22c55e', label: 'Active' };
 
   const [tab, setTab] = useState<TabKey>('profile');
+
+  /* Every tab starts at the top of its own content (#210).
+   *
+   * The profile is a fixed fullscreen overlay and `.ep-content-pane` — not the
+   * window — is the element that scrolls. Switching tabs swaps the children
+   * but leaves the pane's scrollTop where the previous tab left it, so after
+   * scrolling down Profile Details and moving to Expense Details the new tab
+   * opened part-way down: its heading and first cards sat above the viewport
+   * and read as "cut off".
+   *
+   * Reset the pane rather than the window (window.scrollTo would be a no-op
+   * here) and do it without smooth behaviour — a tab switch should land
+   * already at the top, not animate there. */
+  const contentPaneRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    contentPaneRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [tab]);
   const [payrollTab, setPayrollTab] = useState<PayrollTab>('summary');
   const [vaultTab, setVaultTab] = useState<VaultTab>('employee');
   const [expenseFilter, setExpenseFilter] = useState<ExpenseFilter>('all');
@@ -2951,7 +2968,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
       </div>
 
       {/* ── Tab content wrapper ── */}
-      <div className="ep-content-pane px-4 pt-3">
+      <div className="ep-content-pane px-4 pt-3" ref={contentPaneRef}>
 
       {/* ── Tab: Profile Details ── */}
       {tab === 'profile' && <ProfileTab />}
