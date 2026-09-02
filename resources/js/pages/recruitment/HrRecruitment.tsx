@@ -1701,24 +1701,31 @@ export function ViewHiringRequestModal({ request, onClose, onReject, onCreate, c
     return (
       <div style={{ padding: '10px 14px', background: 'var(--vz-secondary-bg)', border: '1px solid var(--vz-border-color)', borderRadius: 10, marginBottom: 10 }}>
         <div style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--vz-secondary-color)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>{label}</div>
-        {/* Clamped to 2 lines, then ellipsised, with the full text on hover.
-            Two separate problems were showing here:
+        {/* Long content scrolls inside its own section (#69).
+            This previously clamped to 2 lines and hung the whole value off a
+            `title` attribute, so reading a long Job Description meant waiting
+            for the browser's native tooltip — which can't be scrolled, is
+            truncated by the OS on very long strings, and vanishes on the
+            slightest pointer move. A bounded, scrollable block keeps the text
+            in place and readable.
+
+            Still solves the two problems the clamp was there for:
               1. an unbroken run of characters (no spaces) never found a wrap
-                 point, so it ran straight off the card — `overflowWrap:
-                 anywhere` forces a break mid-word;
-              2. a genuinely long description grew the block without limit and
-                 pushed the sections below it out of the modal.
-            -webkit-line-clamp is the only cross-browser 2-line ellipsis, and it
-            needs the -webkit-box display + orient pair to engage; pre-wrap is
-            swapped for pre-line so the clamp isn't defeated by trailing
-            whitespace while newlines in the value still break. */}
+                 point and ran off the card — `overflowWrap: anywhere` forces a
+                 break mid-word;
+              2. a long description grew the block without limit and pushed the
+                 sections below it out of the modal — `maxHeight` bounds it and
+                 hands the overflow to a scrollbar instead of an ellipsis.
+
+            `pre-line` reverts to `pre-wrap`: it was only downgraded so trailing
+            whitespace couldn't defeat the line clamp, and with no clamp the
+            author's blank lines are worth preserving. */}
         <div
-          title={String(value)}
+          className="rec-longtext-body"
           style={{
             fontSize: 13, color: 'var(--vz-body-color)', lineHeight: 1.5,
-            whiteSpace: 'pre-line', overflowWrap: 'anywhere', wordBreak: 'break-word',
-            display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2,
-            overflow: 'hidden',
+            whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', wordBreak: 'break-word',
+            maxHeight: 132, overflowY: 'auto',
           }}
         >{value}</div>
       </div>

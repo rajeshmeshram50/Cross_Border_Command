@@ -2197,6 +2197,26 @@
 .rec-req-table-wrap::-webkit-scrollbar-thumb { background: #e0d6f9; border-radius: 8px; }
 .rec-req-table-wrap::-webkit-scrollbar-thumb:hover { background: #c4b5fd; }
 
+/* Scrollable long-text sections in the Recruitment view modal — Job
+   Description / Daily Responsibilities / Required Skills (#69). These used to
+   clamp to two lines and put the rest in a native `title` tooltip; they now
+   bound their height and scroll. Same purple thumb as the table wrapper above
+   so the modal reads as one surface. Firefox gets the standard properties,
+   WebKit the pseudo-elements; `scrollbar-gutter` keeps the text from shifting
+   sideways when the scrollbar appears on the sections that overflow. */
+.rec-longtext-body {
+  scrollbar-width: thin;
+  scrollbar-color: #e0d6f9 transparent;
+  scrollbar-gutter: stable;
+}
+.rec-longtext-body::-webkit-scrollbar { width: 8px; }
+.rec-longtext-body::-webkit-scrollbar-track { background: transparent; }
+.rec-longtext-body::-webkit-scrollbar-thumb { background: #e0d6f9; border-radius: 8px; }
+.rec-longtext-body::-webkit-scrollbar-thumb:hover { background: #c4b5fd; }
+[data-bs-theme="dark"] .rec-longtext-body { scrollbar-color: #4b3f72 transparent; }
+[data-bs-theme="dark"] .rec-longtext-body::-webkit-scrollbar-thumb { background: #4b3f72; }
+[data-bs-theme="dark"] .rec-longtext-body::-webkit-scrollbar-thumb:hover { background: #5d4e8a; }
+
 /* Polished pills inside the Hiring Requests table — glossy gradient face */
 .rec-req-table .rec-pill {
   background-image: linear-gradient(180deg, rgba(255,255,255,0.55) 0%, transparent 100%);
