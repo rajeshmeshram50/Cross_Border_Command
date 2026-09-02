@@ -8,7 +8,7 @@ import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
 import { useToast } from '../../../../contexts/ToastContext';
 import { signatureRequestsToVaultDocs, mergeTradeDocuments, overlayShipmentSigStatus, type SigReqRow } from '../../../../utils/vaultSignatureRows';
-import { downloadFile } from '../../../../utils/downloadFile';
+import { downloadFile, saveApiBlob } from '../../../../utils/downloadFile';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
 import SalesCustomerSendForSignatureModal from '../customer/SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from '../../opportunity-pipeline/SigningTrackerModal';
@@ -864,7 +864,25 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
                                   onClick={async () => {
                                     if (!url) return;
                                     setOvDownloadingKey(dlKey);
-                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                    try {
+                                      /* Signed documents go through the signature
+                                         endpoint that already exists for them.
+                                         signed_url points into
+                                         uploads/signed_documents/, a tree
+                                         downloadFile has no API route for, so it
+                                         fell through to a direct fetch that Azure
+                                         blocks cross-origin and ended on the
+                                         window.open fallback — the file opened
+                                         instead of saving. Same fix as the
+                                         customer vault; keep the two in step. */
+                                      const sigId = (d as VaultShipmentDoc).signature_request_id;
+                                      if (!isStd && sigId) {
+                                        const resp = await api.get(`/clm/signature-requests/${sigId}/download-file/0`, { responseType: 'blob' });
+                                        await saveApiBlob(resp.data as Blob, fname, 'pdf');
+                                      } else {
+                                        await downloadFile(url, fname);
+                                      }
+                                    } finally { setOvDownloadingKey(null); }
                                   }}
                                 >
                                   {dling
