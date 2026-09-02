@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type
 import './product-management.css';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
@@ -12,20 +12,10 @@ import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
 import Tooltip from '../../../../components/ui/Tooltip';
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Products
- *
- * Branch-and-employee Products list (Amazon / Flipkart-style card grid)
- * with an "Add Product" 6-step wizard. Visible only to branch_user and
- * employee user types — admins / super_admin don't see the sidebar entry.
- *
- * Mock data for now; the Add Product flow validates locally and surfaces a
- * toast on Save. Wire the POST once the products API ships.
- * ──────────────────────────────────────────────────────────────────────── */
 
 export type Product = {
-  apiId: number;                               // numeric DB id (for edit / delete)
-  id: string;                                  // display code e.g. "P-001"
+  apiId: number;
+  id: string;
   name: string;
   genericName: string;
   brand: string;
@@ -34,31 +24,26 @@ export type Product = {
   currency: string;
   rating: number;
   reviews: number;
-  status: 'Active' | 'Inactive' | 'Draft';     // server canonical status
+  status: 'Active' | 'Inactive' | 'Draft';
   hsn: string;
   uom: string;
   hazClass: 'HAZ' | 'NON HAZ';
-  hazClassName: string;                        // master haz_class.name when product is HAZ
+  hazClassName: string;
   gstRate: number;
   condition: string;
-  vendors: string[];                           // company_name of every mapped vendor
+  vendors: string[];
   vendorCount: number;
-  /** Creator (product owner). Sourced from products.created_by joined to users
-   *  on the API. Drives the Product Owner filter and the "Created by" line on
-   *  the card. ownerId is null only for legacy rows where the user was deleted. */
   ownerId: number | null;
   ownerName: string;
   ownerBranchId: number | null;
   ownerBranchName: string;
-  /** ISO timestamp of when the product was created. */
   createdAt: string;
-  stepCompleted: number;                       // 0..4 — wizard re-entry hint
+  stepCompleted: number;
   badge?: 'Best Seller' | 'New' | 'Trending' | 'Top Rated';
-  thumb: string;                               // gradient fallback when no real image
-  images: string[];                            // primary first, then secondaries — cycled on the card
+  thumb: string;
+  images: string[];
 };
 
-/* Predictable per-id gradient so reload-order doesn't shuffle card colours. */
 const THUMB_GRADIENTS = [
   'linear-gradient(135deg,#fef3c7,#fbbf24)',
   'linear-gradient(135deg,#dcfce7,#22c55e)',
@@ -72,14 +57,8 @@ const THUMB_GRADIENTS = [
   'linear-gradient(135deg,#1f2937,#374151)',
 ];
 
-/* Per-card accent colour (drives the thumb tint + segment badge), keyed
-   off the numeric id so a product keeps the same accent across reloads.
-   Palette mirrors the agriculture greens/ambers of the P2P prototype. */
 const PRODUCT_ACCENTS = ['#16a34a', '#ca8a04', '#eab308', '#f59e0b', '#65a30d', '#d97706', '#84cc16', '#dc2626', '#22c55e', '#a16207', '#0891b2', '#7c3aed'];
 
-/* Sample a loaded image's average colour so the segment badge can tint to
-   match the product photo. Returns null if the canvas is tainted (cross-origin
-   image without CORS headers) or the read fails — caller falls back to --acc. */
 function averageImageColor(img: HTMLImageElement): string | null {
   try {
     const w = 12, h = 12;
@@ -91,12 +70,11 @@ function averageImageColor(img: HTMLImageElement): string | null {
     const { data } = ctx.getImageData(0, 0, w, h);
     let r = 0, g = 0, b = 0, n = 0;
     for (let i = 0; i < data.length; i += 4) {
-      if (data[i + 3] < 125) continue; // skip transparent pixels
+      if (data[i + 3] < 125) continue;
       r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
     }
     if (!n) return null;
     r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
-    // Darken very light averages so the white badge text stays legible.
     const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     if (lum > 160) { const f = 160 / lum; r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f); }
     return `rgb(${r}, ${g}, ${b})`;
@@ -105,9 +83,6 @@ function averageImageColor(img: HTMLImageElement): string | null {
   }
 }
 
-/* Normalize a product code so the trailing number is always 3 digits
-   (P-1 → P-001, P-03 → P-003, P-119 stays P-119). Codes without a trailing
-   number are shown untouched. */
 function formatProductCode(raw: string): string {
   const m = raw.match(/^(.*?)(\d+)\s*$/);
   if (!m) return raw;
@@ -131,9 +106,6 @@ function apiToCard(row: Record<string, unknown>): Product {
   const displayStatus: Product['status'] =
     apiStatus === 'active' ? 'Active' : apiStatus === 'inactive' ? 'Inactive' : 'Draft';
   const idNum = Number(row.id) || 0;
-  // Prefer the absolute *_url accessors so cards work in any environment
-  // (local /storage, Azure CDN, etc.); fall back to the raw path resolved
-  // client-side if older rows don't have the accessor yet.
   const primaryUrl = (row.primary_image_url as string | null) || (row.primary_image as string | null) || '';
   const secondaryUrls = Array.isArray(row.secondary_images_url)
     ? (row.secondary_images_url as string[])
@@ -158,9 +130,6 @@ function apiToCard(row: Record<string, unknown>): Product {
     gstRate: Number(gstObj?.percentage ?? 0),
     condition: condObj?.title ?? '',
     vendors: vendorNames,
-    // Sales users have vendor rows masked out (they must not see who the
-    // supplier is), but the backend still surfaces the bare count so the card
-    // can show "N Suppliers". Prefer it; fall back to the row count otherwise.
     vendorCount: row.vendor_count != null ? Number(row.vendor_count) : vendorMaps.length,
     ownerId: creator?.id ?? null,
     ownerName: creator?.name ?? '',
@@ -175,7 +144,6 @@ function apiToCard(row: Record<string, unknown>): Product {
 
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
 
-/* ─── Sidebar filter options ─── */
 const GST_RATES = ['0%', '5%', '12%', '18%', '28%'];
 const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
 const HAZ_TYPES = ['HAZ', 'NON HAZ'];
@@ -212,7 +180,6 @@ const EMPTY_FILTERS: FilterState = {
 export default function Products() {
   const { user } = useAuth();
   const toast = useToast();
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const vendorFilterId   = searchParams.get('vendor_id');
   const vendorFilterCode = searchParams.get('vendor_code') ?? '';
@@ -228,22 +195,13 @@ export default function Products() {
   const [sort, setSort] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating'>('recent');
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
-  /* Product detail opens as a popup over the list (not a full-screen route).
-     Clicking a card sets this; the ProductView renders inside a modal. */
   const [detailId, setDetailId] = useState<number | null>(null);
   const [brefOpen, setBrefOpen] = useState(false);
 
-  /* ─── Filter sidebar ─── */
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
-  // Master-detail filter: which category's options show in the right pane.
   const [activeCategory, setActiveCategory] = useState<string>('gstRate');
 
-  /* Filter dropdown options live in state so they can be refreshed
-     from the master APIs on mount. The hardcoded `SEGMENTS` /
-     `HSN_CODES` / `UOMS` / `CONDITIONS` / `VENDORS` constants are
-     fallbacks that ship until the fetch resolves — keeps the panel
-     usable even with a slow or unreachable backend. */
   const [segmentOpts, setSegmentOpts]   = useState<string[]>(SEGMENTS);
   const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
   const [uomOpts,     setUomOpts]       = useState<string[]>(UOMS);
@@ -251,28 +209,10 @@ export default function Products() {
   const [hazClassOpts, setHazClassOpts] = useState<string[]>([]);
   const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
   const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
-  /* Product Owner options — sourced from /products/owners. The endpoint
-     scopes the list to the caller's own branch users (every branch is an
-     isolated peer). The old `PRODUCT_OWNERS` const was generic role labels
-     (Branch Admin, Inventory Manager…) that never matched a real
-     `created_by` row, so the filter never selected anything. */
   type OwnerOpt = { id: number; name: string; branchId: number | null; branchName: string };
   const [ownerOpts, setOwnerOpts] = useState<OwnerOpt[]>([]);
 
   useEffect(() => {
-    /* Filter dropdowns source from the SAME /products/master-bundle
-     * payload the Add Product modal uses. Previously this effect fired
-     * 5 separate /master/* calls (segments, hsn_codes, uom, conditions,
-     * gst_percentage) plus /vendors?per_page=200 — six round-trips on
-     * every Products page load. The page already preloads the bundle
-     * into sessionStorage on mount (see the warm-bundle useEffect
-     * below), so reading from cache is usually instant; on cache miss
-     * we fetch the bundle ourselves and write it back so the modal
-     * benefits too.
-     *
-     * /products/owners stays a separate call — it's not master data
-     * and the list shape (branch metadata) doesn't fit the bundle.
-     */
     type IdRow = { id: number | string; status?: string | null };
     type Bundle = {
       segments: Array<IdRow & { title?: string | null; name?: string | null }>;
@@ -284,12 +224,6 @@ export default function Products() {
       vendors: Array<{ id: number | string; company_name?: string | null }>;
     };
 
-    /* Master endpoints are branch-scoped, so the same logical name
-       (e.g. "Handicrafts") can come back multiple times when the user
-       has visibility into more than one (client, branch) tuple. The
-       filter dropdowns key on the string itself, so duplicates blow up
-       with "Encountered two children with the same key" warnings.
-       dedupe collapses repeats while preserving the first-seen order. */
     const dedupe = (arr: string[]): string[] => {
       const seen = new Set<string>();
       const out: string[] = [];
@@ -302,9 +236,6 @@ export default function Products() {
     const applyBundle = (b: Bundle) => {
       const seg  = (b.segments  ?? []).map(r => r.title ?? r.name ?? '').filter(Boolean);
       const hsn  = (b.hsn_codes ?? []).map(r => r.hsn_code ?? '').filter(Boolean);
-      // UOM options must mirror what the product card actually shows.
-      // apiToCard maps p.uom = short_code ?? title (e.g. "kg" for the
-      // "Kilogram" master row), so the filter has to do the same.
       const uom  = (b.uom       ?? []).map(r => r.short_code ?? r.title ?? '').filter(Boolean);
       const cond = (b.conditions ?? []).map(r => r.title ?? '').filter(Boolean);
       const haz  = (b.haz_class ?? []).map(r => r.name ?? '').filter(Boolean);
@@ -317,38 +248,19 @@ export default function Products() {
       if (uom.length)  setUomOpts(dedupe(uom));
       if (cond.length) setConditionOpts(dedupe(cond));
       if (haz.length)  setHazClassOpts(dedupe(haz));
-      // GST rates sort NUMERICALLY ascending (5% < 12% < 18%), so a newly
-      // added rate slots into place instead of landing at the bottom in
-      // insertion order (QA #47).
       if (gst.length)  setGstRateOpts(dedupe(gst).sort((a, b) => parseFloat(a) - parseFloat(b)));
       if (ven.length)  setVendorOpts(dedupe(ven));
     };
 
     (async () => {
-      // Stale-while-revalidate. Paint instantly from the client cache when it's
-      // warm, then ALWAYS refetch the fresh bundle from the server and re-apply.
-      //
-      // This is what fixes stale filter options after a master edit made on
-      // another page — e.g. a segment renamed in the CLM master (QA #42).
-      // Products resolve their segment name live via the FK, so the cards already
-      // show the new name; but the filter dropdown was served from the 5-min
-      // sessionStorage cache and kept the OLD name (and the new name wasn't
-      // offered, so filtering by it returned nothing). The server bundle cache is
-      // invalidated on those edits, so this refetch returns the renamed value; we
-      // then rewrite the client cache so the Add Product modal reuses it.
       const cached = readProductMasterBundle<Bundle>();
       if (cached) applyBundle(cached);
       try {
         const res = await api.get<Bundle>('/products/master-bundle');
         applyBundle(res.data);
         writeProductMasterBundle(res.data);
-      } catch { /* keep the cache / hardcoded defaults on error */ }
+      } catch {  }
 
-      // Product Owner dropdown — pulls the user list the backend says
-      // is in scope (the caller's own branch users). Empty list means the
-      // role has no use for the filter (e.g. client_admin) and the panel
-      // will just render empty. Kept as a separate fetch because the shape
-      // doesn't fit the master bundle.
       try {
         type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null };
         const res = await api.get<{ data?: OwnerRow[] }>('/products/owners');
@@ -359,21 +271,16 @@ export default function Products() {
           branchId:     r.branch_id,
           branchName:   r.branch_name ?? '',
         })));
-      } catch { /* leave panel empty on error */ }
+      } catch {  }
     })();
   }, []);
 
-  /* Escape-to-close — a second exit path beyond the backdrop click and
-     the close button. Bound only while the drawer is open so we don't
-     listen forever. */
   useEffect(() => {
     if (!filterOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setFilterOpen(false);
     };
     window.addEventListener('keydown', onKey);
-    // Lock the page scroll while the filter drawer is open so the list
-    // behind it can't scroll under the overlay.
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
@@ -401,20 +308,11 @@ export default function Products() {
     return n;
   }, [filters]);
 
-  /* ─── Applied-filter chips ───
-   * Flattens the whole filter state into one removable chip per selected
-   * value. The drawer closes on Apply, so without this the only trace of a
-   * 13-panel filter set is a count badge — you had to reopen the drawer and
-   * expand each panel to see what was actually narrowing the list.
-   *
-   * Each chip carries its own remover, so the label the user reads and the
-   * state it clears can't drift apart. */
   type FilterChip = { id: string; group: string; label: string; onRemove: () => void };
 
   const appliedChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
 
-    // Multi-select panels whose stored value IS the display label.
     const multi: Array<[keyof FilterState, string]> = [
       ['gstRate', 'GST Rate'], ['segment', 'Segment'], ['hsn', 'HSN/SAC'],
       ['hazType', 'Hazard'], ['hazClass', 'Haz Class'], ['uom', 'UOM'],
@@ -427,8 +325,6 @@ export default function Products() {
       });
     });
 
-    // Owner is the one panel storing ids rather than labels — resolve the name
-    // so the chip reads "Owner: Ravi", not "Owner: 42".
     filters.productOwner.forEach(id => {
       const owner = ownerOpts.find(o => String(o.id) === id);
       out.push({
@@ -439,7 +335,6 @@ export default function Products() {
       });
     });
 
-    // Single-value panels.
     if (filters.topProducts) {
       out.push({ id: 'topProducts', group: 'Top', label: filters.topProducts, onRemove: () => setFilters(p => ({ ...p, topProducts: '' })) });
     }
@@ -450,12 +345,8 @@ export default function Products() {
       out.push({ id: 'createdTo', group: 'Created to', label: filters.createdTo, onRemove: () => setFilters(p => ({ ...p, createdTo: '' })) });
     }
     return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, ownerOpts]);
 
-  /* The toolbar's own controls (search / segment / status) live outside
-     `filters`, but to a user they are filters too — so they get chips in the
-     same bar and are cleared by the same "Clear all". */
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
     if (q.trim())                    out.push({ id: 'q',       group: 'Search',  label: q,            onRemove: () => setQ('') });
@@ -473,8 +364,6 @@ export default function Products() {
     setStatusFilter('All Status');
   };
 
-  // Hard guard — even if someone types /products directly, only branch_user
-  // and employee can use the module.
   const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => {
@@ -486,35 +375,87 @@ export default function Products() {
     document.head.appendChild(link);
   }, []);
 
-  /* ─── Load list ───
-   * We deliberately fetch BOTH active + inactive products in one call
-   * (no `status` query param) so the Active / Inactive tab counts can
-   * be derived live from the filter-applied set. The previous version
-   * filtered server-side by the selected tab and the stats endpoint
-   * returned org-wide totals, so applying any sidebar filter never
-   * moved the badge numbers. */
+  const [debouncedQ, setDebouncedQ] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 350);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+
+  const [total, setTotal] = useState(0);
+
+  const [stats, setStats] = useState({ active: 0, inactive: 0 });
+
+  const listParams = useMemo(() => {
+    const p: Record<string, string | string[]> = {};
+    if (debouncedQ) p.q = debouncedQ;
+    if (statusFilter !== 'All Status') p.status = statusFilter.toLowerCase();
+    if (vendorFilterId) p.vendor_id = vendorFilterId;
+
+    if (segment !== 'All Segments') p.segment_eq = segment;
+    if (filters.segment.length)      p.segment      = filters.segment;
+    if (filters.hsn.length)          p.hsn          = filters.hsn;
+    if (filters.uom.length)          p.uom          = filters.uom;
+    if (filters.condition.length)    p.condition    = filters.condition;
+    if (filters.hazClass.length)     p.haz_class    = filters.hazClass;
+    if (filters.hazType.length)      p.haz_type     = filters.hazType;
+    if (filters.gstRate.length)      p.gst_rate     = filters.gstRate;
+    if (filters.vendor.length)       p.vendor       = filters.vendor;
+    if (filters.productOwner.length) p.owner        = filters.productOwner;
+    if (filters.createdFrom)         p.created_from = filters.createdFrom;
+    if (filters.createdTo)           p.created_to   = filters.createdTo;
+    return p;
+  }, [debouncedQ, segment, statusFilter, filters, vendorFilterId]);
+
+  const listReqRef = useRef(0);
+
   const refresh = useCallback(async () => {
     if (!allowed) return;
+    const token = ++listReqRef.current;
     setLoading(true);
     try {
-      const params: Record<string, string | number> = { per_page: 200 };
-      // Vendor deep-link narrows the universe but still loads every
-      // status under that vendor.
-      if (vendorFilterId) params.vendor_id = vendorFilterId;
-
-      const list = await api.get<{ data: Record<string, unknown>[] }>('/products', { params });
-      setProducts(list.data.data.map(apiToCard));
+      const res = await api.get<{ data?: Record<string, unknown>[]; total?: number }>('/products', {
+        params: {
+          ...listParams,
+          supplier: statusTab === 'active' ? 'mapped' : 'zero',
+          sort,
+          page,
+          per_page: pageSize,
+        },
+      });
+      if (token !== listReqRef.current) return;
+      const body = res.data ?? {};
+      setProducts((Array.isArray(body.data) ? body.data : []).map(apiToCard));
+      setTotal(Number(body.total ?? 0) || 0);
     } catch {
+      if (token !== listReqRef.current) return;
       setProducts([]);
+      setTotal(0);
     } finally {
-      setLoading(false);
+      if (token === listReqRef.current) setLoading(false);
     }
-  }, [allowed, vendorFilterId]);
+  }, [allowed, listParams, statusTab, sort, page, pageSize]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  /* Lock the page scroll while the detail popup is open so the list behind
-     it stays put instead of scrolling under the fixed overlay. */
+  const refreshStats = useCallback(async () => {
+    if (!allowed) return;
+    try {
+      const res = await api.get<{ active?: number; inactive?: number }>('/products/stats', { params: listParams });
+      setStats({
+        active:   Number(res.data?.active) || 0,
+        inactive: Number(res.data?.inactive) || 0,
+      });
+    } catch {
+    }
+  }, [allowed, listParams]);
+
+  useEffect(() => { refreshStats(); }, [refreshStats]);
+
+  const reload = useCallback(() => { refresh(); refreshStats(); }, [refresh, refreshStats]);
+
   useEffect(() => {
     if (detailId == null) return;
     const prev = document.body.style.overflow;
@@ -522,192 +463,38 @@ export default function Products() {
     return () => { document.body.style.overflow = prev; };
   }, [detailId]);
 
-  // NOTE: previously there was a separate `requestIdleCallback` preload
-  // here that warmed /products/master-bundle for the Add Product modal.
-  // It was removed because the filter-dropdowns useEffect above already
-  // fetches the same bundle (cache-first + writes sessionStorage on
-  // miss), and the AddProductModal reads from that same cache. Keeping
-  // both effects fired the network request TWICE on first page load —
-  // both effects checked the empty cache, both raced to fetch. Now the
-  // filter effect is the single source of truth that fills the cache.
 
-  /* Everything-except-status filter. Drives both the visible grid
-   * (after we further narrow by the Active/Inactive tab) and the
-   * counts on those two tabs — so applying any sidebar filter (Vendor,
-   * GST, Created Date, etc.) updates both tab numbers, not just the
-   * currently-shown rows. */
-  const filteredAllStatus = useMemo(() => {
+
+  const visible = useMemo(() => {
     let src = products;
-    const lo = q.trim().toLowerCase();
-    if (lo) {
-      src = src.filter(p =>
-        p.name.toLowerCase().includes(lo) ||
-        p.brand.toLowerCase().includes(lo) ||
-        p.genericName.toLowerCase().includes(lo) ||
-        p.segment.toLowerCase().includes(lo) ||
-        p.id.toLowerCase().includes(lo) ||
-        p.hsn.toLowerCase().includes(lo)
-      );
-    }
-    if (segment !== 'All Segments')  src = src.filter(p => p.segment === segment);
-    if (statusFilter !== 'All Status') src = src.filter(p => p.status === statusFilter);
 
-    if (filters.segment.length)  src = src.filter(p => filters.segment.includes(p.segment));
-    if (filters.hsn.length)      src = src.filter(p => filters.hsn.includes(p.hsn));
-    if (filters.hazType.length)  src = src.filter(p => filters.hazType.includes(p.hazClass));
-    if (filters.hazClass.length) src = src.filter(p => filters.hazClass.includes(p.hazClassName));
-    if (filters.uom.length)      src = src.filter(p => filters.uom.includes(p.uom));
-    /* GST filter values arrive as strings ("5%", "18%"); the product's
-       gstRate is a number. Normalize both sides so comparison is
-       strictly on the numeric percent. */
-    if (filters.gstRate.length) {
-      const allowedPcts = new Set(filters.gstRate.map(s => Number(s.replace(/[^\d.]/g, ''))));
-      src = src.filter(p => allowedPcts.has(p.gstRate));
-    }
-    if (filters.condition.length) src = src.filter(p => filters.condition.includes(p.condition));
-    /* Vendor filter checks the list of mapped vendor company names on
-       the product (vendor_maps.vendor_name). Previously this matched
-       against p.brand, which is a free-text brand field unrelated to
-       the mapped-vendor directory — so nothing ever matched. */
-    if (filters.vendor.length) {
-      src = src.filter(p => p.vendors.some(v => filters.vendor.includes(v)));
-    }
     if (filters.scoreRange.length) {
       src = src.filter(p => filters.scoreRange.some(r => {
         const [lo, hi] = r.split('–').map(s => parseFloat(s.trim()));
         return p.rating >= lo && p.rating <= hi;
       }));
     }
-    /* Product Owner — the dropdown values are user IDs (as strings) from
-       /products/owners, and p.ownerId is the row's created_by joined to
-       users on the API. */
-    if (filters.productOwner.length) {
-      const ownerSet = new Set(filters.productOwner);
-      src = src.filter(p => p.ownerId != null && ownerSet.has(String(p.ownerId)));
-    }
-    /* Created Date — inclusive From/To window on the product's created_at
-       timestamp. Empty strings mean unbounded on that side. */
-    if (filters.createdFrom) {
-      const from = new Date(filters.createdFrom + 'T00:00:00').getTime();
-      src = src.filter(p => {
-        const t = Date.parse(p.createdAt);
-        return Number.isFinite(t) && t >= from;
-      });
-    }
-    if (filters.createdTo) {
-      const to = new Date(filters.createdTo + 'T23:59:59').getTime();
-      src = src.filter(p => {
-        const t = Date.parse(p.createdAt);
-        return Number.isFinite(t) && t <= to;
-      });
-    }
-    return src;
-  }, [products, q, segment, statusFilter, filters]);
-
-  /* Tab counts derived from the filter-applied set. The two tabs split
-   * the catalogue by supplier mapping (matches the shared design):
-   *   • "Supplier Mapped Products"  → at least one vendor mapped
-   *   • "Zero Supplier Products"    → no vendor mapped yet
-   * The green/red "Active / Inactive" pills describe each bucket's
-   * procurement readiness, not the product's own status column. */
-  const stats = useMemo(() => ({
-    active:   filteredAllStatus.filter(p => p.vendorCount > 0).length,
-    inactive: filteredAllStatus.filter(p => p.vendorCount === 0).length,
-  }), [filteredAllStatus]);
-
-  const filtered = useMemo(() => {
-    let src = statusTab === 'active'
-      ? filteredAllStatus.filter(p => p.vendorCount > 0)
-      : filteredAllStatus.filter(p => p.vendorCount === 0);
-
-    const sorted = [...src];
-    if (sort === 'price-asc')  sorted.sort((a, b) => a.price - b.price);
-    if (sort === 'price-desc') sorted.sort((a, b) => b.price - a.price);
-    if (sort === 'rating')     sorted.sort((a, b) => b.rating - a.rating);
 
     if (filters.topProducts) {
       const n = parseInt(filters.topProducts.replace(/\D/g, ''), 10);
-      return [...sorted].sort((a, b) => b.rating - a.rating).slice(0, n);
+      src = [...src].sort((a, b) => b.rating - a.rating).slice(0, n);
     }
 
-    return sorted;
-  }, [filteredAllStatus, statusTab, sort, filters.topProducts]);
+    return src;
+  }, [products, filters.scoreRange, filters.topProducts]);
 
-  /* ─── Dynamic pagination ───
-   * Mirrors the Customers / TableContainer behaviour: the page size is
-   * computed to FIT the viewport instead of being a fixed number, so the
-   * card grid (or list) never spills past the bottom of the screen — the
-   * overflow rolls onto the next page. We measure the results container's
-   * top offset, the real card/row height, and (for the grid) how many
-   * columns the CSS auto-fill produced, then pageSize = cols × rows that
-   * fit. Recomputed on resize, view switch, data load, and filter change. */
   const resultsRef = useRef<HTMLDivElement>(null);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(12);
-  /* Auto-fit on by default: the page size is computed to show 2 rows of
-     cards (grid) / a viewport-fit number of rows (list). The moment the
-     user picks an explicit value from the "Rows per page" dropdown we flip
-     this off and respect their choice until the next view switch. */
-  const autoFitRef = useRef(true);
-
-  // Any change to the visible set jumps back to page 1 so the user never
-  // lands on a now-empty trailing page after filtering. Switching view
-  // also re-enables auto-fit (grid and list want different row counts).
-  useEffect(() => { setPage(1); }, [q, segment, statusFilter, statusTab, sort, filters, vendorFilterId, view]);
-  useEffect(() => { autoFitRef.current = true; }, [view]);
 
   useEffect(() => {
-    if (loading) return;
-    const el = resultsRef.current;
-    if (!el) return;
-    const fit = () => {
-      if (!autoFitRef.current) return;
-      // Measure the grid/list region's OWN height — it's a fixed flex body
-      // inside the fixed-height panel (see .prd-panel CSS), exactly like the
-      // My Workplace worksheet measures its scroll wrap's clientHeight. This
-      // is more robust than viewport math: the pager is pinned below, so
-      // whatever height the container has, we fill it with rows that fit and
-      // the overflow rolls onto the next page.
-      const cs = getComputedStyle(el);
-      const padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
-      const avail = el.clientHeight - padY;
-      if (avail <= 0) return;
-      if (view === 'list') {
-        const rowH = (el.querySelector('.prd-row') as HTMLElement | null)?.offsetHeight || 84;
-        const rowGap = parseFloat(cs.rowGap) || 10;
-        const rows = Math.max(4, Math.floor(avail / (rowH + rowGap)));
-        setPageSize(rows);
-      } else {
-        // Show exactly TWO rows of cards. The column count stays dynamic (CSS
-        // auto-fit produces N columns at the current width), so the page size =
-        // cols × 2 and the number of products adjusts automatically as the grid
-        // re-flows on zoom / resize.
-        const cols = Math.max(1, cs.gridTemplateColumns.split(' ').filter(Boolean).length || 4);
-        const rows = 2;
-        setPageSize(cols * rows);
-      }
-    };
-    // ResizeObserver keeps the fit correct as the container resizes (window
-    // resize, brief-box collapse/expand, layout switch) without listening to
-    // window forever. The container height is fixed by flex, so setPageSize
-    // can't feed back into a resize loop.
-    const ro = new ResizeObserver(fit);
-    ro.observe(el);
-    fit();
-    const t = window.setTimeout(fit, 120);
-    return () => { ro.disconnect(); window.clearTimeout(t); };
-  }, [loading, view, filtered.length]);
+    setPage(1);
+  }, [debouncedQ, segment, statusFilter, statusTab, sort, filters, vendorFilterId]);
 
-  const setRowsPerPage = (n: number) => { autoFitRef.current = false; setPageSize(n); setPage(1); };
+  const setRowsPerPage = (n: number) => { setPageSize(n); setPage(1); };
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  // Clamp if the page count shrank below the current page.
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
-  const paged = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, page, pageSize]);
+  const paged = visible;
 
   if (!allowed) {
     return (
@@ -723,13 +510,8 @@ export default function Products() {
     );
   }
 
-  // Refetch from the API after any step is saved. The wizard does its own
-  // POST/PUT for each step AND fires its own step-specific toast
-  // (`Core saved`, `Sales saved`, `Quality saved`, `Product saved`), so
-  // this handler only mirrors server state — no extra toast or the user
-  // sees two stacked notifications for the same action.
   const handleSaved = (_productId: number, _finalised: boolean) => {
-    refresh();
+    reload();
   };
 
   const handleEdit = (p: Product) => {
@@ -737,12 +519,6 @@ export default function Products() {
     setAddOpen(true);
   };
 
-  /* Delete confirmation — mirrors the modal used on Clients and HR
-     Employees. Two-stage flow: click "Delete" in the row action ->
-     opens DeleteConfirmModal -> Confirm -> hits the API. Server-side
-     this is a soft delete (Product uses SoftDeletes), so the row only
-     disappears from the active list and can be restored from the
-     trashed rows later if a recovery flow ever ships. */
   const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -757,7 +533,7 @@ export default function Products() {
       await api.delete(`/products/${deleteTarget.apiId}`);
       toast.success('Deleted', `${deleteTarget.name} moved to deleted state`);
       setDeleteTarget(null);
-      refresh();
+      reload();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Please try again';
       toast.error('Delete failed', msg);
@@ -769,8 +545,6 @@ export default function Products() {
   return (
     <div className="prd-root">
 
-      {/* Header strip — purple "Product Management" hero (ported from the
-          P2P prototype .cstrip design). */}
       <div className="prd-hero">
         <span className="prd-hero-accent" />
         <span className="prd-hero-glow" />
@@ -794,7 +568,6 @@ export default function Products() {
         </button>
       </div>
 
-      {/* WHAT WE ARE DOING HERE — collapsible 5-step guide (ported .bref-box) */}
       <div className={`prd-bref ${brefOpen ? '' : 'is-collapsed'}`}>
         <div className="prd-bref-head" onClick={() => setBrefOpen(o => !o)}>
           <div className="prd-bref-head-ico">
@@ -834,10 +607,7 @@ export default function Products() {
         </div>
       </div>
 
-      {/* Product panel — toolbar + card grid + pagination in ONE container
-          (matches the prototype .pl-panel). */}
       <div className="prd-panel">
-      {/* Toolbar — supplier-mapping tabs + search + Filter (ported .pl-toolbar) */}
       <div className="prd-toolbar">
         <div className="prd-tabs">
           <button
@@ -859,10 +629,6 @@ export default function Products() {
             <span className="prd-tab-badge prd-tab-badge--inactive"><span className="prd-tab-badge-dot" />Inactive<span className="prd-tab-badge-count">{stats.inactive}</span></span>
           </button>
         </div>
-        {/* Groups search + Filter so they can share a row once the toolbar
-            stacks. It is `display: contents` above 640px, so on wider screens
-            it disappears from the layout and the toolbar's original single-row
-            flex is untouched. */}
         <div className="prd-toolbar-find">
         <div className="prd-search">
           <svg className="prd-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
@@ -894,10 +660,6 @@ export default function Products() {
         </div>
       </div>
 
-      {/* Vendor deep-link banner — shown only when the page is
-          filtered to a specific vendor's mapped products. Clearing
-          it pops the query params off the URL and restores the
-          status-tab default list. */}
       {vendorFilterId && (
         <div className="prd-vendor-banner">
           <i className="ri-links-line" />
@@ -917,9 +679,6 @@ export default function Products() {
         </div>
       )}
 
-      {/* Applied filters — every active narrowing in one place, toolbar controls
-          and sidebar panels alike, each individually removable. Only rendered
-          when something is set, so there's no empty gap above the card grid. */}
       {allChips.length > 0 && (
         <div className="prd-meta">
           <span className="prd-meta-label">
@@ -946,7 +705,6 @@ export default function Products() {
         </div>
       )}
 
-      {/* Grid / List view */}
       {loading ? (
         view === 'grid' ? (
           <div className="prd-grid">
@@ -957,7 +715,7 @@ export default function Products() {
             {Array.from({ length: 6 }).map((_, i) => <ProductRowShimmer key={i} />)}
           </div>
         )
-      ) : filtered.length === 0 ? (
+      ) : paged.length === 0 ? (
         <div className="prd-empty">
           <div className="prd-empty-icon">
             <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /></svg>
@@ -996,7 +754,7 @@ export default function Products() {
               />
             ))}
           </div>
-          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
+          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={total} onPage={setPage} onRowsPerPage={setRowsPerPage} />
         </>
       ) : (
         <>
@@ -1014,10 +772,10 @@ export default function Products() {
               />
             ))}
           </div>
-          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={filtered.length} onPage={setPage} onRowsPerPage={setRowsPerPage} />
+          <ProductPagination page={page} totalPages={totalPages} pageSize={pageSize} total={total} onPage={setPage} onRowsPerPage={setRowsPerPage} />
         </>
       )}
-      </div>{/* /prd-panel */}
+      </div>
 
       {addOpen && (
         <AddProductModal
@@ -1036,7 +794,7 @@ export default function Products() {
           <div className="prd-detail-modal">
             <ProductView
               productId={detailId}
-              onClose={() => { setDetailId(null); refresh(); }}
+              onClose={() => { setDetailId(null); reload(); }}
             />
           </div>
         </div>
@@ -1052,12 +810,6 @@ export default function Products() {
         loading={deleting}
       />
 
-      {/* Filter sidebar — slides in from the left.
-          Portalled to <body> so the fixed positioning escapes the
-          page-content stacking context. Without the portal the drawer's
-          z-index loses to Velzon's #page-topbar (z-index 1002) in
-          horizontal layout and outside-clicks on the topbar area never
-          reach the overlay. */}
       {createPortal((
         <>
       <div
@@ -1104,7 +856,6 @@ export default function Products() {
         </div>
 
         {(() => {
-          // Per-category selected count, for the left-rail badges.
           const counts: Record<string, number> = {
             gstRate: filters.gstRate.length, segment: filters.segment.length,
             createdDate: (filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0), hsn: filters.hsn.length,
@@ -1115,14 +866,11 @@ export default function Products() {
           const activeMeta = PANEL_META[activeCategory];
           return (
             <div className="prd-filter-body prd-md">
-              {/* LEFT RAIL — category list. Click switches the right pane. */}
               <div className="prd-md-rail">
                 {CATEGORY_ORDER.map(k => {
                   const m = PANEL_META[k];
                   const c = counts[k] ?? 0;
                   return (
-                    /* Icon-only rail: the category name shows on hover (tooltip)
-                       and again in the detail header once selected. */
                     <Tooltip key={k} label={CATEGORY_LABELS[k]} position="right">
                       <button
                         type="button"
@@ -1140,7 +888,6 @@ export default function Products() {
                 })}
               </div>
 
-              {/* RIGHT PANE — the active category's options. */}
               <div className="prd-md-detail">
                 <div className="prd-md-dhead">
                   <span className="prd-md-dhead-ic" aria-hidden>
@@ -1152,8 +899,6 @@ export default function Products() {
                   </div>
                 </div>
 
-                {/* key={activeCategory} → remounts on switch so the fade-in
-                    animation replays, giving the pane change a soft transition. */}
                 <div className="prd-md-dbody" key={activeCategory}>
                   {activeCategory === 'gstRate' && gstRateOpts.map(v => (
                     <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
@@ -1258,10 +1003,6 @@ export default function Products() {
           );
         })()}
 
-        {/* prd-fbtn, NOT prd-filter-btn: that class belongs to the animated
-            "Filter" trigger pill, whose ::before glow and ::after shine-sweep
-            were bleeding onto these footer buttons — a shine animation running
-            across a white Reset button. */}
         <div className="prd-filter-footer">
           <button className="prd-fbtn ghost" onClick={resetFilters}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
@@ -1279,14 +1020,6 @@ export default function Products() {
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Sidebar helper components
- * ════════════════════════════════════════════════════════════════════════ */
-/* Per-section icon + one-line hint + a category TONE (soft bg / glyph / solid),
-   keyed by panelKey so the 13 call sites stay untouched. The tone colour-codes
-   each filter — icon chip, open-accent, header tint and count pill all pick it
-   up — so categories are recognisable at a glance (Stripe-style). Each `path`
-   is the inner geometry of a 24×24 line icon. */
 const PANEL_META: Record<string, { sub: string; bg: string; fg: string; solid: string; path: ReactNode }> = {
   gstRate:      { sub: 'Select GST rate',        bg: '#d1fae5', fg: '#059669', solid: '#10b981', path: <><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></> },
   segment:      { sub: 'Choose segment',         bg: '#fef3c7', fg: '#d97706', solid: '#f59e0b', path: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></> },
@@ -1303,70 +1036,14 @@ const PANEL_META: Record<string, { sub: string; bg: string; fg: string; solid: s
   inwardCount:  { sub: 'Filter by inward count', bg: '#ffedd5', fg: '#ea580c', solid: '#f97316', path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></> },
 };
 
-/* Master-detail filter: left-rail order + display labels (the right pane's
-   options come from the JSX per activeCategory). */
 const CATEGORY_ORDER = ['gstRate', 'segment', 'createdDate', 'hsn', 'hazType', 'hazClass', 'uom', 'condition', 'vendor', 'scoreRange', 'topProducts', 'productOwner', 'inwardCount'] as const;
-/* Rail labels — concise so they fit on one line (the full context is always in
-   the detail header's title + subtitle). */
 const CATEGORY_LABELS: Record<string, string> = {
   gstRate: 'GST Rate', segment: 'Segment', createdDate: 'Creation Date', hsn: 'HSN / SAC',
   hazType: 'Hazard Type', hazClass: 'Haz Class', uom: 'Unit (UOM)', condition: 'Condition',
   vendor: 'Supplier', scoreRange: 'Score Range', topProducts: 'Top Products', productOwner: 'Owner', inwardCount: 'Inward Count',
 };
 
-function FilterPanel(props: {
-  label: string;
-  panelKey: string;
-  open: boolean;
-  count: number;
-  onToggle: (k: string) => void;
-  children: ReactNode;
-}) {
-  const { label, panelKey, open, count, onToggle, children } = props;
-  const meta = PANEL_META[panelKey] ?? { sub: '', bg: '#f1ebfb', fg: '#7c3aed', solid: '#7c3aed', path: null };
-  const toneVars = { '--fpc-bg': meta.bg, '--fpc-fg': meta.fg, '--fpc-solid': meta.solid } as CSSProperties;
-  return (
-    <div className={`prd-filter-panel ${open ? 'open' : ''}`} style={toneVars}>
-      <button className="prd-filter-panel-head" onClick={() => onToggle(panelKey)}>
-        <span className="prd-fp-icon" aria-hidden>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{meta.path}</svg>
-        </span>
-        <span className="prd-fp-titles">
-          <span className="prd-filter-panel-label">{label}</span>
-          {meta.sub && <span className="prd-fp-sub">{meta.sub}</span>}
-        </span>
-        <span className="prd-filter-panel-right">
-          {count > 0 && <span className="prd-filter-panel-count">{count} Selected</span>}
-          <svg
-            className="prd-filter-chevron"
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </span>
-      </button>
-      {/* Body ALWAYS rendered — the grid-rows 0fr→1fr transition gives a smooth
-          expand/collapse without JS height measuring. */}
-      <div className="prd-fp-collapse" data-open={open ? '1' : '0'}>
-        <div className="prd-fp-collapse-inner">
-          <div className="prd-filter-panel-body">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void }) {
-  /* Long option labels (a stray "Travel & Luggagewwww…" segment) used to wrap
-     over two lines and break the row. Truncate to one line; the full value is on
-     the hover tooltip. */
   const long = props.label.length > 28;
   const span = <span className="prd-filter-row-txt">{props.label}</span>;
   return (
@@ -1377,15 +1054,8 @@ function CheckRow(props: { label: string; checked: boolean; onChange: () => void
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Pagination footer
- *
- * Mirrors the Sales Lead Worksheet pager (Showing X–Y of Z · Rows per page ·
- * page / total pill · circular prev/next arrows), tinted to the Products
- * page's violet palette. Lives as a footer band inside the same card as the
- * grid / list, so list + pagination read as one container.
- * ════════════════════════════════════════════════════════════════════════ */
 const ROWS_PER_PAGE_OPTIONS = [8, 12, 16, 24, 48];
+const DEFAULT_PAGE_SIZE = 12;
 
 function ProductPagination(props: {
   page: number; totalPages: number; pageSize: number; total: number;
@@ -1427,17 +1097,12 @@ function ProductPagination(props: {
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Product Card (Amazon / Flipkart style)
- * ════════════════════════════════════════════════════════════════════════ */
 function ProductCard(props: {
   product: Product;
   onAction: (label: string) => void;
 }) {
   const { product, onAction } = props;
-  // Show the primary image; drop to the tinted-icon fallback if it 404s.
   const [imgOk, setImgOk] = useState(true);
-  // Segment badge colour sampled from the product image (falls back to --acc).
   const [segColor, setSegColor] = useState<string | null>(null);
   const accent = PRODUCT_ACCENTS[product.apiId % PRODUCT_ACCENTS.length];
   const img = product.images[0] || '';
@@ -1457,9 +1122,6 @@ function ProductCard(props: {
         )}
         <span className="prd-pcard-thumb-grad" />
         {(() => {
-          /* A long segment name used to render in full over the thumbnail and
-             cover the whole image ("FLOWER FLOWER FLOWER…"). Cap at 30 chars
-             with an ellipsis; the full name is on the hover tooltip. */
           const seg = product.segment ?? '';
           const short = seg.length > 30 ? `${seg.slice(0, 30)}…` : seg;
           const badge = (
@@ -1525,7 +1187,6 @@ function ProductCard(props: {
   );
 }
 
-/* ─── List view row ─── */
 function ProductRow(props: {
   product: Product;
   onAction: (label: string) => void;
@@ -1575,8 +1236,6 @@ function ProductRow(props: {
         </div>
       </div>
       <div className="prd-row-status">
-        {/* Status pill intentionally hidden — the status tabs at the top
-            already segment Active vs Inactive, no need to repeat it here. */}
       </div>
       <div className="prd-row-price">
         <div className="prd-card-price-label">Selling Price</div>
@@ -1595,10 +1254,6 @@ function ProductRow(props: {
   );
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
- * Shimmer placeholders — matches card / row geometry so the loading state
- * doesn't shift the layout when the real data lands.
- * ════════════════════════════════════════════════════════════════════════ */
 function ProductCardShimmer() {
   return (
     <div className="prd-card prd-card-shimmer">
@@ -1635,7 +1290,3 @@ function ProductRowShimmer() {
     </div>
   );
 }
-
-/* ════════════════════════════════════════════════════════════════════════════
- * Scoped CSS
- * ════════════════════════════════════════════════════════════════════════ */
