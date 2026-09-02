@@ -11,7 +11,10 @@ import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } fro
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
-import { SegmentRefUploadPopup, SCOPED_CSS as AVM_SCOPED_CSS } from './AddVendorModal';
+/* AddVendorModal's styles are no longer a string this file can inject — they
+   are a real stylesheet that module imports, so importing SegmentRefUploadPopup
+   from it already pulls them in. */
+import { SegmentRefUploadPopup } from './AddVendorModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
 
 /* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
@@ -1416,7 +1419,6 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     <div className="cev-row-actions">
       {reupOpen && (isStdCat ? (
         <>
-          <style>{AVM_SCOPED_CSS}</style>
           {/* The vault modal sits at z-index 11400; lift the reused popup's
               backdrop above it so it opens ON TOP, not behind the vault — and the
               date-picker calendar (default 11100) above the popup.

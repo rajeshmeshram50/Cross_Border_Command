@@ -28,29 +28,13 @@ import {
   writeVendorMasterBundle,
   bustVendorMasterBundle,
 } from './vendorBundleCache';
+import './add-vendor-modal.css';
 
-/* Vendor-specific contact number rule — 6 to 15 digits, numerics only.
- * Stricter than the shared `validatePhoneGeneric` (which permits +, spaces,
- * parens, hyphens) because the vendor module wants a clean digit string
- * for WhatsApp / SMS automations downstream.
- * When `isIndia` is set (country = India), the rule tightens to a valid
- * 10-digit Indian mobile number (starts 6-9) — the +91 code is shown as a
- * fixed prefix in the UI and is NOT part of the stored value. */
 function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
   const v = (value ?? '').trim();
   if (!v) return '';
   if (!/^\d+$/.test(v))           return `${label} must contain digits only (no spaces, +, or punctuation)`;
   if (isIndia) {
-    /* Say WHICH rule failed (QA #100).
-     *
-     * This used to answer every failure with "must be a valid 10-digit mobile
-     * number (after +91)". For 1234568769 that reads as a bug rather than a
-     * rejection: the number IS ten digits, so the message appears to describe
-     * something the user has already done. The real problem is the leading 1 —
-     * TRAI allocates Indian mobile series 6, 7, 8 and 9 only, so a number
-     * starting 0-5 is not a mobile number however many digits it has.
-     * Length and prefix are now reported separately, so the message always
-     * names the thing that is actually wrong. */
     if (v.length !== 10)          return `${label} must be exactly 10 digits (after +91) — you entered ${v.length}`;
     if (!/^[6-9]/.test(v))        return `${label} must start with 6, 7, 8 or 9 — Indian mobile numbers do not begin with ${v[0]}`;
     return '';
@@ -59,15 +43,8 @@ function validateContactNumber(value: string, label = 'Contact No', isIndia = fa
   return '';
 }
 
-/* Strip any non-digit character from a contact-number input as the user
- * types, so the field is impossible to populate with letters or symbols.
- * `max` caps the length — 10 for India (post +91), 15 otherwise. */
 const digitsOnly = (raw: string, max = 15): string => (raw || '').replace(/\D/g, '').slice(0, max);
 
-/* Contact-number input. For India it renders a fixed +91 prefix addon and
- * limits entry to a 10-digit mobile; for every other country it keeps the
- * original free 15-digit field. Shared by the primary-contact card and the
- * Add-Contact popup so both enforce the same rule. */
 function ContactNoInput(props: {
   value: string;
   onChange: (next: string) => void;
@@ -106,107 +83,59 @@ function ContactNoInput(props: {
   );
 }
 
-/* ────────────────────────────────────────────────────────────────────────────
- * Add Vendor — 4-step wizard
- *
- * Step 1: Vendor Legal Identity (Company, GST, PAN & contact)
- *   • Vendor Identification — basic company details
- *   • Address & Contact Persons — registered office + extra contacts
- *
- * Step 2: Vendor KYC / Due Diligence (Docs, identity & compliance)
- *   • Company Due Diligence — incorporation, MOA/AOA, financials
- *   • Owner KYC Details — PAN/Aadhaar/passport of directors
- *   • Trade License Details — IEC, FSSAI, agmark etc.
- *   • Vendor Bank Details — bank + UPI + cancelled cheque
- *   • GST Scrutiny — GST profile + filing status
- *
- * Step 3: Trade Document Management
- *   • KYC / Due Diligence Documents — Owner KYC, Company DD, Trade License
- *   • Trade Documents — quotations, contracts, agreements
- *
- * Step 4: Map Products — links the vendor to one or more products with pricing
- *
- * Front-end only; submit fires onSubmit(payload). No API calls yet.
- * ──────────────────────────────────────────────────────────────────────── */
-
 export type VendorPayload = {
-  // Identity
   companyName: string;
   legalName: string;
   vendorType: string;
   website: string;
-  /* GST is captured once here on Stage 1 and flows read-only into every GST
-   * Scrutiny entry (Step 2) — mirrors the Customer master. gstNumber is only
-   * meaningful when gstApplicable is 'Yes'. */
   gstApplicable: 'Yes' | 'No';
   gstNumber: string;
   riskLevel: string;
   vendorBehaviour: string;
   segment: string;
   complianceBehaviour: string;
-  // Address
   registeredOffice: string;
   country: string;
   state: string;
   stateCode: string;
   city: string;
   pincode: string;
-  /** Google Maps link for the premises — domestic and international alike. */
   googleLocation: string;
-  // Primary contact
   contactName: string;
   designation: string;
   contactNo: string;
   email: string;
   whatsappEnabled: boolean;
-  // Step 2 — KYC / Due Diligence collections
   dueDiligence: DueDiligenceRow[];
   ownerKyc: OwnerKycRow[];
   tradeLicenses: TradeLicenseRow[];
   bankAccounts: BankRow[];
   gstScrutiny: GstScrutinyRow[];
-  // Step 3 — Trade Documents (preset doc types with signature workflow)
   tradeDocuments: TradeDocRow[];
-  // Step 4 — product mappings with pricing
   productMappings: ProductMappingRow[];
-  // Step 4 — derived list of mapped product codes (kept for backward-compat
-  // with the Vendors list page which only needs codes today)
   mappedProductCodes: string[];
 };
 
-/* ─── Step 2 row shapes ─────────────────────────────────────────────
- * Each Step-2 tab maintains a list of rows the user adds via its
- * "+ Add …" modal. `file` carries the actual File for upload once a
- * backend lands; `fileName` is what we render in the table today. */
-/* `existingPath` is set when the row came back from /vendors/{id} on
- * edit-mode prefill — it carries the server-side storage path so the
- * KYC re-save can ship `existing_path` to the controller and skip the
- * file upload when the user didn't replace it. Picking a new file
- * clears it via the FileChooser's onPick handler. */
 export type DueDiligenceRow = {
   id: string;
-  code: string;              // DD-001, DD-002, …
+  code: string;              
   documentName: string;
   issuingAuthority: string;
-  expiry: string;            // 'N/A' | 'MM/YYYY'
+  expiry: string;            
   mandatory: boolean;
   file: File | null;
   fileName: string;
   existingPath?: string;
-  /** Pre-resolved URL from the backend (via file_url(), matches the URL
-   *  scheme used for client/branch profile photos). Prefer this over
-   *  composing a URL from existingPath — it understands Azure Blob
-   *  Storage where Storage::url() is the authoritative builder. */
   existingUrl?: string;
 };
 
 export type OwnerKycRow = {
   id: string;
-  code: string;              // KYC-001, KYC-002, …
+  code: string;              
   documentName: string;
   issuingAuthority: string;
   documentNumber: string;
-  issueDate: string;         // dd/mm/yyyy
+  issueDate: string;         
   expiry: string;
   status: 'Active' | 'Inactive';
   file: File | null;
@@ -217,8 +146,8 @@ export type OwnerKycRow = {
 
 export type TradeLicenseRow = {
   id: string;
-  code: string;              // TL-001, TL-002, …
-  licenseType: string;       // label from license_name master (or free text)
+  code: string;              
+  licenseType: string;       
   licenseNumber: string;
   issuingAuthority: string;
   issueDate: string;
@@ -246,21 +175,15 @@ export type GstScrutinyRow = {
   id: string;
   gstNumber: string;
   status: 'Active' | 'Inactive';
-  scrutinyDate?: string;   // server-set creation date (Figma "Scrutiny Date")
+  scrutinyDate?: string;   
   lastFilingDate: string;
   prevNonGst2aInvoice: string;
   redFlags: string;
 };
 
-/* Step 3 — Trade Documents (signature workflow on a preset list).
- * `db_id` is the clm_trade_doc_library.id used by the Zoho-Sign send
- * modal; null for rows that came from the legacy SEED_TRADE_DOCS
- * fallback (those can't be sent since they don't map to a library
- * draft). `signedUrl` and `signatureRequestId` are set by the polling
- * loop once the live signature status is fetched. */
 export type TradeDocRow = {
-  code: string;             // TD-001, TD-002, …
-  name: string;             // 'Vendor / Supplier Agreement'
+  code: string;             
+  name: string;             
   db_id: number | null;
   sendForSignature: boolean;
   status: 'N/A' | 'Sent' | 'Signed' | 'inprogress' | 'completed' | 'declined' | 'recalled' | 'expired';
@@ -268,26 +191,15 @@ export type TradeDocRow = {
   attachmentName: string;
   signatureRequestId?: number;
   signedUrl?: string;
-  /* Zoho Sign completion-certificate URL — populated by the polling
-   * effect from clm_signature_requests.certificate_path on completed
-   * rows. Drives the third action-column button. */
   certificateUrl?: string;
-  /* Set by the parent right before rendering — true when this row's
-   * signatureRequestId is inside the active 60-second Resend cooldown.
-   * The button locks so a multi-doc bundle can't fire one reminder
-   * email per doc. */
   cooldownActive?: boolean;
-  /* Reminder counter + last-sent timestamp from clm_signature_requests.
-   * Drives the "× N" badge on the Resend button so the user can see at
-   * a glance how many times the recipient has already been nudged. */
   reminder_count?: number;
   last_reminder_sent_at?: string | null;
 };
 
-/* Step 4 — product-vendor mapping rows with pricing. */
 export type ProductMappingRow = {
   id: string;
-  productId: number | null;     // FK to products.id (when picked from API)
+  productId: number | null;     
   productCode: string;
   productName: string;
   hsnSacCode: string;
@@ -299,53 +211,26 @@ export type ProductMappingRow = {
   totalAmount: number;
 };
 
-/* Trade Document Management (the former Step 3, an Evidence Vault) was
- * removed from the supplier form — those uploads now live in the standalone
- * Evidence Vault popup. The wizard is now Identity → KYC → Map Products. */
 type StepKey = 1 | 2 | 3;
 type IdTab = 'identification' | 'address';
 type KycTab = 'company' | 'owner' | 'license' | 'bank' | 'gst';
 
-/* Forward order of the Step 2 sub-tabs — drives "Save & Next" pagination
- * so the user walks Company DD → Owner KYC → Trade License → Bank → GST
- * before advancing to Step 3. Clicking any pill in the header still
- * jumps freely; this only controls what the footer button does. */
 const KYC_TAB_ORDER: KycTab[] = ['company', 'owner', 'license', 'bank', 'gst'];
 
-/* Forward order of the Step 3 → KYC sub-pills. Save & Next walks
- * Owner KYC → Company Due Diligence → Trade License, then flips the
- * Step 3 top tab to "Trade Documents", then advances to Step 4. */
 const KYC_SUB_ORDER: KycSubTab[] = ['owner', 'company', 'license'];
 type TradeTab = 'kyc' | 'trade';
 type KycSubTab = 'owner' | 'company' | 'license';
 
-/* Classification dropdowns (Vendor Type, Risk Level, Vendor Behaviour,
- * Segment, Compliance Behaviour, Country, State) are all loaded from
- * their masters via the API loader effect inside the component.
- * Each dropdown's value is the master row's id — see the schema on
- * vendors.vendor_type_id / risk_level_id / segment_id etc. */
-
-/* ─── Step 2 seed rows ─────────────────────────────────────────────
- * Both DD and Trade License now start empty — the user adds every
- * row via the "+ Add …" modal. The previous seeded "Certificate of
- * Incorporation" / "IEC" rows were misleading on imports where those
- * docs aren't applicable, and forced an extra delete click anyway. */
 const SEED_DD: DueDiligenceRow[] = [];
 
 const SEED_TRADE_LICENSE: TradeLicenseRow[] = [];
 
-/* Supplier Type is a FIXED vocabulary (not the shared customer/consignee
- * types). The form sends the chosen name; the backend resolves it to a
- * master_vendor_types row (find-or-create) so the vendor_type_id FK stays
- * valid — new names auto-create their master row on first save. */
 const SUPPLIER_TYPE_OPTS: { value: string; label: string }[] = [
   { value: 'Material / Goods',  label: 'Material / Goods' },
   { value: 'Services',          label: 'Services' },
   { value: 'FFD / Transporter', label: 'FFD / Transporter' },
 ];
 
-/* Step 2 KYC sub-tab → section-header title + subtitle (mirrors the Figma,
- * where the heading changes to the active sub-tab's name). */
 const KYC_TAB_TITLE: Record<string, string> = {
   company: 'Company Due Diligence',
   owner:   'Owner KYC',
@@ -361,28 +246,10 @@ const KYC_TAB_SUB: Record<string, string> = {
   gst:     'GST registration & compliance checks',
 };
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Component
- * ────────────────────────────────────────────────────────────────────── */
 export default function AddVendorModal(props: {
-  /** Existing vendor id to edit; omit or pass null to create a new one. */
   vendorId?: number | null;
-  /** Optional step to land on when the modal opens — used by row
-   *  actions like "Map Products" that want to drop the user
-   *  straight onto Step 4 instead of replaying Step 1. Ignored in
-   *  create mode (no vendorId) so we never skip past required setup. */
   initialStep?: StepKey;
-  /** Which scope the user picked in SupplierScopeGate before this opened.
-   *  Create mode only — in edit mode the supplier's country already says
-   *  which it is, so the gate is skipped and this arrives undefined.
-   *  Step 2 of this work reads it to decide what Country may offer:
-   *  domestic → India only, international → every country except India. */
   scope?: 'domestic' | 'international';
-  /** Supplier code the opener already has on screen (the list row's own
-   *  `S-002`). Purely so the header can read "Edit Supplier — S-002" from the
-   *  FIRST frame: the code otherwise arrives with the /vendors/{id} response,
-   *  so the title rewrote itself mid-load and the whole header jumped. The
-   *  fetched value still overwrites this once it lands. */
   vendorCodeHint?: string | null;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
@@ -392,17 +259,13 @@ export default function AddVendorModal(props: {
   const confirm = useConfirm();
   const isEdit = !!initialVendorId;
 
-  /* ─── Wizard navigation ─── */
   const [step, setStep] = useState<StepKey>(isEdit && initialStep ? initialStep : 1);
   const [idTab,    setIdTab]    = useState<IdTab>('identification');
   const [kycTab,   setKycTab]   = useState<KycTab>('company');
   const [tradeTab, setTradeTab] = useState<TradeTab>('kyc');
   const [kycSub,   setKycSub]   = useState<KycSubTab>('owner');
-  // Collapsed by default — the user expands "What you did in previous stages"
-  // only when they want to review it.
   const [prevOpen, setPrevOpen] = useState(false);
 
-  /* ─── Master option lists (fetched once on mount) ─── */
   type Opt = { value: string; label: string };
   const [vendorTypeOpts, setVendorTypeOpts]     = useState<Opt[]>([]);
   const [riskLevelOpts,  setRiskLevelOpts]      = useState<Opt[]>([]);
@@ -411,20 +274,11 @@ export default function AddVendorModal(props: {
   const [classificationOpts, setClassificationOpts] = useState<Opt[]>([]);
   const [behaviourOpts,  setBehaviourOpts]      = useState<Opt[]>([]);
   const [countryOpts,    setCountryOpts]        = useState<Opt[]>([]);
-  /* master_states drives the State dropdown — full per-country list
-     (1800+ rows across 90+ countries). Loaded once on mount and
-     cascaded off the selected Country via the `country_id` field. */
   const [stateRows, setStateRows] = useState<Array<{
     id: string;
     name: string;
     country_id: string;
   }>>([]);
-  /* master_state_codes — only used for the State Code auto-fill once
-     a state is picked. Most countries have no entries here (it was
-     seeded for India only at boot); the State dropdown must not be
-     gated by it or non-Indian countries would show zero options.
-     Each row carries `state_id` (the FK into master_states) and
-     `state_code` (the value we auto-fill into the State Code field). */
   const [stateCodeRows, setStateCodeRows] = useState<Array<{
     id: string;
     state_id: string;
@@ -432,11 +286,7 @@ export default function AddVendorModal(props: {
     state_name: string;
     country_id: string;
   }>>([]);
-  /* The State dropdown is now declared further down (after `country`
-     is in scope) so it can cascade off the selected country. See
-     `stateOpts` below the country/state useState block. */
 
-  /* ─── Per-field validation errors keyed by field name ─── */
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const clearFieldError = (k: string) => {
     setFieldErrors(prev => {
@@ -447,15 +297,7 @@ export default function AddVendorModal(props: {
     });
   };
 
-  /* Company Name / Company Legal Name input sanitiser. Strip XSS angle
-   * brackets and SQL-injection signatures before they reach state, then
-   * enforce a name whitelist (letters, digits, spaces, and the few
-   * punctuation marks real company names use: . , - ( ) & / ' %). 100-char
-   * cap matches the backend column. Inline error surfaces when a paste
-   * lands disallowed input so the user knows what was stripped. */
   const COMPANY_NAME_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
-  // \p{L}/\p{N} (u flag) keep non-Latin / Unicode names (e.g. 中文, العربية,
-  // देवनागरी) — only strip markup / symbol-soup, not legitimate scripts.
   const COMPANY_NAME_INVALID_RE = /[^\p{L}\p{N}\s\-.,()&/'%]/gu;
   const COMPANY_NAME_MAX = 100;
   const handleCompanyNameChange = (
@@ -481,11 +323,6 @@ export default function AddVendorModal(props: {
     setFieldErrors(prev => ({ ...prev, [fieldKey]: msg }));
   };
 
-  /* Generic sanitised-change wrapper. Pipes the raw keystroke through
-   * the supplied sanitiser, writes the cleaned value back to state, and
-   * surfaces / clears the inline error on the matching Field. Lets the
-   * Registered Office / City / Contact Person / Designation inputs all
-   * share one bind-site without each growing their own handler. */
   const applySanitizer = (
     raw: string,
     fieldKey: string,
@@ -498,17 +335,9 @@ export default function AddVendorModal(props: {
     else clearFieldError(fieldKey);
   };
 
-  /* ─── Master Quick-Add state (matches the Add Product wizard pattern) ─── */
   const [quickAdd, setQuickAdd] = useState<VendorMasterSlug | null>(null);
 
-  /* Segment "+" opens the REAL CLM "Add New Segment" form (auto SG- code,
-   * regulatory status, customer≠consignee rule) instead of the bare master
-   * quick-add. We fetch current segments first so the previewed code + the
-   * duplicate-name guard are accurate. */
   const [segAdd, setSegAdd] = useState<{ nextCode: string; names: string[] } | null>(null);
-  /* Opening the Segment quick-add needs a /clm/segments round-trip first (to
-   * allocate the next code). Drive a spinner on the "+" button so the user sees
-   * it's loading and doesn't click again. */
   const [segAddLoading, setSegAddLoading] = useState(false);
   const openSegmentAdd = async () => {
     if (segAddLoading) return;
@@ -524,82 +353,32 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* Persisted vendor id — null until the first step (Identity) is saved.
-     Every subsequent step PUT/POST targets /vendors/{vendorId}/step/… so
-     the wizard treats this as required after Step 1 advances. When the
-     caller passes a vendorId prop (edit mode), it's pre-set here and a
-     load-effect fetches the existing data to prefill the form. */
   const [vendorId, setVendorId] = useState<number | null>(initialVendorId ?? null);
-  /* Vendor code surfaced in the carried-over header on later steps.
-     Populated from /vendors/{id} on edit-mode load; new vendors get
-     their code only after Step 1 saves, so it stays blank until then. */
-  /* Seeded from the opener's hint so the header title is complete on the very
-     first paint; the /vendors/{id} response replaces it with the stored code. */
   const [vendorCode, setVendorCode] = useState<string>(vendorCodeHint ?? '');
   const [saving,   setSaving]   = useState(false);
-  /* True while advancing to the next tab/step (Save & Next). Drives a
-     page-level shimmer so it's clear the next step is loading — the button
-     spinner alone wasn't obvious enough. */
   const [advancing, setAdvancing] = useState(false);
   const [loadingEdit, setLoadingEdit] = useState(isEdit);
-  /* True until the bundled master fetch (/vendors/master-bundle) resolves.
-   * While true, the modal body shows a shimmer skeleton so the user sees
-   * structure instead of empty dropdowns — important because the bundle
-   * pulls 1800+ states rows on cold load. Hits 0ms when the sessionStorage
-   * cache is fresh (see vendorBundleCache). */
   const [mastersLoading, setMastersLoading] = useState<boolean>(true);
 
-  /* ─── Step 1: Identification ─── */
   const [companyName, setCompanyName] = useState('');
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
   const [website,     setWebsite]     = useState('');
-  /* GST Applicable defaults to 'No' so a supplier that isn't GST-registered
-   * needs no extra clicks; picking 'Yes' reveals the GST Number field, whose
-   * value the GST Scrutiny popup then renders read-only. */
   const [gstApplicable, setGstApplicable] = useState<'Yes' | 'No'>('No');
   const [gstNumber,     setGstNumber]     = useState('');
-  /* GST Scrutiny only exists for a GST-registered supplier — with GST Applicable
-   * = 'No' there is no GSTIN to report on, so the Step-2 tab is dropped entirely
-   * and Bank Details becomes the last sub-tab. Save & Next / Previous / the
-   * "last tab?" footer check all walk THIS list, not the static KYC_TAB_ORDER,
-   * so navigation can never land on the hidden tab. */
   const kycTabOrder = useMemo(
     () => (gstApplicable === 'Yes' ? KYC_TAB_ORDER : KYC_TAB_ORDER.filter(t => t !== 'gst')),
     [gstApplicable],
   );
   const [riskLevel,   setRiskLevel]   = useState('');
   const [vendorBehaviour, setVendorBehaviour] = useState('');
-  /* Segment is multi-valued — array of segment ids (as strings) so a
-   * supplier can be tagged with several segments and the segment-rule
-   * resolver unions all their KYC/DD/TL/TD/QC docs into Step 2/3. The
-   * legacy `segment_id` column is scalar, so on save we send the first
-   * id as `segment_id` and the joined list as `segment_ids`. */
   const [segment,     setSegment]     = useState<string[]>([]);
-  // Segment IDS locked against removal because a product on an issued Purchase
-  // Order belongs to them (server-driven, per-segment).
   const [lockedSegments, setLockedSegments] = useState<string[]>([]);
-  /* WHY each locked segment is locked, keyed by segment ID: 'po' = its product
-     is on an issued PO / Supplier Invoice, 'product' = a product in it is merely
-     mapped to this supplier. The removal guard names the real blocker instead
-     of blaming a PO that may not exist (QA #94). */
   const [lockedSegmentReasons, setLockedSegmentReasons] = useState<Record<string, string>>({});
-  /* The segment set as the SERVER last knew it. When a save is refused because
-     a removed segment owns an uploaded document, the chip has already gone from
-     the picker — leaving the form showing a removal that did not happen. This
-     puts it back, so what is on screen matches what is stored. */
   const savedSegmentRef = useRef<string[]>([]);
-  // Server-provided data for the unique-document removal guard (condition 2):
-  // required doc keys (category|code) per segment ID, and the keys uploaded.
   const [segReqKeys, setSegReqKeys] = useState<Record<string, string[]>>({});
   const [uploadedKeys, setUploadedKeys] = useState<string[]>([]);
-  /* Segments carrying a Document Control Panel rule. The rest stay listed but
-   * disabled — a rule-less segment maps to no KYC/DD/TL documents, so tagging
-   * a supplier with it leaves Step 2 empty. The modal only mounts while open,
-   * so the fetch is gated on `true`. */
   const { ruledIds: ruledSegIds, typesById: segTypesById, loaded: segRulesLoaded } = useRuledSegments(true);
-  /* Segment ids whose "+2" badge has been clicked open — those show the
-   * individual Intl + Dom badges instead of the collapsed +2. */
   const [expandedSegBadges, setExpandedSegBadges] = useState<Set<string>>(new Set());
   const toggleSegBadge = (id: string) => setExpandedSegBadges(prev => {
     const next = new Set(prev);
@@ -607,47 +386,20 @@ export default function AddVendorModal(props: {
     return next;
   });
   const [complianceBehaviour, setComplianceBehaviour] = useState('');
-  /* Classification & Flags — FK to the shared classification master
-   * (master_customer_classifications). Holds the selected id; options come
-   * from the master bundle and the value persists as vendors.classification_id. */
   const [classificationId, setClassificationId] = useState('');
 
-  /* Segment-rule template — resolved KYC/DD/TL/TD/QC master rows for the
-   * currently-selected supplier segment. Renders as a reference banner
-   * above the Step 2 Company DD and Trade License tables so onboarders
-   * see the segment's required uploads at a glance. Stays empty when no
-   * segment is picked or the segment has no rule configured. */
   type SegDocRow = { id:number; code:string; name:string; authority?:string|null; authority_list?:string[]|null; expiry?:string|null; status?:string; requirement:'M'|'O' };
   type SegmentDocs = { kyc: SegDocRow[]; dd: SegDocRow[]; tl: SegDocRow[]; td: SegDocRow[]; qc: SegDocRow[] };
   const EMPTY_SEG_DOCS: SegmentDocs = { kyc:[], dd:[], tl:[], td:[], qc:[] };
   const [segmentDocs, setSegmentDocs] = useState<SegmentDocs>(EMPTY_SEG_DOCS);
 
-  /* Maps each selected segment id → the upload keys (`company::dd`,
-   * `owner::kyc`, `license::tl`) its segment rules require. Used to work out
-   * WHICH segments actually have a document uploaded (segmentRefUploads), so
-   * only those get locked from removal — the rest, and adding new segments,
-   * stay free. Built by the segment-rules effect below. */
   const [segmentDocKeys, setSegmentDocKeys] = useState<Record<string, string[]>>({});
 
-  /* Per-row file uploads against the segment-rule reference rows in
-   * Step 2 (Company DD / Owner KYC / Trade License). Key:
-   * `${kycTab}::${doc.code}`. Value: File + blob URL. Reset on modal
-   * close — held at this level (not inside SupplierSegmentRefTable)
-   * so switching sub-tabs doesn't drop uploads. */
   type SegRefUpload = { file: File | null; url: string; name: string; expiry?: string };
   const [segmentRefUploads, setSegmentRefUploads] = useState<Record<string, SegRefUpload>>({});
 
-  /* Stash for the segment_uploads array that now arrives bundled with
-   * the /vendors/{id} response. Hydrated into segmentRefUploads by an
-   * effect declared AFTER the segment-rules useEffect, so the wipe
-   * inside segment-rules runs first and doesn't nuke our entries.
-   * See the comment in the main hydration block for the race rationale. */
   const [bundledSegUploads, setBundledSegUploads] = useState<any[] | null>(null);
 
-  /* Persist a segment-rule reference upload so it lands in
-   * segment_doc_uploads (where the Evidence Vault reads from). The
-   * three vendor KYC sub-tabs map directly onto the three categories:
-   *   company → dd, owner → kyc, license → tl. */
   const SUB_TO_CAT_V: Record<string, 'kyc' | 'dd' | 'tl'> = {
     company: 'dd',
     owner:   'kyc',
@@ -656,10 +408,6 @@ export default function AddVendorModal(props: {
   const persistSegmentRefUpload = async (refKey: string, file: File, docName: string, expiryDate?: string) => {
     const ownerId = vendorId || initialVendorId || null;
     if (!ownerId) {
-      // Vendor row needs to exist before /segment-uploads/supplier/{id} can
-      // write. Said out loud rather than returning quietly: the row already
-      // shows the file by this point, so a silent return leaves the user
-      // looking at an upload that was never sent anywhere.
       toast.error(
         'Save Step 1 first',
         'The supplier has to exist before documents can be attached to it. Save Supplier Legal Identity, then upload.',
@@ -693,13 +441,6 @@ export default function AddVendorModal(props: {
         });
       }
     } catch (e: any) {
-      /* This used to swallow the error and keep the blob URL, so the row went
-         on showing the file while segment_doc_uploads had never received it —
-         which is exactly why an upload made here could be missing from the
-         Evidence Vault later with no sign anything had gone wrong. The vault
-         reads the table, not this component's state.
-         Now the reason is shown and the optimistic row is thrown away, so what
-         is on screen and what is stored agree again. */
       const status = e?.response?.status;
       const body   = e?.response?.data;
       const detail = body?.errors
@@ -722,15 +463,11 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* ─── Step 1: Address + primary contact ─── */
   const [addressType, setAddressType] = useState('Registered Office');
   const [registeredOffice, setRegisteredOffice] = useState('');
   const [country,   setCountry]   = useState('');
   const [state,     setState]     = useState('');
   const [stateCode, setStateCode] = useState('');
-  /* Once this supplier is mapped to a Purchase Order its state is baked into that
-     PO's GST/tax, so the backend sends state_locked=true and we freeze Country +
-     State (changing either would desync the PO's tax classification). */
   const [stateLocked, setStateLocked] = useState(false);
   const lockToast = () => toast.warning(
     'Can’t change this',
@@ -742,23 +479,9 @@ export default function AddVendorModal(props: {
   );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
-  /* A pasted Google Maps link. An address line does not locate a supplier —
-     plot numbers repeat across industrial estates and an overseas address is
-     unverifiable from text — so procurement and audit navigate by this. */
   const [googleLocation, setGoogleLocation] = useState('');
-  /* Scheme-checked only. Google hands out three different shapes for the same
-     place — a share link (maps.app.goo.gl/…), a copied browser URL
-     (/maps/place/…/@lat,lng,17z/data=…) and a coordinate query (?q=lat,lng) —
-     so matching one pattern would reject the other two. What this has to catch
-     is someone pasting an address instead of a link. */
   const mapsLinkOk = /^https?:\/\/[^\s]+$/i.test(googleLocation.trim());
 
-  /* State dropdown options. Source is master_states (the full per-
-     country list), filtered by the selected Country. Country is the
-     master_countries id stored as a string, so the comparison matches
-     `country_id` (also stringified) directly. When no country is
-     picked yet we show every state — the cascade narrows it as soon
-     as the user chooses one. */
   const stateOpts = useMemo<Opt[]>(() => {
     const filtered = country
       ? stateRows.filter(r => r.country_id === country)
@@ -767,31 +490,12 @@ export default function AddVendorModal(props: {
       .map(r => ({ value: r.id, label: r.name }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [stateRows, country]);
-  /* ── Country, narrowed by the scope chosen in SupplierScopeGate ──────────
-     The gate already asked whether this is a domestic or an international
-     supplier, so the Country dropdown must not go on offering the other
-     answer — a "domestic" supplier sitting on Germany, or an "international"
-     one on India, is a contradiction the rest of the form then has to cope
-     with (GST applicability, State Code, the segment document_type below are
-     all derived from this one field).
-
-     EDIT mode keeps the full list: the gate is skipped there because the
-     supplier's country is already on record, and hiding options would make an
-     existing row unsavable if its country fell outside the filter. */
-  /* The supplier's scope, whether it came from the gate (create) or from the
-     country already on record (edit).
-     Deriving it from the CURRENT value is what makes filtering safe in edit
-     mode: the list is built from the very value the field holds, so that value
-     is always in it. Filtering off the gate's answer instead would drop an
-     existing supplier's own country out of its dropdown, leaving the field
-     blank and the required-check impossible to pass. */
   const effectiveScope: 'domestic' | 'international' | null = useMemo(() => {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim().toLowerCase();
     if (name) return name === 'india' ? 'domestic' : 'international';
-    return scope ?? null;   // create mode, before a country has been chosen
+    return scope ?? null;   
   }, [country, countryOpts, scope]);
 
-  /* Domestic means India and nothing else, so there is nothing to choose. */
   const countryScopeLocked = effectiveScope === 'domestic';
 
   const scopedCountryOpts = useMemo<Opt[]>(() => {
@@ -802,11 +506,6 @@ export default function AddVendorModal(props: {
       : countryOpts.filter(o => !isIndia(o));
   }, [countryOpts, effectiveScope]);
 
-  /* Domestic means India, so fill it in rather than making someone pick the
-     only option there is. Runs once the country master has actually loaded —
-     on a cold masters cache this effect fires first with an empty list, and
-     `countryOpts` is in the deps so it comes back when the rows arrive.
-     Guarded on `!country` so it never overwrites a real choice. */
   useEffect(() => {
     if (isEdit || scope !== 'domestic' || country || countryOpts.length === 0) return;
     const india = countryOpts.find(o => String(o.label).trim().toLowerCase() === 'india');
@@ -816,10 +515,6 @@ export default function AddVendorModal(props: {
     setStateCode('');
   }, [scope, isEdit, countryOpts, country]);
 
-  /* Country is not a free field once the supplier has one: GST applicability,
-     the State Code requirement and which segment documents apply are all
-     derived from it, so changing it silently rewrites three other parts of
-     this form. Said out loud rather than just greying the field out. */
   const scopeLockToast = () => toast.info(
     'Country is fixed',
     isEdit
@@ -827,57 +522,21 @@ export default function AddVendorModal(props: {
       : 'You chose Domestic, so this supplier is registered in India. Close and add them as an International supplier to pick another country.',
   );
 
-  /* Supplier trade type — India → domestic, any other country → international.
-   * `country` holds the master_countries id, so resolve to the name first.
-   * Drives the segment-rule document_type fetch and the segment validation. */
   const supplierDocType: SegDocType = useMemo(() => {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
     return name === 'India' ? 'domestic' : 'international';
   }, [country, countryOpts]);
-  /* Segments the supplier cannot take, greyed in the dropdown.
-     TWO reasons now, not one:
-       1. No Document Control Panel rule at all — "No rule", as before.
-       2. A rule that does not cover THIS supplier's trade type: a Domestic
-          segment on an international supplier, or the reverse.
-     The second used to be selectable, with a toast on pick and a hard error on
-     save. That is the wrong order — it lets someone choose a thing, act as
-     though it worked, and only then take it back. The scope is known the
-     moment a country is set (and the Add Supplier gate sets one up front), so
-     the answer can be given before the click instead of after it.
-     DISABLED, not hidden. A supplier saved earlier against what is now the
-     wrong scope keeps its chip and stays visible — hiding the option would
-     drop that segment silently on the next save, or make the form unsavable
-     because a required value is missing from its own list.
-     Nothing is greyed until a country is chosen: with no country there is no
-     trade type to judge against. */
   const disabledSegmentIds = useMemo(() => {
     if (!segRulesLoaded) return [] as string[];
     return segmentOpts.map(o => o.value).filter(v => {
-      if (!ruledSegIds.has(v)) return true;                 // no rule at all
-      if (!country) return false;                           // scope not known yet
-      if (segment.includes(v)) return false;                // already on the supplier
+      if (!ruledSegIds.has(v)) return true;                 
+      if (!country) return false;                           
+      if (segment.includes(v)) return false;                
       const t = segTypesById.get(String(v));
-      return !!t && t.size > 0 && !t.has(supplierDocType);  // wrong trade type
+      return !!t && t.size > 0 && !t.has(supplierDocType);  
     });
   }, [segRulesLoaded, segmentOpts, ruledSegIds, country, segment, segTypesById, supplierDocType]);
 
-  /* Dropdown ORDER — the pickable segments first, for THIS supplier's trade type.
-   *
-   * The list arrives in master order, which scatters the handful a given
-   * supplier can actually choose among rows it may not: on an international
-   * supplier the first thing under the cursor was "Tobacco & Tobacco Products —
-   * No rule", greyed out, while the INT-ruled segments sat further down past a
-   * scroll. Ranking puts the answer where the eye lands and leaves the dead
-   * rows at the bottom, still visible (they are disabled, never hidden — a
-   * supplier saved earlier against what is now the wrong scope must keep
-   * showing its chip).
-   *
-   *   0  already on this supplier — never make someone hunt for their own data
-   *   1  selectable: a rule covering this supplier's trade type (INT / DOM / both)
-   *   2  ruled, but for the other trade type
-   *   3  no Document Control Panel rule at all
-   *
-   * Alphabetical inside each band so the order is stable between renders. */
   const sortedSegmentOpts = useMemo(() => {
     const disabled = new Set(disabledSegmentIds);
     const rank = (v: string): number => {
@@ -891,9 +550,6 @@ export default function AddVendorModal(props: {
     });
   }, [segmentOpts, disabledSegmentIds, segment, ruledSegIds]);
 
-  /* The hint the dropdown shows on a greyed row. Which of the two reasons
-     applies depends on the row, so the wording covers the one the user is most
-     likely looking at once a country is set. */
   const segmentDisabledHint = country
     ? `not available for a ${supplierDocType === 'domestic' ? 'Domestic' : 'International'} supplier — no matching rule in the Document Control Panel`
     : 'no document rule defined in the Document Control Panel yet';
@@ -903,30 +559,13 @@ export default function AddVendorModal(props: {
   const [email,       setEmail]       = useState('');
   const [whatsappEnabled, setWhatsappEnabled] = useState(true);
   const [attachment, setAttachment] = useState<File | null>(null);
-  /* Primary contact "saved" flag — once the user clicks Save on the Primary
-     Contact card, the contact surfaces as a locked (non-edit/non-delete)
-     "Primary" row in the contacts table below. Edit-mode starts saved. */
   const [primarySaved, setPrimarySaved] = useState(false);
-  /* Snapshot of the LAST-SAVED primary contact. The "Primary" row in the
-     contacts table renders from THIS, not the live form fields — so typing /
-     editing the primary card above never mutates the row below until the user
-     actually clicks "Save Contact". Null = no saved primary yet (row hidden). */
   type PrimarySnapshot = { name: string; designation: string; phone: string; email: string; whatsapp: boolean; attachmentName: string; attachmentHref: string };
   const [savedPrimary, setSavedPrimary] = useState<PrimarySnapshot | null>(null);
-  /* In-flight flag for the primary contact's own "Save Contact" button. */
   const [savingPrimary, setSavingPrimary] = useState(false);
-  /* When the user clicks Edit on the primary row, this overrides the
-     saved/edit lock so the Primary Contact card becomes editable again. */
   const [editingPrimary, setEditingPrimary] = useState(false);
-  /* Scroll target — the Primary Contact card, so Edit jumps the user to it. */
   const primaryCardRef = useRef<HTMLDivElement>(null);
-  /* Server-side path for the primary contact's previously uploaded
-     business card. Hydrated from primary_address.attachment_path on
-     edit-mode load so the table cell can render a working View link
-     without a fresh upload. */
   const [primaryAttachmentPath, setPrimaryAttachmentPath] = useState<string>('');
-  /* Backend-resolved file_url() for the primary contact attachment — used
-     for view/download so it works on the server (Azure / real host). */
   const [primaryAttachmentUrl, setPrimaryAttachmentUrl] = useState<string>('');
 
   type ContactRow = {
@@ -937,38 +576,23 @@ export default function AddVendorModal(props: {
     email: string;
     whatsapp: boolean;
     attachmentName: string;
-    /* Server-stored path — present when the row was hydrated from
-       /vendors/{id}. Empty for freshly-added rows that haven't been
-       saved yet. */
     attachmentPath?: string;
-    /* Backend-resolved file_url() — the AUTHORITATIVE view/download URL
-       (knows Azure Blob + the real host). Use this over composing a URL
-       from attachmentPath, which breaks on the server. */
     attachmentUrl?: string;
-    /* Freshly-picked File — set while the popup is open so the
-       FileChooser can render a blob: preview URL with View + Delete
-       buttons before the row is persisted. Cleared on save. */
     attachmentFile?: File | null;
   };
   const [extraContacts, setExtraContacts] = useState<ContactRow[]>([]);
 
-  /* Contact-person popup (mirrors the QcAddPopup pattern used in the
-     Add Product wizard). The popup lives outside the main scroll area
-     so it always stays centred when the form is long. */
   const [contactPopupOpen, setContactPopupOpen] = useState(false);
   const [contactDraft, setContactDraft] = useState<Omit<ContactRow, 'id'>>({
     name: '', designation: '', phone: '', email: '', whatsapp: true, attachmentName: '', attachmentFile: null,
   });
 
-
-  /* ─── Step 2: KYC / Due Diligence — one row list per tab ─── */
   const [ddRows,      setDdRows]      = useState<DueDiligenceRow[]>(SEED_DD);
   const [ownerRows,   setOwnerRows]   = useState<OwnerKycRow[]>([]);
   const [licenseRows, setLicenseRows] = useState<TradeLicenseRow[]>(SEED_TRADE_LICENSE);
   const [bankRows,    setBankRows]    = useState<BankRow[]>([]);
   const [gstRows,     setGstRows]     = useState<GstScrutinyRow[]>([]);
 
-  /* ─── Step 2: per-modal draft + open flag ─── */
   type DdDraft     = Omit<DueDiligenceRow, 'id' | 'code'>;
   type OwnerDraft  = Omit<OwnerKycRow,    'id' | 'code'>;
   type LicDraft    = Omit<TradeLicenseRow,'id' | 'code'>;
@@ -984,34 +608,18 @@ export default function AddVendorModal(props: {
   const [ownerPopupOpen, setOwnerPopupOpen] = useState(false);
   const [licPopupOpen,   setLicPopupOpen]   = useState(false);
   const [bankPopupOpen,  setBankPopupOpen]  = useState(false);
-  /* Id of the bank row being edited (null = the popup is in Add mode). */
   const [editingBankId,  setEditingBankId]  = useState<string | null>(null);
   const [gstPopupOpen,   setGstPopupOpen]   = useState(false);
-  /* Flipping GST Applicable to 'No' while standing ON the GST Scrutiny tab would
-   * strand the user on a tab that no longer has a pill to click back from — fall
-   * back to Bank Details (the new last tab). */
   useEffect(() => {
     if (gstApplicable !== 'Yes' && kycTab === 'gst') setKycTab('bank');
   }, [gstApplicable, kycTab]);
-  /* GST applicability is DERIVED purely from the supplier's country — there is
-   * no user-facing "GST Applicable" toggle anymore (mirrors the Customer
-   * master): India (domestic) → 'Yes', any other country → 'No'. Leaving India
-   * drops the GSTIN so a stale number can't linger read-only in GST Scrutiny.
-   * (The first mount pass runs with an empty country → 'No', which only clears
-   * an already-empty GSTIN; the hydrated number is set afterwards by the load
-   * effect and then re-derived to 'Yes' once the saved India country lands.) */
   useEffect(() => {
-    // Wait for the country master list before deriving. On a cold masters cache
-    // the vendor hydration can set `country` BEFORE `countryOpts` is populated,
-    // which would transiently resolve as "international" and WIPE a saved GSTIN.
-    // Skipping until the options land lets the effect re-run and settle on the
-    // real country (deps include countryOpts, so it fires again once loaded).
     if (country && countryOpts.length === 0) return;
     const derived = supplierDocType === 'domestic' ? 'Yes' : 'No';
     setGstApplicable(derived);
     clearFieldError('gstApplicable');
     if (derived === 'No') { setGstNumber(''); clearFieldError('gstNumber'); }
-  }, [supplierDocType, country, countryOpts]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [supplierDocType, country, countryOpts]); 
 
   const [ddDraft,    setDdDraft]    = useState<DdDraft>(EMPTY_DD_DRAFT);
   const [ownerDraft, setOwnerDraft] = useState<OwnerDraft>(EMPTY_OWNER_DRAFT);
@@ -1019,35 +627,12 @@ export default function AddVendorModal(props: {
   const [bankDraft,  setBankDraft]  = useState<BankDraft>(EMPTY_BANK_DRAFT);
   const [gstDraft,   setGstDraft]   = useState<GstDraft>(EMPTY_GST_DRAFT);
 
-  /* license_name master powers the License Type dropdown on the
-     Trade License modal. Loaded lazily the first time the modal opens
-     to avoid an extra fetch on initial mount. */
   const [licenseTypeOpts, setLicenseTypeOpts] = useState<Opt[]>([]);
 
-  /* segmentRefUploads hydration moved INLINE into the main edit-mode
-   * hydration effect below (search for `root.segment_uploads`). The
-   * VendorController::show() response now bundles this data so we no
-   * longer need a separate /segment-uploads/supplier/{id} round-trip
-   * on modal open. Same pattern shipped for Customer + Consignee. */
-
-  /* ─── Step 3: Trade Documents (preset signature workflow) ─── */
-  // Starts EMPTY — Trade Documents are populated only from the segment
-  // rule's `td` set intersected with the party=Supplier trade-doc library
-  // (see the segment-rules effect). No hardcoded seed rows, so only real
-  // clm_trade_doc_library entries appear.
   const [tradeDocRows, setTradeDocRows] = useState<TradeDocRow[]>([]);
-  /* Send for Signature — when non-null the Zoho Sign wizard pops with
-   * the listed clm_trade_doc_library ids pre-checked. modelName='Vendor'
-   * makes the backend resolve {{supplier.*}} tokens with this vendor. */
   const [sendForSignature, setSendForSignature] = useState<number[] | null>(null);
   const [sigStatusByDoc, setSigStatusByDoc] = useState<Record<number, { status: TradeDocRow['status']; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }>>({});
 
-  /* Resend cooldown — same pattern as the customer + consignee modals.
-   * Zoho's remind API operates per-REQUEST so a multi-doc bundle gets
-   * ONE reminder email no matter how many rows in the bundle the user
-   * clicks Resend on. We seed a 60s cooldown on the
-   * signature_request_id; every sibling row's Resend button locks
-   * visually until the timer expires. */
   
   const [recentReminds, setRecentReminds] = useState<Record<number, number>>({});
   useEffect(() => {
@@ -1071,19 +656,15 @@ export default function AddVendorModal(props: {
     return Math.max(0, Math.ceil(((recentReminds[reqId] ?? 0) - Date.now()) / 1000));
   };
 
-  /* ─── Step 4: Product mappings + Add Product Mapping modal ─── */
   type ProductOpt = {
-    value: string;             // product id as string
-    label: string;             // product_code — name
+    value: string;             
+    label: string;             
     code: string;
     name: string;
     hsn: string;
     segment: string;
-    segmentId: number | null;  // product's segment_id — used to gate mapping to the vendor's own segments
+    segmentId: number | null;  
 
-    /* Auto-seed values pulled from the product itself — picking a
-       product in the mapping modal pre-fills Purchase Price and GST %
-       so the user only confirms or overrides. */
     basePrice: string;
     gstPercentage: string;
   };
@@ -1091,60 +672,30 @@ export default function AddVendorModal(props: {
   const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
   const [productMappings, setProductMappings] = useState<ProductMappingRow[]>([]);
   const [mapPopupOpen,   setMapPopupOpen]   = useState(false);
-  /* Header "Map Product" → opens the Mapped Products list popup (Figma flow).
-     Mappings collect in productMappings state and persist on wizard submit. */
   const [mappedListOpen, setMappedListOpen] = useState(false);
 
   type MapDraft = {
-    productId: string;         // '' = nothing picked
+    productId: string;         
     productCode: string;
     productName: string;
     hsnSacCode: string;
     segment: string;
     batchSerialLot: string;
-    purchasePrice: string;     // string while editing — parsed on save
+    purchasePrice: string;     
     gstPercentage: string;
     gstAmount: string;
     totalAmount: string;
   };
   const EMPTY_MAP_DRAFT: MapDraft = { productId: '', productCode: '', productName: '', hsnSacCode: '', segment: '', batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '' };
   const [mapDraft,       setMapDraft]       = useState<MapDraft>(EMPTY_MAP_DRAFT);
-  /* When set, the Map Products popup is editing this existing mapping
-   * row (saveMapDraft updates in place instead of appending a new one). */
   const [mapEditingId,   setMapEditingId]   = useState<string | null>(null);
 
-  /* ─── Body scroll lock ─── */
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = prev; };
   }, []);
 
-  /* ─── Master loader — every classification dropdown on the form
-   *
-   *   Vendor Type            → customer_types        (label: name)
-   *   Risk Level             → risk_levels           (label: name)
-   *   Vendor Behaviour       → vendor_behaviour      (label: name)
-   *   Vendor Segment         → segments              (label: title)
-   *   Compliance Behaviour   → compliance_behaviours (label: name)
-   *   Country                → countries             (label: name)
-   *   State + State Code     → state_codes (eager-loads state.name) so
-   *                            one fetch drives both the State dropdown
-   *                            AND the State Code auto-fill.
-   * ──────────────────────────────────────────────────────────── */
-  /* Bundled master fetch — /vendors/master-bundle returns every dropdown
-   * (vendor_types, risk_levels, vendor_behaviour, segments,
-   * compliance_behaviours, countries, state_codes [with state relation],
-   * states, license_name, gst_percentage) in ONE round-trip. Replaces the
-   * previous 8-call Promise.all and pre-empts the two later lazy fetches
-   * (license_name on the License popup, gst_percentage on the Map Product
-   * dialog) — they now hydrate from this same bundle for free.
-   *
-   * Caching: the bundle is read from sessionStorage first (5-min TTL) via
-   * vendorBundleCache. Cache hit ⇒ synchronous hydration, 0 API calls.
-   * Cache miss ⇒ fetch + persist for next time. Inline master adds bust
-   * the cache (see onMasterAdded analog if/when introduced).
-   */
   useEffect(() => {
     type IdRow = { id: number | string };
     type NamedRow = IdRow & { name?: string | null };
@@ -1176,9 +727,6 @@ export default function AddVendorModal(props: {
       setVendorTypeOpts(toOpt(b.vendor_types));
       setRiskLevelOpts(toOpt(b.risk_levels));
       setBehaviourOpts(toOpt(b.vendor_behaviour));
-      // Segments: server returns `name`, but the Segments model also
-      // appends `title` (alias of name) for legacy API consumers. Read
-      // whichever is present — same string either way.
       setSegmentOpts(
         (b.segments || [])
           .map(r => ({ value: String(r.id), label: String(r.title ?? r.name ?? '') }))
@@ -1207,9 +755,6 @@ export default function AddVendorModal(props: {
           }))
           .filter(r => r.name !== '')
       );
-      // Pre-populate the License Type + GST% dropdowns that were
-      // previously lazy-loaded on popup open. Now they're already in
-      // memory by the time the user clicks anything.
       setLicenseTypeOpts(
         (b.license_name || [])
           .map(r => ({ value: String(r.name ?? ''), label: String(r.name ?? '') }))
@@ -1222,16 +767,6 @@ export default function AddVendorModal(props: {
       );
     };
 
-    // Stale-while-revalidate. A cache hit paints the dropdowns with no
-    // roundtrip, but must NOT end there: this cache lives in sessionStorage,
-    // which is per-tab. bustAllMasterBundles() only reaches the tab that did
-    // the mutation, so a master deleted in another tab — or by another user
-    // entirely — kept being offered here until the 5-min TTL lapsed. Masters
-    // are hard-deleted, so picking one 422s on save ("The selected risk level
-    // id is invalid"). Always revalidate against the server and re-hydrate with
-    // its truth. hydrate() only replaces option lists (never form values), so
-    // running it twice is safe, and the server bundle is itself cached for
-    // 5 minutes behind a version stamp — this costs one cheap request.
     const cached = readVendorMasterBundle<Bundle>();
     if (cached) {
       hydrate(cached);
@@ -1254,19 +789,6 @@ export default function AddVendorModal(props: {
     })();
   }, []);
 
-  /* Segment-rule reference-upload wipe. Runs ONLY on genuine segment
-   * changes (not on step transitions, not on initial hydration). The
-   * wipe used to live inside the segment-rules fetch effect below, but
-   * adding `step` to that effect's deps caused Step 1 → Step 2
-   * transitions to wipe the bundled segmentRefUploads. Splitting it
-   * here with [segment] dep alone ensures step transitions are no-ops.
-   *
-   * The skip-first-fire ref handles the initial hydration case: when
-   * the main edit-mode fetch calls setSegment(segIds), segment changes
-   * from [] → [...] which would otherwise wipe what bundledSegUploads
-   * is about to write. Marking the ref true on first fire causes us
-   * to skip exactly once — subsequent user-driven changes wipe as
-   * expected. */
   const segmentDirtyRef = useRef(false);
   useEffect(() => {
     if (!segmentDirtyRef.current) {
@@ -1274,16 +796,6 @@ export default function AddVendorModal(props: {
       return;
     }
     setSegmentRefUploads(prev => {
-      /* Keep SERVER-persisted rows. They live in segment_doc_uploads keyed by
-       * (category, doc_code) — independent of which segments are selected — and
-       * the remove-segment guard reads this map to decide whether a removal
-       * would strand a file. Wiping the whole map blinded the guard after the
-       * FIRST segment change: the first removal was blocked correctly, every
-       * later one silently succeeded because the map was empty by then. It also
-       * re-hydrates only once per modal open, so nothing put them back.
-       *
-       * Unsaved local picks (blob: URLs, or a File with no URL yet) still go:
-       * their document row may not exist under the new segment set. */
       const kept: Record<string, SegRefUpload> = {};
       for (const [k, u] of Object.entries(prev)) {
         if (u?.url && !u.url.startsWith('blob:')) { kept[k] = u; continue; }
@@ -1293,19 +805,7 @@ export default function AddVendorModal(props: {
     });
   }, [segment]);
 
-  /* Segment-rule template fetch (multi-segment). The supplier
-   * `segment` state is an array of DB ids (stringified). For each id
-   * we hit the resolver in parallel and merge category arrays —
-   * deduped by `code`, with Mandatory winning over Optional so a doc
-   * required by any segment stays mandatory in the union. */
   useEffect(() => {
-    /* Lazy gate — only fire the CLM segment-rules + trade-doc-library
-     * fetches once the user reaches Step 2 or higher. Step 1 only
-     * edits identity + address; it doesn't need this data. Mirrors
-     * the same gate added to AddCustomerModal / AddConsigneeModal. */
-    // In EDIT mode we also load at Step 1 so we know which segments already
-    // have uploaded documents (to lock just those in the picker). Add mode
-    // keeps the lazy Step-2 gate — a brand-new supplier has no uploads.
     if (step < 2 && !initialVendorId) return;
 
     const ids = (segment ?? [])
@@ -1322,17 +822,11 @@ export default function AddVendorModal(props: {
             .catch(() => ({}))
         )
       ),
-      /* Party filter for the supplier (vendor) form: trade docs whose
-       * `party` CSV mentions ANY Supplier-* sub-type. The endpoint
-       * matches Supplier-Material / Logistic / Tech / Advisory /
-       * Strategic Risk. Intersected with segment-rule td below. */
       api.get('/clm/trade-doc-library/for-party/supplier')
         .then(r => Array.isArray(r.data?.data) ? r.data.data : [])
         .catch(() => [] as Array<{ code: string; name: string }>),
     ]).then(([results, partyDocs]) => {
       if (cancelled) return;
-      // Per-segment → required upload keys. results[i] aligns with ids[i].
-      // Only dd/kyc/tl have file uploads (company/owner/license sub-tabs).
       const docKeyMap: Record<string, string[]> = {};
       results.forEach((r: any, i: number) => {
         const keys: string[] = [];
@@ -1367,10 +861,6 @@ export default function AddVendorModal(props: {
         td:  mergedTd,
         qc:  mergeCat('qc'),
       });
-      /* Drive the Step 3 Trade Documents signature workflow from the
-       * segment × party intersection. Mandatory rows arrive pre-checked.
-       * No seed fallback — when the intersection is empty the table is
-       * empty, so only real clm_trade_doc_library rows ever appear. */
       setTradeDocRows(mergedTd.map(d => ({
         code: d.code,
         name: d.name,
@@ -1385,27 +875,10 @@ export default function AddVendorModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, segment, supplierDocType]);
 
-  /* Whether the removal guard can answer yet — `segmentDocKeys` is filled by an
-   * async fetch, so on a first open the field is interactive before the map
-   * exists and every removal would look safe (the customer form had the same
-   * race: blocked correctly on a second open, silently passed on the first).
-   * Only matters for a saved supplier; a new one has no uploads to orphan.
-   * Non-numeric values never get a map entry, so they're excluded. */
   const segGuardReady = !initialVendorId || (segment ?? [])
     .filter(s => Number.isFinite(Number(s)) && Number(s) > 0)
     .every(s => segmentDocKeys[String(s)] !== undefined);
 
-  /* Apply the bundled segment_uploads payload to segmentRefUploads.
-   * Declared AFTER the segment-rules effect above so it fires LATER in
-   * the same commit cycle — segment-rules wipes segmentRefUploads
-   * synchronously when `segment` changes (including the initial
-   * hydration), and this effect then writes the hydrated entries on
-   * top. The OLD code achieved the same ordering by luck (its fetch
-   * was a network round-trip that resolved after the wipe); we now
-   * achieve it deterministically.
-   *
-   * Fires once per change to bundledSegUploads. Main hydration sets it
-   * exactly once on edit-mode open, so this effect runs once too. */
   useEffect(() => {
     if (!bundledSegUploads || bundledSegUploads.length === 0) return;
     const CAT_TO_SUB: Record<string, string> = { dd: 'company', kyc: 'owner', tl: 'license' };
@@ -1424,16 +897,7 @@ export default function AddVendorModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundledSegUploads]);
 
-  /* Poll live signature-request status every 15s while the user is on
-   * Step 3 → Trade Documents. ?sync=true makes the backend pull each
-   * inprogress row from Zoho so completed signings appear in the badges
-   * without a refresh — same pattern as Customer/Consignee Stage 3.
-   * Keyed on `vendorId` (not `initialVendorId`) so the poller also kicks
-   * in for newly-created vendors once Stage 1→2 has saved a row. */
   useEffect(() => {
-    // Dormant since the Evidence Vault step was removed: `tradeTab` can no
-    // longer become 'trade' here, so this poller never fires. Kept for the
-    // standalone Evidence Vault flow's parity.
     if (!vendorId || tradeTab !== 'trade') return;
     let cancelled = false;
     const fetchAndUpdate = async (withSync: boolean) => {
@@ -1461,18 +925,6 @@ export default function AddVendorModal(props: {
           for (let i = 0; i < ids.length; i++) {
             const docId = Number(ids[i]);
             if (!docId || map[docId]) continue;
-            // Resolve a usable URL from whatever the backend populated.
-            // Production sometimes returns signed_document_paths=null
-            // (the Zoho-download queue job hadn't run yet) while the
-            // webhook-set certificate_path is already there. Fall back
-            // through the chain so the View / Download buttons enable
-            // as soon as ANY signed artefact exists, instead of staying
-            // disabled until the queue worker catches up.
-            // Backend transforms the response with file_url() now (see
-            // ClmSignatureController::index), so .url / .file_url on each
-            // signed_document_paths entry is already absolute (Azure blob
-            // URL on prod, /storage/… on local). Prefer those over raw
-            // paths so we don't double-resolve.
             const signedArr = row.signed_document_paths;
             let rawSignedUrl: string | null = null;
             if (Array.isArray(signedArr)) {
@@ -1482,19 +934,7 @@ export default function AddVendorModal(props: {
             }
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
-            /* file_url and certificate_* are NOT fallbacks here. When
-             * Zoho mints the certificate before the signed PDF lands
-             * (signed_document_paths: []), Laravel's model accessor
-             * fills file_url with the cert URL — using that as a signed
-             * URL fallback silently routes the View / Download buttons
-             * to the certificate. Keep them strictly separate so the
-             * signed-doc buttons stay disabled until the real signed
-             * PDF appears, and the cert lives only on its own button. */
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
-            // Resolve via resolveFileUrl so the URL gets the right
-            // base prefix (VITE_API_URL on the deployed SPA, current
-            // origin in dev). Bare /storage/… relative URLs 404 when
-            // the SPA origin differs from the API host.
             map[docId] = {
               status: row.status,
               signatureRequestId: row.id,
@@ -1513,7 +953,6 @@ export default function AddVendorModal(props: {
     return () => { cancelled = true; window.clearInterval(iv); };
   }, [vendorId, step, tradeTab]);
 
-  // Project polled status into tradeDocRows.
   useEffect(() => {
     setTradeDocRows(prev => prev.map(r => {
       if (!r.db_id) return r;
@@ -1531,14 +970,6 @@ export default function AddVendorModal(props: {
     }));
   }, [sigStatusByDoc]);
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Edit-mode prefill — fires once on mount when the parent passed an
-   * existing vendor id. Hits GET /vendors/{id} (whose response is the
-   * controller's `shape()`) and pours every field back into the form
-   * state. File rows come back with their server path; we surface the
-   * basename so the user sees what's already attached and keep the
-   * full path on `existingPath` so the next save can reuse it.
-   * ────────────────────────────────────────────────────────────── */
   useEffect(() => {
     if (!initialVendorId) return;
     type ApiAddress = {
@@ -1584,81 +1015,38 @@ export default function AddVendorModal(props: {
     const basename = (p?: string | null): string => {
       if (!p) return '';
       const last = String(p).split('/').pop() ?? '';
-      // Backend stores attachments as `{slug}-{rand}__{original}.{ext}`
-      // so the original filename can be recovered without a DB
-      // migration. If the separator is absent (legacy uploads) we
-      // fall back to the raw stored name.
       const sep = last.indexOf('__');
       return sep >= 0 ? last.slice(sep + 2) : last;
     };
     const numStr = (n?: number | null): string => (n ?? '') === '' || n == null ? '' : String(n);
 
     (async () => {
-      /* Parallel fetch — kick off the vendor show AND the products
-       * dropdown at the same time. Previously productOpts only loaded
-       * when the user opened Step 4, so a fresh edit with mappings
-       * showed blank HSN/Segment until the user clicked Map Products
-       * and waited for *another* ~500-row fetch. Firing both in parallel
-       * shaves the perceived load to whichever is slower, and the
-       * Map Products backfill effect immediately joins them. */
-      const minShimmerMs = 350; // floor so the shimmer doesn't flicker on fast networks
+      const minShimmerMs = 350; 
       const t0 = performance.now();
       try {
         const res = await api.get<{ data: ApiVendor; segment_uploads?: { data?: any[] } }>(`/vendors/${initialVendorId}`);
         const root = res.data ?? ({} as { data?: ApiVendor; segment_uploads?: { data?: any[] } });
         const v = root.data;
         if (!v) return;
-        // The ~500-row products dropdown is only needed up-front to hydrate a
-        // supplier's EXISTING mappings. Skip it entirely when there are none —
-        // it lazy-loads when Map Products opens. On single-threaded artisan
-        // serve this drops a whole boot-tax round-trip + payload from the very
-        // common "edit a supplier that has no products yet" path.
         if ((v.product_mappings ?? []).length > 0) await fetchProductOptsIfNeeded();
 
-        /* Stage 2/3 segment-rule reference uploads — now arrive in the
-         * same response as the vendor itself (top-level `segment_uploads`
-         * key, not inside `data`). We stash them in state and let a
-         * dedicated useEffect (declared AFTER the segment-rules effect
-         * below) apply them to segmentRefUploads. Declaration order
-         * matters: the segment-rules effect synchronously wipes
-         * segmentRefUploads whenever `segment` changes — including the
-         * initial hydration where setSegment(segIds) below fires it.
-         * If we hydrated inline here, the wipe would run on the very
-         * next effect-firing cycle and nuke our entries. Routing through
-         * a downstream effect guarantees we run AFTER the wipe.
-         *
-         * The OLD code (separate /segment-uploads fetch) avoided this
-         * race only because the network round-trip delayed the
-         * setSegmentRefUploads(...) past the wipe — bundling collapsed
-         * that delay, so we restore the ordering deterministically. */
         const refs: any[] = Array.isArray(root.segment_uploads?.data) ? root.segment_uploads!.data! : [];
         setBundledSegUploads(refs);
 
-        // Step 1 — identity
         setVendorCode(v.vendor_code ?? '');
         setCompanyName(v.company_name ?? '');
         setLegalName(v.legal_name ?? '');
         setWebsite(v.website ?? '');
-        // Legacy suppliers predate these columns — fall back to 'No'/'' rather
-        // than leaving the select empty (it has no blank option).
         setGstApplicable(v.gst_applicable === 'Yes' ? 'Yes' : 'No');
         setGstNumber(v.gst_number ?? '');
-        // Supplier Type now binds to the fixed-vocabulary NAME.
         setVendorType(v.vendor_type_name ?? '');
         setRiskLevel(numStr(v.risk_level_id));
         setVendorBehaviour(numStr(v.vendor_behaviour_id));
-        /* Multi-segment hydration. The legacy `segment_id` column is
-         * scalar — when the server starts shipping a `segment_ids`
-         * array (or comma-joined string), we honour it; otherwise we
-         * fall back to a single-element array sourced from segment_id. */
         const fromIds: string[] = Array.isArray((v as any).segment_ids)
           ? (v as any).segment_ids.map((x: any) => String(x)).filter(Boolean)
           : typeof (v as any).segment_ids === 'string'
             ? (v as any).segment_ids.split(',').map((s: string) => s.trim()).filter(Boolean)
             : [];
-        // Legacy suppliers saved before multi-segment have an EMPTY pivot but a
-        // scalar segment_id — fall back to it so editing doesn't drop the segment
-        // (an empty array would otherwise sync the pivot to nothing on save).
         const segIds: string[] = fromIds.length ? fromIds : (v.segment_id ? [String(v.segment_id)] : []);
         setSegment(segIds);
         savedSegmentRef.current = segIds;
@@ -1671,7 +1059,6 @@ export default function AddVendorModal(props: {
         setComplianceBehaviour(numStr(v.compliance_behaviour_id));
         setClassificationId(numStr(v.classification_id));
 
-        // Step 1 — primary address + extra contacts
         const pa = v.primary_address;
         if (pa) {
           setAddressType(pa.address_type || 'Registered Office');
@@ -1689,8 +1076,6 @@ export default function AddVendorModal(props: {
           setWhatsappEnabled(pa.whatsapp_enabled ?? true);
           setPrimaryAttachmentPath(pa.attachment_path ?? '');
           setPrimaryAttachmentUrl(pa.attachment_url ?? '');
-          // Seed the saved-primary snapshot from what's actually persisted, so
-          // the "Primary" row below reflects the saved contact (not live edits).
           if ((pa.contact_name ?? '').trim() || (pa.email ?? '').trim() || (pa.contact_no ?? '').trim()) {
             setSavedPrimary({
               name: pa.contact_name ?? '',
@@ -1715,12 +1100,6 @@ export default function AddVendorModal(props: {
           attachmentUrl: c.attachment_url ?? undefined,
         })));
 
-        // Step 2 — KYC sub-collections (file fields restored via existingPath
-        // + existingUrl). `existingUrl` is the backend-resolved file_url()
-        // value (same helper that powers client/branch profile photos and
-        // knows how to address Azure Blob Storage); we hand that to the
-        // FileChooser so View links don't try to compose Azure URLs from
-        // a raw path on the frontend.
         setDdRows((v.due_diligence ?? []).map(r => ({
           id: String(r.id),
           code: r.code ?? '',
@@ -1750,9 +1129,6 @@ export default function AddVendorModal(props: {
         setLicenseRows((v.trade_licenses ?? []).map(r => ({
           id: String(r.id),
           code: r.code ?? '',
-          // licenseType in form state carries the master id (matches the
-          // ID-based License Type dropdown). Falls back to the joined
-          // name if the id is missing — keeps old rows readable.
           licenseType: r.license_type_id != null ? String(r.license_type_id) : (r.license_type_name ?? ''),
           licenseNumber: r.license_number ?? '',
           issuingAuthority: r.issuing_authority ?? '',
@@ -1778,19 +1154,13 @@ export default function AddVendorModal(props: {
         setGstRows((v.gst_scrutiny ?? []).map(r => ({
           id: String(r.id),
           gstNumber: r.gst_number ?? '',
-          // Only Active / Inactive now — any legacy value (Suspended/Cancelled)
-          // collapses to Inactive since it's a non-active state.
           status: (r.status === 'Active' ? 'Active' : 'Inactive'),
           scrutinyDate: r.scrutiny_date ?? '',
           lastFilingDate: r.last_filing_date ?? '',
           prevNonGst2aInvoice: r.prev_non_gst_2a_invoice ?? '',
           redFlags: r.red_flags ?? '',
-        })).reverse());   // newest scrutiny first (matches the prepend-on-add ordering)
+        })).reverse());   
 
-        // Step 4 — product mappings. HSN/SAC + Segment aren't echoed in
-        // the vendor show payload, so they're seeded empty here and a
-        // later effect backfills them once productOpts loads (kicked off
-        // by the void call right after).
         setProductMappings((v.product_mappings ?? []).map(m => ({
           id: String(m.id),
           productId: m.product_id ?? null,
@@ -1811,9 +1181,6 @@ export default function AddVendorModal(props: {
         toast.error('Load failed', 'Could not load the supplier — closing the form.');
         onClose();
       } finally {
-        // Floor the visible shimmer time so a fast network doesn't
-        // render a 50ms flash that looks like a glitch. Once enough
-        // wall-clock has elapsed, drop the overlay.
         const elapsed = performance.now() - t0;
         const wait = Math.max(0, minShimmerMs - elapsed);
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
@@ -1823,31 +1190,9 @@ export default function AddVendorModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialVendorId]);
 
-  /* Look up a master label by its FK id — used by the "previous stages"
-     summary that needs the display name even though form state carries
-     the id. Returns '' when nothing matches so callers can `||` to a
-     placeholder. */
   const labelFor = (id: string, opts: Opt[]): string =>
     opts.find(o => o.value === id)?.label ?? '';
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Step-wise persistence
-   *
-   *   Step 1 / identification  → POST /vendors/step/identity      sets vendorId
-   *   Step 1 / address         → PUT  /vendors/{id}/step/contacts
-   *   Step 2 (all 5 tabs)      → POST /vendors/{id}/step/kyc      multipart
-   *   Step 3 (Trade Documents) → no backend, just advance
-   *   Step 4 / map products    → POST /vendors/{id}/step/products + onSubmit
-   *
-   * Each handler validates client-side first, then hits the API and
-   * advances only on success. The `saving` flag disables the footer
-   * button so the user can't double-fire mid-request.
-   * ────────────────────────────────────────────────────────────── */
-
-  /* Field-key → human label, so a failed validation names the culprit in
-     the toast instead of the vague "highlighted fields" — the offending
-     field is frequently scrolled out of view (e.g. Company Name above the
-     fold, or a Website that contains spaces). */
   const FIELD_LABELS: Record<string, string> = {
     companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
     gstNumber: 'GST Number', gstApplicable: 'GST Applicable',
@@ -1859,19 +1204,6 @@ export default function AddVendorModal(props: {
     googleLocation: 'Google Location',
   };
 
-  /* Set the field errors, SAY WHAT IS WRONG, and scroll the first bad field
-     into view so an off-screen problem is never a mystery.
-
-     This used to print the field LABELS under a hardcoded "Missing required
-     fields" heading, throwing away the message each validator had already
-     produced. A badly-formatted website therefore reported "Missing required
-     fields — Please check: Company Website" (QA #97): wrong on both counts,
-     since the field was filled in and the real problem was its format. The
-     validators know exactly what is wrong; the toast just has to repeat it.
-
-     Only when EVERY error is a plain "… is required" does the old
-     name-the-fields wording still fit, so that case is kept — a list of five
-     "X is required" sentences is worse than a list of five field names. */
   const flagErrors = (errs: Record<string, string>) => {
     setFieldErrors(prev => ({ ...prev, ...errs }));
     const keys = Object.keys(errs);
@@ -1880,8 +1212,6 @@ export default function AddVendorModal(props: {
     if (allRequired) {
       toast.error('Missing required fields', `Please check: ${keys.map(k => FIELD_LABELS[k] ?? k).join(', ')}`);
     } else {
-      // Prefix the field name onto any message that doesn't already open with
-      // it, so a lone "Enter a valid website…" still says which field it means.
       const lines = keys.map(k => {
         const label = FIELD_LABELS[k] ?? k;
         const msg = (errs[k] ?? '').trim() || `${label} is invalid`;
@@ -1904,9 +1234,6 @@ export default function AddVendorModal(props: {
     if (!Array.isArray(segment) || segment.length === 0)
                               errs.segment             = 'Select at least one supplier segment';
     else if (segRulesLoaded && country) {
-      /* Trade-type match: a segment's document-type rule must match the
-       * supplier's trade type — a Domestic supplier needs a Domestic rule, an
-       * International one needs an International rule. Both types satisfy either. */
       const label = supplierDocType === 'domestic' ? 'Domestic' : 'International';
       const mismatched = segment.filter(id => {
         const t = segTypesById.get(String(id));
@@ -1919,15 +1246,9 @@ export default function AddVendorModal(props: {
     }
     if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
-    // Only enforced when GST applies. The GST Scrutiny popup renders this number
-    // read-only, so a bad value has to be caught HERE — there's no second chance
-    // to fix it downstream.
-    // GST applicability is derived from the country (India → Yes), so there is
-    // no toggle to validate — an Indian supplier is always GST-applicable.
     if (gstApplicable === 'Yes') {
       if (!gstNumber.trim()) errs.gstNumber = 'GST Number is required';
       else { const e = validateGstin(gstNumber); if (e) errs.gstNumber = e; }
-      // GSTIN must begin with the state code (first 2 digits = GST state code).
       if (!errs.gstNumber && gstNumber.trim() && stateCode.trim()) {
         const expected = stateCode.trim().padStart(2, '0');
         if (gstNumber.trim().slice(0, 2) !== expected) {
@@ -1935,26 +1256,11 @@ export default function AddVendorModal(props: {
         }
       }
     }
-    // The Supplier Address block lives on THIS same tab, so validate it here too
-    // — before the API call. A missing/invalid State Code (or any address field)
-    // now blocks on the frontend and never wastes a /vendors/step/identity call.
     if (!registeredOffice.trim()) errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                 errs.country          = 'Country is required';
-    /* Optional, but a half-pasted value is worse than an empty one: it reads
-       as answered while leading nowhere. Scheme-checked rather than matched
-       against one Google URL shape — a share link (maps.app.goo.gl), a copied
-       browser URL (/maps/place/...) and a coordinate query (?q=lat,lng) are
-       all legitimate, and pinning the pattern to one rejects the other two. */
     if (googleLocation.trim() && !mapsLinkOk) {
       errs.googleLocation = 'Enter a full link starting with https://';
     }
-    /* State is required for EVERY supplier. An overseas address has a state,
-       province or emirate just as an Indian one does, and the field already
-       offers the chosen country's own list (United States → Alabama, …), so
-       there was never a reason to let it through empty.
-       STATE CODE is the part that is genuinely GST-specific — the 2-digit
-       Indian code — so it stays domestic-only and keeps rendering disabled as
-       "Not applicable (international)". */
     if (!state) errs.state = 'State is required';
     if (supplierDocType === 'domestic') {
       if (!stateCode.trim()) errs.stateCode = 'State Code is required';
@@ -1971,24 +1277,14 @@ export default function AddVendorModal(props: {
         legal_name: legalName || null,
         website: website || null,
         gst_applicable: gstApplicable,
-        // Backend also nulls this when applicable is 'No' — belt and braces so a
-        // stale number can't reach the read-only Scrutiny field either way.
         gst_number: gstApplicable === 'Yes' ? (gstNumber.trim() || null) : null,
-        // Supplier Type is sent as the fixed-vocabulary NAME; the backend
-        // resolves it to the master_vendor_types FK.
         vendor_type: vendorType || null,
         risk_level_id: riskLevel ? Number(riskLevel) : null,
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
-        /* Multi-segment: send the full set as an array (backend syncs the
-         * vendor_segments pivot and keeps the first as the scalar
-         * segment_id for backward compatibility). */
         segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
         segment_ids: (segment ?? []).map(Number),
         compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
         classification_id: classificationId ? Number(classificationId) : null,
-        // Persist the registered-office address WITH Stage 1 so it survives even
-        // if the primary contact (contacts step) is never filled. The backend
-        // upserts it onto the primary address without touching contact fields.
         address: {
           address_line: registeredOffice || null,
           country_id: country ? Number(country) : null,
@@ -2000,16 +1296,9 @@ export default function AddVendorModal(props: {
         },
       };
 
-      /* The `confirm_segment_doc_removal` flag is deliberately never sent. The
-         server still accepts it (see VendorController::storeIdentity), but this
-         form no longer offers to delete a supplier's uploaded documents as a
-         side effect of editing a dropdown — it refuses the removal instead and
-         sends the user to delete the file where they can see it. */
       const attempt = async (): Promise<boolean> => {
         const res = await api.post<{ data: { id: number } }>('/vendors/step/identity', identityPayload);
         setVendorId(res.data?.data?.id ?? vendorId);
-        // Capture the server-assigned vendor_code so the header on later steps
-        // can render it without another roundtrip.
         const returnedCode = (res.data?.data as Record<string, unknown> | undefined)?.vendor_code;
         if (typeof returnedCode === 'string' && returnedCode) setVendorCode(returnedCode);
         setFieldErrors({});
@@ -2023,20 +1312,6 @@ export default function AddVendorModal(props: {
       } catch (e: any) {
         const d = e?.response?.data;
         if (e?.response?.status === 409 && d?.requires_doc_confirmation) {
-          /* Refuse, don't offer to delete.
-           *
-           * This used to open a "Remove segment & delete its documents?" dialog
-           * with a red "Delete & Remove" button, which made destroying an
-           * uploaded compliance document a single click inside what the user
-           * thought was an edit to a dropdown. It also read as the form asking
-           * permission to do something it should not be doing at all: the file
-           * is evidence attached to this supplier, and deleting it is a separate,
-           * deliberate act that belongs in KYC / Due Diligence where the document
-           * can actually be seen.
-           *
-           * So the save is simply refused and the reason is stated. The removed
-           * chip goes back into the picker, because the removal did not happen
-           * and the form must not imply it did. */
           const docs = (d.orphan_documents ?? []) as Array<{ name: string; category?: string }>;
           const list = docs.map(x => `${x.name}${x.category ? ` (${x.category})` : ''}`).join(', ');
           toast.error(
@@ -2044,16 +1319,13 @@ export default function AddVendorModal(props: {
             `${docs.length > 1 ? 'Documents are' : 'A document is'} uploaded against ${docs.length > 1 ? 'segments' : 'a segment'} you removed${list ? `: ${list}` : ''}. Delete ${docs.length > 1 ? 'them' : 'it'} in KYC / Due Diligence first, then remove the segment.`,
           );
           setSegment(savedSegmentRef.current);
-          return false;   // segment kept, nothing deleted
+          return false;   
         }
-        throw e;   // fall through to the outer handler
+        throw e;   
       }
     } catch (err: unknown) {
       const res = (err as { response?: { data?: { message?: string; errors?: Record<string, string[]> } } })?.response?.data;
       const msg = res?.message || 'Could not save vendor identity';
-      // Surface field-keyed 422s (e.g. a duplicate GST number) UNDER the field
-      // as well as in the toast, and scroll it into view — the GST field can be
-      // below the fold, and a toast alone leaves the user hunting for it.
       const apiErrs = res?.errors ?? {};
       const mapped: Record<string, string> = {};
       if (apiErrs.gst_number?.[0]) mapped.gstNumber = apiErrs.gst_number[0];
@@ -2071,24 +1343,14 @@ export default function AddVendorModal(props: {
   };
 
   const saveContacts = async (opts?: { outerSpinner?: boolean }): Promise<boolean> => {
-    // The Primary Contact card's own "Save Contact" button drives its own
-    // spinner (savingPrimary), so it calls this with outerSpinner:false to keep
-    // the footer "Update & Next" button from ALSO showing a loader.
     const useOuter = opts?.outerSpinner !== false;
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     const errs: Record<string, string> = {};
     if (!registeredOffice.trim())  errs.registeredOffice = 'Registered Office Address is required';
     if (!country)                  errs.country          = 'Country is required';
-    /* Optional, but a half-pasted value is worse than an empty one: it reads
-       as answered while leading nowhere. Scheme-checked rather than matched
-       against one Google URL shape — a share link (maps.app.goo.gl), a copied
-       browser URL (/maps/place/...) and a coordinate query (?q=lat,lng) are
-       all legitimate, and pinning the pattern to one rejects the other two. */
     if (googleLocation.trim() && !mapsLinkOk) {
       errs.googleLocation = 'Enter a full link starting with https://';
     }
-    // State is required for every supplier; only State Code is GST/domestic-only
-    // (see the identity validation above for the reasoning).
     if (!state) errs.state = 'State is required';
     if (supplierDocType === 'domestic') {
       if (!stateCode.trim()) errs.stateCode = 'State Code is required';
@@ -2106,9 +1368,6 @@ export default function AddVendorModal(props: {
 
     if (useOuter) setSaving(true);
     try {
-      // Multipart so the primary contact's business card can upload. The
-      // contacts route is PUT, but PHP only parses multipart on POST, so we
-      // POST with _method=PUT spoofing (the route still resolves to PUT).
       const fd = new FormData();
       fd.append('_method', 'PUT');
       const pa: Record<string, string> = {
@@ -2127,29 +1386,18 @@ export default function AddVendorModal(props: {
         whatsapp_enabled: whatsappEnabled ? '1' : '0',
       };
       Object.entries(pa).forEach(([k, v]) => fd.append(`primary_address[${k}]`, v));
-      // New business-card upload, else echo the existing stored path on edit.
       if (attachment) fd.append('primary_attachment', attachment);
       else if (primaryAttachmentPath) fd.append('primary_address[attachment_path]', primaryAttachmentPath);
-
-      // Additional contacts are NOT sent here — each persists on its own via
-      // the per-contact CRUD endpoints, so Save & Next only writes the primary.
 
       const { data } = await api.post(`/vendors/${vendorId}/step/contacts`, fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      // Sync the stored business-card path back so a re-save echoes it
-      // (instead of re-uploading) and the chooser reflects the saved file.
       const savedPa = data?.data?.primary_address as { attachment_path?: string; attachment_url?: string } | undefined;
       setPrimaryAttachmentPath(savedPa?.attachment_path ?? '');
       setPrimaryAttachmentUrl(savedPa?.attachment_url ?? '');
-      // Refresh the saved-primary snapshot so the row below now reflects the
-      // values the user just persisted (and only now, after a real save).
       setSavedPrimary({
         name: contactName, designation, phone: contactNo, email,
         whatsapp: whatsappEnabled,
-        // Inline basename — the `basename` helper is scoped to the edit-load
-        // function, not accessible here (Vite build doesn't type-check, so an
-        // out-of-scope ref throws only at runtime → false "Save failed").
         attachmentName: attachment?.name ?? (savedPa?.attachment_path ? (savedPa.attachment_path.split('/').pop() ?? '') : ''),
         attachmentHref: savedPa?.attachment_url || (savedPa?.attachment_path ? resolveFileUrl(savedPa.attachment_path) : ''),
       });
@@ -2166,9 +1414,6 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* @param opts.silentToast Suppress the per-tab toast — finishSupplier sets this
-   *   so the final completion notice is the last thing the user sees, instead of
-   *   a per-tab "saved" firing right before the wizard closes. */
   const saveKyc = async (opts?: { silentToast?: boolean }): Promise<boolean> => {
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return false; }
     const missingDd = ddRows.filter(r => r.mandatory && !r.fileName);
@@ -2177,11 +1422,6 @@ export default function AddVendorModal(props: {
       return false;
     }
 
-    /* Build multipart payload. Indexed array notation
-       (`due_diligence[0][document_name]`) lets PHP/Laravel parse the
-       rows into the validation rules cleanly, and `dd_files[N]` ships
-       the new file for row N (or nothing if the row already has an
-       existing_path on the backend). */
     const fd = new FormData();
     ddRows.forEach((r, i) => {
       fd.append(`due_diligence[${i}][code]`, r.code);
@@ -2205,9 +1445,6 @@ export default function AddVendorModal(props: {
     });
     licenseRows.forEach((r, i) => {
       fd.append(`trade_licenses[${i}][code]`, r.code);
-      // licenseType in modal stores the master label (Trade License modal
-      // shows a free-text fallback) — send as license_type_id only when
-      // the value parses as a number, else send null.
       const ltId = Number(r.licenseType);
       if (Number.isInteger(ltId) && ltId > 0) {
         fd.append(`trade_licenses[${i}][license_type_id]`, String(ltId));
@@ -2219,8 +1456,6 @@ export default function AddVendorModal(props: {
       if (r.file) fd.append(`tl_files[${i}]`, r.file);
       else if (r.existingPath) fd.append(`trade_licenses[${i}][existing_path]`, r.existingPath);
     });
-    // Bank Accounts + GST Scrutiny are NOT sent here — each persists on its
-    // own via the bank-accounts / gst-scrutiny CRUD endpoints.
 
     setSaving(true);
     try {
@@ -2228,11 +1463,6 @@ export default function AddVendorModal(props: {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setFieldErrors({});
-      // Name the tab that was actually saved. The old blanket "KYC saved /
-      // Due-diligence details captured" fired identically on Company DD, Owner
-      // KYC, Trade Licence and Bank Details, so it told the user nothing about
-      // what had just been persisted — and on Bank Details it even said
-      // "due-diligence", which is a different tab.
       if (!opts?.silentToast) {
         toast.success(
           `${KYC_TAB_TITLE[kycTab] ?? 'KYC'} saved`,
@@ -2280,39 +1510,23 @@ export default function AddVendorModal(props: {
 
   const goNext = async () => {
     if (saving || advancing) return;
-    // Page-level shimmer while the step's save is in flight + we advance, so
-    // the transition to the next tab is obvious (not just the button spinner).
-    // Synchronous validation-only early-returns below batch true→false, so they
-    // never flash the shimmer — only the awaited saves show it.
     setAdvancing(true);
     try {
       if (step === 1 && idTab === 'identification') {
-        // saveIdentity validates the WHOLE tab (company + address) on the
-        // frontend first, so a missing State Code blocks here without an
-        // API call. Only a fully-valid tab reaches the server + advances.
         const ok = await saveIdentity();
         if (ok) setIdTab('address');
       } else if (step === 1 && idTab === 'address') {
         const ok = await saveContacts();
         if (ok) setStep(2);
       } else if (step === 2) {
-        // Bank Details is MANDATORY — at least one bank account must be on record
-        // before leaving the Bank Details sub-tab.
         if (kycTab === 'bank' && bankRows.length === 0) {
           toast.error('Bank Details required', 'Add at least one bank account before continuing.');
           return;
         }
-        // GST Scrutiny is MANDATORY for a Domestic (Indian) supplier — the GST
-        // sub-tab only exists when gstApplicable === 'Yes' (i.e. country = India),
-        // so gate it on the same flag. International suppliers skip it.
         if (kycTab === 'gst' && gstApplicable === 'Yes' && gstRows.length === 0) {
           toast.error('GST Scrutiny required', 'Add at least one GST Scrutiny record for a domestic supplier before continuing.');
           return;
         }
-        // Step 2 has 5 sub-tabs (Company DD → Owner KYC → Trade License →
-        // Bank → GST). Save & Next persists the full KYC payload AND
-        // walks one sub-tab forward. Only on the last sub-tab (gst) does
-        // the wizard advance to Step 3.
         const ok = await saveKyc();
         if (!ok) return;
         const idx = kycTabOrder.indexOf(kycTab);
@@ -2329,13 +1543,10 @@ export default function AddVendorModal(props: {
   };
 
   const goPrev = () => {
-    // Walk back TAB-WISE (mirrors Save & Next) instead of jumping whole stages.
-    // Pure navigation — no save — so the user can flip back through sub-tabs.
     if (step > 2) { setStep((step - 1) as StepKey); return; }
     if (step === 2) {
       const idx = kycTabOrder.indexOf(kycTab);
-      if (idx > 0) { setKycTab(kycTabOrder[idx - 1]); return; }   // back one KYC sub-tab
-      // First KYC sub-tab → step back into Step 1's LAST sub-tab (Contact Person).
+      if (idx > 0) { setKycTab(kycTabOrder[idx - 1]); return; }   
       setStep(1);
       setIdTab('address');
       return;
@@ -2344,36 +1555,24 @@ export default function AddVendorModal(props: {
     // step 1 / identification is the very first tab — nothing before it.
   };
 
-  /* Final step is KYC — there is no separate Product Mapping step in the
-   * wizard. The Save/Update button persists the active KYC sub-tab, saves any
-   * product mappings added via the header "Map Product" button, then closes. */
   const finishSupplier = async () => {
     if (saving) return;
-    // Bank Details is mandatory — block the final save until a bank account is on
-    // record, and jump to the Bank Details tab so the user can add it.
     if (bankRows.length === 0) {
       toast.error('Bank Details required', 'Add at least one bank account before saving the supplier.');
       setKycTab('bank');
       return;
     }
-    // GST Scrutiny is mandatory for a Domestic (Indian) supplier — block the
-    // final save until at least one record exists and jump to the GST tab.
     if (gstApplicable === 'Yes' && gstRows.length === 0) {
       toast.error('GST Scrutiny required', 'Add at least one GST Scrutiny record for a domestic supplier before saving.');
       setKycTab('gst');
       return;
     }
-    // silentToast: this is the FINAL submit, so the completion notice below is
-    // the message the user should be left with — not a per-tab "saved".
     const okKyc = await saveKyc({ silentToast: true });
     if (!okKyc) return;
     if (productMappings.length > 0) {
       const okProd = await saveProducts();
       if (!okProd) return;
     }
-    // The list page's onSubmit handler only closes + refreshes — it shows no
-    // toast of its own, so without this the wizard would vanish with the last
-    // word being a per-tab "saved" and no confirmation the supplier was done.
     toast.success(
       isEdit ? 'Supplier updated' : 'Supplier saved',
       `${vendorCode ? vendorCode + ' — ' : ''}${companyName.trim() || 'Supplier'} completed and saved.`,
@@ -2394,15 +1593,6 @@ export default function AddVendorModal(props: {
     });
   };
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Step 2 — row helpers
-   *
-   * Each "+ Add …" button stamps the next auto-code (DD-002 if DD-001
-   * already exists) and appends the draft to the right list. Seed rows
-   * (mandatory defaults) share the same code prefix so the next-code
-   * calculation just counts the list length. Validation lives inside
-   * each save handler so the modal can show a focused toast.
-   * ────────────────────────────────────────────────────────────── */
   const nextCode = (prefix: string, rows: Array<{ code: string }>) => {
     let max = 0;
     const re = new RegExp(`^${prefix}-(\\d+)$`, 'i');
@@ -2414,9 +1604,6 @@ export default function AddVendorModal(props: {
   };
   const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  /* Inline upload — used by mandatory seed rows that don't have a
-     dedicated row in the modal. Picking a file flips the row's
-     fileName so the action button switches to "Uploaded". */
   const attachFileToDd = (id: string, file: File) => {
     const err = validateVendorUpload(file);
     if (err) { toast.error(err.title, err.body); return; }
@@ -2428,7 +1615,6 @@ export default function AddVendorModal(props: {
     setLicenseRows(prev => prev.map(r => r.id === id ? { ...r, file, fileName: file.name } : r));
   };
 
-  /* Open / save / delete handlers per modal */
   const openDdPopup = () => { setDdDraft(EMPTY_DD_DRAFT); setDdPopupOpen(true); };
   const saveDdDraft = () => {
     if (!ddDraft.documentName.trim()) { toast.error('Missing field', 'DD Document Name is required'); return; }
@@ -2438,10 +1624,6 @@ export default function AddVendorModal(props: {
     setDdPopupOpen(false);
     toast.success('Document added', `${row.code} ${row.documentName} added`);
   };
-  /* Local-only removal (the KYC payload is replace-all, so it becomes permanent
-   * on the next Update & Next) — but with no confirm, one stray click on a saved
-   * document was unrecoverable short of abandoning the whole wizard. Matches
-   * removeBankRow / removeGstRow / removeMapRow, which all confirm. */
   const removeDdRow = async (id: string) => {
     const ok = await confirm({
       title: 'Remove Due Diligence Document?',
@@ -2510,7 +1692,6 @@ export default function AddVendorModal(props: {
     setLicenseRows(prev => prev.filter(r => r.id !== id));
   };
 
-  /** Strip the storage slug prefix → original filename for table labels. */
   const lastName = (p?: string | null): string => {
     const f = (p ?? '').split('/').pop() ?? '';
     return f.includes('__') ? f.slice(f.indexOf('__') + 2) : f;
@@ -2519,9 +1700,6 @@ export default function AddVendorModal(props: {
   type ApiGstRow = { id: number; gst_number?: string | null; status?: string | null; scrutiny_date?: string | null; last_filing_date?: string | null; prev_non_gst_2a_invoice?: string | null; red_flags?: string | null };
 
   const openBankPopup = () => { setEditingBankId(null); setBankDraft(EMPTY_BANK_DRAFT); setBankPopupOpen(true); };
-  /* Load a saved bank row back into the popup for editing. The cancelled
-     cheque is carried as existingPath/Url so the user can keep it without
-     re-uploading (the update endpoint treats cheque as optional). */
   const openBankEdit = (row: BankRow) => {
     setEditingBankId(row.id);
     setBankDraft({
@@ -2539,15 +1717,11 @@ export default function AddVendorModal(props: {
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
     const routingLabel = supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code';
     if (!bankDraft.ifsc.trim())          { toast.error('Missing field', routingLabel + ' is required'); return; }
-    // On edit the previously-saved cheque stands in for a fresh upload.
     if (!bankDraft.chequeFile && !bankDraft.existingPath) { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
     const accErr = validateAccountNumber(bankDraft.accountNumber, 'Account Number', supplierDocType === 'international');
     if (accErr) { toast.error('Invalid Account Number', accErr); return; }
     const ifscErr = supplierDocType === 'international' ? validateSwift(bankDraft.ifsc) : validateIfsc(bankDraft.ifsc);
     if (ifscErr) { toast.error('Invalid ' + routingLabel, ifscErr); return; }
-    // No-duplicate guard — the same account number can't be added twice for this
-    // supplier (the account number uniquely identifies a bank account). The row
-    // being edited is excluded so re-saving it unchanged doesn't trip the guard.
     const accNorm  = bankDraft.accountNumber.trim();
     const ifscNorm = bankDraft.ifsc.trim().toUpperCase();
     if (bankRows.some(b => b.id !== editingBankId && b.accountNumber.trim() === accNorm)) {
@@ -2556,8 +1730,6 @@ export default function AddVendorModal(props: {
     }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
-    // Persist immediately via the bank-accounts CRUD endpoint (multipart for
-    // the cancelled-cheque upload). Editing PUTs to the row; adding POSTs.
     const fd = new FormData();
     fd.append('bank_name', bankDraft.bankName);
     fd.append('branch_name', bankDraft.branchName);
@@ -2566,13 +1738,8 @@ export default function AddVendorModal(props: {
     fd.append('branch_address', bankDraft.branchAddress || '');
     if (bankDraft.chequeFile) fd.append('cheque', bankDraft.chequeFile);
 
-    // No setSaving here — the Add Bank popup (PopupShell) shows its OWN "Saving…"
-    // spinner on its Save button. Touching the shared `saving` flag would ALSO
-    // spin the outer "Update & Next" footer button, which is wrong.
     try {
       if (editingBankId) {
-        // Laravel doesn't parse multipart bodies on PUT — POST with a method
-        // override so the file part still arrives.
         fd.append('_method', 'PUT');
         const { data } = await api.post<{ data: ApiBankRow }>(`/vendors/${vendorId}/bank-accounts/${editingBankId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         const b = data.data;
@@ -2631,10 +1798,6 @@ export default function AddVendorModal(props: {
   };
 
   const openGstPopup = () => {
-    // Every scrutiny entry reports on the SAME GSTIN — the supplier's own, taken
-    // from Stage 1 — so seed it here and render it read-only in the popup.
-    // Without a Stage-1 number the popup's required read-only field would be an
-    // unfixable dead end (nothing to type into), so send the user to the source.
     if (gstApplicable !== 'Yes' || !gstNumber.trim()) {
       toast.error('GST Number missing', 'Set GST Applicable to “Yes” and enter the GST Number on Supplier Identification (Stage 1) first.');
       return;
@@ -2648,8 +1811,6 @@ export default function AddVendorModal(props: {
     const gstErr = validateGstin(gstDraft.gstNumber); if (gstErr) { toast.error('Invalid GST Number', gstErr); return; }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
-    // No setSaving — the Add GST Scrutiny popup (PopupShell) shows its OWN Save
-    // spinner; the shared flag would also spin the outer "Update & Next" button.
     try {
       const { data } = await api.post<{ data: ApiGstRow }>(`/vendors/${vendorId}/gst-scrutiny`, {
         gst_number: gstDraft.gstNumber,
@@ -2660,9 +1821,6 @@ export default function AddVendorModal(props: {
       });
       const g = data.data;
       const gstNo = g.gst_number ?? '';
-      // Prepend the new scrutiny at the TOP, and sync EVERY row's GST number to
-      // it — GST is a supplier-wide value shared across all scrutiny periods
-      // (the backend mirrors this by updating all rows for the vendor).
       setGstRows(prev => [{
         id: String(g.id),
         gstNumber: gstNo,
@@ -2679,31 +1837,7 @@ export default function AddVendorModal(props: {
       toast.error('Save failed', msg);
     }
   };
-  const removeGstRow = async (id: string) => {
-    const ok = await confirm({
-      title: 'Remove GST Scrutiny?',
-      message: 'This GST scrutiny entry will be permanently removed from this supplier. This action cannot be undone.',
-      confirmLabel: 'Delete',
-      cancelLabel: 'Cancel',
-      tone: 'danger',
-      icon: 'delete-bin-line',
-    });
-    if (!ok) return;
-    if (!vendorId || !/^\d+$/.test(id)) { setGstRows(prev => prev.filter(r => r.id !== id)); return; }
-    setSaving(true);
-    try {
-      await api.delete(`/vendors/${vendorId}/gst-scrutiny/${id}`);
-      setGstRows(prev => prev.filter(r => r.id !== id));
-      toast.success('GST scrutiny deleted', 'Entry removed');
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not delete GST scrutiny';
-      toast.error('Delete failed', msg);
-    } finally {
-      setSaving(false);
-    }
-  };
 
-  /* Tab-aware label + handler for the SectionCard's "+ Add …" button */
   const kycTabAddMeta: Record<KycTab, { label: string; onClick: () => void }> = {
     company: { label: '+ Add More Due Diligence', onClick: openDdPopup },
     owner:   { label: '+ Add Owner KYC',          onClick: openOwnerPopup },
@@ -2712,19 +1846,10 @@ export default function AddVendorModal(props: {
     gst:     { label: '+ Add GST Scrutiny',       onClick: openGstPopup },
   };
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Step 3 — Trade Documents handlers
-   *
-   * Each row is a fixed agreement type. Toggling the per-row checkbox
-   * marks it for signature; clicking Send flips status to 'Sent' and
-   * clears the checkbox (so the same row can be re-sent if needed).
-   * The header "select-all" checkbox flips every row's checkbox.
-   * ────────────────────────────────────────────────────────────── */
   const toggleTradeDocSign = (code: string) => {
     setTradeDocRows(prev => prev.map(r => r.code === code ? { ...r, sendForSignature: !r.sendForSignature } : r));
   };
   const toggleAllTradeDocSign = () => {
-    // Signed docs are locked — they never join select-all or a bulk send.
     const isSignedRow = (s: string) => s === 'completed' || s === 'Signed';
     setTradeDocRows(prev => {
       const selectable = prev.filter(r => !isSignedRow(r.status));
@@ -2738,23 +1863,10 @@ export default function AddVendorModal(props: {
       toast.info('Not a library document', 'This row is a legacy placeholder. Pick a segment with mapped trade documents to enable signature sending.');
       return;
     }
-    // `vendorId` covers both edit-mode (prop-supplied) and create-mode
-    // (set by Stage 1→2 auto-save). Checking only `initialVendorId`
-    // here was wrong — it stays null after a fresh create until the
-    // user closes and re-opens the modal.
     if (!vendorId) {
       toast.info('Save vendor first', 'Save the vendor before sending documents for signature.');
       return;
     }
-    /* Resend semantics — when the doc is already `inprogress` in Zoho,
-     * the user clicking "Resend" wants to NUDGE the existing signer,
-     * not re-pick recipients + re-position the signature box. Hit the
-     * remind endpoint directly (mirrors New_IDIMS_6.0 + the customer /
-     * consignee flows) and toast. Declined / recalled / expired rows
-     * fall through to the wizard so the user can re-cast a fresh
-     * request. Vendor row state uses signatureRequestId (camelCase).
-     * Bundle-aware cooldown stops a 3-doc bundle from triggering three
-     * reminder emails. */
     const reqId = row.signatureRequestId;
     if (reqId && row.status === 'inprogress') {
       if (isReminderCooldown(reqId)) {
@@ -2770,9 +1882,6 @@ export default function AddVendorModal(props: {
               ? `The signer was notified about all ${bundleCount} documents in this signature request.`
               : 'The signer has been notified.',
           );
-          // Optimistic counter bump — server's returned value wins so
-          // the badge stays accurate even when the polling loop is
-          // mid-flight against the same row.
           const serverCount = Number(res?.data?.data?.reminder_count ?? NaN);
           const serverLastAt = (res?.data?.data?.last_reminder_sent_at ?? null) as string | null;
           setTradeDocRows(prev => prev.map(r => (
@@ -2791,7 +1900,6 @@ export default function AddVendorModal(props: {
     setSendForSignature([row.db_id]);
   };
   const sendSelectedTradeDocs = () => {
-    // Signed (completed) docs are locked — never include them in a bulk send.
     const ids = tradeDocRows
       .filter(r => r.sendForSignature && r.db_id && r.status !== 'completed' && r.status !== 'Signed')
       .map(r => r.db_id!);
@@ -2806,15 +1914,6 @@ export default function AddVendorModal(props: {
     setSendForSignature(ids.slice(0, 10));
   };
 
-  /* ──────────────────────────────────────────────────────────────────
-   * Step 4 — Product Mapping handlers
-   *
-   * The modal pulls active products from /api/products and active gst
-   * percentages from the gst_percentage master on first open. Selecting
-   * a product copies its code / HSN / segment into readonly draft
-   * fields. Changing purchase price or GST % auto-computes the GST
-   * amount and total amount so the user only enters two values.
-   * ────────────────────────────────────────────────────────────── */
   const fetchProductOptsIfNeeded = async () => {
     if (productOpts.length) return;
     try {
@@ -2827,15 +1926,6 @@ export default function AddVendorModal(props: {
         segment?: { id?: number; title?: string } | null;
         gst_percentage?: { percentage?: number | string } | null;
       };
-      // Pull every product (no `status=` filter) so we get active, inactive AND
-      // the draft/zero-supplier rows. A product is mappable as long as it has a
-      // SEGMENT (Core step done) — that's what the segment filter matches against
-      // and what a supplier is mapped by. Price / GST are entered in the popup,
-      // so a product that hasn't finished Sales / Quality can still be mapped.
-      // `lite=1` → the backend skips the 10 heavy list relations (incl. the
-      // vendorMaps / qcRecords hasMany fan-outs) and returns only the fields
-      // this picker reads (code / name / HSN / segment / base price / GST %),
-      // cutting the ~5s load to well under a second.
       const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500&lite=1');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       const eligible = rows.filter(r => r.segment_id != null || r.segment?.id != null);
@@ -2852,10 +1942,6 @@ export default function AddVendorModal(props: {
       })));
     } catch { /* silent — modal falls back to manual entry */ }
   };
-  // gst_percentage options are seeded from the master bundle on mount
-  // (see hydrate() in the bundled-fetch useEffect above). The two callers
-  // below still invoke this helper but it's now a no-op kept for layout
-  // — removing the fetch silently turns the dialog into an instant open.
   const fetchGstPctOptsIfNeeded = async () => { /* seeded from bundle */ };
 
   const recomputeMapTotals = (draft: MapDraft): MapDraft => {
@@ -2885,26 +1971,15 @@ export default function AddVendorModal(props: {
       productName:   picked?.name ?? '',
       hsnSacCode:    picked?.hsn  ?? '',
       segment:       picked?.segment ?? '',
-      // Seed purchase price + GST from the product's own data if it
-      // has them; user can still override. recomputeMapTotals runs
-      // off the same draft so amount totals update in one pass.
       purchasePrice: picked?.basePrice ?? d.purchasePrice,
       gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
     }));
   };
 
-  /* Persist the full mapping list to the backend immediately (replace-all via
-   * POST /vendors/{id}/step/products) so each per-row Map Product add / edit /
-   * delete saves right away — no waiting for the final "Save Supplier". Stays
-   * local (no-op) while the vendor doesn't exist yet (mid add-flow). Returns
-   * false on failure so the caller can keep the popup open. */
-  /* In-flight flag for the replace-all product-mapping write. Locks the Mapped
-   * Products popup (Map Product / Edit / Remove / Close) so a second write can't
-   * race the first — see removeMapRow. */
   const [mappingBusy, setMappingBusy] = useState(false);
 
   const persistMappings = async (list: ProductMappingRow[]): Promise<boolean> => {
-    if (!vendorId) return true;   // add-flow: vendor not created yet → keep local
+    if (!vendorId) return true;   
     try {
       await api.post(`/vendors/${vendorId}/step/products`, {
         mappings: list.map(m => ({
@@ -2926,9 +2001,6 @@ export default function AddVendorModal(props: {
 
   const saveMapDraft = async () => {
     if (!mapDraft.productId)             { toast.error('Missing field', 'Pick a Product Name'); return; }
-    // Segment gate: a product can only be mapped if its segment is one of the
-    // supplier's own segments. (Belt-and-suspenders — the dropdown is already
-    // filtered, but this blocks any stale/forced selection.)
     {
       const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
       const opt = productOpts.find(o => o.value === mapDraft.productId);
@@ -2940,9 +2012,6 @@ export default function AddVendorModal(props: {
     if (!mapDraft.purchasePrice.trim())  { toast.error('Missing field', 'Purchase Price is required'); return; }
     const price = parseFloat(mapDraft.purchasePrice);
     if (!isFinite(price) || price < 0)   { toast.error('Invalid price', 'Purchase Price must be a non-negative number'); return; }
-    // Duplicate-mapping check only fires for ADD mode — in edit mode the
-    // row already exists for this productId, so we exclude the row being
-    // edited from the check.
     if (productMappings.some(m => m.productId === Number(mapDraft.productId) && m.id !== mapEditingId)) {
       toast.error('Already mapped', `${mapDraft.productCode} is already mapped to this vendor`);
       return;
@@ -2961,7 +2030,7 @@ export default function AddVendorModal(props: {
         gstAmount:    parseFloat(mapDraft.gstAmount) || 0,
         totalAmount:  parseFloat(mapDraft.totalAmount) || price,
       });
-      if (!(await persistMappings(next))) return;   // keep popup open on failure
+      if (!(await persistMappings(next))) return;   
       setProductMappings(next);
       setMapEditingId(null);
       setMapPopupOpen(false);
@@ -2982,16 +2051,12 @@ export default function AddVendorModal(props: {
       totalAmount:  parseFloat(mapDraft.totalAmount) || price,
     };
     const next = [...productMappings, row];
-    if (!(await persistMappings(next))) return;     // keep popup open on failure
+    if (!(await persistMappings(next))) return;     
     setProductMappings(next);
     setMapPopupOpen(false);
     toast.success('Product mapped', `${row.productCode} ${row.productName} added`);
   };
   const removeMapRow = async (id: string) => {
-    // persistMappings is a REPLACE-ALL post. Two overlapping removes each build
-    // `next` from the same stale productMappings closure, so the later response
-    // silently resurrects the row the earlier one deleted. Guard at the top —
-    // the popup's disabled/veil is a UI courtesy, this is the correctness fix.
     if (mappingBusy) return;
     const ok = await confirm({
       title: 'Remove Mapped Product?',
@@ -3002,8 +2067,6 @@ export default function AddVendorModal(props: {
       icon: 'delete-bin-line',
     });
     if (!ok) return;
-    // Re-check: the confirm dialog is awaited, so another remove could have
-    // started while it was open.
     if (mappingBusy) return;
     setMappingBusy(true);
     try {
@@ -3015,13 +2078,6 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* Backfill HSN / Segment on existing mappings once productOpts arrive.
-   * Edit-load seeds these as empty (the vendor show payload doesn't
-   * include the joined master rows), so the Map Products table renders
-   * blank cells until the user re-edits each mapping. This effect joins
-   * each mapping back to its product by productId and writes the master
-   * values in. Skips rows that already have data so a user-edited value
-   * isn't clobbered. */
   useEffect(() => {
     if (productOpts.length === 0 || productMappings.length === 0) return;
     let dirty = false;
@@ -3036,10 +2092,6 @@ export default function AddVendorModal(props: {
     if (dirty) setProductMappings(next);
   }, [productOpts, productMappings]);
 
-  /* Open the Map Products popup in edit mode for an existing row.
-   * Prefills the draft from the row, sets mapEditingId so saveMapDraft
-   * updates in place rather than appending, and ensures the product /
-   * GST option lists are loaded so the dropdowns aren't blank. */
   const openMapEdit = (id: string) => {
     const row = productMappings.find(r => r.id === id);
     if (!row) return;
@@ -3061,22 +2113,8 @@ export default function AddVendorModal(props: {
     void fetchGstPctOptsIfNeeded();
   };
 
-  /* Tracks which extra contact the popup is currently editing. null in
-   * add-mode (popup appends a new row), set to a contact id in edit-mode
-   * (saveContactDraft updates that row in place rather than creating a
-   * duplicate). Lets the Edit icon on each secondary contact reuse the
-   * same ContactAddPopup component. */
   const [contactEditingId, setContactEditingId] = useState<number | null>(null);
-  /* Save the primary contact — validates the four required fields, then
-     marks it saved so it surfaces as the locked "Primary" row in the
-     table below. The actual persistence still happens in saveContacts()
-     on Save & Next; this is the in-form confirmation step the user asked for. */
   const savePrimaryContact = async () => {
-    // Validate the contact fields first so errors highlight on THIS tab, then
-    // actually persist via saveContacts() (PUT /vendors/{id}/step/contacts).
-    // Previously this only set a local flag + toast, so the primary contact
-    // stayed unsaved (primary_address null) until Save & Next — the button
-    // claimed success while nothing hit the backend.
     const errs: Record<string, string> = {};
     if (!contactName.trim())  errs.contactName = 'Contact Person Name is required';
     if (!designation.trim())  errs.designation = 'Designation is required';
@@ -3091,29 +2129,12 @@ export default function AddVendorModal(props: {
     }
     setSavingPrimary(true);
     try {
-      const ok = await saveContacts({ outerSpinner: false });   // persists primary_address + business card; spinner stays on THIS button only
+      const ok = await saveContacts({ outerSpinner: false });   
       if (ok) { setPrimarySaved(true); setEditingPrimary(false); }
     } finally {
       setSavingPrimary(false);
     }
   };
-  /* The Primary Contact card is read-only once saved (or on edit of a supplier
-     that ALREADY has a primary contact), UNLESS the user clicked Edit on its
-     row — then editingPrimary re-opens it. If a supplier was created WITHOUT a
-     primary contact, the card stays open on edit so it can finally be filled. */
-  // Only treat the primary contact as "saved/locked" when the PERSISTED contact
-  // is COMPLETE. An incomplete/partial contact — e.g. a supplier whose address
-  // was saved at Stage 1 but the contact person was never fully filled — must
-  // stay OPEN on edit so the user can finish it.
-  //
-  // Derive this from savedPrimary (the last-loaded/last-saved snapshot), NOT the
-  // live form fields. Reading the live fields meant that filling in the LAST
-  // missing required field flipped the card to locked mid-keystroke: on a
-  // supplier with no email, typing the first character of one instantly set
-  // readOnly and fired the "locked" toast, so the email could never be finished.
-  // Using the snapshot also keeps the lock in step with the Primary row below —
-  // locked now always implies that row exists, so the toast's "click the Edit
-  // icon on the primary row" is always something the user can actually do.
   const savedPrimaryComplete = !!(
     savedPrimary
     && savedPrimary.name.trim()
@@ -3149,7 +2170,6 @@ export default function AddVendorModal(props: {
     });
     setContactPopupOpen(true);
   };
-  /* Map a server contact (shapeContact) → local ContactRow. */
   type ApiContactRow = {
     id: number; contact_name?: string | null; designation?: string | null;
     contact_no?: string | null; email?: string | null; whatsapp_enabled?: boolean;
@@ -3181,13 +2201,10 @@ export default function AddVendorModal(props: {
       toast.error('Missing required fields', `Please fill: ${missing.join(', ')}`);
       return;
     }
-    // Format checks — phone and email
     const phoneErr = validateContactNumber(contactDraft.phone, 'Contact No', supplierDocType === 'domestic');
     if (phoneErr) { toast.error('Invalid Contact No', phoneErr); return; }
     const emailErr = validateEmail(contactDraft.email);
     if (emailErr) { toast.error('Invalid Email', emailErr); return; }
-    // Email must be UNIQUE across all contacts (primary + additional). Exclude
-    // the row being edited so re-saving it unchanged doesn't false-positive.
     const emailNorm = contactDraft.email.trim().toLowerCase();
     const usedEmails = new Set<string>([
       email.trim().toLowerCase(),
@@ -3199,8 +2216,6 @@ export default function AddVendorModal(props: {
     }
     if (!vendorId) { toast.error('Step blocked', 'Save Identity information first.'); return; }
 
-    // Persist immediately via the per-contact CRUD endpoint so the row is
-    // stored the moment the user clicks Save — independent of "Save & Next".
     const fd = new FormData();
     fd.append('contact_name', contactDraft.name);
     fd.append('designation', contactDraft.designation || '');
@@ -3209,15 +2224,11 @@ export default function AddVendorModal(props: {
     fd.append('whatsapp_enabled', contactDraft.whatsapp ? '1' : '0');
     if (contactDraft.attachmentFile) fd.append('attachment', contactDraft.attachmentFile);
     else if (contactDraft.attachmentPath) fd.append('attachment_path', contactDraft.attachmentPath);
-    else fd.append('remove_attachment', '1');  // no file + no path = user cleared it → backend drops the old file
+    else fd.append('remove_attachment', '1');  
 
-    // The "Add Contact Person" popup drives its OWN in-flight spinner (local
-    // state in ContactAddPopup), so we deliberately do NOT toggle the shared
-    // `saving` flag here — that flag belongs to the outer "Update & Next"
-    // button, which was lighting up instead of the popup's Save button.
     try {
       if (contactEditingId !== null) {
-        fd.append('_method', 'PUT');  // PHP parses multipart only on POST
+        fd.append('_method', 'PUT');  
         const { data } = await api.post<{ data: ApiContactRow }>(`/vendors/${vendorId}/contacts/${contactEditingId}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
         const saved = mapApiContact(data.data);
         setExtraContacts(prev => prev.map(c => c.id === contactEditingId ? saved : c));
@@ -3260,9 +2271,6 @@ export default function AddVendorModal(props: {
     }
   };
 
-  /* Row count for the active KYC sub-tab — drives the Figma "N documents"
-     header badge. Falls back to the segment-rule reference rows when the user
-     hasn't uploaded their own yet. */
   const kycDocCount =
     kycTab === 'company' ? (ddRows.length      || segmentDocs.dd.length) :
     kycTab === 'owner'   ? (ownerRows.length   || segmentDocs.kyc.length) :
@@ -3271,12 +2279,7 @@ export default function AddVendorModal(props: {
                            gstRows.length;
 
   return createPortal((
-    // Backdrop click intentionally does NOT close the wizard — the
-    // user has stepped through multiple tabs of form data and an
-    // accidental click outside would lose all of it. The Cancel button
-    // and the top-right X are the only dismissal paths.
     <div className="avm-backdrop">
-      <style>{SCOPED_CSS}</style>
       <div className="avm-modal" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
         {/* While a step save is in flight, a veil over the whole modal blocks
             EVERY other action (Map Product, tab switch, Add buttons, etc.) until
@@ -3361,13 +2364,6 @@ export default function AddVendorModal(props: {
             </div>
           )}
           {(loadingEdit || mastersLoading || advancing) ? (
-            /* Shimmer skeleton — replaces the form entirely while
-               /vendors/master-bundle (or the edit-mode prefill) is in
-               flight. Previously this was an overlay sitting ON TOP of
-               the form, but absolute positioning inside a scrollable
-               body left gaps and let the half-loaded form bleed through.
-               Mutually-exclusive rendering is simpler and reliable.
-               Skeleton hits 0ms when the sessionStorage cache is fresh. */
             <div className="avm-load-overlay avm-load-overlay-static" role="status" aria-live="polite" aria-label="Loading supplier form">
               {/* Step 1's identification tab is what opens 99% of the time, and
                   it gets a skeleton built from the real section cards so nothing
@@ -3392,113 +2388,117 @@ export default function AddVendorModal(props: {
               prefill have both finished — keeps half-hydrated inputs from
               flashing onscreen behind a translucent skeleton. */}
           {step > 1 && (() => {
-            /* Carried-over summary of everything captured in earlier
-               steps. Each entry is a `Label : value` pair flowed
-               inline so the header reads like the field strip on
-               read-only detail screens — much denser than a card grid.
-               KYC carries the FIRST row of each sub-list (not the
-               count), and contact info shows only the PRIMARY contact.
-               Sub-tabs inside the same step share this header so
-               navigating between them never loses the upstream data. */
             type PrevField = {
               label: string;
               value: string;
-              href?: string;        // renders the value as a link
-              suffix?: string;      // appended in muted style after value (e.g. validity)
+              href?: string;        
+              suffix?: string;      
             };
+            type PrevGroup =
+              | { label: string; kind: 'grid'; fields: PrevField[] }
+              | { label: string; kind: 'line'; parts: string[]; empty: string };
             type PrevStage = {
               name: string;
               tone: 'violet' | 'teal' | 'purple';
-              rows: PrevField[][];   // one inline row per sub-array
+              groups: PrevGroup[];
             };
             const prevStages: PrevStage[] = [];
+            const joined = (parts: Array<string | undefined | null>) =>
+              parts.map(p => (p ?? '').trim()).filter(p => p && p !== '—');
 
             if (step > 1) {
               const yesNo = (b: boolean) => (b ? 'Yes' : 'No');
+              const identityFields: PrevField[] = [
+                { label: 'Supplier Code',        value: vendorCode || '—' },
+                { label: 'Company Name',         value: companyName || '—' },
+                { label: 'Legal Name',           value: legalName || '—' },
+                { label: 'Supplier Type',        value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
+                { label: 'Segment',              value: segment.map(s => labelFor(s, segmentOpts) || s).join(', ') || '—' },
+                { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
+                { label: 'Supplier Behaviour',   value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
+                { label: 'Compliance Behaviour', value: labelFor(complianceBehaviour, complianceOpts) || '—' },
+                { label: 'Company Website',      value: website || 'NA' },
+              ];
+              if (supplierDocType === 'domestic') {
+                identityFields.push({ label: 'GST Number', value: gstNumber || '—' });
+              }
+
               prevStages.push({
-                name: 'Supplier Legal Identity Details',
+                name: 'Stage 1 — Supplier Legal Identity',
                 tone: 'violet',
-                rows: [
-                  [
-                    { label: 'Supplier Code',       value: vendorCode || '—' },
-                    { label: 'Company Name',        value: companyName || '—' },
-                    { label: 'Company Legal Name',  value: legalName || '—' },
-                    { label: 'Supplier Type',       value: labelFor(vendorType, SUPPLIER_TYPE_OPTS) || vendorType || '—' },
-                  ],
-                  [
-                    { label: 'Company Website',     value: website || 'NA' },
-                    { label: 'Risk Level',          value: labelFor(riskLevel, riskLevelOpts) || '—' },
-                    { label: 'Supplier Behaviour',  value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
-                    { label: 'Compliance Behaviour',value: labelFor(complianceBehaviour, complianceOpts) || '—' },
-                  ],
-                  [
-                    { label: 'Registered Office Address', value: registeredOffice || '—' },
-                    { label: 'Google Location Link', value: googleLocation || '—' },
-                    { label: 'Country',             value: labelFor(country, countryOpts) || '—' },
-                    { label: 'State',               value: labelFor(state, stateOpts) || '—' },
-                    { label: 'City',                value: city || '—' },
-                    { label: 'State Code',          value: stateCode || '—' },
-                  ],
-                  // Primary contact only — extras are intentionally
-                  // hidden (the user said to surface only the
-                  // primary). Pincode + segment included so the row
-                  // still reads as a complete identity snapshot.
-                  [
-                    { label: 'Contact Person Name', value: contactName || '—' },
-                    { label: 'Designation',         value: designation || '—' },
-                    { label: 'Contact No',          value: contactNo || '—' },
-                    { label: 'WhatsApp Enable',     value: yesNo(whatsappEnabled) },
-                  ],
+                groups: [
+                  { label: 'Company Information', kind: 'grid', fields: identityFields },
+                  {
+                    label: 'Primary Address', kind: 'line',
+                    parts: joined([
+                      registeredOffice, city,
+                      labelFor(state, stateOpts),
+                      stateCode ? `State Code ${stateCode}` : '',
+                      labelFor(country, countryOpts),
+                    ]),
+                    empty: 'No address entered yet',
+                  },
+                  {
+                    label: 'Primary Contact Person', kind: 'line',
+                    parts: joined([
+                      contactName, designation, contactNo, email,
+                      `WhatsApp ${yesNo(whatsappEnabled)}`,
+                    ]),
+                    empty: 'No contact entered yet',
+                  },
                 ],
               });
             }
 
             if (step > 2) {
-              // First entry of each KYC sub-list — counts are gone.
               const bank = bankRows[0];
               const dd   = ddRows[0];
               const own  = ownerRows[0];
-              const kycRows: PrevField[][] = [];
+              const kycGroups: PrevGroup[] = [];
 
               if (bank) {
-                kycRows.push([
-                  { label: 'Bank Name',      value: bank.bankName || '—' },
-                  { label: 'Branch',         value: bank.branchName || '—' },
-                  { label: 'Account Number', value: bank.accountNumber || '—' },
-                  { label: supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code', value: bank.ifsc || '—' },
-                ]);
+                kycGroups.push({
+                  label: 'Bank Details', kind: 'grid',
+                  fields: [
+                    { label: 'Bank Name',      value: bank.bankName || '—' },
+                    { label: 'Branch',         value: bank.branchName || '—' },
+                    { label: 'Account Number', value: bank.accountNumber || '—' },
+                    { label: supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code', value: bank.ifsc || '—' },
+                  ],
+                });
               }
               if (dd) {
                 const fileLabel = dd.fileName || (dd.existingPath ? dd.existingPath.split('/').pop() ?? '' : '');
                 const href = dd.existingUrl || (dd.existingPath ? resolveFileUrl(dd.existingPath) : (dd.file ? URL.createObjectURL(dd.file) : ''));
-                kycRows.push([
-                  {
+                kycGroups.push({
+                  label: 'Company Due Diligence', kind: 'grid',
+                  fields: [{
                     label: dd.documentName || 'Document',
                     value: fileLabel || '—',
                     href: href || undefined,
                     suffix: dd.expiry && dd.expiry !== 'N/A' ? `(Validity: ${dd.expiry})` : undefined,
-                  },
-                ]);
+                  }],
+                });
               }
               if (own) {
-                kycRows.push([
-                  { label: 'Document Name',     value: own.documentName || '—' },
-                  { label: 'Issuing Authority', value: own.issuingAuthority || '—' },
-                  { label: 'Document Number',   value: own.documentNumber || '—' },
-                  { label: 'Issue Date',        value: fmtDMY(own.issueDate) },
-                ]);
+                kycGroups.push({
+                  label: 'Owner KYC', kind: 'grid',
+                  fields: [
+                    { label: 'Document Name',     value: own.documentName || '—' },
+                    { label: 'Issuing Authority', value: own.issuingAuthority || '—' },
+                    { label: 'Document Number',   value: own.documentNumber || '—' },
+                    { label: 'Issue Date',        value: fmtDMY(own.issueDate) },
+                  ],
+                });
               }
-              if (kycRows.length) {
+              if (kycGroups.length) {
                 prevStages.push({
-                  name: 'Supplier KYC / Due Diligence Details',
+                  name: 'Stage 2 — KYC / Due Diligence',
                   tone: 'teal',
-                  rows: kycRows,
+                  groups: kycGroups,
                 });
               }
             }
-
-            // The Trade Document Management recap was removed along with
-            // that step (Evidence Vault).
 
             if (prevStages.length === 0) return null;
 
@@ -3519,24 +2519,46 @@ export default function AddVendorModal(props: {
                   <div className="avm-prev-body">
                     {prevStages.map(s => (
                       <div key={s.name} className={`avm-prev-stage tone-${s.tone}`}>
-                        <div className="avm-prev-stage-label">⊕ {s.name}</div>
-                        <div className="avm-prev-rows">
-                          {s.rows.map((row, i) => (
-                            <div key={i} className="avm-prev-row">
-                              {row.map((f, j) => (
-                                <span key={`${f.label}-${j}`} className="avm-prev-pair">
-                                  <span className="avm-prev-k">{f.label} :</span>{' '}
-                                  {f.href ? (
-                                    <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-link">{f.value}</a></Tooltip>
-                                  ) : (
-                                    <Tooltip label={f.value}><span className="avm-prev-v">{f.value}</span></Tooltip>
-                                  )}
-                                  {f.suffix ? <span className="avm-prev-suffix"> {f.suffix}</span> : null}
-                                </span>
-                              ))}
-                            </div>
-                          ))}
+                        {/* Green tick, not the old ⊕ glyph — the block exists to
+                            say "this stage is done", and a check is the mark
+                            that already means completed on the stepper above. */}
+                        <div className="avm-prev-stage-label">
+                          <span className="avm-prev-check">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+                          </span>
+                          {s.name}
                         </div>
+                        {s.groups.map(g => (
+                          <div key={g.label} className="avm-prev-group">
+                            <div className="avm-prev-glabel">{g.label}</div>
+                            {g.kind === 'grid' ? (
+                              <div className="avm-prev-grid">
+                                {g.fields.map((f, j) => (
+                                  <div key={`${f.label}-${j}`} className="avm-prev-cell">
+                                    <span className="avm-prev-k">{f.label}</span>
+                                    {f.href ? (
+                                      <Tooltip label={f.value}><a href={f.href} target="_blank" rel="noopener noreferrer" className="avm-prev-v avm-prev-link">{f.value}</a></Tooltip>
+                                    ) : (
+                                      <Tooltip label={f.value}><span className="avm-prev-v">{f.value}</span></Tooltip>
+                                    )}
+                                    {f.suffix ? <span className="avm-prev-suffix">{f.suffix}</span> : null}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="avm-prev-line">
+                                {g.parts.length
+                                  ? g.parts.map((p, j) => (
+                                      <span key={j}>
+                                        {j > 0 && <span className="avm-prev-dot">·</span>}
+                                        {p}
+                                      </span>
+                                    ))
+                                  : <span className="avm-prev-empty">{g.empty}</span>}
+                              </div>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     ))}
                   </div>
@@ -3620,16 +2642,7 @@ export default function AddVendorModal(props: {
                             return dom();
                           }}
                           onChange={vs => {
-                            // Block ADDING a segment whose DCP rule doesn't cover this
-                            // supplier's country (e.g. an International-only segment on a
-                            // domestic India supplier). The segment stays visible/selectable
-                            // — the block is a toast + we don't add it, so the reason is clear.
                             const added = vs.filter(s => !segment.includes(s));
-                            // Only enforce the trade-type match once a COUNTRY is chosen —
-                            // without a country the supplier's trade type is undetermined, so
-                            // the segment must not be pre-judged as international (QA: empty
-                            // form wrongly said "International supplier"). Mirrors the save
-                            // validation's `&& country` guard.
                             const badAdd = country ? added.filter(s => {
                               const t = segTypesById.get(String(s));
                               return t && t.size > 0 && !t.has(supplierDocType);
@@ -3643,38 +2656,16 @@ export default function AddVendorModal(props: {
                               );
                               vs = vs.filter(s => !badAdd.includes(s));
                             }
-                            // A segment can't be removed when (1) a PRODUCT on an issued PO
-                            // or a Supplier Invoice belongs to it, or (2) it has an uploaded
-                            // document not shared with any remaining segment. Block only those
-                            // (re-add them) and let the rest go through. Mirrors the server.
                             const removed = segment.filter(s => !vs.includes(s));
                             if (removed.length) {
                               const lockedRemoved = removed.filter(s => lockedSegments.includes(s));
-                              // (2) Unique-document lock — SAME server data as the backend
-                              // (required category|code keys per segment id + uploaded keys),
-                              // so the UI blocks exactly what save does.
                               const uploadedSet = new Set(uploadedKeys);
                               const keepKeys = new Set(vs.flatMap(s => segReqKeys[String(s)] ?? []));
                               const docRemoved = removed.filter(s => !lockedRemoved.includes(s)
                                 && (segReqKeys[String(s)] ?? []).some(k => uploadedSet.has(k) && !keepKeys.has(k)));
-                              /* Name the REAL blocker (QA #94).
-                                 A segment is locked for one of two reasons, and
-                                 they need different messages: its product is on
-                                 an issued PO / Supplier Invoice (nothing the user
-                                 can undo here), or a product is merely mapped to
-                                 this supplier in that segment (which they CAN
-                                 clear, by unmapping it). Both used to print
-                                 "used in a PO / Invoice", so a supplier with no
-                                 PO at all was told one existed — and given no
-                                 hint about the mapping that was actually
-                                 blocking them. The server reports the reason per
-                                 segment id in locked_segment_reasons. */
                               if (lockedRemoved.length) {
                                 const label = (id: string) => segmentOpts.find(o => o.value === id)?.label ?? id;
                                 const by = (r: string) => lockedRemoved.filter(s => lockedSegmentReasons[String(s)] === r).map(label);
-                                // Unknown reason falls in with the PO bucket — the
-                                // stronger, safer claim if the server ever omits
-                                // the map (e.g. an older cached response).
                                 const poNames   = lockedRemoved.filter(s => !['spi', 'product'].includes(lockedSegmentReasons[String(s)] ?? '')).map(label);
                                 const spiNames  = by('spi');
                                 const prodNames = by('product');
@@ -3690,15 +2681,6 @@ export default function AddVendorModal(props: {
                                 }
                               }
                               if (docRemoved.length) {
-                                /* "has its own uploaded document" did not say what
-                                   to do, or which document. The condition is
-                                   specific: a document was uploaded against a
-                                   requirement that ONLY this segment asks for, so
-                                   dropping the segment would orphan the file. Say
-                                   that, and say where to clear it. Applies to
-                                   mandatory and optional requirements alike —
-                                   the uploaded file is what matters, not whether
-                                   it was compulsory. */
                                 const n = docRemoved.map(id => segmentOpts.find(o => o.value === id)?.label ?? id);
                                 toast.error(
                                   'Cannot remove segment',
@@ -3771,10 +2753,6 @@ export default function AddVendorModal(props: {
                           value={state}
                           onChange={(v) => {
                             setState(v);
-                            // Auto-fill State Code from the master_state_codes row
-                            // whose state_id matches the chosen state. The
-                            // dropdown's `value` is the state's id since the
-                            // switch to ID-based master FK references.
                             const sc = stateCodeRows.find(r => r.state_id === v)?.state_code ?? '';
                             setStateCode(sc);
                             clearFieldError('state');
@@ -3886,9 +2864,6 @@ export default function AddVendorModal(props: {
                   }>
                     <div
                       className="avm-grid-4"
-                      /* The primary contact locks after saving. Clicking the
-                         locked fields does nothing, so surface a toast telling
-                         the user why it can't be edited here. */
                       onClick={() => { if (primaryLocked) toast.info('Primary contact locked', 'Click the Edit icon on the primary row below to change it.'); }}
                     >
                       <Field label="Contact Person Name" required error={fieldErrors.contactName}>
@@ -3960,8 +2935,6 @@ export default function AddVendorModal(props: {
                     <button className="avm-section-add-btn" onClick={openContactPopup}>+ Add More Contact Person</button>
                   }>
                     {(() => {
-                      // Additional (secondary) contacts only — the primary KYC
-                      // contact now lives in its own card above (Figma layout).
                       type Row = {
                         key: string;
                         isPrimary: boolean;
@@ -3975,10 +2948,6 @@ export default function AddVendorModal(props: {
                         attachmentHref: string;
                       };
                       const rows: Row[] = [];
-                      // Primary contact surfaces as the first, locked "Primary" row —
-                      // but ONLY from the saved snapshot. Typing / editing the primary
-                      // card above never adds or mutates this row until the user
-                      // actually clicks "Save Contact" (which refreshes savedPrimary).
                       if (savedPrimary) {
                         rows.push({
                           key: 'primary',
@@ -4223,7 +3192,7 @@ export default function AddVendorModal(props: {
                 />
               )}
               {kycTab === 'gst' && (
-                <GstScrutinyTable rows={gstRows} onRemove={removeGstRow} />
+                <GstScrutinyTable rows={gstRows} />
               )}
             </SectionCard>
           </>)}
@@ -4252,11 +3221,6 @@ export default function AddVendorModal(props: {
           <div className="avm-foot-right">
             {!(step === 1 && idTab === 'identification') && <button className="avm-btn-outline" onClick={goPrev}>← Previous</button>}
             {!(step === 2 && kycTabOrder.indexOf(kycTab) === kycTabOrder.length - 1) ? (
-              /* Only `saving` gets a spinner — that's the user's OWN click being
-                 worked on. During the initial load the button stays disabled but
-                 keeps its normal label: the body shimmer already says "loading",
-                 and a spinner here read as "your click is being processed" when
-                 nothing had been clicked. */
               <button className="avm-btn-primary" onClick={goNext} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
@@ -4268,8 +3232,6 @@ export default function AddVendorModal(props: {
                 )}
               </button>
             ) : (
-              /* Last KYC sub-tab = final step. Saves + closes (no Product step).
-                 Spinner only for `saving` — see the Save & Next button above. */
               <button className="avm-btn-primary" onClick={finishSupplier} disabled={saving || loadingEdit || mastersLoading}>
                 {saving ? (
                   <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
@@ -4355,13 +3317,18 @@ export default function AddVendorModal(props: {
         <AddProductMappingPopup
           draft={mapDraft}
           setDraft={setMapDraft}
-          /* Only products whose segment matches one of the supplier's own
-             segments can be mapped. The currently-edited product is kept visible
-             so editing an existing row never blanks the dropdown. */
           productOpts={(() => {
             const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
-            if (segSet.size === 0) return productOpts;
-            return productOpts.filter(o => (o.segmentId != null && segSet.has(o.segmentId)) || o.value === mapDraft.productId);
+            const mapped = new Set(
+              productMappings
+                .filter(m => m.id !== mapEditingId)      
+                .map(m => String(m.productId ?? '')),
+            );
+            return productOpts.filter(o => {
+              if (o.value === mapDraft.productId) return true;   
+              if (mapped.has(String(o.value))) return false;
+              return segSet.size === 0 || (o.segmentId != null && segSet.has(o.segmentId));
+            });
           })()}
           gstPctOpts={gstPctOpts}
           onProductChange={onMapProductChange}
@@ -4388,10 +3355,6 @@ export default function AddVendorModal(props: {
                 if (created?.id) {
                   const id = String(created.id);
                   setSegmentOpts(prev => [...prev, { value: id, label: String(created.name ?? form.name) }]);
-                  /* Deliberately NOT auto-selected: a brand-new segment has no
-                   * Document Control Panel rule yet, and a segment without a
-                   * rule can't be assigned (it would carry no KYC/DD/TL docs).
-                   * It appears in the list, disabled, until a rule is mapped. */
                   toast.info(
                     'Segment created',
                     `${created.name ?? form.name} can't be selected until a rule is defined for it in the Document Control Panel.`,
@@ -4414,18 +3377,9 @@ export default function AddVendorModal(props: {
           slug={quickAdd}
           onClose={() => setQuickAdd(null)}
           onSaved={(row) => {
-            // The new master row's id becomes the dropdown's value
-            // (the wizard stores FK ids and resolves labels through
-            // the Opts array on render). Without this, picking the
-            // just-added row would post a stale label to the API
-            // and fail the integer FK validation.
             const id = String(row.id ?? '');
             if (!id) { setQuickAdd(null); return; }
             bustVendorMasterBundle();
-            // Only ACTIVE master records belong in the supplier dropdowns (the
-            // master bundle already filters to Active). If the user creates an
-            // Inactive one via the "+" quick-add, save it but do NOT add/select
-            // it here — tell them to activate it first.
             if (row.status && String(row.status).toLowerCase() !== 'active') {
               toast.info('Saved as Inactive', 'Only Active records appear in this dropdown. Set it to Active to select it here.');
               setQuickAdd(null);
@@ -4451,9 +3405,6 @@ export default function AddVendorModal(props: {
                 const label = String(row.title ?? '');
                 if (label) {
                   setSegmentOpts(prev => [...prev, { value: id, label }]);
-                  /* Multi-select: append the newly-created segment id
-                   * rather than replacing the existing selection. Guard
-                   * against double-add when the user clicks twice. */
                   setSegment(prev => prev.includes(id) ? prev : [...prev, id]);
                   clearFieldError('segment');
                 }
@@ -4483,11 +3434,6 @@ export default function AddVendorModal(props: {
         open={Array.isArray(sendForSignature)}
         modelName="Vendor"
         customer={(() => {
-          // `vendorId` is the runtime state — covers both edit-mode
-          // (prop) and create-mode (set by Stage 1→2 auto-save). The
-          // earlier check on `initialVendorId` returned null for newly
-          // saved vendors, blocking the wizard from opening even
-          // though the row existed on the server.
           if (!vendorId) return null;
           return {
             id:      `v-${vendorId}`,
@@ -4511,27 +3457,11 @@ export default function AddVendorModal(props: {
   ), document.body);
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Master Quick-Add popup — opens above the wizard when a "+" button is
- * clicked on a master-backed field. Mirrors the Add Product wizard popup.
- *
- * NOTE on declaration order: `VendorMasterSlug` MUST be declared before
- * `QUICK_ADD_SCHEMAS` because Vite/SWC processes the file top-to-bottom
- * and doesn't always hoist type aliases used inside Record<…> generic
- * arguments. A forward reference here trips the dev transformer with a
- * 500 even though tsc itself is happy.
- * ────────────────────────────────────────────────────────────────────── */
 type VendorMasterSlug = 'vendor_types' | 'risk_levels' | 'vendor_behaviour' | 'segments' | 'compliance_behaviours' | 'countries';
 
 type QaField = { name: string; label: string; type?: 'text' | 'number' | 'textarea' | 'select'; required?: boolean; placeholder?: string; options?: string[] };
 
-/* Fields mirror each master's full form in masterConfigs.ts so Quick Add
-   captures the SAME data as the dedicated /master/{slug} page — not just the
-   name. status defaults to Active. */
 const STATUS_FIELD: QaField = { name: 'status', label: 'Status', type: 'select', required: true, options: ['Active', 'Inactive'] };
-/* title / icon / singular mirror each master's own Add modal (masterConfigs.ts)
-   so this popup reads as the SAME form: purple header, master icon, and the
-   "Fill in the details to register a new X" subtitle. */
 const QUICK_ADD_SCHEMAS: Record<VendorMasterSlug, { title: string; singular: string; icon: string; fields: QaField[] }> = {
   vendor_types:          { title: 'Add Supplier Type', singular: 'Supplier Type', icon: 'ri-shield-check-line', fields: [
     { name: 'name',  label: 'Supplier Type', required: true, placeholder: 'e.g. Genuine / Verified' },
@@ -4573,7 +3503,6 @@ function MasterQuickAddPopup(props: {
   const toast = useToast();
   const schema = QUICK_ADD_SCHEMAS[slug];
   const [values, setValues] = useState<Record<string, string>>(() => {
-    // Seed Status to "Active" so the required select isn't empty on open.
     const init: Record<string, string> = {};
     if (schema.fields.some(f => f.name === 'status')) init.status = 'Active';
     return init;
@@ -4588,11 +3517,6 @@ function MasterQuickAddPopup(props: {
 
   const submit = async () => {
     const errs: Record<string, string> = {};
-    /* Same defence layer the main vendor form uses on its Company Name —
-     * Quick Add writes straight to /master/{slug} so without this an
-     * attacker could plant `<script>` / `' OR 1=1 --` into a Risk Level
-     * or Compliance Behaviour and have it render verbatim everywhere
-     * those masters are surfaced. */
     const QA_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
     const QA_NAME_WHITELIST = /^[A-Za-z0-9\s\-.,()&/'%]+$/;
     schema.fields.forEach(f => {
@@ -4630,7 +3554,6 @@ function MasterQuickAddPopup(props: {
     }
     setSaving(true);
     try {
-      // Default status to Active but let the user's pick win (it's in values).
       const payload: Record<string, unknown> = { status: 'Active', ...values };
       schema.fields.forEach(f => {
         if (f.type === 'number' && payload[f.name] !== undefined) {
@@ -4655,10 +3578,6 @@ function MasterQuickAddPopup(props: {
   };
 
   return createPortal((
-    /* Backdrop click intentionally does NOT close the popup — the
-       user is mid-edit on a master record and an accidental outside
-       click would wipe their input. The only dismissal paths are the
-       header ✕ button and the footer Cancel. */
     <div className="avm-qa-backdrop">
       <div className="avm-qa-popup">
         <div className="avm-qa-head">
@@ -4723,11 +3642,6 @@ function MasterQuickAddPopup(props: {
   ), document.body);
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Contact Person popup — small modal that overlays the wizard so the user
- * can capture a single secondary contact in one focused form. Mirrors the
- * QC popup pattern in Add Product.
- * ────────────────────────────────────────────────────────────────────── */
 type ContactDraft = {
   name: string;
   designation: string;
@@ -4735,16 +3649,8 @@ type ContactDraft = {
   email: string;
   whatsapp: boolean;
   attachmentName: string;
-  /* Newly picked File while the popup is open. The wider ContactRow
-   * carries this too so the just-added row keeps a working "View" link
-   * via a blob URL until the next /vendors/{id} reload. */
   attachmentFile?: File | null;
-  /* Server-stored path on edit. Drives the FileChooser's "existing"
-   * state so the user sees the previously-attached file with View +
-   * Delete actions instead of an empty input. */
   attachmentPath?: string;
-  /* Backend-resolved file_url() for that stored path — used for the View
-   * link so it works on the Azure server (resolveFileUrl(path) breaks there). */
   attachmentUrl?: string;
 };
 function ContactAddPopup(props: {
@@ -4758,8 +3664,6 @@ function ContactAddPopup(props: {
   const confirm = useConfirm();
   const set = <K extends keyof ContactDraft>(k: K, v: ContactDraft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ name?: string; designation?: string; phone?: string; email?: string }>({});
-  /* Local in-flight flag so the popup's OWN Save button shows the spinner
-   * (the save no longer toggles the parent's shared `saving`). */
   const [saving, setSaving] = useState(false);
   const handleNameChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycAlpha(raw, 60);
@@ -4772,9 +3676,6 @@ function ContactAddPopup(props: {
     setErrors(prev => ({ ...prev, designation: error }));
   };
   return createPortal((
-    /* Backdrop click is intentionally NOT wired to onClose so an
-       accidental outside click doesn't wipe an in-flight contact entry.
-       Header ✕ and footer Cancel are the only dismissal paths. */
     <div className="avm-cp-backdrop">
       <div className="avm-cp-popup">
         <div className="avm-cp-head">
@@ -4850,7 +3751,6 @@ function ContactAddPopup(props: {
                 existingUrl={draft.attachmentFile ? undefined : draft.attachmentUrl}
                 existingName={draft.attachmentFile ? undefined : (draft.attachmentName || undefined)}
                 onPick={async (f) => {
-                  // Deleting an existing attachment (f === null) → confirm first.
                   if (!f && (draft.attachmentFile || draft.attachmentPath)) {
                     const ok = await confirm({
                       title: 'Remove Attachment?',
@@ -4866,8 +3766,6 @@ function ContactAddPopup(props: {
                     ...draft,
                     attachmentFile: f,
                     attachmentName: f?.name ?? '',
-                    // Picking null = delete. Drop the saved server path too
-                    // so the row doesn't silently re-attach it on Save.
                     attachmentPath: f ? draft.attachmentPath : undefined,
                   });
                 }}
@@ -4884,8 +3782,6 @@ function ContactAddPopup(props: {
             disabled={saving}
             onClick={async () => {
               if (saving) return;
-              // Highlight empty required fields in red before handing off to the
-              // parent save (which still runs format / uniqueness checks).
               const errs: typeof errors = { ...errors };
               errs.name        = draft.name.trim()        ? errs.name        : 'Contact Person Name is required';
               errs.designation = draft.designation.trim() ? errs.designation : 'Designation is required';
@@ -4907,9 +3803,6 @@ function ContactAddPopup(props: {
   ), document.body);
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Sub-components
- * ────────────────────────────────────────────────────────────────────── */
 function StepperItem(props: {
   n: number; title: string; sub: string; current: number;
   tone: 'violet' | 'teal' | 'purple' | 'green';
@@ -4959,21 +3852,6 @@ function SectionCard(props: {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Step 1 loading skeleton
- *
- * Built from the form's OWN <SectionCard> and .avm-grid-* classes rather than
- * the generic ShimmerForm, because the two did not describe the same page: the
- * generic version drew plain white cards with a grey bar for a heading, so on
- * load every card suddenly grew a coloured left accent, an icon tile and a
- * two-line heading, and the field grid re-flowed from 2 rows of 3 to the real
- * 3-3-1-4-2 shape. The page visibly rebuilt itself.
- *
- * The card chrome is not data — the headings, tones and icons are static
- * markup that is known before any request is made — so it is drawn for real
- * and only the field contents shimmer. What lands is then the same layout,
- * with values filled in, and nothing moves.
- * ────────────────────────────────────────────────────────────────────── */
 function SkelField({ label = 60 }: { label?: number }) {
   return (
     <div className="avm-field">
@@ -5017,12 +3895,6 @@ function Field(props: {
   hint?: ReactNode;
   children: ReactNode;
 }) {
-  /* Renders as a <div>, NOT a <label>. A <label> proxies clicks anywhere
-     within it to the first form control inside — when `addNew` is set,
-     that first control is the "+" button, so clicking the field area or
-     even the label text was firing the quick-add popup. Using a plain
-     <div> keeps the visual layout but breaks the click-association
-     entirely. */
   return (
     <div className={`avm-field${props.error ? ' has-error' : ''}`}>
       <span className="avm-field-label">
@@ -5049,8 +3921,6 @@ function Field(props: {
   );
 }
 
-/* Wraps a locked (read-only) field so a click still surfaces a toast — a truly
-   disabled input fires no click event, so an invisible catcher over it does. */
 function LockField({ locked, onLockClick, children }: { locked: boolean; onLockClick: () => void; children: React.ReactNode }) {
   if (!locked) return <>{children}</>;
   return (
@@ -5081,47 +3951,19 @@ function SelectInput(props: {
   );
 }
 
-/* Shared file picker for every attachment field in the vendor wizard.
- *
- *  • Accepts JPG / PNG / PDF only — both the native picker's MIME
- *    filter AND a runtime guard on pick (since users can bypass the
- *    picker's filter by selecting "All Files").
- *  • Caps file size at 2 MB.
- *  • After a file is picked (or when an existing server path is
- *    passed in), the empty "Choose file" affordance is replaced with
- *    a compact row: filename + View button (opens in a new tab) +
- *    Delete button (clears the file).
- *
- *  `existingPath` is set on rows hydrated from /vendors/{id} so the
- *  View link works on previously-uploaded files without re-uploading.
- */
-/* Local (not UTC) YYYY-MM-DD for "today" — used as the min for EXPIRY pickers so
- * a document can't be given an expiry that's already in the past. */
 const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; };
 const FILE_ACCEPT     = '.jpg,.jpeg,.png,.pdf,.doc,.docx,image/jpeg,image/png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-const FILE_MAX_BYTES  = 2 * 1024 * 1024; // 2 MB
+const FILE_MAX_BYTES  = 2 * 1024 * 1024; 
 const FILE_TYPE_LABEL = 'JPG / PNG / PDF / DOC / DOCX';
 const FILE_ALLOWED_EXT_RE   = /\.(jpe?g|png|pdf|docx?)$/i;
 const FILE_ALLOWED_MIME_RE  = /^(image\/(jpeg|png)|application\/(pdf|msword|vnd\.openxmlformats-officedocument\.wordprocessingml\.document))$/i;
 
-/* Cancelled-cheque proof accepts ONLY images + PDF (matches the backend rule
- * "jpg, jpeg, png, webp, pdf") — NOT DOC/DOCX, unlike the generic doc uploads.
- * FileChooser's `imagesPdfOnly` prop swaps to this stricter set so an unsupported
- * file (e.g. a .docx) is rejected inline the moment it's picked, not on Save. */
 const IMG_PDF_ACCEPT    = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf';
 const IMG_PDF_LABEL     = 'JPG / JPEG / PNG / WEBP / PDF';
 const IMG_PDF_EXT_RE    = /\.(jpe?g|png|webp|pdf)$/i;
 const IMG_PDF_MIME_RE   = /^(image\/(jpe?g|png|webp)|application\/pdf)$/i;
-/* Dangerous extension blacklist — script-style and executable files that
- * must never reach storage even if a mistuned MIME-sniff or an empty type
- * lets them past the allow-list. Belt-and-suspenders behind the whitelist. */
 const FILE_DENY_EXT_RE = /\.(exe|bat|cmd|com|scr|msi|js|jse|vbs|vbe|ws[hf]?|ps1|psm1|jar|sh|app|apk|dll|deb|rpm|html?|svg|php|asp[x]?|jsp)$/i;
 
-/* Shared upload validator for the inline KYC / DD / Trade-Document / segment
- * table upload buttons. FileChooser already runs these three checks inline,
- * but the table <input type="file"> handlers bypassed them, so unsupported /
- * oversized files (e.g. .exe) were accepted (QA bug). Returns a toast-ready
- * { title, body } when the file must be rejected, or null when it's allowed. */
 function validateVendorUpload(file: File): { title: string; body: string } | null {
   if (FILE_DENY_EXT_RE.test(file.name)) {
     return { title: 'Unsafe file type blocked', body: `${file.name} — executable / script files are not allowed` };
@@ -5142,27 +3984,15 @@ function FileChooser(props: {
   onPick: (f: File | null) => void;
   placeholder?: string;
   existingPath?: string;
-  /** Pre-resolved URL from the backend (file_url() helper). Prefer this
-   *  over composing a URL via resolveFileUrl(existingPath) — the helper
-   *  knows about Azure Blob Storage, where Storage::url() is the only
-   *  authoritative URL builder. */
   existingUrl?: string;
-  /** Original filename for an already-uploaded file that only has a URL
-   *  (no local path) — e.g. re-upload popups on server-loaded documents. */
   existingName?: string;
-  /** When true the chooser is locked — no upload, no delete (view-only link). */
   readOnly?: boolean;
-  /** Restrict to images + PDF only (no DOC/DOCX) — used for the cancelled-cheque
-   *  proof, which the backend accepts only as jpg/jpeg/png/webp/pdf. */
   imagesPdfOnly?: boolean;
-  /** Hide the Delete (trash) action — for a MANDATORY upload the file can only be
-   *  Replaced, never cleared (you can't leave a required field empty). */
   noDelete?: boolean;
 }) {
   const { file, onPick, placeholder, existingPath, existingUrl, existingName, readOnly, imagesPdfOnly, noDelete } = props;
   const toast = useToast();
 
-  // Swap to the stricter images+PDF allow-list when the caller asks for it.
   const ACCEPT   = imagesPdfOnly ? IMG_PDF_ACCEPT   : FILE_ACCEPT;
   const EXT_RE   = imagesPdfOnly ? IMG_PDF_EXT_RE   : FILE_ALLOWED_EXT_RE;
   const MIME_RE  = imagesPdfOnly ? IMG_PDF_MIME_RE  : FILE_ALLOWED_MIME_RE;
@@ -5171,13 +4001,6 @@ function FileChooser(props: {
   const onChange = (e: ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0] ?? null;
     if (!picked) { onPick(null); return; }
-    /* Three-layer validation — the native `accept` attribute is advisory
-     * (users can override via the OS dialog), so we enforce on JS too:
-     *   1. Hard-deny dangerous extensions (.exe, .bat, .js, .html, …)
-     *      even if the MIME somehow claims otherwise.
-     *   2. Allow only the whitelisted business formats (PDF/JPG/PNG/DOC/DOCX)
-     *      by MIME *or* by extension. The OR is necessary because some
-     *      browsers / OSes ship an empty `picked.type` for valid files. */
     const name = picked.name;
     if (FILE_DENY_EXT_RE.test(name)) {
       toast.error('Unsafe file type blocked', `${name} — executable / script files are not allowed`);
@@ -5200,9 +4023,6 @@ function FileChooser(props: {
   };
 
   const hasFile = !!file || !!existingPath || !!existingUrl;
-  // Strip the storage prefix from the filename so users see the original
-  // upload name (e.g. "PAN Card.pdf"), not the slug+rand prefix that
-  // absorbFile() puts in front to keep filenames collision-safe.
   const stripPrefix = (n: string) => {
     const idx = n.indexOf('__');
     return idx >= 0 ? n.slice(idx + 2) : n;
@@ -5215,7 +4035,6 @@ function FileChooser(props: {
     : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
 
   if (!hasFile) {
-    // Locked + nothing attached → plain read-only text (no upload affordance).
     if (readOnly) {
       return (
         <div className="avm-filechooser">
@@ -5224,7 +4043,6 @@ function FileChooser(props: {
         </div>
       );
     }
-    // Empty state — clickable drop affordance.
     return (
       <div className="avm-filechooser">
         <input
@@ -5241,10 +4059,6 @@ function FileChooser(props: {
     );
   }
 
-  // Populated state — filename + View / Delete actions. The whole
-  // strip stays visually consistent with the empty affordance. The
-  // filename itself is also clickable when a view URL is available,
-  // so the user doesn't have to aim at the small 👁 button.
   return (
     <div className="avm-filechooser avm-filechooser-has-file">
       {viewHref ? (
@@ -5297,25 +4111,56 @@ function FileChooser(props: {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Step 2 row tables — one per KYC tab. Each table renders the user-added
- * row list, an empty state, and per-row actions (delete + optional file
- * attach for mandatory seed rows). All five are intentionally similar in
- * shape so the styling stays consistent with the rest of the modal.
- * ────────────────────────────────────────────────────────────────────── */
 function EmptyTable(props: { label: string }) {
   return <div className="avm-empty">{props.label}</div>;
 }
 
-/* Segment-rule reference table — rendered in Step 2 sub-tabs (Company
- * DD, Owner KYC, Trade License) when no live rows have been captured
- * yet AND the selected supplier segment's rule defines required
- * documents. Acts as a checklist of what the segment expects. Each
- * row's Actions cell starts as a single Upload button; on file pick
- * it flips to View / Download / Delete via a blob URL held in the
- * parent's `uploads` map. */
-/* Format an ISO (YYYY-MM-DD) upload expiry into the compact display the
- * reference table's EXPIRY pill shows once a document is uploaded. */
+/* Shared chrome for every KYC-style table in this form.
+ *
+ * The six tables below — Due Diligence, Owner KYC, Trade Licence, Bank, GST
+ * Scrutiny, Product Mapping — each repeated the same opening: an empty-state
+ * guard, the .table-responsive wrapper, the .avm-kyc-table element, a
+ * .table-light thead and a <tr> of <th>. Six copies of twelve lines, which is
+ * also six places for the chrome to drift apart — and it had: one table's
+ * wrapper was already missing .table-card.
+ *
+ * What is NOT shared is the body. Each table maps a different row type over a
+ * different set of 6-10 columns with its own formatters, so the rows stay
+ * written out per table. A generic column-config table would have to express
+ * every one of those cases and would end up longer than what it replaced.
+ *
+ * `headers` takes a plain string, or a {label, className} pair for the few
+ * columns that need alignment (the money columns are .text-end).
+ * `tableClassName` carries the per-table modifiers: .avm-gst-table pins the
+ * GST column alignment, .avm-mapped-table restyles Product Mapping. */
+type KycTableHeader = string | { label: string; className?: string };
+function KycTable(props: {
+  empty: string;
+  isEmpty: boolean;
+  headers: KycTableHeader[];
+  wrapClassName?: string;
+  tableClassName?: string;
+  children: ReactNode;
+}) {
+  if (props.isEmpty) return <EmptyTable label={props.empty} />;
+  return (
+    <div className={`table-responsive table-card border rounded avm-kyc-table-wrap${props.wrapClassName ? ` ${props.wrapClassName}` : ''}`}>
+      <table className={`table align-middle mb-0 avm-kyc-table${props.tableClassName ? ` ${props.tableClassName}` : ''}`}>
+        <thead className="table-light">
+          <tr>
+            {props.headers.map((h, i) => (
+              typeof h === 'string'
+                ? <th key={i}>{h}</th>
+                : <th key={i} className={h.className}>{h.label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{props.children}</tbody>
+      </table>
+    </div>
+  );
+}
+
 function fmtSegRefExpiry(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -5323,8 +4168,6 @@ function fmtSegRefExpiry(iso?: string): string {
   return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-/* Table date display → DD-MMM-YYYY (e.g. 01-Jul-2026), matching the popup date
- * pickers. Parses the YYYY-MM-DD parts directly so there's no timezone drift. */
 const DMY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function fmtDMY(iso?: string | null): string {
   if (!iso) return '—';
@@ -5334,8 +4177,6 @@ function fmtDMY(iso?: string | null): string {
   return isNaN(d.getTime()) ? String(iso) : `${String(d.getDate()).padStart(2, '0')}-${DMY_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-/* Expiry colour tone: 'is-expired' (red) when the date is before today,
- * 'is-valid' (green) when today or in the future, '' when there's no real date. */
 function segExpiryTone(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
@@ -5357,12 +4198,7 @@ function SupplierSegmentRefTable(props: {
 }) {
   const { title, tabKey, rows, uploads, setUploads, persistUpload } = props;
   const toast = useToast();
-  /* Which reference row's upload popup is open (null = closed). The popup
-   * collects the file + optional expiry before the row flips to Uploaded. */
   const [popupRow, setPopupRow] = useState<SegRefRow | null>(null);
-  /* refKey currently downloading — drives a spinner on that row's Download
-   * button so the user knows the fetch is in flight (server files stream
-   * through the backend, which takes a beat). */
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
   const doDownload = async (refKey: string, url: string, name: string) => {
     if (downloadingKey) return;
@@ -5371,13 +4207,8 @@ function SupplierSegmentRefTable(props: {
     catch { toast.error('Download failed', 'Could not download the file. Please try again.'); }
     finally { setDownloadingKey(null); }
   };
-  /* Show the blob URL immediately for instant feedback, then fire the
-   * server upload — the persist callback swaps the blob URL for a
-   * permanent attachment_url once the row lands in segment_doc_uploads. */
   const onSubmit = async (row: SegRefRow, f: File, expiryDate?: string): Promise<boolean> => {
     const refKey = `${tabKey}::${row.code}`;
-    /* Reject unsupported / oversized files BEFORE the optimistic UI shows
-       the row as uploaded (QA: Company DD / Trade Document accepted .exe). */
     const err = validateVendorUpload(f);
     if (err) { toast.error(err.title, err.body); return false; }
     setUploads(prev => {
@@ -5387,10 +4218,6 @@ function SupplierSegmentRefTable(props: {
       }
       return { ...prev, [refKey]: { file: f, url: URL.createObjectURL(f), name: f.name, expiry: expiryDate || undefined } };
     });
-    // Awaited (not fire-and-forget) so the popup's Save button spinner tracks
-    // the real upload before the popup closes. A throw means the server did
-    // not take it — report false so the popup stays open on the failed row
-    // rather than closing as though the document were filed.
     try {
       await persistUpload(refKey, f, row.name, expiryDate);
     } catch {
@@ -5432,13 +4259,9 @@ function SupplierSegmentRefTable(props: {
             {filtered.map((r, i) => {
               const refKey = `${tabKey}::${r.code}`;
               const uploaded = uploads[refKey];
-              /* Once uploaded, the EXPIRY pill shows the date the user
-                 picked in the popup (if any); otherwise it falls back to
-                 the segment-rule master's generic validity text. */
               const uploadedExpiry = uploaded?.expiry ? fmtSegRefExpiry(uploaded.expiry) : '';
               const expiryText = uploadedExpiry || r.expiry || 'N/A';
               const isDate = !!uploadedExpiry || !!(r.expiry && /\d/.test(r.expiry));
-              // Colour a real expiry date: past today → red (expired), else → green (valid).
               const expTone = segExpiryTone(uploaded?.expiry);
               return (
                 <tr key={r.code}>
@@ -5515,12 +4338,6 @@ function SupplierSegmentRefTable(props: {
   );
 }
 
-/* Upload popup for a segment-rule reference row (Company DD / Owner KYC /
- * Trade License). The document's identity — Auto Code, Doc Name, Issuing
- * Authority — is fixed by the segment rule, so those show read-only. The
- * user only chooses whether the document has an expiry (Yes → date picker,
- * No → N/A) and picks the file. Save fires the optimistic upload; the row
- * then flips to "Uploaded" in the list. */
 export function SegmentRefUploadPopup(props: {
   title: string;
   row: SegRefRow;
@@ -5533,19 +4350,11 @@ export function SegmentRefUploadPopup(props: {
   const [file, setFile] = useState<File | null>(existing?.file ?? null);
   const [hasExpiry, setHasExpiry] = useState<boolean>(!!existing?.expiry);
   const [expiryDate, setExpiryDate] = useState<string>(existing?.expiry ?? '');
-  /* Label the popup by the document category the table is showing —
-     "DD DOCUMENT NAME" → "Due Diligence", etc. */
   const catLabel = title.replace(/ (DOCUMENT )?NAME$/i, '').replace(/\bDD\b/i, 'Due Diligence');
-  // Async + awaited so PopupShell's Save spinner shows during the upload.
   const save = async () => {
-    // Expiry is validated first so the message is the same whether or not a
-    // new file was picked — you can't save a "Yes expiry" without a date.
     if (hasExpiry && !expiryDate) { toast.error('Expiry date required', 'Pick the expiry date, or switch Expiry to No.'); return; }
     let toSubmit = file;
     if (!toSubmit) {
-      // Re-upload where the user only changed the expiry (didn't pick a new
-      // file): keep the CURRENT document — fetch it back and resubmit it with
-      // the updated expiry, instead of forcing a pointless re-pick.
       if (!existing?.url) { toast.error('File required', 'Choose a document to upload.'); return; }
       try {
         const res = await fetch(existing.url);
@@ -5604,18 +4413,11 @@ export function SegmentRefUploadPopup(props: {
   );
 }
 
-/* Reusable FILE-cell renderer for the KYC tables — shows the filename
- * plus inline View (opens the file in a new tab) and Delete (clears
- * the attachment) action buttons. Works equally well for freshly-
- * picked File objects (via createObjectURL) and previously-uploaded
- * server paths (via resolveFileUrl). */
 function AttachmentCell(props: {
   fileName?: string;
   file?: File | null;
   existingPath?: string;
   existingUrl?: string;
-  /** Still accepted so callers don't break, but no longer rendered — the row's
-   *  Action column handles deletion; the filename link handles viewing. */
   onClear?: () => void;
 }) {
   const { fileName, file, existingPath, existingUrl } = props;
@@ -5624,9 +4426,6 @@ function AttachmentCell(props: {
   const href = file
     ? URL.createObjectURL(file)
     : (existingUrl || (existingPath ? resolveFileUrl(existingPath) : ''));
-  // Just the filename as a clickable link — click the name to open/view it.
-  // No separate view (eye) or delete-attachment icons (the row's own Action
-  // column handles removal).
   return href ? (
     <Tooltip label={`Open ${fileName || 'Attachment'}`}>
       <a
@@ -5655,28 +4454,17 @@ function DdTable(props: {
   onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
-  // Must sit ABOVE the empty-rows early return — a hook after it would be
-  // conditional. The inline upload's reject path needs this; without it the
-  // handler threw a ReferenceError instead of showing the error toast.
   const toast = useToast();
-  if (props.rows.length === 0) return <EmptyTable label="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>AUTO CODE</th>
-            <th>DD DOCUMENT NAME</th>
-            <th>ISSUING AUTHORITY</th>
-            <th>EXPIRY</th>
-            <th>STATUS</th>
-            <th>FILE</th>
-            {!props.readOnly && <th>ACTIONS</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((r, i) => (
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty="No due-diligence documents added yet. Use “+ Add More Due Diligence” to begin."
+      headers={[
+        'SR NO', 'AUTO CODE', 'DD DOCUMENT NAME', 'ISSUING AUTHORITY', 'EXPIRY', 'STATUS', 'FILE',
+        ...(props.readOnly ? [] : ['ACTIONS']),
+      ]}
+    >
+      {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
               <td><span className="avm-auto-code">{r.code}</span></td>
@@ -5711,9 +4499,6 @@ function DdTable(props: {
                             const f = e.target.files?.[0];
                             e.currentTarget.value = '';
                             if (!f) return;
-                            // Only JPG / JPEG / PNG / PDF — no DOC/DOCX (backend rejects them too).
-                            // Ext OR mime (never AND) — some browsers / OSes ship an empty
-                            // `type` for a perfectly valid file, and requiring both rejected it.
                             if (!IMG_PDF_EXT_RE.test(f.name) && !IMG_PDF_MIME_RE.test(f.type || '')) {
                               toast.error('Unsupported file type', 'Only JPG, JPEG, PNG or PDF files are allowed.');
                               return;
@@ -5735,9 +4520,7 @@ function DdTable(props: {
               )}
             </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+    </KycTable>
   );
 }
 
@@ -5747,26 +4530,17 @@ function OwnerKycTable(props: {
   onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
-  if (props.rows.length === 0) return <EmptyTable label="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>AUTO CODE</th>
-            <th>KYC DOCUMENT NAME</th>
-            <th>ISSUING AUTHORITY</th>
-            <th>DOCUMENT NO</th>
-            <th>ISSUE DATE</th>
-            <th>EXPIRY</th>
-            <th>STATUS</th>
-            <th>FILE</th>
-            {!props.readOnly && <th>ACTIONS</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((r, i) => (
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty="No owner-KYC documents added yet. Use “+ Add Owner KYC” to begin."
+      headers={[
+        'SR NO', 'AUTO CODE', 'KYC DOCUMENT NAME', 'ISSUING AUTHORITY', 'DOCUMENT NO',
+        'ISSUE DATE', 'EXPIRY', 'STATUS', 'FILE',
+        ...(props.readOnly ? [] : ['ACTIONS']),
+      ]}
+    >
+      {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
               <td><span className="avm-auto-code">{r.code}</span></td>
@@ -5800,9 +4574,7 @@ function OwnerKycTable(props: {
               )}
             </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+    </KycTable>
   );
 }
 
@@ -5813,26 +4585,17 @@ function TradeLicenseTable(props: {
   onClearFile?: (id: string) => void;
   readOnly?: boolean;
 }) {
-  // Above the early return — see DdTable.
   const toast = useToast();
-  if (props.rows.length === 0) return <EmptyTable label="No trade licenses added yet. Use “+ Add Trade License” to begin." />;
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>AUTO CODE</th>
-            <th>LICENSE TYPE</th>
-            <th>LICENSE NO</th>
-            <th>ISSUING AUTHORITY</th>
-            <th>ISSUE</th>
-            <th>EXPIRY</th>
-            <th>FILE</th>
-            {!props.readOnly && <th>ACTIONS</th>}
-          </tr>
-        </thead>
-        <tbody>
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty="No trade licenses added yet. Use “+ Add Trade License” to begin."
+      headers={[
+        'SR NO', 'AUTO CODE', 'LICENSE TYPE', 'LICENSE NO', 'ISSUING AUTHORITY',
+        'ISSUE', 'EXPIRY', 'FILE',
+        ...(props.readOnly ? [] : ['ACTIONS']),
+      ]}
+    >
           {props.rows.map((r, i) => {
             const isSeed = r.id.startsWith('seed-');
             return (
@@ -5889,30 +4652,21 @@ function TradeLicenseTable(props: {
               </tr>
             );
           })}
-        </tbody>
-      </table>
-    </div>
+    </KycTable>
   );
 }
 
-function BankTable(props: { rows: BankRow[]; /** International supplier — the routing column is SWIFT, not IFSC (QA #103). */ international?: boolean; onRemove?: (id: string) => void; onEdit?: (row: BankRow) => void; onClearFile?: (id: string) => void; /** Hide the per-row Remove action (edit mode — see QA #99 below). */ lockRemove?: boolean }) {
-  if (props.rows.length === 0) return <EmptyTable label="No bank records added yet." />;
+function BankTable(props: { rows: BankRow[];  international?: boolean; onRemove?: (id: string) => void; onEdit?: (row: BankRow) => void; onClearFile?: (id: string) => void;  lockRemove?: boolean }) {
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>BANK NAME</th>
-            <th>BRANCH</th>
-            <th>ACCOUNT NO</th>
-            <th>{props.international ? "SWIFT CODE" : "IFSC CODE"}</th>
-            <th>BRANCH ADDRESS</th>
-            <th>PROOF ATTACHMENT</th>
-            <th>ACTION</th>
-          </tr>
-        </thead>
-        <tbody>
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty="No bank records added yet."
+      headers={[
+        'SR NO', 'BANK NAME', 'BRANCH', 'ACCOUNT NO',
+        props.international ? 'SWIFT CODE' : 'IFSC CODE',
+        'BRANCH ADDRESS', 'PROOF ATTACHMENT', 'ACTION',
+      ]}
+    >
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td>{String(i + 1).padStart(2, '0')}</td>
@@ -5963,299 +4717,55 @@ function BankTable(props: { rows: BankRow[]; /** International supplier — the 
               </td>
             </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+    </KycTable>
   );
 }
 
-function GstScrutinyTable(props: { rows: GstScrutinyRow[]; onRemove?: (id: string) => void }) {
-  if (props.rows.length === 0) return <EmptyTable label="No GST scrutiny entries added yet." />;
+function GstScrutinyTable(props: { rows: GstScrutinyRow[] }) {
   return (
-    <div className="table-responsive table-card border rounded avm-kyc-table-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>SCRUTINY DATE</th>
-            <th>GST NUMBER</th>
-            <th>STATUS</th>
-            <th>LAST FILING</th>
-            <th>PREV 2A INVOICE</th>
-            <th>RED FLAGS</th>
-            <th>ACTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {props.rows.map((r, i) => (
-            <tr key={r.id}>
-              <td>{String(i + 1).padStart(2, '0')}</td>
-              <td>{fmtDMY(r.scrutinyDate)}</td>
-              <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
-              <td>
-                <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-danger'}`}>
-                  {r.status}
-                </span>
-              </td>
-              <td>{fmtDMY(r.lastFilingDate)}</td>
-              <td>{r.prevNonGst2aInvoice || '—'}</td>
-              <td>{r.redFlags || '—'}</td>
-              <td>
-                <Tooltip label="Remove">
-                  <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
-                    <i className="ri-close-line" />
-                  </button>
-                </Tooltip>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty="No GST scrutiny entries added yet."
+      tableClassName="avm-no-actions avm-gst-table"
+      headers={['SR NO', 'SCRUTINY DATE', 'GST NUMBER', 'STATUS', 'LAST FILING', 'PREV 2A INVOICE', 'RED FLAGS']}
+    >
+      {props.rows.map((r, i) => (
+        <tr key={r.id}>
+          <td>{String(i + 1).padStart(2, '0')}</td>
+          <td>{fmtDMY(r.scrutinyDate)}</td>
+          <td><span className="font-monospace fs-13">{r.gstNumber}</span></td>
+          <td>
+            <span className={`avm-pill ${r.status === 'Active' ? 'avm-pill-success' : 'avm-pill-danger'}`}>
+              {r.status}
+            </span>
+          </td>
+          <td>{fmtDMY(r.lastFilingDate)}</td>
+          <td>{r.prevNonGst2aInvoice || '—'}</td>
+          <td>{r.redFlags || '—'}</td>
+        </tr>
+      ))}
+    </KycTable>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Step 3 — Trade Documents table. Fixed list of agreements with a
- * per-row send-for-signature checkbox + Send button, plus document
- * status pill. Header checkbox bulk-toggles every row's checkbox.
- * ────────────────────────────────────────────────────────────────────── */
-function TradeDocsTable(props: {
-  rows: TradeDocRow[];
-  onToggleAll: () => void;
-  onToggleSign: (code: string) => void;
-  onSend: (code: string) => void;
-  onSendSelected: () => void;
-}) {
-  // Signing-tracker modal target (one shared modal for the whole table).
-  const [trackSig, setTrackSig] = useState<{ id: number; code: string } | null>(null);
-  // Signed docs are locked — select-all reflects only the unsigned rows.
-  const selectable = props.rows.filter(r => r.status !== 'completed' && r.status !== 'Signed');
-  const allChecked = selectable.length > 0 && selectable.every(r => r.sendForSignature);
-  // Map raw signature status → display label + pill colour. Legacy
-  // 'Sent'/'Signed'/'N/A' values still come back from local-only state
-  // (rows that haven't been hit by the poller yet); the live values
-  // come from the polling loop in the parent.
-  const badge = (status: TradeDocRow['status']): { label: string; cls: string } => {
-    switch (status) {
-      case 'completed': case 'Signed':     return { label: 'Signed',             cls: 'avm-pill-primary' };
-      case 'inprogress': case 'Sent':       return { label: 'Awaiting Signature', cls: 'avm-pill-success' };
-      case 'declined':                      return { label: 'Declined',           cls: 'avm-pill-muted' };
-      case 'recalled':                      return { label: 'Recalled',           cls: 'avm-pill-muted' };
-      case 'expired':                       return { label: 'Expired',            cls: 'avm-pill-muted' };
-      default:                              return { label: 'N/A',                cls: 'avm-pill-muted' };
-    }
-  };
-  return (
-    <div>
-      <div className="table-responsive table-card border rounded">
-        <table className="table align-middle table-nowrap mb-0">
-          <thead className="table-light">
-            <tr>
-              <th>SR NO</th>
-              <th>DOCUMENT NAME</th>
-              <th style={{ minWidth: 260 }}>
-                <label className="d-inline-flex align-items-center gap-2 mb-0">
-                  <input type="checkbox" checked={allChecked} disabled={selectable.length === 0} onChange={props.onToggleAll} />
-                  SEND DOCUMENT FOR SIGNATURE
-                </label>
-              </th>
-              <th>DOCUMENT STATUS</th>
-              <th>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {props.rows.map((r, i) => {
-              const b = badge(r.status);
-              const viewHref = r.signedUrl || (r.attachmentName ? '#' : '#');
-              const canView  = !!r.signedUrl || !!r.attachmentName;
-              return (
-                <tr key={r.code}>
-                  <td>{String(i + 1)}</td>
-                  <td><strong>{r.name}</strong></td>
-                  <td>
-                    {(() => {
-                      // Once the signer is done (`completed` from polling,
-                      // or the legacy 'Signed' local-state value), block
-                      // resend — it would create a fresh request against
-                      // an archived PDF. declined / recalled / expired
-                      // stay re-sendable so the user can retry.
-                      const isSigned = r.status === 'completed' || r.status === 'Signed';
-                      return (
-                        <div className="d-inline-flex align-items-center gap-2">
-                          <input
-                            type="checkbox"
-                            checked={!isSigned && r.sendForSignature}
-                            onChange={() => props.onToggleSign(r.code)}
-                            disabled={isSigned}
-                          />
-                          {(() => {
-                            const remCount = r.reminder_count ?? 0;
-                            const lastAt   = r.last_reminder_sent_at;
-                            const baseTitle = isSigned
-                              ? 'This document has already been signed.'
-                              : r.cooldownActive
-                                ? 'Reminder just sent — one reminder covers every document in this bundle.'
-                                : (r.status === 'N/A' ? 'Send for signature' : 'Resend for signature');
-                            const titleWithCount = remCount > 0
-                              ? `${baseTitle} · Reminders sent: ${remCount}${lastAt ? ` (last: ${new Date(lastAt).toLocaleString()})` : ''}`
-                              : baseTitle;
-                            const isResend = r.status !== 'N/A';
-                            return (
-                              <button
-                                type="button"
-                                className="avm-btn-primary"
-                                style={{
-                                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                                  padding: '6px 14px',
-                                  fontSize: 13,
-                                  opacity: (isSigned || r.cooldownActive) ? 0.5 : 1,
-                                  cursor:  (isSigned || r.cooldownActive) ? 'not-allowed' : 'pointer',
-                                }}
-                                onClick={() => { if (!isSigned && !r.cooldownActive) props.onSend(r.code); }}
-                                disabled={isSigned || !!r.cooldownActive}
-                                title={titleWithCount}
-                              >
-                                <i className="ri-send-plane-line me-1" /> {r.cooldownActive ? 'Sent ✓' : (isResend ? 'Resend' : 'Send')}
-                                {isResend && remCount > 0 && (
-                                  <span aria-label={`Reminder sent ${remCount} times`} style={{
-                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                    marginLeft: 2, minWidth: 18, padding: '0 5px', height: 16,
-                                    borderRadius: 999,
-                                    background: 'rgba(255,255,255,.22)', color: '#fff',
-                                    fontFamily: "'Geist Mono', ui-monospace, monospace",
-                                    fontSize: 9.5, fontWeight: 800, letterSpacing: '.02em', lineHeight: 1,
-                                  }}>{remCount}</span>
-                                )}
-                              </button>
-                            );
-                          })()}
-                        </div>
-                      );
-                    })()}
-                  </td>
-                  <td>
-                    <span className={`avm-pill ${b.cls}`}>{b.label}</span>
-                  </td>
-                  <td>
-                    <div className="hstack gap-1">
-                      <Tooltip label={r.signedUrl ? 'View signed document' : 'View'}>
-                        <a
-                          href={r.signedUrl || viewHref}
-                          target={r.signedUrl ? '_blank' : undefined}
-                          rel={r.signedUrl ? 'noreferrer' : undefined}
-                          onClick={e => { if (!canView) e.preventDefault(); }}
-                          className="btn btn-sm btn-soft-secondary"
-                          aria-label={r.signedUrl ? 'View signed document' : 'View'}
-                          style={{ opacity: canView ? 1 : 0.5, pointerEvents: canView ? 'auto' : 'none' }}
-                        >
-                          <i className="ri-eye-line" />
-                        </a>
-                      </Tooltip>
-                      <Tooltip label={r.signedUrl ? 'Download signed document' : 'Download'}>
-                        <a
-                          href={r.signedUrl || '#'}
-                          download={r.signedUrl ? '' : undefined}
-                          onClick={e => { if (!r.signedUrl) e.preventDefault(); }}
-                          className="btn btn-sm btn-soft-secondary"
-                          aria-label={r.signedUrl ? 'Download signed document' : 'Download'}
-                          style={{ opacity: r.signedUrl ? 1 : 0.5, pointerEvents: r.signedUrl ? 'auto' : 'none' }}
-                        >
-                          <i className="ri-download-2-line" />
-                        </a>
-                      </Tooltip>
-                      {/* Certificate of Completion — third action only
-                          when the request is completed and Zoho has
-                          minted the certificate. Matches the Customer /
-                          Consignee Stage 3 tables. The legacy 'Signed'
-                          string is treated the same as 'completed' so
-                          rows from before the live-status polling
-                          landed still see the button. */}
-                      {(r.status === 'completed' || r.status === 'Signed') && r.certificateUrl && (
-                        <Tooltip label="Download Certificate of Completion">
-                          <a
-                            href={r.certificateUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            download=""
-                            className="btn btn-sm btn-soft-info"
-                            aria-label="Download Certificate of Completion"
-                            style={{ pointerEvents: 'auto' }}
-                          >
-                            <i className="ri-award-line" />
-                          </a>
-                        </Tooltip>
-                      )}
-                      {/* Signing tracker — available once the document has a
-                          signature request (sent / signed / declined). Shows the
-                          full timeline incl. any decline reason + date. */}
-                      {!!r.signatureRequestId && (
-                        <Tooltip label="Signing activity tracker">
-                          <button
-                            type="button"
-                            onClick={() => setTrackSig({ id: r.signatureRequestId!, code: r.name || r.code })}
-                            className="btn btn-sm btn-soft-primary"
-                            aria-label="Signing activity tracker"
-                          >
-                            <i className="ri-pulse-line" />
-                          </button>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {trackSig && (
-        <SigningTrackerModal sigId={trackSig.id} code={trackSig.code} onClose={() => setTrackSig(null)} />
-      )}
-      {props.rows.length > 0 && (
-        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
-          <button type="button" className="avm-btn-primary" onClick={props.onSendSelected}>
-            <i className="ri-send-plane-line me-1" /> Send Selected Documents for Signature
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Step 4 — Product mapping table. Lists products linked to this vendor
- * with purchase price + GST + total. Empty state until "+ Add More
- * Products" is clicked.
- * ────────────────────────────────────────────────────────────────────── */
-/* `readOnly` drops the ACTIONS column entirely (header + cells) — the supplier
- * LIST opens this same table as a view-only popup, where editing or removing a
- * mapping is not on offer. It also swaps the empty-state copy, which otherwise
- * tells the reader to use a "+ Add More Products" button that isn't there. */
 function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: string) => void; onEdit?: (id: string) => void; busy?: boolean; readOnly?: boolean }) {
-  if (props.rows.length === 0) {
-    return <EmptyTable label={props.readOnly
-      ? 'No products mapped to this supplier yet.'
-      : 'No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products.'} />;
-  }
   return (
-    <div className="table-responsive border rounded avm-kyc-table-wrap avm-mapped-wrap">
-      <table className="table align-middle mb-0 avm-kyc-table avm-mapped-table">
-        <thead className="table-light">
-          <tr>
-            <th>SR NO</th>
-            <th>PRODUCT</th>
-            <th>CODE</th>
-            <th>HSN/SAC</th>
-            <th>SEGMENT</th>
-            <th className="text-end">PRICE (₹)</th>
-            <th className="text-end">GST %</th>
-            <th className="text-end">GST (₹)</th>
-            <th className="text-end">TOTAL (₹)</th>
-            {!props.readOnly && <th>ACTIONS</th>}
-          </tr>
-        </thead>
-        <tbody>
+    <KycTable
+      isEmpty={props.rows.length === 0}
+      empty={props.readOnly
+        ? 'No products mapped to this supplier yet.'
+        : 'No products mapped yet. Use “+ Add More Products” to link this vendor to one or more products.'}
+      wrapClassName="avm-mapped-wrap"
+      tableClassName="avm-mapped-table"
+      headers={[
+        'SR NO', 'PRODUCT', 'CODE', 'HSN/SAC', 'SEGMENT',
+        { label: 'PRICE (₹)', className: 'text-end' },
+        { label: 'GST %', className: 'text-end' },
+        { label: 'GST (₹)', className: 'text-end' },
+        { label: 'TOTAL (₹)', className: 'text-end' },
+        ...(props.readOnly ? [] : ['ACTIONS']),
+      ]}
+    >
           {props.rows.map((r, i) => (
             <tr key={r.id}>
               <td><span className="avm-sr-pill">{String(i + 1).padStart(2, '0')}</span></td>
@@ -6263,10 +4773,10 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               <td><span className="avm-auto-code">{formatProductCode(r.productCode) || r.productCode}</span></td>
               <td><span className="font-monospace fs-13">{r.hsnSacCode || '—'}</span></td>
               <td>{r.segment ? <SegmentTags segment={r.segment} tagClassName="avm-seg-tag" /> : '—'}</td>
-              <td className="text-end font-monospace fs-13">₹{r.purchasePrice.toFixed(2)}</td>
-              <td className="text-end font-monospace fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
-              <td className="text-end font-monospace fs-13">₹{r.gstAmount.toFixed(2)}</td>
-              <td className="text-end font-monospace fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
+              <td className="text-end avm-num fs-13">₹{r.purchasePrice.toFixed(2)}</td>
+              <td className="text-end avm-num fs-13">{r.gstPercentage ? `${r.gstPercentage.toFixed(2)}%` : '—'}</td>
+              <td className="text-end avm-num fs-13">₹{r.gstAmount.toFixed(2)}</td>
+              <td className="text-end avm-num fs-13"><strong>₹{r.totalAmount.toFixed(2)}</strong></td>
               {!props.readOnly && (
               <td>
                 <div className="avm-row-actions">
@@ -6287,186 +4797,47 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
               )}
             </tr>
           ))}
-        </tbody>
-      </table>
-    </div>
+    </KycTable>
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Doc table — used by Step 3's Trade Documents sub-tab (legacy upload-toggle
- * UX for the read-only trade-docs repository).
- * ────────────────────────────────────────────────────────────────────── */
-function DocTable(props: {
-  banner?: { tone: 'amber' | 'teal' | 'violet'; label: string; sub: string };
-  countLabel: string;
-  rows: Array<{ code: string; name: string; authority: string; expiry: string; mandatory?: boolean }>;
-  uploaded: string[];
-  onUpload: (code: string) => void;
-  showMandatory?: boolean;
-}) {
-  return (
-    <div className="avm-doctable-wrap">
-      {props.banner && (
-        <div className={`avm-doctable-banner tone-${props.banner.tone}`}>
-          <span className="avm-doctable-icon"><i className="ri-file-text-line" /></span>
-          <span className="avm-doctable-banner-label">{props.banner.label}</span>
-          <span className="avm-doctable-banner-sub">| {props.banner.sub}</span>
-        </div>
-      )}
-      <div className="avm-doctable-toolbar">
-        <div className="avm-doctable-search">
-          <i className="ri-search-line" />
-          <input placeholder="Search DD document name…" />
-        </div>
-        <span className="avm-doctable-count">{props.countLabel}</span>
-      </div>
-      <div className="table-responsive table-card border rounded">
-        <table className="table align-middle table-nowrap mb-0">
-          <thead className="table-light">
-            <tr>
-              <th>SR NO</th>
-              <th>AUTO CODE</th>
-              <th>DD DOCUMENT NAME</th>
-              <th>ISSUING AUTHORITY</th>
-              <th>EXPIRY</th>
-              {props.showMandatory && <th>STATUS</th>}
-              <th>ACTIONS</th>
-            </tr>
-          </thead>
-          <tbody>
-            {props.rows.map((r, i) => {
-              const done = props.uploaded.includes(r.code);
-              const expiryDanger = /^\d{2}\/\d{4}$/.test(r.expiry); // bare MM/YYYY → highlight as upcoming
-              return (
-                <tr key={r.code}>
-                  <td>{String(i + 1).padStart(2, '0')}</td>
-                  <td><span className="avm-auto-code">{r.code}</span></td>
-                  {/* Truncate a long document name to one line with an ellipsis;
-                      the full name is available on hover (QA #91). */}
-                  <td>
-                    <Tooltip label={r.name} disabled={(r.name || '').length <= 40}>
-                      <strong style={{ display: 'block', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</strong>
-                    </Tooltip>
-                  </td>
-                  <td>{r.authority}</td>
-                  <td>
-                    <span className={`avm-pill ${expiryDanger ? 'avm-pill-danger' : 'avm-pill-muted'}`}>
-                      {r.expiry}
-                    </span>
-                  </td>
-                  {props.showMandatory && (
-                    <td>
-                      <span className={`avm-pill ${r.mandatory ? 'avm-pill-success' : 'avm-pill-muted'}`}>
-                        {r.mandatory ? '✓ Mandatory' : 'Optional'}
-                      </span>
-                    </td>
-                  )}
-                  <td>
-                    <div className="hstack gap-1">
-                      <Tooltip label={done ? 'Uploaded' : 'Upload'}>
-                        <button type="button" className={`btn btn-sm ${done ? 'btn-soft-success' : 'btn-soft-primary'}`} onClick={() => props.onUpload(r.code)} aria-label={done ? 'Uploaded' : 'Upload'}>
-                          <i className={done ? 'ri-checkbox-circle-line' : 'ri-upload-2-line'} />
-                        </button>
-                      </Tooltip>
-                      <Tooltip label="Download">
-                        <button type="button" className="btn btn-sm btn-soft-secondary" aria-label="Download" disabled={!done}>
-                          <i className="ri-download-2-line" />
-                        </button>
-                      </Tooltip>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-/* ──────────────────────────────────────────────────────────────────────────
- * Step 2 popups — one per KYC tab. Each one captures a single row's
- * draft, validates on save, and hands the row up to the parent. All
- * five share the same backdrop / shell styling as ContactAddPopup so
- * focus + escape behaviour stays consistent.
- * ────────────────────────────────────────────────────────────────────── */
 type Setter<T> = (v: T) => void;
 
-/* Mapped Products list popup — opened from the Add Supplier header's
- * "Map Product" button (Figma flow). Shows the supplier's current product
- * mappings (or an empty state) and a "Map Product" CTA that opens the
- * AddProductMappingPopup form. Reuses the shared popup chrome (avm-cp-*). */
 function MappedProductsPopup(props: {
   rows: ProductMappingRow[];
   onAdd: () => void;
   onRemove: (id: string) => void;
   onEdit: (id: string) => void;
   onClose: () => void;
-  /** A mapping write is in flight — freeze the whole popup. This popup portals
-   *  to document.body, so the wizard's .avm-busy-veil (which lives inside
-   *  .avm-modal) does NOT cover it; it needs its own. */
   busy?: boolean;
 }) {
   const n = props.rows.length;
   const busy = !!props.busy;
-  return createPortal((
-    <div className="avm-cp-backdrop">
-      <div className="avm-cp-popup avm-cp-popup-wide">
-        <div className="avm-cp-head">
-          <div className="avm-cp-title">
-            <i className="ri-box-3-line" />
-            <div className="avm-cp-htext">
-              <div className="avm-cp-htitle">Mapped Products</div>
-              <div className="avm-cp-subtitle">Products linked to this supplier with price &amp; GST</div>
-            </div>
-          </div>
-          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={busy}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        <div className="avm-cp-body">
-          {busy && <div className="avm-cp-saving-veil" />}
-          <div className="avm-mapped-toolbar">
-            <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
-            <button className="avm-section-add-btn" onClick={props.onAdd} disabled={busy}>
-              <i className="ri-add-line" /> Map Product
-            </button>
-          </div>
-          {n === 0 ? (
-            <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
-          ) : (
-            <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} />
-          )}
-        </div>
-        <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={props.onClose} disabled={busy}>Close</button>
-        </div>
+  return (
+    <PopupChrome
+      title="Mapped Products"
+      subtitle="Products linked to this supplier with price & GST"
+      icon="ri-box-3-line"
+      panelClassName="avm-cp-popup-wide"
+      onClose={props.onClose}
+      busy={busy}
+      footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={busy}>Close</button>}
+    >
+      <div className="avm-mapped-toolbar">
+        <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
+        <button className="avm-section-add-btn" onClick={props.onAdd} disabled={busy}>
+          <i className="ri-add-line" /> Map Product
+        </button>
       </div>
-    </div>
-  ), document.body);
+      {n === 0 ? (
+        <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
+      ) : (
+        <ProductMappingTable rows={props.rows} onRemove={props.onRemove} onEdit={props.onEdit} busy={busy} />
+      )}
+    </PopupChrome>
+  );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Mapped Products — LIST view (read-only)
- *
- * Same popup chrome as MappedProductsPopup above, opened from the "Mapped
- * Products" count badge on the supplier list instead of from inside the
- * wizard. Two deliberate differences:
- *
- *   • No "Map Product" CTA and no per-row edit/remove icons. The list is a
- *     browsing surface; mappings are created and changed in the supplier
- *     form, which is one click away via the row's Edit action.
- *   • It fetches its own rows from GET /vendors/{id}/product-mappings rather
- *     than being handed wizard state. That endpoint joins the product's
- *     HSN/SAC and segment server-side, so the table is complete on arrival —
- *     the wizard has to backfill both from a separate 500-row /products call.
- *
- * Lives in this file (rather than its own) so it shares SCOPED_CSS and
- * ProductMappingTable with the wizard popup it mirrors — the two must not
- * drift apart visually.
- * ────────────────────────────────────────────────────────────────────── */
 export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
@@ -6478,7 +4849,7 @@ export function MappedProductsViewPopup(props: {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    let alive = true;
+let alive = true;    
     type ApiRow = {
       id: number; product_id?: number | null;
       product_code?: string | null; product_name?: string | null;
@@ -6515,49 +4886,92 @@ export function MappedProductsViewPopup(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.vendorId]);
 
-  const n = rows?.length ?? 0;
+  return (
+    <PopupChrome
+      title={`Mapped Products — ${props.code}`}
+      subtitle={`${props.name} · Products linked to this supplier with price & GST`}
+      icon="ri-box-3-line"
+      panelClassName="avm-cp-popup-wide"
+      onClose={props.onClose}
+      /* Backdrop dismisses — unlike the wizard popups, nothing here is unsaved
+         input that a stray click could destroy. */
+      dismissOnBackdrop
+      footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
+    >
+      {rows === null ? (
+        <ShimmerTable rows={5} cols={9} />
+      ) : failed ? (
+        <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
+      ) : (
+        /* No count pill here, unlike the wizard's popup above. There it shares a
+           toolbar row with "+ Map Product" and balances it; opened from the LIST
+           there is no button, so the pill would sit alone restating a number the
+           badge that was just clicked already showed. */
+        <ProductMappingTable rows={rows} onRemove={() => {}} readOnly />
+      )}
+    </PopupChrome>
+  );
+}
+
+/* Popup chrome — backdrop, panel, header and body, portalled to <body>.
+ *
+ * The layer under PopupShell. Seven popups here are save-forms and use
+ * PopupShell; the two Mapped Products popups are read-only and end in a single
+ * Close, so they could not use it and each carried its own copy of this markup
+ * instead. Three copies of the same head/title/close block is three places for
+ * the chrome to drift.
+ *
+ * Everything except the FOOTER is shared, so the footer is the slot. */
+function PopupChrome(props: {
+  title: string;
+  icon: string;
+  subtitle?: string;
+  tone?: 'purple' | 'amber';
+  /** Extra class on the panel — e.g. avm-cp-popup-wide for the wide tables. */
+  panelClassName?: string;
+  onClose: () => void;
+  /** Freezes the close button and veils the body while a write is in flight. */
+  busy?: boolean;
+  /** Backdrop click dismisses. Off by default: a form popup holds unsaved
+   *  input that a stray click must not discard. */
+  dismissOnBackdrop?: boolean;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  const amber = props.tone === 'amber';
+  const busy = !!props.busy;
   return createPortal((
-    <>
-      <style>{SCOPED_CSS}</style>
-      {/* Backdrop click closes — unlike the wizard popups, nothing here is
-          unsaved input that a stray click could destroy. */}
-      <div className="avm-cp-backdrop" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
-        <div className="avm-cp-popup avm-cp-popup-wide">
-          <div className="avm-cp-head">
-            <div className="avm-cp-title">
-              <i className="ri-box-3-line" />
-              <div className="avm-cp-htext">
-                <div className="avm-cp-htitle">Mapped Products — {props.code}</div>
-                <div className="avm-cp-subtitle">{props.name} · Products linked to this supplier with price &amp; GST</div>
-              </div>
+    <div
+      className="avm-cp-backdrop"
+      onClick={props.dismissOnBackdrop ? (e) => { if (e.target === e.currentTarget) props.onClose(); } : undefined}
+    >
+      <div className={`avm-cp-popup${amber ? ' avm-cp-amber' : ''}${props.panelClassName ? ` ${props.panelClassName}` : ''}`}>
+        <div className="avm-cp-head">
+          <div className="avm-cp-title">
+            <i className={props.icon} />
+            <div className="avm-cp-htext">
+              <div className="avm-cp-htitle">{props.title}</div>
+              {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
             </div>
-            <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
           </div>
-          <div className="avm-cp-body">
-            {rows === null ? (
-              <ShimmerTable rows={5} cols={9} />
-            ) : (
-              <>
-                <div className="avm-mapped-toolbar">
-                  <span className="avm-mapped-count">{n} product{n === 1 ? '' : 's'} mapped</span>
-                </div>
-                {failed
-                  ? <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
-                  : <ProductMappingTable rows={rows} onRemove={() => {}} readOnly />}
-              </>
-            )}
-          </div>
-          <div className="avm-cp-foot">
-            <button className="avm-btn-ghost" onClick={props.onClose}>Close</button>
-          </div>
+          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={busy}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
+        {/* While busy, a veil over the body blocks ALL interaction (editing a
+            field, opening an attached image, etc.) until the write resolves. */}
+        <div className="avm-cp-body" style={{ position: 'relative' }}>
+          {props.children}
+          {busy && <div className="avm-cp-saving-veil" aria-hidden />}
+        </div>
+        <div className="avm-cp-foot">{props.footer}</div>
       </div>
-    </>
+    </div>
   ), document.body);
 }
 
+/* Save-form popup: PopupChrome plus a Cancel / Save footer that owns its own
+ * in-flight state, so the popup's OWN button spins rather than the wizard's. */
 function PopupShell(props: {
   title: string;
   icon: string;
@@ -6568,63 +4982,39 @@ function PopupShell(props: {
   children: ReactNode;
 }) {
   const amber = props.tone === 'amber';
-  /* Local in-flight flag so the popup's OWN Save button shows the spinner
-   * (rather than the outer wizard button) — shared by every popup that uses
-   * this shell: DD / Owner KYC / Trade License / Bank / GST / Map Product. */
   const [saving, setSaving] = useState(false);
-  return createPortal((
-    /* Backdrop click does NOT dismiss — these popups (DD / Owner
-       KYC / Trade License / Bank / GST / Product Mapping) all
-       collect form input that's easy to lose on a stray click. */
-    <div className="avm-cp-backdrop">
-      <div className={`avm-cp-popup${amber ? ' avm-cp-amber' : ''}`}>
-        <div className="avm-cp-head">
-          <div className="avm-cp-title">
-            <i className={props.icon} />
-            <div className="avm-cp-htext">
-              <div className="avm-cp-htitle">{props.title}</div>
-              {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
-            </div>
-          </div>
-          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={saving}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
-        </div>
-        {/* While saving, a veil over the body blocks ALL interaction (editing a
-            field, opening an attached image, etc.) until the save resolves. */}
-        <div className="avm-cp-body" style={{ position: 'relative' }}>
-          {props.children}
-          {saving && <div className="avm-cp-saving-veil" aria-hidden />}
-        </div>
-        <div className="avm-cp-foot">
-          <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
-          <button
-            className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`}
-            disabled={saving}
-            onClick={async () => {
-              if (saving) return;
-              setSaving(true);
-              try { await props.onSave(); } finally { setSaving(false); }
-            }}
-          >
-            {saving
-              ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
-              : 'Save'}
-          </button>
-        </div>
-      </div>
-    </div>
-  ), document.body);
+  return (
+    <PopupChrome
+      title={props.title}
+      icon={props.icon}
+      subtitle={props.subtitle}
+      tone={props.tone}
+      onClose={props.onClose}
+      busy={saving}
+      footer={<>
+        <button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Cancel</button>
+        <button
+          className={`avm-btn-primary${amber ? ' avm-btn-amber' : ''}`}
+          disabled={saving}
+          onClick={async () => {
+            if (saving) return;
+            setSaving(true);
+            try { await props.onSave(); } finally { setSaving(false); }
+          }}
+        >
+          {saving
+            ? <><span className="avm-spinner" role="status" aria-hidden="true" /> Saving…</>
+            : 'Save'}
+        </button>
+      </>}
+    >
+      {props.children}
+    </PopupChrome>
+  );
 }
 
 type DdAddPopupDraft = { documentName: string; issuingAuthority: string; expiry: string; mandatory: boolean; file: File | null; fileName: string };
 
-/* ─── Vendor KYC popup field sanitisers ────────────────────────────────
- * Shared by the DD, Owner KYC, Trade License, and Bank popups. Each
- * helper strips XSS angle brackets and SQL-injection signatures, then
- * enforces a per-field-type charset and length cap, returning the
- * cleaned value along with a context-aware error message when input
- * was modified. The Field component renders the error inline. */
 const VENDOR_KYC_SQL_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi;
 
 type SanitizeResult = { cleaned: string; error?: string };
@@ -6635,9 +5025,6 @@ const stripXssAndSql = (raw: string): { cleaned: string; afterAngles: string; af
   return { cleaned: afterSql, afterAngles, afterSql };
 };
 
-/* Name-like fields — DD Document Name, KYC Document Name, Issuing
- * Authority, Bank Name. Allows letters, digits, spaces, and the basic
- * punctuation real names use (. , - ( ) & / ' %). */
 const VENDOR_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
 const sanitizeKycName = (raw: string, maxLen = 120): SanitizeResult => {
   const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
@@ -6651,9 +5038,6 @@ const sanitizeKycName = (raw: string, maxLen = 120): SanitizeResult => {
   return { cleaned, error };
 };
 
-/* Identifier fields — Document Number, License Number. These are
- * machine-readable codes like PAN (AABCT1234F), FSSAI (10019011000123),
- * Aadhaar masks; allow letters, digits, hyphens, and slashes only. */
 const VENDOR_ID_INVALID_RE = /[^A-Za-z0-9\-/]/g;
 const sanitizeKycId = (raw: string, maxLen = 40): SanitizeResult => {
   const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
@@ -6667,9 +5051,6 @@ const sanitizeKycId = (raw: string, maxLen = 40): SanitizeResult => {
   return { cleaned, error };
 };
 
-/* Alphabetic-only fields — Bank Branch, City, Contact Person Name.
- * Letters + spaces, plus the few punctuation marks real values use
- * (e.g. "M.G. Road", "St. Louis", "Mr. Rahul Sharma"). */
 const VENDOR_ALPHA_INVALID_RE = /[^A-Za-z\s.,'-]/g;
 const sanitizeKycAlpha = (raw: string, maxLen = 60): SanitizeResult => {
   const cleaned = raw.replace(VENDOR_ALPHA_INVALID_RE, '').slice(0, maxLen);
@@ -6677,8 +5058,6 @@ const sanitizeKycAlpha = (raw: string, maxLen = 60): SanitizeResult => {
   return { cleaned, error: 'Only alphabetic characters are allowed' };
 };
 
-/* Alphanumeric fields — Bank Branch (e.g. "Sector-21", "Branch 2",
- * "M.G. Road"). Letters + digits + spaces + . , ' - ; no other specials. */
 const VENDOR_ALPHANUM_INVALID_RE = /[^A-Za-z0-9\s.,'-]/g;
 const sanitizeKycAlphaNum = (raw: string, maxLen = 60): SanitizeResult => {
   const cleaned = raw.replace(VENDOR_ALPHANUM_INVALID_RE, '').slice(0, maxLen);
@@ -6686,8 +5065,6 @@ const sanitizeKycAlphaNum = (raw: string, maxLen = 60): SanitizeResult => {
   return { cleaned, error: 'Only letters and numbers are allowed' };
 };
 
-/* Designation — same alphabet base, plus `/` for combined titles
- * (e.g. "CEO/Director", "Sr. Manager - Ops"). */
 const VENDOR_DESIGNATION_INVALID_RE = /[^A-Za-z\s.,'/-]/g;
 const sanitizeKycDesignation = (raw: string, maxLen = 60): SanitizeResult => {
   const cleaned = raw.replace(VENDOR_DESIGNATION_INVALID_RE, '').slice(0, maxLen);
@@ -6695,9 +5072,6 @@ const sanitizeKycDesignation = (raw: string, maxLen = 60): SanitizeResult => {
   return { cleaned, error: 'Only letters, spaces, and . , - / are allowed' };
 };
 
-/* Address — broader charset than a name (plot numbers, flat numbers
- * etc. include `#` and `/`), but still no `<` / `>` / SQL signatures.
- * Allows letters, digits, spaces, and . , - ( ) & / ' # %. */
 const VENDOR_ADDRESS_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'#%]/g;
 const sanitizeKycAddress = (raw: string, maxLen = 200): SanitizeResult => {
   const { cleaned: stripped, afterAngles, afterSql } = stripXssAndSql(raw);
@@ -6711,11 +5085,6 @@ const sanitizeKycAddress = (raw: string, maxLen = 200): SanitizeResult => {
   return { cleaned, error };
 };
 
-/* Expiry — MM/YYYY or N/A. As the user types, only digits, slash,
- * and N/A letters survive. 7-char cap (MM/YYYY length). Save-time
- * format validation is left to the parent saver — this just blocks
- * the obviously-invalid keystrokes that the screenshots called out
- * (random text, special characters). */
 const VENDOR_EXPIRY_INVALID_RE = /[^0-9NA/]/gi;
 const sanitizeKycExpiry = (raw: string): SanitizeResult => {
   let cleaned = raw.replace(VENDOR_EXPIRY_INVALID_RE, '');
@@ -6724,8 +5093,6 @@ const sanitizeKycExpiry = (raw: string): SanitizeResult => {
   return { cleaned, error: 'Enter MM/YYYY (e.g. 12/2026) or N/A' };
 };
 
-/* Back-compat alias — earlier turn introduced sanitizeDdDocName and the
- * DdAddPopup body still references it. Wire it to the new generic. */
 const sanitizeDdDocName = (raw: string) => sanitizeKycName(raw, 120);
 const DD_DOC_NAME_MAX = 120;
 
@@ -6995,31 +5362,19 @@ function BankAddPopup(props: {
   setDraft: Setter<BankAddPopupDraft>;
   onClose: () => void;
   onSave: () => void | Promise<void>;
-  /** Account numbers already on this supplier — used to highlight a duplicate
-   *  on the field itself (not just a toast). */
   existingAccounts: string[];
-  /** International supplier — the routing field becomes SWIFT / BIC instead of
-   *  IFSC, which is an Indian-only construct (QA #103). */
   international?: boolean;
-  /** Edit mode — retitles the popup and lets the existing cheque stand in for
-   *  a fresh upload. */
   isEdit?: boolean;
 }) {
   const { draft, setDraft, onClose, onSave, existingAccounts, isEdit } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ bankName?: string; branchName?: string; branchAddress?: string; accountNumber?: string; ifsc?: string; cheque?: string }>({});
-  /* Highlight empty required fields when the user hits Save without filling
-     them (the parent's toast-only check never reached the field state). */
-  // Async + awaited so PopupShell's Save spinner shows while the row saves.
   const handleSave = async () => {
     const e: typeof errors = {};
     if (!draft.bankName.trim())      e.bankName = 'Bank Name is required';
     if (!draft.branchName.trim())    e.branchName = 'Branch is required';
     if (!draft.accountNumber.trim()) e.accountNumber = 'Account Number is required';
     else { const accErr = validateAccountNumber(draft.accountNumber, 'Account Number', !!props.international); if (accErr) e.accountNumber = accErr; }
-    /* Same COLUMN, two formats. An international bank has no IFSC — it routes on
-       SWIFT/BIC — so the field keeps its storage but swaps label and rule with
-       the supplier's trade type (QA #103). */
     const routingLabel = props.international ? 'SWIFT Code' : 'IFSC Code';
     if (!draft.ifsc.trim()) e.ifsc = `${routingLabel} is required`;
     else {
@@ -7027,7 +5382,6 @@ function BankAddPopup(props: {
       if (err) e.ifsc = err;
     }
     if (!draft.chequeFile && !draft.existingPath) e.cheque = 'Cancelled Cheque is required';
-    // Duplicate account number — highlight the field itself, not just a toast.
     if (!e.accountNumber && existingAccounts.includes(draft.accountNumber.trim())) {
       e.accountNumber = 'This account number is already added for this supplier.';
     }
@@ -7127,28 +5481,18 @@ function GstScrutinyAddPopup(props: {
   const { draft, setDraft, onClose, onSave } = props;
   const set = <K extends keyof typeof draft>(k: K, v: typeof draft[K]) => setDraft({ ...draft, [k]: v });
   const [errors, setErrors] = useState<{ gstNumber?: string; prevNonGst2aInvoice?: string; redFlags?: string; lastFilingDate?: string }>({});
-  /* GST number is no longer typed here — it is seeded read-only from Stage 1
-   * (see openGstPopup), which owns the sanitising + GSTIN validation. */
   const handlePrevInvoiceChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycId(raw, 50);
     set('prevNonGst2aInvoice', cleaned);
     setErrors(prev => ({ ...prev, prevNonGst2aInvoice: error }));
   };
-  /* Red Flags is free-form prose — explanation text like "GSTR-1 not filed
-   * for Q3 2024". Strip XSS/SQL but keep the broader address-style
-   * charset so the user can type sentences naturally. */
   const handleRedFlagsChange = (raw: string) => {
     const { cleaned, error } = sanitizeKycAddress(raw, 300);
     set('redFlags', cleaned);
     setErrors(prev => ({ ...prev, redFlags: error }));
   };
-  /* Highlight empty required fields on Save (GST Number + Last Filing Date). */
-  // Async + awaited so PopupShell's Save spinner shows while the row saves.
   const handleSave = async () => {
     const e: typeof errors = {};
-    // Required + format checks surface INLINE under the field (red helper text),
-    // not as a top-right toast — so the user sees the expected GSTIN structure
-    // right where they're typing.
     if (!draft.gstNumber.trim()) {
       e.gstNumber = 'GST Number is required';
     } else {
@@ -7277,2021 +5621,3 @@ function AddProductMappingPopup(props: {
   );
 }
 
-/* ──────────────────────────────────────────────────────────────────────────
- * Scoped CSS — light + dark mode
- * ────────────────────────────────────────────────────────────────────── */
-export const SCOPED_CSS = `
-.avm-hint { font-size: 11px; font-weight: 600; color: #b45309; margin-top: 5px; line-height: 1.3; }
-.avm-lockwrap { position: relative; cursor: not-allowed; }
-.avm-lockwrap-inner { pointer-events: none; }
-/* Make a DISABLED / locked field clearly read-only (greyed + not-allowed cursor).
-   The base MasterSelect disabled style is too subtle (opacity .85), so a locked
-   Country/State on a PO-mapped supplier looked editable. */
-.avm-master-select .master-select-toggle:disabled,
-.avm-master-select .master-select-wrap.disabled .master-select-toggle {
-  background: #eef2f6 !important; color: #94a3b8 !important; opacity: 1 !important;
-  cursor: not-allowed !important; box-shadow: none !important;
-}
-.avm-input:disabled, .avm-input[disabled] {
-  background: #eef2f6 !important; color: #94a3b8 !important; cursor: not-allowed !important;
-}
-.avm-backdrop {
-  position: fixed; inset: 0; z-index: 1090;
-  /* 100dvh, not the implicit height of inset:0. On mobile Safari the URL bar
-     is counted OUT of dvh but IN of vh/layout height, so a dialog sized off
-     vh comes out taller than the screen actually is — which is what pushed
-     the "Add Supplier" header above the top of the phone. Same reason the app
-     shell uses dvh (velzon/Layouts/index.tsx). vh first as the fallback for
-     browsers without dvh. */
-  height: 100vh;
-  height: 100dvh;
-  background: rgba(40, 44, 52, .42);
-  backdrop-filter: blur(7px) saturate(118%);
-  -webkit-backdrop-filter: blur(7px) saturate(118%);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px 20px;
-  overflow-y: auto;
-  font-family: var(--font-sans);
-}
-.avm-modal {
-  width: 100%; max-width: 1200px;
-  /* Sized to its content between a floor and the viewport.
-     It used to be a flat height of calc(100vh - 48px) — full height, always.
-     That was chosen so the dialog would not resize when you switch tabs, and
-     it holds on a laptop where every tab overflows anyway. On a tall monitor
-     it does not: Step 1 ends around two-thirds down and the rest of the
-     dialog is empty lavender, which is what makes the popup look broken on
-     the server and fine locally.
-     The floor is what keeps the anti-jump property that fixed height was
-     protecting — every tab with a normal amount of content lands on it, so
-     switching between them still moves nothing. Only a genuinely long tab
-     grows, and it stops at the viewport and scrolls inside (.avm-body). */
-  height: auto;
-  /* No margin:auto here. Auto margins absorb free space in both directions and
-     override align-items — including NEGATIVE free space, so the moment the
-     dialog is taller than the backdrop its top is pushed out of the scroll
-     range and cannot be reached. The backdrop centres it instead (safe now
-     that max-height keeps it inside the viewport). */
-  min-height: min(660px, calc(100vh - 48px));
-  min-height: min(660px, calc(100dvh - 48px));
-  max-height: calc(100vh - 48px);
-  max-height: calc(100dvh - 48px);
-  /* Figma lavender wash (.sf-modal) — soft glows over a light gradient so the
-     white section cards read as elevated, not flat on plain white. */
-  background:
-    radial-gradient(ellipse at 12% 0%, rgba(196,181,253,.25), transparent 45%),
-    radial-gradient(ellipse at 100% 8%, rgba(167,139,250,.22), transparent 50%),
-    linear-gradient(180deg, #fbf9ff 0%, #f5f1fe 55%, #efe9fd 100%);
-  border-radius: 22px;
-  /* Soft white frame so the modal (and the purple header's top edge) reads
-     as a bordered card — like the Add Customer modal, but no dotted texture. */
-  border: 1.5px solid rgba(255, 255, 255, .65);
-  overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .45);
-  color: #1e1b4b;
-}
-.avm-modal *, .avm-modal *::before, .avm-modal *::after { box-sizing: border-box; }
-
-/* ── Narrow screens ───────────────────────────────────────────────────────
-   The dialog is a desktop wizard — a header carrying two buttons, a two-across
-   stepper, a tab strip of full-sentence labels, and 4-up field grids — all
-   sized against ~1200px. Two tiers below that, each giving up the row that
-   stops fitting.
-
-   Rule followed throughout: nothing that a user must be able to REACH is
-   allowed to wrap or scroll out of view. The close button therefore never
-   leaves the title row; the Map Product button loses its words instead. */
-@media (max-width: 820px) {
-  .avm-backdrop { padding: 10px; }
-  .avm-modal { max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); border-radius: 18px; }
-  /* One step per row. Side by side these got ~150px each, which is narrower
-     than "Supplier Legal Identity" can wrap into. min-width has to be cleared
-     with them or the column itself overflows a 360px phone. */
-  .avm-stepper { flex-direction: column; gap: 8px; }
-  .avm-step { min-width: 0; }
-  .avm-stepper-wrap { padding: 10px 12px 2px; }
-  /* Both tab labels are full sentences. Let the strip swipe rather than clip
-     the second one. flex-start, not centre: a centred overflowing flex row
-     spills out of BOTH ends and the leading one cannot be scrolled back to. */
-  .avm-tabs { justify-content: flex-start; overflow-x: auto; scrollbar-width: none; }
-  .avm-tabs::-webkit-scrollbar { display: none; }
-  .avm-tab { flex: 0 0 auto; padding: 8px 10px; font-size: 11.5px; }
-}
-
-@media (max-width: 700px) {
-  .avm-backdrop { padding: 6px; }
-  .avm-modal {
-    /* No floor on a phone. The 660px minimum exists to stop the dialog
-       jumping between DESKTOP tabs; here it only forces empty space under a
-       short form. */
-    min-height: 0;
-    max-height: calc(100vh - 12px);
-    max-height: calc(100dvh - 12px);
-    border-radius: 14px;
-  }
-  .avm-head { padding: 10px 12px; gap: 8px; }
-  .avm-head-left { min-width: 0; flex: 1; }
-  .avm-head-icon { width: 32px; height: 32px; border-radius: 9px; }
-  .avm-title { font-size: 15px; }
-  .avm-sub { display: none; }
-  /* Words go, icon stays — the button keeps working and the close button
-     keeps its place. Wrapping the whole group onto a second row instead would
-     push the only way out of the dialog below the fold on a short screen. */
-  .avm-map-btn-label { display: none; }
-  .avm-map-btn { padding: 0 9px; }
-  .avm-body { padding: 10px 12px 12px; overflow-x: hidden; }
-  /* Full-width stacked buttons — a 13px label in a 90px button is a miss on
-     a thumb. */
-  .avm-foot { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
-  .avm-foot > * { flex: 1 1 100%; }
-  .avm-foot-right { display: flex; gap: 8px; }
-  .avm-foot-right > * { flex: 1; justify-content: center; }
-}
-
-/* Anything below this is a small phone in portrait. */
-@media (max-width: 420px) {
-  .avm-title { font-size: 14px; }
-  .avm-tab { padding: 7px 8px; font-size: 11px; }
-  .avm-step { padding: 10px 12px; gap: 10px; }
-  .avm-step-title { font-size: 12.5px; }
-  .avm-step-sub { font-size: 10px; }
-}
-
-/* Header — purple gradient bar (.sf-head spec from the Figma) with a
-   subtle white hairline border so the bar reads as a framed strip. */
-.avm-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 14px;
-  padding: 14px 22px;
-  position: relative; overflow: hidden;
-  /* Exact Figma header gradient — deep violet → light violet across 5 stops. */
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 28%, #6d28d9 55%, #7c3aed 80%, #8b5cf6 100%);
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, .22);
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
-}
-/* The two light layers the Figma header carries on top of its gradient, ported
-   verbatim from .sf-head::before / ::after. Without them the bar is a flat
-   five-stop ramp; these give it the corner bloom and the top sheen that make it
-   read as lit rather than painted.
-     ::before — a warm white glow rising from the lower left plus a lavender one
-                falling in from the upper right, both fading to nothing;
-     ::after  — a soft highlight down the top half only.
-   Both pointer-events:none so nothing in the header stops being clickable.
-   .avm-head already sets position:relative + overflow:hidden, so the layers are
-   anchored and clipped to the bar. */
-.avm-head::before {
-  content: ''; position: absolute; inset: 0; opacity: .5; pointer-events: none;
-  background-image:
-    radial-gradient(circle at 18% 120%, rgba(255,255,255,.18), transparent 42%),
-    radial-gradient(circle at 88% -30%, rgba(216,180,254,.4), transparent 45%);
-}
-.avm-head::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%;
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
-}
-/* Both pseudo-elements are absolutely positioned, so they paint ABOVE the
-   static header content and would wash the title out. The Figma raises its
-   header content the same way (z-index on .sf-head-left / .sf-head-actions).
-   These are flex items, which honour z-index without needing position. */
-.avm-head-left { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; z-index: 1; }
-.avm-head-icon {
-  width: 38px; height: 38px; border-radius: 11px; flex-shrink: 0;
-  background: rgba(255,255,255,.18);
-  border: 1px solid rgba(255,255,255,.25);
-  display: flex; align-items: center; justify-content: center;
-}
-.avm-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.4px; line-height: 1.1; text-shadow: 0 1px 3px rgba(0,0,0,.18); }
-.avm-sub   { font-size: 11.5px; font-weight: 500; color: rgba(255,255,255,.85); margin-top: 3px; }
-.avm-head-right { display: inline-flex; align-items: center; gap: 8px; position: relative; z-index: 1; }
-.avm-map-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 34px; padding: 0 12px;
-  background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.25);
-  color: #fff; border-radius: 9px;
-  font-family: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-.avm-map-btn:hover:not(:disabled) { background: rgba(255,255,255,.25); transform: translateY(-1px); }
-.avm-map-btn:disabled { opacity: .45; cursor: not-allowed; }
-.avm-close {
-  width: 32px; height: 32px; border-radius: 9px;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.12); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-.avm-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-
-/* Stepper */
-/* Stepper, body and footer share ONE continuous light-lavender surface so
-   the modal reads as a single sheet (Figma) — the white section cards float
-   on top. No dividing band between the stepper and the form. */
-.avm-stepper-wrap { padding: 14px 18px 2px; background: transparent; }
-.avm-stepper { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
-
-/* Step card — matches the Figma two-card stepper: icon chip with a small
-   number badge, title + sub, and a status pill pushed to the right. */
-.avm-step {
-  flex: 1; min-width: 240px;
-  display: flex; align-items: center; gap: 13px;
-  padding: 12px 16px;
-  background: linear-gradient(135deg, rgba(255,255,255,.7), rgba(245,241,254,.55));
-  border: 1.5px solid rgba(196,181,253,.5); border-radius: 15px;
-  box-shadow: 0 1px 3px rgba(124,58,237,.05);
-  transition: border-color .15s, background .15s, box-shadow .15s;
-}
-.avm-step-ico {
-  position: relative; width: 38px; height: 38px; border-radius: 12px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; color: #fff;
-  background: linear-gradient(135deg, #c4b5fd, #a78bfa);
-  box-shadow: 0 4px 12px rgba(167,139,250,.4), 0 1px 0 rgba(255,255,255,.4) inset;
-  transition: all .25s;
-}
-.avm-step-ico i { font-size: 18px; line-height: 1; }
-.avm-step-ico-num {
-  position: absolute; right: -4px; bottom: -4px;
-  width: 17px; height: 17px; border-radius: 50%;
-  /* The ring is WHITE, and the definition comes from a violet hairline plus a
-     drop shadow OUTSIDE it. The ring used to be 1.5px solid #ede9fe — the same
-     lavender as the active card behind it — so it disappeared into the card,
-     the white disc lost its edge, and the digit read as floating loose beside
-     the icon tile rather than pinned to its corner. Same construction as
-     .avm-step-ico-check below, which never had the problem because its white
-     ring sits against a green fill. */
-  background: #fff; color: #6d28d9; border: 1.5px solid #fff;
-  box-shadow: 0 0 0 1px rgba(167,139,250,.55), 0 1px 3px rgba(76,29,149,.28);
-  font-size: 9.5px; font-weight: 800;
-  display: flex; align-items: center; justify-content: center;
-}
-.avm-step-text { flex: 1; min-width: 0; }
-.avm-step-title { font-size: 13.5px; font-weight: 700; color: #1e1b4b; letter-spacing: -0.01em; }
-.avm-step-sub   { font-size: 11px; font-weight: 500; color: #94a3b8; margin-top: 2px; }
-.avm-step-badge {
-  flex-shrink: 0; padding: 4px 11px; border-radius: 99px;
-  font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-}
-.avm-step-badge-active { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 3px 8px rgba(124,58,237,.4); }
-.avm-step-badge-done   { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 3px 8px rgba(22,163,74,.35); }
-
-/* Active card — purple wash + glow (universal, regardless of tone) */
-.avm-step-active {
-  border-color: #a78bfa;
-  background: linear-gradient(135deg, #f6f2ff, #ece4fb);
-  box-shadow: 0 10px 26px rgba(124,58,237,.2), 0 0 0 1px rgba(167,139,250,.3), 0 1px 0 rgba(255,255,255,.8) inset;
-}
-.avm-step-active .avm-step-ico { background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); box-shadow: 0 6px 16px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
-
-/* Completed card — green wash + green check chip. Matches Figma exactly:
-   vivid green border, mint gradient, and the green elevation glow + inset
-   white highlight (this glow was missing, which made dev look flat). */
-.avm-step-done {
-  border-color: #86efac;
-  background: linear-gradient(135deg, #f0fdf4, #d6fadf);
-  box-shadow: 0 8px 22px rgba(34, 197, 94, .18), 0 1px 0 rgba(255, 255, 255, .7) inset;
-}
-.avm-step-done .avm-step-ico { background: linear-gradient(135deg, #22c55e, #16a34a); box-shadow: 0 4px 12px rgba(22,163,74,.4); }
-.avm-step-done .avm-step-ico > i { font-size: 22px; }
-/* Small green check sub-badge at the icon corner (Figma) — mirrors the
-   number badge slot but renders a green tick on white. */
-.avm-step-ico-check {
-  position: absolute; right: -4px; bottom: -4px;
-  width: 17px; height: 17px; border-radius: 50%;
-  /* Figma: green gradient fill, white tick, white ring. */
-  background: linear-gradient(135deg, #16a34a, #15803d); color: #fff; border: 1.5px solid #fff;
-  box-shadow: 0 1px 3px rgba(22,163,74,.3);
-  display: flex; align-items: center; justify-content: center;
-}
-.avm-step-ico-check i { font-size: 11px; font-weight: 800; line-height: 1; }
-.avm-step-done .avm-step-title { color: #15803d; }
-.avm-step-done .avm-step-sub   { color: #4d9e6a; }
-
-/* Connector — short line between cards (the › glyph is hidden via font-size:0) */
-.avm-step-arrow { flex: 0 0 26px; align-self: center; height: 2px; background: #ddd6fe; font-size: 0; border-radius: 2px; }
-
-/* Body — plain white surface like the Client / Master forms */
-.avm-body {
-  flex: 1; overflow-y: auto;
-  padding: 12px 22px 14px;
-  background: transparent;   /* show the modal's lavender wash (Figma) */
-  scrollbar-width: thin; scrollbar-color: #ddd6fe transparent;
-  position: relative;  /* anchor for the .avm-load-overlay during edit-load */
-}
-.avm-body::-webkit-scrollbar { width: 8px; }
-.avm-body::-webkit-scrollbar-thumb { background: #ddd6fe; border-radius: 99px; }
-
-/* Previous-stage summary */
-/* Step 2 / 3 / 4 carried-over summary header — restyled to match the
- * lavender Stage 1 vendor header (.avm-id-summary) so every read-only
- * header in the wizard reads as one component family. Previously this
- * was a green "completed" panel; design feedback wanted the same calm
- * violet palette applied across all stages. */
-.avm-prev {
-  position: relative;
-  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
-  border: 1px solid #e9d5ff; border-radius: 12px;
-  margin-bottom: 14px; overflow: hidden;
-}
-/* Purple left accent strip — matches the section cards' ::before (Figma). */
-.avm-prev::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0;
-  width: 4px; background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
-}
-.avm-prev-head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 14px;
-  background: transparent;
-}
-.avm-prev-ico {
-  width: 32px; height: 32px; border-radius: 9px; flex-shrink: 0;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center; font-size: 16px;
-  box-shadow: 0 3px 9px rgba(124,58,237,.35);
-}
-.avm-prev-headtext { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.avm-prev-title { font-size: 13px; font-weight: 700; color: #3b0764; letter-spacing: -0.01em; }
-.avm-prev-subtitle { font-size: 10.5px; font-weight: 500; color: #7c3aed; }
-/* Pill + chevron are split: the chevron sits OUTSIDE the purple pill (Figma).
-   The button itself is a transparent wrapper. */
-.avm-prev-toggle {
-  flex-shrink: 0;
-  display: inline-flex; align-items: center; gap: 8px;
-  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
-}
-.avm-prev-toggle-pill {
-  z-index: 1; flex-shrink: 0;
-  display: inline-flex; align-items: center;
-  padding: 4px 10px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff;
-  border-radius: 20px;
-  font-size: 8.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
-  box-shadow: 0 3px 8px rgba(124,58,237,.35);
-  transition: filter .15s, box-shadow .15s;
-}
-.avm-prev-toggle-chev { font-size: 20px; color: #7c3aed; line-height: 1; }
-.avm-prev-toggle:hover .avm-prev-toggle-pill { filter: brightness(1.06); box-shadow: 0 5px 13px rgba(124,58,237,.5); }
-.avm-prev-body { padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 9px; border-top: 1px solid rgba(196,181,253,.4); }
-/* Step-grouped summary — each stage's label uses the same muted violet
- * tone so the header reads as a single block rather than several panels
- * fighting for attention. */
-.avm-prev-stage { display: flex; flex-direction: column; gap: 8px; }
-.avm-prev-stage + .avm-prev-stage { margin-top: 6px; padding-top: 10px; border-top: 1px dashed rgba(196,181,253,.55); }
-.avm-prev-stage-label {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
-  color: #6d28d9;
-  display: inline-flex; align-items: center;
-  text-transform: uppercase;
-}
-.avm-prev-stage.tone-violet .avm-prev-stage-label,
-.avm-prev-stage.tone-teal   .avm-prev-stage-label,
-.avm-prev-stage.tone-purple .avm-prev-stage-label { color: #6d28d9; }
-
-/* Switch the per-stage rows from flex-wrap to the same 4-column grid
- * used by .avm-id-summary-row, so labels and values line up cleanly
- * across stages — matches the Stage 1 screenshot exactly. */
-.avm-prev-rows { display: flex; flex-direction: column; gap: 5px; }
-.avm-prev-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 28px;
-  row-gap: 5px;
-  align-items: baseline;
-}
-.avm-prev-pair {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 10.5px; line-height: 1.3;
-  min-width: 0;
-  cursor: default; padding: 1px 2px; border-radius: 4px;
-  transition: background .12s;
-}
-.avm-prev-pair:hover { background: rgba(124,58,237,0.06); }
-.avm-prev-k {
-  font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
-  color: #64748b; text-transform: uppercase;
-  white-space: nowrap; flex-shrink: 0;
-}
-.avm-prev-v {
-  font-weight: 600; color: #6d28d9; line-height: 1.4;
-  min-width: 0; flex: 1 1 auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-.avm-prev-link {
-  font-weight: 600; color: #6d28d9; text-decoration: underline;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0; flex: 1 1 auto;
-}
-.avm-prev-link:hover { color: #4c1d95; }
-.avm-prev-suffix {
-  font-size: 11px; color: #64748b; font-weight: 500;
-}
-@media (max-width: 900px) {
-  .avm-prev-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-/* Tabs */
-.avm-tabs {
-  display: flex; gap: 6px; margin-bottom: 14px;
-  border-bottom: 1.5px solid #e2d4fa;
-}
-.avm-tab {
-  background: none; border: none; padding: 8px 14px;
-  font-family: "DM Sans", system-ui, sans-serif; font-size: 12px; font-weight: 700;
-  color: #8b7bb8; cursor: pointer;
-  border-bottom: 2.5px solid transparent;
-  margin-bottom: -1.5px;
-  white-space: nowrap;
-  transition: color .15s, border-color .15s;
-}
-.avm-tab:hover { color: #5b21b6; }
-.avm-tab.on { color: #5b21b6; border-bottom-color: #7c3aed; font-weight: 700; }
-
-/* Pill tabs (Step 2 sub-tabs) */
-/* Sub-tab strip (Figma): a light lavender container; only the ACTIVE tab is a
-   purple gradient pill, inactive tabs are plain muted text. Scoped under
-   .avm-pill-tabs so it doesn't collide with the table status .avm-pill badges. */
-.avm-pill-tabs {
-  display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px;
-  padding: 5px;
-  background: #f3eefc;
-  /* Crisper outline + subtle lift so the strip reads as a defined card on the
-     lavender modal body (Figma). The old #e9e2f7 was near-invisible against it. */
-  border: 1px solid #ddd6fe;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(124, 58, 237, .07);
-}
-.avm-pill-tabs .avm-pill {
-  display: inline-flex; align-items: center;
-  background: transparent; color: #6b7280;
-  border: none; border-radius: 9px;
-  padding: 8px 16px; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; line-height: 1.2;
-  transition: background .15s, color .15s, box-shadow .15s;
-}
-.avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.08); color: #6d28d9; }
-.avm-pill-tabs .avm-pill.on {
-  color: #fff;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
-  border: none;
-  box-shadow: 0 4px 12px rgba(124, 58, 237, .42);
-}
-.avm-sub-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-.avm-sub-pill {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: #fff; color: #475569;
-  border: 1.5px solid #e2e8f0; border-radius: 8px;
-  padding: 6px 14px; font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer;
-}
-.avm-sub-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; display: inline-block; }
-.avm-sub-pill.on { color: #15803d; border-color: #86efac; background: #ecfdf5; }
-.avm-sub-pill.on::before { background: #16a34a; }
-
-/* Section card */
-.avm-section {
-  position: relative;
-  background: #fff;
-  border: 1px solid #ece4fb;
-  border-radius: 14px; margin-bottom: 8px; overflow: hidden;   /* Figma .sf-section radius */
-}
-/* Left accent strip — a vertical GRADIENT bar (Figma), not a flat border. */
-.avm-section::before {
-  content: '';
-  position: absolute; left: 0; top: 0; bottom: 0;
-  width: 4px; opacity: .85;
-  background: linear-gradient(180deg, #a78bfa, #7c3aed, #5b21b6);
-}
-/* All section strips use the same purple gradient (.avm-section::before).
-   Only the outer border tint + icon/title colour vary per section. */
-.avm-section-violet { border-color: #ece4fb; }
-.avm-section-amber  { border-color: #fbeccb; }
-.avm-section-teal   { border-color: #cdf6f1; }
-.avm-section-green  { border-color: #d6f5df; }
-.avm-section-purple { border-color: #ece4fb; }
-
-.avm-section-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 7px 14px;
-  background: #fff;
-  border-bottom: 1px solid #f1ecfb;
-}
-/* Subtle tinted section heads — keep the coloured left-border accent but
-   use a near-white head so it doesn't fight the white form surface. */
-/* Section header sits on the same white as the body (seamless card, like the
-   Figma) — separated only by the thin divider line from .avm-section-head. */
-.avm-section-amber .avm-section-head { border-bottom-color: #fef3c7; }
-.avm-section-teal  .avm-section-head { border-bottom-color: #ccfbf1; }
-.avm-section-green .avm-section-head { border-bottom-color: #dcfce7; }
-.avm-section-head-left { display: flex; align-items: center; gap: 10px; }
-.avm-section-icon {
-  width: 25px; height: 25px; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; border: 1px solid transparent;
-}
-.avm-section-violet .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
-.avm-section-amber  .avm-section-icon { background: #fffbeb; color: #d97706; border-color: #fde68a; }
-.avm-section-teal   .avm-section-icon { background: #f0fdfa; color: #0d9488; border-color: #99f6e4; }
-.avm-section-green  .avm-section-icon { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
-.avm-section-purple .avm-section-icon { background: #f5f1fe; color: #7c3aed; border-color: #e2d4fa; }
-.avm-section-headtext { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.avm-section-title { font-size: 11px; font-weight: 700; color: #5b21b6; letter-spacing: 0.02em; text-transform: uppercase; }
-.avm-section-sub   { font-size: 10.5px; font-weight: 500; color: #a78bfa; letter-spacing: 0; }
-.avm-section-sub::before { content: '|'; margin-right: 7px; color: #c4b5fd; font-weight: 600; }
-/* Amber section keeps its amber icon, but the title + subtitle use the same
-   purple as every other section heading (user request). */
-.avm-section-body { padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 9px; }
-/* Additional Contact Persons card — stretch its body so the card fills the
-   empty space below in the modal instead of leaving a big gap. */
-.avm-section-grow .avm-section-body { min-height: 230px; }
-
-.avm-section-add-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; border-radius: 9px;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6); color: #fff; border: none;
-  font-family: inherit; font-size: 11px; font-weight: 700; cursor: pointer;
-  box-shadow: 0 3px 9px rgba(124,58,237,.42);
-  transition: transform .14s, box-shadow .14s;
-}
-.avm-section-add-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124,58,237,.5); }
-
-/* Additional-contacts table = Figma .sf-mini-table: PURPLE header text, NO
-   gradient band (just a thin divider) — distinct from the DD/KYC tables, which
-   keep the lavender-gradient gray header. */
-.avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
-.avm-modal .table.avm-mini-table thead th {
-  color: #7c3aed; font-size: 10.5px; font-weight: 800; letter-spacing: .05em;
-  padding: 11px 14px; border-bottom: 1px solid #ece7f8;
-}
-/* Figma spacing — airier rows: larger cell padding + 13px body text. */
-.avm-modal .table.avm-mini-table tbody td {
-  padding: 13px 14px; font-size: 13px; vertical-align: middle;
-  border-bottom: 1px solid #f3eefc;
-}
-.avm-modal .table.avm-mini-table tbody tr:last-child td { border-bottom: none; }
-[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead tr { background: transparent !important; }
-[data-bs-theme="dark"] .avm-modal .table.avm-mini-table thead th { color: #c4b5fd; border-bottom-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-modal .table.avm-mini-table tbody td { border-bottom-color: #2a2150; }
-
-/* Row action buttons — match the Customer form (acm-row-btn): pastel square. */
-.avm-row-actions { display: inline-flex; gap: 5px; }
-.avm-row-btn {
-  width: 28px; height: 28px; border-radius: 7px; border: 1px solid #e0d9f7;
-  background: #fff; color: #7c3aed; cursor: pointer; padding: 0;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background .15s, border-color .15s;
-}
-.avm-row-btn:hover { background: #ede9fe; border-color: #c4b5fd; }
-.avm-row-btn-del { color: #dc2626; border-color: #fecaca; background: #fef2f2; }
-.avm-row-btn-del:hover { background: #fee2e2; border-color: #fca5a5; }
-[data-bs-theme="dark"] .avm-row-btn-del { color: #fca5a5; border-color: rgba(220,38,38,.4); background: rgba(220,38,38,.14); }
-[data-bs-theme="dark"] .avm-row-btn { background: #1a1430; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-row-btn:hover { background: #2a1d5c; border-color: #6d28d9; }
-
-/* WhatsApp pills + Primary tag — Customer-form gradient style. */
-.avm-wa-yes, .avm-wa-no { display: inline-block; padding: 3px 11px; border-radius: 20px; font-size: 10.5px; font-weight: 700; }
-.avm-wa-yes { background: linear-gradient(135deg,#dcfce7,#bbf7d0); color: #15803d; border: 1px solid #86efac; }
-.avm-wa-no  { background: linear-gradient(135deg,#fee2e2,#fecaca); color: #b91c1c; border: 1px solid #fca5a5; }
-.avm-primary-tag {
-  display: inline-block; padding: 2px 9px; border-radius: 20px;
-  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
-  background: linear-gradient(135deg, #ede9fe, #ddd6fe); color: #5b21b6; border: 1px solid #c4b5fd;
-}
-/* Additional Contacts list — show ~3 rows then scroll; min-height stops the
-   card collapsing to a single thin row (fills the empty space a bit). The
-   header stays pinned while the body scrolls. */
-/* Show ~3 contact rows + the sticky header, then scroll for the rest. */
-.avm-contacts-scroll { max-height: 250px; overflow-y: auto; }
-.avm-contacts-scroll thead th {
-  position: sticky; top: 0; z-index: 3;
-  /* The base rule ".avm-modal .table thead th" sets background:transparent — the
-     header's visible colour normally comes from the thead TR gradient, which does
-     NOT stick (only the TH does). So !important gives the sticky TH its OWN opaque
-     fill; without it the header is see-through and rows bleed up into it. */
-  background: #f7f3fd !important;
-  box-shadow: inset 0 -1px 0 0 #ece7f8;
-}
-[data-bs-theme="dark"] .avm-contacts-scroll thead th {
-  background: #251d47 !important;
-  box-shadow: inset 0 -1px 0 0 rgba(167,139,250,.22);
-}
-
-/* "N documents" count badge on the KYC section header (Figma) */
-.avm-doc-count {
-  display: inline-flex; align-items: center;
-  padding: 5px 13px; border-radius: 99px;
-  background: #f5f1fe; color: #6d28d9;
-  border: 1px solid #e2d4fa;
-  font-size: 11.5px; font-weight: 700; white-space: nowrap;
-}
-
-/* Form */
-.avm-grid-1 { display: grid; grid-template-columns: 1fr; gap: 11px; }
-.avm-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
-.avm-grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
-.avm-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 11px; }
-
-.avm-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-/* Labels match the Client / Recruitment master forms: small, uppercase,
-   modest letter-spacing, navy color, lighter weight (500) so the
-   surrounding form chrome doesn't shout at the user. */
-.avm-field-label {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; font-weight: 700;
-  letter-spacing: 0; text-transform: none;
-  color: #3b0764;
-  margin-bottom: 0;
-  white-space: nowrap;
-}
-[data-bs-theme="dark"] .avm-field-label,
-[data-layout-mode="dark"] .avm-field-label { color: #c4b5fd; }
-.avm-req { color: #f06548; font-weight: 600; margin-left: 1px; }
-/* Segment picker lock note — shown when uploaded docs pin the segment set. */
-.avm-segment-lock-note { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 10.5px; font-weight: 600; color: #b45309; }
-.avm-segment-lock-note i { font-size: 12px; }
-[data-bs-theme="dark"] .avm-segment-lock-note { color: #fbbf24; }
-/* Inline lock hint beside the Supplier Segment label (no extra row → no gap). */
-.avm-seg-hint { display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; font-size: 9.5px; font-weight: 500; color: #b45309; text-transform: none; letter-spacing: 0; white-space: nowrap; cursor: help; }
-.avm-seg-hint i { font-size: 11px; }
-[data-bs-theme="dark"] .avm-seg-hint { color: #fbbf24; }
-/* Inline quick-add (+) buttons — let the user add a new master entry
-   (Risk Level / Supplier Behaviour / Segment / Compliance / Country)
-   without leaving the form. */
-.avm-field-plus {
-  width: 18px; height: 18px;
-  border: none; border-radius: 5px;
-  background: #7c3aed; color: #fff;
-  font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.avm-field-plus:disabled { opacity: .85; cursor: progress; }
-/* Read-only input (State Code auto-fill) — light in light mode, dark in dark mode. */
-.avm-input-ro { background: #f1f5f9; color: #475569; cursor: default; }
-[data-bs-theme="dark"] .avm-input-ro { background: #1a1430; color: #9db3c1; border-color: #3b2a6b; }
-.avm-spinner-sm { width: 10px; height: 10px; border-width: 1.5px; vertical-align: 0; }
-/* Inputs — mirror .master-modal .form-control from masterFormKit so the
-   wizard reads as part of the same form family as Clients / Recruitment.
-   Subtle blue-tinted surface, indigo focus ring, 10px radius. */
-.avm-input {
-  height: 38px; width: 100%;   /* Figma .sf-input height */
-  padding: 5px 12px;
-  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
-  border-radius: 10px;
-  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
-  color: var(--vz-body-color, #495057);
-  font-family: inherit; font-size: 13px; font-weight: 400; outline: none;
-  box-shadow: 0 1px 2px rgba(18,38,63,0.04), inset 0 1px 1px rgba(255,255,255,0.04);
-  transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
-}
-/* +91 country-code prefix shown on the Contact No field for Indian suppliers.
-   The addon sits flush-left of the input; the input loses its left radius so
-   the two read as a single control. */
-.avm-phone-in { display: flex; align-items: stretch; width: 100%; }
-.avm-phone-cc {
-  display: inline-flex; align-items: center; padding: 0 11px;
-  height: 38px; white-space: nowrap;
-  font-size: 13px; font-weight: 600;
-  color: var(--vz-body-color, #495057);
-  background: color-mix(in srgb, #a78bfa 14%, var(--vz-card-bg, #fff));
-  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
-  border-right: none;
-  border-radius: 10px 0 0 10px;
-}
-.avm-phone-field { border-radius: 0 10px 10px 0 !important; }
-.avm-cp-body .avm-phone-cc { height: 42px; border-radius: 11px 0 0 11px; }
-.avm-cp-body .avm-phone-field { border-radius: 0 11px 11px 0 !important; }
-[data-bs-theme="dark"] .avm-phone-cc {
-  background: color-mix(in srgb, #a78bfa 18%, #110c25);
-  border-color: #3b2a6b; color: #ede9fe;
-}
-.avm-input::placeholder,
-.avm-modal input::placeholder,
-.avm-modal textarea::placeholder,
-.avm-modal .master-select-placeholder {
-  color: #94a3b8 !important;
-  opacity: 0.45 !important;
-  font-weight: 400 !important;
-  font-size: 13px !important;   /* one uniform placeholder size everywhere */
-}
-.avm-input:hover:not(:disabled):not([readonly]) {
-  border-color: rgba(124,58,237,0.55);
-  box-shadow: 0 2px 6px rgba(124,58,237,0.08);
-}
-.avm-input:focus {
-  background: var(--vz-card-bg, #fff);
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 3px rgba(124,58,237,0.15), 0 4px 12px rgba(124,58,237,0.12);
-}
-[data-bs-theme="dark"] .avm-input,
-[data-layout-mode="dark"] .avm-input {
-  background: color-mix(in srgb, #a78bfa 12%, var(--vz-card-bg));
-}
-
-/* Inline per-field error — red text + warning icon under the input,
-   plus a red border on the input itself (matches the Add Product form). */
-.avm-field .avm-field-error,
-.avm-modal .avm-field-error,
-.avm-field-error {
-  display: inline-flex !important; align-items: center; gap: 4px;
-  font-size: 11.5px; font-weight: 600; color: #ef4444 !important;
-  margin-top: 4px; line-height: 1.2;
-}
-.avm-field .avm-field-error i,
-.avm-field-error i { font-size: 13px; color: #ef4444 !important; }
-.avm-field.has-error .avm-input,
-.avm-field.has-error textarea {
-  border-color: #ef4444 !important;
-}
-.avm-field.has-error .avm-input:focus,
-.avm-field.has-error textarea:focus {
-  box-shadow: 0 0 0 3px rgba(239,68,68,.15) !important;
-}
-.avm-field.has-error .master-select-wrap .master-select-toggle {
-  border-color: #ef4444 !important;
-}
-.avm-field.has-error .avm-field-label { color: #ef4444 !important; }
-
-/* MasterSelect inside this modal — match Velzon form-select chrome */
-.avm-master-select .master-select-wrap .master-select-toggle {
-  min-height: 38px !important; height: 38px;   /* match Figma .sf-input 38px */
-  /* Right padding trimmed 32px -> 12px: the chevron is a flex item pushed to
-     the right by the toggle's space-between, so the extra 32px right padding
-     was holding it ~20px in from the edge, making it look centred. 12px sits
-     it flush near the right edge like a normal select. */
-  padding: 0 12px !important;
-  font-size: 13px !important;
-  /* Match .avm-input exactly so dropdowns and text fields look identical. */
-  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff)) !important;
-  border: 1px solid color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec)) !important;
-  border-radius: 10px !important;
-  color: var(--vz-body-color, #495057) !important;
-}
-.avm-master-select .master-select-wrap.show .master-select-toggle {
-  border-color: #7c3aed !important;
-  box-shadow: 0 0 0 3px rgba(124,58,237,.15) !important;
-}
-
-/* Radios */
-.avm-radio-row { display: inline-flex; align-items: center; gap: 16px; height: 32px; }
-.avm-radio { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #1e1b4b; cursor: pointer; }
-.avm-radio input { width: 16px; height: 16px; accent-color: #7c3aed; }
-/* Dark-theme: navy text turns invisible on the modal's dark background.
- * Lift Yes / No labels to a high-contrast off-white and tint the radio
- * accent to the indigo used elsewhere in the wizard. */
-[data-bs-theme="dark"] .avm-radio { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-radio input { accent-color: #a78bfa; }
-
-/* File chooser — same chrome as the inputs, dashed border to signal upload */
-.avm-filechooser {
-  position: relative;
-  height: 32px; padding: 0 8px 0 12px;
-  border: 1px dashed var(--vz-border-color, #e9ebec); border-radius: 8px;
-  background: var(--vz-card-bg, #fff); color: #6b7280;
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 500; cursor: pointer;
-  width: 100%;
-}
-.avm-filechooser:hover { border-color: #7c3aed; }
-.avm-filechooser-input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.avm-filechooser-icon { color: #7c3aed; font-size: 15px; flex-shrink: 0; }
-.avm-filechooser-text {
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: #1e1b4b;
-}
-/* Filename as a link — applies the indigo affordance only when a
-   view URL exists (fresh blob or hydrated server path). Clicking
-   the name opens the file in a new tab, same as the 👁 button. */
-.avm-filechooser-link {
-  color: #6d28d9;
-  text-decoration: underline;
-  text-decoration-color: rgba(124, 58, 237, .35);
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-.avm-filechooser-link:hover {
-  color: #5b21b6;
-  text-decoration-color: #6d28d9;
-}
-[data-bs-theme="dark"] .avm-filechooser-link {
-  color: #c4b5fd;
-  text-decoration-color: rgba(196, 181, 253, .35);
-}
-[data-bs-theme="dark"] .avm-filechooser-link:hover { color: #e9d5ff; }
-
-/* Populated state — the hidden <input> is gone, so the strip is no
-   longer a "click anywhere to choose" affordance. Border switches to
-   solid + a subtle indigo tint, and the View / Delete buttons sit on
-   the right as proper pill-style action chips. */
-.avm-filechooser.avm-filechooser-has-file {
-  cursor: default;
-  border: 1px solid #ddd6fe;
-  background: #faf5ff;
-}
-.avm-filechooser.avm-filechooser-has-file:hover { border-color: #a78bfa; }
-.avm-filechooser-actions {
-  display: inline-flex; align-items: center; gap: 4px;
-  flex-shrink: 0; align-self: center;
-}
-.avm-fc-action {
-  width: 26px; height: 26px; box-sizing: border-box; vertical-align: middle;
-  margin: 0; line-height: 1; font-size: 0; appearance: none; -webkit-appearance: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  border-radius: 6px;
-  background: #fff;
-  border: 1px solid var(--vz-border-color, #e5e7eb);
-  color: #6b7280;
-  cursor: pointer;
-  transition: background .15s ease, border-color .15s ease, color .15s ease;
-  padding: 0;
-  text-decoration: none;
-}
-.avm-fc-action i { font-size: 14px; line-height: 1; }
-.avm-fc-view:hover {
-  background: rgba(124, 58, 237, .10);
-  border-color: #7c3aed;
-  color: #7c3aed;
-}
-.avm-fc-replace { position: relative; }
-.avm-fc-replace:hover {
-  background: rgba(124, 58, 237, .10);
-  border-color: #7c3aed;
-  color: #7c3aed;
-}
-.avm-fc-delete:hover {
-  background: rgba(240, 101, 72, .10);
-  border-color: #f06548;
-  color: #f06548;
-}
-
-[data-bs-theme="dark"] .avm-filechooser.avm-filechooser-has-file {
-  background: #1a1538; border-color: #3b2a6b;
-}
-[data-bs-theme="dark"] .avm-filechooser-text { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-fc-action {
-  background: #2a2150; border-color: #3b2a6b; color: #cbd5e1;
-}
-[data-bs-theme="dark"] .avm-fc-view:hover,
-[data-bs-theme="dark"] .avm-fc-replace:hover {
-  background: rgba(124, 58, 237, .18); border-color: #a78bfa; color: #ddd6fe;
-}
-[data-bs-theme="dark"] .avm-fc-delete:hover {
-  background: rgba(248, 113, 113, .18); border-color: #f87171; color: #fecaca;
-}
-
-/* Extra contact rows */
-.avm-extra-contacts { display: flex; flex-direction: column; gap: 12px; }
-.avm-extra-contact { padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 10px; background: #f8fafc; }
-.avm-extra-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; color: #7c3aed; }
-.avm-extra-remove {
-  width: 28px; height: 28px; border-radius: 7px;
-  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
-  cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-}
-
-.avm-empty { padding: 22px; text-align: center; color: #94a3b8; font-size: 12.5px; border: 1.5px dashed #e2e8f0; border-radius: 10px; background: #fff; }
-
-/* Doc table */
-.avm-doctable-wrap { display: flex; flex-direction: column; gap: 10px; }
-.avm-doctable-banner {
-  display: inline-flex; align-items: center; gap: 8px;
-  padding: 8px 14px; border-radius: 8px;
-  font-size: 12.5px; font-weight: 500; letter-spacing: .04em;
-  align-self: flex-start;
-}
-.avm-doctable-banner.tone-amber { background: linear-gradient(135deg, #fef3c7, #fef9c3); color: #92400e; border: 1px solid #fde68a; }
-.avm-doctable-banner.tone-teal  { background: linear-gradient(135deg, #ccfbf1, #f0fdfa); color: #0f766e; border: 1px solid #99f6e4; }
-.avm-doctable-icon {
-  width: 24px; height: 24px; border-radius: 6px;
-  background: linear-gradient(135deg, #f59e0b, #d97706); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center;
-}
-.avm-doctable-banner-label { color: inherit; }
-.avm-doctable-banner-sub { font-weight: 600; letter-spacing: 0; color: #b45309; }
-.avm-doctable-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.avm-doctable-search {
-  flex: 1; max-width: 360px;
-  position: relative;
-  height: 36px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  display: inline-flex; align-items: center; padding: 0 12px 0 36px;
-}
-.avm-doctable-search i { position: absolute; left: 12px; color: #94a3b8; font-size: 14px; }
-.avm-doctable-search input { flex: 1; height: 100%; border: none; outline: none; background: transparent; font-size: 13px; }
-.avm-doctable-count { font-size: 12px; color: #7c3aed; font-weight: 700; }
-
-/* Doc tables — keep the plain Velzon table-light header (same as the
-   Clients master) so the chrome stays consistent across the app. */
-.avm-doctable-wrap .table thead th {
-  font-size: 11.5px; letter-spacing: .04em; font-weight: 700;
-}
-
-/* ───── Global table chrome inside the Vendor modal ─────
-   Mirrors the Clients list table (resources/js/pages/client/Clients.tsx)
-   so every embedded table here — DD, Owner KYC, Trade License, Bank,
-   GST Scrutiny, Product Mappings — reads with the same tight header /
-   cell rhythm. The vendor modal was rendering Velzon's default 13.5px
-   bold uppercase headers, which dwarfed everything around them. */
-.avm-modal .table {
-  --bs-table-bg: transparent;
-  font-size: 13px;
-  margin-bottom: 0;
-}
-/* Exact match to the Figma prototype's .sf-doc-table header (P2P_Sourcing). */
-.avm-modal .table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
-.avm-modal .table thead.table-light th,
-.avm-modal .table thead th {
-  font-family: "DM Sans", system-ui, sans-serif;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: #8b7bb8;
-  padding: 10px 13px;
-  background: transparent;
-  border-bottom: 1.5px solid #ece7f8;
-  white-space: nowrap;
-}
-/* KYC / DD / License / Bank / GST document tables — Figma header th is
-   "9px DM Sans" which is weight 400 (normal). The general rule above uses 800,
-   so even at the same 9px the dev headers read heavier/larger. Match the Figma
-   weight here; scoped to avm-kyc-table so contacts and mapped tables keep theirs. */
-.avm-modal .table.avm-kyc-table thead th { font-weight: 400; letter-spacing: 0.04em; }
-.avm-modal .table tbody td {
-  font-size: 13px;
-  font-weight: 400;
-  /* Theme-adaptive — was hardcoded #495057 (dark text), which on the modal's
-     dark surface in dark mode rendered the KYC cell text nearly invisible.
-     var(--vz-body-color) is dark in light mode and light in dark mode, so the
-     cells stay readable in BOTH without depending on theme-prefixed overrides. */
-  color: var(--vz-body-color, #495057);
-  padding: 10px 12px;
-  vertical-align: middle;
-  border-top: 1px solid #f3f4f6;
-}
-.avm-modal .table tbody td strong {
-  font-weight: 600;
-  /* was #1e293b (near-black) — invisible on the dark modal. Emphasis colour
-     adapts per theme (near-black in light, near-white in dark). */
-  color: var(--vz-emphasis-color, var(--vz-heading-color, #1e293b));
-}
-/* Issuing Authority column reads in the brand purple (Figma), not body grey. */
-.avm-modal .table tbody td.avm-cell-authority { color: #7c3aed; font-weight: 500; }
-[data-bs-theme="dark"] .avm-modal .table tbody td.avm-cell-authority { color: #c4b5fd; }
-
-/* Action buttons inside vendor-modal tables — 30x30 outline pills,
-   identical to the Clients ActionBtn component
-   (resources/js/pages/client/Clients.tsx#L131). Replaces the larger
-   Velzon .btn-soft-* defaults that were oversized in this context. */
-.avm-modal .table .btn.btn-sm.btn-soft-primary,
-.avm-modal .table .btn.btn-sm.btn-soft-danger,
-.avm-modal .table .btn.btn-sm.btn-soft-info,
-.avm-modal .table .btn.btn-sm.btn-soft-success,
-.avm-modal .table .btn.btn-sm.btn-soft-warning {
-  width: 30px; height: 30px; padding: 0;
-  border-radius: 8px;
-  background: var(--vz-secondary-bg, #f3f4f6);
-  border: 1px solid var(--vz-border-color, #e5e7eb);
-  color: var(--vz-secondary-color, #6c757d);
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: all .15s ease;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-primary i,
-.avm-modal .table .btn.btn-sm.btn-soft-danger i,
-.avm-modal .table .btn.btn-sm.btn-soft-info i,
-.avm-modal .table .btn.btn-sm.btn-soft-success i,
-.avm-modal .table .btn.btn-sm.btn-soft-warning i {
-  font-size: 14px;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-primary:hover {
-  background: rgba(124, 58, 237, 0.10); border-color: #7c3aed; color: #7c3aed;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-danger:hover {
-  background: rgba(240, 101, 72, 0.10); border-color: #f06548; color: #f06548;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-info:hover {
-  background: rgba(41, 156, 219, 0.10); border-color: #299cdb; color: #299cdb;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-success:hover {
-  background: rgba(10, 179, 156, 0.10); border-color: #0ab39c; color: #0ab39c;
-}
-.avm-modal .table .btn.btn-sm.btn-soft-warning:hover {
-  background: rgba(247, 184, 75, 0.10); border-color: #f7b84b; color: #f7b84b;
-}
-
-/* Hover row tint — same subtle gray the Clients table uses. */
-.avm-modal .table tbody tr:hover td { background: #f8f9fc; }
-
-/* Auto-code monospace badge — keep it tight & lower-key. */
-.avm-modal .table .badge.bg-light {
-  font-size: 11px;
-  font-weight: 600;
-  padding: 4px 9px;
-  background: #f3f4f6 !important;
-  border-color: #e5e7eb !important;
-}
-
-/* Dark-mode table header — the .table-light Bootstrap class forces a light bg
-   even in dark mode, so override with !important; the row carries a dark
-   gradient (mirrors the light-mode lavender gradient) and cells stay transparent. */
-[data-bs-theme="dark"] .avm-modal .table thead tr { background: linear-gradient(135deg, #251d47, #2a2150) !important; }
-[data-bs-theme="dark"] .avm-modal .table thead.table-light th,
-[data-bs-theme="dark"] .avm-modal .table thead th {
-  background: transparent !important; color: #a89fc7; border-bottom-color: #3b2a6b;
-}
-/* Section header icon tiles — translucent tinted chips instead of the bright
-   light-mode tiles, so they sit on the dark surface. */
-[data-bs-theme="dark"] .avm-section-violet .avm-section-icon,
-[data-bs-theme="dark"] .avm-section-purple .avm-section-icon { background: rgba(124,58,237,.22); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-section-amber  .avm-section-icon { background: rgba(217,119,6,.22);  color: #fbbf24; border-color: rgba(251,191,36,.35); }
-[data-bs-theme="dark"] .avm-section-teal   .avm-section-icon { background: rgba(13,148,136,.22); color: #5eead4; border-color: rgba(94,234,212,.3); }
-[data-bs-theme="dark"] .avm-section-green  .avm-section-icon { background: rgba(22,163,74,.22);  color: #86efac; border-color: rgba(134,239,172,.3); }
-[data-bs-theme="dark"] .avm-modal .table tbody td {
-  color: #cbd5e1; border-top-color: #2a2150;
-}
-[data-bs-theme="dark"] .avm-modal .table tbody td strong { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-modal .table tbody tr:hover td { background: #1a1538; }
-/* Table wrapper outer border — Bootstrap .border uses a light --bs-border-color
-   in dark mode, which reads as a stark white box around the table. Mute it to a
-   subtle dark purple so the table blends (Contact Persons, KYC, DD, etc.). */
-[data-bs-theme="dark"] .avm-modal .table-responsive { border-color: rgba(167,139,250,.16) !important; }
-
-/* Bank grid */
-.avm-bank-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-
-/* Product list (Step 4) */
-.avm-product-list { display: flex; flex-direction: column; gap: 8px; }
-.avm-product-row {
-  display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center;
-  padding: 12px 14px;
-  background: #fff; border: 1.5px solid #e2e8f0; border-radius: 10px;
-  cursor: pointer;
-  transition: border-color .15s, background .15s;
-}
-.avm-product-row.on { border-color: #16a34a; background: #ecfdf5; }
-.avm-product-row input { width: 18px; height: 18px; accent-color: #16a34a; }
-.avm-product-code { font-size: 11px; font-weight: 600; color: #7c3aed; letter-spacing: .06em; }
-.avm-product-name { font-size: 13px; font-weight: 500; color: #1e1b4b; }
-.avm-product-info { display: inline-flex; gap: 6px; }
-.avm-product-tag { padding: 3px 9px; border-radius: 99px; background: #f5f1fe; color: #7c3aed; font-size: 10.5px; font-weight: 500; }
-
-/* Footer */
-.avm-foot {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 14px 22px;
-  background: #f5f2fc; border-top: 1px solid #e9e2f7;
-}
-.avm-foot-right { display: flex; align-items: center; gap: 8px; }
-.avm-foot-note { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: #64748b; }
-.avm-foot-dot { width: 7px; height: 7px; border-radius: 50%; background: #7c3aed; display: inline-block; flex-shrink: 0; }
-[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
-.avm-btn-ghost, .avm-btn-outline, .avm-btn-primary {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 40px; padding: 0 18px;
-  font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-  border-radius: 10px;
-  transition: transform .12s, background .15s, box-shadow .15s, border-color .15s;
-}
-/* Cancel button — the old #e2e8f0 border was nearly invisible against
- * the modal's white surface, so the button read as a floating label.
- * Use a stronger slate border + subtle shadow so it's recognisable as
- * a clickable affordance without competing with the primary CTA. */
-.avm-btn-ghost {
-  background: #fff;
-  border: 1.5px solid #94a3b8;
-  color: #334155;
-  box-shadow: 0 1px 2px rgba(15,23,42,.06);
-}
-.avm-btn-ghost:hover { background: #f1f5f9; border-color: #64748b; color: #1e293b; }
-.avm-btn-outline { background: #fff; border: 1.5px solid #ddd6fe; color: #7c3aed; }
-.avm-btn-outline:hover { background: #f5f1fe; border-color: #7c3aed; }
-.avm-btn-primary {
-  position: relative; overflow: hidden;
-  color: #fff; border: none;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
-  box-shadow: 0 6px 18px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset;
-  text-shadow: 0 1px 2px rgba(0,0,0,.18);
-}
-.avm-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(124,58,237,.6), 0 1px 0 rgba(255,255,255,.2) inset; }
-.avm-btn-primary:disabled { transform: none; opacity: .85; cursor: progress; box-shadow: 0 6px 18px rgba(124,58,237,.32), 0 1px 0 rgba(255,255,255,.2) inset; }
-
-/* Inline spinner shown in Save & Next / Save Vendor while the network
- * call is in flight. Same size/curve as Bootstrap's spinner-border-sm
- * so it sits flush with the 13px button text. */
-.avm-spinner {
-  display: inline-block;
-  width: 14px; height: 14px;
-  border: 2px solid rgba(255,255,255,0.4);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: avm-spinner-spin .7s linear infinite;
-  vertical-align: -2px;
-}
-@keyframes avm-spinner-spin { to { transform: rotate(360deg); } }
-/* Spin any icon in place — used on the row Download button while the file
-   streams through the backend, so the user sees it's working. */
-.avm-spin { animation: avm-spinner-spin .7s linear infinite; display: inline-block; }
-.avm-spinner-lg {
-  width: 36px; height: 36px;
-  border-width: 3px;
-  border-color: rgba(124,58,237,.20);
-  border-top-color: #7c3aed;
-}
-
-/* Edit-mode shimmer placeholder — shown over the form while /vendors/{id}
- * is in flight. Form-shaped skeleton bars convey "data is loading" while
- * preserving the user's mental map of the form layout (no centred modal
- * card covering the geometry). */
-.avm-load-overlay {
-  position: absolute;
-  inset: 0;
-  background: #fff;
-  z-index: 5;
-  overflow: hidden;
-  padding: 22px 26px;
-}
-/* avm-load-overlay-static — used when the skeleton REPLACES the form
-   (mutually-exclusive render) rather than sitting on top of it. Drops
-   the absolute positioning so the skeleton flows normally inside the
-   scrollable body, which guarantees full coverage regardless of body
-   height or scroll offset. */
-.avm-load-overlay-static {
-  position: static;
-  inset: auto;
-  z-index: auto;
-  min-height: 100%;
-  /* Inherited from .avm-load-overlay, and both are wrong once the skeleton
-     flows INSIDE .avm-body rather than covering it:
-       • padding 22/26 stacked on top of the body's own 12/22, so the skeleton
-         cards sat ~26px narrower on each side than the section cards that
-         replaced them — the form visibly widened as it loaded;
-       • the white fill hid the body's lavender wash, so the whole panel went
-         from white to tinted at the same moment. */
-  padding: 0;
-  background: transparent;
-}
-[data-bs-theme="dark"] .avm-load-overlay { background: #1c2531; }
-/* The skeleton content now uses the shared <Shimmer> component (same as the
-   Client/Branch forms); only the overlay wrapper above stays local. */
-
-/* KYC table layout — Bootstrap's table-nowrap was forcing every cell
- * onto a single line, so long document names / addresses / red flags
- * would overflow the column and break the table layout. Allow text
- * cells to wrap with sane per-cell limits, but keep nowrap for the
- * status badges and the action button column so they stay aligned. */
-/* These tables live inside the modal, NOT a Velzon .card — so Velzon's
-   .table-card negative margin (margin: -card-spacer) bleeds them wider than the
-   card and forces a horizontal scrollbar. Neutralize the margin so the table
-   fits the card width and sizes to the popup dynamically. */
-/* 12px radius + overflow clip so the gradient header curves at the top
-   corners, matching the Figma .sf-doc-scroll wrapper. */
-/* overflow:visible (not hidden) so a centred action-column tooltip isn't clipped
-   at the table edge. Fixed-layout tables fill 100% width, so nothing else spills.
-   Mobile still gets overflow-x:auto below for horizontal scroll. */
-.avm-kyc-table-wrap { overflow: visible; border-radius: 12px !important; border-color: #f1ecfb !important; margin: 0 !important; }
-.avm-kyc-table-wrap.table-card { margin: 0 !important; }
-/* Fill the card width so columns spread to fit (no bleed, no scroll on desktop). */
-.avm-kyc-table-wrap .avm-kyc-table { width: 100%; }
-/* Segment-rule reference table (Company DD / Owner KYC / Trade Licence): a
-   FIXED layout so the explicit per-column th widths are authoritative and the
-   header lines up exactly over its data. Auto layout stretched the columns
-   unevenly, which read as header/content misalignment. The Document Name
-   column carries no width, so it soaks up the remaining space. */
-.avm-kyc-table-wrap .avm-segref-table { table-layout: fixed; width: 100%; }
-.avm-segref-table td, .avm-segref-table th { max-width: none; }
-/* On small / mobile screens the table can't compress to readable widths, so let
-   it keep a min width and scroll HORIZONTALLY instead of clipping the columns. */
-@media (max-width: 820px) {
-  .avm-kyc-table-wrap { overflow-x: auto !important; }
-  .avm-kyc-table-wrap .avm-kyc-table { min-width: 700px; }
-  .avm-kyc-table th, .avm-kyc-table td { white-space: nowrap; max-width: none; }
-}
-/* KYC step card (purple tone) — extend down to fill the modal body instead of
-   floating short with empty space below. Step-1 sections (violet) are untouched. */
-.avm-section-purple { min-height: calc(100vh - 430px); }
-/* width:auto so the table hugs its content — columns sit tight together
-   instead of stretching across the full card (no wasted gaps / no scroll). */
-.avm-kyc-table {
-  table-layout: auto;
-  width: auto;
-}
-.avm-kyc-table th, .avm-kyc-table td {
-  white-space: normal;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  vertical-align: middle;
-  max-width: 280px;
-  padding: 9px 14px;
-  font-size: 12px;
-}
-/* Tighten the inter-column rhythm: first/last cells hug the card edges. */
-.avm-kyc-table th:first-child, .avm-kyc-table td:first-child { padding-left: 14px; }
-.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child  { padding-right: 14px; text-align: right; }
-.avm-kyc-table th { white-space: nowrap; }  /* headers stay on one line */
-.avm-kyc-table td .badge,
-.avm-kyc-table td .avm-pill,
-.avm-kyc-table td .btn,
-.avm-kyc-table td .hstack,
-.avm-kyc-table td .font-monospace,
-/* td.font-monospace — the numeric columns (PRICE, GST %, GST AMT, TOTAL) put
-   the class on the <td> itself, not a child, so the descendant selector above
-   missed them and the cells inherited word-break/overflow-wrap. In a narrow
-   column that broke "12.00%" so the % dropped to a second line (QA report).
-   Matching the td directly keeps the value + % on one line. */
-.avm-kyc-table td.font-monospace { white-space: nowrap; }
-/* Action / SR / status columns stay narrow so they don't fight the
- * text columns for horizontal space. The last column is action icons
- * across every KYC table; first is the row number. */
-.avm-kyc-table th:first-child, .avm-kyc-table td:first-child,
-.avm-kyc-table th:last-child,  .avm-kyc-table td:last-child {
-  white-space: nowrap;
-  max-width: none;
-  width: 1%;
-}
-/* Mapped Products table — match the Figma .sf-doc-table typography: small
-   uppercase muted-purple headers on a soft gradient, compact cells, and a
-   rounded "01" SR pill. Scoped to this table so the KYC/DD tables are untouched. */
-/* Full-width + all-left-aligned headers/cells to mirror the Figma .sf-doc-table
-   (it left-aligns every column, including the numeric ones). */
-.avm-mapped-table { width: 100%; }
-/* The row fits the body, so kill the spurious table-responsive scrollbar — the
-   table then spans the full body width (aligned with the toolbar: pill left →
-   +Map Product right) and the action icons sit INSIDE as the last column. */
-/* visible: the compacted table fits the popup so no scrollbar is needed, and
-   visible lets the SEGMENT "+N" segment popover overflow the row instead of
-   being clipped (overflow-x:auto would force overflow-y:auto and cut it off). */
-.avm-mapped-wrap { overflow: visible !important; border-color: #f1ecfb !important; border-radius: 12px !important; }
-.avm-mapped-table th.text-end, .avm-mapped-table td.text-end { text-align: left !important; }
-.avm-mapped-table thead tr { background: linear-gradient(135deg, #faf8ff, #f3eefe); }
-.avm-mapped-table thead th {
-  background: transparent;
-  font-size: 9px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-  color: #8b7bb8; padding: 10px 7px; border-bottom: 1.5px solid #ece7f8;
-}
-.avm-mapped-table tbody td { padding: 9px 7px; font-size: 12px; color: #475569; }
-.avm-mapped-table tbody td strong { font-weight: 800; color: #1e293b; }
-/* Numeric + CODE columns stay on one line (server showed "P-18" wrapping to two
-   lines). Smaller mono font keeps the wide ₹ amounts narrow so all 10 columns
-   fit the popup with NO horizontal scroll; PRODUCT & SEGMENT still wrap. */
-.avm-mapped-table td.font-monospace { white-space: nowrap; font-size: 11px; }
-.avm-mapped-table th.text-end { white-space: nowrap; }
-.avm-mapped-table .avm-auto-code { white-space: nowrap; }
-/* SEGMENT column — SegmentTags: first segment as a teal chip + a "+N" pill that
-   opens a popover listing every segment (for multi-segment products). */
-.avm-mapped-table .seg-tags { position: relative; display: inline-flex; align-items: center; gap: 4px; }
-.avm-seg-tag { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; white-space: nowrap; }
-.avm-mapped-table .seg-more-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 19px; padding: 0 6px; border-radius: 6px; border: 1px solid #bdf0f7; background: #e0fbff; color: #0e7490; font-family: inherit; font-size: 10px; font-weight: 700; cursor: pointer; line-height: 1; transition: background .15s, border-color .15s; }
-.avm-mapped-table .seg-more-pill:hover { background: #cffafe; border-color: #67e8f9; }
-.avm-mapped-table .seg-more-pop { position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; min-width: 150px; max-width: 240px; padding: 8px; border-radius: 10px; background: #fff; border: 1px solid #e2e8f0; box-shadow: 0 8px 24px rgba(15,23,42,.18); }
-.avm-mapped-table .seg-more-pop-hdr { font-size: 9.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
-.avm-mapped-table .seg-more-pop-list { display: flex; flex-wrap: wrap; gap: 5px; }
-.avm-mapped-table .seg-more-pop-item { display: inline-block; font-size: 10.5px; font-weight: 600; color: #0e7490; background: #f0fdff; border: 1px solid #bdf0f7; border-radius: 999px; padding: 3px 9px; }
-[data-bs-theme="dark"] .avm-seg-tag,
-[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-item { background: rgba(8,145,178,.15); border-color: rgba(103,232,249,.25); color: #a5f3fc; }
-[data-bs-theme="dark"] .avm-mapped-table .seg-more-pill { background: rgba(8,145,178,.18); border-color: rgba(103,232,249,.3); color: #67e8f9; }
-[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop { background: #0f1e2e; border-color: rgba(255,255,255,.12); box-shadow: 0 8px 24px rgba(0,0,0,.5); }
-[data-bs-theme="dark"] .avm-mapped-table .seg-more-pop-hdr { color: #94a3b8; }
-.avm-sr-pill {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 24px; height: 24px; border-radius: 7px;
-  font-size: 10.5px; font-weight: 800; color: #7c3aed;
-  background: #f5f1fe; border: 1px solid #e7defb;
-}
-/* CODE pill — match Figma .sf-doc-code--company (mono 10px, radius 7px). */
-.avm-mapped-table .avm-auto-code { font-size: 10px; padding: 3px 9px; border-radius: 7px; color: #7c3aed; border-color: #ddd6fe; }
-/* Compact 29px action buttons (Figma .sf-doc-act) so the row fits — no scroll. */
-.avm-mapped-table tbody td .btn { width: 29px; height: 29px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
-/* + Map Product — match Figma .sf-add-mini (11px/700, radius 9px, 3-stop gradient). */
-.avm-mapped-toolbar .avm-section-add-btn {
-  padding: 7px 12px; border-radius: 9px; font-size: 11px; font-weight: 700;
-  background: linear-gradient(135deg, #8b5cf6, #7c3aed, #5b21b6);
-  box-shadow: 0 3px 9px rgba(124,58,237,.42);
-}
-/* Popup Close/Cancel — match Figma .sf-btn-cancel (light slate border, radius 12px). */
-/* Footer buttons — exact Figma .sf-pop-foot .sf-btn: 13px / 700, padding
-   10px 22px, radius 12px. Cancel = white + #475569 text; Save keeps the base
-   violet gradient (which already matches Figma's .sf-btn-primary). */
-.avm-cp-foot .avm-btn-ghost { color: #475569; background: #fff; border: 1.5px solid #e2e8f0; border-radius: 12px; font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; box-shadow: none; }
-.avm-cp-foot .avm-btn-ghost:hover { background: #f8fafc; border-color: #cbd5e1; color: #334155; }
-.avm-cp-foot .avm-btn-primary { font-weight: 700; font-size: 13px; height: auto; padding: 10px 22px; border-radius: 12px; }
-[data-bs-theme="dark"] .avm-mapped-table thead tr { background: rgba(124,58,237,.12); }
-[data-bs-theme="dark"] .avm-mapped-table thead th { color: #c4b5fd; border-bottom-color: rgba(167,139,250,.2); }
-[data-bs-theme="dark"] .avm-mapped-table tbody td { color: #cbd5e1; }
-[data-bs-theme="dark"] .avm-mapped-table tbody td strong { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-sr-pill { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-/* Dark mode: the light #f1ecfb wrapper border + any inner table borders read as
-   a stark white outline — swap to a muted dark-purple so the table blends. */
-[data-bs-theme="dark"] .avm-mapped-wrap { border-color: rgba(167,139,250,.18) !important; }
-[data-bs-theme="dark"] .avm-mapped-table,
-[data-bs-theme="dark"] .avm-mapped-table td,
-[data-bs-theme="dark"] .avm-mapped-table th { border-color: rgba(167,139,250,.12); }
-/* Dark-mode KYC tables — cell text + row hover. The DD document name and
-   plain cells rendered too dim on the modal's dark surface, and the inherited
-   (Velzon/Bootstrap) row-hover background washed them out to near-invisible.
-   Brighten the cell text and pin a subtle violet hover wash with readable
-   white text. Pills / badges / buttons keep their own colours (they set
-   their own colour on their own element, so the td colour does not override
-   them); muted secondary cells also keep their muted tone. */
-[data-bs-theme="dark"] .avm-kyc-table {
-  --bs-table-color: #e5e7eb;
-  --bs-table-bg: transparent;
-  --bs-table-border-color: rgba(255,255,255,.10);
-  color: #e5e7eb;
-}
-/* Force readable cell text (the inherited table colour was rendering as a
-   faint purple on the dark gradient). !important + the strong override so the
-   DD document name and plain cells are clearly visible. */
-[data-bs-theme="dark"] .avm-kyc-table tbody td {
-  color: #e5e7eb !important;
-}
-[data-bs-theme="dark"] .avm-kyc-table tbody td strong {
-  color: #f5f3ff !important;
-}
-/* Secondary / muted cells (issuing authority, expiry, "Not uploaded") — keep
-   them dimmer than the main text but still legible. */
-[data-bs-theme="dark"] .avm-kyc-table tbody td .text-muted,
-[data-bs-theme="dark"] .avm-kyc-table tbody td .avm-prev-v {
-  color: rgba(255,255,255,.62) !important;
-}
-[data-bs-theme="dark"] .avm-kyc-table tbody tr:hover td {
-  background-color: rgba(124,92,252,.16) !important;
-  color: #ffffff !important;
-}
-
-@media (max-width: 880px) {
-  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
-  .avm-bank-grid { grid-template-columns: 1fr 1fr; }
-  .avm-stepper { flex-direction: column; }
-  .avm-step-arrow { display: none; }
-}
-@media (max-width: 540px) {
-  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
-  .avm-bank-grid { grid-template-columns: 1fr; }
-
-  /* Header — was cramped: the long title wrapped and the Map Product + close
-     buttons overlapped it. Tighten padding, shrink the title, drop the long
-     descriptive subtitle, and make the action buttons compact so they sit
-     cleanly beside the title. */
-  .avm-head { padding: 12px 14px; gap: 8px; align-items: flex-start; }
-  .avm-head-left { gap: 9px; }
-  .avm-title { font-size: 15px; line-height: 1.25; }
-  .avm-sub { display: none; }
-  .avm-head-right { flex-shrink: 0; gap: 6px; }
-  .avm-map-btn { padding: 6px 9px; font-size: 11px; }
-  .avm-map-btn i { font-size: 12px; }
-
-  /* Footer — the "Fields required" note and the Update/Prev buttons were
-     squished side by side. Stack them: note on top, full-width buttons below. */
-  .avm-foot { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px 14px; }
-  .avm-foot-right { width: 100%; }
-  .avm-foot-right button { flex: 1 1 auto; justify-content: center; }
-}
-
-/* ════════════════════════════════════════════════════════════════════════
- * Dark mode
- * ════════════════════════════════════════════════════════════════════ */
-[data-bs-theme="dark"] .avm-modal { background: #14102a; color: #ede9fe; }
-/* Flat solid surfaces in dark — no gradient sweeps (clean + clear). */
-[data-bs-theme="dark"] .avm-head { background: #4c1d95; box-shadow: none; border-bottom-color: rgba(167,139,250,.30); }
-[data-bs-theme="dark"] .avm-step-active { background: #2a1d5c; border-color: #7c3aed; box-shadow: none; }
-[data-bs-theme="dark"] .avm-step-active .avm-step-ico { background: #6d28d9; box-shadow: none; }
-[data-bs-theme="dark"] .avm-stepper-wrap { background: #1a1430; border-bottom-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-step { background: #221852; }
-[data-bs-theme="dark"] .avm-step-title { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-step-sub   { color: #a89fc7; }
-/* Was .avm-step-num — a class this file no longer renders, so the badge had no
-   dark rule at all and kept its light white-on-white ring. Dark inverts it:
-   a dark disc on the lighter card, same violet hairline doing the separating. */
-[data-bs-theme="dark"] .avm-step-ico-num {
-  background: #1a1430; color: #c4b5fd; border-color: #1a1430;
-  box-shadow: 0 0 0 1px rgba(167,139,250,.45), 0 1px 3px rgba(0,0,0,.5);
-}
-/* Attractive dark mode — soft purple glow gives the flat form depth (mirrors
-   the CLM Segment Master recipe, in purple instead of teal). */
-[data-bs-theme="dark"] .avm-body {
-  background:
-    radial-gradient(ellipse 78% 46% at 50% -6%, rgba(124,58,237,.17), transparent 60%),
-    radial-gradient(ellipse 55% 42% at 100% 106%, rgba(167,139,250,.09), transparent 55%),
-    #0e0a20;
-  scrollbar-color: #4c1d95 transparent;
-}
-[data-bs-theme="dark"] .avm-body::-webkit-scrollbar-thumb { background: #4c1d95; }
-[data-bs-theme="dark"] .avm-section {
-  background: linear-gradient(180deg, rgba(124,58,237,.10), rgba(124,58,237,.035));
-  border: 1px solid rgba(167,139,250,.14);
-  box-shadow: 0 6px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.05);
-}
-[data-bs-theme="dark"] .avm-section-violet,
-[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
-[data-bs-theme="dark"] .avm-section-amber  { border-color: #78350f; border-left-color: #f59e0b; }
-[data-bs-theme="dark"] .avm-section-teal   { border-color: #0f766e; border-left-color: #14b8a6; }
-[data-bs-theme="dark"] .avm-section-green  { border-color: #14532d; border-left-color: #4ade80; }
-[data-bs-theme="dark"] .avm-section-violet .avm-section-head,
-[data-bs-theme="dark"] .avm-section-purple .avm-section-head { background: #241a47; }
-/* The head/body divider was a light lavender line (#f1ecfb) with no dark
-   override — it read as an ugly white line. Subtle purple instead. */
-[data-bs-theme="dark"] .avm-section-head { border-bottom-color: rgba(167,139,250,.15); }
-/* Cleaner dark borders — these had light (near-white / bright-lavender) borders
-   that read as harsh outlines in dark. Soften to subtle purple. Light mode is
-   untouched (these only apply under [data-bs-theme="dark"]). */
-[data-bs-theme="dark"] .avm-kyc-table-wrap { border-color: rgba(167,139,250,.14) !important; }
-[data-bs-theme="dark"] .avm-step { border-color: rgba(167,139,250,.16); }
-[data-bs-theme="dark"] .avm-step-done { border-color: rgba(74,222,128,.30); }
-[data-bs-theme="dark"] .avm-mapped-wrap,
-[data-bs-theme="dark"] .table-card.border,
-[data-bs-theme="dark"] .avm-modal .border { border-color: rgba(167,139,250,.14) !important; }
-[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-section-amber  .avm-section-head { background: linear-gradient(135deg, #3f2c0a, #4a3408); }
-[data-bs-theme="dark"] .avm-section-teal   .avm-section-head { background: linear-gradient(135deg, #0c2522, #133e3a); }
-[data-bs-theme="dark"] .avm-section-green  .avm-section-head { background: linear-gradient(135deg, #14241a, #1a3225); }
-[data-bs-theme="dark"] .avm-section-title { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-section-sub   { color: #a89fc7; }
-[data-bs-theme="dark"] .avm-section-amber .avm-section-title { color: #fde68a; }
-[data-bs-theme="dark"] .avm-section-amber .avm-section-sub   { color: #fcd34d; }
-[data-bs-theme="dark"] .avm-field-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-input { background: #110c25; border-color: #3b2a6b; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-input:focus { background: #1a1430; border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .avm-master-select .master-select-wrap .master-select-toggle {
-  background: color-mix(in srgb, #a78bfa 12%, #110c25) !important;
-  border-color: #3b2a6b !important; color: #ede9fe !important;
-}
-[data-bs-theme="dark"] .avm-filechooser { background: #110c25; border-color: #4c1d95; color: #a89fc7; }
-[data-bs-theme="dark"] .avm-pill { background: #221852; color: #c4b5fd; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-pill.on { background: linear-gradient(135deg, #7c3aed, #6d28d9); color: #fff; }
-[data-bs-theme="dark"] .avm-sub-pill { background: #1a1430; border-color: #3b2a6b; color: #a89fc7; }
-[data-bs-theme="dark"] .avm-sub-pill.on { background: #14241a; border-color: #14532d; color: #4ade80; }
-[data-bs-theme="dark"] .avm-tabs { border-bottom-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-tab { color: #6d6391; }
-[data-bs-theme="dark"] .avm-tab.on { color: #c4b5fd; border-bottom-color: #a78bfa; }
-[data-bs-theme="dark"] .avm-extra-contact { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-empty { background: #110c25; border-color: #3b2a6b; color: #6d6391; }
-[data-bs-theme="dark"] .avm-foot { background: #14102a; border-top-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-btn-ghost { background: #1a1430; border-color: #3b2a6b; color: #c4b5fd; }
-/* Dark-mode hover — without this the light .avm-btn-ghost:hover rule is
-   overridden by the dark base rule above (equal specificity, defined later),
-   so the Cancel button showed no hover feedback in dark mode (QA report). */
-[data-bs-theme="dark"] .avm-btn-ghost:hover { background: #221852; border-color: #4c1d95; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-btn-outline { background: #1a1430; border-color: #4c1d95; color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-product-row { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-product-row.on { background: #14241a; border-color: #14532d; }
-[data-bs-theme="dark"] .avm-product-name { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-product-tag { background: #2a1d5c; color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-doctable-search { background: #110c25; border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-doctable-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-doctable-count { color: #c4b5fd; }
-/* Dark mode — mirrors .avm-id-summary palette so all read-only headers
- * (Stage 1 + carried-over Stage 2/3/4) share the same dark violet shell. */
-[data-bs-theme="dark"] .avm-prev { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-prev-head { background: transparent; border-bottom-color: rgba(167,139,250,.25); }
-[data-bs-theme="dark"] .avm-prev-title { color: #ddd6fe; }
-[data-bs-theme="dark"] .avm-prev-toggle-pill { background: #221940; color: #c4b5fd; box-shadow: none; }
-[data-bs-theme="dark"] .avm-prev-toggle:hover .avm-prev-toggle-pill { background: #2a1d5c; }
-[data-bs-theme="dark"] .avm-prev-toggle-chev { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-chip { background: #221940; border-color: rgba(167,139,250,.35); color: #ddd6fe; }
-[data-bs-theme="dark"] .avm-prev-pair:hover { background: rgba(167,139,250,0.10); }
-[data-bs-theme="dark"] .avm-prev-k { color: #94a3b8; }
-[data-bs-theme="dark"] .avm-prev-v { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-link { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-link:hover { color: #ddd6fe; }
-[data-bs-theme="dark"] .avm-prev-suffix { color: #94a3b8; }
-[data-bs-theme="dark"] .avm-prev-stage-label,
-[data-bs-theme="dark"] .avm-prev-stage.tone-violet .avm-prev-stage-label,
-[data-bs-theme="dark"] .avm-prev-stage.tone-teal   .avm-prev-stage-label,
-[data-bs-theme="dark"] .avm-prev-stage.tone-purple .avm-prev-stage-label { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-prev-stage + .avm-prev-stage { border-top-color: rgba(167,139,250,.20); }
-
-/* ─── Master Quick-Add popup ─── */
-.avm-qa-backdrop {
-  position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .6);
-  backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px 20px;
-  font-family: var(--font-sans);
-}
-.avm-qa-popup {
-  width: 100%; max-width: 480px;
-  background: #fff; border-radius: 16px; overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
-}
-.avm-qa-head {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 16px 18px;
-  background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%);
-  color: #fff;
-}
-/* Soft radial glow — same accent the master Add modal header uses. */
-.avm-qa-head-glow {
-  position: absolute; bottom: -50px; left: -30px; width: 160px; height: 160px; border-radius: 50%;
-  background: radial-gradient(circle, rgba(255,255,255,0.18) 0%, transparent 70%);
-  pointer-events: none;
-}
-.avm-qa-head-main { display: flex; align-items: center; gap: 12px; min-width: 0; position: relative; }
-.avm-qa-head-ico {
-  width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.25);
-  backdrop-filter: blur(6px);
-}
-.avm-qa-head-ico i { font-size: 20px; color: #fff; }
-.avm-qa-head-text { min-width: 0; }
-.avm-qa-title { font-size: 16px; font-weight: 800; letter-spacing: .01em; line-height: 1.2; }
-.avm-qa-sub { font-size: 12px; color: rgba(255,255,255,0.82); margin-top: 1px; }
-.avm-qa-close {
-  position: relative; flex-shrink: 0;
-  width: 30px; height: 30px; border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.25);
-  background: rgba(255,255,255,.12); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-.avm-qa-close:hover { background: rgba(255,255,255,.22); transform: rotate(90deg); }
-/* position:relative so .avm-cp-saving-veil (absolute; inset:0) sizes to THIS
-   body. Without it the veil's containing block is .avm-qa-backdrop (fixed;
-   inset:0) and the 45% wash covers the whole viewport instead of the popup. */
-.avm-qa-body { padding: 18px; display: flex; flex-direction: column; gap: 12px; position: relative; }
-.avm-qa-foot {
-  display: flex; justify-content: flex-end; gap: 8px;
-  padding: 12px 18px; border-top: 1px solid #ede9fe;
-}
-
-[data-bs-theme="dark"] .avm-qa-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-qa-head  { background: linear-gradient(115deg, #4c1d95 0%, #6d28d9 55%, #8b5cf6 100%); }
-[data-bs-theme="dark"] .avm-qa-foot  { border-top-color: #3b2a6b; }
-
-/* ─── Contact Person popup ─── */
-.avm-cp-backdrop {
-  position: fixed; inset: 0; z-index: 1100;
-  background: rgba(15, 23, 42, .6);
-  backdrop-filter: blur(3px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 24px 20px;
-  font-family: var(--font-sans);
-}
-.avm-cp-popup {
-  width: 100%; max-width: 880px;
-  background: #fff;
-  border-radius: 16px;
-  overflow: hidden;
-  display: flex; flex-direction: column;
-  box-shadow: 0 30px 80px rgba(15, 23, 42, .5);
-}
-/* Mapped Products list popup — wider to fit the mapping table columns. */
-.avm-cp-popup-wide { max-width: 1040px; }
-.avm-mapped-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
-.avm-mapped-count {
-  font-size: 12px; font-weight: 700; color: #6d28d9;
-  background: #f5f1fe; border: 1px solid #e2d4fa; border-radius: 20px; padding: 5px 13px;
-}
-.avm-empty-accent { color: #7c3aed; border-color: #ddd6fe; background: #faf7ff; }
-.avm-cp-head {
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 17px 22px;
-  background: linear-gradient(115deg, #4c1d95 0%, #5b21b6 30%, #6d28d9 60%, #7c3aed 82%, #8b5cf6 100%);
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0,0,0,.18);
-  /* Crisp white highlight line along the top edge — same as the Add Supplier
-     header (.avm-head). Sits above the ::after gloss. */
-  box-shadow: inset 0 2px 0 rgba(255, 255, 255, .35);
-}
-/* Figma .sf-pop-head sheen — soft radial highlights + a top gloss band. */
-.avm-cp-head::before {
-  content: ''; position: absolute; inset: 0; opacity: .55; pointer-events: none;
-  background-image: radial-gradient(circle at 16% 130%, rgba(255,255,255,.2), transparent 42%), radial-gradient(circle at 90% -40%, rgba(216,180,254,.45), transparent 46%);
-}
-.avm-cp-head::after {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 50%; pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,.16), transparent);
-}
-/* Amber-toned popup (GST Scrutiny) — orange header + orange Save button. */
-.avm-cp-amber .avm-cp-head { background: linear-gradient(115deg, #b45309 0%, #d97706 45%, #f59e0b 100%); }
-.avm-btn-amber {
-  background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706) !important;
-  box-shadow: 0 4px 12px rgba(217,119,6,.4) !important;
-}
-.avm-btn-amber:hover { box-shadow: 0 6px 18px rgba(217,119,6,.5) !important; }
-/* Amber "+ Add" section button (GST tab). */
-.avm-section-add-btn.amber { background: linear-gradient(135deg, #f59e0b, #d97706); box-shadow: 0 3px 9px rgba(217, 119, 6, .42); }
-.avm-section-add-btn.amber:hover { box-shadow: 0 6px 14px rgba(217,119,6,.5); }
-/* Figma .sf-pop-head layout — icon chip beside a tight title/subtitle column,
-   vertically centred. Keeps the header compact (no taller than the icon). */
-/* font-size here drives the Add Contact Person popup title (it renders text
-   directly in .avm-cp-title, not .avm-cp-htitle) — match Figma's 16px DM Sans.
-   PopupShell titles use .avm-cp-htitle, which keeps its own size. */
-.avm-cp-title { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 12px; font-size: 16px; font-weight: 800; letter-spacing: -0.2px; }
-.avm-cp-title i {
-  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0; font-size: 18px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, rgba(255,255,255,.3), rgba(255,255,255,.12));
-  border: 1px solid rgba(255,255,255,.38);
-  box-shadow: 0 5px 14px rgba(0,0,0,.18), 0 1px 0 rgba(255,255,255,.4) inset;
-}
-.avm-cp-htext { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.avm-cp-htitle { font-size: 16px; font-weight: 800; letter-spacing: -0.2px; line-height: 1.1; }
-.avm-cp-subtitle { font-size: 11px; font-weight: 500; color: rgba(255,255,255,.82); text-shadow: none; line-height: 1.2; }
-.avm-cp-close {
-  position: relative; z-index: 1;
-  width: 32px; height: 32px; border-radius: 9px;
-  border: 1px solid rgba(255,255,255,.32);
-  background: rgba(255,255,255,.16); color: #fff;
-  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
-  transition: background .15s, transform .12s;
-}
-.avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
-/* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
-   (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
-.avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; position: relative; }
-/* Popup field labels — match the Figma .sf-pop-body .sf-label: 11.5px, bold,
-   dark-purple (the main form uses a lighter slate medium-weight label). */
-/* No margin-bottom here — the .avm-field flex gap (5px) already spaces the
-   label from the input. The extra 5px margin doubled the gap (Figma is ~5px). */
-.avm-cp-body .avm-field-label { font-size: 11.5px; font-weight: 700; color: #3b0764; margin-bottom: 0; }
-[data-bs-theme="dark"] .avm-cp-body .avm-field-label,
-[data-layout-mode="dark"] .avm-cp-body .avm-field-label { color: #c4b5fd; }
-/* Figma .sf-pop-body .sf-input — popup inputs sit a touch taller/rounder than
-   the main form's, and popup grids breathe a little more. */
-.avm-cp-body .avm-input { height: 42px; border-radius: 11px; }
-/* Upload box (Cancelled Cheque etc.) matches the sibling inputs inside the
-   popup — same 42px height, radius, lavender tint and purple-tinted border —
-   so it doesn't sit shorter/whiter than the fields next to it (Figma). */
-.avm-cp-body .avm-filechooser {
-  height: 42px; border-radius: 11px;
-  border-color: color-mix(in srgb, #a78bfa 20%, var(--vz-border-color, #e9ebec));
-  background: color-mix(in srgb, #a78bfa 5%, var(--vz-card-bg, #fff));
-}
-/* Dark mode — the light tint above outranks the global dark .avm-filechooser
-   rule (same specificity, declared later), so re-darken it explicitly here. */
-[data-bs-theme="dark"] .avm-cp-body .avm-filechooser {
-  background: color-mix(in srgb, #a78bfa 12%, #110c25);
-  border-color: rgba(167,139,250,.3); color: #a89fc7;
-}
-.avm-cp-body .avm-grid-2, .avm-cp-body .avm-grid-3 { gap: 12px; }
-/* Interaction-blocking veil shown over the popup body while a save is in flight
- * so no field can be edited and no attachment opened until it resolves. */
-.avm-cp-saving-veil { position: absolute; inset: 0; z-index: 20; background: rgba(255,255,255,.45); cursor: progress; border-radius: inherit; }
-[data-bs-theme="dark"] .avm-cp-saving-veil { background: rgba(10,6,24,.45); }
-/* Whole-modal veil during a step save — blocks Map Product / tabs / everything. */
-.avm-busy-veil { position: absolute; inset: 0; z-index: 60; background: rgba(245,243,255,.35); cursor: progress; border-radius: inherit; }
-[data-bs-theme="dark"] .avm-busy-veil { background: rgba(10,6,24,.4); }
-.avm-cp-foot {
-  display: flex; justify-content: flex-end; gap: 11px;
-  padding: 14px 22px 20px;
-  border-top: 1px solid #f1ecfb;
-  background: linear-gradient(180deg, transparent, rgba(245,241,254,.5));
-}
-
-/* Readonly Step-1 summary strip — now rendered ON the Address &
-   Contact Person sub-tab itself (not inside the contact popup). It
-   surfaces every field captured on the Vendor Identification sub-tab
-   so the user can verify they're entering the right vendor's address
-   / extra contacts without tab-flipping. */
-/* Read-only identity summary — aligned with the customer & consignee
- * modals' .acm-hs-grid / .acg-hs-grid look: dense 4-column grid of
- * "LABEL : Value" pairs, hover affordance, and ellipsis on long values.
- * Old layout was flex-wrap rows which produced uneven column widths
- * and mismatched the rest of the suite. */
-.avm-id-summary {
-  padding: 14px 18px 16px;
-  margin-bottom: 14px;
-  background: linear-gradient(180deg, #faf5ff 0%, #f3e8ff 100%);
-  border: 1px solid #e9d5ff;
-  border-radius: 12px;
-  display: flex; flex-direction: column; gap: 13px;
-}
-.avm-id-summary-row {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  column-gap: 28px;
-  row-gap: 13px;
-  align-items: baseline;
-}
-.avm-id-pair {
-  display: flex; align-items: baseline; gap: 6px;
-  font-size: 12px; line-height: 1.4;
-  min-width: 0;
-  cursor: default; padding: 1px 2px; border-radius: 4px;
-  transition: background .12s;
-}
-.avm-id-pair:hover { background: rgba(124,58,237,0.06); }
-.avm-id-k {
-  font-size: 12px; font-weight: 600; letter-spacing: .01em;
-  color: #64748b;
-  white-space: nowrap; flex-shrink: 0;
-}
-.avm-id-v {
-  font-weight: 600; color: #6d28d9; line-height: 1.4;
-  min-width: 0; flex: 1 1 auto;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
-@media (max-width: 900px) {
-  .avm-id-summary-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-[data-bs-theme="dark"] .avm-id-summary { background: linear-gradient(180deg, #1a1538 0%, #14102a 100%); border-color: #3b2a6b; }
-[data-bs-theme="dark"] .avm-id-pair:hover { background: rgba(167,139,250,0.10); }
-[data-bs-theme="dark"] .avm-id-k { color: #94a3b8; }
-[data-bs-theme="dark"] .avm-id-v { color: #c4b5fd; }
-
-[data-bs-theme="dark"] .avm-cp-popup { background: #14102a; color: #ede9fe; }
-[data-bs-theme="dark"] .avm-cp-head  { background: linear-gradient(135deg, #5b21b6, #a78bfa); }
-[data-bs-theme="dark"] .avm-cp-foot  { border-top-color: #3b2a6b; background: linear-gradient(180deg, transparent, rgba(124,58,237,.08)); }
-/* .avm-cp-summary moved to .avm-id-summary on the Address tab — see
-   the rule block above. The dark-mode overrides used to live here. */
-
-/* Bootstrap "subtle" badge palette inside the modal's tables.
- * Bootstrap 5.3's bg-*-subtle / text-* tokens swap via --bs-* vars,
- * which depend on Bootstrap's own CSS being applied BEFORE this
- * scoped block. In Edge those vars resolved fine, but in Chrome (and
- * in some cache states) the dark-mode swap was missing — the STATUS
- * pill rendered as pale-on-pale and the user reported the table
- * "looks empty" in Chrome. Pin solid colours per state so the
- * rendering is identical in every Chromium-based browser. */
-.avm-modal .badge.bg-success-subtle,
-.avm-modal .badge.bg-success-subtle.text-success {
-  background-color: #d1fae5 !important;
-  color: #065f46 !important;
-}
-.avm-modal .badge.bg-warning-subtle,
-.avm-modal .badge.bg-warning-subtle.text-warning {
-  background-color: #fef3c7 !important;
-  color: #854d0e !important;
-}
-.avm-modal .badge.bg-danger-subtle,
-.avm-modal .badge.bg-danger-subtle.text-danger {
-  background-color: #fee2e2 !important;
-  color: #991b1b !important;
-}
-.avm-modal .badge.bg-primary-subtle,
-.avm-modal .badge.bg-primary-subtle.text-primary {
-  background-color: #dbeafe !important;
-  color: #1e40af !important;
-}
-.avm-modal .badge.bg-light,
-.avm-modal .badge.bg-light.text-muted {
-  background-color: #f1f5f9 !important;
-  color: #475569 !important;
-}
-[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle,
-[data-bs-theme="dark"] .avm-modal .badge.bg-success-subtle.text-success {
-  background-color: #0c2e1d !important;
-  color: #4ade80 !important;
-}
-[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle,
-[data-bs-theme="dark"] .avm-modal .badge.bg-warning-subtle.text-warning {
-  background-color: #3a2a08 !important;
-  color: #fbbf24 !important;
-}
-[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle,
-[data-bs-theme="dark"] .avm-modal .badge.bg-danger-subtle.text-danger {
-  background-color: #3a0e0e !important;
-  color: #f87171 !important;
-}
-[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle,
-[data-bs-theme="dark"] .avm-modal .badge.bg-primary-subtle.text-primary {
-  background-color: #0f1e3a !important;
-  color: #60a5fa !important;
-}
-[data-bs-theme="dark"] .avm-modal .badge.bg-light,
-[data-bs-theme="dark"] .avm-modal .badge.bg-light.text-muted {
-  background-color: rgba(255,255,255,0.06) !important;
-  color: #94a3b8 !important;
-}
-
-/* Auto-code badge (e.g. KYC-001, V-001-P-002). Uses solid hex
- * colours (no rgba alpha, no Bootstrap CSS vars) so it renders the
- * SAME in Chrome and Edge — the rgba variant the badge used before
- * composited to different perceived shades when Chrome cached an
- * older Bootstrap layer, producing a faded "barely visible" look.
- * Solid backgrounds avoid that drift entirely. */
-.avm-auto-code {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: #f5f1fe;
-  color: #6d28d9;
-  border: 1px solid #e2d4fa;
-  font-family: 'DM Mono', 'JetBrains Mono', monospace;
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.2;
-  letter-spacing: .02em;
-}
-
-/* KYC reference table (Figma): SR-No badge, expiry pills, Mandatory/Optional
-   pair, upload/download action buttons, and a search bar above the table. */
-.avm-sr-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  min-width: 26px; height: 24px; padding: 0 6px;
-  border-radius: 7px; background: #f5f1fe; color: #6d28d9;
-  border: 1px solid #e2d4fa; font-size: 11px; font-weight: 800; font-family: 'DM Mono', monospace;
-}
-.avm-exp-pill { display: inline-block; padding: 4px 10px; border-radius: 7px; font-size: 11px; font-weight: 700; }
-.avm-exp-pill.is-na   { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
-.avm-exp-pill.is-date { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.avm-exp-pill.is-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.avm-exp-pill.is-valid   { background: #ecfdf5; color: #16a34a; border: 1px solid #bbf7d0; }
-/* Issuing-authority badges + "+N" overflow popover (reused AuthorityBadges component).
-   These .clm-* classes live in the CLM shared CSS, which isn't loaded in this modal,
-   so mirror the ones AuthorityBadges needs here. */
-.clm-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10.5px; font-weight: 600; border: 1px solid; white-space: nowrap; letter-spacing: .01em; line-height: 1.35; }
-.clm-badge-teal { background: rgba(8,145,178,.08); color: #0891b2; border-color: rgba(6,182,212,.22); }
-.clm-code-pill { display: inline-block; font-family: 'Geist Mono', ui-monospace, Menlo, monospace; font-size: 11px; font-weight: 500; letter-spacing: .05em; color: #0891b2; background: linear-gradient(135deg, rgba(8,145,178,.10), rgba(6,182,212,.06)); padding: 4px 9px; border-radius: 7px; border: 1px solid rgba(6,182,212,.25); white-space: nowrap; }
-.clm-pop { background: #fff; border: 1.5px solid #99f6e4; box-shadow: 0 16px 40px rgba(0,0,0,.18); -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
-.clm-pop::-webkit-scrollbar { width: 8px; }
-.clm-pop::-webkit-scrollbar-thumb { background: rgba(6,182,212,.35); border-radius: 8px; }
-.clm-pop-title { color: #0d9488; }
-.clm-pop-row-alt { background: #f0fdfa; }
-[data-bs-theme="dark"] .clm-pop { background: #0f172a; border-color: rgba(6,182,212,.35); box-shadow: 0 16px 40px rgba(0,0,0,.5); }
-[data-bs-theme="dark"] .clm-pop-title { color: #5eead4; }
-[data-bs-theme="dark"] .clm-pop-row-alt { background: rgba(255,255,255,.04); }
-[data-bs-theme="dark"] .clm-badge-teal { background: rgba(8,145,178,.16); color: #67e8f9; border-color: rgba(6,182,212,.4); }
-.avm-req-pair { display: inline-flex; align-items: center; gap: 4px; }
-.avm-req-pill { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 99px; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.avm-req-pill.on-m { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; box-shadow: 0 2px 6px rgba(22,163,74,.3); }
-.avm-req-pill.on-o { background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; box-shadow: 0 2px 6px rgba(124,58,237,.3); }
-.avm-req-pill.off  { background: #f5f3fb; color: #9b94b3; border: 1px solid #e9e2f7; }
-.avm-kyc-actions { display: inline-flex; align-items: center; gap: 5px; }
-/* Action-column tooltips stay ABOVE the button and CENTRED (default). They were
-   clipping at the card's right edge because the table wrapper clipped overflow —
-   the wrappers below are set to overflow:visible so the centred tooltip shows in
-   full. (These tables are table-layout:fixed / width:100%, so nothing else spills.) */
-.avm-kyc-act {
-  width: 27px; height: 27px; border-radius: 7px; cursor: pointer;
-  /* margin:0 — the Upload is a <label>, which Bootstrap gives a default
-     margin-bottom, pushing it ~4px higher than the Download (<a>). Zeroing it
-     makes the two action buttons line up. */
-  margin: 0; vertical-align: middle;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: transform .14s, box-shadow .14s, filter .14s; text-decoration: none;
-}
-.avm-kyc-act i { font-size: 14px; }
-.avm-kyc-act.up   { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
-.avm-kyc-act.up:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.avm-kyc-act.down { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
-.avm-kyc-act.down:hover { background: #16a34a; color: #fff; border-color: transparent; transform: translateY(-1px); }
-/* View (eye) + Re-upload (refresh) — shown once a file exists, like Evidence Vault. */
-.avm-kyc-act.view { background: #ecfeff; color: #0891b2; border: 1px solid #a5f3fc; }
-.avm-kyc-act.view:hover { background: #0891b2; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.avm-kyc-act.reup { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
-.avm-kyc-act.reup:hover { background: #d97706; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.avm-kyc-act.edit { background: #f5f1fe; color: #7c3aed; border: 1px solid #ddd6fe; }
-.avm-kyc-act.edit:hover { background: #7c3aed; color: #fff; border-color: transparent; transform: translateY(-1px); }
-.avm-kyc-act.del { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-.avm-kyc-act.del:hover { background: #dc2626; color: #fff; border-color: transparent; transform: translateY(-1px); }
-/* Green "file uploaded" tick that fronts the action group. */
-.avm-uploaded-dot { display: inline-flex; align-items: center; color: #16a34a; font-size: 16px; margin-right: 1px; }
-.avm-kyc-act.is-disabled { opacity: .45; cursor: not-allowed; }
-.avm-kyc-act.is-disabled:hover { background: #f0fdf4; color: #16a34a; transform: none; }
-/* The Upload / Re-upload actions are now <button>s that open a popup (no
-   longer <label>s wrapping a hidden <input>) — strip the native button
-   padding so they stay square inside the fixed 27x27 chip. */
-button.avm-kyc-act { padding: 0; font: inherit; }
-/* Expiry field: the Yes/No control and, once Yes is chosen, the date picker
-   sit on ONE inline row — the calendar opens right beside the buttons. */
-.avm-expiry-row { display: flex; align-items: center; gap: 10px; }
-.avm-expiry-date { flex: 1 1 auto; min-width: 0; }
-/* Yes/No segmented toggle — a single joined pill (shared border, no gap)
-   so it reads as one compact control instead of two loose buttons. */
-.avm-yesno {
-  display: inline-flex; flex-shrink: 0; height: 38px; border-radius: 9px;
-  border: 1.5px solid #e9e2f7; background: #faf8ff; overflow: hidden;
-}
-.avm-yesno-btn {
-  min-width: 46px; padding: 0 15px; border: 0; background: transparent; cursor: pointer;
-  font-family: inherit; font-size: 13px; font-weight: 600; color: #6b7280;
-  border-right: 1.5px solid #e9e2f7; transition: background .14s, color .14s;
-}
-.avm-yesno-btn:last-child { border-right: 0; }
-.avm-yesno-btn:hover { background: #f1ebfe; color: #7c3aed; }
-.avm-yesno-btn.on { background: #7c3aed; color: #fff; }
-.avm-yesno-btn.on:hover { background: #6d28d9; color: #fff; }
-[data-bs-theme="dark"] .avm-yesno { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }
-[data-bs-theme="dark"] .avm-yesno-btn { color: #adb5bd; border-right-color: rgba(255,255,255,.12); }
-[data-bs-theme="dark"] .avm-yesno-btn.on { background: #7c3aed; color: #fff; }
-.avm-field-hint { margin-left: 6px; font-size: 11px; font-weight: 500; color: #94a3b8; }
-.avm-kyc-search {
-  position: relative; display: flex; align-items: center; gap: 9px;
-  height: 38px; margin-bottom: 6px; padding: 0 12px 0 14px;
-  background: #faf8ff; border: 1.5px solid #e9e2f7; border-radius: 11px;
-  transition: border-color .16s, box-shadow .16s;
-}
-.avm-kyc-search:focus-within { border-color: #a78bfa; box-shadow: 0 0 0 3px rgba(167,139,250,.18); }
-.avm-kyc-search > i { color: #a78bfa; font-size: 16px; flex-shrink: 0; }
-.avm-kyc-search input { flex: 1; min-width: 0; border: none; outline: none; background: transparent; font-family: inherit; font-size: 13px; color: #3b0764; }
-.avm-kyc-search input::placeholder { color: #a78bfa; opacity: .7; }
-.avm-kyc-search-clear { flex-shrink: 0; width: 22px; height: 22px; border: none; border-radius: 6px; background: rgba(124,58,237,.1); color: #7c3aed; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.avm-kyc-search-clear:hover { background: #7c3aed; color: #fff; }
-[data-bs-theme="dark"] .avm-auto-code {
-  background: #3a2a08;
-  color: #fde68a;
-  border-color: #78521a;
-}
-
-/* Status / mandatory / whatsapp pills used inside the vendor modal tables.
- * Custom-named classes (no collision with Bootstrap utility classes like
- * .bg-success-subtle / .text-muted) so the rendering is identical across
- * Chrome, Edge and any cache state. Earlier the badges depended on
- * Bootstrap's --bs-*-subtle CSS vars that Chrome could resolve to a
- * near-white background, producing the "empty pill" the user reported. */
-.avm-pill {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: .01em;
-  border: 1px solid transparent;
-  white-space: nowrap;
-}
-.avm-pill-success { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
-.avm-pill-warning { background: #fef3c7; color: #854d0e; border-color: #fde68a; }
-.avm-pill-danger  { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
-.avm-pill-primary { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
-.avm-pill-muted   { background: #f1f5f9; color: #475569; border-color: #cbd5e1; }
-[data-bs-theme="dark"] .avm-pill-success { background: #0c2e1d; color: #4ade80; border-color: #15803d; }
-[data-bs-theme="dark"] .avm-pill-warning { background: #3a2a08; color: #fbbf24; border-color: #b45309; }
-[data-bs-theme="dark"] .avm-pill-danger  { background: #3a0e0e; color: #f87171; border-color: #b91c1c; }
-[data-bs-theme="dark"] .avm-pill-primary { background: #0f1e3a; color: #60a5fa; border-color: #1d4ed8; }
-[data-bs-theme="dark"] .avm-pill-muted   { background: rgba(255,255,255,0.06); color: #cbd5e1; border-color: rgba(255,255,255,0.14); }
-
-/* ════════════════════════════════════════════════════════════════════════
- * Dark mode — completeness pass across every stage of the Supplier wizard.
- * Each element below either carried a hardcoded light value with no dark
- * counterpart, or an inline style on the element that the earlier dark
- * rules could not reach. Every override is gated on [data-bs-theme="dark"]
- * so light mode is byte-for-byte unchanged.
- * ════════════════════════════════════════════════════════════════════ */
-
-/* The segment / DD reference rows carry an inline background:#fafafa on the
-   <tr> (near-white). In dark mode that washed the whole row to near-white
-   beneath the light cell text, leaving the document names unreadable.
-   Neutralise it so the row inherits the dark table surface; !important is
-   required to beat the inline style, which otherwise wins on specificity. */
-[data-bs-theme="dark"] .avm-kyc-table tbody tr { background-color: transparent !important; }
-
-/* File links inside the KYC / segment tables were hardcoded inline as teal
-   (#0d9488) or indigo (#6d28d9) — both too dim against the dark surface.
-   Substring matching on the inline colour lifts each to its lighter
-   counterpart without touching any other anchor. */
-[data-bs-theme="dark"] .avm-modal a[style*="0d9488"] { color: #5eead4 !important; }
-[data-bs-theme="dark"] .avm-modal a[style*="4338ca"] { color: #c4b5fd !important; }
-
-/* Doc-table banners (Trade Document Management, Steps 3 & 4) were light
-   amber / teal panels with no dark variant — bright blocks on the dark body. */
-[data-bs-theme="dark"] .avm-doctable-banner.tone-amber {
-  background: linear-gradient(135deg, #3a2a08, #2a2105); color: #fcd34d; border-color: #78521a;
-}
-[data-bs-theme="dark"] .avm-doctable-banner.tone-teal {
-  background: linear-gradient(135deg, #0c2522, #08201d); color: #5eead4; border-color: #155e56;
-}
-[data-bs-theme="dark"] .avm-doctable-banner-sub { color: #fbbf24; }
-
-/* Purple section tone — the only section colour left without a dark border. */
-[data-bs-theme="dark"] .avm-section-purple { border-color: #3b2a6b; border-left-color: #a78bfa; }
-
-/* Extra-contact card: the navy heading + light-red remove button were tuned
-   for the white card and disappeared / glared on the dark card surface. */
-[data-bs-theme="dark"] .avm-extra-head   { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-extra-remove { background: #3a0e0e; border-color: #b91c1c; color: #fca5a5; }
-
-/* Remaining navy (#7c3aed) accents that dim out against the dark surface. */
-[data-bs-theme="dark"] .avm-product-code     { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-filechooser-icon { color: #c4b5fd; }
-[data-bs-theme="dark"] .avm-tab:hover        { color: #c4b5fd; }
-
-/* ───── Dark mode for the NEW Step-2 / Figma elements ───── */
-[data-bs-theme="dark"] .avm-pill-tabs { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.18); }
-[data-bs-theme="dark"] .avm-pill-tabs .avm-pill { color: #a89fc7; }
-[data-bs-theme="dark"] .avm-pill-tabs .avm-pill:hover { background: rgba(124,58,237,.18); color: #ede9fe; }
-[data-bs-theme="dark"] .avm-doc-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-sr-badge  { background: rgba(124,58,237,.2); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-exp-pill.is-na   { background: rgba(255,255,255,.06); color: #adb5bd; border-color: rgba(255,255,255,.12); }
-[data-bs-theme="dark"] .avm-exp-pill.is-date { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
-[data-bs-theme="dark"] .avm-exp-pill.is-expired { background: rgba(220,38,38,.18); color: #fca5a5; border-color: rgba(220,38,38,.4); }
-[data-bs-theme="dark"] .avm-exp-pill.is-valid   { background: rgba(22,163,74,.18); color: #86efac; border-color: rgba(22,163,74,.4); }
-[data-bs-theme="dark"] .avm-req-pill.off { background: rgba(255,255,255,.05); color: #9a93b3; border-color: rgba(255,255,255,.12); }
-[data-bs-theme="dark"] .avm-kyc-act.up   { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-kyc-act.down { background: rgba(22,163,74,.18); color: #4ade80; border-color: rgba(22,163,74,.4); }
-[data-bs-theme="dark"] .avm-kyc-act.view { background: rgba(8,145,178,.18); color: #67e8f9; border-color: rgba(34,211,238,.4); }
-[data-bs-theme="dark"] .avm-kyc-act.reup { background: rgba(217,119,6,.18); color: #fbbf24; border-color: rgba(251,191,36,.4); }
-[data-bs-theme="dark"] .avm-kyc-act.edit { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-kyc-act.del  { background: rgba(220,38,38,.18); color: #f87171; border-color: rgba(220,38,38,.4); }
-[data-bs-theme="dark"] .avm-uploaded-dot { color: #4ade80; }
-[data-bs-theme="dark"] .avm-kyc-search { background: rgba(255,255,255,.04); border-color: rgba(167,139,250,.22); }
-[data-bs-theme="dark"] .avm-kyc-search input { color: #ede9fe; }
-[data-bs-theme="dark"] .avm-mapped-count { background: rgba(124,58,237,.18); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-empty-accent { background: rgba(124,58,237,.08); color: #c4b5fd; border-color: rgba(167,139,250,.3); }
-[data-bs-theme="dark"] .avm-section-headtext .avm-section-sub { color: #a89fc7; }
-[data-bs-theme="dark"] .avm-section-sub::before { color: rgba(167,139,250,.4); }
-[data-bs-theme="dark"] .avm-foot-note { color: #a89fc7; }
-
-/* ───── Responsive — collapse the form/table grids on narrow screens ───── */
-@media (max-width: 820px) {
-  .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr 1fr; }
-}
-@media (max-width: 520px) {
-  .avm-grid-2, .avm-grid-3, .avm-grid-4 { grid-template-columns: 1fr; }
-  .avm-tabs { overflow-x: auto; }
-  .avm-pill-tabs { overflow-x: auto; flex-wrap: nowrap; }
-}
-`;
