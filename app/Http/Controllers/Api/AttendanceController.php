@@ -1285,6 +1285,35 @@ class AttendanceController extends Controller
     ): string {
         if ($row && !empty($row->status)) {
             $stored = (string) $row->status;
+
+            /* Working a rest day beats the rest-day label. (#89)
+             *
+             * A stored 'Holiday' / 'Weekly Off' is not always a statement that
+             * the employee was off — it is sometimes just what the row was
+             * STAMPED with when it was created. AttendanceRegularization's
+             * exemption path seeds a new row from PayrollService::restDayKind(),
+             * which returns 'Holiday' on a holiday, and AttendancePunchService
+             * reuses an existing row without touching its status. So once such
+             * a row exists, later punches attach to it and the day keeps
+             * reading "Holiday" while the Attendance Log lists the punches
+             * right next to it — the contradiction in the report.
+             *
+             * If the row carries real attendance, the person worked; say so.
+             * Only a rest-day label is overridden, and only when there is a
+             * punch to justify it, so a genuine holiday with no attendance is
+             * untouched.
+             *
+             * Returned as plain 'Present', deliberately skipping the Late
+             * promotion below: lateness is measured against an expected shift
+             * start, and on a day the company was closed there is no shift to
+             * be late for. Promoting it would brand a volunteer as Late and
+             * feed the late-mark count that drives the LOP deduction. */
+            $hasAttendance = $row->check_in_at
+                || ($row->relationLoaded('punches') && $row->punches->isNotEmpty());
+            if ($hasAttendance && in_array(strtolower($stored), ['holiday', 'weekly off'], true)) {
+                return 'Present';
+            }
+
             // Auto-promote Present → Late based on the local first-in. 10-min
             // grace matches the heuristic used by the MTD late-marks loop.
             if (strcasecmp($stored, 'Present') === 0 && $row->check_in_at && $shiftStart) {
