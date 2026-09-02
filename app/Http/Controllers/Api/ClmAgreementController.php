@@ -1012,7 +1012,15 @@ class ClmAgreementController extends Controller
         $client    = \App\Models\Client::find($row->client_id);
         $urlPath   = (isset($headerCfg['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerCfg['logo_url'], $lm)) ? $lm[1] : null;
         $logoAbs   = null;
-        foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
+        /* BRANCH logo before the client one.
+         * The chain ended at $client->logo, and branding in this product is
+         * held per BRANCH — clients.logo is empty across the board while every
+         * configured branch carries its own mark. So a draft saved before the
+         * header captured a logo (header_config empty) fell through every
+         * candidate and the Word file came out with no logo at all, even though
+         * the branch it belongs to has one. */
+        $branch = $row->branch_id ? \App\Models\Branch::find($row->branch_id) : null;
+        foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $branch?->logo, $client?->logo]) as $path) {
             try {
                 if (Storage::disk('public')->exists($path)) { $logoAbs = Storage::disk('public')->path($path); break; }
             } catch (\Throwable $e) { /* try next candidate */ }
