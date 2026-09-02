@@ -2014,7 +2014,7 @@ function CandidateConfirmModal({
               : (isReject ? 'Confirm Rejection' : 'Confirm Selection')}
           </button>
         </div>
-      </ModalBody>
+      </ModalBody>  
     </Modal>
   );
 }
