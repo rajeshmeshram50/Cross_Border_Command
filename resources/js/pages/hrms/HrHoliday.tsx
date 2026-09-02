@@ -148,8 +148,25 @@ export default function HrHoliday() {
   }, [rows, search, typeFilter, yearFilter, groupFilter]);
 
   /* Columns for the shared <DataTable>. The hand-rolled Holiday-ID sort header
-     is gone — every column sorts from its own header arrow now. Widths sum to
-     100 (fixed layout): 5+11+29+14+11+9+12+9. */
+     is gone — every column sorts from its own header arrow now.
+
+     PIXEL widths, not percentages (#60). The table runs `table-layout: fixed`
+     with `minWidth={1250}`, and DataTable prepends a 56px serial column — a
+     fixed value. Mixing that with percentages made the two sizing systems
+     fight: the percentages resolve against the table's own width, which the
+     56px then pushes past, so the browser redistributed the shortfall across
+     every column and the widths on screen were never the widths declared here.
+     They also summed to 95, not 100, which left 5% to be handed out by the
+     same redistribution — worst on first paint, while the shimmer rows are up
+     and the table is at its minimum width, which is when the misalignment was
+     reported.
+
+     Pixels remove the negotiation: each column gets exactly what it asks for
+     and .dt-scroll scrolls when the viewport cannot fit the total. Same
+     convention (and same reasoning) as Exit Management's column block.
+
+     Sum MUST stay in step with minWidth below:
+       56 serial + 138+365+176+138+113+151+113 = 1250. */
   const columns = useMemo<DataTableColumn<HolidayRow>[]>(() => [
     {
       header: 'Holiday ID',
@@ -157,14 +174,14 @@ export default function HrHoliday() {
       accessorFn: (r: HolidayRow) => r.code || `HOL-${r.id}`,
       // Natural alphanumeric so HOL-2 sorts before HOL-10.
       sortingFn: (a, b, id) => String(a.getValue(id)).localeCompare(String(b.getValue(id)), undefined, { numeric: true, sensitivity: 'base' }),
-      meta: { width: '11%' },
+      meta: { width: 138 },
       cell: info => <span className="rec-id-pill">{String(info.getValue() ?? '')}</span>,
     },
     {
       header: 'Holiday Name',
       accessorKey: 'name',
       // wrap: the description rides on a second line under the name.
-      meta: { width: '29%', wrap: true },
+      meta: { width: 365, wrap: true },
       cell: info => {
         const r = info.row.original;
         /* Truncation is done in CSS, not by slicing the string. A 50-char cut
@@ -208,7 +225,7 @@ export default function HrHoliday() {
       header: 'Group',
       id: 'group',
       accessorFn: (r: HolidayRow) => (r.holiday_group_id ? (r.group?.name || groupName(r.holiday_group_id)) : ''),
-      meta: { width: '14%', align: 'center' },
+      meta: { width: 176, align: 'center' },
       cell: info => {
         const r = info.row.original;
         return r.holiday_group_id
@@ -221,20 +238,20 @@ export default function HrHoliday() {
          dd-Mon-yyyy label. */
       header: 'Date',
       accessorKey: 'date',
-      meta: { width: '11%', align: 'center' },
+      meta: { width: 138, align: 'center' },
       cell: info => <span className="rec-date">{formatDate(info.row.original.date)}</span>,
     },
     {
       header: 'Day',
       id: 'day',
       accessorFn: (r: HolidayRow) => weekdayName(r.date),
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 113, align: 'center' },
       cell: info => <span className="text-muted">{weekdayName(info.row.original.date)}</span>,
     },
     {
       header: 'Type',
       accessorKey: 'type',
-      meta: { width: '12%', align: 'center' },
+      meta: { width: 151, align: 'center' },
       cell: info => {
         const t = info.row.original.type;
         const tone = TYPE_TONES[t] || TYPE_TONES.Public;
@@ -245,7 +262,7 @@ export default function HrHoliday() {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { width: '9%', align: 'center' },
+      meta: { width: 113, align: 'center' },
       cell: info => {
         const r = info.row.original;
         /* Edit always allowed (the change auto-propagates to the group's
