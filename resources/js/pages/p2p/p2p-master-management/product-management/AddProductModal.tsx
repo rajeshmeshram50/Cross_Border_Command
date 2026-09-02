@@ -171,14 +171,36 @@ export default function AddProductModal(props: {
     });
   };
   const PRODUCT_NAME_INVALID_RE = /[^A-Za-z0-9\s\-.,()&/'%]/g;
+
+  /* Mirror the server caps in ProductController::storeCore (name max:100,
+     generic_name max:255). Without the generic-name limit here the only thing
+     enforcing it was the API, so an over-long value sailed through Core and
+     came back as a 422 after the GST mapping step — several screens away from
+     the field that caused it (QA #59). */
+  const PRODUCT_NAME_MAX = 100;
+  const GENERIC_NAME_MAX = 255;
+  const NAME_FIELD_MAX: Record<'name' | 'genericName', number> = {
+    name: PRODUCT_NAME_MAX,
+    genericName: GENERIC_NAME_MAX,
+  };
+
   const handleProductNameChange = (
     raw: string,
     fieldKey: 'name' | 'genericName',
     setter: (v: string) => void,
   ) => {
-    const cleaned = raw.replace(PRODUCT_NAME_INVALID_RE, '');
+    const max = NAME_FIELD_MAX[fieldKey];
+    const stripped = raw.replace(PRODUCT_NAME_INVALID_RE, '');
+    // Cap here as well as via maxLength: a paste that the browser truncates
+    // never reaches this handler, but a programmatic or IME-composed value can.
+    const cleaned = stripped.slice(0, max);
     setter(cleaned);
-    if (cleaned !== raw) {
+    if (stripped.length > max) {
+      setFieldErrors(prev => ({
+        ...prev,
+        [fieldKey]: `Must be ${max} characters or fewer — the extra characters were not added`,
+      }));
+    } else if (cleaned !== raw) {
       setFieldErrors(prev => ({
         ...prev,
         [fieldKey]: "Special characters are not allowed. Use letters, numbers, spaces, and . , - ( ) & / ' % only",
@@ -1102,7 +1124,15 @@ export default function AddProductModal(props: {
   const saveCore = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim())            errs.name              = 'Product name is required';
+    /* maxLength stops the user typing past the cap, but it does NOT apply to a
+       value put into state programmatically — editing a legacy product whose
+       stored generic_name is longer than 255 loads straight past it. Check on
+       Save so it is caught here rather than by the API after the GST step. */
+    else if (name.length > PRODUCT_NAME_MAX)
+      errs.name = `Product name must be ${PRODUCT_NAME_MAX} characters or fewer (currently ${name.length})`;
     if (!genericName.trim())     errs.genericName       = 'Generic name is required';
+    else if (genericName.length > GENERIC_NAME_MAX)
+      errs.genericName = `Generic name must be ${GENERIC_NAME_MAX} characters or fewer (currently ${genericName.length})`;
     if (!description.trim())     errs.description       = 'Printable description is required';
     else if (HAS_ANGLE_BRACKET_RE.test(description)) errs.description = 'HTML-like syntax (<, >) is not allowed';
     else if (SQL_INJECTION_RE.test(description))     errs.description = 'Suspicious SQL-like patterns are not allowed';
@@ -1572,10 +1602,15 @@ export default function AddProductModal(props: {
                 >
                   <div className="apm-grid-2">
                     <Field label="Product Name" required icon={<i className="ri-product-hunt-line" />} error={fieldErrors.name}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter product name" maxLength={100} value={name} onChange={e => handleProductNameChange(e.target.value, 'name', setName)} />
+                      <input className="apm-input apm-input-mf" placeholder="Enter product name" maxLength={PRODUCT_NAME_MAX} value={name} onChange={e => handleProductNameChange(e.target.value, 'name', setName)} />
                     </Field>
                     <Field label="Generic Name" required icon={<i className="ri-price-tag-3-line" />} error={fieldErrors.genericName}>
-                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" value={genericName} onChange={e => handleProductNameChange(e.target.value, 'genericName', setGenericName)} />
+                      <input className="apm-input apm-input-mf" placeholder="Enter generic name" maxLength={GENERIC_NAME_MAX} value={genericName} onChange={e => handleProductNameChange(e.target.value, 'genericName', setGenericName)} />
+                      {/* maxLength truncates an over-long paste without saying
+                          anything; the counter is what makes the cap visible. */}
+                      <div className={`apm-char-count${genericName.length >= GENERIC_NAME_MAX ? ' is-full' : ''}`}>
+                        {genericName.length} / {GENERIC_NAME_MAX} characters
+                      </div>
                     </Field>
                   </div>
 

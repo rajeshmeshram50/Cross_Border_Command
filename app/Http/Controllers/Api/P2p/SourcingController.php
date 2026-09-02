@@ -206,7 +206,7 @@ class SourcingController extends Controller
             'segments'   => Segments::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'countries'  => Countries::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'name']),
             'states'     => States::query()->tap($scope)->tap($active)->orderBy('name')->get(['id', 'country_id', 'name']),
-            'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->get(['id', 'state_id', 'state_code']),
+            'stateCodes' => StateCodes::query()->tap($scope)->tap($active)->statutoryFirst()->get(['id', 'state_id', 'state_code']),
         ]);
     }
 

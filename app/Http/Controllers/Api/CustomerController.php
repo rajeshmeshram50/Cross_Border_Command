@@ -73,24 +73,24 @@ class CustomerController extends Controller
             $exact = mb_strtoupper($search);
             $q->where(function ($w) use ($search, $exact) {
                 $w->where('customer_code', $exact)
-                  ->orWhere('primary_email', 'ilike', $search . '%')
-                  ->orWhere('company_name',  'ilike', "%{$search}%")
-                  ->orWhere('legal_name',    'ilike', "%{$search}%")
-                  ->orWhere('segment',       'ilike', "%{$search}%")
-                  // Customer Type (shown in the list) — e.g. "Retailer".
-                  ->orWhere('type',          'ilike', "%{$search}%")
-                  /* Country / Contact Person / Contact No live on the primary
+                    ->orWhere('primary_email', 'ilike', $search . '%')
+                    ->orWhere('company_name',  'ilike', "%{$search}%")
+                    ->orWhere('legal_name',    'ilike', "%{$search}%")
+                    ->orWhere('segment',       'ilike', "%{$search}%")
+                    // Customer Type (shown in the list) — e.g. "Retailer".
+                    ->orWhere('type',          'ilike', "%{$search}%")
+                    /* Country / Contact Person / Contact No live on the primary
                    * address row (mirrored into the list's Country / Contact /
                    * Phone columns), so search them via the addresses relation
                    * to match what the user actually sees in the table. */
-                  ->orWhereHas('addresses', function ($a) use ($search) {
-                      $a->where('is_primary', true)
-                        ->where(function ($x) use ($search) {
-                            $x->where('country',    'ilike', "%{$search}%")
-                              ->orWhere('cp_name',  'ilike', "%{$search}%")
-                              ->orWhere('cp_contact', 'ilike', "%{$search}%");
-                        });
-                  });
+                    ->orWhereHas('addresses', function ($a) use ($search) {
+                        $a->where('is_primary', true)
+                            ->where(function ($x) use ($search) {
+                                $x->where('country',    'ilike', "%{$search}%")
+                                    ->orWhere('cp_name',  'ilike', "%{$search}%")
+                                    ->orWhere('cp_contact', 'ilike', "%{$search}%");
+                            });
+                    });
             });
         }
 
@@ -151,7 +151,7 @@ class CustomerController extends Controller
             $total   = (clone $q)->count();
             $rows    = $q->forPage($page, $perPage)
                 ->get()
-                ->map(fn ($c) => $this->shape($c))
+                ->map(fn($c) => $this->shape($c))
                 ->all();
             return response()->json([
                 'tab'        => $tab,
@@ -163,7 +163,7 @@ class CustomerController extends Controller
             ]);
         }
 
-        $rows = $q->get()->map(fn ($c) => $this->shape($c))->all();
+        $rows = $q->get()->map(fn($c) => $this->shape($c))->all();
 
         return response()->json([
             'tab'        => $tab,
@@ -204,13 +204,13 @@ class CustomerController extends Controller
          * its existing on-tab fetch.
          */
         $documents = $this->safeDelegate(
-            fn () => (new CustomerDocumentController())->index($request, $id)
+            fn() => (new CustomerDocumentController())->index($request, $id)
         );
         $owners = $this->safeDelegate(
-            fn () => (new CustomerOwnerController())->index($request, $id)
+            fn() => (new CustomerOwnerController())->index($request, $id)
         );
         $segmentUploads = $this->safeDelegate(
-            fn () => (new SegmentDocUploadController())->index($request, 'customer', $id)
+            fn() => (new SegmentDocUploadController())->index($request, 'customer', $id)
         );
 
         // Per-segment lock: the segment NAMES whose product appears on a
@@ -267,7 +267,7 @@ class CustomerController extends Controller
             // consumers don't have to null-check.
             'segment_uploads' => $segmentUploads ?: ['data' => [], 'by_category' => [], 'count' => 0],
             // GST Scrutiny history for the popup (domestic customers).
-            'gst_scrutiny'    => $row->gstScrutiny->map(fn ($g) => $this->shapeGst($g))->all(),
+            'gst_scrutiny'    => $row->gstScrutiny->map(fn($g) => $this->shapeGst($g))->all(),
         ]);
     }
 
@@ -417,7 +417,7 @@ class CustomerController extends Controller
             return response()->json([
                 'requires_doc_confirmation' => true,
                 'message' => 'Removing this segment will delete ' . $orphanUploads->count() . ' document(s) used only by it. Shared documents are kept. Confirm to proceed.',
-                'orphan_documents' => $orphanUploads->map(fn ($d) => [
+                'orphan_documents' => $orphanUploads->map(fn($d) => [
                     'id'       => $d->id,
                     'name'     => $d->attachment_name ?: ($d->doc_name ?: ('Document #' . $d->id)),
                     'category' => $d->category,
@@ -450,7 +450,10 @@ class CustomerController extends Controller
             if ($confirmDocRemoval && $orphanUploads->isNotEmpty()) {
                 foreach ($orphanUploads as $u) {
                     if ($u->attachment_path) {
-                        try { \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path); } catch (\Throwable $e) { /* best-effort file cleanup */ }
+                        try {
+                            \Illuminate\Support\Facades\Storage::disk('public')->delete($u->attachment_path);
+                        } catch (\Throwable $e) { /* best-effort file cleanup */
+                        }
                     }
                     $u->delete();
                 }
@@ -575,10 +578,17 @@ class CustomerController extends Controller
             // not shared with a remaining segment.
             $keep = array_values(array_unique(array_merge(
                 \App\Support\SegmentGuard::blockedByCompletedDocs(
-                    \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed,
+                    \App\Models\Consignee::class,
+                    (int) $consignee->id,
+                    (int) $consignee->client_id,
+                    $removed,
                 ),
                 \App\Support\SegmentGuard::blockedByOrphanDocs(
-                    \App\Models\Consignee::class, (int) $consignee->id, (int) $consignee->client_id, $removed, \App\Support\SegmentGuard::names($derived),
+                    \App\Models\Consignee::class,
+                    (int) $consignee->id,
+                    (int) $consignee->client_id,
+                    $removed,
+                    \App\Support\SegmentGuard::names($derived),
                 ),
             )));
             $finalSegment = \App\Support\SegmentGuard::mergeRetained($derived, $keep);
@@ -623,7 +633,7 @@ class CustomerController extends Controller
             ->where(function ($q) use ($branchId) {
                 $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
             })
-            ->when($ignoreId > 0, fn ($q) => $q->where('id', '!=', $ignoreId))
+            ->when($ignoreId > 0, fn($q) => $q->where('id', '!=', $ignoreId))
             ->first(['id', 'company_name', 'legal_name']);
 
         return response()->json(['data' => [
@@ -645,7 +655,7 @@ class CustomerController extends Controller
     {
         $user = $request->user();
         $customer = Customer::query()->forUser($user)->with('gstScrutiny')->findOrFail($id);
-        return response()->json(['data' => $customer->gstScrutiny->map(fn ($g) => $this->shapeGst($g))->all()]);
+        return response()->json(['data' => $customer->gstScrutiny->map(fn($g) => $this->shapeGst($g))->all()]);
     }
 
     public function storeGstScrutiny(Request $request, int $id): JsonResponse
@@ -716,10 +726,11 @@ class CustomerController extends Controller
             // may repeat it across periodic scrutiny entries, so its own rows
             // are excluded from the check (one customer ↔ one GST).
             'gst_number'              => [
-                'required', 'string',
+                'required',
+                'string',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/',
                 Rule::unique('customer_gst_scrutiny', 'gst_number')
-                    ->where(fn ($q) => $q->where('customer_id', '!=', $customerId)->whereNull('deleted_at')),
+                    ->where(fn($q) => $q->where('customer_id', '!=', $customerId)->whereNull('deleted_at')),
             ],
             'status'                  => ['nullable', Rule::in(['Active', 'Inactive'])],
             'last_filing_date'        => 'nullable|date',
@@ -905,7 +916,7 @@ class CustomerController extends Controller
             'locations'       => $c->addresses
                 ->where('is_primary', false)
                 ->values()
-                ->map(fn ($a) => $this->shapeAddress($a))
+                ->map(fn($a) => $this->shapeAddress($a))
                 ->all(),
             'primary_address' => $primary ? $this->shapeAddress($primary) : null,
         ];
@@ -966,7 +977,9 @@ class CustomerController extends Controller
              * client-scoped, ignores the row being edited, and skips the check
              * when blank (legal_name stays optional). */
             'legal_name'     => [
-                'nullable', 'string', 'max:255',
+                'nullable',
+                'string',
+                'max:255',
                 function ($attribute, $value, $fail) use ($clientId, $customerId) {
                     if (!trim((string) $value)) return;
                     $exists = \App\Models\Customer::query()
@@ -975,7 +988,7 @@ class CustomerController extends Controller
                             $clientId === null ? $q->whereNull('client_id') : $q->where('client_id', $clientId);
                         })
                         ->whereRaw('LOWER(legal_name) = ?', [mb_strtolower(trim((string) $value))])
-                        ->when($customerId, fn ($q) => $q->where('id', '!=', $customerId))
+                        ->when($customerId, fn($q) => $q->where('id', '!=', $customerId))
                         ->exists();
                     if ($exists) {
                         $fail('This legal name is already used by another customer.');
@@ -996,7 +1009,9 @@ class CustomerController extends Controller
             // Yes; auto-fills the GST Scrutiny form. Required + strict GSTIN
             // format only when applicable (same regex as the scrutiny check).
             'gst_number'     => [
-                'nullable', 'required_if:gst_applicable,Yes', 'string',
+                'nullable',
+                'required_if:gst_applicable,Yes',
+                'string',
                 'regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/',
                 /* A GSTIN identifies ONE legal entity, so it can't repeat within
                  * a branch. Branches of the same client are independent address
@@ -1019,7 +1034,7 @@ class CustomerController extends Controller
                         ->where(function ($q) use ($branchId) {
                             $branchId === null ? $q->whereNull('branch_id') : $q->where('branch_id', $branchId);
                         })
-                        ->when($customerId, fn ($q) => $q->where('id', '!=', $customerId))
+                        ->when($customerId, fn($q) => $q->where('id', '!=', $customerId))
                         ->exists();
                     if ($exists) {
                         $fail('This GST Number is already used by another customer in this branch.');
@@ -1058,8 +1073,9 @@ class CustomerController extends Controller
              * letters/digits/spaces/hyphens up to 12. Same rule the shipment
              * module uses; see App\Support\PostalCode. */
             'primary_address.pin'            => [
-                'nullable', 'string',
-                PostalCode::rule(fn () => $request->input('primary_address.country')),
+                'nullable',
+                'string',
+                PostalCode::rule(fn() => $request->input('primary_address.country')),
             ],
             'primary_address.cp_name'        => 'required|string|max:255',
             'primary_address.cp_designation' => 'nullable|string|max:128',
@@ -1070,7 +1086,9 @@ class CustomerController extends Controller
              * customers table) and we only want to block duplicates among the
              * *primary* address row per customer. */
             'primary_address.cp_contact'     => [
-                'required', 'string', 'regex:/^\+?[0-9\s-]{7,15}$/',
+                'required',
+                'string',
+                'regex:/^\+?[0-9\s-]{7,15}$/',
                 function ($attribute, $value, $fail) use ($clientId, $customerId, $branchId) {
                     if (!trim((string) $value)) return;
                     $exists = \App\Models\CustomerAddress::query()
@@ -1093,7 +1111,9 @@ class CustomerController extends Controller
             // still rejects malformed inputs like "x@.com", "x@gmail",
             // or "x@gmail.c". Frontend uses the same regex inline.
             'primary_address.cp_email'       => [
-                'required', 'email', 'max:255',
+                'required',
+                'email',
+                'max:255',
                 'regex:/^[A-Za-z0-9._%+-]+@[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,}$/',
                 // Unique within the SAME BRANCH (not the whole client) — mirrors
                 // the phone rule so the same contact can exist once per branch.
@@ -1207,13 +1227,13 @@ class CustomerController extends Controller
         $codes = Customer::withTrashed()
             ->when(
                 $clientId === null,
-                fn ($q) => $q->whereNull('client_id'),
-                fn ($q) => $q->where('client_id', $clientId)
+                fn($q) => $q->whereNull('client_id'),
+                fn($q) => $q->where('client_id', $clientId)
             )
             ->when(
                 $branchId === null,
-                fn ($q) => $q->whereNull('branch_id'),
-                fn ($q) => $q->where('branch_id', $branchId)
+                fn($q) => $q->whereNull('branch_id'),
+                fn($q) => $q->where('branch_id', $branchId)
             )
             ->pluck('customer_code');
 
@@ -1264,7 +1284,7 @@ class CustomerController extends Controller
             // this a client_admin of Client A would see Client B's
             // tenant-scoped master rows via the bundle endpoint. Per-user
             // cache key is a second line of defence.
-            $scope = fn ($q) => MasterVisibility::applyReadScope($q, $user);
+            $scope = fn($q) => MasterVisibility::applyReadScope($q, $user);
 
             $active = function (string $modelClass, array $cols) use ($scope) {
                 return $modelClass::query()
@@ -1279,7 +1299,7 @@ class CustomerController extends Controller
             // attached has nothing to drive the customer's KYC/DD/TL/QC stage,
             // so it must not appear in the Customer Segment picker.
             $segmentIdsWithDocs = DB::table('clm_segment_rules')
-                ->when($user, fn ($q) => $q->where('client_id', $user->client_id))
+                ->when($user, fn($q) => $q->where('client_id', $user->client_id))
                 ->whereRaw('(COALESCE(mandatory_count, 0) + COALESCE(optional_count, 0)) > 0')
                 ->distinct()
                 ->pluck('segment_id')
@@ -1306,7 +1326,7 @@ class CustomerController extends Controller
                     ->whereRaw('LOWER(status) = ?', ['active'])
                     ->tap($scope)
                     ->with('state:id,name,country_id')
-                    ->orderBy('id')
+                    ->statutoryFirst()
                     ->get(['id', 'state_id', 'state_code', 'status']),
                 'designations'             => $active(Designations::class,            ['id', 'name']),
                 'document_type'            => $active(DocumentType::class,            ['id', 'title']),

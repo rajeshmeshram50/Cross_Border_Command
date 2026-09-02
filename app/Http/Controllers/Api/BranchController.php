@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\Employee;
 use App\Models\Masters\Countries;
+use App\Models\Masters\StateCodes;
 use App\Models\Masters\States;
 use App\Models\User;
 use App\Support\Gst;
@@ -1284,7 +1285,7 @@ class BranchController extends Controller
             return;
         }
         $complete = collect($this->normalizeShifts($request->input('shifts')))
-            ->contains(fn ($row) => $row['start'] !== '' && $row['end'] !== '');
+            ->contains(fn($row) => $row['start'] !== '' && $row['end'] !== '');
 
         if (!$complete) {
             throw ValidationException::withMessages([
@@ -1602,20 +1603,11 @@ class BranchController extends Controller
                     ->tap($scope)
                     ->orderBy('name')
                     ->get(['id', 'country_id', 'name', 'status']),
-                /* Statutory GST state codes (state_id → "27"), so the form can
-                 * tell the user their GSTIN doesn't belong to the state they
-                 * picked BEFORE they submit. Read globally (client_id IS NULL,
-                 * how they're seeded) and deliberately NOT tenant-scoped — the
-                 * CBIC list is the same for every client. Matches
-                 * App\Support\Gst::stateCodeFor(), which is what the server-side
-                 * twin of this rule resolves against.
-                 *
-                 * state_id is varchar while master_states.id is bigint, hence
-                 * the ::text comparison everywhere else in this codebase — here
-                 * we just hand the raw pair to the client and let it match. */
-                'state_codes' => DB::table('master_state_codes')
-                    ->whereNull('client_id')
+
+                'state_codes' => StateCodes::query()
                     ->whereRaw('LOWER(status) = ?', ['active'])
+                    ->tap($scope)
+                    ->statutoryFirst()
                     ->get(['state_id', 'state_code']),
             ];
         });
