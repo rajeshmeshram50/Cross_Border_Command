@@ -35,9 +35,7 @@ class OnboardingController extends Controller
     {
         $user = $request->user();
         if (!$user) abort(401, 'Authentication required');
-        if (!in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
-            abort(403, 'Only admins can issue onboarding invites.');
-        }
+        $this->authorizeInvite($user);
 
         $data = $request->validate([
             'invitee_name'       => 'required|string|max:255',
@@ -359,6 +357,45 @@ class OnboardingController extends Controller
     /* ─────────────────────────────────────────────────────────────────
      *  Helpers
      * ───────────────────────────────────────────────────────────────── */
+
+    /**
+     * May this user issue an onboarding invite? (CBC #211)
+     *
+     * This used to be a bare user_type whitelist — super_admin / client_admin /
+     * branch_user — which ignored the permission system entirely. Granting an
+     * HR user "Employee Onboarding" in Permissions changed nothing: they were
+     * still refused with "Only admins can issue onboarding invites", because
+     * their user_type is `employee`. The screen said they had the access and
+     * the API disagreed.
+     *
+     * The whitelist is KEPT as a standing allow rather than replaced by the
+     * permission lookup. Admins can already do this today, and some of them
+     * have no explicit `permissions` row; swapping the check outright would
+     * have locked them out to fix somebody else's access. This is purely
+     * additive — the only people who gain the ability are those a client-admin
+     * has deliberately granted can_add on `hr.onboarding`.
+     *
+     * Tenancy is unaffected: resolveOwnership() falls through to the user's own
+     * client_id / branch_id for employee logins, so an invite raised by an HR
+     * user is stamped with their own tenant, not a caller-supplied one.
+     */
+    private function authorizeInvite($user): void
+    {
+        if (in_array($user->user_type, ['super_admin', 'client_admin', 'branch_user'], true)) {
+            return;
+        }
+
+        // `can_add` is the create flag on this schema (there is no can_create).
+        $moduleId = Module::where('slug', 'hr.onboarding')->value('id');
+        if ($moduleId && Permission::where('user_id', $user->id)
+            ->where('module_id', $moduleId)
+            ->where('can_add', true)
+            ->exists()) {
+            return;
+        }
+
+        abort(403, 'You do not have permission to issue onboarding invites. Ask an admin to grant you "Add" on Employee Onboarding.');
+    }
 
     private function resolveOwnership($user): array
     {
