@@ -2207,9 +2207,39 @@ class PayrollService
                 ? $earnedBasic
                 : round($basic * $pfDayBasis, 2);
 
+            /* THE CEILING PRO-RATES WITH THE WAGES. (#142)
+             *
+             * The statutory ceiling is a MONTHLY figure: PF is charged on at
+             * most 15,000 of wages for a whole month. Capping a pro-rated
+             * basic against the whole-month ceiling compared two different
+             * periods, and PF then stopped responding to paid days for anyone
+             * whose pro-rated basic still cleared 15,000:
+             *
+             *   basic 400,000, 1 paid day of 26  ->  pro-rated basic 15,384
+             *   capped at the full 15,000        ->  PF 1,800
+             *
+             * which is exactly the PF of a full month worked. One day's pay,
+             * a full month's deduction. Below the ceiling the number tracked
+             * paid days correctly, which is why this reads as "PF is
+             * sometimes wrong" rather than as a formula that is plainly off.
+             *
+             * Pro-rating the ceiling by the same day basis as the wages puts
+             * both sides on the same period. A month with every working day
+             * paid is unchanged — the basis is 1.0, so the cap is the whole
+             * 15,000 exactly as before and the payslip does not move by a
+             * paisa. A month carrying LOP now charges PF on the share actually
+             * paid, which is the correction this ticket asks for.
+             *
+             * `pf_type = standard` is unaffected: that setting means "charge
+             * on the whole basic, ignore the ceiling", so there is no ceiling
+             * to pro-rate. */
+            $pfCeiling = $pfDayBasis === null
+                ? self::PF_WAGE_CEILING
+                : round(self::PF_WAGE_CEILING * $pfDayBasis, 2);
+
             $pfBase = strtolower((string) ($employee->pf_type ?? '')) === 'standard'
                 ? $pfEarnedBasic
-                : min($pfEarnedBasic, self::PF_WAGE_CEILING);
+                : min($pfEarnedBasic, $pfCeiling);
             $pf = round(max(0, $pfBase) * self::PF_RATE, 2);
             // PF was charged on an assumption, not a recorded employment type.
             // Info rather than warning: it is the correct default and holding
