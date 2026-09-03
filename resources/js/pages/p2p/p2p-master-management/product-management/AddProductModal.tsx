@@ -214,6 +214,11 @@ export default function AddProductModal(props: {
     }
   };
 
+  /* Mirrors the server's `description => max:10000` (ProductController::
+     storeCore). The cap guards the PI/PO PDF renderers, which chunk the
+     description into table rows — an uncapped paste OOM'd dompdf. */
+  const DESCRIPTION_MAX = 10000;
+
   const HAS_ANGLE_BRACKET_RE = /[<>]/;
   const SQL_INJECTION_RE = /(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/i;
   const handleDescriptionChange = (raw: string) => {
@@ -226,6 +231,17 @@ export default function AddProductModal(props: {
     if (SQL_INJECTION_RE.test(cleaned)) {
       cleaned = cleaned.replace(/(\bOR\b\s+\d+\s*=\s*\d+|--|;\s*(?:DROP|DELETE|INSERT|UPDATE|TRUNCATE|ALTER)\b|\bUNION\s+SELECT\b|javascript:|\bon\w+\s*=)/gi, '');
       issues.push('Suspicious SQL-like patterns are not allowed');
+    }
+    /* The cap is enforced here rather than by the textarea's maxLength: the
+       browser truncates an over-long paste before any handler runs, so the
+       text just disappeared with nothing said. Letting the full paste reach
+       this point is what makes it possible to say how much was dropped. */
+    if (cleaned.length > DESCRIPTION_MAX) {
+      const dropped = cleaned.length - DESCRIPTION_MAX;
+      cleaned = cleaned.slice(0, DESCRIPTION_MAX);
+      issues.push(
+        `Limited to ${DESCRIPTION_MAX.toLocaleString()} characters — the last ${dropped.toLocaleString()} were not added`,
+      );
     }
     setDescription(cleaned);
     if (issues.length) {
@@ -935,6 +951,11 @@ export default function AddProductModal(props: {
     else if (genericName.length > GENERIC_NAME_MAX)
       errs.genericName = `Generic name must be ${GENERIC_NAME_MAX} characters or fewer (currently ${genericName.length})`;
     if (!description.trim())     errs.description       = 'Printable description is required';
+    /* Same reason as the name fields above: the handler caps what is typed or
+       pasted, but a value loaded from a legacy record bypasses it. Catch it
+       here so it reads as a field error instead of a raw 422 from the API. */
+    else if (description.length > DESCRIPTION_MAX)
+      errs.description = `Printable description must be ${DESCRIPTION_MAX.toLocaleString()} characters or fewer (currently ${description.length.toLocaleString()})`;
     else if (HAS_ANGLE_BRACKET_RE.test(description)) errs.description = 'HTML-like syntax (<, >) is not allowed';
     else if (SQL_INJECTION_RE.test(description))     errs.description = 'Suspicious SQL-like patterns are not allowed';
     if (!brand.trim())           errs.brand             = 'Make / Brand / Specifications is required';
@@ -1318,11 +1339,10 @@ export default function AddProductModal(props: {
                       placeholder="Enter printable description"
                       value={description}
                       onChange={e => handleDescriptionChange(e.target.value)}
-                      maxLength={10000}
                       rows={3}
                     />
-                    <div className={`apm-char-count${description.length >= 10000 ? ' is-full' : ''}`}>
-                      {description.length} / 10000 characters
+                    <div className={`apm-char-count${description.length >= DESCRIPTION_MAX ? ' is-full' : ''}`}>
+                      {description.length.toLocaleString()} / {DESCRIPTION_MAX.toLocaleString()} characters
                     </div>
                   </Field>
 

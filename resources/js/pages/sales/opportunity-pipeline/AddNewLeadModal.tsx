@@ -266,13 +266,13 @@ export default function AddNewLeadModal(props: {
 
   const toggleUseExisting = (next: boolean) => {
     setUseExisting(next);
-    // Flipping back to manual entry wipes the auto-filled values so
-    // the user gets a clean form to type into.
-    if (!next) {
-      setValues(EMPTY_LEAD);
-      setPickedCustomerId('');
-      setErrors({});
-    }
+    // Either direction wipes the form. Flipping OFF gives a clean form to
+    // type into; flipping ON locks every field but the picker, so anything
+    // typed by hand beforehand would sit there greyed-out and un-editable
+    // — and could be saved without a customer ever being picked.
+    setValues(EMPTY_LEAD);
+    setPickedCustomerId('');
+    setErrors({});
   };
 
   /* Country and State picker options. Start from the static lists,
@@ -361,12 +361,12 @@ export default function AddNewLeadModal(props: {
 
   if (!open) return null;
 
-  /* When the lead is built from an existing customer (toggle on + a customer
-   * picked), the auto-filled customer/location fields are LOCKED — they
-   * mirror the saved customer record and must be edited on the customer, not
-   * here. The Customer Name dropdown stays interactive so the user can switch
-   * which customer is used. */
-  const lockCustomer = useExisting && !!pickedCustomerId;
+  /* When the toggle is on, every customer/location field is LOCKED — they are
+   * filled from the saved customer record and must be edited on the customer,
+   * not here. The lock applies as soon as the checkbox is ticked (before a
+   * customer is picked) so the only thing the user can touch is the Customer
+   * Name dropdown, which stays interactive to pick/switch the customer. */
+  const lockCustomer = useExisting;
 
   return createPortal((
     /* Backdrop click intentionally does NOT call onClose — losing a
