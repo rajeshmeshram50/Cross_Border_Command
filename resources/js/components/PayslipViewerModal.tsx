@@ -94,6 +94,13 @@ export interface PayslipViewerModalProps {
    *  table, because that is where the reader is looking when they notice the
    *  line is absent. Empty/undefined renders nothing. (#130) */
   notices?: string[];
+  /** Server-supplied workings behind the "This Cycle" column — the rule the
+   *  component figures follow, plus the case-specific factors recorded on the
+   *  slip (mid-cycle salary revision blended across rates, join/exit
+   *  pro-ration, holidays credited, late-mark LOP). Shown under the Earnings
+   *  table, because that is the column being questioned. The value was
+   *  displayed with no way to validate it. (#141) */
+  payBasis?: string[];
   /** When set, Download/Print hit the real server PDF for this payslip.
    *  Without it the buttons fall back to a toast (legacy EmployeeProfile use). */
   payslipId?: number;
@@ -163,6 +170,7 @@ export default function PayslipViewerModal({
   overtimeRate,
   overtimeRateName,
   notices = [],
+  payBasis = [],
   recentMonths = [],
   companyName = '',
   companyMeta = '',
@@ -697,6 +705,23 @@ export default function PayslipViewerModal({
                         </tr>
                       </tfoot>
                     </table>
+                    {/* How "This Cycle" was arrived at. Directly under the
+                        table it explains, same treatment as the Deductions
+                        notes. (#141) */}
+                    {payBasis.map(n => (
+                      <div
+                        key={n}
+                        className="d-flex align-items-start gap-2"
+                        style={{
+                          margin: '8px 10px 10px', padding: '7px 9px', borderRadius: 7,
+                          background: '#eef7f2', border: '1px solid #bfe3d2',
+                          color: '#12634a', fontSize: 10, lineHeight: 1.45,
+                        }}
+                      >
+                        <i className="ri-calculator-line" style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }} />
+                        <span>{n}</span>
+                      </div>
+                    ))}
                   </div>
                 </Col>
                 <Col md={6}>

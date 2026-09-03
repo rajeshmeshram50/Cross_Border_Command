@@ -358,6 +358,21 @@ class PayrollController extends Controller
                         . 'PF applies from the next payroll run.';
                 } elseif ($frozen && !$pfAppliesNow && $pfOnSlip) {
                     $pfNotice = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
+                } elseif (!$frozen && $pfAppliesNow && !$pfOnSlip) {
+                    /* PF ticked, cycle still open (so it was recomputed with the
+                     * flag ON), and PF is STILL zero. That is not the freeze
+                     * rule — the base came out zero, almost always a structure
+                     * with no Basic row or a zero one. The payslip screen said
+                     * so; this grid printed a bare ₹0, which reads as "PF
+                     * Applicable doesn't work" and is how #90 kept coming back.
+                     * Surface the slip's own PF exception verbatim so both
+                     * screens give the same answer. */
+                    $pfReason = collect($s->exceptions ?? [])
+                        ->pluck('reason')
+                        ->first(fn ($r) => stripos((string) $r, 'PF') !== false);
+                    $pfNotice = $pfReason
+                        ?: 'PF is applicable but no PF was deducted — the basic pay for this cycle worked out '
+                            . 'to zero. Check the earning components on the salary structure.';
                 }
 
                 return [
@@ -1224,6 +1239,10 @@ class PayrollController extends Controller
         $data['company'] = $this->pdf->letterhead($slip);
         $data['period_label'] = $this->periodLabelFor($slip);
         $data['notices'] = $this->slipNotices($slip, $data['deductionsBreakup'] ?? []);
+        /* The workings behind the "This Cycle" column, shown under EARNINGS —
+         * the table the reader is questioning. Separate from `notices`, which
+         * explains the Deductions side. (#141) */
+        $data['payBasis'] = $this->payBasisNotices($slip);
         return response()->json(['data' => $data]);
     }
 
@@ -1320,6 +1339,68 @@ class PayrollController extends Controller
         }
 
         return $notices;
+    }
+
+
+    /**
+     * The workings behind the "This Cycle" column. (#141)
+     *
+     * Two parts, in the order a reader needs them:
+     *   1. The rule — components carry the pay window's rate; attendance is
+     *      NOT applied to the component lines, it is charged once as the Loss
+     *      of Pay deduction. Without this the reader assumes every line is
+     *      pro-rated by paid days and then cannot make the numbers agree.
+     *   2. The case-specific factors already recorded on the slip at
+     *      generation time — a mid-cycle salary revision blended across rates,
+     *      a mid-month join/exit pro-ration, holidays credited as paid, and
+     *      late-mark LOP. These explain any line that differs from the monthly
+     *      figure, which is exactly what the ticket could not validate.
+     *
+     * Read-only: every figure quoted is taken from the stored payslip. Nothing
+     * is recomputed and no amount changes.
+     */
+    private function payBasisNotices(Payslip $slip): array
+    {
+        $out = [];
+
+        $working = (float) $slip->working_days;
+        $paid    = (float) $slip->paid_days;
+        $lopDays = (float) $slip->lop_days;
+        $gross   = (float) $slip->gross_earnings;
+        $lopAmt  = (float) $slip->lop_amount;
+
+        $basis = 'This Cycle is each component at the rate in force during this pay window. '
+            . 'Attendance is not applied to the component lines — absence is charged once, '
+            . 'as the Loss of Pay deduction';
+        if ($lopDays > 0) {
+            $basis .= ' (₹' . number_format($lopAmt, 2) . ' for ' . rtrim(rtrim(number_format($lopDays, 2, '.', ''), '0'), '.')
+                . ' of ' . rtrim(rtrim(number_format($working, 2, '.', ''), '0'), '.') . ' working day(s), '
+                . 'paid days ' . rtrim(rtrim(number_format($paid, 2, '.', ''), '0'), '.') . ')';
+        }
+        $basis .= '. Net Pay = Total Earnings ₹' . number_format($gross, 2)
+            . ' − Total Deductions ₹' . number_format((float) $slip->total_deductions, 2)
+            . ' = ₹' . number_format((float) $slip->net_pay, 2) . '.';
+        $out[] = $basis;
+
+        /* The factors recorded when the run was generated. Matched on the
+         * phrases PayrollService writes, so a note it stops emitting simply
+         * stops appearing here rather than showing a stale explanation. */
+        $wanted = ['blended', 'pro-rated', 'prorated', 'Priced on the salary structure',
+                   'holiday', 'late mark', 'late marks'];
+        foreach ((array) ($slip->exceptions ?? []) as $e) {
+            $reason = (string) ($e['reason'] ?? '');
+            if ($reason === '') {
+                continue;
+            }
+            foreach ($wanted as $needle) {
+                if (stripos($reason, $needle) !== false) {
+                    $out[] = $reason;
+                    break;
+                }
+            }
+        }
+
+        return array_values(array_unique($out));
     }
 
     /** Salary-slip history for one employee across cycles (Rule 16). Only
@@ -1865,7 +1946,14 @@ class PayrollController extends Controller
     {
         $frozen = !in_array($run?->status, ['draft', 'generated'], true)
             || ($period?->status ?? null) === 'locked';
-        if (!$frozen || $slips->isEmpty()) {
+        /* An OPEN cycle used to return early here. That was right for the
+         * freeze mismatch — recomputeEmployeePayslips() keeps an open cycle in
+         * step — but it also silenced the other way PF lands on ₹0 with the
+         * flag ON: a zero PF base (no Basic row on the structure, or a zero
+         * one). The payslip screen explained it, this grid printed a bare ₹0,
+         * and that is how #90 kept coming back. Both cases are handled below.
+         */
+        if ($slips->isEmpty()) {
             return [];
         }
 
@@ -1885,11 +1973,21 @@ class PayrollController extends Controller
                 || isset($pfStructure[$s->employee_id]);
             $onSlip = (float) $s->pf_employee > 0;
 
-            if ($applies && !$onSlip) {
+            if ($frozen && $applies && !$onSlip) {
                 $out[$s->id] = 'PF is applicable now but this cycle was finalized before it was enabled — '
                     . 'PF applies from the next payroll run.';
-            } elseif (!$applies && $onSlip) {
+            } elseif ($frozen && !$applies && $onSlip) {
                 $out[$s->id] = 'PF has since been turned off — this finalized cycle keeps the PF it was paid with.';
+            } elseif (!$frozen && $applies && !$onSlip) {
+                // Open cycle, PF ticked, PF still zero — the base came out
+                // zero. Reuse the payslip's own exception so the grid and the
+                // payslip screen give the same answer.
+                $reason = collect($s->exceptions ?? [])
+                    ->pluck('reason')
+                    ->first(fn ($r) => stripos((string) $r, 'PF') !== false);
+                $out[$s->id] = $reason
+                    ?: 'PF is applicable but no PF was deducted — the basic pay for this cycle worked out '
+                        . 'to zero. Check the earning components on the salary structure.';
             }
         }
 
