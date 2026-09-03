@@ -7,7 +7,7 @@ import Tooltip from '../../../../../components/ui/Tooltip';
 import { SHARED_STAGE_CSS, type StageProps } from './stageTypes';
 import CreateProcurementModal, { type SelectedProduct } from './CreateProcurementModal';
 import ProcurementDetailsModal from './ProcurementDetailsModal';
-import VendorMappingsModal from './VendorMappingsModal';
+import VendorMappingsModal, { useVendorMappings } from './VendorMappingsModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Sales Matrix → Stage 3: Product Sourcing
@@ -66,8 +66,9 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
   const [procModalOpen, setProcModalOpen]   = useState(false);
   const [procModalRows, setProcModalRows]   = useState<SelectedProduct[]>([]);
   const [procViewId, setProcViewId]         = useState<number | null>(null);
-  // Row whose vendor mappings to show (Vendor Count column click → popup).
-  const [vendorMapRow, setVendorMapRow]     = useState<Row | null>(null);
+  // Vendor Count column click → loads the mappings first and only opens the
+  // popup when the server returned some (Sales dept gets an empty list back).
+  const vendorMaps                          = useVendorMappings();
 
   const leadId = header.leadId;
 
@@ -720,7 +721,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                                 type="button"
                                 className="s3-vendor-count s3-vc-amber"
                                 title="View vendor mappings"
-                                onClick={() => setVendorMapRow(r)}
+                                onClick={() => void vendorMaps.openFor(r)}
+                                disabled={vendorMaps.loadingId === r.product_id}
                               >
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                   <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -851,7 +853,8 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
                               type="button"
                               className="s3-vendor-count s3-vc-mint"
                               title="View vendor mappings"
-                              onClick={() => setVendorMapRow(r)}
+                              onClick={() => void vendorMaps.openFor(r)}
+                              disabled={vendorMaps.loadingId === r.product_id}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -949,13 +952,14 @@ export default function Stage3ProductSourcing({ header, onPrev, onNext, reloadLe
         onClose={() => setProcViewId(null)}
       />
       <VendorMappingsModal
-        open={vendorMapRow != null}
-        productId={vendorMapRow?.product_id ?? null}
-        productCode={formatProductCode(vendorMapRow?.product_code) || null}
-        productName={vendorMapRow?.product_name ?? null}
-        targetPrice={vendorMapRow?.target_price ?? null}
-        currency={vendorMapRow?.currency ?? null}
-        onClose={() => setVendorMapRow(null)}
+        open={vendorMaps.target != null}
+        maps={vendorMaps.maps}
+        productId={vendorMaps.target?.product_id ?? null}
+        productCode={formatProductCode(vendorMaps.target?.product_code) || null}
+        productName={vendorMaps.target?.product_name ?? null}
+        targetPrice={vendorMaps.target?.target_price ?? null}
+        currency={vendorMaps.target?.currency ?? null}
+        onClose={vendorMaps.close}
       />
     </>
   );

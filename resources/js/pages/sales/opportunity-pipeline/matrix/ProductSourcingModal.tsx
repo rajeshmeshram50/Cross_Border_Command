@@ -5,7 +5,7 @@ import Tooltip from '../../../../components/ui/Tooltip';
 import { formatProductCode } from '../../../../utils/formatProductCode';
 import { useToast } from '../../../../contexts/ToastContext';
 import { MasterSelect } from '../../../../components/ui/MasterSelect';
-import VendorMappingsModal from './stages/VendorMappingsModal';
+import VendorMappingsModal, { useVendorMappings } from './stages/VendorMappingsModal';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Product Sourcing — Stage 3 quick-action modal.
@@ -85,7 +85,8 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
   const [loading, setLoading]   = useState(false);
   const [tab, setTab]           = useState<TabKey>('all');
   const [savingId, setSavingId] = useState<number | null>(null);
-  const [vendorMapRow, setVendorMapRow] = useState<SourcingRow | null>(null);
+  // Vendor Count cell click → fetch first, open only if vendors came back.
+  const vendorMaps = useVendorMappings();
 
   /* Reload the mapped products every time the modal opens for a lead.
    * Same endpoint as Product Directory; we just pivot on
@@ -314,7 +315,8 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
                               type="button"
                               className="psm-vendor-count"
                               title="View vendor mappings"
-                              onClick={() => setVendorMapRow(r)}
+                              onClick={() => void vendorMaps.openFor(r)}
+                              disabled={vendorMaps.loadingId === r.product_id}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
@@ -388,13 +390,14 @@ export default function ProductSourcingModal({ open, leadId, onClose, onChanged 
       </div>
 
       <VendorMappingsModal
-        open={vendorMapRow != null}
-        productId={vendorMapRow?.product_id ?? null}
-        productCode={vendorMapRow?.product_code ?? null}
-        productName={vendorMapRow?.product_name ?? null}
-        targetPrice={vendorMapRow?.target_price ?? null}
-        currency={vendorMapRow?.currency ?? null}
-        onClose={() => setVendorMapRow(null)}
+        open={vendorMaps.target != null}
+        maps={vendorMaps.maps}
+        productId={vendorMaps.target?.product_id ?? null}
+        productCode={vendorMaps.target?.product_code ?? null}
+        productName={vendorMaps.target?.product_name ?? null}
+        targetPrice={vendorMaps.target?.target_price ?? null}
+        currency={vendorMaps.target?.currency ?? null}
+        onClose={vendorMaps.close}
       />
     </div>
   ), document.body);

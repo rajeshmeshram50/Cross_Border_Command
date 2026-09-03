@@ -90,6 +90,16 @@ function PunchChips({ pairs, muted = false }: { pairs: string[]; muted?: boolean
  *  is the same bargain PunchChips above already makes with "+N more". (QA #80) */
 function ReasonCell({ text }: { text: string | null }) {
   const [open, setOpen] = useState(false);
+  /* Full reason in a real modal. (#8)
+   *
+   * The full text used to live on the cell's `title`, i.e. the browser's native
+   * tooltip. A native tooltip is unstyled, un-wrapped and un-scrollable, so a
+   * long reason rendered as a single band stretching the width of the screen —
+   * legible to nobody. It is also hover-only, so it could not be read on touch
+   * at all. A click-opened modal is the readable, scrollable, dismissible form
+   * of the same thing, and it is what the row's own View action already does
+   * for the rest of the request. */
+  const [full, setFull] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
   const [clipped, setClipped] = useState(false);
 
@@ -114,14 +124,51 @@ function ReasonCell({ text }: { text: string | null }) {
   if (!text) return <span className="text-muted">—</span>;
 
   return (
-    <div className="reg-reason" title={text}>
-      <div ref={ref} className={`reg-reason-text${open ? '' : ' is-clamped'}`}>{text}</div>
-      {(clipped || open) && (
-        <button type="button" className="reg-reason-more" onClick={() => setOpen(o => !o)}>
-          {open ? 'Show less' : 'Read more'}
-        </button>
-      )}
-    </div>
+    <>
+      {/* No `title` — see the note on `full` above. The clamped text itself is
+          clickable when it is actually clipped, so the reason opens the same way
+          whether the pointer lands on the words or on the link. */}
+      <div className="reg-reason">
+        <div
+          ref={ref}
+          className={`reg-reason-text${open ? '' : ' is-clamped'}`}
+          onClick={clipped && !open ? () => setFull(true) : undefined}
+          style={clipped && !open ? { cursor: 'pointer' } : undefined}
+        >
+          {text}
+        </div>
+        {(clipped || open) && (
+          <span className="d-inline-flex gap-2">
+            <button type="button" className="reg-reason-more" onClick={() => setOpen(o => !o)}>
+              {open ? 'Show less' : 'Read more'}
+            </button>
+            <button type="button" className="reg-reason-more" onClick={() => setFull(true)}>
+              View full
+            </button>
+          </span>
+        )}
+      </div>
+
+      <Modal isOpen={full} toggle={() => setFull(false)} centered size="lg" zIndex={2000}>
+        <ModalBody className="p-0">
+          <div className="d-flex align-items-center justify-content-between px-3 py-2"
+               style={{ borderBottom: '1px solid var(--vz-border-color)' }}>
+            <div className="fw-bold" style={{ fontSize: 13.5 }}>
+              <i className="ri-chat-quote-line me-1" style={{ color: '#6d28d9' }} />
+              Regularization reason
+            </div>
+            <button type="button" className="btn-close" onClick={() => setFull(false)} aria-label="Close" />
+          </div>
+          {/* The reason scrolls INSIDE the dialog — the dialog itself never
+              grows past the viewport, so there is no outer scrollbar. Same rule
+              as the Reason panel in the View modal. (#7) */}
+          <div className="px-3 py-3"
+               style={{ fontSize: 12.5, whiteSpace: 'pre-wrap', maxHeight: '60vh', overflowY: 'auto', lineHeight: 1.55 }}>
+            {text}
+          </div>
+        </ModalBody>
+      </Modal>
+    </>
   );
 }
 
@@ -556,7 +603,14 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
           </button>
         </div>
 
-        <div className="d-flex flex-column gap-3 p-3">
+        {/* The BODY scrolls, not the page behind it, and the header above stays
+            pinned — so however long the request is, the employee's name and the
+            status chip are always visible. Combined with the capped Reason
+            panel below, a long reason no longer moves anything. (#7) */}
+        <div
+          className="d-flex flex-column gap-3 p-3"
+          style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto', overscrollBehavior: 'contain' }}
+        >
           {/* Summary panel — the day being corrected, and when it was asked for. */}
           <div style={PANEL}>
             <div className="d-flex align-items-center justify-content-between gap-3 flex-wrap">
@@ -596,7 +650,25 @@ function RegularizationDetailModal({ row, onClose }: { row: ApiRegularization | 
               <i className="ri-chat-quote-line flex-shrink-0" style={{ color: '#6d28d9', marginTop: 1 }} />
               <div className="min-w-0">
                 <div style={{ ...LABEL, color: '#6d28d9' }}>Reason</div>
-                <div className="mt-1" style={{ fontSize: 12.5, whiteSpace: 'pre-wrap' }}>{row.reason || 'No reason given'}</div>
+                {/* Scrolls WITHIN the callout. (#7)
+                    Uncapped, a long reason grew this panel until the whole
+                    dialog scrolled, pushing the correction, the decision and the
+                    approval chain off-screen — the approver lost the details
+                    they are there to weigh in order to read the reason. Capped
+                    at 30vh, so the reason has its own scrollbar and everything
+                    else stays put. `overscroll-behavior: contain` stops the
+                    scroll handing off to the dialog once this reaches its end,
+                    which is what made the outer bar appear to take over. */}
+                <div
+                  className="mt-1"
+                  style={{
+                    fontSize: 12.5, whiteSpace: 'pre-wrap', lineHeight: 1.55,
+                    maxHeight: '30vh', overflowY: 'auto', overscrollBehavior: 'contain',
+                    paddingRight: 4,
+                  }}
+                >
+                  {row.reason || 'No reason given'}
+                </div>
               </div>
             </div>
           </div>

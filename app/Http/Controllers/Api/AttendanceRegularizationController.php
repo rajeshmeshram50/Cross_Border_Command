@@ -125,6 +125,23 @@ class AttendanceRegularizationController extends Controller
             abort(422, 'You cannot regularize a future date. Pick today or a past day.');
         }
 
+        /* Exit gate — an employee who has left cannot have their attendance
+         * corrected. (#88)
+         *
+         * Their history stays READABLE (that is #87, and reading a leaver's
+         * record is the ordinary case at F&F time), but the record itself is
+         * closed: their F&F has been priced off it, so rewriting a punch now
+         * would move money that has already been settled. Nothing stopped it —
+         * there was no exit check anywhere in this controller, so a request
+         * could be filed against a leaver and approved straight through.
+         *
+         * Filing is refused outright, whatever the date: a leaver has no open
+         * attendance to correct. The message names the last working day so the
+         * refusal is actionable rather than mysterious. */
+        if ($closed = $this->employmentClosedReason($employee, $dateStr)) {
+            abort(422, $closed);
+        }
+
         // Payroll gate — once the month's payroll is paid (period locked), its
         // attendance is closed. Filing here would raise a request that can never
         // legitimately be applied, so it is refused at the door.
@@ -806,10 +823,24 @@ class AttendanceRegularizationController extends Controller
          * payslip. Approval is blocked; REJECTING remains allowed so the stale
          * request can still be cleared out of the queue. */
         if ($next === 'Approved') {
-            $emp = Employee::find($row->employee_id);
+            $emp = Employee::withTrashed()->find($row->employee_id);
             $dStr = $row->regularization_date instanceof \Carbon\CarbonInterface
                 ? $row->regularization_date->toDateString()
                 : Carbon::parse((string) $row->regularization_date)->toDateString();
+            /* Exit gate, re-checked at DECISION time — same reason the payroll
+             * gate is re-checked below. A request filed while the employee was
+             * on the books can sit in the queue until after they have exited,
+             * and approving it then rewrites the attendance their F&F was
+             * priced from. Approval is blocked; REJECTING stays allowed so the
+             * stale request can still be cleared out of the queue. (#88)
+             *
+             * withTrashed() above: completing an exit soft-deletes the employee
+             * row, so a plain find() returned null and this gate — and the
+             * payroll one under it — would both have been skipped for exactly
+             * the people they need to catch. */
+            if ($emp && ($closed = $this->employmentClosedReason($emp, $dStr))) {
+                abort(422, $closed . ' Reject this request to clear it from the queue.');
+            }
             if ($emp && $this->payrollLocked($emp, $dStr)) {
                 abort(422, 'Payroll for ' . Carbon::parse($dStr)->format('F Y')
                     . ' has been processed and locked since this request was raised — it can no longer be approved.'
@@ -903,6 +934,45 @@ class AttendanceRegularizationController extends Controller
      * branch's period for them would block corrections because some OTHER
      * branch had closed its payroll.
      */
+    /**
+     * Why this employee's attendance is closed to correction, or null when it
+     * is still open. (#88)
+     *
+     * Closed when the employee has EXITED — a completed exit carrying a last
+     * working day (a rehire spends that exit, so it does not count), or, for
+     * someone removed through Employee Management with no exit record at all,
+     * the soft-delete date, which is the only end-of-employment marker there
+     * is. Mirrors the window AttendanceController::employeeSummary() reports,
+     * so what the Attendance tab shows as "employment ended" is exactly what
+     * this refuses to let through.
+     *
+     * Returns a sentence, not a bool, so the caller does not have to
+     * reconstruct which of the two cases it hit.
+     */
+    private function employmentClosedReason(Employee $employee, string $dateStr): ?string
+    {
+        $exit = \App\Models\EmployeeExit::where('employee_id', $employee->id)
+            ->whereNull('rehired_at')
+            ->whereNotNull('last_working_day')
+            ->orderByDesc('last_working_day')
+            ->first();
+
+        if ($exit) {
+            $lwd = Carbon::parse($exit->last_working_day);
+            return 'This employee left on ' . $lwd->format('j M Y')
+                . ' — attendance for an exited employee can no longer be regularized,'
+                . ' their Full & Final is priced off the record as it stands.';
+        }
+
+        if ($employee->deleted_at) {
+            return 'This employee was removed from Employee Management on '
+                . $employee->deleted_at->format('j M Y')
+                . ' — their attendance record is closed and can no longer be regularized.';
+        }
+
+        return null;
+    }
+
     private function payrollLocked(Employee $employee, string $dateStr): bool
     {
         $when = Carbon::parse($dateStr);

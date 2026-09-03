@@ -12765,6 +12765,30 @@
           .no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
           .emp-input[type="number"], .no-spin { -moz-appearance: textfield; appearance: textfield; }
 
+          /* …except Annual CTC, which keeps its stepper. (#207)
+             Killing the spinners everywhere left this field in a state that
+             reads as broken rather than as a decision: it is still
+             type="number", so the MOUSE WHEEL changed the amount while the
+             arrows did nothing — reported as "the value changes on scroll but
+             not on the arrows". The stepper is restored here with a ₹1,000
+             step (see the input's `step`), which is a meaningful move on a CTC
+             where the native ₹1 was not, and the wheel is disabled in the
+             handler so a page scroll can never alter a salary. Scoped to this
+             one field — every other number input in the form stays
+             spinner-free, exactly as the block above intends. */
+          .emp-input--stepper[type="number"] { -moz-appearance: number-input; appearance: auto; }
+          .emp-input--stepper[type="number"]::-webkit-outer-spin-button,
+          .emp-input--stepper[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: inner-spin-button;
+            opacity: 1;            /* always visible, not only on hover */
+            margin-left: 4px;
+            height: 22px;
+            cursor: pointer;
+          }
+          /* Room for the arrows so they never sit on top of the figure — the
+             overlap was half the reason they were removed in the first place. */
+          .emp-input--stepper[type="number"] { padding-right: 6px; }
+
           .emp-input { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 9px 11px; font-size: 13px; color: #1f2937; transition: border-color .15s ease, box-shadow .15s ease; width: 100%; }
           .emp-input::placeholder { color: #9ca3af; }
           .emp-input:focus { outline: none; border-color: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.15); }

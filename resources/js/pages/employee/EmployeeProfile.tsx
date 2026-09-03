@@ -3213,6 +3213,7 @@ export default function EmployeeProfile({ employeeId, employee, onBack }: Props)
         earnings={viewSlip?.earnings || []}
         deductions={viewSlip?.deductions || []}
         notices={viewSlip?.notices || []}
+        payBasis={viewSlip?.payBasis || []}
         workingDays={viewSlip?.working}
         daysPresent={viewSlip?.present}
         paidDays={viewSlip?.paid}

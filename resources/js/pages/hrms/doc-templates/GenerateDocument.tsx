@@ -125,6 +125,9 @@ export default function GenerateDocument() {
   const [alreadySent, setAlreadySent] = useState<Map<number, { id: number; status: string; code: string | null }>>(new Map());
   const [customByEmp, setCustomByEmp] = useState<Record<number, Record<string, string>>>({});
   const [previews, setPreviews] = useState<Record<number, string>>({});
+  /** Resolved organisation name + logo per employee, from the preview
+   *  endpoint. Replaces the template's placeholder letterhead. (#126) */
+  const [letterheads, setLetterheads] = useState<Record<number, Letterhead>>({});
   const [previewing, setPreviewing] = useState(false);
 
   const [saving, setSaving] = useState(false);
@@ -244,6 +247,7 @@ export default function GenerateDocument() {
       setPreviewing(true);
       try {
         const out: Record<number, string> = {};
+        const lh: Record<number, Letterhead> = {};
         for (const emp of selectedEmployees) {
           const { data } = await api.post('/hr-generated-documents/preview', {
             template_id: templateId,
@@ -251,8 +255,20 @@ export default function GenerateDocument() {
             custom_values: customByEmp[emp.id] || {},
           });
           out[emp.id] = data?.rendered_html || '';
+          /* Organisation the document is actually issued by, resolved per
+             employee by the preview endpoint. The header/footer strips are
+             drawn from the template's STORED header_config, which holds
+             whatever its author's letterhead resolved to when it was written —
+             often the literal words "Company Name" and no logo. Without this
+             the strip asserted a company that does not exist and showed no
+             logo, while the finished PDF carried the real ones. (#126) */
+          lh[emp.id] = {
+            company_name: String(data?.letterhead?.company_name ?? ''),
+            logo_url:     data?.letterhead?.logo_url ?? null,
+          };
         }
         setPreviews(out);
+        setLetterheads(lh);
         setStep(3);
       } catch (err: any) {
         toast.error('Preview failed', err?.response?.data?.message || 'Please try again.');
@@ -940,10 +956,10 @@ function Step3(props: {
               {open && (
                 <div className="gd-preview-stage">
                   <div className="gd-preview-paper">
-                    <DocHeader cfg={template.header_config} />
+                    <DocHeader cfg={template.header_config} letterhead={letterheads[emp.id]} />
                     <div className="gd-preview-body"
                       dangerouslySetInnerHTML={{ __html: decorateUnfilledTokens(html) }} />
-                    <DocFooter cfg={template.footer_config} />
+                    <DocFooter cfg={template.footer_config} letterhead={letterheads[emp.id]} />
                   </div>
                 </div>
               )}
@@ -959,12 +975,46 @@ function Step3(props: {
 // These mirror the strips the operator configured in the Template Editor —
 // drawn here on top of the preview paper (and round-tripped to DOCX by the
 // template's own download endpoint).
-function DocHeader({ cfg }: { cfg?: HeaderConfig | null }) {
+type Letterhead = { company_name: string; logo_url: string | null };
+
+/* Swap the template's placeholder letterhead for the organisation this
+ * document is actually issued by. (#126)
+ *
+ * A template stores whatever its author's letterhead resolved to when it was
+ * written — and where that could not be resolved it stored the literal words
+ * "Company Name" / "Company Name Pvt. Ltd.", or the {{CompanyName}} token.
+ * Both reach this preview as plain text with nothing to resolve them, which is
+ * why the strip read "Company Name · Confidential" for a document belonging to
+ * a real branch. Mirrors the substitution the PDF blade performs, so the
+ * preview and the sent document say the same thing.
+ *
+ * With no name resolvable the placeholder is DROPPED rather than printed, and
+ * a stranded separator cleaned up, so the strip degrades to "Confidential"
+ * instead of asserting a company that does not exist. */
+function fillOrgName(text: string | null | undefined, orgName: string): string {
+  let s = String(text ?? '');
+  if (!s) return s;
+  s = s.replace(/\{\{\s*CompanyName\s*\}\}/gi, orgName);
+  // Longest first — "Company Name Pvt. Ltd." must not be half-replaced.
+  s = s.replace(/Company Name Pvt\. Ltd\./gi, orgName).replace(/Company Name/gi, orgName);
+  return s.replace(/\s*\|\s*\|\s*/g, ' | ').replace(/^\s*\|\s*|\s*\|\s*$/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function DocHeader({ cfg, letterhead }: { cfg?: HeaderConfig | null; letterhead?: Letterhead }) {
   if (!cfg) return null;
+  const org = letterhead?.company_name ?? '';
   const showLogo  = cfg.show_logo  !== false;
   const showTitle = cfg.show_title !== false;
-  const logoSrc = cfg.logo_url || (cfg.logo_path ? `/storage/${cfg.logo_path}` : null);
-  const hasAnything = (showLogo && logoSrc) || (showTitle && (cfg.title || cfg.subtitle));
+  /* Falls back to the employing branch's logo when the template carries none —
+     the PDF already does this (headerLogoDataUri), so a preview with no logo
+     was showing something the sent document would never look like. */
+  const logoSrc = cfg.logo_url
+    || (cfg.logo_path ? `/storage/${cfg.logo_path}` : null)
+    || letterhead?.logo_url
+    || null;
+  const title    = fillOrgName(cfg.title, org);
+  const subtitle = fillOrgName(cfg.subtitle, org);
+  const hasAnything = (showLogo && logoSrc) || (showTitle && (title || subtitle));
   if (!hasAnything) return null;
   return (
     <div className="gd-doc-header" style={{
@@ -975,19 +1025,21 @@ function DocHeader({ cfg }: { cfg?: HeaderConfig | null }) {
         <img src={logoSrc} alt="Logo" className="gd-doc-logo"
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
       )}
-      {showTitle && (cfg.title || cfg.subtitle) && (
+      {showTitle && (title || subtitle) && (
         <div style={{ textAlign: cfg.align === 'left' ? 'left' : 'right', flex: 1 }}>
-          {cfg.title    && <div className="gd-doc-title">{cfg.title}</div>}
-          {cfg.subtitle && <div className="gd-doc-sub">{cfg.subtitle}</div>}
+          {title    && <div className="gd-doc-title">{title}</div>}
+          {subtitle && <div className="gd-doc-sub">{subtitle}</div>}
         </div>
       )}
     </div>
   );
 }
 
-function DocFooter({ cfg }: { cfg?: FooterConfig | null }) {
+function DocFooter({ cfg, letterhead }: { cfg?: FooterConfig | null; letterhead?: Letterhead }) {
   if (!cfg) return null;
-  const text = (cfg.text || '').trim();
+  // Same substitution as the header — the footer is where
+  // "Company Name Pvt. Ltd.  |  Confidential" lives. (#126)
+  const text = fillOrgName(cfg.text, letterhead?.company_name ?? '').trim();
   const showPage = cfg.show_page_number !== false;
   if (!text && !showPage) return null;
   const align = cfg.align || 'right';

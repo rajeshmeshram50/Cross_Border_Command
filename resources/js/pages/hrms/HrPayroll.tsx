@@ -390,6 +390,8 @@ export default function HrPayroll() {
   const [paySlipRow, setPaySlipRow] = useState<PayrollRow | null>(null);
   const [payslipBreakup, setPayslipBreakup] = useState<{ earnings: PayslipLine[]; deductions: PayslipLine[] } | null>(null);
   const [payslipNotices, setPayslipNotices] = useState<string[]>([]);
+  /** Workings behind the "This Cycle" column, shown under Earnings. (#141) */
+  const [payslipBasis, setPayslipBasis] = useState<string[]>([]);
   const [payslipFinal, setPayslipFinal] = useState<boolean | undefined>(undefined);
   const [payslipRecent, setPayslipRecent] = useState<{ label: string; now?: boolean; payslipId?: number; status?: string }[]>([]);
   const [payslipCompany, setPayslipCompany] = useState<{ name: string; meta: string; initials: string; hrEmail: string } | null>(null);
@@ -427,7 +429,7 @@ export default function HrPayroll() {
      * payslip's breakup, day counts and overtime stayed on screen while the new
      * month loaded, and any field the new response does not set kept the old
      * value indefinitely. Clearing here covers both entry points. (QA #94) */
-    setPayslipBreakup(null); setPayslipNotices([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
     setPayslipDays(null);
     setPayslipOt(null);
     setPayslipFinal(undefined);
@@ -452,6 +454,7 @@ export default function HrPayroll() {
         // Server-side explanation for a deduction that applies today but was
         // not in force when this slip was finalized. (#130)
         setPayslipNotices(Array.isArray(d.notices) ? d.notices : []);
+        setPayslipBasis(Array.isArray(d.payBasis) ? d.payBasis : []);
         setPayslipDays({
           present: typeof d.present === 'number' ? d.present : undefined,
           lopDays: typeof d.lopDays === 'number' ? d.lopDays : undefined,
@@ -512,7 +515,7 @@ export default function HrPayroll() {
       return;
     }
     setPaySlipRow(row);
-    setPayslipBreakup(null); setPayslipNotices([]);
+    setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]);
     setPayslipFinal(undefined);
     setPayslipCompany(null);
     setActivePayslipId(row.payslip_id);
@@ -537,7 +540,7 @@ export default function HrPayroll() {
     }
   };
   const selectRecent = (entry: { payslipId?: number }) => loadPayslipDetail(entry.payslipId);
-  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
+  const closePayslip = () => { setPaySlipRow(null); setPayslipBreakup(null); setPayslipNotices([]); setPayslipBasis([]); setPayslipFinal(undefined); setPayslipRecent([]); setPayslipCompany(null); setActivePayslipId(undefined); setPayslipDays(null); };
 
   const [runOpen, setRunOpen] = useState(false);
   const [proceeding, setProceeding] = useState(false);
@@ -2554,6 +2557,7 @@ export default function HrPayroll() {
             earnings={earnings}
             deductions={deductions}
             notices={payslipNotices}
+            payBasis={payslipBasis}
             /* Per-employee only. The old chain fell back to the cycle's
                company-wide figure and then to a hardcoded 26, either of which
                puts a number next to Paid Days that was never computed on the
