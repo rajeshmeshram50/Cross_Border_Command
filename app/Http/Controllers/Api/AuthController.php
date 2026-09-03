@@ -360,21 +360,13 @@ class AuthController extends Controller
             ]);
         }
 
-        // Forced-reset gate (mirrors password login) — a face match must not
-        // bypass the post-email-change password reset requirement.
         if ($user->must_reset_password) {
             throw ValidationException::withMessages([
                 'email' => ['Your sign-in email was changed, so your password must be reset for security. Use "Forgot Password" to set a new one before logging in.'],
             ]);
         }
 
-        // Same onboarding gate as password login — can't bypass via face.
-        // NOTE: onboarding-incomplete employees may now sign in. The SPA
-        // restricts them to the Inbox (via the onboarding_pending flag on the
-        // user payload) so they can sign their pending onboarding documents —
-        // blocking login entirely created a deadlock where the employee could
-        // never sign, so onboarding could never complete.
-
+   
         $user->update([
             'last_login_at' => now(),
             'last_login_ip' => $request->ip(),
@@ -595,11 +587,7 @@ class AuthController extends Controller
         return response()->json(['message' => 'Password changed successfully']);
     }
 
-    /**
-     * Update the signed-in user's own profile (name, phone, designation).
-     * Email is intentionally NOT editable here — it's the login identifier
-     * and changing it requires re-verification, which we don't support yet.
-     */
+  
     public function updateProfile(Request $request)
     {
         $request->validate([
@@ -880,11 +868,7 @@ class AuthController extends Controller
         ];
     } 
 
-    /**
-     * Pick the first non-empty value that looks like a 7-char hex color.
-     * Anything else (whitespace, malformed, named colors, etc.) is rejected
-     * so the frontend never injects invalid CSS into document.documentElement.
-     */
+  
     private function pickHexColor(?string ...$candidates): ?string
     {
         foreach ($candidates as $c) {
@@ -896,17 +880,7 @@ class AuthController extends Controller
         return null;
     }
 
-    /**
-     * Self-serve tenant branding update — tenant users (client_admin, branch_user)
-     * can edit their own logo + primary/secondary colors from their Profile page
-     * without going through the super-admin client form. Authorization is
-     * scope-driven:
-     *   client_admin → updates the row in `clients`
-     *   branch_user  → updates the row in `branches`
-     *   super_admin  → no tenant attached, returns 403
-     * Returns the freshly-formatted user so the SPA can swap state and the
-     * theme effect repaints automatically.
-     */
+    
 
 
     public function updateBranding(\Illuminate\Http\Request $request)
@@ -977,14 +951,7 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Build the on-disk filename for an uploaded logo or photo, keeping the
-     * name the user actually uploaded so the form can show the current file
-     * name after a reload instead of an opaque hash. Sanitised to a slug so
-     * odd characters can never escape the storage folder; collisions across
-     * tenants are impossible because the caller stores it under a
-     * per-client / per-branch / per-user subfolder.
-     */
+   
     private function uploadFileName(\Illuminate\Http\UploadedFile $file): string
     {
         $slug = \Illuminate\Support\Str::slug(
@@ -1000,10 +967,7 @@ class AuthController extends Controller
         return $slug . '.' . $ext;
     }
 
-    /**
-     * Normalize a stored value (legacy "/storage/..." URL or already-relative
-     * path) to a disk-relative path suitable for Storage::delete().
-     */
+    
     private function relativeFilePath(string $stored): string
     {
         if (preg_match('#^https?://#i', $stored)) {
