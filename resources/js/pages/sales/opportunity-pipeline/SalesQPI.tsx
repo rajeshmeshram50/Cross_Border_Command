@@ -718,7 +718,14 @@ export default function SalesQPI() {
           // (SHP-NNN) created against the opportunity; fall back to the
           // legacy bt_id for older records not yet shipped.
           btId:        r.shipment_code ?? r.bt_id ?? null,
-          btDate:      r.bt_date ? formatDmy(r.bt_date) : null,
+          // "SHP Date" — mirror the id column's preference: the real shipment
+          // order's date first, legacy bt_date only as the fallback. Reading
+          // bt_date alone left the column blank on every shipped PI that was
+          // created directly (bt_date is stamped only by convert-to-PI), so a
+          // row showed SHP-NNN with no date beside it.
+          btDate:      r.shipment_date
+                         ? formatDmy(r.shipment_date)
+                         : (r.bt_date ? formatDmy(r.bt_date) : null),
           convertFrom: r.convert_from_code ?? r.sourceQuotation?.code ?? null,
           oppId:       r.opp_code ?? '',
           leadId:      r.opp_id != null ? Number(r.opp_id) : null,
