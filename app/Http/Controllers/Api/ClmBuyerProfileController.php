@@ -339,7 +339,11 @@ class ClmBuyerProfileController extends Controller
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
-                'td'      => $prog['td'],
+                /* Placeholder — overwritten below from $tdByCustomer /
+                   $tdByConsignee. NOT $prog['td']: that resolves out of the
+                   segment rule's doc_selections['td'], which the DCP no longer
+                   stores, so it is permanently an empty set. */
+                'td'      => ['d' => 0, 't' => 0],
                 'agr'     => $agr,
                 'ship'    => (int) ($shipByCustomer[(int) $c->id] ?? 0),
             ];
@@ -405,7 +409,11 @@ class ClmBuyerProfileController extends Controller
                 'kyc'     => $prog['kyc'],
                 'dd'      => $prog['dd'],
                 'tl'      => $prog['tl'],
-                'td'      => $prog['td'],
+                /* Placeholder — overwritten below from $tdByCustomer /
+                   $tdByConsignee. NOT $prog['td']: that resolves out of the
+                   segment rule's doc_selections['td'], which the DCP no longer
+                   stores, so it is permanently an empty set. */
+                'td'      => ['d' => 0, 't' => 0],
                 'agr'     => $agr,
                 'ship'    => (int) ($shipByConsignee[(int) $c->id] ?? 0),
             ];
@@ -423,6 +431,27 @@ class ClmBuyerProfileController extends Controller
         foreach ($consOut as $co) $consProgById[$co['db_id']] = $co;
 
         $wsEq = []; $wsNeq = []; $wosEq = []; $wosNeq = [];
+
+        /* Party-level Trade Docs, summed across the party's own deals.
+         *
+         * Trade Documents are a PER-DEAL document for a customer/consignee —
+         * they hang off the shipment, not off the party (see the Evidence
+         * Vault's own note: its trade_documents_count is the sum of each
+         * shipment's trade_docs ratio). There is no party-level source to read,
+         * so the list column has to be aggregated from the same per-lead figure
+         * the transaction rows below already compute.
+         *
+         * This is why the column read 0/0 for EVERY customer: it was taking
+         * $prog['td'], which resolves $union['td'] out of the segment rule's
+         * doc_selections — and Trade Documents were removed from the DCP, so
+         * ClmSegmentRuleController::validated() strips 'td' on every save and
+         * that key is now permanently empty. */
+        $tdByCustomer  = [];
+        $tdByConsignee = [];
+        $addTd = function (array &$acc, int $key, array $p): void {
+            $acc[$key]['d'] = ($acc[$key]['d'] ?? 0) + (int) $p['d'];
+            $acc[$key]['t'] = ($acc[$key]['t'] ?? 0) + (int) $p['t'];
+        };
         $n = ['wsEq' => 0, 'wsNeq' => 0, 'wosEq' => 0, 'wosNeq' => 0];
 
         foreach ($leads as $l) {
@@ -476,11 +505,35 @@ class ClmBuyerProfileController extends Controller
                 $base['c_agr'] = $docProgress($applicAgr, $agrPartyById, $agrSigByLead[$lid]['Consignee'] ?? [], 'consignee');
             }
 
+            /* Roll this deal into the party totals the two list tables show.
+               The customer always gets the buyer-side figure (which already
+               carries the PI as its first trade document). A SEPARATE consignee
+               gets the consignee-side figure; when Customer = Consignee the
+               vault displays the buyer-side set, so the consignee row mirrors
+               it rather than showing 0/0. */
+            $addTd($tdByCustomer, (int) $cust->id, $tdBuyer);
+            if ($cons) {
+                $addTd($tdByConsignee, (int) $cons->id, $separateConsignee ? $base['c_td'] : $tdBuyer);
+            }
+
             if ($hasShip && $separateConsignee)        { $base['sr'] = ++$n['wsNeq'];  $wsNeq[]  = $base; }
             elseif ($hasShip && !$separateConsignee)   { $base['sr'] = ++$n['wsEq'];   $wsEq[]   = $base; }
             elseif (!$hasShip && $separateConsignee)   { $base['sr'] = ++$n['wosNeq']; $wosNeq[] = $base; }
             else                                       { $base['sr'] = ++$n['wosEq'];  $wosEq[]  = $base; }
         }
+
+        /* Both lists are built before the lead loop runs, so the aggregated
+           Trade-Docs figure is applied here. A party with no deals keeps 0/0 —
+           correct, not a failure: per-deal documents cannot exist without a
+           deal. */
+        foreach ($buyers as &$b) {
+            $b['td'] = $tdByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
+        }
+        unset($b);
+        foreach ($consOut as &$co) {
+            $co['td'] = $tdByConsignee[(int) $co['db_id']] ?? ['d' => 0, 't' => 0];
+        }
+        unset($co);
 
         return response()->json([
             'status' => true,

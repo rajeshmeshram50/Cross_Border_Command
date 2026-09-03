@@ -193,6 +193,33 @@ class MasterVisibility
             return null;
         }
 
+        // CLM MASTERS are open on the same terms: the CLM module grant is the
+        // gate, not row ownership. A trade document, agreement, clause, T&C or
+        // DCP rule is shared reference data for the whole tenant — the person
+        // who first typed it in has no special claim on it, and locking it to
+        // them meant an employee could open the Edit wizard, fill in Step 1 and
+        // only be refused at Save (the row carries no can_edit flag, so the UI
+        // had no way to disable the button up front).
+        //
+        // Listed one by one rather than matched on a "Clm" name prefix: this is
+        // an authorisation boundary, so a new CLM model must be opened on
+        // purpose, never by inheriting a pattern.
+        //
+        // NOT exempt, and must stay that way:
+        //   • CtcContract         — case-to-case contracts are the record of one
+        //                           deal, not shared master data.
+        //   • ClmSignatureRequest — likewise per-transaction.
+        $clmMasters = [
+            \App\Models\ClmTradeDocLibrary::class,   \App\Models\ClmTradeDocName::class,
+            \App\Models\ClmAgreementLibrary::class,  \App\Models\ClmAgreementType::class,
+            \App\Models\ClmClauseLibrary::class,     \App\Models\ClmClauseType::class,
+            \App\Models\ClmTncLibrary::class,        \App\Models\ClmTncCategory::class,
+            \App\Models\ClmSegmentRule::class,
+        ];
+        foreach ($clmMasters as $cls) {
+            if ($row instanceof $cls) return null;
+        }
+
         // Always allow the row's own creator to manage it. (When
         // created_by is null, this short-circuit doesn't fire — we
         // fall through to the tier check below.)
