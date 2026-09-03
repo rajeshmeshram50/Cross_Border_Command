@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../../api';
 import { useToast } from '../../../../../contexts/ToastContext';
@@ -13,6 +13,9 @@ import Tooltip from '../../../../../components/ui/Tooltip';
 
 type Props = {
   open:        boolean;
+  /** Already-loaded mappings. The list is fetched by `useVendorMappings`
+   *  BEFORE the popup opens, so this modal never renders an empty body. */
+  maps:        VendorMap[];
   productId:   number | null;
   productCode: string | null;
   productName: string | null;
@@ -21,7 +24,7 @@ type Props = {
   onClose:     () => void;
 };
 
-type VendorMap = {
+export type VendorMap = {
   id:             number;
   vendor_code:    string | null;
   vendor_name:    string;
@@ -36,6 +39,15 @@ type VendorMap = {
   total_amount:   number | string | null;
 };
 
+/** Minimal row shape the Stage 3 "Vendor Count" cell hands to the hook. */
+export type VendorMapTarget = {
+  product_id:    number;
+  product_code?: string | null;
+  product_name?: string | null;
+  target_price?: number | string | null;
+  currency?:     string | null;
+};
+
 const CURRENCY_SYMBOL: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£', AED: 'AED ', SGD: 'S$' };
 const sym = (code: string | null | undefined): string => CURRENCY_SYMBOL[(code ?? '').toUpperCase()] ?? ((code ?? '') ? `${code} ` : '₹');
 
@@ -46,19 +58,7 @@ const money = (v: number | string | null | undefined, symbol = '₹'): string =>
   return `${symbol}${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
-export default function VendorMappingsModal({ open, productId, productCode, productName, targetPrice, currency, onClose }: Props) {
-  const toast = useToast();
-  const [loading, setLoading] = useState(false);
-  const [maps, setMaps]       = useState<VendorMap[]>([]);
-
-  useEffect(() => {
-    if (!open || !productId) { setMaps([]); return; }
-    setLoading(true);
-    api.get<{ status: boolean; data: VendorMap[] }>(`/products/${productId}/vendor-maps`)
-      .then(({ data }) => setMaps(data.data ?? []))
-      .catch(() => toast.error('Load failed', 'Could not fetch vendor mappings'))
-      .finally(() => setLoading(false));
-  }, [open, productId, toast]);
+export default function VendorMappingsModal({ open, maps, productId, productCode, productName, targetPrice, currency, onClose }: Props) {
 
   // L1 = vendor with the lowest total (falls back to purchase price).
   const l1Id = useMemo(() => {
@@ -112,9 +112,7 @@ export default function VendorMappingsModal({ open, productId, productCode, prod
         </div>
 
         <div className="vmm-body">
-          {loading ? (
-            <div className="vmm-loading"><span className="vmm-spinner" /> Loading vendor mappings…</div>
-          ) : maps.length === 0 ? (
+          {maps.length === 0 ? (
             <div className="vmm-empty">No vendors mapped to this product yet.</div>
           ) : maps.map((m, idx) => {
             const isL1 = m.id === l1Id;
@@ -154,6 +152,43 @@ export default function VendorMappingsModal({ open, productId, productCode, prod
       </div>
     </div>
   ), document.body);
+}
+
+/* ───────────────────────────────────────────────────────────────────────
+ * useVendorMappings — owns the "Vendor Count" click.
+ *
+ * The mappings are fetched BEFORE the popup opens, and the popup opens ONLY if
+ * the server actually returned vendors. Sales-department users hit the
+ * department information wall (ProductController::vendorMaps returns an empty
+ * list for them), so for them the count stays visible but clicking it opens
+ * nothing — instead of a popup with an empty "0 vendor" body. Every other
+ * department gets the popup exactly as before.
+ * ──────────────────────────────────────────────────────────────────── */
+export function useVendorMappings() {
+  const toast = useToast();
+  const [loadingId, setLoadingId] = useState<number | null>(null);
+  const [target, setTarget]       = useState<VendorMapTarget | null>(null);
+  const [maps, setMaps]           = useState<VendorMap[]>([]);
+
+  const openFor = useCallback(async (row: VendorMapTarget) => {
+    if (!row?.product_id) return;
+    setLoadingId(row.product_id);
+    try {
+      const { data } = await api.get<{ status: boolean; data: VendorMap[] }>(`/products/${row.product_id}/vendor-maps`);
+      const list = data?.data ?? [];
+      if (list.length === 0) return;   // nothing this user may see → don't open
+      setMaps(list);
+      setTarget(row);
+    } catch {
+      toast.error('Load failed', 'Could not fetch vendor mappings');
+    } finally {
+      setLoadingId(null);
+    }
+  }, [toast]);
+
+  const close = useCallback(() => { setTarget(null); setMaps([]); }, []);
+
+  return { loadingId, target, maps, openFor, close };
 }
 
 const VMM_CSS = `
