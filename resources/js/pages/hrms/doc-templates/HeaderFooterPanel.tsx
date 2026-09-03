@@ -250,7 +250,12 @@ export default function HeaderFooterPanel({
   });
 
   return (
-    <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+    /* height:100% + column flex — the shell is a CHILD of the editor column
+       now (see TemplateEditor's pageWrapper), and that column has a definite
+       height from the grid row. Without passing it down, the body sized to its
+       content instead of filling, which left the editor a short box with dead
+       space under it and the footer stranded at the bottom. */
+    <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <HfpDarkStyles />
       {/* HEADER zone — min-height (grows to fit multi-line title), absolute
           children, free drag. Title + subtitle are inline-editable. */}
@@ -383,7 +388,9 @@ export default function HeaderFooterPanel({
       )}
 
       {/* BODY — Tiptap or whatever the parent renders */}
-      <div className="tpl-page-body" style={{ padding: 18, minHeight: 320, background: '#fff' }}>
+      {/* flex:1 + minHeight:0 so the body absorbs whatever the fixed-height
+          header and footer leave, rather than sizing to its content. */}
+      <div className="tpl-page-body" style={{ padding: 18, background: '#fff', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {children}
       </div>
 

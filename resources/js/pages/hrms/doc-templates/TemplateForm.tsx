@@ -1273,13 +1273,25 @@ function Step3(props: {
             // Reserve the column the out-of-flow preview sits in.
             marginRight: props.livePreview ? 'calc(34% + 12px)' : undefined,
           }}>
-            <HeaderFooterPanel
-              header={props.headerConfig} setHeader={props.setHeaderConfig}
-              footer={props.footerConfig} setFooter={props.setFooterConfig}
-            >
-              <TemplateEditor value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers}
-                tokenPreviews={props.tokenPreviews} />
-            </HeaderFooterPanel>
+            {/* The page shell wraps the EDITOR COLUMN, not the whole editor.
+                Nesting it the other way round put the placeholder sidebar
+                inside the document page, so the header zone — and the
+                draggable logo with it — stretched across the tool panel
+                instead of sitting on the page. The left 240px is now purely
+                the placeholder list; the header, body and footer line up with
+                the document. */}
+            <TemplateEditor
+              value={props.contentHtml} onChange={props.setContentHtml} signers={props.signers}
+              tokenPreviews={props.tokenPreviews}
+              pageWrapper={(editorColumn) => (
+                <HeaderFooterPanel
+                  header={props.headerConfig} setHeader={props.setHeaderConfig}
+                  footer={props.footerConfig} setFooter={props.setFooterConfig}
+                >
+                  {editorColumn}
+                </HeaderFooterPanel>
+              )}
+            />
           </div>
 
           {props.livePreview && (

@@ -154,6 +154,10 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
 
   const [content, setContent] = useState('');
   const [clauseOpen, setClauseOpen] = useState(false);
+  /* Full screen expands the MODAL, not the browser: the editor already lives
+     in a dialog, so a real Fullscreen API call would black out the page around
+     it and fight the overlay. A class on .tnw-shell is enough. */
+  const [editorFs, setEditorFs] = useState(false);
   const [signatureOpen, setSignatureOpen] = useState(false);
   const [drawSigOpen, setDrawSigOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -411,7 +415,7 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
       aria-modal="true"
     >
       <style>{TNW_CSS}</style>
-      <div className="tnw-shell">
+      <div className={`tnw-shell${editorFs ? ' is-fullscreen' : ''}`}>
         {/* Blocks the whole card while the save is in flight. Only the buttons
             were disabled, so the Regulatory Type radios, the document name and
             the segment stayed live mid-request: switching High to Less after
@@ -596,6 +600,8 @@ export default function ClmTncWizardModal({ open, existing, cats: initialCats, s
             <div className="tnw-step-body">
               <TncEditor
                 editor={editor}
+                fullScreen={editorFs}
+                onToggleFullScreen={() => setEditorFs(v => !v)}
                 onUploadWord={() => fileInputRef.current?.click()}
                 onOpenClauseLibrary={() => { setClauseOpen(o => !o); setSignatureOpen(false); }}
                 clauseOpen={clauseOpen}
@@ -751,8 +757,14 @@ function TncEditor({
   onCloseSignature,
   signatureOpen,
   onOpenDrawSignature,
+  fullScreen,
+  onToggleFullScreen,
 }: {
   editor: Editor | null;
+  /** Modal expanded to fill the viewport. The button lives in this header but
+   *  the class goes on .tnw-shell, which the parent owns. */
+  fullScreen: boolean;
+  onToggleFullScreen: () => void;
   onUploadWord: () => void;
   onOpenClauseLibrary: () => void;
   onCloseClauseLibrary: () => void;
@@ -788,6 +800,16 @@ function TncEditor({
             <button type="button" className="tnw-editor-btn" onClick={onUploadWord}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
               Upload Word
+            </button>
+          </Tooltip>
+          <Tooltip label={fullScreen ? 'Exit full screen' : 'Expand the editor to fill the screen'}>
+            <button type="button" className="tnw-editor-btn" onClick={onToggleFullScreen}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                {fullScreen
+                  ? <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+                  : <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />}
+              </svg>
+              {fullScreen ? 'Exit Full Screen' : 'Full Screen'}
             </button>
           </Tooltip>
           <Tooltip label="Browse reusable clauses">
@@ -1464,6 +1486,42 @@ const TNW_CSS = `
    The height comes from the modal: .tnw-body is the flex parent and gives this
    what is left after the stepper, so the frame is exactly as tall as the space
    there is. */
+/* Full screen — the card grows to the viewport and the editor, being
+   flex:1 inside it, takes the extra height. Width capped just short of the
+   edge so the dialog still reads as a dialog. */
+.tnw-shell.is-fullscreen {
+  width: calc(100vw - 24px);
+  max-width: calc(100vw - 24px);
+  height: calc(100vh - 24px);
+  max-height: calc(100vh - 24px);
+}
+/* Full screen is asked for when the draft needs room, so the wizard chrome
+   steps out of the way: the stepper is navigation for a two-step form the user
+   has already navigated, and it costs ~70px of draft height. The dialog header
+   and the T&C CONTENT bar stay — one identifies the record being edited, the
+   other carries Exit Full Screen, so hiding either would strand the user. The
+   footer stays too: Save must never be more than one click away. */
+.tnw-shell.is-fullscreen .tnw-stepper { display: none; }
+/* overflow:hidden is BACK, deliberately.
+ *
+ * It was briefly removed to stop this box clipping the toolbar's Link and
+ * Find-and-Replace panels. That uncovered them, but made things worse: an
+ * absolutely-positioned popover still contributes to an ancestor's overflow
+ * area, so opening one widened the layout and an ancestor shifted the whole
+ * shell left — the toolbar lost "Paragraph", the head read "C CONTENT", and
+ * the Find panel landed outside the dialog entirely.
+ *
+ * The clipping is not the real bug. The real bug is that both panels are
+ * position:absolute inside the toolbar row, so they can only ever be as
+ * visible as their nearest clipping ancestor allows. The fix is to render
+ * them in a portal to <body> with fixed coordinates measured from the button
+ * — the same thing the segment "+N" popover in Vendors.tsx does, and for the
+ * same reason. That belongs in CtcRichEditor, where the popovers live, and it
+ * fixes them for all five editors at once rather than only this modal.
+ *
+ * Until then this stays clipped, which is the lesser of the two faults, and
+ * Full Screen is the workaround: at full width there is room for both panels
+ * and neither clips. */
 .tnw-editor-shell {
   border: 1px solid rgba(6,182,212,.20);
   border-radius: 14px;

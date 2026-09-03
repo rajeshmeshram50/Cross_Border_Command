@@ -530,8 +530,36 @@ class ClmBuyerProfileController extends Controller
             $b['td'] = $tdByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
         }
         unset($b);
+        /* Consignee → its customer, for the same_as_customer fallback below. */
+        $custIdOfCons = [];
+        foreach ($consignees as $cRow) {
+            $first = $cRow->customers->first();
+            $custIdOfCons[(int) $cRow->id] = (int) ($first->id ?? $cRow->customer_id ?? 0);
+        }
+
         foreach ($consOut as &$co) {
-            $co['td'] = $tdByConsignee[(int) $co['db_id']] ?? ['d' => 0, 't' => 0];
+            $own = $tdByConsignee[(int) $co['db_id']] ?? null;
+            if ($own) { $co['td'] = $own; continue; }
+
+            /* SAME AS CUSTOMER, with no deal of its own.
+             *
+             * When the consignee IS the customer there is no separate
+             * consignee-side document set — the buyer's documents are the
+             * consignee's, which is why the Evidence Vault shows them on this
+             * party and why they "auto update" when the customer's do. The
+             * lead loop already mirrors the buyer figure onto such a consignee,
+             * but only for consignees that appear on a lead; one with no deal
+             * yet fell through to 0/0 while its vault showed documents.
+             *
+             * A SEPARATE consignee keeps 0/0 here: its documents are genuinely
+             * per-deal, so with no deal there is nothing to count. */
+            if (!empty($co['same_as_customer'])) {
+                $ownerId = $custIdOfCons[(int) $co['db_id']] ?? 0;
+                $co['td'] = $tdByCustomer[$ownerId] ?? ['d' => 0, 't' => 0];
+                continue;
+            }
+
+            $co['td'] = ['d' => 0, 't' => 0];
         }
         unset($co);
 

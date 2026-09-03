@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import { Extension, Node } from '@tiptap/core';
 import { Plugin, PluginKey, TextSelection } from '@tiptap/pm/state';
@@ -1491,7 +1492,74 @@ export function CtcEditorContent({ editor, pageView, margins, onMargins, footerT
 }
 
 /** Formatting toolbar — render ABOVE the content surface. */
-export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES }: {
+/* Toolbar panels render into <body>, not into the toolbar.
+ *
+ * Both the Link box and the Find-and-Replace panel used to be position:absolute
+ * inside their button's wrapper. That made them prisoners of whatever clipped
+ * the editor: inside the T&C modal the shell is overflow:hidden for its rounded
+ * corners, so the panels were cut in half; removing that clip was worse, because
+ * an absolutely-positioned child still counts toward an ancestor's overflow, so
+ * opening one widened the layout and shoved the whole editor sideways.
+ *
+ * A portal has no such ancestor. The panel is measured from its own button and
+ * placed in viewport coordinates, so it cannot be clipped, cannot displace the
+ * editor, and behaves the same in all five editors that use this toolbar.
+ * Same technique, and the same reason, as the segment "+N" popover in
+ * Vendors.tsx.
+ *
+ * Right-aligned to the button so a wide panel opens INWARD, and clamped to the
+ * viewport so it can never sit off-screen on a narrow window. */
+function AnchoredPop({ anchor, width, onClose, children }: {
+  anchor: HTMLElement | null;
+  width: number;
+  /** Called when the panel's coordinates go stale. */
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  /* Close on any click that is not inside this panel.
+     The panel is positioned once, when it opens, so anything that moves the
+     button afterwards — Full Screen, a resize, scrolling the draft — leaves it
+     stranded at coordinates that no longer mean anything. Clicking anywhere
+     else closes it, which is what a user expects from a transient panel and
+     covers every one of those cases without watching for them individually. */
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (popRef.current?.contains(t)) return;   // inside the panel — keep it
+      if (anchor?.contains(t)) return;           // its own button — it toggles
+      onClose();
+    };
+    // Capture phase: a toolbar button that stops propagation must not be able
+    // to keep a stale panel alive.
+    document.addEventListener('mousedown', onDown, true);
+    return () => document.removeEventListener('mousedown', onDown, true);
+  }, [anchor, onClose]);
+
+  if (!anchor) return null;
+  const r = anchor.getBoundingClientRect();
+  /* Open RIGHTWARD from the button, and only flip when there is no room.
+     Right-aligning to the button (left = r.right - width) put a 340px panel
+     270px to the LEFT of a button that sits near the left edge of the
+     toolbar — outside the dialog entirely. Left-aligning keeps the panel
+     beside the control that opened it, which is where the eye already is. */
+  let left = r.left;
+  if (left + width > window.innerWidth - 8) left = r.right - width;   // flip
+  left = Math.max(8, Math.min(left, window.innerWidth - width - 8));  // clamp
+  return createPortal(
+    /* 400001 — ABOVE every dialog this toolbar can appear inside. The T&C
+       wizard's own overlay is z-index 200000 and its nested overlay 300000, so
+       a portal at the old 12000 rendered behind the modal and the panel simply
+       never appeared. A portalled popover has to outrank its host dialog, not
+       the page. */
+    <div ref={popRef} style={{ position: 'fixed', top: r.bottom + 6, left, zIndex: 400001 }}>
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FONT_FAMILIES }: {
   editor: Editor | null;
   dark?: boolean;
   /** Fonts the Font control may offer. Defaults to the house face alone — an
@@ -1503,6 +1571,12 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
    *  agreement and takes that agreement's pagination, so a break authored here
    *  would land wherever the host happened to drop the clause. */
   hidePageBreak?: boolean;
+  /** Drop the text-colour picker and the highlight swatches. For an editor
+   *  whose output is not rendered by our own PDF pipeline: HR document
+   *  templates go through PHPWord, whose HTML reader has only partial support
+   *  for inline colour, so offering the control there promises formatting the
+   *  generated DOCX may not keep. */
+  hideColor?: boolean;
 }) {
   /* ONE menu open at a time.
      These were four independent booleans, so each menu knew only about itself:
@@ -1514,6 +1588,9 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
      setters keep the same shape (boolean or updater) so no call site changed. */
   type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
   const [menu, setMenu] = useState<ToolMenu>(null);
+  /* Anchors for the portalled Link and Find panels — measured, not nested. */
+  const linkAnchorRef = useRef<HTMLDivElement>(null);
+  const findAnchorRef = useRef<HTMLDivElement>(null);
   const linkOpen    = menu === 'link';
   const spacingOpen = menu === 'spacing';
   const tableOpen   = menu === 'table';
@@ -1853,6 +1930,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           Document editor onto this toolbar a downgrade. */}
       <TB active={editor.isActive('superscript')} onClick={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript"><span style={{ fontSize: 11 }}>X²</span></TB>
       <TB active={editor.isActive('subscript')}   onClick={() => editor.chain().focus().toggleSubscript().run()}   title="Subscript"><span style={{ fontSize: 11 }}>X₂</span></TB>
+      {!hideColor && (<>
       <label className="ctcte-btn ctcte-color" title="Text colour">
         <span style={{ borderBottom: `3px solid ${editor.getAttributes('textStyle').color || '#1f2937'}`, lineHeight: 1 }}>A</span>
         <input
@@ -1881,6 +1959,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
         onMouseDown={e => e.preventDefault()}
         onClick={() => (editor.chain().focus() as any).unsetBackgroundColor().run()}
       />
+      </>)}
 
       </div>
       <span className="ctcte-div" />
@@ -1997,13 +2076,15 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
       </div>
       <span className="ctcte-div" />
       <div className="ctcte-grp">
-      <div className="ctcte-linkwrap">
+      <div className="ctcte-linkwrap" ref={linkAnchorRef}>
         <TB active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href ?? ''); setLinkOpen(o => !o); }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
         {linkOpen && (
-          <div className="ctcte-linkpop" onMouseDown={e => e.preventDefault()}>
+          <AnchoredPop anchor={linkAnchorRef.current} width={280} onClose={() => setMenu(null)}>
+          <div className="ctcte-linkpop ctcte-pop-portal" onMouseDown={e => e.preventDefault()}>
             <input autoFocus className="ctcte-linkinput" placeholder="https://…" value={linkUrl} onChange={e => setLinkUrl(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') applyLink(); if (e.key === 'Escape') setLinkOpen(false); }} />
             <button type="button" className="ctcte-linkbtn" onClick={applyLink}>Apply</button>
           </div>
+          </AnchoredPop>
         )}
       </div>
 
@@ -2137,7 +2218,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
       <div className="ctcte-grp">
       {/* Find and Replace. Its own panel because two inputs, a case toggle, a
           match counter and four actions do not fit a dropdown list. */}
-      <div className="ctcte-linkwrap">
+      <div className="ctcte-linkwrap" ref={findAnchorRef}>
         <button
           type="button"
           className={`ctcte-pgbtn${findOpen ? ' is-open' : ''}`}
@@ -2155,7 +2236,8 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
           <Ico d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4.35-4.35" />
         </button>
         {findOpen && (
-          <div className="ctcte-findpop ctcte-pop-right" onMouseDown={e => e.stopPropagation()}>
+          <AnchoredPop anchor={findAnchorRef.current} width={340} onClose={() => setMenu(null)}>
+          <div className="ctcte-findpop ctcte-pop-portal" onMouseDown={e => e.stopPropagation()}>
             <div className="ctcte-findrow">
               <input
                 className="ctcte-linkinput"
@@ -2192,6 +2274,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, fonts = FONT_FAMILIES 
               Match case
             </label>
           </div>
+          </AnchoredPop>
         )}
       </div>
       </div>
@@ -2646,6 +2729,9 @@ export const CTC_EDITOR_CSS = `
    dialog. Compounding makes it (0,2,0) and settles it on specificity. */
 .ctcte-findpop.ctcte-pop-right,
 .ctcte-spcpop.ctcte-pop-right { left: auto; right: 0; }
+/* Portalled panels are positioned by AnchoredPop's fixed wrapper, so their own
+   absolute offsets must not fight it. */
+.ctcte-pop-portal { position: static !important; top: auto !important; left: auto !important; right: auto !important; margin: 0 !important; }
 .ctcte-pgbtn:hover { background: #EDE9FE; border-color: #C4B5FD; }
 [data-bs-theme="dark"] .ctcte-pgbtn { background: rgba(124,58,237,.18); border-color: rgba(124,58,237,.45); color: #C4B5FD; }
 .ctcte-div { width: 1px; height: 18px; background: #E5E1F3; margin: 0 3px; }

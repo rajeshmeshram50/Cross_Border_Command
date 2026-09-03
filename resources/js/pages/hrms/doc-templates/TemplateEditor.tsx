@@ -1,9 +1,19 @@
 import { useEditor, EditorContent } from '@tiptap/react';
-import { Node } from '@tiptap/core';
-import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
-import TextAlign from '@tiptap/extension-text-align';
-import { useEffect, useMemo, useRef, useState } from 'react';
+/* The full editor kit is SHARED with the CLM Case-to-Case editor rather than
+   rebuilt here. CtcRichEditor already exports the extension list and the
+   toolbar, so HR templates get tables, links, fonts, colours, highlight,
+   find-and-replace, indents, legal numbering, line height, sub/superscript and
+   the paste ceiling for free — and a fix to any of them lands on both screens
+   at once instead of drifting apart.
+
+   The local PageBreak node this file used to define is gone: ctcExtensions()
+   ships an identical one (same node name, same class + data-page-break markup),
+   and two nodes of the same name cannot coexist in one schema.
+
+   PageFlow comes along in the list but is inert here — it early-returns unless
+   the editor sits inside .ctcte-pageview, which is CTC's paged preview. */
+import { ctcExtensions, CtcToolbar, CTC_EDITOR_CSS } from '../../clm/operations/CtcRichEditor';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import api from '../../../api';
 import { useToast } from '../../../contexts/ToastContext';
 import CustomFieldModal, { CustomFieldFormPayload } from './CustomFieldModal';
@@ -135,34 +145,13 @@ export function buildSignerGroup(signers: SignerLite[]): PlaceholderGroup {
  * Being a plain div means older drafts round-trip untouched and the stored
  * contract (content_html = HTML string) is unchanged.
  */
-const PageBreak = Node.create({
-  name: 'pageBreak',
-  group: 'block',
-  atom: true,          // one indivisible thing — no cursor inside it
-  selectable: true,
-  parseHTML() {
-    return [{ tag: 'div.page-break' }, { tag: 'div[data-page-break]' }];
-  },
-  renderHTML() {
-    // Class AND data attribute: a sanitiser can drop one, the other still
-    // carries the instruction to the PDF/DOCX side.
-    return ['div', { class: 'page-break', 'data-page-break': 'true' }];
-  },
-  addCommands() {
-    return {
-      setPageBreak: () => ({ chain }: any) =>
-        // Insert the break AND a paragraph after it — an atom at the end of the
-        // document leaves nowhere to put the caret.
-        chain().insertContent([{ type: 'pageBreak' }, { type: 'paragraph' }]).run(),
-    } as any;
-  },
-});
 
 export default function TemplateEditor({
   value,
   onChange,
   signers,
   tokenPreviews,
+  pageWrapper = (node) => node,
 }: {
   value: string;
   onChange: (html: string) => void;
@@ -173,6 +162,11 @@ export default function TemplateEditor({
      inserting is the difference between trusting the placeholder and
      hard-typing the company name into the body. */
   tokenPreviews?: Record<string, string>;
+  /* Wraps the EDITOR COLUMN only — the caller passes the header/footer page
+     shell through here instead of nesting the whole component inside it.
+     Defaults to identity, so a caller that wants no page shell renders the
+     bare editor and nothing changes for it. */
+  pageWrapper?: (node: ReactNode) => ReactNode;
 }) {
   const toast = useToast();
   const [search, setSearch] = useState('');
@@ -197,12 +191,14 @@ export default function TemplateEditor({
   useEffect(() => { loadCustomFields(); }, []);
 
   const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      PageBreak,
-    ],
+    extensions: ctcExtensions({
+      /* Same 1,000,000-character ceiling the CTC editor enforces. This editor
+         had none, so a large paste went straight through to PHPWord. */
+      onLimit: (attempted, max) => toast.error(
+        'Too much content',
+        `That paste is ${attempted.toLocaleString()} characters — the template limit is ${max.toLocaleString()}.`,
+      ),
+    }),
     content: value || '<p></p>',
     onUpdate({ editor }) { onChange(editor.getHTML()); },
   });
@@ -308,12 +304,6 @@ export default function TemplateEditor({
 
   if (!editor) return <div style={{ padding: 16 }}>Loading editor…</div>;
 
-  const btn = (active: boolean): React.CSSProperties => ({
-    padding: '4px 9px', borderRadius: 6, border: '1px solid ' + (active ? '#6366f1' : '#e5e7eb'),
-    background: active ? '#eef2ff' : '#fff', color: active ? '#4338ca' : '#374151',
-    cursor: 'pointer', fontSize: 13, lineHeight: 1, fontWeight: 600,
-  });
-
   return (
     /* One definite height for the row, not a min/max per column.
        The two sides used to size themselves: the sidebar grew to its field list
@@ -345,6 +335,13 @@ export default function TemplateEditor({
     >
       {/* Left sidebar — placeholder fields */}
       <div className="tpl-sidebar" style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 10, background: '#fff', height: '100%', overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
+        {/* The panel opened straight onto a search box with nothing saying what
+            was being searched. Now that it sits OUTSIDE the document page it
+            reads as its own tool, so it names itself. */}
+        <div className="tpl-sidebar-title" style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+          <i className="ri-braces-line" style={{ fontSize: 14, color: '#6366f1' }} />
+          <span style={{ fontSize: 12, fontWeight: 800, letterSpacing: '.02em', color: '#312e81', textTransform: 'uppercase' }}>Placeholders</span>
+        </div>
         <div style={{ position: 'relative', marginBottom: 10 }}>
           <i className="ri-search-line tpl-search-icon" style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af', fontSize: 13 }} />
           <input
@@ -422,7 +419,16 @@ export default function TemplateEditor({
         })}
       </div>
 
-      {/* Right — editor + toolbar */}
+      {/* Right — editor + toolbar, optionally inside the page shell.
+
+          pageWrapper exists so the header/footer PAGE wraps only this column.
+          It used to be the other way round: TemplateForm nested the whole
+          editor (sidebar included) inside HeaderFooterPanel, so the document's
+          header zone spanned the placeholder list too and the draggable LOGO
+          landed above the sidebar rather than on the page it belongs to.
+          Passing the shell down as a wrapper keeps the left 240px strictly a
+          tool panel and the right column strictly the document. */}
+      {pageWrapper(
       <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%' }}>
         {unknownTokens.length > 0 && (
           <div className="tpl-unknown-banner" style={{ marginBottom: 8, padding: '8px 12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
@@ -453,59 +459,36 @@ export default function TemplateEditor({
           </div>
         )}
 
-        <div className="tpl-toolbar" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '8px 10px', border: '1px solid #e5e7eb', borderRadius: '10px 10px 0 0', background: '#fafafa' }}>
-          <select
-            className="tpl-toolbar-select"
-            value={editor.isActive('heading', { level: 1 }) ? 'h1'
-                  : editor.isActive('heading', { level: 2 }) ? 'h2'
-                  : editor.isActive('heading', { level: 3 }) ? 'h3'
-                  : 'p'}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === 'p')  editor.chain().focus().setParagraph().run();
-              if (v === 'h1') editor.chain().focus().toggleHeading({ level: 1 }).run();
-              if (v === 'h2') editor.chain().focus().toggleHeading({ level: 2 }).run();
-              if (v === 'h3') editor.chain().focus().toggleHeading({ level: 3 }).run();
-            }}
-            style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #e5e7eb', fontSize: 13, background: '#fff' }}
-          >
-            <option value="p">Paragraph</option>
-            <option value="h1">Heading 1</option>
-            <option value="h2">Heading 2</option>
-            <option value="h3">Heading 3</option>
-          </select>
+        {/* The SHARED toolbar — the same component the CLM Case-to-Case editor
+            renders, so both screens expose the identical control set and a fix
+            to any control lands on both. Replaces the three-button (Bold /
+            Italic / Underline) strip this file used to draw by hand.
 
-          <button type="button" style={btn(editor.isActive('bold'))}      onClick={() => editor.chain().focus().toggleBold().run()}      title="Bold"><b>B</b></button>
-          <button type="button" style={btn(editor.isActive('italic'))}    onClick={() => editor.chain().focus().toggleItalic().run()}    title="Italic"><i>I</i></button>
-          <button type="button" style={btn(editor.isActive('underline'))} onClick={() => editor.chain().focus().toggleUnderline().run()} title="Underline"><u>U</u></button>
+            CTC_EDITOR_CSS MUST travel with it: CtcToolbar carries no styles of
+            its own, it renders .ctcte-* class names that live in that sheet.
+            Without it every control collapses into a bare unstyled column —
+            the toolbar renders, it just has no layout. The three CLM editors
+            (Agreement, T&C, Trade Document) each drop the same <style> tag.
 
-          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
-
-          <button type="button" style={btn(editor.isActive({ textAlign: 'left' }))}   onClick={() => editor.chain().focus().setTextAlign('left').run()}><i className="ri-align-left" /></button>
-          <button type="button" style={btn(editor.isActive({ textAlign: 'center' }))} onClick={() => editor.chain().focus().setTextAlign('center').run()}><i className="ri-align-center" /></button>
-          <button type="button" style={btn(editor.isActive({ textAlign: 'right' }))}  onClick={() => editor.chain().focus().setTextAlign('right').run()}><i className="ri-align-right" /></button>
-
-          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
-
-          <button type="button" style={btn(editor.isActive('bulletList'))} onClick={() => editor.chain().focus().toggleBulletList().run()}><i className="ri-list-unordered" /></button>
-          <button type="button" style={btn(editor.isActive('orderedList'))} onClick={() => editor.chain().focus().toggleOrderedList().run()}><i className="ri-list-ordered" /></button>
-
-          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
-
-          <button
-            type="button"
-            style={{ ...btn(editor.isActive('pageBreak')), display: 'inline-flex', alignItems: 'center', gap: 5 }}
-            title="Insert a page break — the PDF and the Word copy both start a new page from here"
-            onClick={() => (editor.chain().focus() as any).setPageBreak().run()}
-          >
-            <i className="ri-page-separator" />
-            <span style={{ fontSize: 12 }}>Page Break</span>
-          </button>
-
-          <span className="tpl-toolbar-divider" style={{ width: 1, background: '#e5e7eb', margin: '0 4px' }} />
-
-          <button type="button" style={btn(false)} onClick={() => editor.chain().focus().undo().run()}><i className="ri-arrow-go-back-line" /></button>
-          <button type="button" style={btn(false)} onClick={() => editor.chain().focus().redo().run()}><i className="ri-arrow-go-forward-line" /></button>
+            The wrapper carries the BOX only — border, top corners, clipping —
+            and no layout: .ctcte-toolbar supplies its own flex row. Without it
+            the strip ran full-bleed, because the surface below is drawn with
+            borderTop:none and rounded bottom corners on the assumption that a
+            bordered toolbar closes the box above it. flexShrink:0 stops the
+            column's flex sizing from squeezing the strip when the editor grows;
+            overflow:hidden makes the toolbar's own background respect the
+            rounded top corners. */}
+        <style>{CTC_EDITOR_CSS}</style>
+        <div
+          style={{
+            border: '1px solid #e5e7eb',
+            borderBottom: 'none',
+            borderRadius: '10px 10px 0 0',
+            overflow: 'hidden',
+            flexShrink: 0,
+          }}
+        >
+          <CtcToolbar editor={editor} hideColor />
         </div>
 
         <div
@@ -725,7 +708,7 @@ export default function TemplateEditor({
             color: rgba(255, 255, 255, 0.35);
           }
         `}</style>
-      </div>
+      </div>)}
 
       {inlineModalOpen && (
         <CustomFieldModal
