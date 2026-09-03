@@ -1106,6 +1106,111 @@
   box-sizing: border-box;
 }
 
+/* Hover-only affordance: hidden until the card is hovered, so the artwork
+   reads clean at rest. Kept in the layout (opacity, not display) so the
+   reveal can animate and so it stays reachable by keyboard. */
+.prd-pcard-edit {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  color: #6d28d9;
+  background: rgba(255, 255, 255, .95);
+  border: 1px solid #ddd6fe;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+  opacity: 0;
+  transform: translateY(-4px) scale(.92);
+  pointer-events: none;
+  transition: opacity .16s ease, background .15s ease, color .15s ease, transform .16s ease;
+}
+
+/* Revealed on card hover, on keyboard focus, and while it is loading — a
+   spinner must not vanish just because the pointer moved off the card. */
+.prd-pcard:hover .prd-pcard-edit,
+.prd-pcard:focus-within .prd-pcard-edit,
+.prd-pcard-edit:focus-visible,
+.prd-pcard-edit.is-busy {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* Touch / no-hover devices never fire :hover, so keep it permanently on
+   there rather than leaving the action unreachable. */
+@media (hover: none) {
+  .prd-pcard-edit {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+}
+
+.prd-pcard-edit:hover {
+  color: #fff;
+  background: #7c3aed;
+  border-color: #7c3aed;
+  transform: translateY(-1px);
+}
+
+.prd-pcard-edit:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 2px;
+}
+
+/* Inline spinner for card / row controls that are waiting on their modal.
+   Sized to the icon it replaces so the control doesn't resize mid-click. */
+.prd-btn-spinner {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  opacity: .8;
+  animation: prd-btn-spin .7s linear infinite;
+}
+
+@keyframes prd-btn-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* A busy control keeps its normal colours (not the greyed-out `:disabled`
+   look) — it is working, not unavailable. */
+.prd-pcard-edit.is-busy,
+.prd-pcard-info-item--link.is-busy,
+.prd-card-vendor-cell--link.is-busy,
+.prd-card-hover-btn.is-busy {
+  cursor: progress;
+}
+
+/* Siblings of the busy control are disabled for the moment — dim them so the
+   card reads as "one thing is loading" rather than "everything broke". */
+.prd-pcard-edit:disabled:not(.is-busy),
+.prd-pcard-info-item--link:disabled:not(.is-busy),
+.prd-card-vendor-cell--link:disabled:not(.is-busy),
+.prd-card-hover-btn:disabled:not(.is-busy) {
+  opacity: .55;
+  cursor: default;
+}
+
+.prd-card-hover-btn.is-busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  opacity: 1;
+}
+
 .prd-pcard-status {
   position: absolute;
   right: 10px;
@@ -1237,6 +1342,30 @@
 
 .prd-pcard-info-item--supplier svg {
   opacity: .85;
+}
+
+/* Supplier count opens the Mapped Suppliers popup — it is a <button>, so the
+   UA styling has to be reset back to the surrounding info row's look. */
+.prd-pcard-info-item--link {
+  font-family: inherit;
+  padding: 2px 6px;
+  margin: -2px -6px -2px -2px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.prd-pcard-info-item--link:hover {
+  color: #5b21b6;
+  background: rgba(124, 58, 237, .1);
+  border-color: rgba(124, 58, 237, .25);
+}
+
+.prd-pcard-info-item--link:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: 1px;
 }
 
 .prd-pcard-line3 {
@@ -1885,6 +2014,27 @@
 .prd-card-vendor-cell svg {
   color: #16a34a;
   flex-shrink: 0;
+}
+
+.prd-card-vendor-cell--link {
+  font-family: inherit;
+  padding: 2px 6px;
+  margin: -2px -4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.prd-card-vendor-cell--link:hover {
+  background: rgba(22, 163, 74, .1);
+  border-color: rgba(22, 163, 74, .28);
+}
+
+.prd-card-vendor-cell--link:focus-visible {
+  outline: 2px solid #16a34a;
+  outline-offset: 1px;
 }
 .prd-card-title-link {
   display: flex;
@@ -3486,6 +3636,29 @@
 
 [data-bs-theme="dark"] .prd-pcard::before {
   background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .12), transparent);
+}
+
+[data-bs-theme="dark"] .prd-pcard-info-item--link:hover {
+  color: #ddd6fe;
+  background: rgba(167, 139, 250, .18);
+  border-color: rgba(167, 139, 250, .34);
+}
+
+[data-bs-theme="dark"] .prd-card-vendor-cell--link:hover {
+  background: rgba(34, 197, 94, .16);
+  border-color: rgba(34, 197, 94, .32);
+}
+
+[data-bs-theme="dark"] .prd-pcard-edit {
+  color: #c4b5fd;
+  background: rgba(30, 27, 45, .92);
+  border-color: rgba(167, 139, 250, .32);
+}
+
+[data-bs-theme="dark"] .prd-pcard-edit:hover {
+  color: #fff;
+  background: #7c3aed;
+  border-color: #7c3aed;
 }
 
 [data-bs-theme="dark"] .prd-pcard-thumb {
@@ -7451,6 +7624,26 @@
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+/* Shimmer placeholders for the Mapped Suppliers popup while it loads.
+   Sized to the real controls so nothing shifts when the data lands. */
+.apm-sup-shim-pill {
+  width: 132px;
+  height: 30px;
+  border-radius: 20px;
+}
+
+.apm-sup-shim-btn {
+  margin-left: auto;
+  width: 116px;
+  height: 30px;
+  border-radius: 9px;
+}
+
+.apm-sup-shim-cell {
+  height: 13px;
+  border-radius: 5px;
 }
 .apm-sup-overlay *,
 .apm-sup-overlay *::before,

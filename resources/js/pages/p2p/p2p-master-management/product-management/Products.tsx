@@ -179,6 +179,10 @@ const EMPTY_FILTERS: FilterState = {
 
 export default function Products() {
   const { user } = useAuth();
+  /* Sales can't see who the supplier is or the purchase price — the mapped
+     supplier list stays hidden for them, exactly as on the product detail
+     page (the API returns an empty list for Sales anyway). */
+  const isSalesDept = (user?.department || '').trim().toLowerCase() === 'sales';
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const vendorFilterId   = searchParams.get('vendor_id');
@@ -195,6 +199,14 @@ export default function Products() {
   const [sort, setSort] = useState<'recent' | 'price-asc' | 'price-desc' | 'rating'>('recent');
   const [addOpen, setAddOpen] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  /* Mapped Suppliers is AddProductModal's own popup running in supplier-only
+     mode (same entry point ProductView uses), so this page owns no second
+     copy of the supplier list or the Map Supplier form. */
+  const [supplierOnly, setSupplierOnly] = useState(false);
+  /* Which card control is waiting on the modal. The modal fetches the product
+     (and, cold, the master bundle) before it can show anything real, so the
+     control that was clicked spins until AddProductModal reports ready. */
+  const [booting, setBooting] = useState<{ id: number; act: 'Edit' | 'Suppliers' } | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [brefOpen, setBrefOpen] = useState(false);
 
@@ -515,6 +527,16 @@ export default function Products() {
   };
 
   const handleEdit = (p: Product) => {
+    setSupplierOnly(false);
+    setBooting({ id: p.apiId, act: 'Edit' });
+    setEditingId(p.apiId);
+    setAddOpen(true);
+  };
+
+  /* "N Suppliers" on a card → the Mapped Suppliers popup for that product. */
+  const handleSuppliers = (p: Product) => {
+    setSupplierOnly(true);
+    setBooting({ id: p.apiId, act: 'Suppliers' });
     setEditingId(p.apiId);
     setAddOpen(true);
   };
@@ -745,11 +767,14 @@ export default function Products() {
               <ProductCard
                 key={p.apiId}
                 product={p}
+                canViewSuppliers={!isSalesDept}
+                busyAction={booting?.id === p.apiId ? booting.act : null}
                 onAction={(act) => {
-                  if (act === 'View')        setDetailId(p.apiId);
-                  else if (act === 'Edit')   handleEdit(p);
-                  else if (act === 'Delete') handleDelete(p);
-                  else                       toast.info(act, `${act}: ${p.name}`);
+                  if (act === 'View')            setDetailId(p.apiId);
+                  else if (act === 'Edit')       handleEdit(p);
+                  else if (act === 'Suppliers')  handleSuppliers(p);
+                  else if (act === 'Delete')     handleDelete(p);
+                  else                           toast.info(act, `${act}: ${p.name}`);
                 }}
               />
             ))}
@@ -763,11 +788,14 @@ export default function Products() {
               <ProductRow
                 key={p.apiId}
                 product={p}
+                canViewSuppliers={!isSalesDept}
+                busyAction={booting?.id === p.apiId ? booting.act : null}
                 onAction={(act) => {
-                  if (act === 'View')        setDetailId(p.apiId);
-                  else if (act === 'Edit')   handleEdit(p);
-                  else if (act === 'Delete') handleDelete(p);
-                  else                       toast.info(act, `${act}: ${p.name}`);
+                  if (act === 'View')            setDetailId(p.apiId);
+                  else if (act === 'Edit')       handleEdit(p);
+                  else if (act === 'Suppliers')  handleSuppliers(p);
+                  else if (act === 'Delete')     handleDelete(p);
+                  else                           toast.info(act, `${act}: ${p.name}`);
                 }}
               />
             ))}
@@ -780,10 +808,12 @@ export default function Products() {
       {addOpen && (
         <AddProductModal
           productId={editingId}
-          onClose={() => { setAddOpen(false); setEditingId(null); }}
+          supplierOnly={supplierOnly}
+          onReady={() => setBooting(null)}
+          onClose={() => { setAddOpen(false); setEditingId(null); setSupplierOnly(false); setBooting(null); }}
           onSaved={(id, finalised) => {
             handleSaved(id, finalised);
-            if (finalised) { setAddOpen(false); setEditingId(null); }
+            if (finalised) { setAddOpen(false); setEditingId(null); setSupplierOnly(false); setBooting(null); }
             else           { setEditingId(id); }
           }}
         />
@@ -1099,9 +1129,14 @@ function ProductPagination(props: {
 
 function ProductCard(props: {
   product: Product;
+  canViewSuppliers?: boolean;
+  /** Which of this card's controls is waiting on its modal, if any. */
+  busyAction?: 'Edit' | 'Suppliers' | null;
   onAction: (label: string) => void;
 }) {
-  const { product, onAction } = props;
+  const { product, onAction, canViewSuppliers = true, busyAction = null } = props;
+  const editBusy = busyAction === 'Edit';
+  const supBusy  = busyAction === 'Suppliers';
   const [imgOk, setImgOk] = useState(true);
   const [segColor, setSegColor] = useState<string | null>(null);
   const accent = PRODUCT_ACCENTS[product.apiId % PRODUCT_ACCENTS.length];
@@ -1132,6 +1167,20 @@ function ProductCard(props: {
         <span className={`prd-pcard-status prd-pcard-status--${isActive ? 'active' : 'inactive'}`}>
           <span className="prd-pcard-status-dot" />{isActive ? 'Active' : 'Inactive'}
         </span>
+        <Tooltip label={editBusy ? 'Opening edit form...' : 'Edit product'}>
+          <button
+            type="button"
+            className={`prd-pcard-edit${editBusy ? ' is-busy' : ''}`}
+            aria-label="Edit product"
+            aria-busy={editBusy}
+            disabled={busyAction != null}
+            onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}
+          >
+            {editBusy
+              ? <span className="prd-btn-spinner" />
+              : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>}
+          </button>
+        </Tooltip>
       </div>
 
       <div className="prd-pcard-body">
@@ -1148,10 +1197,27 @@ function ProductCard(props: {
           <span className="prd-pcard-info-div" />
           <span className="prd-pcard-info-item"><span className="prd-pcard-info-k">GST</span><span className="prd-pcard-info-v">{product.gstRate}%</span></span>
           <span className="prd-pcard-info-div" />
-          <span className="prd-pcard-info-item prd-pcard-info-item--supplier">
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
-            {suppliers} Supplier{suppliers !== 1 ? 's' : ''}
-          </span>
+          {canViewSuppliers ? (
+            <Tooltip label={supBusy ? 'Opening mapped suppliers...' : suppliers > 0 ? 'View mapped suppliers' : 'Map a supplier to this product'}>
+              <button
+                type="button"
+                className={`prd-pcard-info-item prd-pcard-info-item--supplier prd-pcard-info-item--link${supBusy ? ' is-busy' : ''}`}
+                aria-busy={supBusy}
+                disabled={busyAction != null}
+                onClick={(e) => { e.stopPropagation(); onAction('Suppliers'); }}
+              >
+                {supBusy
+                  ? <span className="prd-btn-spinner" />
+                  : <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>}
+                {suppliers} Supplier{suppliers !== 1 ? 's' : ''}
+              </button>
+            </Tooltip>
+          ) : (
+            <span className="prd-pcard-info-item prd-pcard-info-item--supplier">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
+              {suppliers} Supplier{suppliers !== 1 ? 's' : ''}
+            </span>
+          )}
         </div>
 
         <div className="prd-pcard-line3">
@@ -1189,9 +1255,13 @@ function ProductCard(props: {
 
 function ProductRow(props: {
   product: Product;
+  canViewSuppliers?: boolean;
+  busyAction?: 'Edit' | 'Suppliers' | null;
   onAction: (label: string) => void;
 }) {
-  const { product, onAction } = props;
+  const { product, onAction, canViewSuppliers = true, busyAction = null } = props;
+  const editBusy = busyAction === 'Edit';
+  const supBusy  = busyAction === 'Suppliers';
   return (
     <div
       className="prd-row prd-card-clickable"
@@ -1216,15 +1286,37 @@ function ProductRow(props: {
         <div className="prd-card-info-row">
           <span className="prd-card-info-cell"><span className="prd-card-info-key">HSN/SAC:</span><span className="prd-card-info-val">{product.hsn}</span></span>
           <span className="prd-card-info-cell"><span className="prd-card-info-key">GST:</span><span className="prd-card-info-val">{product.gstRate}%</span></span>
-          <span className="prd-card-info-cell prd-card-vendor-cell">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-            <span>{product.vendorCount}</span>
-          </span>
+          {canViewSuppliers ? (
+            <Tooltip label={supBusy ? 'Opening mapped suppliers...' : product.vendorCount > 0 ? 'View mapped suppliers' : 'Map a supplier to this product'}>
+              <button
+                type="button"
+                className={`prd-card-info-cell prd-card-vendor-cell prd-card-vendor-cell--link${supBusy ? ' is-busy' : ''}`}
+                aria-busy={supBusy}
+                disabled={busyAction != null}
+                onClick={(e) => { e.stopPropagation(); onAction('Suppliers'); }}
+              >
+                {supBusy ? <span className="prd-btn-spinner" /> : (
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                  </svg>
+                )}
+                <span>{product.vendorCount}</span>
+              </button>
+            </Tooltip>
+          ) : (
+            <span className="prd-card-info-cell prd-card-vendor-cell">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              <span>{product.vendorCount}</span>
+            </span>
+          )}
           <span className={`prd-card-haz-pill ${product.hazClass === 'HAZ' ? 'is-haz' : 'is-nonhaz'}`}>
             {product.hazClass === 'HAZ' ? 'HAZ' : 'Non-Haz'}
           </span>
@@ -1243,7 +1335,14 @@ function ProductRow(props: {
       </div>
       <div className="prd-row-actions">
         <button className="prd-card-hover-btn" onClick={(e) => { e.stopPropagation(); onAction('View'); }}>View</button>
-        <button className="prd-card-hover-btn primary" onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}>Edit</button>
+        <button
+          className={`prd-card-hover-btn primary${editBusy ? ' is-busy' : ''}`}
+          aria-busy={editBusy}
+          disabled={busyAction != null}
+          onClick={(e) => { e.stopPropagation(); onAction('Edit'); }}
+        >
+          {editBusy && <span className="prd-btn-spinner" />}Edit
+        </button>
         <Tooltip label="Delete product">
           <button className="prd-card-hover-btn danger" aria-label="Delete product" onClick={(e) => { e.stopPropagation(); onAction('Delete'); }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" /></svg>

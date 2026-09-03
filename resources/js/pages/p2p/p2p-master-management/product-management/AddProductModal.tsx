@@ -144,8 +144,12 @@ export default function AddProductModal(props: {
   supplierOnly?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
+  /** Fired once the product + masters have landed, i.e. the modal is showing
+   *  real content rather than a skeleton. Lets the opener drop whatever
+   *  loading state it put on the control that launched this. */
+  onReady?: () => void;
 }) {
-  const { productId: initialId, initialProduct, onClose, onSaved } = props;
+  const { productId: initialId, initialProduct, onClose, onSaved, onReady } = props;
   const supplierOnly = props.supplierOnly === true;
   const toast = useToast();
   const confirm = useConfirm();
@@ -1142,6 +1146,14 @@ export default function AddProductModal(props: {
     setSaving(false);
   };
 
+  // Tell the opener the skeleton phase is over (fires once).
+  const readyFiredRef = useRef(false);
+  useEffect(() => {
+    if (readyFiredRef.current || loadingEdit || mastersLoading) return;
+    readyFiredRef.current = true;
+    onReady?.();
+  }, [loadingEdit, mastersLoading, onReady]);
+
   const supplierPopupFiredRef = useRef(false);
   useEffect(() => {
     if (supplierOnly && !supplierPopupFiredRef.current && productId && !mastersLoading && !loadingEdit) {
@@ -1152,6 +1164,12 @@ export default function AddProductModal(props: {
 
   return createPortal((
     <div className={`apm-backdrop ${supplierOnly ? 'apm-backdrop-supplieronly' : ''}`}>
+      {/* Supplier-only mode hides the wizard and waits for the product +
+          masters before the real popup can open. Callers that don't pass
+          `initialProduct` (the product list) pay a fetch here, so stand the
+          popup's own frame up straight away and shimmer its body — the click
+          lands on a visible popup instead of an empty screen. */}
+      {supplierOnly && (loadingEdit || mastersLoading) && <SupplierSkeleton onClose={onClose} />}
       <div className={`apm-modal ${supplierOnly ? 'apm-modal-hidden' : ''}`} onClick={(e) => e.stopPropagation()}>
         {saving && <div className="apm-busy-veil" aria-hidden />}
         <div className="apm-head">
@@ -1971,6 +1989,59 @@ function SectionCard(props: {
       <div className="apm-section-body">{props.children}</div>
     </div>
   );
+}
+
+/* Mapped Suppliers popup, pre-data. The chrome (header, count bar, table
+ * headings) is static text, so it renders for real and only the rows
+ * shimmer — the popup appears instantly and then fills in. */
+function SupplierSkeleton({ onClose }: { onClose: () => void }) {
+  // Portalled to <body> like the real popup, so the swap is seamless.
+  return createPortal((
+    <div className="apm-sup-overlay" onClick={onClose}>
+      <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()} aria-busy="true" aria-live="polite">
+        <div className="apm-sup-head">
+          <div className="apm-sup-head-ico">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
+          </div>
+          <div className="apm-sup-head-txt">
+            <div className="apm-sup-title">Mapped Suppliers</div>
+            <div className="apm-sup-sub">Suppliers linked to this product with purchase price &amp; GST</div>
+          </div>
+          <button className="apm-sup-close" onClick={onClose} aria-label="Close">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div className="apm-sup-body">
+          <div className="apm-sup-bar">
+            <span className="apm-shim apm-sup-shim-pill" />
+            <span className="apm-shim apm-sup-shim-btn" />
+          </div>
+          <div className="apm-sup-tablewrap">
+            <table className="apm-sup-table">
+              <thead>
+                <tr>
+                  <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
+                  <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[0, 1, 2].map(r => (
+                  <tr key={r}>
+                    {Array.from({ length: 11 }).map((_, c) => (
+                      <td key={c}><span className="apm-shim apm-sup-shim-cell" /></td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="apm-sup-foot">
+          <button className="apm-btn-ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  ), document.body);
 }
 
 function FormSkeleton() {
