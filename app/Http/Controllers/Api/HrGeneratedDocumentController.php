@@ -78,7 +78,10 @@ class HrGeneratedDocumentController extends Controller
              * which is an <img> element the client would have to parse. */
             'letterhead'    => [
                 'company_name' => (string) ($tokens['CompanyName'] ?? ''),
-                'logo_url'     => $emp->branch?->logo ? file_url($emp->branch->logo) : null,
+                /* Same branch-then-client fallback the {{CompanyLogo}} token
+                 * uses below, so the preview strip and the sent document
+                 * cannot show different letterheads. (#126) */
+                'logo_url'     => $this->letterheadLogoUrl($emp),
             ],
             'template'      => [
                 'id' => $tpl->id, 'code' => $tpl->code, 'name' => $tpl->name,
@@ -279,11 +282,21 @@ class HrGeneratedDocumentController extends Controller
     {
         $disk = \Illuminate\Support\Facades\Storage::disk('public');
         $branchLogo = $row->employee?->branch?->logo;
+        /* …and the CLIENT's logo last. A branch that never uploaded its own
+         * left this returning null, so the finished PDF — the document that
+         * actually goes out for signature — carried no letterhead image even
+         * though the tenant had one on the client record. Same branch-then-
+         * client order as letterheadLogoUrl() and the {{CompanyLogo}} token,
+         * so the preview and the sent document cannot disagree. (#126) */
+        $clientLogo = $row->employee?->branch?->client?->logo ?: $row->employee?->client?->logo;
 
         foreach ([
             (string) ($headerCfg['logo_path'] ?? ''),
             $this->diskPathFromUrl((string) ($headerCfg['logo_url'] ?? '')) ?? '',
             $this->diskPathFromUrl((string) ($branchLogo ?? '')) ?? '',
+            (string) ($branchLogo ?? ''),
+            $this->diskPathFromUrl((string) ($clientLogo ?? '')) ?? '',
+            (string) ($clientLogo ?? ''),
         ] as $candidate) {
             $candidate = ltrim($candidate, '/');
             if ($candidate === '' || !$disk->exists($candidate)) continue;
@@ -422,6 +435,20 @@ class HrGeneratedDocumentController extends Controller
      *   2. Template-derived tokens (Signer{N}*, CompanyName from branch)
      *   3. Operator-entered custom_values
      */
+
+    /**
+     * Letterhead logo for an employee's documents: the employing BRANCH's own
+     * logo, falling back to the client's. Mirrors orgIdentity() in
+     * HrDocumentTemplateController and the {{CompanyLogo}} token, so the
+     * template draft, the on-screen preview and the generated document all
+     * resolve the same image. Null when neither carries one. (#126)
+     */
+    private function letterheadLogoUrl(\App\Models\Employee $emp): ?string
+    {
+        $path = $emp->branch?->logo ?: $emp->branch?->client?->logo ?: $emp->client?->logo;
+        return $path ? file_url($path) : null;
+    }
+
     private function resolveTokens(Employee $emp, array $customValues, ?HrDocumentTemplate $tpl): array
     {
         // reportingManagerUser: a manager can be a Branch / login user rather
@@ -520,7 +547,15 @@ class HrGeneratedDocumentController extends Controller
          * into a data URI (inlineLocalImagesAsDataUris) because DomPDF cannot
          * fetch over HTTP. */
         $branch = $emp->branch;
-        $logoUrl = $branch ? file_url($branch->logo) : null;
+        /* Branch logo FIRST, then the client's. A branch that never uploaded
+         * its own logo produced no letterhead image at all — on the preview,
+         * on the PDF, and on the document that went out for signature — even
+         * though the tenant had one on the client record. HrDocumentTemplate-
+         * Controller::orgIdentity() already falls back this way when seeding a
+         * template's letterhead, so the two disagreed: the draft showed a logo
+         * the generated document then dropped. (#126) */
+        $logoPath = $branch?->logo ?: $emp->branch?->client?->logo ?: $emp->client?->logo;
+        $logoUrl = $logoPath ? file_url($logoPath) : null;
         $companyLogo = $logoUrl
             ? sprintf(
                 '<img src="%s" alt="%s" style="max-height:64px;max-width:220px;" />',

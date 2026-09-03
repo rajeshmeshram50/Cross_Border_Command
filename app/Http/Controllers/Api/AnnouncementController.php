@@ -227,7 +227,20 @@ class AnnouncementController extends Controller
         }
 
     
+        /* The status the CALLER asked for, never the one already on the row.
+         *
+         * $merged exists so the lifecycle can be resolved against the whole
+         * post-update record (publish_at / expires_at may come from either
+         * side). But feeding the row's own status into that resolver made an
+         * omitted status mean "keep whatever it is", and since the resolver
+         * short-circuits on 'Draft', a publish that did not name a status was
+         * written back as a draft. (#2)
+         *
+         * An absent status still means "leave it alone" — the row's status is
+         * put back below — so no other caller starts silently publishing
+         * drafts. It simply no longer overrides a status that WAS sent. */
         $merged = array_merge($row->toArray(), $data);
+        $merged['status'] = array_key_exists('status', $data) ? $data['status'] : $row->status;
         $data['status'] = $this->resolveLifecycleStatus($merged);
         $data['updated_by'] = $request->user()?->id;
 
@@ -394,6 +407,29 @@ class AnnouncementController extends Controller
         $isUpdate = $id !== null;
         $isDraft = strtolower((string) $request->input('status')) === 'draft';
         $req = fn () => $isUpdate || $isDraft ? 'nullable' : 'required';
+
+        /* Normalise line endings BEFORE the length rules run. (#1)
+         *
+         * The composer posts as multipart/form-data (it carries the optional
+         * attachment), and the FormData spec has the browser rewrite every
+         * newline in a text entry to CRLF on the way out. The textarea counts
+         * in JS, where a newline is ONE character, so a description the
+         * composer reports as 1,991 / 2,000 arrives here as 1,991 plus one
+         * extra byte per line break — and a notice with a dozen paragraphs then
+         * failed max:2000 while the counter on screen still read green. The
+         * user is told to fix a field that is, by the only count they can see,
+         * already inside the limit.
+         *
+         * Normalising to LF makes the server count what the composer counted,
+         * and it is the right storage form regardless: the same text was stored
+         * with CRLF from here and with LF from anywhere else, so the email body
+         * and the inbox row rendered from two different strings. */
+        foreach (['title', 'description'] as $field) {
+            $value = $request->input($field);
+            if (is_string($value)) {
+                $request->merge([$field => preg_replace('/\r\n?/', "\n", $value)]);
+            }
+        }
 
         $validated = $request->validate([
             'title'       => [$req(), 'string', 'max:191'],

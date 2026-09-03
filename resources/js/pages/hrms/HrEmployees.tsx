@@ -3009,10 +3009,23 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
 
     setSaving(true);
     try {
+      /* The success toast is BUILT here and FIRED at the end. (#208)
+       *
+       * It used to fire the moment the employee PUT/POST returned, while the
+       * rest of this try block — persistBreakup() above all — was still to
+       * run. A breakup that the server rejects (a 422 when the components do
+       * not total the CTC) then threw into the outer catch, which announced
+       * "Could not save employee" on top of the "Employee saved" already on
+       * screen. Both messages were true of different halves of the operation
+       * and the pair was unreadable, which is this ticket.
+       *
+       * Nothing is announced now until every part has landed, and the breakup
+       * failure below gets its own message that says what actually happened. */
+      let successBody = '';
       const currentId = editingDbIdRef.current ?? editingDbId;
       if (currentId) {
         await api.put(`/employees/${currentId}`, payload);
-        toast.success('Employee saved', `${eFirstName} ${eLastName}`.trim() + ' · marked complete.');
+        successBody = `${eFirstName} ${eLastName}`.trim() + ' · marked complete.';
       } else {
         const r = await api.post('/employees', payload);
         const emp = r?.data?.employee;
@@ -3020,10 +3033,7 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
           editingDbIdRef.current = emp.id;
           setEditingDbId(emp.id);
         }
-        toast.success(
-          'Employee saved',
-          `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`,
-        );
+        successBody = `${emp?.display_name || eFirstName} · welcome email queued to ${payload.email}.`;
       }
       const finalEmpId = editingDbIdRef.current;
       if (finalEmpId && eLeavePlan) {
@@ -3033,9 +3043,26 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
             .catch(err => console.warn('[HrEmployees] leave plan assign failed', err));
         }
       }
+      /* The breakup is a SEPARATE save (POST /salary-structures) against a
+       * server that validates the components against the CTC. Its failure is
+       * not the employee's failure — the employee row is already written — so
+       * it must not be reported as one, and it must not be swallowed either:
+       * the salary structure genuinely did not save.
+       *
+       * Own catch, own message, and the modal stays OPEN so the breakup can be
+       * corrected instead of the operator discovering later that the employee
+       * has no structure. No success toast is shown in this path — exactly one
+       * message reaches the screen. (#208) */
       if (finalEmpId) {
-        await persistBreakup(finalEmpId);
+        try {
+          await persistBreakup(finalEmpId);
+        } catch (bErr: any) {
+          const bMsg = bErr?.response?.data?.message || bErr?.message || 'The salary breakup could not be saved.';
+          toast.error('Salary breakup not saved', `The employee was saved, but the salary breakup was rejected: ${String(bMsg)}`);
+          return;   // finally{} still clears `saving`
+        }
       }
+      toast.success('Employee saved', successBody);
       // closeEmp() refreshes the list, so no reloadAfterMutation() here — it
       // would fetch the same two endpoints twice on finish.
       reloadManagers().catch(() => { /* swallow */ });
@@ -5315,12 +5342,20 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                             ₹
                           </span>
                           <input
-                            className={`emp-input${eErrors.annual_salary ? ' is-invalid' : ''}`}
+                            className={`emp-input emp-input--stepper${eErrors.annual_salary ? ' is-invalid' : ''}`}
                             type="number"
                             placeholder="Enter annual amount"
                             value={eAnnualSalary}
+                            min={0}
                             max={999999999999}
-                            step="1"
+                            /* ₹1,000 a click. The native step of 1 moved a CTC
+                               by a rupee, which is why the arrows were hidden
+                               and the field then behaved as #207 describes —
+                               inert arrows next to a live scroll wheel. `min`
+                               stops the down arrow producing a negative, which
+                               the digits-only guard below would silently drop,
+                               leaving the arrow looking dead at 0. */
+                            step={1000}
                             inputMode="numeric"
                             /* Locked while the saved structure is still in flight.
                                The response overwrites the whole breakup when it
@@ -5332,6 +5367,14 @@ export default function HrEmployees({ embedEditCode, onEmbedClose }: {
                                invite one. */
                             disabled={eBreakupLoading || eSalaryLocked}
                             title={eSalaryLocked ? 'Locked — an exit is in progress for this employee.' : undefined}
+                            /* A salary must never change because someone
+                               scrolled the page. The field is type="number", so
+                               a wheel event over a focused input silently
+                               edited the CTC — the other half of #207, and the
+                               dangerous half: it changes a figure nobody was
+                               editing. Blur instead of preventDefault so the
+                               page still scrolls normally underneath. */
+                            onWheel={e => (e.target as HTMLInputElement).blur()}
                             onChange={e => {
                               if (eSalaryLocked) return;
                               const raw = e.target.value;

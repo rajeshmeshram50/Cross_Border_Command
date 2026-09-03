@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Col, Row } from 'reactstrap';
+import { Col, Modal, ModalBody, Row } from 'reactstrap';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
@@ -22,6 +22,9 @@ const STATUS_TONES: Record<DocStatus, { bg: string; fg: string; dot: string }> =
   Active:     { bg: '#dcfce7', fg: '#15803d', dot: '#22c55e' },
   Deprecated: { bg: '#fee2e2', fg: '#b91c1c', dot: '#ef4444' },
 };
+
+/** Shown in the View dialog when a web-editor template has no body yet. */
+const NO_CONTENT_HTML = '<p style="color:#9ca3af">No content yet.</p>';
 
 interface Stats { total: number; active: number; draft: number; deprecated: number; by_category: Record<string, number>; }
 
@@ -47,6 +50,13 @@ export default function HrDocumentTemplates() {
   // HR Employees / Custom Fields) for a consistent delete UX across modules.
   const [deleteTarget, setDeleteTarget] = useState<TemplateRow | null>(null);
   const [deleting, setDeleting] = useState(false);
+
+  /* Read-only View. The list endpoint already returns the WHOLE row —
+     content_html, header/footer config, signers and every flag — so this needs
+     no second fetch; the details were on the page all along with no way to look
+     at them. Edit was the only way in, which meant opening the editor (and
+     risking a save) just to read a template. */
+  const [viewTarget, setViewTarget] = useState<TemplateRow | null>(null);
 
   const fetchAll = async () => {
     try {
@@ -359,12 +369,15 @@ export default function HrDocumentTemplates() {
       header: () => <div className="text-center">Actions</div>,
       id: '__actions',
       enableSorting: false,
-      meta: { align: 'center', width: '14%' },
+      meta: { align: 'center', width: '17%' },   // four buttons since View was added
       cell: info => {
         const r = info.row.original;
         return (
           <div className="d-flex gap-1 justify-content-center">
-            {/* Edit (opens the template editor), Deprecate/Activate, Delete. */}
+            {/* View (read-only), Edit (opens the template editor),
+                Deprecate/Activate, Delete. View is first: it is the
+                non-destructive one, and the one reached most often. */}
+            <ActionBtn icon="ri-eye-line" tone="primary" onClick={() => setViewTarget(r)} title="View" />
             <ActionBtn icon="ri-pencil-line" tone="info" onClick={() => navigate(`/hr/doc-templates/${r.id}/edit`)} title="Edit" />
             <ActionBtn
               icon={r.status === 'Active' ? 'ri-forbid-2-line' : 'ri-checkbox-circle-line'}
@@ -574,6 +587,12 @@ export default function HrDocumentTemplates() {
         </div>
       </Col>
 
+      <TemplateViewModal
+        row={viewTarget}
+        onClose={() => setViewTarget(null)}
+        onEdit={id => { setViewTarget(null); navigate(`/hr/doc-templates/${id}/edit`); }}
+      />
+
       <DeleteConfirmModal
         open={!!deleteTarget}
         title="Delete Template"
@@ -584,6 +603,143 @@ export default function HrDocumentTemplates() {
         onConfirm={confirmDelete}
       />
     </Row>
+  );
+}
+
+/* Read-only view of a template. (#1 — Document Template Management)
+ *
+ * Everything the Action column could previously reach was a MUTATION: Edit
+ * opened the editor, and the other two changed state. Reading a template meant
+ * opening it for editing, which is both a permission problem and an easy way to
+ * save a change nobody meant to make.
+ *
+ * Renders from the row already in the list — the list endpoint returns the
+ * whole record — so opening this costs no request. The body scrolls inside the
+ * dialog, never the page, and the content preview keeps its own scrollbar so a
+ * long template cannot push the metadata off screen. */
+function TemplateViewModal({
+  row, onClose, onEdit,
+}: { row: TemplateRow | null; onClose: () => void; onEdit: (id: number) => void }) {
+  if (!row) return null;
+
+  const tone = STATUS_TONES[row.status] || STATUS_TONES.Draft;
+  const LABEL: React.CSSProperties = {
+    fontSize: 10, fontWeight: 700, letterSpacing: '.06em',
+    textTransform: 'uppercase', color: 'var(--vz-secondary-color)',
+  };
+  const yn = (v: boolean) => (v ? 'Yes' : 'No');
+
+  const meta: Array<[string, string]> = [
+    ['Code', row.code],
+    ['Version', row.version || '-'],
+    ['Category', row.employee_category],
+    ['Designation level', row.role_type],
+    ['Document type', row.doc_type || '-'],
+    ['Trigger point', row.trigger_point?.module_name || '-'],
+    ['Editor', row.editor_mode === 'word' ? 'Word (.docx upload)' : 'Web editor'],
+    ['Mandatory', yn(row.is_mandatory)],
+    ['Needs signature', yn(row.requires_signature)],
+    ['Manager approval', yn(row.requires_manager_approval)],
+    ['In audit pack', yn(row.include_in_audit)],
+    ['Signing mode', row.requires_signature ? (row.signing_mode || '-') : '-'],
+  ];
+
+  return (
+    <Modal isOpen toggle={onClose} centered size="lg" className="hdt-view-modal">
+      <ModalBody className="p-0">
+        <div
+          className="d-flex align-items-center gap-3 px-3 py-3"
+          style={{ background: 'linear-gradient(135deg,#6366f1 0%,#8b5cf6 100%)', color: '#fff' }}
+        >
+          <i className="ri-file-text-line" style={{ fontSize: 20 }} />
+          <div className="min-w-0 flex-grow-1">
+            <div className="fw-bold text-truncate" style={{ fontSize: 15, lineHeight: 1.25 }}>{row.name}</div>
+            <div style={{ fontSize: 11.5, opacity: 0.86 }}>{row.code}{row.version ? ` \u00b7 v${row.version}` : ''}</div>
+          </div>
+          <span
+            className="fw-semibold flex-shrink-0"
+            style={{ background: tone.bg, color: tone.fg, fontSize: 11, padding: '4px 10px', borderRadius: 999 }}
+          >
+            {row.status}
+          </span>
+          <button
+            type="button" aria-label="Close" onClick={onClose}
+            className="btn btn-sm d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
+            style={{ width: 30, height: 30, padding: 0, background: 'rgba(255,255,255,0.20)', color: '#fff', border: 'none' }}
+          >
+            <i className="ri-close-line" />
+          </button>
+        </div>
+
+        {/* The dialog itself never grows past the viewport. */}
+        <div
+          className="d-flex flex-column gap-3 p-3"
+          style={{ maxHeight: 'calc(100vh - 230px)', overflowY: 'auto', overscrollBehavior: 'contain' }}
+        >
+          {row.description && (
+            <div style={{ fontSize: 12.5, color: 'var(--vz-secondary-color)', whiteSpace: 'pre-wrap' }}>
+              {row.description}
+            </div>
+          )}
+
+          <div className="d-flex flex-wrap" style={{ rowGap: 10, columnGap: 0 }}>
+            {meta.map(([k, v]) => (
+              <div key={k} style={{ flex: '0 0 33.333%', minWidth: 0, paddingRight: 12 }}>
+                <div style={LABEL}>{k}</div>
+                <div className="text-truncate" style={{ fontSize: 12.5, fontWeight: 500 }} title={v}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {row.requires_signature && !!row.signers?.length && (
+            <div className="d-flex flex-column gap-1">
+              <div style={LABEL}>Signers</div>
+              {row.signers.map((sg: any, i: number) => (
+                <div key={i} className="d-flex align-items-center gap-2" style={{ fontSize: 12 }}>
+                  <span className="fw-semibold">{sg?.label || sg?.name || `Signer ${i + 1}`}</span>
+                  {sg?.role && <span style={{ color: 'var(--vz-secondary-color)', fontSize: 11.5 }}>{sg.role}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="d-flex flex-column gap-1">
+            <div style={LABEL}>Template content</div>
+            {row.editor_mode === 'word' ? (
+              <div style={{ fontSize: 12.5 }}>
+                <i className="ri-file-word-2-line me-1" style={{ color: '#2b579a' }} />
+                {row.docx_original_name || 'Uploaded .docx file'}
+                <div style={{ fontSize: 11.5, color: 'var(--vz-secondary-color)' }}>
+                  Word templates are rendered at generation time - open Generate to preview one.
+                </div>
+              </div>
+            ) : (
+              /* Its own scrollbar, so a long template cannot push the metadata
+                 above it off the screen. */
+              <div
+                style={{
+                  border: '1px solid var(--vz-border-color)', borderRadius: 10, padding: 14,
+                  background: '#fff', color: '#1f2937', fontSize: 12.5, lineHeight: 1.6,
+                  maxHeight: '40vh', overflowY: 'auto', overscrollBehavior: 'contain',
+                  wordBreak: 'break-word', overflowWrap: 'anywhere',
+                }}
+                /* Authored by an admin in this tenant's own editor and stored as
+                   the template body - the same string the editor and the
+                   generated document already render. */
+                dangerouslySetInnerHTML={{ __html: row.content_html || NO_CONTENT_HTML }}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="d-flex justify-content-end gap-2 px-3 py-2" style={{ borderTop: '1px solid var(--vz-border-color)' }}>
+          <button type="button" className="btn btn-light btn-sm" onClick={onClose}>Close</button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => onEdit(row.id)}>
+            <i className="ri-pencil-line me-1" />Edit
+          </button>
+        </div>
+      </ModalBody>
+    </Modal>
   );
 }
 

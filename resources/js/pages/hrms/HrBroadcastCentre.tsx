@@ -801,7 +801,21 @@ function CreateAnnouncementModal({
     fd.append('notify_sms',      '0');
     fd.append('notify_whatsapp', '0');
 
-    if (forceStatus === 'Draft') fd.append('status', 'Draft');
+    /* Publishing has to SAY so. (#2)
+     *
+     * Only the draft case used to send a status, and the publish case sent
+     * none at all. On update the server merges the payload over the existing
+     * row, so "no status" resolved to the row's own status — Draft — and a
+     * draft that was edited and published was written straight back as a
+     * draft. It looked published (the toast fired, the row saved) and stayed
+     * in the Draft list. A new announcement was unaffected: there is no
+     * existing row to inherit from, which is why this only ever bit the
+     * draft → edit → publish path.
+     *
+     * 'Active' is an INTENT, not the final value: resolveLifecycleStatus()
+     * still decides between Active / Scheduled / Expired from publish_type,
+     * publish_at and expires_at. It only means "this is no longer a draft". */
+    fd.append('status', forceStatus === 'Draft' ? 'Draft' : 'Active');
     if (attachment) fd.append('attachment', attachment);
     /* Removing a SAVED attachment is its own instruction: leaving the file out
        of the payload means "unchanged", not "delete it". Only sent when no

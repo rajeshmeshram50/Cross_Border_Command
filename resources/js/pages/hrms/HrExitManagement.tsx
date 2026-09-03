@@ -2197,7 +2197,25 @@ function ExitProcessModal({ employee, onClose, onCompleted }: { employee: Employ
           // payDate, treat that as already paid.
           setFnfMarkedPaid(Boolean(rawMeta.approval === 'Approved' && rawMeta.payDate));
         }
-        if (savedFnf?.monthly && !String(savedFnf.monthly).startsWith('0')) setMonthlyAmount(String(savedFnf.monthly));
+        /* The saved monthly figure wins — HR may have typed it — EXCEPT when it
+           is exactly the monthly BASIC while a gross is on file. A case worked
+           before #130 stored the basic that the old prefill put there, and
+           reopening it re-applied that stored basic over the gross the server
+           now resolves, so the card went back to ₹15,000 → ₹500/day. There is
+           no flag separating "HR typed this" from "the old prefill wrote it",
+           so the basic-and-a-different-gross-exists shape is the signal: a
+           deliberate HR override that happens to equal the basic to the paisa
+           is vanishingly unlikely, and re-pricing it on gross is the correct
+           answer for it anyway. Any other saved figure is left untouched. */
+        const savedMonthly = Number(savedFnf?.monthly);
+        const staleBasicPrefill = Number.isFinite(savedMonthly) && savedMonthly > 0
+          && Number.isFinite(mb) && mb > 0 && Math.abs(savedMonthly - mb) < 0.01
+          && Number.isFinite(mg) && mg > 0 && Math.abs(mg - mb) >= 0.01;
+        if (savedFnf?.monthly && !String(savedFnf.monthly).startsWith('0') && !staleBasicPrefill) {
+          setMonthlyAmount(String(savedFnf.monthly));
+        } else if (staleBasicPrefill) {
+          setMonthlyAmount(String(mg));
+        }
         setFnfDoc(savedFnf?.attachment?.name
           // Older rows stored only `path`; resolveFileUrl handles both a
           // "/storage/…" url and a bare disk-relative path.
