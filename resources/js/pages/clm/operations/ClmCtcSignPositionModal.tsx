@@ -181,6 +181,12 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const onUp = () => { dragRef.current = null; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
 
   const send = async () => {
+    /* Second line of defence behind the disabled button. A double Zoho request
+       is not a harmless retry — it raises TWO signature requests against the
+       same contract, so the counterparty gets two mails and the second reply
+       lands on a request nobody is tracking. The button being disabled already
+       stops the ordinary double-click; this catches the paths that skip it. */
+    if (sending || loading) return;
     setSending(true);
     try {
       const payload = {
@@ -217,10 +223,20 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
             <div style={{ width: 38, height: 38, borderRadius: 11, background: 'rgba(255,255,255,.18)', border: '1.5px solid rgba(255,255,255,.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.1" strokeLinecap="round"><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" /></svg></div>
             <div><div style={{ fontSize: 8, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>Position Signatures · {code}</div><div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{title || 'Agreement'}</div><div style={{ fontSize: 9, color: 'rgba(255,255,255,.72)', marginTop: 1 }}>Drag each signer's box to set where they sign · sent via Zoho Sign</div></div>
           </div>
-          <button onClick={() => !sending && onClose()} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
+          <button onClick={() => !sending && onClose()} disabled={sending} style={{ width: 30, height: 30, borderRadius: 9, border: 'none', background: 'rgba(255,255,255,.18)', cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.4 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg></button>
         </div>
-        {/* body: preview (left) + controls (right) */}
-        <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
+        {/* body: preview (left) + controls (right)
+            Frozen once "Send for Signature" is pressed. The request travels to
+            Zoho and takes a few seconds; until it lands the whole body stayed
+            live, so a signature box could still be dragged, the page flipped or
+            an expiry/notes field retyped — none of which reaches the payload
+            that was already posted, leaving the screen disagreeing with what
+            was sent. `inert` (React 19) blocks mouse, keyboard and focus across
+            the subtree in one attribute; the dim + wait cursor say why. */}
+        <div
+          inert={sending}
+          style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden', ...(sending ? { opacity: 0.55, cursor: 'wait' } : null) }}
+        >
           {/* preview */}
           <div style={{ flex: 1, minWidth: 0, background: t.dark ? '#100c1c' : '#EDEAF6', padding: 18, overflowY: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
             {/* Prev / Next page navigation — parity with the sales/PI
@@ -298,7 +314,7 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
         <div style={{ flexShrink: 0, padding: '12px 18px', borderTop: `1.5px solid ${t.dark ? 'rgba(124,58,237,.2)' : '#EDE9FE'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, fontWeight: 600, color: t.textMuted }}><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>Drag boxes to position · sent securely via Zoho Sign</span>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => !sending && onClose()} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+            <button onClick={() => !sending && onClose()} disabled={sending} style={{ padding: '8px 18px', borderRadius: 9, border: `1.5px solid ${t.dark ? 'rgba(124,58,237,.3)' : '#DDD6FE'}`, background: t.dark ? 'rgba(124,58,237,.1)' : '#F5F0FF', color: t.dark ? '#c4b5fd' : '#6D28D9', fontSize: 10.5, fontWeight: 700, cursor: sending ? 'not-allowed' : 'pointer', opacity: sending ? 0.45 : 1, fontFamily: 'inherit' }}>Cancel</button>
             <button onClick={send} disabled={sending || loading} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 20px', borderRadius: 9, border: 'none', background: sending || loading ? '#C4B5FD' : 'linear-gradient(135deg,#4C1D95,#6D28D9,#7C3AED)', color: '#fff', fontSize: 10.5, fontWeight: 800, cursor: sending || loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 14px rgba(109,40,217,.4)' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg> {sending ? 'Sending…' : 'Send for Signature'}</button>
           </div>
         </div>
