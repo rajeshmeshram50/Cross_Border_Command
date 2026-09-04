@@ -411,11 +411,6 @@ class ProductController extends Controller
                     'gstPercentage',
                     'vendorMaps:id,product_id,vendor_name',
                     'qcRecords:id,product_id',
-                    // creator + their branch so the product-owner filter can
-                    // show "Person Name · Branch Name" and resolve filtering
-                    // on the frontend without a second lookup.
-                    'creator:id,name,user_type,branch_id',
-                    'creator.branch:id,name',
                 ]
         );
 
@@ -424,6 +419,15 @@ class ProductController extends Controller
         // Every narrowing the Products page can apply, shared verbatim with
         // stats() so the tab badges and the rows always agree.
         $query = $this->applyListFilters($query, $request);
+
+        /* Tab badges ride along with the rows. They are counted BEFORE the
+         * supplier tab narrows the query — each badge has to keep reporting
+         * its own total while the other tab is open — and shipping them here
+         * saves the page a second round trip to stats() on every filter
+         * change. stats() stays for callers that only want the numbers. */
+        $mappedCount = (clone $query)->has('vendorMaps')->count();
+        $zeroCount   = (clone $query)->doesntHave('vendorMaps')->count();
+
         $query = $this->applySupplierTab($query, $request);
 
         /* Sorting. 'recent' (the default) keeps the historical newest-first
@@ -453,7 +457,9 @@ class ProductController extends Controller
             );
         }
 
-        return response()->json($products);
+        return response()->json($products->toArray() + [
+            'counts' => ['active' => $mappedCount, 'inactive' => $zeroCount],
+        ]);
     }
 
     /* ──────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
-import api from '../../../../api';
+import api, { isCanceled } from '../../../../api';
 import AddProductModal from './AddProductModal';
 import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
@@ -366,6 +366,14 @@ export default function Products() {
     return () => clearTimeout(t);
   }, [q]);
 
+  /* Same treatment for the Custom "last N days" box — otherwise typing "30"
+     would refetch once for "3" and again for "30". */
+  const [debouncedDays, setDebouncedDays] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDays(filters.createdCustomDays.trim()), 400);
+    return () => clearTimeout(t);
+  }, [filters.createdCustomDays]);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -388,23 +396,46 @@ export default function Products() {
        last:<n> so the API treats it like any other relative window. */
     const buckets = filters.createdBucket.flatMap(key => {
       if (key !== 'custom') return [key];
-      const days = parseInt(filters.createdCustomDays, 10);
+      const days = parseInt(debouncedDays, 10);
       return days > 0 ? [`last:${days}`] : [];
     });
     if (buckets.length) p.created_bucket = buckets;
     return p;
-  }, [debouncedQ, segment, statusFilter, filters, vendorFilterId]);
+  }, [debouncedQ, debouncedDays, segment, statusFilter, filters, vendorFilterId]);
+
+  /* Ticking several boxes in a row is one intent, not three: collapse the
+     burst into a single fetch instead of firing (and cancelling) one each. */
+  const [appliedParams, setAppliedParams] = useState(listParams);
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedParams(listParams), 220);
+    return () => clearTimeout(t);
+  }, [listParams]);
 
   const listReqRef = useRef(0);
+  /* The in-flight list request. Ticking three boxes used to leave three
+     requests running; the last one's answer won but the server still worked
+     through all of them, and on a single-worker dev server that queue is what
+     you wait for. Superseded requests are now aborted. */
+  const listAbortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
     if (!allowed) return;
     const token = ++listReqRef.current;
+    listAbortRef.current?.abort();
+    const controller = new AbortController();
+    listAbortRef.current = controller;
     setLoading(true);
     try {
-      const res = await api.get<{ data?: Record<string, unknown>[]; total?: number }>('/products', {
+      /* One round trip carries both the rows and the tab badges — the counts
+         come back on the list response instead of a parallel /products/stats. */
+      const res = await api.get<{
+        data?: Record<string, unknown>[];
+        total?: number;
+        counts?: { active?: number; inactive?: number };
+      }>('/products', {
+        signal: controller.signal,
         params: {
-          ...listParams,
+          ...appliedParams,
           supplier: statusTab === 'active' ? 'mapped' : 'zero',
           sort,
           page,
@@ -415,32 +446,25 @@ export default function Products() {
       const body = res.data ?? {};
       setProducts((Array.isArray(body.data) ? body.data : []).map(apiToCard));
       setTotal(Number(body.total ?? 0) || 0);
-    } catch {
-      if (token !== listReqRef.current) return;
+      setStats({
+        active:   Number(body.counts?.active) || 0,
+        inactive: Number(body.counts?.inactive) || 0,
+      });
+    } catch (err) {
+      // A cancel means a newer request owns the screen; leave it alone.
+      if (token !== listReqRef.current || isCanceled(err)) return;
       setProducts([]);
       setTotal(0);
     } finally {
       if (token === listReqRef.current) setLoading(false);
     }
-  }, [allowed, listParams, statusTab, sort, page, pageSize]);
+  }, [allowed, appliedParams, statusTab, sort, page, pageSize]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const refreshStats = useCallback(async () => {
-    if (!allowed) return;
-    try {
-      const res = await api.get<{ active?: number; inactive?: number }>('/products/stats', { params: listParams });
-      setStats({
-        active:   Number(res.data?.active) || 0,
-        inactive: Number(res.data?.inactive) || 0,
-      });
-    } catch {
-    }
-  }, [allowed, listParams]);
+  useEffect(() => () => listAbortRef.current?.abort(), []);
 
-  useEffect(() => { refreshStats(); }, [refreshStats]);
-
-  const reload = useCallback(() => { refresh(); refreshStats(); }, [refresh, refreshStats]);
+  const reload = useCallback(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
     if (detailId == null) return;
