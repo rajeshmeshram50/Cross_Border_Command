@@ -174,10 +174,11 @@ class ProductController extends Controller
         }
 
         /* Relative creation windows from the filter drawer ("Last 7 days",
-         * "Older", …). Several can be ticked at once, so the windows OR
+         * "Last 30 days", …). Several can be ticked at once, so the windows OR
          * together inside one group — otherwise they would cancel each other
-         * out and return nothing. "Older" is everything before the 90-day
-         * cut-off, so the four buckets tile the timeline with no gap. */
+         * out and return nothing. 'older' (everything before the 90-day
+         * cut-off) is still honoured here, though the drawer no longer offers
+         * it as a row. */
         if ($buckets = $list('created_bucket')) {
             $cut = fn(int $days) => now()->subDays($days - 1)->toDateString();
 

@@ -153,7 +153,6 @@ const CREATED_BUCKETS: Array<{ key: string; label: string }> = [
   { key: 'last_7',  label: 'Last 7 days' },
   { key: 'last_30', label: 'Last 30 days' },
   { key: 'last_90', label: 'Last 90 days' },
-  { key: 'older',   label: 'Older' },
   { key: 'custom',  label: 'Custom' },
 ];
 
