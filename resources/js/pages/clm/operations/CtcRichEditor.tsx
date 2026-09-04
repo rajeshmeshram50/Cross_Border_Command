@@ -1008,6 +1008,19 @@ const findKey = new PluginKey('findReplace');
 type FindMatch = { from: number; to: number };
 type FindState = { term: string; matchCase: boolean; matches: FindMatch[]; index: number };
 
+/* A "word" character for whole-word matching. Letters, digits and _ — the
+   same set w means in a regex, so "position" does not match inside
+   "positions" but "co-operate" still matches "operate" after the hyphen. */
+const isWordChar = (c: string | undefined): boolean => !!c && /[A-Za-z0-9_]/.test(c);
+
+/* Whole-word matching is ALWAYS on. It is not a user option because the
+   alternative is not merely a preference — substring matching lets a search
+   term survive inside its own replacement, so replacing "position" with
+   "positions" leaves the count above zero and every further Replace All
+   appends another "s" ("positionssssss…"). Making it unconditional removes
+   that failure mode rather than leaving it one unticked box away.
+   The trade: a partial term no longer finds the longer word — searching
+   "confirm" will not match "confirmation". */
 function collectMatches(doc: any, term: string, matchCase: boolean): FindMatch[] {
   const out: FindMatch[] = [];
   if (!term) return out;
@@ -1026,7 +1039,14 @@ function collectMatches(doc: any, term: string, matchCase: boolean): FindMatch[]
     const hay = matchCase ? text : text.toLowerCase();
     let at = hay.indexOf(needle);
     while (at !== -1) {
-      out.push({ from: map[at], to: map[at + needle.length - 1] + 1 });
+      /* Whole word: reject a hit that has a word character touching either
+         end. Without it, replacing "position" with "positions" leaves the term
+         still present inside its own replacement — the count never reaches
+         zero, which invites another Replace All and appends another "s" every
+         time ("positionsssss…"). */
+      const okStart = !isWordChar(hay[at - 1]);
+      const okEnd   = !isWordChar(hay[at + needle.length]);
+      if (okStart && okEnd) out.push({ from: map[at], to: map[at + needle.length - 1] + 1 });
       at = hay.indexOf(needle, at + needle.length);
     }
     return false;   // a textblock holds no further textblocks
@@ -1177,6 +1197,79 @@ export const pastedLength = (raw: string): number => {
     .trim()
     .length;
 };
+
+/* Show a link's target on hover.
+ *
+ * A link inside a contenteditable gets no status-bar preview and no tooltip —
+ * the browser only does that for links you can actually click through, so an
+ * author had no way to see where a link they had inserted actually pointed
+ * without opening it. Stamping the href onto title= gives the native tooltip.
+ *
+ * Written on mouseover rather than at render time so it stays correct after the
+ * href is edited, and it costs nothing until the pointer is over a link. */
+const LinkTitle = Extension.create({
+  name: 'linkTitle',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        props: {
+          handleDOMEvents: {
+            mouseover: (_view, event) => {
+              const el = event.target as HTMLElement | null;
+              const a = el?.closest?.('a[href]') as HTMLAnchorElement | null;
+              if (a) {
+                const href = a.getAttribute('href') || '';
+                if (a.getAttribute('title') !== href) a.setAttribute('title', href);
+              }
+              return false;   // never consume the event
+            },
+          },
+        },
+      }),
+    ];
+  },
+});
+
+/* Keep the selection VISIBLE while a toolbar panel is open.
+ *
+ * A browser only paints ::selection while the element owning it has focus. The
+ * link panel's input takes that focus, so the moment it opened the highlight
+ * vanished — you were asked which URL to attach without being shown what you
+ * had selected. It came back only after Apply, which is too late to check.
+ *
+ * The selection still EXISTS in editor state throughout; it is only the drawing
+ * that stops. So we draw it ourselves: a decoration over the same range,
+ * switched on when the panel opens and off when it closes. */
+export const selShadowKey = new PluginKey('ctcSelShadow');
+const SelectionShadow = Extension.create({
+  name: 'ctcSelShadow',
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: selShadowKey,
+        state: {
+          init: () => null as { from: number; to: number } | null,
+          apply(tr, prev) {
+            const meta = tr.getMeta(selShadowKey);
+            if (meta !== undefined) return meta;                 // explicit on/off
+            if (!prev) return null;
+            // Follow edits so the band stays on the same text.
+            return { from: tr.mapping.map(prev.from), to: tr.mapping.map(prev.to) };
+          },
+        },
+        props: {
+          decorations(state) {
+            const r = selShadowKey.getState(state);
+            if (!r || r.from >= r.to) return DecorationSet.empty;
+            return DecorationSet.create(state.doc, [
+              Decoration.inline(r.from, r.to, { class: 'ctcte-selshadow' }),
+            ]);
+          },
+        },
+      }),
+    ];
+  },
+});
 
 const ContentLimit = Extension.create<ContentLimitOptions>({
   name: 'contentLimit',
@@ -1332,6 +1425,8 @@ export function ctcExtensions(opts?: {
     ParagraphIndent,
     PageBreak,
     PageFlow,
+    LinkTitle,
+    SelectionShadow,
   ];
 }
 
@@ -1589,9 +1684,21 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
   const [menu, setMenu] = useState<ToolMenu>(null);
   /* Anchors for the portalled Link and Find panels — measured, not nested. */
+  const spacingAnchorRef = useRef<HTMLDivElement>(null);
+  const tableAnchorRef   = useRef<HTMLDivElement>(null);
   const linkAnchorRef = useRef<HTMLDivElement>(null);
   const findAnchorRef = useRef<HTMLDivElement>(null);
   const linkOpen    = menu === 'link';
+  /* Clear the selection band on EVERY way the panel can close — Apply, Remove,
+     Escape, the toggle, or a click outside. Clearing it only where the panel is
+     opened would leave the band painted after an Escape, which reads as a
+     selection the user no longer has. */
+  useEffect(() => {
+    if (!editor || linkOpen) return;
+    if (selShadowKey.getState(editor.state)) {
+      editor.view.dispatch(editor.state.tr.setMeta(selShadowKey, null));
+    }
+  }, [linkOpen, editor]);
   const spacingOpen = menu === 'spacing';
   const tableOpen   = menu === 'table';
   const findOpen    = menu === 'find';
@@ -1975,7 +2082,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           than a <select> because a select cannot hold the toggles, and those
           are the half people actually reach for: line spacing changes the gap
           INSIDE a paragraph, the toggles change the gap BETWEEN paragraphs. */}
-      <div className="ctcte-linkwrap">
+      <div className="ctcte-linkwrap" ref={spacingAnchorRef}>
         <button
           type="button"
           className={`ctcte-pgbtn${spacingOpen ? ' is-open' : ''}`}
@@ -1995,7 +2102,8 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
             {/* Click-away. mousedown-prevented everywhere inside so the caret
                 never leaves the document while the menu is open. */}
             <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setSpacingOpen(false); }} />
-            <div className="ctcte-spcpop" onMouseDown={e => e.preventDefault()}>
+            <AnchoredPop anchor={spacingAnchorRef.current} width={232} onClose={() => setSpacingOpen(false)}>
+            <div className="ctcte-spcpop ctcte-pop-portal" onMouseDown={e => e.preventDefault()}>
               {LINE_HEIGHTS.map(h => (
                 <button
                   key={h}
@@ -2045,6 +2153,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
                 Reset spacing
               </button>
             </div>
+            </AnchoredPop>
           </>
         )}
       </div>
@@ -2077,7 +2186,15 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
       <span className="ctcte-div" />
       <div className="ctcte-grp">
       <div className="ctcte-linkwrap" ref={linkAnchorRef}>
-        <TB active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href ?? ''); setLinkOpen(o => !o); }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
+        <TB active={editor.isActive('link')} onClick={() => {
+          const opening = !linkOpen;
+          setLinkUrl(editor.getAttributes('link').href ?? '');
+          /* Freeze the current selection as a decoration BEFORE the panel's
+             input steals focus, so the user can still see what they picked. */
+          const { from, to } = editor.state.selection;
+          editor.view.dispatch(editor.state.tr.setMeta(selShadowKey, opening && to > from ? { from, to } : null));
+          setLinkOpen(o => !o);
+        }} title="Insert link"><Ico d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" /></TB>
         {linkOpen && (
           <AnchoredPop anchor={linkAnchorRef.current} width={280} onClose={() => setMenu(null)}>
           <div className="ctcte-linkpop ctcte-pop-portal" onMouseDown={e => e.preventDefault()}>
@@ -2096,7 +2213,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
           The structure items are disabled outside a table rather than hidden:
           a menu whose length changes as the caret moves is harder to learn
           than one whose items grey out. */}
-      <div className="ctcte-linkwrap">
+      <div className="ctcte-linkwrap" ref={tableAnchorRef}>
         <button
           type="button"
           className={`ctcte-pgbtn${tableOpen ? ' is-open' : ''}`}
@@ -2109,7 +2226,8 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
         {tableOpen && (
           <>
             <div className="ctcte-spcbd" onMouseDown={e => { e.preventDefault(); setTableOpen(false); }} />
-            <div className="ctcte-spcpop ctcte-pop-right" onMouseDown={e => e.preventDefault()}>
+            <AnchoredPop anchor={tableAnchorRef.current} width={232} onClose={() => setTableOpen(false)}>
+            <div className="ctcte-spcpop ctcte-pop-portal" onMouseDown={e => e.preventDefault()}>
               {([['3 × 3', 3, 3], ['2 × 2', 2, 2], ['4 × 4', 4, 4]] as [string, number, number][]).map(([label, rows, cols]) => (
                 <button
                   key={label}
@@ -2209,6 +2327,7 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
                 </button>
               ))}
             </div>
+            </AnchoredPop>
           </>
         )}
       </div>
@@ -2228,8 +2347,18 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
             setFindOpen(next);
             // Leaving the panel clears the highlights; they are a search aid,
             // not part of the document.
-            if (!next) pushSearch('', matchCase);
-            else if (findTerm) pushSearch(findTerm, matchCase);
+            if (!next) { pushSearch('', matchCase); return; }
+
+            /* Seed Find from the SELECTION, the way Ctrl+F does everywhere else.
+               Opening the panel with a word selected used to leave the box
+               empty and the word unhighlighted, so the user had to retype what
+               they had just selected. A selection spanning more than one block
+               is ignored — that is a passage, not a search term. */
+            const { from, to, empty } = editor.state.selection;
+            const picked = empty ? '' : editor.state.doc.textBetween(from, to, ' ').trim();
+            const seed = (picked && !picked.includes('\n') && picked.length <= 120) ? picked : findTerm;
+            if (seed !== findTerm) setFindTerm(seed);
+            if (seed) pushSearch(seed, matchCase);
           }}
           title="Find and replace"
         >
@@ -2338,6 +2467,10 @@ export const CTC_EDITOR_CSS = `
   .clm-editor-split > * { width: auto !important; }
   .clm-editor-split > *:last-child { flex: 0 0 42%; min-height: 0; }
 }
+/* The stand-in for ::selection while a panel holds focus. Deliberately the
+   toolbar's own purple rather than the OS blue, so it reads as "this is what
+   the panel is about to act on" rather than a live text selection. */
+.ctcte-selshadow { background: rgba(124,58,237,.22); border-radius: 2px; }
 .ctcte-toolbar { display: flex; align-items: center; gap: 3px; row-gap: 6px; flex-wrap: wrap; padding: 7px 10px; border-bottom: 1px solid #EDE9FE; background: #FAFBFF; flex-shrink: 0; }
 .ctcte-toolbar > * { flex-shrink: 0; }
 /* A cluster of related controls. nowrap is the load-bearing part: the bar
@@ -2499,12 +2632,28 @@ export const CTC_EDITOR_CSS = `
 .ctcte-content .ProseMirror b { font-weight: 700; }
 .ctcte-content .ProseMirror em,
 .ctcte-content .ProseMirror i { font-style: italic; }
-.ctcte-content .ProseMirror ul       { list-style: disc outside; }
-.ctcte-content .ProseMirror ul ul    { list-style: circle outside; }
-.ctcte-content .ProseMirror ul ul ul { list-style: square outside; }
-.ctcte-content .ProseMirror ol       { list-style: decimal outside; }
-.ctcte-content .ProseMirror ol ol    { list-style: lower-alpha outside; }
-.ctcte-content .ProseMirror ol ol ol { list-style: lower-roman outside; }
+/* Scoped to the HRMS surface as well as the CLM one.
+   These rules only named .ctcte-content, but the HRMS template editor renders
+   its EditorContent inside .tpl-editor-surface — so neither the list-style nor
+   the padding below reached it. The app's global reset strips list-style from
+   ul/ol, and a marker is drawn OUTSIDE the content box, so HRMS lists came out
+   indented with no bullet and no number at all: the toolbar button lit up, the
+   list existed in the document, and nothing was drawn. */
+.ctcte-content .ProseMirror ul,
+.tpl-editor-surface .ProseMirror ul       { list-style: disc outside; }
+.ctcte-content .ProseMirror ul ul,
+.tpl-editor-surface .ProseMirror ul ul    { list-style: circle outside; }
+.ctcte-content .ProseMirror ul ul ul,
+.tpl-editor-surface .ProseMirror ul ul ul { list-style: square outside; }
+.ctcte-content .ProseMirror ol,
+.tpl-editor-surface .ProseMirror ol       { list-style: decimal outside; }
+.ctcte-content .ProseMirror ol ol,
+.tpl-editor-surface .ProseMirror ol ol    { list-style: lower-alpha outside; }
+.ctcte-content .ProseMirror ol ol ol,
+.tpl-editor-surface .ProseMirror ol ol ol { list-style: lower-roman outside; }
+/* The markers need room to sit in, or they are clipped off the left edge. */
+.tpl-editor-surface .ProseMirror ul,
+.tpl-editor-surface .ProseMirror ol { margin: 0 0 8px 0; padding-left: 1.6em; }
 .ctcte-content.ctcte-pageview .ProseMirror li { line-height: 21.1px; }
 /* Tables, matched to the PDF the same way the body text is.
    The page view carried NO table CSS — cells fell back to whatever the DOCX

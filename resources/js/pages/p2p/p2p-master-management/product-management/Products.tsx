@@ -5,8 +5,7 @@ import { createPortal } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
-import api from '../../../../api';
-import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
+import api, { isCanceled } from '../../../../api';
 import AddProductModal from './AddProductModal';
 import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
@@ -144,37 +143,37 @@ function apiToCard(row: Record<string, unknown>): Product {
 
 const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coconut Oil', 'Seeds', 'Coffee Beans', 'Pulses', 'Mango Pulp', 'Millets', 'Chemicals'];
 
-const GST_RATES = ['0%', '5%', '12%', '18%', '28%'];
 const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
-const HAZ_TYPES = ['HAZ', 'NON HAZ'];
-const UOMS = ['Kg', 'L', 'g', 'mL', 'Pcs', 'Box', 'Tonne'];
 const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
-const VENDORS = ['GreenHarvest', 'Shree Exports', 'Sun Agri', 'MJ Foods', 'BrightHarvest', 'Eastern Harvest', 'Delta Agro', 'Apex Foods', 'Spice Route', 'Bharat Agro', 'SunGrow'];
-const SCORE_RANGES = ['0 – 1', '1 – 2', '2 – 3', '3 – 4', '4 – 5'];
-const TOP_PRODUCTS = ['Top 10', 'Top 25', 'Top 50', 'Top 100'];
-const INWARD_BUCKETS = ['0 – 50', '51 – 200', '201 – 500', '501 – 1000', '1000+'];
+
+/* Creation date is picked as a relative window, not a calendar range. The keys
+   travel to the API as ?created_bucket[]= and OR together there. 'custom' is
+   the odd one out: it carries the typed day count and is sent as `last:<n>`. */
+const CREATED_BUCKETS: Array<{ key: string; label: string }> = [
+  { key: 'last_7',  label: 'Last 7 days' },
+  { key: 'last_30', label: 'Last 30 days' },
+  { key: 'last_90', label: 'Last 90 days' },
+  { key: 'older',   label: 'Older' },
+  { key: 'custom',  label: 'Custom' },
+];
+
+/* Inward / invoice counts per product have no API behind them yet, so both
+   sections are frozen: fixed default buckets, shown but not selectable. */
+const INWARD_BUCKETS  = ['0', '1–5', '6–20', '21+'];
+const INVOICE_BUCKETS = ['0', '1–10', '11–50', '51+'];
 
 type FilterState = {
-  gstRate: string[];
   segment: string[];
   hsn: string[];
-  hazType: string[];
   hazClass: string[];
-  uom: string[];
   condition: string[];
-  vendor: string[];
-  scoreRange: string[];
-  topProducts: string;
-  createdFrom: string;
-  createdTo: string;
-  productOwner: string[];
-  inwardCount: string[];
+  createdBucket: string[];
+  /* Days typed into the Custom row; only read while 'custom' is ticked. */
+  createdCustomDays: string;
 };
 
 const EMPTY_FILTERS: FilterState = {
-  gstRate: [], segment: [], hsn: [], hazType: [], hazClass: [], uom: [], condition: [],
-  vendor: [], scoreRange: [], topProducts: '', createdFrom: '', createdTo: '',
-  productOwner: [], inwardCount: [],
+  segment: [], hsn: [], hazClass: [], condition: [], createdBucket: [], createdCustomDays: '',
 };
 
 export default function Products() {
@@ -212,17 +211,14 @@ export default function Products() {
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [filters, setFilters] = useState<FilterState>(EMPTY_FILTERS);
-  const [activeCategory, setActiveCategory] = useState<string>('gstRate');
+  /* Which accordion section is expanded in the right-hand drawer — one at a
+     time. Segment opens by default: it is the first thing users narrow by. */
+  const [openPanel, setOpenPanel] = useState<string | null>('segment');
 
   const [segmentOpts, setSegmentOpts]   = useState<string[]>(SEGMENTS);
   const [hsnOpts,     setHsnOpts]       = useState<string[]>(HSN_CODES);
-  const [uomOpts,     setUomOpts]       = useState<string[]>(UOMS);
   const [conditionOpts, setConditionOpts] = useState<string[]>(CONDITIONS);
   const [hazClassOpts, setHazClassOpts] = useState<string[]>([]);
-  const [vendorOpts,  setVendorOpts]    = useState<string[]>(VENDORS);
-  const [gstRateOpts, setGstRateOpts]   = useState<string[]>(GST_RATES);
-  type OwnerOpt = { id: number; name: string; branchId: number | null; branchName: string };
-  const [ownerOpts, setOwnerOpts] = useState<OwnerOpt[]>([]);
 
   useEffect(() => {
     type IdRow = { id: number | string; status?: string | null };
@@ -248,20 +244,12 @@ export default function Products() {
     const applyBundle = (b: Bundle) => {
       const seg  = (b.segments  ?? []).map(r => r.title ?? r.name ?? '').filter(Boolean);
       const hsn  = (b.hsn_codes ?? []).map(r => r.hsn_code ?? '').filter(Boolean);
-      const uom  = (b.uom       ?? []).map(r => r.short_code ?? r.title ?? '').filter(Boolean);
       const cond = (b.conditions ?? []).map(r => r.title ?? '').filter(Boolean);
       const haz  = (b.haz_class ?? []).map(r => r.name ?? '').filter(Boolean);
-      const gst  = (b.gst_percentage ?? [])
-        .map(r => r.percentage != null ? `${r.percentage}%` : '')
-        .filter(Boolean);
-      const ven  = (b.vendors ?? []).map(v => v.company_name ?? '').filter(Boolean);
       if (seg.length)  setSegmentOpts(dedupe(seg));
       if (hsn.length)  setHsnOpts(dedupe(hsn));
-      if (uom.length)  setUomOpts(dedupe(uom));
       if (cond.length) setConditionOpts(dedupe(cond));
       if (haz.length)  setHazClassOpts(dedupe(haz));
-      if (gst.length)  setGstRateOpts(dedupe(gst).sort((a, b) => parseFloat(a) - parseFloat(b)));
-      if (ven.length)  setVendorOpts(dedupe(ven));
     };
 
     (async () => {
@@ -271,18 +259,6 @@ export default function Products() {
         const res = await api.get<Bundle>('/products/master-bundle');
         applyBundle(res.data);
         writeProductMasterBundle(res.data);
-      } catch {  }
-
-      try {
-        type OwnerRow = { id: number; name: string; branch_id: number | null; branch_name: string | null };
-        const res = await api.get<{ data?: OwnerRow[] }>('/products/owners');
-        const rows = Array.isArray(res.data?.data) ? res.data!.data! : [];
-        setOwnerOpts(rows.map(r => ({
-          id:           r.id,
-          name:         r.name,
-          branchId:     r.branch_id,
-          branchName:   r.branch_name ?? '',
-        })));
       } catch {  }
     })();
   }, []);
@@ -309,11 +285,17 @@ export default function Products() {
     });
   };
 
+  /* Opening a section closes whichever one was open. */
+  const togglePanel = (key: string) =>
+    setOpenPanel(prev => (prev === key ? null : key));
+
   const resetFilters = () => setFilters(EMPTY_FILTERS);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
-    Object.entries(filters).forEach(([, v]) => {
+    Object.entries(filters).forEach(([key, v]) => {
+      // The typed day count belongs to the Custom row, already counted above it.
+      if (key === 'createdCustomDays') return;
       if (Array.isArray(v)) n += v.length;
       else if (typeof v === 'string' && v.trim()) n += 1;
     });
@@ -326,10 +308,8 @@ export default function Products() {
     const out: FilterChip[] = [];
 
     const multi: Array<[keyof FilterState, string]> = [
-      ['gstRate', 'GST Rate'], ['segment', 'Segment'], ['hsn', 'HSN/SAC'],
-      ['hazType', 'Hazard'], ['hazClass', 'Haz Class'], ['uom', 'UOM'],
-      ['condition', 'Condition'], ['vendor', 'Supplier'],
-      ['scoreRange', 'Score'], ['inwardCount', 'Inward'],
+      ['segment', 'Segment'], ['hsn', 'HSN/SAC'],
+      ['hazClass', 'Haz Class'], ['condition', 'Condition'],
     ];
     multi.forEach(([key, group]) => {
       (filters[key] as string[]).forEach(v => {
@@ -337,27 +317,20 @@ export default function Products() {
       });
     });
 
-    filters.productOwner.forEach(id => {
-      const owner = ownerOpts.find(o => String(o.id) === id);
+    filters.createdBucket.forEach(key => {
+      const bucket = CREATED_BUCKETS.find(b => b.key === key);
+      const days = filters.createdCustomDays.trim();
       out.push({
-        id: `productOwner:${id}`,
-        group: 'Owner',
-        label: owner?.name ?? `#${id}`,
-        onRemove: () => toggleMulti('productOwner', id),
+        id: `createdBucket:${key}`,
+        group: 'Created',
+        label: key === 'custom'
+          ? (days ? `Last ${days} days` : 'Custom')
+          : (bucket?.label ?? key),
+        onRemove: () => toggleMulti('createdBucket', key),
       });
     });
-
-    if (filters.topProducts) {
-      out.push({ id: 'topProducts', group: 'Top', label: filters.topProducts, onRemove: () => setFilters(p => ({ ...p, topProducts: '' })) });
-    }
-    if (filters.createdFrom) {
-      out.push({ id: 'createdFrom', group: 'Created from', label: filters.createdFrom, onRemove: () => setFilters(p => ({ ...p, createdFrom: '' })) });
-    }
-    if (filters.createdTo) {
-      out.push({ id: 'createdTo', group: 'Created to', label: filters.createdTo, onRemove: () => setFilters(p => ({ ...p, createdTo: '' })) });
-    }
     return out;
-  }, [filters, ownerOpts]);
+  }, [filters]);
 
   const toolbarChips = useMemo<FilterChip[]>(() => {
     const out: FilterChip[] = [];
@@ -393,6 +366,14 @@ export default function Products() {
     return () => clearTimeout(t);
   }, [q]);
 
+  /* Same treatment for the Custom "last N days" box — otherwise typing "30"
+     would refetch once for "3" and again for "30". */
+  const [debouncedDays, setDebouncedDays] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedDays(filters.createdCustomDays.trim()), 400);
+    return () => clearTimeout(t);
+  }, [filters.createdCustomDays]);
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
 
@@ -409,28 +390,52 @@ export default function Products() {
     if (segment !== 'All Segments') p.segment_eq = segment;
     if (filters.segment.length)      p.segment      = filters.segment;
     if (filters.hsn.length)          p.hsn          = filters.hsn;
-    if (filters.uom.length)          p.uom          = filters.uom;
     if (filters.condition.length)    p.condition    = filters.condition;
     if (filters.hazClass.length)     p.haz_class    = filters.hazClass;
-    if (filters.hazType.length)      p.haz_type     = filters.hazType;
-    if (filters.gstRate.length)      p.gst_rate     = filters.gstRate;
-    if (filters.vendor.length)       p.vendor       = filters.vendor;
-    if (filters.productOwner.length) p.owner        = filters.productOwner;
-    if (filters.createdFrom)         p.created_from = filters.createdFrom;
-    if (filters.createdTo)           p.created_to   = filters.createdTo;
+    /* 'custom' only means something once a day count is typed — it leaves as
+       last:<n> so the API treats it like any other relative window. */
+    const buckets = filters.createdBucket.flatMap(key => {
+      if (key !== 'custom') return [key];
+      const days = parseInt(debouncedDays, 10);
+      return days > 0 ? [`last:${days}`] : [];
+    });
+    if (buckets.length) p.created_bucket = buckets;
     return p;
-  }, [debouncedQ, segment, statusFilter, filters, vendorFilterId]);
+  }, [debouncedQ, debouncedDays, segment, statusFilter, filters, vendorFilterId]);
+
+  /* Ticking several boxes in a row is one intent, not three: collapse the
+     burst into a single fetch instead of firing (and cancelling) one each. */
+  const [appliedParams, setAppliedParams] = useState(listParams);
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedParams(listParams), 220);
+    return () => clearTimeout(t);
+  }, [listParams]);
 
   const listReqRef = useRef(0);
+  /* The in-flight list request. Ticking three boxes used to leave three
+     requests running; the last one's answer won but the server still worked
+     through all of them, and on a single-worker dev server that queue is what
+     you wait for. Superseded requests are now aborted. */
+  const listAbortRef = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
     if (!allowed) return;
     const token = ++listReqRef.current;
+    listAbortRef.current?.abort();
+    const controller = new AbortController();
+    listAbortRef.current = controller;
     setLoading(true);
     try {
-      const res = await api.get<{ data?: Record<string, unknown>[]; total?: number }>('/products', {
+      /* One round trip carries both the rows and the tab badges — the counts
+         come back on the list response instead of a parallel /products/stats. */
+      const res = await api.get<{
+        data?: Record<string, unknown>[];
+        total?: number;
+        counts?: { active?: number; inactive?: number };
+      }>('/products', {
+        signal: controller.signal,
         params: {
-          ...listParams,
+          ...appliedParams,
           supplier: statusTab === 'active' ? 'mapped' : 'zero',
           sort,
           page,
@@ -441,32 +446,25 @@ export default function Products() {
       const body = res.data ?? {};
       setProducts((Array.isArray(body.data) ? body.data : []).map(apiToCard));
       setTotal(Number(body.total ?? 0) || 0);
-    } catch {
-      if (token !== listReqRef.current) return;
+      setStats({
+        active:   Number(body.counts?.active) || 0,
+        inactive: Number(body.counts?.inactive) || 0,
+      });
+    } catch (err) {
+      // A cancel means a newer request owns the screen; leave it alone.
+      if (token !== listReqRef.current || isCanceled(err)) return;
       setProducts([]);
       setTotal(0);
     } finally {
       if (token === listReqRef.current) setLoading(false);
     }
-  }, [allowed, listParams, statusTab, sort, page, pageSize]);
+  }, [allowed, appliedParams, statusTab, sort, page, pageSize]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const refreshStats = useCallback(async () => {
-    if (!allowed) return;
-    try {
-      const res = await api.get<{ active?: number; inactive?: number }>('/products/stats', { params: listParams });
-      setStats({
-        active:   Number(res.data?.active) || 0,
-        inactive: Number(res.data?.inactive) || 0,
-      });
-    } catch {
-    }
-  }, [allowed, listParams]);
+  useEffect(() => () => listAbortRef.current?.abort(), []);
 
-  useEffect(() => { refreshStats(); }, [refreshStats]);
-
-  const reload = useCallback(() => { refresh(); refreshStats(); }, [refresh, refreshStats]);
+  const reload = useCallback(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
     if (detailId == null) return;
@@ -477,23 +475,9 @@ export default function Products() {
 
 
 
-  const visible = useMemo(() => {
-    let src = products;
-
-    if (filters.scoreRange.length) {
-      src = src.filter(p => filters.scoreRange.some(r => {
-        const [lo, hi] = r.split('–').map(s => parseFloat(s.trim()));
-        return p.rating >= lo && p.rating <= hi;
-      }));
-    }
-
-    if (filters.topProducts) {
-      const n = parseInt(filters.topProducts.replace(/\D/g, ''), 10);
-      src = [...src].sort((a, b) => b.rating - a.rating).slice(0, n);
-    }
-
-    return src;
-  }, [products, filters.scoreRange, filters.topProducts]);
+  /* Every remaining filter is applied server-side, so the page the API returns
+     is already the result set. */
+  const visible = products;
 
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -507,6 +491,8 @@ export default function Products() {
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
   const paged = visible;
+
+  const resultCount = total;
 
   if (!allowed) {
     return (
@@ -849,30 +835,30 @@ export default function Products() {
       />
       <aside className={`prd-filter-drawer ${filterOpen ? 'open' : ''}`} aria-hidden={!filterOpen}>
         <div className="prd-filter-head">
-          <div className="prd-filter-head-left">
-            <span className="prd-filter-head-icon" aria-hidden>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-              </svg>
-            </span>
-            <div className="prd-filter-head-titles">
-              <div className="prd-filter-head-title">Filters</div>
-              <div className="prd-filter-head-sub">Refine your product list</div>
+          <span className="prd-filter-head-icon" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+          </span>
+          <div className="prd-filter-head-titles">
+            <div className="prd-filter-head-title">Filters</div>
+            <div className="prd-filter-head-sub">
+              {activeFilterCount === 0
+                ? 'No filters applied'
+                : `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} applied`}
             </div>
           </div>
           <div className="prd-filter-head-actions">
             <button
-              className="prd-filter-icon-btn"
+              type="button"
+              className="prd-filter-clear-all"
               onClick={resetFilters}
-              aria-label="Reset filters"
-              title="Reset filters"
+              disabled={activeFilterCount === 0}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
+              Clear All
             </button>
             <button
+              type="button"
               className="prd-filter-icon-btn close"
               onClick={() => setFilterOpen(false)}
               aria-label="Close filters"
@@ -887,148 +873,120 @@ export default function Products() {
 
         {(() => {
           const counts: Record<string, number> = {
-            gstRate: filters.gstRate.length, segment: filters.segment.length,
-            createdDate: (filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0), hsn: filters.hsn.length,
-            hazType: filters.hazType.length, hazClass: filters.hazClass.length, uom: filters.uom.length,
-            condition: filters.condition.length, vendor: filters.vendor.length, scoreRange: filters.scoreRange.length,
-            topProducts: filters.topProducts ? 1 : 0, productOwner: filters.productOwner.length, inwardCount: filters.inwardCount.length,
+            segment: filters.segment.length,
+            hsn: filters.hsn.length,
+            hazClass: filters.hazClass.length,
+            condition: filters.condition.length,
+            createdDate: filters.createdBucket.length,
           };
-          const activeMeta = PANEL_META[activeCategory];
-          return (
-            <div className="prd-filter-body prd-md">
-              <div className="prd-md-rail">
-                {CATEGORY_ORDER.map(k => {
-                  const m = PANEL_META[k];
-                  const c = counts[k] ?? 0;
-                  return (
-                    <Tooltip key={k} label={CATEGORY_LABELS[k]} position="right">
-                      <button
-                        type="button"
-                        className={`prd-md-cat ${activeCategory === k ? 'active' : ''}`}
-                        onClick={() => setActiveCategory(k)}
-                        aria-label={CATEGORY_LABELS[k]}
-                      >
-                        <span className="prd-md-cat-ic" aria-hidden>
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{m.path}</svg>
-                        </span>
-                        {c > 0 && <span className="prd-md-cat-ct">{c}</span>}
-                      </button>
-                    </Tooltip>
-                  );
-                })}
-              </div>
 
-              <div className="prd-md-detail">
-                <div className="prd-md-dhead">
-                  <span className="prd-md-dhead-ic" aria-hidden>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{activeMeta.path}</svg>
-                  </span>
-                  <div className="prd-md-dhead-tx">
-                    <div className="prd-md-dhead-title">{CATEGORY_LABELS[activeCategory]}</div>
-                    <div className="prd-md-dhead-sub">{activeMeta.sub}</div>
-                  </div>
-                </div>
+          const renderOptions = (key: string): ReactNode => {
+            switch (key) {
+              case 'segment':
+                return segmentOpts.filter(s => s !== 'All Segments').map(v => (
+                  <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
+                ));
 
-                <div className="prd-md-dbody" key={activeCategory}>
-                  {activeCategory === 'gstRate' && gstRateOpts.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.gstRate.includes(v)} onChange={() => toggleMulti('gstRate', v)} />
+              case 'hsn':
+                return hsnOpts.map(v => (
+                  <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
+                ));
+
+              case 'hazClass':
+                return hazClassOpts.length === 0
+                  ? <div className="prd-filter-empty">No haz classifications available</div>
+                  : hazClassOpts.map(v => (
+                    <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
+                  ));
+
+              case 'condition':
+                return conditionOpts.map(v => (
+                  <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
+                ));
+
+              case 'createdDate':
+                return (<>
+                  {CREATED_BUCKETS.map(b => (
+                    <CheckRow
+                      key={b.key}
+                      label={b.label}
+                      checked={filters.createdBucket.includes(b.key)}
+                      onChange={() => {
+                        toggleMulti('createdBucket', b.key);
+                        // Leaving Custom drops the day count with it.
+                        if (b.key === 'custom' && filters.createdBucket.includes('custom')) {
+                          setFilters(prev => ({ ...prev, createdCustomDays: '' }));
+                        }
+                      }}
+                    />
                   ))}
-
-                  {activeCategory === 'segment' && segmentOpts.filter(s => s !== 'All Segments').map(v => (
-                    <CheckRow key={v} label={v} checked={filters.segment.includes(v)} onChange={() => toggleMulti('segment', v)} />
-                  ))}
-
-                  {activeCategory === 'createdDate' && (
-                    <div className="prd-filter-date-grid">
-                      <label className="prd-filter-date-field">
-                        <span>From</span>
-                        <div className="prd-filter-date-picker">
-                          <MasterDatePicker value={filters.createdFrom} onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))} placeholder="Select date" maxDate={filters.createdTo || undefined} />
-                        </div>
-                      </label>
-                      <label className="prd-filter-date-field">
-                        <span>To</span>
-                        <div className="prd-filter-date-picker">
-                          <MasterDatePicker value={filters.createdTo} onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))} placeholder="Select date" minDate={filters.createdFrom || undefined} />
-                        </div>
-                      </label>
+                  {filters.createdBucket.includes('custom') && (
+                    <div className="prd-filter-days">
+                      <span>Last</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={filters.createdCustomDays}
+                        placeholder="e.g. 10"
+                        aria-label="Number of days"
+                        autoFocus
+                        onChange={e => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+                          setFilters(prev => ({ ...prev, createdCustomDays: digits }));
+                        }}
+                      />
+                      <span>days</span>
                     </div>
                   )}
+                </>);
 
-                  {activeCategory === 'hsn' && hsnOpts.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.hsn.includes(v)} onChange={() => toggleMulti('hsn', v)} />
-                  ))}
+              case 'inwardCount':
+                return <FrozenRows options={INWARD_BUCKETS} />;
 
-                  {activeCategory === 'hazType' && (<>
-                    {HAZ_TYPES.map(v => {
-                      const selected = filters.hazType[0] === v;
-                      return (
-                        <label key={v} className="prd-filter-row">
-                          <input type="radio" name="hazType" checked={selected}
-                            onChange={() => setFilters(prev => ({ ...prev, hazType: [v], hazClass: v === 'NON HAZ' ? [] : prev.hazClass }))}
-                            onClick={() => { if (selected) setFilters(prev => ({ ...prev, hazType: [] })); }} />
-                          <span>{v}</span>
-                        </label>
-                      );
-                    })}
-                    {filters.hazType.length > 0 && (
-                      <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, hazType: [] }))}>Clear selection</button>
-                    )}
-                  </>)}
+              case 'invoiceCount':
+                return <FrozenRows options={INVOICE_BUCKETS} />;
 
-                  {activeCategory === 'hazClass' && (
-                    filters.hazType.length === 1 && filters.hazType[0] === 'NON HAZ'
-                      ? <div className="prd-filter-empty">Not applicable — "Non-Hazardous" is selected under Hazard Type. Switch it to "HAZ" or clear it to pick a classification.</div>
-                      : hazClassOpts.length === 0
-                        ? <div className="prd-filter-empty">No haz classifications available</div>
-                        : hazClassOpts.map(v => (
-                          <CheckRow key={v} label={v} checked={filters.hazClass.includes(v)} onChange={() => toggleMulti('hazClass', v)} />
-                        )))}
+              default:
+                return null;
+            }
+          };
 
-                  {activeCategory === 'uom' && uomOpts.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.uom.includes(v)} onChange={() => toggleMulti('uom', v)} />
-                  ))}
-
-                  {activeCategory === 'condition' && conditionOpts.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.condition.includes(v)} onChange={() => toggleMulti('condition', v)} />
-                  ))}
-
-                  {activeCategory === 'vendor' && vendorOpts.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.vendor.includes(v)} onChange={() => toggleMulti('vendor', v)} />
-                  ))}
-
-                  {activeCategory === 'scoreRange' && SCORE_RANGES.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.scoreRange.includes(v)} onChange={() => toggleMulti('scoreRange', v)} />
-                  ))}
-
-                  {activeCategory === 'topProducts' && (<>
-                    {TOP_PRODUCTS.map(v => (
-                      <label key={v} className="prd-filter-row">
-                        <input type="radio" name="topProducts" checked={filters.topProducts === v} onChange={() => setFilters(prev => ({ ...prev, topProducts: v }))} />
-                        <span>{v}</span>
-                      </label>
-                    ))}
-                    {filters.topProducts && (
-                      <button className="prd-filter-clear-mini" onClick={() => setFilters(prev => ({ ...prev, topProducts: '' }))}>Clear selection</button>
-                    )}
-                  </>)}
-
-                  {activeCategory === 'productOwner' && (ownerOpts.length === 0
-                    ? <div className="prd-filter-empty">No owners available</div>
-                    : ownerOpts.map(o => {
-                      const showBranch = ownerOpts.some(x => x.branchId !== o.branchId);
-                      const label = showBranch && o.branchName ? `${o.name} · ${o.branchName}` : o.name;
-                      const id = String(o.id);
-                      return (
-                        <CheckRow key={id} label={label} checked={filters.productOwner.includes(id)} onChange={() => toggleMulti('productOwner', id)} />
-                      );
-                    }))}
-
-                  {activeCategory === 'inwardCount' && INWARD_BUCKETS.map(v => (
-                    <CheckRow key={v} label={v} checked={filters.inwardCount.includes(v)} onChange={() => toggleMulti('inwardCount', v)} />
-                  ))}
-                </div>
-              </div>
+          return (
+            <div className="prd-filter-body">
+              {CATEGORY_ORDER.map(k => {
+                const m = PANEL_META[k];
+                const c = counts[k] ?? 0;
+                const open = openPanel === k;
+                return (
+                  <section key={k} className={`prd-filter-panel ${open ? 'open' : ''}`}>
+                    <button
+                      type="button"
+                      className="prd-filter-panel-head"
+                      onClick={() => togglePanel(k)}
+                      aria-expanded={open}
+                    >
+                      <span className="prd-fp-icon" aria-hidden>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">{m.path}</svg>
+                      </span>
+                      <span className="prd-fp-titles">
+                        <span className="prd-filter-panel-label">{CATEGORY_LABELS[k]}</span>
+                        <span className="prd-fp-sub">{m.sub}</span>
+                      </span>
+                      <span className="prd-filter-panel-right">
+                        {c > 0 && <span className="prd-filter-panel-count">{c}</span>}
+                        <svg className="prd-filter-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="6 9 12 15 18 9" />
+                        </svg>
+                      </span>
+                    </button>
+                    <div className="prd-fp-collapse" data-open={open ? 1 : 0}>
+                      <div className="prd-fp-collapse-inner">
+                        <div className="prd-filter-panel-body">{open && renderOptions(k)}</div>
+                      </div>
+                    </div>
+                  </section>
+                );
+              })}
             </div>
           );
         })()}
@@ -1036,11 +994,10 @@ export default function Products() {
         <div className="prd-filter-footer">
           <button className="prd-fbtn ghost" onClick={resetFilters}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-            Reset All
+            Reset
           </button>
           <button className="prd-fbtn primary" onClick={() => setFilterOpen(false)}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-            Apply Filters {activeFilterCount > 0 && <span className="prd-fbtn-count">{activeFilterCount}</span>}
+            Show Results ({resultCount})
           </button>
         </div>
       </aside>
@@ -1050,28 +1007,37 @@ export default function Products() {
   );
 }
 
-const PANEL_META: Record<string, { sub: string; bg: string; fg: string; solid: string; path: ReactNode }> = {
-  gstRate:      { sub: 'Select GST rate',        bg: '#d1fae5', fg: '#059669', solid: '#10b981', path: <><line x1="19" y1="5" x2="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></> },
-  segment:      { sub: 'Choose segment',         bg: '#fef3c7', fg: '#d97706', solid: '#f59e0b', path: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></> },
-  createdDate:  { sub: 'Pick a date range',      bg: '#dbeafe', fg: '#2563eb', solid: '#3b82f6', path: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></> },
-  hsn:          { sub: 'Enter HSN / SAC code',   bg: '#ede9fe', fg: '#7c3aed', solid: '#8b5cf6', path: <><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></> },
-  hazType:      { sub: 'Select hazard type',     bg: '#fee2e2', fg: '#dc2626', solid: '#ef4444', path: <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></> },
-  hazClass:     { sub: 'Select classification',  bg: '#e0e7ff', fg: '#4f46e5', solid: '#6366f1', path: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /> },
-  uom:          { sub: 'Select unit',            bg: '#cffafe', fg: '#0891b2', solid: '#06b6d4', path: <><path d="M21.3 15.3 8.7 2.7a1 1 0 0 0-1.4 0L2.7 7.3a1 1 0 0 0 0 1.4l12.6 12.6a1 1 0 0 0 1.4 0l4.6-4.6a1 1 0 0 0 0-1.4z" /><path d="m14.5 12.5-2 2" /><path d="m11.5 9.5-2 2" /><path d="m8.5 6.5-2 2" /></> },
-  condition:    { sub: 'Select condition',       bg: '#dcfce7', fg: '#16a34a', solid: '#22c55e', path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></> },
-  vendor:       { sub: 'Select supplier',        bg: '#e0f2fe', fg: '#0284c7', solid: '#0ea5e9', path: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></> },
-  scoreRange:   { sub: 'Set score range',        bg: '#fef9c3', fg: '#ca8a04', solid: '#eab308', path: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /> },
-  topProducts:  { sub: 'Highlight top products', bg: '#fce7f3', fg: '#db2777', solid: '#ec4899', path: <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18" /><polyline points="17 6 23 6 23 12" /></> },
-  productOwner: { sub: 'Select owner',           bg: '#f3e8ff', fg: '#9333ea', solid: '#a855f7', path: <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></> },
-  inwardCount:  { sub: 'Filter by inward count', bg: '#ffedd5', fg: '#ea580c', solid: '#f97316', path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></> },
+const PANEL_META: Record<string, { sub: string; path: ReactNode }> = {
+  segment:      { sub: 'Choose segment',           path: <><path d="M20.59 13.41 13.42 20.58a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></> },
+  hsn:          { sub: 'Enter HSN / SAC code',     path: <><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></> },
+  hazClass:     { sub: 'Select classification',    path: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /> },
+  condition:    { sub: 'Select condition',         path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></> },
+  createdDate:  { sub: 'Choose a time window',     path: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></> },
+  inwardCount:  { sub: 'Default buckets (frozen)', path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></> },
+  invoiceCount: { sub: 'Default buckets (frozen)', path: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></> },
 };
 
-const CATEGORY_ORDER = ['gstRate', 'segment', 'createdDate', 'hsn', 'hazType', 'hazClass', 'uom', 'condition', 'vendor', 'scoreRange', 'topProducts', 'productOwner', 'inwardCount'] as const;
+const CATEGORY_ORDER = ['segment', 'hsn', 'hazClass', 'condition', 'createdDate', 'inwardCount', 'invoiceCount'] as const;
 const CATEGORY_LABELS: Record<string, string> = {
-  gstRate: 'GST Rate', segment: 'Segment', createdDate: 'Creation Date', hsn: 'HSN / SAC',
-  hazType: 'Hazard Type', hazClass: 'Haz Class', uom: 'Unit (UOM)', condition: 'Condition',
-  vendor: 'Supplier', scoreRange: 'Score Range', topProducts: 'Top Products', productOwner: 'Owner', inwardCount: 'Inward Count',
+  segment: 'Product Segment', hsn: 'HSN / SAC Code', hazClass: 'Haz Classification',
+  condition: 'Product Condition', createdDate: 'Product Creation Date',
+  inwardCount: 'Inward Count Per Product', invoiceCount: 'Invoice Count Per Product',
 };
+
+/* Read-only bucket list for a section that has no API behind it yet. */
+function FrozenRows(props: { options: string[] }) {
+  return (
+    <>
+      {props.options.map(v => (
+        <label key={v} className="prd-filter-row is-frozen">
+          <input type="checkbox" checked={false} disabled readOnly />
+          <span className="prd-filter-row-txt">{v}</span>
+        </label>
+      ))}
+      <div className="prd-filter-empty">Default buckets — not connected to product data yet.</div>
+    </>
+  );
+}
 
 function CheckRow(props: { label: string; checked: boolean; onChange: () => void }) {
   const long = props.label.length > 28;
