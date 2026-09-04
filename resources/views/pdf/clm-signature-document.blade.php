@@ -339,14 +339,21 @@
       padding: 0;
     }
 
+    /* The configured height must be emitted on ONE line, and as `height`.
+       Two bugs lived here:
+       1. The value was split across lines, so Blade rendered
+          "max-height: 62 px;" — a space between the number and the unit makes
+          the declaration invalid, and dompdf drops it silently. The size set
+          in the draft therefore never reached the PDF at all.
+       2. Even valid, max-height could not drive the size: a wide logo hits
+          max-width first and its height then follows the aspect ratio, so
+          changing logo_height moved nothing. `height` sets it outright and
+          max-width stays only as an overflow guard. */
     .brand-logo {
       display: block;
-      max-width: 230px;
-      max-height:
-        {{ max(24, min(200, $headerLogoHeight)) }}
-        px;
+      height: {{ max(24, min(200, $headerLogoHeight)) }}px;
       width: auto;
-      height: auto;
+      max-width: 260px;
       margin: 0;
     }
 

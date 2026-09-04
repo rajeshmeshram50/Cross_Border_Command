@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
@@ -138,8 +139,29 @@ class HrTemplateDocxRenderer
     private static function localFile(?string $path): ?string
     {
         if (!$path) return null;
-        $disk = Storage::disk('public');
-        if (!$disk->exists($path)) return null;
+
+        /* Find the file on whichever disk it was actually written to.
+         *
+         * This hardcoded Storage::disk('public'), while FILESYSTEM_DISK is
+         * 'azure' in production. A logo stored in Azure Blob failed the
+         * exists() check on the public disk, localFile() returned null, and the
+         * header logo was silently dropped from the generated DOCX — the
+         * reported "company logo missing in downloaded doc". The format
+         * conversion below never even ran; it failed one line earlier, which is
+         * why a plain PNG went missing too.
+         *
+         * The configured disk is tried first, then 'public' for rows written
+         * before the move to Azure. Note the exists() check was also what made
+         * the remote-adapter fallback further down unreachable. */
+        $disk = null;
+        foreach (array_unique([(string) config('filesystems.default'), 'public']) as $name) {
+            try {
+                $candidate = Storage::disk($name);
+                if ($candidate->exists($path)) { $disk = $candidate; break; }
+            } catch (Throwable $e) { /* disk not configured — try the next */ }
+        }
+        if (!$disk) return null;
+
         try {
             $local = $disk->path($path);
             if (is_string($local) && is_file($local)) return $local;
@@ -186,6 +208,43 @@ class HrTemplateDocxRenderer
             },
             $html,
         ) ?? $html;
+    }
+
+    /**
+     * Last resort: fetch the logo over HTTP into a temp file PhpWord can embed.
+     *
+     * Restricted to the app's own origin and the configured Azure Blob account.
+     * The value comes from a tenant-editable header config, so an unrestricted
+     * fetch here would let a tenant point the server at any internal address.
+     */
+    private static function logoFromUrl(?string $url): ?string
+    {
+        $url = trim((string) $url);
+        if ($url === '' || !preg_match('~^https?://~i', $url)) return null;
+
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $allowed = array_filter([
+            strtolower((string) parse_url((string) config('app.url'), PHP_URL_HOST)),
+            strtolower((string) parse_url((string) config('filesystems.disks.azure.url', env('AZURE_STORAGE_URL', '')), PHP_URL_HOST)),
+        ]);
+        if (!$host || !in_array($host, $allowed, true)) {
+            Log::warning('DOCX header logo URL refused (host not allowed)', ['host' => $host]);
+            return null;
+        }
+
+        try {
+            $res = Http::timeout(8)->get($url);
+            if (!$res->successful()) return null;
+            $ext = strtolower(pathinfo((string) parse_url($url, PHP_URL_PATH), PATHINFO_EXTENSION)) ?: 'png';
+            $tmp = tempnam(sys_get_temp_dir(), 'cbc_logo_') . '.' . $ext;
+            file_put_contents($tmp, $res->body());
+            // Route it back through the format guard: a fetched SVG/WEBP still
+            // needs converting before PhpWord will take it.
+            return self::resolveDocxLogo($tmp) ?: null;
+        } catch (Throwable $e) {
+            Log::warning('DOCX header logo fetch failed', ['error' => $e->getMessage()]);
+            return null;
+        }
     }
 
     private static function resolveDocxLogo(?string $logoPath): ?string
@@ -247,10 +306,24 @@ class HrTemplateDocxRenderer
         $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
         $titleCell = $row1->addCell(7500, ['valign' => 'center']);
 
-        $absLogo = self::resolveDocxLogo($logoPath);
+        /* logo_path first, then logo_url.
+         *
+         * The PDF renders <img src="{logo_url}"> and has always worked; the
+         * DOCX read logo_path alone, and PhpWord needs a real local file. So
+         * whenever logo_path was null, stale, or not resolvable on the current
+         * disk, the Word file came out with NO logo while the PDF still showed
+         * one -- and silently, because the block below only ran when a path
+         * resolved. Falling back to the URL the PDF already trusts makes the
+         * two exports agree. */
+        $absLogo = self::resolveDocxLogo($logoPath) ?: self::logoFromUrl($cfg['logo_url'] ?? null);
         if ($absLogo) {
             try { $logoCell->addImage($absLogo, ['height' => $logoH]); }
-            catch (\Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
+            catch (Throwable $e) { $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']); }
+        } elseif ($logoPath || !empty($cfg['logo_url'])) {
+            /* A logo WAS configured but could not be resolved. Say so in the
+               document and in the log rather than shipping a silent gap. */
+            Log::warning('DOCX header logo unresolved', ['logo_path' => $logoPath, 'logo_url' => $cfg['logo_url'] ?? null]);
+            $logoCell->addText('[Logo]', ['italic' => true, 'color' => '808080']);
         }
         $align = $hAlign === 'left' ? 'left' : ($hAlign === 'center' ? 'center' : 'right');
         if ($title !== '')    $titleCell->addText($title,    ['bold' => true, 'size' => 14], ['alignment' => $align]);
