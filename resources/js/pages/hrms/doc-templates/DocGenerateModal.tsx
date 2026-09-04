@@ -18,6 +18,10 @@ interface HeaderConfig {
   text_color?: string | null;
   show_logo?: boolean | null;
   show_title?: boolean | null;
+  /* Configured logo height in px, clamped 24-200 by the template editor.
+     Legacy rows predate the field and carry undefined — 62 is the default
+     the editor, the DOCX renderer and the signature PDF all fall back to. */
+  logo_height?: number | null;
 }
 
 interface FooterConfig {
@@ -574,6 +578,18 @@ function DocHeader({ cfg, letterhead }: { cfg?: HeaderConfig | null; letterhead?
     || (cfg.logo_path ? `/storage/${cfg.logo_path}` : null)
     || letterhead?.logo_url
     || null;
+  /* The logo renders at the height the template was DESIGNED with (#2).
+   *
+   * This preview used to pin it to max-height 40px, ignoring header_config
+   * .logo_height entirely — so a logo laid out at the 62px default came back
+   * squashed, and one set to the 200px maximum lost two thirds of its height.
+   *
+   * Same clamp and same fallback as the template editor and the renderers, so
+   * what is reviewed here is what gets signed. `height` is set outright rather
+   * than as a max: a max only ever shrinks, which is why raising logo_height
+   * moved nothing. Width follows the aspect ratio, bounded generously so a
+   * wide wordmark is not clipped at its natural height. */
+  const logoH = Math.max(24, Math.min(200, Number(cfg.logo_height) || 62));
   const title    = fillOrgName(cfg.title, org);
   const subtitle = fillOrgName(cfg.subtitle, org);
   const hasAnything = (showLogo && logoSrc) || (showTitle && (title || subtitle));
@@ -582,6 +598,7 @@ function DocHeader({ cfg, letterhead }: { cfg?: HeaderConfig | null; letterhead?
     <div className="dgm-doc-header" style={{ background: cfg.background || '#0f172a', color: cfg.text_color || '#fff' }}>
       {showLogo && logoSrc && (
         <img src={logoSrc} alt="Logo" className="dgm-doc-logo"
+          style={{ height: logoH, maxWidth: Math.max(180, logoH * 3) }}
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
       )}
       {showTitle && (title || subtitle) && (
@@ -718,7 +735,14 @@ function ScopedStyles() {
         box-shadow: 0 10px 30px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04);
       }
       .dgm-doc-header { display: flex; align-items: center; gap: 16px; padding: 16px 28px; }
-      .dgm-doc-logo { max-height: 40px; max-width: 160px; object-fit: contain; border-radius: 6px; }
+      /* Height and max-width come from the configured logo_height, inline (#2).
+         They CANNOT live here: a max-height in the stylesheet outranks the
+         inline height, which is how the configured size was being thrown away.
+         border-radius is gone with them — rounding the corners of a
+         rectangular wordmark shaves off the artwork itself.
+         flex-shrink: 0 keeps the title block, which is flex: 1, from
+         squeezing the logo on a narrow screen. */
+      .dgm-doc-logo { object-fit: contain; flex-shrink: 0; }
       .dgm-doc-title { font-weight: 800; font-size: 15px; }
       .dgm-doc-sub { font-size: 11px; opacity: 0.78; margin-top: 2px; }
       .dgm-doc-footer { display: flex; align-items: center; padding: 12px 28px; font-size: 11px; border-top: 1px solid #e5e7eb; }

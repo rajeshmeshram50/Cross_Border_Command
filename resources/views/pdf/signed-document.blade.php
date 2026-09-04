@@ -40,6 +40,19 @@
   $hBg      = (string) ($h['background'] ?? '#ffffff');
   $hFg      = (string) ($h['text_color'] ?? '#111827');
   $showLogo = ($h['show_logo'] ?? true) && !empty($logoDataUri);
+  /* Configured logo height, same clamp and same 62px fallback as the template
+     editor, the DOCX renderer and the CLM signature PDF (#2). This blade used
+     to hard-code max-height:50px, so the size chosen in the editor never
+     reached the finished PDF.
+
+     The header band is a FIXED-height fragment repeated on every page, so it
+     has to be grown to match or a tall logo is simply cut off by it. 30px is
+     the breathing room the original 80px band left around its 50px logo; the
+     page's top margin and the band's offset are derived from the same figure
+     so the three stay in step instead of being three constants to keep
+     aligned by hand. */
+  $logoH   = max(24, min(200, (int) ($h['logo_height'] ?? 62)));
+  $headerH = max(80, $logoH + 30);
   $showTitle= ($h['show_title'] ?? true);
 
   $fText    = $fillOrg((string) ($f['text']  ?? ''));
@@ -54,10 +67,10 @@
 <meta charset="utf-8" />
 <title>{{ $row->template?->name ?? 'Signed Document' }}</title>
 <style>
-  @page { margin: 110px 40px 70px 40px; }
+  @page { margin: {{ $headerH + 30 }}px 40px 70px 40px; }
   body  { font-family: DejaVu Sans, Arial, sans-serif; font-size: 12px; color: #1f2937; line-height: 1.6; }
   header {
-    position: fixed; top: -90px; left: 0; right: 0; height: 80px;
+    position: fixed; top: -{{ $headerH + 10 }}px; left: 0; right: 0; height: {{ $headerH }}px;
     background: {{ $hBg }}; color: {{ $hFg }};
     border-bottom: 2px solid #f3f4f6; padding: 0 8px;
   }
@@ -96,7 +109,13 @@
     <tr>
       <td class="logo">
         @if($showLogo)
-          <img src="{{ $logoDataUri }}" style="max-height:50px; max-width:160px;" />
+          {{-- `height` outright, not max-height: a max only shrinks, and a wide
+               logo hits max-width first and takes its height from the aspect
+               ratio — which is why changing logo_height moved nothing here.
+               max-width stays purely as an overflow guard. Written on one line
+               because a value split across lines renders as "62 px", and
+               dompdf drops the invalid declaration silently. --}}
+          <img src="{{ $logoDataUri }}" style="height:{{ $logoH }}px; width:auto; max-width:240px;" />
         @endif
       </td>
       <td class="title">
