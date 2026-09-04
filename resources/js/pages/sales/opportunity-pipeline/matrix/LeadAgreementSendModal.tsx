@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import api from '../../../../api';import { resolveFileUrl } from '../../../../utils/resolveFileUrl';import { useToast } from '../../../../contexts/ToastContext';
+import api from '../../../../api';
+/* Force-download helper. A cross-origin <a download> is IGNORED by the browser
+   (see downloadFile.ts) — on Azure the signed PDFs are a different origin, so
+   the link opened the file instead of saving it. */
+import { downloadFile } from '../../../../utils/downloadFile';import { resolveFileUrl } from '../../../../utils/resolveFileUrl';import { useToast } from '../../../../contexts/ToastContext';
 import Tooltip from '../../../../components/ui/Tooltip';
 import WorklistPager from '../../../../components/ui/WorklistPager';
 import { SigningTrackerModal } from '../SigningTrackerModal';
@@ -270,6 +274,20 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   // lists. Default 5 (Evidence-Vault feel); user can bump it.
   const [tdPerPage, setTdPerPage] = useState(5);
   const [agrPerPage, setAgrPerPage] = useState(5);
+  /* One download at a time, per button.
+     downloadFile() streams the file through the backend, which on a large
+     signed PDF takes long enough that an impatient second click fired a second
+     stream — two saves of the same file, and the browser prompting twice. The
+     key is per-row, so downloading one document never disables another's. */
+  const [dlBusy, setDlBusy] = useState<string | null>(null);
+  const runDownload = async (key: string, url: string | null | undefined, name: string) => {
+    if (!url || dlBusy) return;
+    setDlBusy(key);
+    try { await downloadFile(url, name); }
+    catch { toast.error('Download failed', 'Could not download the file.'); }
+    finally { setDlBusy(null); }
+  };
+
   const [previewingId, setPreviewingId] = useState<number | null>(null);
   /* Applicable-party "+N" popover — click the badge to see the full list of
    * parties (mirrors the segment "+N" popovers on the customer/consignee
@@ -716,6 +734,19 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
   const handlePreview = async (agreementId: number) => {
     if (!leadId) return;
     setPreviewingId(agreementId);
+
+    /* Open the tab NOW, synchronously, while the click is still the current
+       user gesture — then point it at the blob once the request returns.
+       window.open() used to run AFTER `await api.post(...)`, and a browser only
+       honours it inside a gesture-initiated call stack. The await ends that
+       stack, so Chrome blocked every preview and the user was told to allow
+       popups for something they had just clicked.
+       'noopener' is deliberately NOT passed: it makes window.open() return
+       null, and the handle is needed to navigate the tab. opener is cleared
+       manually below, which gives the same protection. */
+    const w = window.open('', '_blank');
+    if (w) { try { w.opener = null; } catch { /* already blocked by the browser */ } }
+
     try {
       const resp = await api.post(
         '/clm/signature-requests/agreement-preview',
@@ -724,11 +755,18 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
       );
       const blob = new Blob([resp.data], { type: 'application/pdf' });
       const url  = URL.createObjectURL(blob);
-      const w = window.open(url, '_blank', 'noopener,noreferrer');
-      if (!w) toast.error('Popup blocked', 'Allow popups to view the preview.');
+      if (w) {
+        w.location.replace(url);
+      } else {
+        /* Only reachable if the browser blocks even a gesture-initiated open
+           (a hard block in settings). Nothing to do but say so. */
+        toast.error('Popup blocked', 'Allow popups to view the preview.');
+      }
       // Revoke the blob URL after the tab has had time to load it.
       setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
     } catch (e: any) {
+      // Close the placeholder tab, or a failed preview leaves a blank one behind.
+      try { w?.close(); } catch { /* ignore */ }
       const msg = e?.response?.data?.message ?? 'Could not render the preview.';
       toast.error('Preview failed', msg);
     } finally {
@@ -1370,16 +1408,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                       the signed invoice back) had no exit. */}
                                   {sig?.signed_url && (
                                     <Tooltip label="View / download signed PDF">
-                                      <a href={sig.signed_url} target="_blank" rel="noreferrer" className="lasm-btn-icon" aria-label="Signed PDF" download>
+                                      <button type="button" disabled={dlBusy === `sig-${sig.signature_request_id}`} onClick={() => { void runDownload(`sig-${sig.signature_request_id}`, sig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                      </a>
+                                      </button>
                                     </Tooltip>
                                   )}
                                   {sig?.certificate_url && (
                                     <Tooltip label="Certificate of Completion">
-                                      <a href={sig.certificate_url} target="_blank" rel="noreferrer" className="lasm-btn-cert" aria-label="Certificate" download>
+                                      <button type="button" disabled={dlBusy === `cert-${sig.signature_request_id}`} onClick={() => { void runDownload(`cert-${sig.signature_request_id}`, sig.certificate_url, 'certificate.pdf'); }} className="lasm-btn-cert" aria-label="Certificate">
                                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
-                                      </a>
+                                      </button>
                                     </Tooltip>
                                   )}
                                 </div>
@@ -1511,9 +1549,9 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                                 {/* Signed PDF + Certificate — once the doc is signed. */}
                                 {tdSig?.signed_url && (
                                   <Tooltip label="View / download signed PDF">
-                                    <a href={tdSig.signed_url} target="_blank" rel="noreferrer" className="lasm-btn-icon" aria-label="Signed PDF" download>
+                                    <button type="button" disabled={dlBusy === `td-${tdSig.signature_request_id}`} onClick={() => { void runDownload(`td-${tdSig.signature_request_id}`, tdSig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                    </a>
+                                    </button>
                                   </Tooltip>
                                 )}
                                 {tdSig?.certificate_url && (
@@ -1913,16 +1951,16 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               </Tooltip>
                               {sig?.signed_url && (
                                 <Tooltip label="View / download signed PDF">
-                                  <a href={sig.signed_url} target="_blank" rel="noreferrer" className="lasm-btn-icon" aria-label="Signed PDF" download>
+                                  <button type="button" disabled={dlBusy === `sig-${sig.signature_request_id}`} onClick={() => { void runDownload(`sig-${sig.signature_request_id}`, sig.signed_url, 'signed-document.pdf'); }} className="lasm-btn-icon" aria-label="Signed PDF">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                  </a>
+                                  </button>
                                 </Tooltip>
                               )}
                               {sig?.certificate_url && (
                                 <Tooltip label="Certificate of Completion">
-                                  <a href={sig.certificate_url} target="_blank" rel="noreferrer" className="lasm-btn-cert" aria-label="Certificate" download>
+                                  <button type="button" disabled={dlBusy === `cert-${sig.signature_request_id}`} onClick={() => { void runDownload(`cert-${sig.signature_request_id}`, sig.certificate_url, 'certificate.pdf'); }} className="lasm-btn-cert" aria-label="Certificate">
                                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg>
-                                  </a>
+                                  </button>
                                 </Tooltip>
                               )}
                             </div>
