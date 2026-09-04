@@ -205,6 +205,7 @@ class AttendanceController extends Controller
 
     public function employeeSummary(Request $request, string $employeeId)
     {
+
         $user = $request->user();
         if (!$user) abort(401, 'Unauthenticated');
 
@@ -513,6 +514,7 @@ class AttendanceController extends Controller
     {
         return in_array($user->user_type, ['branch_user', 'employee'], true);
     }
+    
 
     public function index(Request $request)
     {
