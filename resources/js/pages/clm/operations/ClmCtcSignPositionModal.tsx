@@ -81,7 +81,13 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   const [pageCount, setPageCount] = useState(1);
   const [pdfReady, setPdfReady] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const dragRef = useRef<{ mode: 'move' | 'resize'; sx: number; sy: number; init: Box } | null>(null);
+  /* `target` is the box this gesture GRABBED. The pointermove listener is
+     registered once at pointerdown and closes over that render's activeKey /
+     activeBoxIdx, so selecting a box and dragging it in the same press would
+     otherwise move the previously selected one - which is why a box used to
+     need one click to select and a second to drag. */
+  type BoxTarget = { key: string; boxIdx: number };
+  const dragRef = useRef<{ mode: 'move' | 'resize'; sx: number; sy: number; init: Box; target?: BoxTarget } | null>(null);
   // Canvas-rendered preview (replaces the old <iframe> native PDF viewer).
   // Painting the page bitmap at exactly the wrapper width keeps the page
   // edge-to-edge with the wrapper, so the drag overlay's px↔pt conversion
@@ -183,12 +189,13 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
   }, [previewUrl]);
 
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-  const setActive = (patch: Partial<Box>) => setBoxes(b => {
-    const arr = (b[activeKey] ?? []).slice();
+  const setActive = (patch: Partial<Box>, target?: BoxTarget) => setBoxes(b => {
+    const key = target?.key ?? activeKey;
+    const arr = (b[key] ?? []).slice();
     if (!arr.length) return b;
-    const idx = Math.min(activeBoxIdx, arr.length - 1);
+    const idx = Math.min(target?.boxIdx ?? activeBoxIdx, arr.length - 1);
     arr[idx] = { ...arr[idx], ...patch };
-    return { ...b, [activeKey]: arr };
+    return { ...b, [key]: arr };
   });
 
   /* Add / remove a signature box for the ACTIVE signer. */
@@ -237,11 +244,12 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
      To go to a specific box, click its chip (Sign 2 p3) - that is explicit. */
   const selectSigner = (key: string) => { setActiveKey(key); setActiveBoxIdx(0); };
 
-  const onDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
-    if (!active) return;
+  const onDown = (e: React.PointerEvent, mode: 'move' | 'resize', seed?: Box, target?: BoxTarget) => {
+    const base = seed ?? active;
+    if (!base) return;
     e.preventDefault(); e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    dragRef.current = { mode, sx: e.clientX, sy: e.clientY, init: { ...active } };
+    dragRef.current = { mode, sx: e.clientX, sy: e.clientY, init: { ...base }, target };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
   };
@@ -249,8 +257,8 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
     const d = dragRef.current; if (!d || wrapW <= 0) return;
     const ptPerPx = A4_W / wrapW;
     const dx = (e.clientX - d.sx) * ptPerPx, dy = (e.clientY - d.sy) * ptPerPx;
-    if (d.mode === 'move') setActive({ x: clamp(d.init.x + dx, 0, A4_W - d.init.width), y: clamp(d.init.y + dy, 0, A4_H - d.init.height) });
-    else setActive({ width: clamp(d.init.width + dx, 40, A4_W - d.init.x), height: clamp(d.init.height + dy, 24, A4_H - d.init.y) });
+    if (d.mode === 'move') setActive({ x: clamp(d.init.x + dx, 0, A4_W - d.init.width), y: clamp(d.init.y + dy, 0, A4_H - d.init.height) }, d.target);
+    else setActive({ width: clamp(d.init.width + dx, 40, A4_W - d.init.x), height: clamp(d.init.height + dy, 24, A4_H - d.init.y) }, d.target);
   };
   const onUp = () => { dragRef.current = null; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
 
@@ -366,7 +374,7 @@ export default function ClmCtcSignPositionModal({ t, contractId, code, title, si
                   if (!b || b.page !== viewPage) return null;
                   const on = s.key === activeKey && bi === activeBoxIdx;
                   return (
-                    <div key={`${s.key}:${bi}`} onPointerDown={e => { if (!on) { e.stopPropagation(); setActiveKey(s.key); setActiveBoxIdx(bi); return; } onDown(e, 'move'); }}
+                    <div key={`${s.key}:${bi}`} onPointerDown={e => { if (!on) { setActiveKey(s.key); setActiveBoxIdx(bi); setViewPage(b.page ?? 0); onDown(e, 'move', b, { key: s.key, boxIdx: bi }); return; } onDown(e, 'move'); }}
                       style={{ position: 'absolute', left: b.x * pxPerPt, top: b.y * pxPerPt, width: b.width * pxPerPt, height: b.height * pxPerPt, border: `2px ${on ? 'solid' : 'dashed'} ${on ? '#7C3AED' : 'rgba(124,58,237,.45)'}`, borderRadius: 5, background: on ? 'rgba(124,58,237,.14)' : 'rgba(124,58,237,.05)', cursor: on ? 'move' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', touchAction: 'none', opacity: on ? 1 : 0.65 }}>
                       <span style={{ fontSize: 8, fontWeight: 800, color: '#6D28D9', background: `linear-gradient(135deg,${grad})`, WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent', pointerEvents: 'none', whiteSpace: 'nowrap', overflow: 'hidden', maxWidth: '90%' }}>✒ {s.name || `Signer ${i + 1}`}{list.length > 1 ? ` · ${bi + 1}` : ''}</span>
                       {on && <div onPointerDown={e => onDown(e, 'resize')} style={{ position: 'absolute', right: -5, bottom: -5, width: 12, height: 12, borderRadius: 3, background: '#7C3AED', border: '1.5px solid #fff', cursor: 'nwse-resize', touchAction: 'none' }} />}
