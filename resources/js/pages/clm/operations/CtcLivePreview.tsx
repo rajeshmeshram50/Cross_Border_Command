@@ -104,6 +104,17 @@ export default function CtcLivePreview({
     const stage = scrollRef.current;
     if (!doc || !stage) return;
     let cancelled = false;
+    /* The RenderTask has to be held so it can be CANCELLED.
+     *
+     * Without this the cleanup only flipped `cancelled`, which stops the loop
+     * starting the next page but does nothing about the paint already running
+     * on the current one. Re-render while that is in flight — which is exactly
+     * what uploading a document does — and two tasks target the same canvas at
+     * once, while `canvas.width = …` resets it underneath both. pdf.js does not
+     * defend against that: the output is a half-painted or inverted page, and
+     * page 1 gets it every time because it is the one always mid-paint when the
+     * new render begins. That is the reported "first page glitches / flips". */
+    let task: { cancel: () => void } | null = null;
     (async () => {
       for (let i = 1; i <= doc.numPages; i++) {
         const canvas = canvasRefs.current[i - 1];
@@ -119,10 +130,21 @@ export default function CtcLivePreview({
         canvas.style.width = '100%';
         canvas.style.height = 'auto';
         const ctx = canvas.getContext('2d');
-        if (ctx) await page.render({ canvasContext: ctx, viewport: vp }).promise;
+        if (!ctx) continue;
+        const t = page.render({ canvasContext: ctx, viewport: vp });
+        task = t;
+        try {
+          await t.promise;
+        } catch {
+          /* A cancelled task rejects. That is the normal path when a newer
+             render supersedes this one, so it is not an error worth surfacing. */
+          return;
+        }
+        task = null;
+        if (cancelled) return;
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; task?.cancel(); };
   }, [status, docVersion]);
 
   // Keep the page counter in sync with the scroll position.

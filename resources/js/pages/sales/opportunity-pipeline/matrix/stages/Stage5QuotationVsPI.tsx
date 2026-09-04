@@ -100,7 +100,7 @@ const ccyCode = (c: string | null): string => {
   return code || '—';
 };
 
-export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange, mandatoryIncomplete = false, locked = false }: StageProps) {
+export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead, onPiChange, piDocGate = 'ok', locked = false }: StageProps) {
   const toast = useToast();
   const leadId = header.leadId ?? null;
 
@@ -549,14 +549,29 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
    * Trade-Licence doc for the customer AND the chosen consignee is uploaded.
    * The check is split across three points because the consignee isn't known
    * until the PI form itself (quotations may each name a different one):
-   *   1. HERE — `mandatoryIncomplete`, the CUSTOMER's tally, derived by the
-   *      parent (SalesMatrixDetail) from the vault fetch it already makes for
-   *      the left "Customer Details" card. Greys the Create PI button.
+   *   1. HERE — `piDocGate`, the CUSTOMER's tally, derived by the parent
+   *      (SalesMatrixDetail) from the vault fetch it already makes for the
+   *      left "Customer Details" card. Greys the Create PI button.
    *   2. Create-PI wizard, Step 1 → Step 2 — probes
    *      /sales/proforma-invoices/party-docs-check for the customer + the
    *      just-picked consignee.
    *   3. The server, on save / convert — the authoritative gate.
-   * Trade documents are intentionally EXCLUDED at every point. */
+   * Trade documents are intentionally EXCLUDED at every point.
+   *
+   * Anything other than 'ok' blocks. 'checking' HARD-disables (same treatment
+   * as this stage's own load window — there is no user action to take yet, and
+   * it resolves on its own in a moment); 'incomplete' and 'error' stay soft so
+   * the click can explain why and point at the Customer Details card. */
+  const docsBlocked  = piDocGate !== 'ok';
+  const docsChecking = piDocGate === 'checking';
+  const docsMsg =
+    piDocGate === 'checking'
+      ? 'Checking the customer’s Standard Documents…'
+      : piDocGate === 'error'
+        ? 'Couldn’t check the customer’s Standard Documents — open Customer Details on the left to retry'
+        : piDocGate === 'incomplete'
+          ? 'Upload all the customer’s Standard Documents (KYC, Due Diligence & Licences) before creating a PI'
+          : undefined;
 
   const colSpan = docType === 'quotation' ? 7 : 9;
 
@@ -682,9 +697,9 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
               // click right after refresh can't create a second PI before the
               // existing-PI status has hydrated. Business-rule cases (already has
               // PI / locked / docs pending) stay soft so their "why" toast shows.
-              disabled={loading || anyActing}
-              style={(loading || anyActing || locked || livePisCount > 0 || mandatoryIncomplete) ? { opacity: 0.5, cursor: (loading || anyActing) ? 'wait' : 'not-allowed' } : undefined}
-              title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : undefined}
+              disabled={loading || anyActing || docsChecking}
+              style={(loading || anyActing || docsChecking || locked || livePisCount > 0 || docsBlocked) ? { opacity: 0.5, cursor: (loading || anyActing || docsChecking) ? 'wait' : 'not-allowed' } : undefined}
+              title={anyActing ? 'Please wait — an action is in progress…' : loading ? 'Checking the latest quotation / PI status…' : locked ? 'Locked — the Proforma Invoice has been signed' : livePisCount > 0 ? 'A Proforma Invoice already exists for this opportunity' : docsMsg}
               onClick={() => {
                 // Block while a row action (PDF view/download/email) is in flight.
                 if (anyActing) { toast.info('Please wait', 'An action is already in progress.'); return; }
@@ -702,7 +717,15 @@ export default function Stage5QuotationVsPI({ header, onPrev, onNext, reloadLead
                   toast.warning('Only one PI per opportunity', 'A single lead can have only one Proforma Invoice.');
                   return;
                 }
-                if (mandatoryIncomplete) {
+                if (docsChecking) {
+                  toast.info('Please wait', 'Still checking the customer’s Standard Documents…');
+                  return;
+                }
+                if (piDocGate === 'error') {
+                  toast.warning('Customer documents unknown', 'We couldn’t load the customer’s Standard Documents, so a PI can’t be started. Open Customer Details in the CLM panel on the left to retry.');
+                  return;
+                }
+                if (piDocGate === 'incomplete') {
                   toast.warning('Standard documents pending', 'Upload all Standard Documents (KYC, Due Diligence & Licences) for the customer to 100% before creating a PI. The consignee’s documents are checked once you pick it inside the form.');
                   return;
                 }

@@ -20,6 +20,7 @@ use App\Support\MasterVisibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -1010,7 +1011,19 @@ class ClmAgreementController extends Controller
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $client    = \App\Models\Client::find($row->client_id);
-        $urlPath   = (isset($headerCfg['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerCfg['logo_url'], $lm)) ? $lm[1] : null;
+        /* A local URL is /storage/<key>; an Azure blob URL is
+           https://<account>.blob.core.windows.net/<container>/<key>. Matching
+           only the first left blob URLs yielding nothing, so this candidate was
+           dead on Azure as well as the ones after it. */
+        $urlPath = null;
+        $rawLogoUrl = (string) ($headerCfg['logo_url'] ?? '');
+        if ($rawLogoUrl !== '') {
+            if (preg_match('#/storage/(.+)$#', $rawLogoUrl, $lm)) {
+                $urlPath = $lm[1];
+            } elseif (preg_match('#^https?://[^/]+/[^/]+/(.+)$#', $rawLogoUrl, $lm)) {
+                $urlPath = $lm[1];   // strip scheme, host and container
+            }
+        }
         $logoAbs   = null;
         /* BRANCH logo before the client one.
          * The chain ended at $client->logo, and branding in this product is
@@ -1020,10 +1033,28 @@ class ClmAgreementController extends Controller
          * candidate and the Word file came out with no logo at all, even though
          * the branch it belongs to has one. */
         $branch = $row->branch_id ? \App\Models\Branch::find($row->branch_id) : null;
+        /* Resolve on whichever disk the file actually lives on.
+         *
+         * This asked Storage::disk('public') for both exists() AND path(),
+         * while FILESYSTEM_DISK is 'azure' in production. Two failures that
+         * compounded: exists() was false for every candidate, and path() is
+         * local-adapter-only anyway, so even a hit would have handed PhpWord
+         * something it cannot open -- the catch swallowed that and moved on.
+         * The loop could not succeed on Azure whatever the logo was, which is
+         * why the Word file carried the company NAME but no mark.
+         *
+         * The candidate chain (header -> url -> branch -> client) is
+         * unchanged; only the disk access under it is fixed. */
         foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $branch?->logo, $client?->logo]) as $path) {
-            try {
-                if (Storage::disk('public')->exists($path)) { $logoAbs = Storage::disk('public')->path($path); break; }
-            } catch (\Throwable $e) { /* try next candidate */ }
+            $logoAbs = self::docxLogoFile($path);
+            if ($logoAbs) break;
+        }
+        if (!$logoAbs) {
+            Log::warning('Agreement DOCX header logo unresolved', [
+                'agreement_id' => $row->id,
+                'logo_path'    => $headerCfg['logo_path'] ?? null,
+                'logo_url'     => $headerCfg['logo_url'] ?? null,
+            ]);
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
@@ -1332,5 +1363,6 @@ class ClmAgreementController extends Controller
 
         return $pdf->stream('agreement-preview.pdf');
     }
+
 
 }

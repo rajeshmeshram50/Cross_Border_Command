@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
 
 /**
@@ -536,23 +537,76 @@ trait HandlesDocxHtmlRoundtrip
         if ($showLogo || $showTitle) {
             $header = $section->addHeader();
             $hAlign = $align($headerCfg['align'] ?? 'right', 'right');
-            if ($showLogo && $logoAbsPath && is_file($logoAbsPath)) {
+            /* Logo and title share ONE ROW, not two stacked blocks.
+             *
+             * addImage() and addText() are separate block elements, so the
+             * logo landed on its own line above the title while the editor
+             * showed them side by side at the same height. A two-cell table
+             * puts them on one line and vertically centres both, which is what
+             * the editor draws — the same arrangement HrTemplateDocxRenderer
+             * already uses for HR templates.
+             *
+             * The logo keeps its OWN alignment inside its cell, derived from
+             * where it was actually placed. It used to reuse $hAlign, the
+             * TITLE's alignment, so a right-aligned title dragged the logo to
+             * the right edge even though the editor showed it on the left.
+             * The editor free-positions it via header.logo_pos — an {x,y}
+             * percentage of the band with a CENTRE anchor (see ClmCtcForm).
+             * Word cannot reproduce that, so x is snapped to the nearest of
+             * left / center / right by thirds. */
+            $logoX = $headerCfg['logo_pos']['x'] ?? null;
+            if (is_numeric($logoX)) {
+                $logoX = max(0, min(100, (float) $logoX));
+                $logoAlign = $logoX < 34 ? 'left' : ($logoX > 66 ? 'right' : 'center');
+            } else {
+                $logoAlign = $align($headerCfg['logo_align'] ?? null, 'left');
+            }
+
+            $title = trim((string) ($headerCfg['title'] ?? ''));
+            $sub   = trim((string) ($headerCfg['subtitle'] ?? ''));
+            $color = $hex($headerCfg['text_color'] ?? null, '111827');
+            $hasLogo = $showLogo && $logoAbsPath && is_file($logoAbsPath);
+            $hasText = $showTitle && ($title !== '' || $sub !== '');
+
+            if ($hasLogo && $hasText) {
+                // Both present — one row, two cells, both vertically centred.
+                $t = $header->addTable(['borderSize' => 0, 'cellMargin' => 0, 'width' => 100 * 50, 'unit' => 'pct']);
+                $r = $t->addRow();
+                /* 40/60, not 30/70. A wide wordmark (logo + company name in
+                   the image) overflowed a 30% cell and Word clipped it — the
+                   'IGC' came out cut in half. 40% fits the widest mark in use
+                   while still leaving the title room to sit beside it. */
+                $logoCell  = $r->addCell(4000, ['valign' => 'center']);
+                $titleCell = $r->addCell(6000, ['valign' => 'center']);
                 try {
-                    $header->addImage($logoAbsPath, [
+                    $logoCell->addImage($logoAbsPath, [
                         'height'    => (int) ($headerCfg['logo_height'] ?? 62),
-                        'alignment' => $hAlign,
+                        'alignment' => $logoAlign,
                     ]);
                 } catch (\Throwable $e) { /* skip an unreadable image rather than fail the export */ }
-            }
-            if ($showTitle) {
-                $title = trim((string) ($headerCfg['title'] ?? ''));
-                $sub   = trim((string) ($headerCfg['subtitle'] ?? ''));
-                $color = $hex($headerCfg['text_color'] ?? null, '111827');
                 if ($title !== '') {
-                    $header->addText(htmlspecialchars($title, ENT_QUOTES), ['bold' => true, 'size' => 12, 'color' => $color], ['alignment' => $hAlign]);
+                    $titleCell->addText(htmlspecialchars($title, ENT_QUOTES), ['bold' => true, 'size' => 12, 'color' => $color], ['alignment' => $hAlign]);
                 }
                 if ($sub !== '') {
-                    $header->addText(htmlspecialchars($sub, ENT_QUOTES), ['size' => 9, 'color' => '888888'], ['alignment' => $hAlign]);
+                    $titleCell->addText(htmlspecialchars($sub, ENT_QUOTES), ['size' => 9, 'color' => '888888'], ['alignment' => $hAlign]);
+                }
+            } else {
+                // Only one of the two — no table needed.
+                if ($hasLogo) {
+                    try {
+                        $header->addImage($logoAbsPath, [
+                            'height'    => (int) ($headerCfg['logo_height'] ?? 62),
+                            'alignment' => $logoAlign,
+                        ]);
+                    } catch (\Throwable $e) { /* skip an unreadable image */ }
+                }
+                if ($hasText) {
+                    if ($title !== '') {
+                        $header->addText(htmlspecialchars($title, ENT_QUOTES), ['bold' => true, 'size' => 12, 'color' => $color], ['alignment' => $hAlign]);
+                    }
+                    if ($sub !== '') {
+                        $header->addText(htmlspecialchars($sub, ENT_QUOTES), ['size' => 9, 'color' => '888888'], ['alignment' => $hAlign]);
+                    }
                 }
             }
         }
@@ -1005,5 +1059,44 @@ trait HandlesDocxHtmlRoundtrip
             libxml_clear_errors();
             libxml_use_internal_errors($prev);
         }
+    }
+
+    /**
+     * Absolute local path for a stored logo, on whichever disk holds it.
+     *
+     * Storage::disk('public') was hardcoded here and in HrTemplateDocxRenderer,
+     * while FILESYSTEM_DISK is 'azure' in production -- so every lookup missed
+     * and the DOCX shipped without its logo. Two rules make it work on both:
+     *
+     *  - try the CONFIGURED disk first, then 'public' for rows written before
+     *    the move to Azure;
+     *  - never call path() on a remote adapter. It is local-only; copy the
+     *    bytes to a temp file instead, which is what PhpWord actually needs.
+     */
+    protected static function docxLogoFile(?string $path): ?string
+    {
+        $path = trim((string) $path);
+        if ($path === '') return null;
+
+        foreach (array_unique([(string) config('filesystems.default'), 'public']) as $name) {
+            try {
+                $disk = Storage::disk($name);
+                if (!$disk->exists($path)) continue;
+
+                // Local adapter: hand PhpWord the real file.
+                try {
+                    $local = $disk->path($path);
+                    if (is_string($local) && is_file($local)) return $local;
+                } catch (\Throwable $e) { /* remote adapter -- copy below */ }
+
+                $bytes = $disk->get($path);
+                if ($bytes === null) continue;
+                $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'png';
+                $tmp = tempnam(sys_get_temp_dir(), 'clm_logo_') . '.' . $ext;
+                file_put_contents($tmp, $bytes);
+                return $tmp;
+            } catch (\Throwable $e) { /* disk not configured -- try the next */ }
+        }
+        return null;
     }
 }

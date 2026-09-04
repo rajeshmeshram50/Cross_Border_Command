@@ -265,9 +265,26 @@ class ClmSignatureRequest extends Model
         return static::draftIdsByStatus($clientId, $docType, ['inprogress', 'completed']);
     }
 
+    /**
+     * Drafts that must never be edited again because SOMEBODY has signed them.
+     *
+     * "status = completed" alone is not that question. A request's status is a
+     * single field describing where it is NOW, so when a second party declines,
+     * the row moves to 'declined' and the first party's completed signature
+     * stops counting — the Edit button comes back on a document that has
+     * already been signed. That is the reported bug: two customers on one
+     * document, A signs, B rejects, and A's signed copy becomes editable.
+     *
+     * completed_at is the durable fact. It is stamped when a signature actually
+     * completes and is not cleared by a later decline, so it still answers
+     * "was this ever signed?" after the status has moved on.
+     *
+     * Signing is one-way: once a document is signed it stays locked, whatever
+     * anyone else does afterwards.
+     */
     public static function signedDraftIds(?int $clientId, string $docType): array
     {
-        return static::draftIdsByStatus($clientId, $docType, ['completed']);
+        return static::draftIdsByStatus($clientId, $docType, ['completed'], true);
     }
 
     /**
@@ -275,13 +292,21 @@ class ClmSignatureRequest extends Model
      * referenced by a signature request whose status is in $statuses AND that
      * was created at/after the draft's own creation (the id-reuse guard).
      */
-    private static function draftIdsByStatus(?int $clientId, string $docType, array $statuses): array
+    /**
+     * @param bool $orEverCompleted  Also match rows that carry a completed_at,
+     *        whatever their current status. Only the signed-lock uses this; the
+     *        other callers ask about the CURRENT state and must not.
+     */
+    private static function draftIdsByStatus(?int $clientId, string $docType, array $statuses, bool $orEverCompleted = false): array
     {
         if (!$clientId) return [];
 
         $rows = static::where('client_id', $clientId)
             ->where('document_type', $docType)
-            ->whereIn('status', $statuses)
+            ->where(function ($q) use ($statuses, $orEverCompleted) {
+                $q->whereIn('status', $statuses);
+                if ($orEverCompleted) $q->orWhereNotNull('completed_at');
+            })
             ->get(['trade_doc_id', 'trade_doc_ids', 'created_at']);
 
         // Candidate draft id => the matching-request timestamps referencing it.

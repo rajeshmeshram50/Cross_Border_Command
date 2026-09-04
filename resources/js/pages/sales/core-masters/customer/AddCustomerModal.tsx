@@ -3124,8 +3124,34 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
         .catch(() => { if (!cancelled) setGstStatus('valid'); });
     }, 500);
     return () => { cancelled = true; window.clearTimeout(t); };
+    /* form.stateCode belongs here: the GSTIN's first 2 digits ARE the state
+       code, so the SAME number flips between valid and invalid when the user
+       picks a different State. Without it the effect never re-ran on a state
+       change and `gstStatus` stayed on its last answer — a number validated
+       against Maharashtra kept its green "GST Number is valid" after the state
+       was switched to Assam. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gstRaw, gstApplicable]);
+  }, [gstRaw, gstApplicable, form.stateCode]);
+
+  /* GSTIN prefix vs. the selected state's code, surfaced inline.
+   *
+   * Deliberately separate from the format errors, which stay silent until
+   * Save & Next so a half-typed number isn't flagged mid-keystroke (see
+   * validateField — it only ever CORRECTS an error that is already on screen,
+   * it never raises one). That reasoning doesn't apply here: this check is
+   * gated on a COMPLETE, well-formed GSTIN, so it can only fire on a finished
+   * number, and it's usually triggered by the user changing a DIFFERENT field
+   * (State) — which silently invalidated a number they'd already entered and
+   * been told was valid. That has to be visible immediately.
+   *
+   * Every format branch of gstNumberError is already satisfied once GSTIN_RE
+   * passes, so the only message it can return here is the state-code mismatch. */
+  const gstStateMismatch = useMemo(
+    () => (gstApplicable && GSTIN_RE.test(gstRaw))
+      ? gstNumberError(gstRaw, form.stateCode) ?? null
+      : null,
+    [gstApplicable, gstRaw, form.stateCode],
+  );
 
   /* Contact Person Name and Whatsapp are lifted out of the JSX because they sit
    * in DIFFERENT slots depending on whether GST Number is rendered:
@@ -3412,7 +3438,7 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                     save propagates the new number to those records. Switching the
                     COUNTRY away from India is what's blocked in that case. */}
                 <input
-                  className={`acm-input ${errors.coGstNumber || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' ? 'acm-input-ok' : ''}`}
+                  className={`acm-input ${errors.coGstNumber || gstStateMismatch || gstStatus === 'taken' ? 'acm-input-error' : ''} ${gstStatus === 'valid' && !gstStateMismatch ? 'acm-input-ok' : ''}`}
                   placeholder="e.g. 27AADCI6120M1ZH"
                   maxLength={15}
                   value={form.coGstNumber ?? ''}
@@ -3420,13 +3446,25 @@ function Stage1Identification({ form, setF, masters, errors, clearErr, validateF
                      debounced effect above owns this field's validation. */
                   onChange={e => { setF('coGstNumber', e.target.value.toUpperCase().replace(/\s+/g, '')); clearErr('coGstNumber'); }}
                 />
-                {gstStatus === 'checking' && (
+                {gstStatus === 'checking' && !gstStateMismatch && (
                   <div className="acm-gst-hint acm-gst-checking">Checking GST Number…</div>
                 )}
-                {gstStatus === 'valid' && (
+                {/* Never claim "valid" while the number contradicts the chosen
+                    state — the two used to render together, so the field showed
+                    a green tick above a red mismatch. */}
+                {gstStatus === 'valid' && !gstStateMismatch && (
                   <div className="acm-gst-hint acm-gst-ok">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
                     GST Number is valid
+                  </div>
+                )}
+                {/* State-code mismatch. Suppressed when `errors.coGstNumber`
+                    already carries it (after a Save & Next) so the same
+                    sentence isn't printed twice under the field. */}
+                {gstStateMismatch && !errors.coGstNumber && (
+                  <div className="acm-gst-hint acm-gst-taken">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    {gstStateMismatch}
                   </div>
                 )}
                 {gstStatus === 'taken' && (

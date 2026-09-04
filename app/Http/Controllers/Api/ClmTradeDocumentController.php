@@ -494,12 +494,28 @@ class ClmTradeDocumentController extends Controller
         $headerCfg = is_array($row->header_config) ? $row->header_config : [];
         $footerCfg = is_array($row->footer_config) ? $row->footer_config : [];
         $client    = Client::find($row->client_id);
-        $urlPath   = (isset($headerCfg['logo_url']) && preg_match('#/storage/(.+)$#', (string) $headerCfg['logo_url'], $lm)) ? $lm[1] : null;
+        /* A local URL is /storage/<key>; an Azure blob URL is
+           https://<account>.blob.core.windows.net/<container>/<key>. Matching
+           only the first left blob URLs yielding nothing, so this candidate
+           was dead on Azure as well as the ones after it. */
+        $urlPath = null;
+        $rawLogoUrl = (string) ($headerCfg['logo_url'] ?? '');
+        if ($rawLogoUrl !== '') {
+            if (preg_match('#/storage/(.+)$#', $rawLogoUrl, $lm)) {
+                $urlPath = $lm[1];
+            } elseif (preg_match('#^https?://[^/]+/[^/]+/(.+)$#', $rawLogoUrl, $lm)) {
+                $urlPath = $lm[1];   // strip scheme, host and container
+            }
+        }
         $logoAbs   = null;
+        /* Resolve on whichever disk the file actually lives on — see
+           HandlesDocxHtmlRoundtrip::docxLogoFile(). This asked
+           Storage::disk('public') for both exists() AND path() while
+           FILESYSTEM_DISK is 'azure', so no candidate could ever match and the
+           Word file shipped without its logo. */
         foreach (array_filter([$headerCfg['logo_path'] ?? null, $urlPath, $client?->logo]) as $path) {
-            try {
-                if (Storage::disk('public')->exists($path)) { $logoAbs = Storage::disk('public')->path($path); break; }
-            } catch (\Throwable $e) { /* try next candidate */ }
+            $logoAbs = self::docxLogoFile($path);
+            if ($logoAbs) break;
         }
         $this->applyDocxHeaderFooter($section, $headerCfg, $footerCfg, $logoAbs);
 
