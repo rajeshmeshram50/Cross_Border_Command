@@ -50,8 +50,11 @@ class ProformaInvoiceController extends Controller
                 'creator:id,name,user_type,branch_id',
                 'creator.branch:id,name',
                 // Shipment order (per opportunity) → its sequential
-                // shipment_code (SHP-NNN) populates the "Shipp ID" column.
-                'shipmentOrder:id,lead_id,shipment_code',
+                // shipment_code (SHP-NNN) populates the "Shipp ID" column and
+                // its created_at the "SHP Date" column. shipment_orders has no
+                // separate date column — the Create Shipment form stamps
+                // "SHIPMENT DATE" as the day the order is raised, i.e. created_at.
+                'shipmentOrder:id,lead_id,shipment_code,created_at',
             ])
             ->orderByDesc('id');
 
@@ -109,6 +112,14 @@ class ProformaInvoiceController extends Controller
             // sourced from the opportunity's shipment order once created. Falls
             // back to the legacy bt_id on the frontend when not yet shipped.
             $r->shipment_code = $r->shipmentOrder?->shipment_code;
+            // SHP Date — the date the shipment order was raised. Pairs with
+            // shipment_code above, which the "Shipp ID" column already prefers
+            // over the legacy bt_id. The date column had no such counterpart:
+            // it read bt_date alone, and bt_date is only ever stamped by
+            // convertToPi() — it stays NULL on every directly-created PI. So a
+            // shipped PI showed a SHP-NNN id next to an empty SHP Date. The
+            // frontend still falls back to bt_date for legacy rows.
+            $r->shipment_date = $r->shipmentOrder?->created_at?->toDateString();
             return $r;
         })->all();
 

@@ -3361,6 +3361,72 @@ class EmployeeController extends Controller
                 ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $request->input('email'))]))
             ->ignore($ignoreUserId);
 
+        /* An EXITED employee's email is freed, but not for a brand-new record.
+         * (#10)
+         *
+         * Exiting someone sets email_active = false so the address stops
+         * blocking registrations, and the rule above therefore ignores them.
+         * That was written for rehire — the flag flips back to true when the
+         * person returns — but nothing distinguished "reuse this address by
+         * rehiring its owner" from "create a SECOND employee on it". So the
+         * same address could be added as a new joiner while it still belonged
+         * to a leaver, leaving the organisation with two employee records and
+         * two logins on one mailbox, and the leaver's history stranded on the
+         * record nobody opens any more.
+         *
+         * On CREATE the address is refused and the operator is sent to the
+         * right door instead:
+         *   - rehireable   -> rehire the existing person from Exit Management
+         *   - not rehireable (blacklisted, terminated, absconded, ...) -> the
+         *     address stays spoken for; a genuinely new person needs their own.
+         *
+         * Scoped to the tenant, like every other check here. UPDATES are
+         * untouched: an edit is not a new person, and the rehire flow itself
+         * writes through the same validator. */
+        if (!$isUpdate && $request->filled('email')) {
+            $emailRule[] = function (string $attribute, $value, $fail) use ($tenantWhere) {
+                $user = \App\Models\User::query()
+                    ->where($tenantWhere)
+                    ->where('email_active', false)
+                    ->whereNull('deleted_at')
+                    ->whereRaw('LOWER(email) = ?', [mb_strtolower((string) $value)])
+                    ->first();
+                if (!$user) {
+                    return;
+                }
+
+                $employee = Employee::withTrashed()->where('user_id', $user->id)->first();
+                if (!$employee) {
+                    return;   // an inactive login with no employee behind it — not this rule's business
+                }
+
+                $exit = \App\Models\EmployeeExit::where('employee_id', $employee->id)
+                    ->orderByDesc('id')
+                    ->first();
+
+                $who = trim((string) ($employee->display_name
+                    ?: trim(($employee->first_name ?? '') . ' ' . ($employee->last_name ?? ''))));
+                $who = $who !== '' ? $who : 'a former employee';
+                $code = $employee->emp_code ? ' (' . $employee->emp_code . ')' : '';
+                $left = $exit?->last_working_day
+                    ? ' on ' . \Carbon\Carbon::parse($exit->last_working_day)->format('j M Y')
+                    : '';
+
+                $blocked = \App\Http\Controllers\Api\ExitController::rehireBlockedReason($exit, $employee);
+
+                // The reason sentence already ends in a full stop; it is being
+                // dropped into a parenthetical, so trim it to read as one line.
+                $blocked = $blocked === null ? null : rtrim(trim($blocked), '.');
+
+                $fail($blocked === null
+                    ? "This email belongs to {$who}{$code}, who exited{$left}. Rehire them from Exit Management "
+                        . 'instead of creating a new employee — a rehire keeps their history, service and documents. '
+                        . 'If this is a different person, use a different email address.'
+                    : "This email belongs to {$who}{$code}, who exited{$left} and cannot be rehired — {$blocked}. "
+                        . 'The address stays associated with that record, so a new employee needs their own email.');
+            };
+        }
+
         // Attendance Number is the mapping key for eSSL biometric devices — a
         // device User ID resolves to exactly one employee via this field, so it
         // must be unique per tenant (mirrors the pan_number rule + the

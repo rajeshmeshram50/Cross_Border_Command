@@ -1490,7 +1490,8 @@ export default function SalesMatrixDetail() {
             /* Create-PI gate for Stage 5, derived from the vault tally this
                parent already fetches (custTally) — saves Stage 5 from
                re-calling /segment-uploads/customer/{id}/vault. total>0 with
-               verified<total means Standard Documents are still pending.
+               verified<total means Standard Documents are still pending, and
+               a tally that is loading or errored blocks too (see below).
 
                CUSTOMER ONLY, deliberately. The consignee is no longer fixed
                before the PI — quotations may each name a different one, and
@@ -1501,8 +1502,21 @@ export default function SalesMatrixDetail() {
                document-complete consignee. The consignee's documents are
                instead verified inside the Create-PI wizard once it's picked
                (Step 1 → Step 2 gate), and again by the server on save. */
-            mandatoryIncomplete={
-              !!custTally && custTally.total > 0 && custTally.verified < custTally.total
+            piDocGate={
+              /* No customer mapped → nothing of the customer's to check here;
+                 the PI wizard and the server still gate on whoever is picked. */
+              !custTally          ? 'ok'
+              /* Fail CLOSED while the tally is unknown. Both of these used to
+                 evaluate to "not incomplete" and left Create PI fully live —
+                 the vault call is the heaviest on this page, so the loading
+                 window is seconds wide on a cold load and a click inside it
+                 opened the wizard for a customer with 0 of N documents. */
+              : custTally.loading ? 'checking'
+              : custTally.error   ? 'error'
+              /* total = MANDATORY core docs only (optional ones never gate). */
+              : custTally.total > 0 && custTally.verified < custTally.total
+                                  ? 'incomplete'
+              :                     'ok'
             }
             // Stage 5 calls this after a PI is created or edited so
             // the Segment Details card unlocks immediately instead of

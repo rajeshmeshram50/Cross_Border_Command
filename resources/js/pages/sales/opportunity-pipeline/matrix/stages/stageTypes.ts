@@ -1,5 +1,14 @@
 import type { OppHeaderData, StageNum } from '../SalesMatrixDetail';
 
+/* Customer Standard-Documents gate for Stage 5's Create PI button.
+ *   'ok'         every MANDATORY core doc is on file (or the segment rules
+ *                require none) — Create PI is allowed.
+ *   'incomplete' at least one mandatory doc is still missing.
+ *   'checking'   the customer's vault tally is still in flight.
+ *   'error'      the tally fetch failed — completeness is unknown.
+ * Only 'ok' opens the button; the other three block it. */
+export type PiDocGate = 'ok' | 'incomplete' | 'checking' | 'error';
+
 export type StageProps = {
   header: OppHeaderData;
   stage:  StageNum;
@@ -35,12 +44,18 @@ export type StageProps = {
    * quick-action view, not a pipeline step. All in-table actions still
    * persist immediately, so nothing is lost by hiding the footer. */
   embedded?: boolean;
-  /* Stage 5: whether either party still has incomplete Standard Documents
-   * (core KYC/DD/Licence uploads). Derived by the parent from the SAME vault
-   * tallies it already fetches for the left "Customer/Consignee Details"
-   * cards, then passed down — so Stage 5 no longer re-fetches the vault
-   * itself (the call was a duplicate of the parent's). Gates Create PI. */
-  mandatoryIncomplete?: boolean;
+  /* Stage 5: state of the CUSTOMER's Standard Documents (core KYC / DD /
+   * Licence uploads) — the Create PI gate. Derived by the parent from the SAME
+   * vault tally it already fetches for the left "Customer Details" card, then
+   * passed down, so Stage 5 never re-fetches the vault itself (the call was a
+   * duplicate of the parent's).
+   *
+   * It is a state, not a boolean, because "not known to be incomplete" is NOT
+   * the same as "complete": while the vault tally is still loading — or after
+   * it failed — a plain boolean read false and left Create PI fully live, so a
+   * PI could be started on a customer with zero documents on file. The gate
+   * fails CLOSED on both. */
+  piDocGate?: PiDocGate;
   /* Deal lock — true once the Proforma Invoice has been e-signed. Stages
    * become read-only (Stage 5 disables Create Quotation / Create PI / convert).
    * Stage 6 ignores it so "Create Shipment" stays usable. */
