@@ -88,17 +88,36 @@ class AttendanceRegularizationController extends Controller
             'reason'             => ['required', 'string', 'max:2000'],
         ]);
 
-        // Resolve target employee — explicit id (admin filing on behalf) or
-        // the signed-in user's own employee row.
+        /* Resolve target employee — explicit id (admin filing on behalf) or
+         * the signed-in user's own employee row.
+         *
+         * withTrashed(), and no fall-through when an id WAS given. (#88)
+         *
+         * Completing an exit soft-deletes the employee row, so a plain find()
+         * returned null for exactly the people the exit gate below exists to
+         * catch. The null then fell into the "use my own row" branch — which is
+         * meant for a request that named nobody — and the whole thing was filed
+         * against the CALLER instead. Silently: a request naming an exited
+         * employee was accepted, stored under the filer's own employee id, and
+         * the exit gate passed because by then it was inspecting the wrong
+         * person entirely. `exists:employees,id` does not see soft deletes, so
+         * validation waved it through.
+         *
+         * An explicit id that cannot be resolved is now an error rather than a
+         * silent substitution. The two branches are exclusive: naming an
+         * employee and naming nobody are different requests and must not share
+         * an outcome. */
         $employee = null;
         if (!empty($data['employee_id'])) {
-            $employee = Employee::find($data['employee_id']);
-        }
-        if (!$employee) {
+            $employee = Employee::withTrashed()->find($data['employee_id']);
+            if (!$employee) {
+                abort(422, 'That employee no longer exists — the regularization was not filed.');
+            }
+        } else {
             $employee = Employee::where('user_id', $user->id)->first();
-        }
-        if (!$employee) {
-            abort(422, 'Could not resolve target employee for this regularization request.');
+            if (!$employee) {
+                abort(422, 'Could not resolve target employee for this regularization request.');
+            }
         }
 
         // Tenant guard on the resolved employee.
