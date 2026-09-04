@@ -630,9 +630,12 @@ class AttendanceController extends Controller
          * date shows the people who were actually working that day, and today
          * shows only current staff — a leaver drops off the day after their
          * last working day rather than retroactively erasing their history. */
+        /* Opt-in audit flag — see the AUDIT MODE arm below. (#91) */
+        $includeExited = $request->boolean('include_exited');
+
         $empQ = Employee::withTrashed()
             ->where('attendance_tracking', true)
-            ->where(function ($q) use ($date) {
+            ->where(function ($q) use ($date, $includeExited) {
                 $q->where(function ($active) {
                     $active->where('status', 'Active')->whereNull('deleted_at');
                 })->orWhereHas('exit', function ($x) use ($date) {
@@ -642,6 +645,30 @@ class AttendanceController extends Controller
                     $x->whereNull('rehired_at')
                       ->whereNotNull('last_working_day')
                       ->whereDate('last_working_day', '>=', $date);
+                })->orWhere(function ($audit) use ($includeExited) {
+                    /* AUDIT MODE — every leaver, whatever date is selected. (#91)
+                     *
+                     * The arms around this one bound a leaver by their last
+                     * working day, which is right for the sheet: a person who
+                     * left in August is not part of September's attendance and
+                     * must not sit in the Absent column forever. But it also
+                     * meant the only route to their history was to already know
+                     * their leaving date and wind the date picker back past it.
+                     * From the Attendance screen, on today's date, an exited
+                     * employee simply did not exist — so their records could
+                     * not be audited from the module that owns them.
+                     *
+                     * Opt-in, never the default, so current processing is
+                     * unchanged unless the operator asks for leavers. Their day
+                     * status is forced to 'Exited' below rather than left to
+                     * read Absent, which is what keeps them out of the Absent
+                     * chip while they are on screen. */
+                    if (!$includeExited) {
+                        $audit->whereRaw('1 = 0');
+                        return;
+                    }
+                    $audit->whereHas('exit', fn ($x) => $x->whereNull('rehired_at'))
+                          ->orWhereNotNull('deleted_at');
                 })->orWhere(function ($removed) use ($date) {
                     /* Removed from Employee Management rather than exited. (#87)
                      *
@@ -680,6 +707,8 @@ class AttendanceController extends Controller
                 // loaded here so the Mgr. chip resolves without an N+1.
                 'reportingManagerUser:id,name',
                 'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
+                // Last working day, to label a leaver's post-exit days (#91).
+                'exit:id,employee_id,last_working_day,rehired_at',
             ])
             ->orderBy('display_name');
 
@@ -982,6 +1011,23 @@ class AttendanceController extends Controller
             if ($joinIso !== null && $date < $joinIso && !$today) {
                 $statusToday = 'Not Joined';
             }
+            /* Selected date sits AFTER this employee left → out of scope for
+               them, not an absence. Mirror image of 'Not Joined' above, and
+               reached only in audit mode: without include_exited a leaver is
+               not in the roster on such a date at all. Leaving it to read
+               "Absent" would have put a person who has left into the Absent
+               chip for every day since, which is exactly the "excluded from
+               current processing" half of this ticket. (#91)
+
+               A stored row still wins, on the same reasoning as 'Not Joined':
+               if a punch really exists after the last working day, HR needs to
+               see it rather than a label that hides it. */
+            $exitIso = $emp->exit && !$emp->exit->rehired_at && $emp->exit->last_working_day
+                ? \Carbon\Carbon::parse($emp->exit->last_working_day)->toDateString()
+                : null;
+            if ($exitIso !== null && $date > $exitIso && !$today) {
+                $statusToday = 'Exited';
+            }
             // Approved leave wins over an "Absent" reading (no attendance row).
             if (isset($onLeaveSet[$emp->id]) && strcasecmp($statusToday, 'Absent') === 0) {
                 $statusToday = 'Leave';
@@ -1130,7 +1176,8 @@ class AttendanceController extends Controller
                     $holidayByGroupLog[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
                         ?? $holidayByGroupLog[self::HOLIDAY_COMPANY_KEY] ?? [],
                     $leaveLogByEmp[$emp->id] ?? [],
-                    $joinIso
+                    $joinIso,
+                    $exitIso,
                 );
             }
 
@@ -1146,6 +1193,10 @@ class AttendanceController extends Controller
                 // Lets the SPA blank out calendar cells before the employee
                 // joined instead of painting them as attendance days (CBC #74).
                 'dateOfJoining'     => $joinIso,
+                /* Last working day, or null for current staff. Lets the SPA
+                   badge a leaver in the roster and blank their calendar cells
+                   after this date, the way dateOfJoining does before it (#91). */
+                'exitedOn'          => $exitIso,
                 // Default office hours fall back to 09:30 – 18:30 (9 h
                 // working window). Employees with a parseable shift string
                 // like "General (09:00 – 18:00)" override this — handled
@@ -1584,7 +1635,7 @@ class AttendanceController extends Controller
     }
 
   
-    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, ?string $weeklyOffLabel, string $from, string $to, array $holidaySet = [], array $leaveDaySet = [], ?string $joinIso = null): array
+    private function buildHistoryLogs($rows, Employee $emp, ?string $shiftStart, int $expectedMinutes, ?string $weeklyOffLabel, string $from, string $to, array $holidaySet = [], array $leaveDaySet = [], ?string $joinIso = null, ?string $exitIso = null): array
     {
         // Index real Attendance rows by ISO date for O(1) lookup as we
         // walk through the window day-by-day.
@@ -1623,6 +1674,14 @@ class AttendanceController extends Controller
                punch row somehow dated before joining is still emitted rather
                than hidden — that is a data problem HR needs to see. */
             if ($joinIso !== null && $iso < $joinIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
+            /* And days AFTER they left, for the same reason from the same
+               direction (#91). Auditing a leaver's history is the whole point
+               of showing them here, so the log must stop where their
+               employment did: synthesising "Absent" for every day since would
+               bury the record being audited under weeks of fiction. A real
+               punch dated after the last working day is still emitted — like
+               the pre-joining case, that is a data problem HR needs to see. */
+            if ($exitIso !== null && $iso > $exitIso && !isset($byIso[$iso])) { $cursor->subDay(); continue; }
             $r   = $byIso[$iso] ?? null;
             $isWO = \App\Support\WeekOff::isOff($weeklyOffLabel, $cursor);
             $isHoliday = isset($holidaySet[$iso]);

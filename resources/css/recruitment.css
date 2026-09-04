@@ -8175,6 +8175,32 @@
 }
 .att-emp-corr-pill i { font-size: 10px; }
 
+/* "Left 20 Aug 2026" on a roster row while the list is showing exited staff
+   (#91). Slate rather than a warning colour — a leaver is a fact to read, not
+   a problem to fix, and the amber corr-pill directly below it is the thing
+   that does need attention. */
+.att-emp-exit-pill {
+  display: inline-flex; align-items: center; gap: 3px;
+  margin-top: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f1f5f9; color: #475569;
+  font-size: 9.5px; font-weight: 700;
+}
+.att-emp-exit-pill i { font-size: 10px; }
+[data-bs-theme="dark"] .att-emp-exit-pill { background: rgba(148,163,184,0.18); color: #cbd5e1; }
+
+/* "Include exited" next to the roster count. The status tabs above filter the
+   roster; this changes who is in it, so it sits with the count instead. */
+.att-emplist-exited {
+  display: inline-flex; align-items: center; gap: 5px;
+  margin: 0; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: var(--vz-secondary-color);
+  white-space: nowrap;
+}
+.att-emplist-exited input { cursor: pointer; margin: 0; }
+.att-emplist-exited:hover { color: var(--vz-body-color); }
+
 .att-emp-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
 .att-emp-time { font-size: 11px; color: var(--vz-secondary-color); font-weight: 600; }
 [data-bs-theme="dark"] .att-emp-time { color: rgba(255,255,255,0.70); }
