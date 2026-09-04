@@ -881,7 +881,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           },
         });
         const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
+        const infoMap: Record<number, { status: string; cpSigned?: number; cpTotal?: number; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
 
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
@@ -903,8 +903,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
 
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            /* Counterparty tally behind the "1 of 2 Signed" label (BR-12).
+               One counterparty = one contact person = one Zoho recipient, and
+               Zoho marks a recipient signed only once every mandatory field of
+               theirs is filled - so a signed recipient IS a completed
+               counterparty and partial placement progress never shows (BR-10).
+               Declined / viewed / sent do not count. */
+            const sgs = Array.isArray(row.signers) ? row.signers : [];
+            const doneCount = sgs.filter((x: any) => {
+              const a = String(x?.action_status ?? '').toLowerCase();
+              return !x?.declined && (a === 'signed' || a === 'completed' || a === 'approved' || !!x?.signed);
+            }).length;
             infoMap[agreementId] = {
               status: row.status,
+              cpSigned: doneCount,
+              cpTotal: sgs.length,
               signatureRequestId: row.id,
               signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
               certificateUrl: rawCertUrl ? resolveFileUrl(rawCertUrl) : undefined,
@@ -944,6 +957,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     ...existing,
                     id: info.signatureRequestId,
                     status: info.status,
+                    // BR-12: counterparty tally travels with the request so the
+                    // status pill can read "1 of 2 Signed".
+                    cpSigned: info.cpSigned,
+                    cpTotal: info.cpTotal,
                     signed_url: info.signedUrl ?? existing.signed_url,
                     certificate_url: info.certificateUrl ?? existing.certificate_url,
                     reminder_count: info.reminderCount ?? existing.reminder_count ?? 0,
@@ -981,7 +998,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
           params: { lead_id: leadId, document_type: 'trade_doc', sync: withSync ? 1 : 0 },
         });
         const rows = Array.isArray(response.data?.data) ? response.data.data : [];
-        const infoMap: Record<number, { status: string; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
+        const infoMap: Record<number, { status: string; cpSigned?: number; cpTotal?: number; signatureRequestId: number; signedUrl?: string; certificateUrl?: string; reminderCount?: number; lastReminderAt?: string | null }> = {};
         for (const row of rows) {
           const ids = Array.isArray(row.trade_doc_ids) ? row.trade_doc_ids : [];
           for (let i = 0; i < ids.length; i += 1) {
@@ -997,8 +1014,21 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_url || null;
             if (!rawSignedUrl) rawSignedUrl = row.signed_document_path || null;
             const rawCertUrl = row.certificate_url || row.certificate_path || null;
+            /* Counterparty tally behind the "1 of 2 Signed" label (BR-12).
+               One counterparty = one contact person = one Zoho recipient, and
+               Zoho marks a recipient signed only once every mandatory field of
+               theirs is filled - so a signed recipient IS a completed
+               counterparty and partial placement progress never shows (BR-10).
+               Declined / viewed / sent do not count. */
+            const sgs = Array.isArray(row.signers) ? row.signers : [];
+            const doneCount = sgs.filter((x: any) => {
+              const a = String(x?.action_status ?? '').toLowerCase();
+              return !x?.declined && (a === 'signed' || a === 'completed' || a === 'approved' || !!x?.signed);
+            }).length;
             infoMap[docId] = {
               status: row.status,
+              cpSigned: doneCount,
+              cpTotal: sgs.length,
               signatureRequestId: row.id,
               signedUrl: rawSignedUrl ? resolveFileUrl(rawSignedUrl) : undefined,
               certificateUrl: rawCertUrl ? resolveFileUrl(rawCertUrl) : undefined,
@@ -1031,6 +1061,10 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                     ...existing,
                     id: info.signatureRequestId,
                     status: info.status,
+                    // BR-12: counterparty tally travels with the request so the
+                    // status pill can read "1 of 2 Signed".
+                    cpSigned: info.cpSigned,
+                    cpTotal: info.cpTotal,
                     signed_url: info.signedUrl ?? existing.signed_url,
                     certificate_url: info.certificateUrl ?? existing.certificate_url,
                     reminder_count: info.reminderCount ?? existing.reminder_count ?? 0,
@@ -1336,7 +1370,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               <td><span className="lasm-need-tag is-yes">Mandatory</span></td>
                               <td>
                                 {sent
-                                  ? <StatusPill status={sig!.status as any} />
+                                  ? <StatusPill status={sig!.status as any} cpSigned={(sig as any)?.cpSigned} cpTotal={(sig as any)?.cpTotal} />
                                   : <span className="lasm-td-status is-pending">Pending</span>}
                               </td>
                               <td>
@@ -1489,7 +1523,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                               {/* Signature status (Sent / Signed) once it's been
                                   sent for e-signature; otherwise the upload state. */}
                               {tdSig
-                                ? <StatusPill status={tdSigStatus!} />
+                                ? <StatusPill status={tdSigStatus!} cpSigned={(tdSig as any)?.cpSigned} cpTotal={(tdSig as any)?.cpTotal} />
                                 : <span className={`lasm-td-status ${td.status === 'Verified' ? 'is-ok' : 'is-pending'}`}>{td.status === 'Verified' ? 'Uploaded' : 'Pending'}</span>}
                             </td>
                             <td>
@@ -1869,7 +1903,7 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
                           </td>
                           <td className="lasm-mono">{fmtDmyLong(a.updated_at)}</td>
                           <td>
-                            <StatusPill status={sigStatus} />
+                            <StatusPill status={sigStatus} cpSigned={(sig as any)?.cpSigned} cpTotal={(sig as any)?.cpTotal} />
                           </td>
                           <td>
                             <div className="lasm-actions">
@@ -2145,6 +2179,13 @@ export default function LeadAgreementSendModal({ open, leadId, view, onClose, da
         open={Array.isArray(tdSendIds)}
         mode="trade-doc"
         modelName={tdSignRole === 'customer' ? 'Customer' : 'Consignee'}
+        /* multiBox: the one resolved signer can be asked to sign the same
+           document in several places (Legal Team #9 / BR-03). This bucket is
+           the single-signer path - tradeSigners is only set for a Buyer +
+           Consignee send, and roleMode takes precedence when it is - so
+           without this, Buyer-only and Consignee-only sends from the
+           workplace stayed stuck at one signature per document. */
+        multiBox
         customer={tdSignCustomer}
         leadId={leadId ?? null}
         preselectedDocIds={tdSendIds ?? undefined}
@@ -2205,8 +2246,19 @@ function fmtDmyLong(iso: string | null | undefined): string {
     : `${String(d.getDate()).padStart(2, '0')}-${MONTHS_SHORT[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-function StatusPill({ status }: { status: string }) {
+/* `cpSigned` / `cpTotal` drive the BR-12 document label: with more than one
+   counterparty the pill reads "1 of 2 Signed" instead of a flat "In Progress",
+   so the user can see how far the cycle actually is. The count is dropped once
+   everyone has signed (section 7.3) and never appears for a single-counterparty
+   document, where it would say nothing the pill does not already say. */
+function StatusPill({ status, cpSigned, cpTotal }: { status: string; cpSigned?: number; cpTotal?: number }) {
   const s = status.toLowerCase();
+  if (s === 'inprogress' && (cpTotal ?? 0) > 1) {
+    const done = Math.min(cpSigned ?? 0, cpTotal!);
+    if (done < cpTotal!) {
+      return <span className="lasm-status-pill lasm-st-progress">◔ {done} of {cpTotal} Signed</span>;
+    }
+  }
   // Class-based (not inline) so dark mode can re-tint — inline styles would
   // win over the [data-bs-theme="dark"] rules.
   const tone =

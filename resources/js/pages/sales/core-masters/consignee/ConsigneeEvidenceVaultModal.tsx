@@ -724,8 +724,10 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
         </div>
       </div>
 
-      {/* Send for Signature — launched from a Trade Documents row. The
-          modal portals to <body>, so it overlays the vault cleanly. */}
+      {/* Send for Signature — launched from a Case-to-Case Trade Documents
+          row. The modal portals to <body>, so it overlays the vault cleanly.
+          multiBox: the ONE resolved signer can be asked to sign the same doc in
+          up to 3 places (Legal Team #9). Mirrors the Customer vault. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={consignee?.db_id ? {
@@ -735,6 +737,7 @@ export default function ConsigneeEvidenceVaultModal({ open, consignee, onClose, 
           contact: consignee.contact,
         } : null}
         modelName="Consignee"
+        multiBox
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}

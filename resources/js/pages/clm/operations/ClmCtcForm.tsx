@@ -13,7 +13,7 @@ import ClmClauseInsertPanel from '../document-masters/ClmClauseInsertPanel';
 import HeaderFooterPanel, { DEFAULT_HEADER, DEFAULT_FOOTER, type HeaderConfig, type FooterConfig } from '../../hrms/doc-templates/HeaderFooterPanel';
 import { useCtcEditor, CtcToolbar, CtcEditorContent, CTC_EDITOR_CSS, waitForPagination, DEFAULT_MARGINS, type CtcMargins } from './CtcRichEditor';
 import CtcLivePreview from './CtcLivePreview';
-import { pad2, type CtcContract } from './clmOpsData';
+import { ctcSignatureLabel, pad2, type CtcContract } from './clmOpsData';
 import { useOpsTheme, type OpsTokens } from './useOpsTheme';
 import { VersionHistoryModal, type CtcVersion } from './clmCtcModals';
 import ClmCtcSignPositionModal from './ClmCtcSignPositionModal';
@@ -1562,7 +1562,7 @@ function Stage1(p: {
 }
 
 /* ── Stages 2–4: shared LEFT (read-only counterparty) + RIGHT (review) panels, changing MIDDLE ── */
-type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; declined?: boolean; decline_reason?: string };
+type SignRecipient = { name: string; email: string; role: string; contact: string; signed: boolean; signed_at: string | null; /* 1-based pages this signer must sign on (BR-13) */ placements?: number[]; declined?: boolean; decline_reason?: string };
 
 function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, draft, header, footer, sentForApproval, workingId, record, approval, onResubmitEdit, onSendForSigning, onRecordSignature, onMoveToRepository, moving = false, onRefresh, onRemind, onRespondClarification, onExit, onBack, onNext, onSave }: {
   t: OpsTokens; stage: number; cps: CP[]; org: Org | null; agTitle: string; agType: string; effDate: string; endDate: string; draft: string; header: HeaderConfig; footer: FooterConfig; sentForApproval: boolean;
@@ -1871,7 +1871,7 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
               <div style={{ borderRadius: 11, border: `1.5px solid ${isDeclined ? (t.dark ? 'rgba(239,68,68,.3)' : '#FECACA') : (t.dark ? 'rgba(6,182,212,.3)' : '#A5F3FC')}`, background: t.surface, overflow: 'hidden' }}>
                 <div style={{ padding: '7px 10px', background: t.dark ? 'rgba(6,182,212,.14)' : 'linear-gradient(110deg,#ECFEFF,#CFFAFE)', borderBottom: `1px solid ${t.dark ? 'rgba(6,182,212,.25)' : '#A5F3FC'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: 7, fontWeight: 800, color: t.dark ? '#67e8f9' : '#0E7490', letterSpacing: '.1em', textTransform: 'uppercase' }}>Signing Status · Zoho Sign</span>
-                  <span style={{ fontSize: 7, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0891b2' }}>{signers.filter(s => s.signed).length}/{signers.length} signed</span>
+                  <span style={{ fontSize: 7, fontWeight: 700, color: t.dark ? '#67e8f9' : '#0891b2' }}>{ctcSignatureLabel({ signed: signers.filter(s => s.signed).length, total: signers.length, sent: signers.length > 0 }) ?? 'Not sent'}</span>
                 </div>
                 <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 7 }}>
                   {signers.length === 0 && <div style={{ fontSize: 9, color: t.textMuted, textAlign: 'center', padding: 8 }}>No recipients yet.</div>}
@@ -1890,6 +1890,17 @@ function StageReview({ t, stage, cps, org, agTitle, agType, effDate, endDate, dr
                               ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(239,68,68,.16)' : '#FEE2E2', fontSize: 7, fontWeight: 800, color: t.dark ? '#fca5a5' : '#DC2626' }}>✕ Declined</span>
                               : <span style={{ padding: '3px 7px', borderRadius: 8, background: t.dark ? 'rgba(245,158,11,.16)' : '#FEF3C7', fontSize: 7, fontWeight: 800, color: t.dark ? '#fcd34d' : '#D97706' }}>● Awaiting</span>}
                         </div>
+                        {/* BR-13: where this person has to sign. Zoho reports
+                            completion per RECIPIENT and never per field, so no
+                            honest per-placement status exists - the pages are
+                            shown so the user can see WHAT was asked of them,
+                            and the signed/awaiting pill above covers all of it
+                            together (BR-10: no partial progress). */}
+                        {(s.placements?.length ?? 0) > 1 && (
+                          <div style={{ fontSize: 7.5, color: t.textMuted, marginTop: 5, paddingLeft: 32, lineHeight: 1.5 }}>
+                            Signs in {s.placements!.length} places · {s.placements!.map(pg => `Page ${pg}`).join(', ')}
+                          </div>
+                        )}
                         {dec && s.decline_reason && <div style={{ fontSize: 7.5, color: t.dark ? '#fca5a5' : '#B91C1C', marginTop: 5, paddingLeft: 32, lineHeight: 1.4 }}>“{s.decline_reason}”</div>}
                       </div>
                     );
@@ -3218,6 +3229,14 @@ const CTC_FORM_CSS = `
      an unreadable column. Given a real width they line up and the row scrolls
      sideways instead. */
   .ctc-stepper > * { min-width: 168px !important; flex: 0 0 auto !important; }
+  /* Narrow / zoomed-in layout scrolls as ONE page: .ctc-shell and
+     .ctc-stagebody already drop their own clipping above. The inner panel
+     scrollers have to follow, or each panel keeps an independent scroll box
+     inside a page that is also scrolling - so a long panel (Contract
+     History, whose timeline plus quick actions run well past a screen) gets
+     clipped at the panel edge with no usable way to reach the end. Letting
+     them grow hands every panel to the single page scroll. */
+  .ctc-mid-scroll { overflow: visible !important; min-height: 0 !important; flex: 0 0 auto !important; }
 }
 /* Keep cards/rows in a flex-column scroll list at their natural height — without
    this, children with overflow:hidden get min-height:0 and compress to fit

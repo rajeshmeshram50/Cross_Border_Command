@@ -1,4 +1,4 @@
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 /* TYPE-only. The runtime values are imported inside the export handler below,
    so 155 KB of zip machinery is fetched when someone clicks Export — not when
@@ -160,6 +160,9 @@ export interface SupplierVaultTarget {
      to the scalar `segment` when not provided. */
   segments?: string[];
   country?: string;
+  /* Vendor type master name ("Material Supplier", "Service Provider", …).
+     Shown as its own header chip when the caller knows it. */
+  type?: string;
   contact?: string;
   contactCity?: string;
   /* Primary contact email — the default signer when sending a trade doc for
@@ -195,9 +198,9 @@ type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' 
  *   • case-to-case  — Trade Documents, Agreements (per-deal records) */
 type GroupKey = 'standard' | 'case-to-case';
 
-const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
-  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',     icon: 'ri-shield-check-line' },
-  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line' },
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: string; overview: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',                  sub: 'ONE TIME · KYC, DD & LICENSES',      icon: 'ri-shield-check-line', overview: 'All Standard Document Overview' },
+  { key: 'case-to-case', title: 'Case to Case Documents & Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line',         overview: 'All Case Document Overview' },
 ];
 
 const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
@@ -591,11 +594,43 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     : tab === 'trade-documents' ? vault.trade_documents
     : [];
   // A document counts as "uploaded" once it has an attachment; everything
-  // else is "pending". These two are the only header badges we surface.
+  // else is "pending". Drives the uploaded / pending split on the stat cards.
   const isUploaded = (d: VaultDoc) => !!(d.attachment_url || (d.attachment && d.attachment !== '—'));
-  const counts = {
-    Uploaded: docsForTab.filter(isUploaded).length,
-    Pending:  docsForTab.filter(d => !isUploaded(d)).length,
+
+  /* ─── Stat-card figures.
+   *
+   * "Standard documents" is the three one-time buckets added together, and
+   * every ring on that strip is measured against that same whole — so the
+   * cards read as parts of one total rather than six unrelated numbers.
+   * Uploaded / pending are derived from the rows themselves, which is the
+   * only way to show a per-bucket split the API doesn't hand us. */
+  const stdAll: VaultDoc[] = [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses];
+  const upOf = (rows: VaultDoc[]) => rows.filter(isUploaded).length;
+  const stdTotal = stdAll.length;
+  const stdUp    = upOf(stdAll);
+  const stdPend  = stdTotal - stdUp;
+  const splitOf  = (rows: VaultDoc[]) => ({ up: upOf(rows), pend: rows.length - upOf(rows) });
+
+  /* Case-to-case: signature progress across the deals in the active view.
+   * Deals whose documents have not loaded contribute nothing rather than a
+   * guess — an empty strip is honest, invented counts are not. */
+  const dealRows  = shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? []);
+  const dealDocs  = dealRows.flatMap(r => r.docs ?? []);
+  const dealAgrs  = dealRows.flatMap(r => r.agreements ?? []);
+  const caseAll   = [...dealDocs, ...dealAgrs];
+  const isSigned  = (d: VaultDoc) => d.status === 'Signed' || (d.sig_state ?? '').toLowerCase() === 'completed';
+  const caseSigned  = caseAll.filter(isSigned).length;
+  const caseWaiting = caseAll.filter(d => d.signature_request_id && !isSigned(d)).length;
+  const caseUnsent  = caseAll.filter(d => !d.signature_request_id).length;
+
+  /* Section-banner pills follow the row statuses, so an expiring document is
+   * called out instead of being folded into "uploaded". */
+  const statusTally = {
+    Verified: docsForTab.filter(d => evEffectiveStatus(d) === 'Verified').length,
+    Signed:   docsForTab.filter(d => evEffectiveStatus(d) === 'Signed').length,
+    Expiring: docsForTab.filter(d => evEffectiveStatus(d) === 'Expiring').length,
+    Expired:  docsForTab.filter(d => evEffectiveStatus(d) === 'Expired').length,
+    Pending:  docsForTab.filter(d => evEffectiveStatus(d) === 'Pending').length,
   };
 
   const tabMeta = TABS.find(t => t.key === tab)!;
@@ -642,8 +677,127 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           .cev-shp-toggle{display:flex;width:auto;margin:-6px 12px 6px;}
           .cev-shp-toggle button{flex:1;padding:7px 8px;}
         }
+
+        /* ══ Supplier vault skin (.sev) ═══════════════════════════════════
+           Scoped to this modal on purpose: .cev-* is shared with the Customer
+           and Consignee vaults, and they are not part of this redesign. */
+        .cev-card.sev{width:min(1380px,88vw);}
+
+        /* HEADER — deep teal hero, code-led title, translucent tag row. */
+        .sev .cev-header{background:linear-gradient(125deg,#083344 0%,#0c4a6e 25%,#0e7490 50%,#0891b2 75%,#06b6d4 100%);min-height:82px;}
+        /* Eyebrow — pale cyan on the teal hero, led by a short rule, as .ev-hd-label. */
+        .sev .cev-header-eyebrow{display:flex;align-items:center;gap:7px;font-size:8px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:rgba(165,243,252,.8);margin-bottom:3px;}
+        .sev .cev-header-eyebrow::before{content:'';width:20px;height:1.5px;border-radius:2px;background:linear-gradient(90deg,rgba(165,243,252,.65),transparent);}
+        .sev .cev-header-title{font-size:24px;letter-spacing:-.6px;line-height:1.2;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap;text-shadow:0 2px 20px rgba(6,182,212,.45);}
+        .sev .sev-hd-code{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:22px;font-weight:800;letter-spacing:-.02em;color:#a5f3fc;}
+        .sev .sev-hd-dash{font-size:19px;font-weight:400;color:rgba(207,250,254,.5);}
+        .sev .sev-hd-nm{min-width:0;}
+        .sev .cev-header-chips{gap:6px;margin-top:7px;}
+        .sev .cev-chip{font-size:9.5px;font-weight:600;padding:3px 10px;border-radius:6px;letter-spacing:.02em;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.18);color:rgba(207,250,254,.85);}
+        .sev .cev-chip-link{background:rgba(6,182,212,.18);border-color:rgba(6,182,212,.38);color:#a5f3fc;}
+        .sev .cev-chip-risk[data-risk="low"]{background:rgba(16,185,129,.18);border-color:rgba(52,211,153,.38);color:#6ee7b7;}
+        .sev .cev-chip-risk[data-risk="medium"]{background:rgba(245,158,11,.18);border-color:rgba(251,191,36,.4);color:#fde68a;}
+        .sev .cev-chip-risk[data-risk="high"]{background:rgba(239,68,68,.2);border-color:rgba(248,113,113,.45);color:#fecaca;}
+        @media (max-width:900px){
+          .sev .cev-header-title{font-size:19px;gap:7px;}
+          .sev .sev-hd-code{font-size:17px;}
+          .sev .sev-hd-dash{font-size:15px;}
+        }
+
+        /* GROUP CARDS now open the body, so they carry the top band's wash. */
+        .sev .cev-groups-wrap{position:relative;background:linear-gradient(180deg,#f4f5fb 0%,#fbfbfe 100%);padding:15px 18px 13px;border-bottom:1.5px solid #e8eaf5;}
+        /* The accent line carries on from the header. It used to ride on the KPI
+           strip; the group cards lead the body now, so it rides on them. */
+        .sev .cev-groups-wrap::before{content:'';position:absolute;top:0;left:0;right:0;height:2.5px;z-index:2;background:linear-gradient(90deg,#0e7490,#0891b2,#06b6d4,#67e8f9,#06b6d4,#0891b2,#0e7490);background-size:200% 100%;animation:cevStatsAccent 4s linear infinite;}
+
+        /* STAT CARDS */
+        .sev .sev-stats{display:flex;align-items:stretch;gap:8px;flex-shrink:0;padding:9px 14px 10px;background:linear-gradient(180deg,#f7fafc 0%,#ffffff 100%);border-bottom:1.5px solid #e8eaf5;}
+        .sev .sev-stat{flex:1;min-width:0;position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;text-align:left;gap:1px;padding:8px 10px 9px;border-radius:12px;background:linear-gradient(150deg,var(--evTint,#ecfeff) 0%,#ffffff 78%);border:1px solid var(--evEdge,#a5f3fc);box-shadow:0 1px 2px rgba(8,51,68,.05);transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s;}
+        .sev .sev-stat:hover{transform:translateY(-2px);box-shadow:0 8px 18px -8px rgba(8,51,68,.32);}
+        .sev .sev-stat-ico{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;background:#fff;color:var(--evTone,#0891b2);border:1px solid var(--evEdge,#a5f3fc);box-shadow:0 1px 3px rgba(8,51,68,.08);font-size:12px;}
+        .sev .sev-stat-dial{position:absolute;top:8px;right:9px;display:flex;flex-direction:column;align-items:center;gap:2px;}
+        .sev .sev-stat-ring{width:26px;height:26px;overflow:visible;}
+        .sev .sev-stat-ring circle{fill:none;stroke-linecap:round;}
+        .sev .sev-stat-ring .rg-bg{stroke:var(--evTone,#0891b2);opacity:.18;stroke-width:3.4;}
+        .sev .sev-stat-ring .rg-fg{stroke:var(--evTone,#0891b2);stroke-width:3.4;stroke-dasharray:100;transition:stroke-dashoffset .6s cubic-bezier(.22,1,.36,1);}
+        .sev .sev-stat:hover .sev-stat-ring .rg-fg{filter:drop-shadow(0 1px 3px rgba(8,51,68,.25));}
+        .sev .sev-stat-frac{font-family:'JetBrains Mono',ui-monospace,Menlo,Consolas,monospace;font-size:7.5px;font-weight:700;letter-spacing:-.02em;line-height:1;color:var(--evInk,#0e7490);opacity:.85;font-variant-numeric:tabular-nums;white-space:nowrap;}
+        .sev .sev-stat-label{margin-top:13px;padding-right:2px;font-size:7.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--evInk,#0e7490);line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+        .sev .sev-stat-val{font-size:20px;font-weight:800;color:#0f2b3d;line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.03em;}
+        .sev .sev-stat-tag{margin-top:2px;font-size:7px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--evInk,#0e7490);background:#fff;border:1px solid var(--evEdge,#a5f3fc);border-radius:20px;padding:1.5px 7px;white-space:nowrap;}
+        .sev .sev-stat-split{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:3px;}
+        .sev .sev-split-up,.sev .sev-split-pd{font-size:7px;font-weight:800;letter-spacing:.03em;border-radius:20px;padding:1.5px 6px;white-space:nowrap;}
+        .sev .sev-split-up{color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;}
+        .sev .sev-split-pd{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;}
+        .sev .sev-split-up.is-zero,.sev .sev-split-pd.is-zero{color:#64748b;background:#f1f5f9;border-color:#dbe3ec;}
+        /* One place per colour — wash, glyph, ring and text all read from it. */
+        .sev .sev-stat--slate{--evTone:#3b82f6;--evTint:#eff6ff;--evEdge:#c7dbfb;--evInk:#1d4ed8;}
+        .sev .sev-stat--teal {--evTone:#0891b2;--evTint:#ecfeff;--evEdge:#a5f3fc;--evInk:#0e7490;}
+        .sev .sev-stat--green{--evTone:#10b981;--evTint:#ecfdf5;--evEdge:#a7f3d0;--evInk:#047857;}
+        .sev .sev-stat--amber{--evTone:#f59e0b;--evTint:#fffbeb;--evEdge:#fcd34d;--evInk:#b45309;}
+        .sev .sev-stat--red  {--evTone:#ef4444;--evTint:#fef2f2;--evEdge:#fecaca;--evInk:#b91c1c;}
+        @media (max-width:1180px){
+          .sev .sev-stat-val{font-size:18px;}
+          .sev .sev-stat-label{font-size:7px;}
+        }
+        /* Seven cards do not fit a phone; let the strip scroll instead of
+           squeezing every card down to an unreadable sliver. */
+        @media (max-width:820px){
+          .sev .sev-stats{overflow-x:auto;}
+          .sev .sev-stat{flex:0 0 152px;}
+        }
+
+        /* Section banner — amber pill for the expiring bucket. */
+        .sev .sev-sec-pill-warn{background:linear-gradient(135deg,#fffbeb,#fef3c7);color:#b45309;border:1px solid #fcd34d;}
+        .sev .sev-sec-pill-warn .cev-sec-dot{background:#f59e0b;}
+
+        /* Footer provenance line. */
+        .sev .cev-footer-meta{display:flex;align-items:center;gap:10px;font-size:11px;color:#64748b;}
+        .sev .sev-foot-upd strong{color:#0e7490;font-weight:800;}
+        .sev .sev-foot-div{width:1px;height:12px;background:#cfe9f1;display:inline-block;}
+        .sev .sev-foot-managed{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:#0e7490;}
+
+        [data-bs-theme="dark"] .sev .sev-stats{background:#0b2530;border-bottom-color:rgba(148,197,255,.12);}
+        [data-bs-theme="dark"] .sev .sev-stat{background:#102b36;border-color:rgba(148,197,255,.14);box-shadow:none;}
+        [data-bs-theme="dark"] .sev .sev-stat-ico{background:#0b2530;}
+        [data-bs-theme="dark"] .sev .sev-stat-val{color:#e7f2f7;}
+        [data-bs-theme="dark"] .sev .sev-stat-tag{background:#0b2530;}
+        [data-bs-theme="dark"] .sev .sev-split-up{background:rgba(16,185,129,.12);border-color:rgba(16,185,129,.3);color:#6ee7b7;}
+        [data-bs-theme="dark"] .sev .sev-split-pd{background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.3);color:#fca5a5;}
+        [data-bs-theme="dark"] .sev .sev-split-up.is-zero,[data-bs-theme="dark"] .sev .sev-split-pd.is-zero{background:rgba(148,197,255,.08);border-color:rgba(148,197,255,.16);color:#93a7b8;}
+        [data-bs-theme="dark"] .sev .cev-groups-wrap{background:#0d1f29;border-bottom-color:rgba(148,197,255,.12);}
+        [data-bs-theme="dark"] .sev .cev-footer-meta{color:#9db2c4;}
+        [data-bs-theme="dark"] .sev .sev-foot-div{background:rgba(148,197,255,.2);}
+
+        /* HEADER ICON — translucent tile with the compliance tick badge. */
+        .sev .cev-vault-icon{width:48px;height:48px;border-radius:14px;flex-shrink:0;position:relative;background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(255,255,255,.08));border:1px solid rgba(255,255,255,.28);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.95);box-shadow:0 4px 20px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.3),0 0 0 4px rgba(255,255,255,.06);}
+        .sev .cev-vault-icon-tick{position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;background:linear-gradient(135deg,#10b981,#34d399);border:2.5px solid #083344;display:flex;align-items:center;justify-content:center;color:#fff;box-shadow:0 0 10px rgba(16,185,129,.7),0 2px 4px rgba(0,0,0,.2);}
+
+        /* CHIP PALETTE — one tint per kind of fact. */
+        .sev .cev-chip-seg,.sev .cev-chip-type,.sev .cev-chip-contact,.sev .cev-chip-city,.sev .cev-chip-country{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.22);color:#e2f7fc;}
+        .sev .sev-chip-more{cursor:pointer;font-family:inherit;}
+        .sev .sev-chip-more:hover{background:rgba(255,255,255,.22);}
+
+        /* The reference header carries texture, not bubbles: the decorative
+           orbs go, and the wash layer becomes the prototype's radial tints
+           over a fine dot grid. */
+        .sev .cev-header-orb{display:none;}
+        .sev .cev-header-bg::before,.sev .cev-header-bg::after{display:none;}
+        .sev .cev-header-bg{
+          background:
+            radial-gradient(circle, rgba(255,255,255,.06) 1px, transparent 1px) 0 0/20px 20px,
+            radial-gradient(ellipse 55% 180% at 95% 50%, rgba(34,211,238,.22) 0%, transparent 60%),
+            radial-gradient(ellipse 30% 100% at 10% 80%, rgba(6,182,212,.18) 0%, transparent 55%),
+            radial-gradient(ellipse 20% 60% at 50% 0%, rgba(255,255,255,.07) 0%, transparent 60%);
+        }
+        /* Bottom shine line, as on .ev-hd. */
+        .sev .cev-header-bg::after{display:block;content:'';position:absolute;bottom:0;left:0;right:0;top:auto;width:auto;height:1px;border-radius:0;box-shadow:none;background:linear-gradient(90deg,transparent 0%,rgba(103,232,249,.5) 30%,rgba(255,255,255,.35) 50%,rgba(103,232,249,.5) 70%,transparent 100%);}
+
+        /* Close button — a rounded square that turns red on hover. */
+        .sev .cev-close{width:28px;height:28px;border-radius:8px;flex-shrink:0;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background .18s,border-color .18s,color .18s,transform .18s;}
+        .sev .cev-close:hover{background:rgba(239,68,68,.4);border-color:rgba(248,113,113,.6);color:#fff;transform:scale(1.08);}
       `}</style>
-      <div className="cev-card" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="cev-card sev" onMouseDown={(e) => e.stopPropagation()}>
         {/* ─── HEADER ─── */}
         <div className="cev-header">
           <div className="cev-header-bg" aria-hidden />
@@ -651,59 +805,66 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           <div className="cev-header-content">
             <div className="cev-header-left">
               <div className="cev-vault-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="3" width="20" height="5" rx="1.5" />
-                  <path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
-                  <line x1="10" y1="13" x2="14" y2="13" />
-                  <line x1="10" y1="17" x2="14" y2="17" />
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="7" width="20" height="14" rx="2.5" />
+                  <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                  <line x1="12" y1="12" x2="12" y2="15" />
+                  <circle cx="12" cy="16" r=".5" fill="currentColor" />
                 </svg>
                 <span className="cev-vault-icon-tick" aria-hidden>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </span>
               </div>
               <div className="cev-header-text">
                 <div className="cev-header-eyebrow">SUPPLIER EVIDENCE VAULT</div>
-                <div className="cev-header-title">{supplier.company}</div>
-                <div className="cev-header-chips">
-                  <span className="cev-chip cev-chip-id">● {supplier.id}</span>
-                  {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
-                  <span className="cev-chip cev-chip-risk" data-risk={(supplier.risk ?? 'Low').toLowerCase()}>● {supplier.risk ?? 'Low'} Risk</span>
-                  {supplier.contact && (
-                    <span className="cev-chip cev-chip-contact">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      {supplier.contact}{supplier.contactCity ? ` · ${supplier.contactCity}` : ''}
-                    </span>
-                  )}
+                <div className="cev-header-title">
+                  <span className="sev-hd-code">{supplier.id}</span>
+                  <span className="sev-hd-dash" aria-hidden>—</span>
+                  <span className="sev-hd-nm">{supplier.company}</span>
                 </div>
-              </div>
-            </div>
-            <div className="cev-header-right">
-              <div className="cev-header-meta">
+                {/* Chip row — the supplier's identity at a glance: code, the
+                    segments it deals in, its vendor type, who to talk to and
+                    where they sit, then the risk grade. Each fact gets its own
+                    chip so none of them hides inside a joined string. */}
                 {(() => {
-                  /* Cap the inline segment list at 5; the rest collapse into a
-                   * "+N more" chip whose tooltip lists every segment, so a
-                   * supplier with many segments no longer overflows the header. */
                   const segs = (supplier.segments && supplier.segments.length > 0
                     ? supplier.segments
                     : (supplier.segment ? [supplier.segment] : [])
                   ).map(s => String(s).trim()).filter(Boolean);
-                  const shown = segs.slice(0, 5);
-                  const extra = segs.length - shown.length;
+                  const chipSegs = segs.slice(0, 3);
+                  const segRest  = segs.length - chipSegs.length;
+                  const type = (supplier.type ?? '').trim();
+                  // "Pending" is the list's placeholder for an unset type — a
+                  // chip saying Pending reads as a status, so it is left out.
+                  const showType = !!type && !/^(pending|-|—|n\/a)$/i.test(type);
+                  const risk = (supplier.risk ?? 'Low').replace(/\s*risk$/i, '');
                   return (
-                    <>
-                      {shown.map((s, i) => <Tooltip key={`${s}-${i}`} label={s}><span>{s.length > 20 ? s.slice(0, 20) + '…' : s}</span></Tooltip>)}
-                      {extra > 0 && (
+                    <div className="cev-header-chips">
+                      {/* No code chip — the title already leads with it. */}
+                      {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
+                      {chipSegs.map((s, i) => (
+                        <Tooltip key={`${s}-${i}`} label={s}>
+                          <span className="cev-chip cev-chip-seg">{s.length > 22 ? s.slice(0, 22) + '…' : s}</span>
+                        </Tooltip>
+                      ))}
+                      {segRest > 0 && (
                         <button
                           type="button"
-                          className="cev-seg-more"
+                          className="cev-chip cev-chip-seg sev-chip-more"
                           onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >+{extra} more</button>
+                        >+{segRest} more</button>
                       )}
-                    </>
+                      {showType && <span className="cev-chip cev-chip-type">{type}</span>}
+                      {supplier.contact && <span className="cev-chip cev-chip-contact">{supplier.contact}</span>}
+                      {supplier.contactCity && <span className="cev-chip cev-chip-city">{supplier.contactCity}</span>}
+                      {supplier.country && <span className="cev-chip cev-chip-country">{supplier.country}</span>}
+                      <span className="cev-chip cev-chip-risk" data-risk={risk.toLowerCase()}>{risk} Risk</span>
+                    </div>
                   );
                 })()}
-                {supplier.country && <span>· {supplier.country}</span>}
               </div>
+            </div>
+            <div className="cev-header-right">
               <button type="button" className="cev-close" onClick={onClose} aria-label="Close vault">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
@@ -712,22 +873,8 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         </div>
 
         {showSkeleton ? <VaultSkeleton /> : (<div className="cev-scroll">
-        {/* ─── KPI STRIP — full-width static stat row (flat columns split by
-             thin dividers, animated top accent line; no horizontal scroll). */}
-        <div className="cev-kpi-outer">
-          <div className="cev-kpi-strip">
-            <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
-            <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
-            <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
-            <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
-            <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
-            <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
-            <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
-            <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
-          </div>
-        </div>
-
-        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
+        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. Leads the
+             body: the stat strip below reports on whichever group is open. */}
         <div className="cev-groups-wrap">
           <div className="cev-groups">
             {GROUPS.map(g => (
@@ -749,11 +896,32 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); }}
                   title="View all documents in one list"
                 >
-                  <i className="ri-list-check-2" aria-hidden /> Document Overview
+                  <i className="ri-list-check-2" aria-hidden /> {g.overview}
                 </button>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* ─── STAT CARDS — tinted wash per metric, glyph top-left, completion
+             ring top-right, and the uploaded / pending split underneath. */}
+        <div className="sev-stats">
+          {group === 'standard' ? (<>
+            <SevStat tone="slate" icon="ri-file-list-3-line"  label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
+            <SevStat tone="green" icon="ri-checkbox-circle-line" label="Verified / Uploaded"   value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
+            <SevStat tone="red"   icon="ri-error-warning-line"   label="Pending"               value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
+            <SevStat tone="teal"  icon="ri-home-4-line"          label="Company Due Diligence" value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
+            <SevStat tone="teal"  icon="ri-user-3-line"          label="Owner KYC"             value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon="ri-computer-line"        label="Trade License"         value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+          </>) : (<>
+            <SevStat tone="slate" icon="ri-ship-line"            label="With Shipment ID Transactions" value={(vault.vendor_with_shipment ?? []).length} />
+            <SevStat tone="slate" icon="ri-inbox-archive-line"   label="All Other Transactions"        value={(vault.vendor_without_shipment ?? []).length} />
+            <SevStat tone="teal"  icon="ri-article-line"         label="Total Trade Documents"         value={dealDocs.length} part={dealDocs.length} whole={caseAll.length} />
+            <SevStat tone="teal"  icon="ri-file-paper-2-line"    label="Total Agreements"              value={dealAgrs.length} part={dealAgrs.length} whole={caseAll.length} />
+            <SevStat tone="green" icon="ri-checkbox-circle-line" label="Total Signed"                  value={caseSigned}  part={caseSigned}  whole={caseAll.length} tag="Complete" />
+            <SevStat tone="amber" icon="ri-time-line"            label="Pending for Sign"              value={caseWaiting} part={caseWaiting} whole={caseAll.length} tag="Awaiting" />
+            <SevStat tone="red"   icon="ri-mail-send-line"       label="Not Sent for Signature"        value={caseUnsent}  part={caseUnsent}  whole={caseAll.length} tag="Action needed" />
+          </>)}
         </div>
 
         {/* ─── CASE-TO-CASE: With / Without Shipment ID toggle (Figma .ev-shp-toggle).
@@ -821,8 +989,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
               ) : (
                 <>
-                  {counts.Uploaded > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Uploaded {counts.Uploaded}</span>}
-                  {counts.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {counts.Pending}</span>}
+                  {statusTally.Verified > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Verified {statusTally.Verified}</span>}
+                  {statusTally.Signed > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Signed {statusTally.Signed}</span>}
+                  {statusTally.Expiring > 0 && <span className="cev-sec-pill sev-sec-pill-warn"><span className="cev-sec-dot" />Expiring {statusTally.Expiring}</span>}
+                  {statusTally.Expired > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Expired {statusTally.Expired}</span>}
+                  {statusTally.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {statusTally.Pending}</span>}
+                  <span className="cev-sec-pill cev-sec-pill-docs">{docsForTab.length} Document{docsForTab.length === 1 ? '' : 's'}</span>
                 </>
               )}
             </div>
@@ -843,7 +1015,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
         {/* ─── FOOTER ─── */}
         <div className="cev-footer">
-          <div className="cev-footer-meta" />
+          <div className="cev-footer-meta">
+            <span className="sev-foot-upd">Last updated:&nbsp;<strong>{vault.last_updated || '—'}</strong></span>
+            <span className="sev-foot-div" aria-hidden />
+            <span className="sev-foot-managed"><i className="ri-shield-check-line" aria-hidden /> Vault managed by Compliance Team</span>
+          </div>
           <div className="cev-footer-actions">
             <Tooltip label="Download all files as a foldered ZIP">
               <button type="button" className="cev-btn cev-btn-light" onClick={handleExportAll} disabled={exporting}>
@@ -863,10 +1039,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
       {/* Send for Signature — launched from a Trade Documents row. The
           modal portals to <body>, so it overlays the vault cleanly.
-          NOTE: multiBox (one-person-multiple-signatures "Sign 1/2/3" picker) is
-          temporarily DISABLED — the single-signature original Zoho flow is used.
-          The multi-box code stays intact in the send modal, gated behind the
-          prop; re-enable by adding `multiBox` back to the props below. */}
+          multiBox: the ONE resolved signer can be asked to sign the same
+          document in several places (Legal Team #9 / BR-03 of the Multiple
+          Signature Placements spec). It was held back here while the rest of
+          the flows were proven; the spec puts every module in scope, so it is
+          on. Single-signer trade-doc mode only. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={supplier?.db_id ? {
@@ -877,6 +1054,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           email:   supplier.email,   // primary contact email → default signer
         } : null}
         modelName="Vendor"
+        multiBox
         sendAsAgreement={sendKind === 'agreement'}
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
@@ -987,15 +1165,46 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   );
 }
 
-/* ─── KPI tile — flat stat column (matches the CLM prototype): small uppercase
- *      label, a large tone-coloured number, and an optional status sub-line
- *      (✓ COMPLIANT / ⚠ ACTION). No icon box / gradient chrome. */
-function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; value: number; accent?: string; subtitle?: string; subTone?: 'good' | 'bad' }) {
+/* ─── Stat card — the strip under the group cards. A tinted wash in the
+ *      metric's own tone, its glyph top-left, a completion ring top-right
+ *      reading "part / whole", then the label and figure. Either an uploaded
+ *      / pending split or a single status tag closes the card.
+ *
+ *      pathLength=100 on both circles lets the arc be set in plain percent,
+ *      so the maths never has to know the radius. */
+function SevStat(props: {
+  tone: 'slate' | 'teal' | 'green' | 'amber' | 'red';
+  icon: string;
+  label: string;
+  value: number;
+  part?: number;
+  whole?: number;
+  tag?: string;
+  split?: { up: number; pend: number };
+}): ReactNode {
+  const whole = props.whole ?? 0;
+  const part  = props.part ?? 0;
+  const pct   = whole > 0 ? Math.max(0, Math.min(100, Math.round((part / whole) * 100))) : 0;
   return (
-    <div className="cev-kpi-tile">
-      <div className="cev-kpi-label">{label.toUpperCase()}</div>
-      <div className="cev-kpi-value" style={accent ? { color: accent } : undefined}>{value.toLocaleString()}</div>
-      {subtitle && <div className={`cev-kpi-sub ${subTone === 'bad' ? 'is-bad' : 'is-good'}`}>{subtitle}</div>}
+    <div className={`sev-stat sev-stat--${props.tone}`}>
+      <span className="sev-stat-ico"><i className={props.icon} aria-hidden /></span>
+      {whole > 0 && (
+        <span className="sev-stat-dial">
+          <svg className="sev-stat-ring" viewBox="0 0 40 40" aria-hidden>
+            <circle className="rg-bg" cx="20" cy="20" r="16" pathLength={100} />
+            <circle className="rg-fg" cx="20" cy="20" r="16" pathLength={100} transform="rotate(-90 20 20)" strokeDashoffset={100 - pct} />
+          </svg>
+          <span className="sev-stat-frac">{part}/{whole}</span>
+        </span>
+      )}
+      <div className="sev-stat-label">{props.label}</div>
+      <div className="sev-stat-val">{props.value.toLocaleString()}</div>
+      {props.split ? (
+        <div className="sev-stat-split">
+          <span className={`sev-split-up ${props.split.up === 0 ? 'is-zero' : ''}`}>{props.split.up} uploaded</span>
+          <span className={`sev-split-pd ${props.split.pend === 0 ? 'is-zero' : ''}`}>{props.split.pend} pending</span>
+        </div>
+      ) : props.tag ? <div className="sev-stat-tag">{props.tag}</div> : null}
     </div>
   );
 }
@@ -1006,12 +1215,13 @@ function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; v
 function VaultSkeleton() {
   return (
     <div className="cev-skel">
-      <div className="cev-skel-kpis">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
-      </div>
+      {/* Group cards lead the real layout, so they lead the skeleton too. */}
       <div className="cev-skel-groups">
         <div className="cev-skel-group cev-sk" />
         <div className="cev-skel-group cev-sk" />
+      </div>
+      <div className="cev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
       </div>
       <div className="cev-skel-tabs">
         {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cev-skel-tab cev-sk" />)}
@@ -1064,6 +1274,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
             <th>Requirement</th>
+            <th>Issue Date</th>
             <th>Expiry</th>
             <th>Attachment</th>
             <th>Status</th>
@@ -1072,7 +1283,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
         </thead>
         <tbody>
           {rows.length === 0 ? (
-            <tr><td colSpan={9} className="cev-empty">No documents in this bucket yet.</td></tr>
+            <tr><td colSpan={10} className="cev-empty">No documents in this bucket yet.</td></tr>
           ) : rows.map((d, i) => (
             <tr key={`${d.doc_code ?? 'doc'}-${i}`}>
               <td>{i + 1}</td>
@@ -1086,6 +1297,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
                   <span style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: '#f1f5f9', color: '#64748b', border: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Optional</span>
                 )}
               </td>
+              <td>{evFmtExpiry(d.issue_date)}</td>
               <td>{evFmtExpiry(d.expiry)}</td>
               <td>
                 {d.attachment_url ? (

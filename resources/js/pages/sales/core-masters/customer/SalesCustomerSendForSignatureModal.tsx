@@ -55,6 +55,16 @@ export type DocSettings = {
 };
 
 export const DEFAULTS: DocSettings = { x: 380, y: 720, page: 0, width: 150, height: 45 };
+/* Signature boxes ONE signer may be given on a single document (Legal Team #9:
+ * a counterparty must be able to sign the same document in more than one
+ * place). Shared by the single-signer multiBox picker and the per-role picker
+ * so both flows behave identically.
+ *
+ * There is DELIBERATELY no cap - BR-04 of the Multiple Signature Placements
+ * spec: no maximum limit on placements per contact person. A long trade
+ * document is initialled page-wise and on every annexure, so any fixed
+ * ceiling becomes the limitation. ZohoSignService emits one Signature field
+ * per entry with no ceiling of its own. Do not reintroduce one here. */
 export type SignerRoleKey = 'buyer' | 'consignee' | 'supplier';
 export const SIGNER_DEFAULTS: Record<SignerRoleKey, DocSettings> = {
   buyer:     { x:  60, y: 720, page: 0, width: 150, height: 45 },
@@ -236,6 +246,15 @@ export default function SalesCustomerSendForSignatureModal({
    * the coord pane drives and which overlay accepts pointer drags. */
   const [signerSettings, setSignerSettings] =
     useState<Record<number, Partial<Record<SignerRoleKey, DocSettings>>>>({});
+  /* Role mode + several signatures for the SAME signer (Legal Team #9).
+   * `signerSettings` above stays the single source of truth for each role's
+   * FIRST box — every existing seed / detect / drag path keeps writing there
+   * untouched. This map holds only the EXTRA boxes (2nd, 3rd), so when nobody
+   * adds one the payload and behaviour are byte-for-byte what they are today. */
+  const [roleExtraBoxes, setRoleExtraBoxes] =
+    useState<Record<number, Partial<Record<SignerRoleKey, DocSettings[]>>>>({});
+  /* 0 = the role's primary box in `signerSettings`; n = roleExtraBoxes[n - 1]. */
+  const [activeRoleBoxIdx, setActiveRoleBoxIdx] = useState(0);
   const [activeSignerRole, setActiveSignerRole] = useState<SignerRoleKey | null>(null);
   const [activeDocId, setActiveDocId] = useState<number | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -250,6 +269,13 @@ export default function SalesCustomerSendForSignatureModal({
    * of Y" hint can be shown. Kept per modal-open (no per-doc map needed
    * since switching docs reloads the preview anyway). */
   const [pageCount, setPageCount] = useState<number>(1);
+  /* The page shown on the canvas - SEPARATE from the active box's page.
+     Prev/Next used to patch the active box's `page`, so paging through the
+     document physically dragged that signature box along with the view and
+     relabelled it page 1 -> page 2, which read as boxes landing on pages
+     nobody put them on. A box now moves only when it is dragged or its Page
+     field is typed into; paging just looks. Same fix as the CTC modal. */
+  const [viewPage, setViewPage] = useState(0);
 
   const [sending, setSending] = useState(false);
 
@@ -425,6 +451,7 @@ export default function SalesCustomerSendForSignatureModal({
       setExpiryDays(30);
       setNotes('Please review and sign this purchase order.');
       setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
+      setRoleExtraBoxes({}); setActiveRoleBoxIdx(0);
       setSignerSettings({});
       setActiveSignerRole(null);
       setActiveDocId(rid);
@@ -458,6 +485,7 @@ export default function SalesCustomerSendForSignatureModal({
       setExpiryDays(30);
       setNotes('Please review and sign these agreements.');
       setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
+      setRoleExtraBoxes({}); setActiveRoleBoxIdx(0);
       // Seed per-doc-per-signer coords from SIGNER_DEFAULTS so the
       // preview opens with non-overlapping boxes for each role. Each
       // signer gets their own slot; user drags adjust the slot tied
@@ -499,6 +527,7 @@ export default function SalesCustomerSendForSignatureModal({
     setExpiryDays(30);
     setNotes('Please review and sign these documents.');
     setSettings({}); setMultiBoxes({}); setActiveBoxIdx(0);
+    setRoleExtraBoxes({}); setActiveRoleBoxIdx(0);
     // Per-role coord seeding (Buyer+Consignee trade doc) — one non-
     // overlapping box per signer, mirroring agreement mode. Empty for the
     // single-signer path, which keeps using the flat `settings` map.
@@ -755,6 +784,18 @@ export default function SalesCustomerSendForSignatureModal({
               ...prev,
               [docId]: { ...DEFAULTS, ...prev[docId], ...found },
             }));
+            /* multiBox mode reads its coords from `multiBoxes`, not `settings`,
+             * so the detected position has to be mirrored onto box 1 or the
+             * first box would sit at the hardcoded DEFAULTS instead of on the
+             * document's real signature line. Boxes 2+ are user-placed and are
+             * left exactly where they were dragged. */
+            setMultiBoxes(prev => {
+              const arr = prev[docId];
+              if (!arr || !arr.length) return prev;
+              const next = arr.slice();
+              next[0] = { ...DEFAULTS, ...next[0], ...found };
+              return { ...prev, [docId]: next };
+            });
           }
         } catch {
           // Detection failed (e.g., corrupted PDF, worker init issue).
@@ -867,10 +908,23 @@ export default function SalesCustomerSendForSignatureModal({
          * for any signer the user didn't touch. */
         const documentSettings: Record<number, Record<string, DocSettings>> = {};
         selectedIds.forEach(id => {
-          const slice = signerSettings[id] ?? {};
           const filled: Record<string, DocSettings> = {};
           (agreementContext.signers ?? []).forEach(s => {
-            filled[s.role] = slice[s.role] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+            /* Read the role's FULL box list, the same helper the picker and
+               the preview overlay use. This branch used to take only
+               signerSettings[id][role] - the primary box - and never looked at
+               roleExtraBoxes, so an agreement where the user had added Sign 2
+               and Sign 3 still reached Zoho as a single Signature_1_1 field.
+               Trade documents never had the bug because they post through the
+               general builder further down, which already sent `boxes`. */
+            const list    = roleBoxList(id, s.role);
+            const primary = list[0] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+            /* `boxes` only when this role really signs in more than one place,
+               so a single-signature agreement sends byte-for-byte what it
+               always did and cannot regress. */
+            filled[s.role] = list.length > 1
+              ? ({ ...primary, boxes: list } as DocSettings)
+              : primary;
           });
           documentSettings[id] = filled;
         });
@@ -923,10 +977,24 @@ export default function SalesCustomerSendForSignatureModal({
         }));
         const perRole: Record<number, Record<string, DocSettings>> = {};
         selectedIds.forEach(id => {
-          const slice = signerSettings[id] ?? {};
           const filled: Record<string, DocSettings> = {};
           roleSigners.forEach(s => {
-            filled[s.role] = slice[s.role] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+            /* Read through roleBoxList - the SAME helper the picker and the
+               preview overlay use - so what is sent cannot drift from what the
+               screen showed. Rebuilding the list here from signerSettings +
+               roleExtraBoxes duplicated that logic, and a document sent with
+               three visible boxes reached Zoho as a single Signature_1_1
+               field, so the two had drifted in practice. */
+            const list    = roleBoxList(id, s.role);
+            const primary = list[0] ?? { ...(SIGNER_DEFAULTS[s.role] ?? DEFAULTS) };
+            const extras  = list.slice(1);
+            /* `boxes` is attached ONLY when this role really signs in more than
+             * one place — ZohoSignService then drops one Signature field per
+             * entry. With no extras the object is byte-for-byte what this flow
+             * has always sent, so single-signature sends cannot regress. */
+            filled[s.role] = extras.length
+              ? ({ ...primary, boxes: [primary, ...extras] } as DocSettings)
+              : primary;
           });
           perRole[id] = filled;
         });
@@ -1003,15 +1071,95 @@ export default function SalesCustomerSendForSignatureModal({
    *   - trade-doc mode → settings[docId]
    * Per-signer agreement coords are kept in their own state map so
    * trade-doc behaviour stays bit-for-bit unchanged. */
+  /* Box 1 of a doc seeds from that doc's own coords (auto-detected signature
+   * line, else DEFAULTS) — NOT from bare DEFAULTS — so turning multiBox on
+   * never moves the first signature away from where single-box mode put it. */
+  const seedBoxes = (docId: number): DocSettings[] => [{ ...DEFAULTS, ...(settings[docId] ?? {}) }];
+
+  /* The complete box list for one role on one doc: the primary box (still held
+   * in `signerSettings`) followed by any extra boxes the user added. */
+  const roleBoxList = (docId: number, role: SignerRoleKey): DocSettings[] => {
+    const primary = signerSettings[docId]?.[role] ?? { ...(SIGNER_DEFAULTS[role] ?? DEFAULTS) };
+    return [primary, ...(roleExtraBoxes[docId]?.[role] ?? [])];
+  };
+  const roleBoxCount = (roleMode && activeDocId && activeSignerRole)
+    ? roleBoxList(activeDocId, activeSignerRole).length
+    : 1;
+  /* Add / remove an EXTRA signature box for the active role. Index 0 is the
+   * primary box and can never be removed — every signer always signs at least
+   * once, which is exactly today's behaviour. */
+  const addRoleBox = () => {
+    if (!activeDocId || !activeSignerRole) return;
+    const role = activeSignerRole; const docId = activeDocId;
+    const list = roleBoxList(docId, role);
+    const last = list[list.length - 1];
+    setRoleExtraBoxes(prev => {
+      const docSlice = prev[docId] ?? {};
+      const arr = (docSlice[role] ?? []).slice();
+      // Seeded ABOVE the previous box — dropping it at identical coords would
+      // stack the two exactly and leave the lower one impossible to grab.
+      // Lands on the page being VIEWED, not on whatever page the previous box
+      // sits on - placing a signature on page 3 otherwise meant adding it on
+      // page 1 and then hunting for the Page field.
+      // The -70 nudge exists ONLY to stop two boxes stacking at identical
+      // coords on the SAME page, where the lower one becomes impossible to
+      // grab. On a fresh page there is nothing to collide with, so keeping
+      // the nudge just drifted every page's signature 70pt higher than the
+      // last - by page 5 the box sat 280pt above the signature line.
+      const samePage = (last.page ?? 0) === viewPage;
+      arr.push({ ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 70) : (last.y ?? DEFAULTS.y) });
+      return { ...prev, [docId]: { ...docSlice, [role]: arr } };
+    });
+    setActiveRoleBoxIdx(list.length);
+  };
+  /* Box 1 is removable too, by PROMOTING the next box into its place.
+
+     Every role is seeded with a box on page 1, so a Buyer + Consignee send
+     puts two on the cover even when only one party signs there, and the
+     `idx < 1` guard meant that box could only ever be moved, never cleared.
+     Box 1 is not just another entry - it is the role's primary coords in
+     signerSettings, with boxes 2+ living in roleExtraBoxes - so deleting it
+     means the first extra takes over as primary rather than restructuring
+     the payload. A role can therefore never reach zero boxes, which keeps
+     BR-09 intact: a counterparty on the document always signs somewhere.
+     Add the box where the party really signs first, then drop this one. */
+  const removeRoleBox = (idx: number) => {
+    if (!activeDocId || !activeSignerRole || idx < 0) return;
+    const role = activeSignerRole; const docId = activeDocId;
+    const extras = roleExtraBoxes[docId]?.[role] ?? [];
+    if (idx === 0) {
+      if (!extras.length) return;            // only box left - keep it
+      const promoted = extras[0];
+      setSignerSettings(prev => ({
+        ...prev,
+        [docId]: { ...(prev[docId] ?? {}), [role]: { ...promoted } },
+      }));
+      setRoleExtraBoxes(prev => {
+        const docSlice = prev[docId] ?? {};
+        return { ...prev, [docId]: { ...docSlice, [role]: extras.slice(1) } };
+      });
+      setActiveRoleBoxIdx(0);
+      return;
+    }
+    setRoleExtraBoxes(prev => {
+      const docSlice = prev[docId] ?? {};
+      const arr = (docSlice[role] ?? []).slice();
+      arr.splice(idx - 1, 1);
+      return { ...prev, [docId]: { ...docSlice, [role]: arr } };
+    });
+    setActiveRoleBoxIdx(i => Math.max(0, Math.min(i, idx - 1)));
+  };
+
   const activeSettings: DocSettings | null = (() => {
     if (!activeDocId) return null;
     if (roleMode) {
       if (!activeSignerRole) return null;
       const roleSeed = SIGNER_DEFAULTS[activeSignerRole] ?? DEFAULTS;
-      return signerSettings[activeDocId]?.[activeSignerRole] ?? { ...roleSeed };
+      const list = roleBoxList(activeDocId, activeSignerRole);
+      return list[Math.min(activeRoleBoxIdx, list.length - 1)] ?? { ...roleSeed };
     }
     if (multiBox) {
-      const arr = multiBoxes[activeDocId] ?? [{ ...DEFAULTS }];
+      const arr = multiBoxes[activeDocId] ?? seedBoxes(activeDocId);
       return arr[activeBoxIdx] ?? arr[0] ?? { ...DEFAULTS };
     }
     return settings[activeDocId] ?? { ...DEFAULTS };
@@ -1021,6 +1169,19 @@ export default function SalesCustomerSendForSignatureModal({
     if (roleMode) {
       if (!activeSignerRole) return;
       const role = activeSignerRole;
+      if (activeRoleBoxIdx > 0) {
+        /* An EXTRA box — patch it in place. The primary box, and every existing
+         * path that reads or seeds `signerSettings`, stay untouched. */
+        const extraIdx = activeRoleBoxIdx - 1;
+        setRoleExtraBoxes(prev => {
+          const docSlice = prev[activeDocId] ?? {};
+          const arr = (docSlice[role] ?? []).slice();
+          if (!arr[extraIdx]) return prev;
+          arr[extraIdx] = { ...DEFAULTS, ...arr[extraIdx], ...patch };
+          return { ...prev, [activeDocId]: { ...docSlice, [role]: arr } };
+        });
+        return;
+      }
       setSignerSettings(prev => {
         const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
         const docSlice = prev[activeDocId] ?? {};
@@ -1034,7 +1195,7 @@ export default function SalesCustomerSendForSignatureModal({
     }
     if (multiBox) {
       setMultiBoxes(prev => {
-        const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
+        const arr = (prev[activeDocId] ?? seedBoxes(activeDocId)).slice();
         const idx = Math.min(activeBoxIdx, arr.length - 1);
         arr[idx] = { ...DEFAULTS, ...arr[idx], ...patch };
         return { ...prev, [activeDocId]: arr };
@@ -1048,10 +1209,14 @@ export default function SalesCustomerSendForSignatureModal({
   const addBox = () => {
     if (!activeDocId) return;
     setMultiBoxes(prev => {
-      const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
-      if (arr.length >= 3) return prev;                       // cap at 3
+      const arr = (prev[activeDocId] ?? seedBoxes(activeDocId)).slice();
       const last = arr[arr.length - 1] ?? DEFAULTS;
-      arr.push({ ...DEFAULTS, ...last, y: Math.max(0, (last.y ?? DEFAULTS.y) - 80) });  // offset above so it's visible
+      // Lands on the page being VIEWED (see addRoleBox), offset above the
+      // previous box so identical coords cannot stack them unreachably.
+      // Offset only when the new box shares the previous box's page (see
+      // addRoleBox) - otherwise each page's signature drifts upward.
+      const samePage = (last.page ?? 0) === viewPage;
+      arr.push({ ...DEFAULTS, ...last, page: viewPage, y: samePage ? Math.max(0, (last.y ?? DEFAULTS.y) - 80) : (last.y ?? DEFAULTS.y) });
       setActiveBoxIdx(arr.length - 1);
       return { ...prev, [activeDocId]: arr };
     });
@@ -1059,7 +1224,7 @@ export default function SalesCustomerSendForSignatureModal({
   const removeBox = (idx: number) => {
     if (!activeDocId) return;
     setMultiBoxes(prev => {
-      const arr = (prev[activeDocId] ?? [{ ...DEFAULTS }]).slice();
+      const arr = (prev[activeDocId] ?? seedBoxes(activeDocId)).slice();
       if (arr.length <= 1) return prev;                       // keep at least one
       arr.splice(idx, 1);
       setActiveBoxIdx(i => Math.max(0, Math.min(i, arr.length - 1)));
@@ -1071,8 +1236,7 @@ export default function SalesCustomerSendForSignatureModal({
   /* Flip the active signer's signature box (and the rendered preview page)
    * to the previous/next page — mirrors the Quotation/PI modal's Prev/Next. */
   const goPage = (delta: number) => {
-    const cur = activeSettings?.page ?? 0;
-    updateActiveSettings({ page: Math.max(0, Math.min(pageCount - 1, cur + delta)) });
+    setViewPage(p => Math.max(0, Math.min(pageCount - 1, p + delta)));
   };
 
   /* ── Drag-to-position the signature box on the live PDF preview.
@@ -1115,7 +1279,7 @@ export default function SalesCustomerSendForSignatureModal({
    * Re-runs when the page changes, the doc loads, or the wrapper resizes.
    * The page shown is whichever page the active signature box lives on
    * (activeSettings.page), so navigating pages and positioning stay in sync. */
-  const activePageNum = activeSettings?.page ?? 0;
+  const activePageNum = viewPage;
   useEffect(() => {
     if (step !== 2 || !pdfRenderReady) return;
     const pdf = pdfDocRef.current;
@@ -1166,7 +1330,7 @@ export default function SalesCustomerSendForSignatureModal({
 
   // Page currently being positioned on — drives which PDF page the canvas
   // paints so the visible sheet matches the (x, y) Zoho will apply.
-  const activePreviewPage = activeSettings?.page ?? 0;
+  const activePreviewPage = viewPage;
 
   /* ── Paint the active page onto the <canvas> at the wrapper's width.
    * Re-runs when the page changes, the doc finishes loading, or the
@@ -1503,7 +1667,7 @@ export default function SalesCustomerSendForSignatureModal({
                             role="tab"
                             aria-selected={s.role === activeSignerRole}
                             className={`ssf-signer-tab ${s.role === activeSignerRole ? 'is-on' : ''} ${!s.email ? 'is-unmapped' : ''}`}
-                            onClick={() => setActiveSignerRole(s.role)}
+                            onClick={() => { setActiveSignerRole(s.role); setActiveRoleBoxIdx(0); }}
                             title={s.email ? `Position ${s.name}'s signature` : `${s.name} — not mapped on this lead`}
                           >
                             <span className={`ssf-signer-dot ssf-signer-dot-${s.role}`} />
@@ -1519,9 +1683,9 @@ export default function SalesCustomerSendForSignatureModal({
                         page you want. Mirrors the Quotation/PI send modal. */}
                     {pageCount > 1 && (
                       <div className="ssf-pagenav">
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(-1)} disabled={(activeSettings?.page ?? 0) <= 0} aria-label="Previous page">‹ Prev</button>
-                        <span className="ssf-pagenav-label">Page {(activeSettings?.page ?? 0) + 1} of {pageCount}</span>
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(1)} disabled={(activeSettings?.page ?? 0) >= pageCount - 1} aria-label="Next page">Next ›</button>
+                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(-1)} disabled={viewPage <= 0} aria-label="Previous page">‹ Prev</button>
+                        <span className="ssf-pagenav-label">Page {viewPage + 1} of {pageCount}</span>
+                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(1)} disabled={viewPage >= pageCount - 1} aria-label="Next page">Next ›</button>
                       </div>
                     )}
                     <div className="ssf-preview-wrap" ref={previewWrapRef}>
@@ -1541,16 +1705,17 @@ export default function SalesCustomerSendForSignatureModal({
                             can see how the layout looks for the bundle. */}
                       {roleMode && wrapWidthPx > 0 && activeDocId && (() => {
                         const pxPerPt = wrapWidthPx / A4_W;
-                        const visiblePage = activeSettings?.page ?? 0;
-                        return roleSigners.map(s => {
-                          const ds = signerSettings[activeDocId]?.[s.role]
-                            ?? SIGNER_DEFAULTS[s.role]
-                            ?? DEFAULTS;
+                        const visiblePage = viewPage;
+                        return roleSigners.flatMap(s => {
+                          // A signer may sign in several places (Legal Team #9),
+                          // so paint EVERY box this role owns, not just one.
+                          const list = roleBoxList(activeDocId, s.role);
+                          return list.map((ds, bi) => {
                           // Only paint overlays whose .page matches the
                           // iframe's current page — otherwise the box
                           // would float over the wrong page.
                           if (ds.page !== visiblePage) return null;
-                          const isActive = s.role === activeSignerRole;
+                          const isActive = s.role === activeSignerRole && bi === activeRoleBoxIdx;
                           const leftPx   = ds.x      * pxPerPt;
                           const topPx    = ds.y      * pxPerPt;
                           const widthPx  = ds.width  * pxPerPt;
@@ -1558,17 +1723,17 @@ export default function SalesCustomerSendForSignatureModal({
                           const dotCls   = `ssf-signer-dot ssf-signer-dot-${s.role}`;
                           return (
                             <div
-                              key={s.role}
+                              key={`${s.role}:${bi}`}
                               className={`ssf-sig-overlay ssf-sig-overlay-${s.role} ${isActive ? 'is-active' : 'is-dim'}`}
                               style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
                               onPointerDown={(e) => {
                                 if (!isActive) {
-                                  // Clicking another signer's box switches
-                                  // focus to that signer (drag won't fire
-                                  // on this pointerdown — user clicks
-                                  // again to start the drag).
+                                  // Clicking another box switches focus to that
+                                  // signer AND that box (drag won't fire on this
+                                  // pointerdown — user clicks again to drag).
                                   e.stopPropagation();
                                   setActiveSignerRole(s.role);
+                                  setActiveRoleBoxIdx(bi);
                                   return;
                                 }
                                 onSigPointerDown(e, 'move');
@@ -1584,7 +1749,7 @@ export default function SalesCustomerSendForSignatureModal({
                               }}
                               title={isActive ? 'Drag to move' : `Click to switch to ${s.name}`}
                             >
-                              <div className="ssf-sig-label"><span className={dotCls} /> {s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}</div>
+                              <div className="ssf-sig-label"><span className={dotCls} /> {s.role === 'buyer' ? 'Customer' : s.role === 'consignee' ? 'Consignee' : 'Supplier'}{list.length > 1 ? ` · ${bi + 1}` : ''}</div>
                               <div className="ssf-sig-page">page {ds.page + 1}</div>
                               {isActive && (
                                 <div
@@ -1595,6 +1760,7 @@ export default function SalesCustomerSendForSignatureModal({
                               )}
                             </div>
                           );
+                          });
                         });
                       })()}
                       {!roleMode && !multiBox && activeSettings && wrapWidthPx > 0 && (() => {
@@ -1636,8 +1802,8 @@ export default function SalesCustomerSendForSignatureModal({
                           active one draggable, the rest clickable to select. */}
                       {multiBox && activeDocId && wrapWidthPx > 0 && (() => {
                         const pxPerPt = wrapWidthPx / A4_W;
-                        const visiblePage = activeSettings?.page ?? 0;
-                        const arr = multiBoxes[activeDocId] ?? [{ ...DEFAULTS }];
+                        const visiblePage = viewPage;
+                        const arr = multiBoxes[activeDocId] ?? seedBoxes(activeDocId);
                         return arr.map((ds, i) => {
                           if ((ds.page ?? 0) !== visiblePage) return null;
                           const isActive = i === activeBoxIdx;
@@ -1734,13 +1900,53 @@ export default function SalesCustomerSendForSignatureModal({
                   Edit Header / Footer / Body
                 </button>
 
+                {/* Per-role signature boxes — Legal Team #9: the SAME
+                    counterparty may have to sign in several places on one
+                    agreement. Each box is positioned independently and can sit
+                    on its own page. Box 1 can never be removed. */}
+                {roleMode && activeSignerRole && (
+                  <div className="ssf-coord-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, marginTop: 8 }}>
+                    <span style={{ fontWeight: 700, fontSize: 11 }}>
+                      {roleSigners.find(s => s.role === activeSignerRole)?.name || 'This signer'} signs in
+                      <small style={{ color: '#94a3b8', fontWeight: 400 }}> · {roleBoxCount} place{roleBoxCount > 1 ? 's' : ''} on this doc</small>
+                    </span>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                      {Array.from({ length: roleBoxCount }).map((_, i) => (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <button type="button" onClick={() => { setActiveRoleBoxIdx(i); const b = roleBoxList(activeDocId!, activeSignerRole!)[i]; if (b) setViewPage(b.page ?? 0); }}
+                            style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                              border: i === activeRoleBoxIdx ? '1.5px solid #7c3aed' : '1.5px solid #e2e8f0',
+                              background: i === activeRoleBoxIdx ? 'linear-gradient(135deg,#ede9fe,#ddd6fe)' : '#fff',
+                              color: i === activeRoleBoxIdx ? '#5b21b6' : '#475569' }}>
+                            Sign {i + 1}
+                          </button>
+                          {/* Box 1 gets an x too, but only once a second box
+                              exists to take over as the role's primary - a
+                              party on the document must always sign somewhere. */}
+                          {(i > 0 || roleBoxCount > 1) && (
+                            <button type="button" onClick={() => removeRoleBox(i)} aria-label={`Remove box ${i + 1}`}
+                              style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+                          )}
+                        </span>
+                      ))}
+                      {(
+                        <button type="button" onClick={addRoleBox}
+                          style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1.5px dashed #a78bfa', background: '#faf5ff', color: '#7c3aed' }}>
+                          + Add box
+                        </button>
+                      )}
+                    </div>
+                    <small style={{ color: '#94a3b8' }}>Boxes belong to the <strong>signer selected above</strong> — pick one, then drag it on the preview. Each box can sit on a different page.</small>
+                  </div>
+                )}
+
                 {multiBox && (
                   <div className="ssf-coord-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, marginTop: 8 }}>
                     <span style={{ fontWeight: 700, fontSize: 11 }}>{customer?.contact || customer?.company || 'The signer'} signs in <small style={{ color: '#94a3b8', fontWeight: 400 }}>· {boxCount} place{boxCount > 1 ? 's' : ''} on the doc</small></span>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                       {Array.from({ length: boxCount }).map((_, i) => (
                         <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                          <button type="button" onClick={() => setActiveBoxIdx(i)}
+                          <button type="button" onClick={() => { setActiveBoxIdx(i); const b = (multiBoxes[activeDocId!] ?? [])[i]; if (b) setViewPage(b.page ?? 0); }}
                             style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
                               border: i === activeBoxIdx ? '1.5px solid #7c3aed' : '1.5px solid #e2e8f0',
                               background: i === activeBoxIdx ? 'linear-gradient(135deg,#ede9fe,#ddd6fe)' : '#fff',
@@ -1753,7 +1959,7 @@ export default function SalesCustomerSendForSignatureModal({
                           )}
                         </span>
                       ))}
-                      {boxCount < 3 && (
+                      {(
                         <button type="button" onClick={addBox}
                           style={{ padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer', border: '1.5px dashed #a78bfa', background: '#faf5ff', color: '#7c3aed' }}>
                           + Add box
@@ -1779,7 +1985,10 @@ export default function SalesCustomerSendForSignatureModal({
                         onChange={e => {
                           const v = Number(e.target.value) || 1;
                           const clamped = Math.max(1, Math.min(pageCount, v));
+                          // Typing a page MOVES this box there, so the canvas
+                          // follows it - otherwise the box vanishes from view.
                           updateActiveSettings({ page: clamped - 1 });
+                          setViewPage(clamped - 1);
                         }}
                       />
                     </label>
