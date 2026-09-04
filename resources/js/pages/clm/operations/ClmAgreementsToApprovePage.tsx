@@ -189,7 +189,17 @@ export default function ClmAgreementsToApprovePage() {
       // Success → close both the action popup AND the review PDF behind it.
       setActionId(null); setActionChoice(null); setReviewId(null);
       load();
-    } catch { toast.error('Action failed', 'Please try again.'); }
+    } catch (e: any) {
+      /* Show what the server actually said. A 422 from the length rule arrived
+         here and was thrown away for a flat "Please try again", which told the
+         user nothing and suggested a transient fault — so they retried the same
+         over-long text and got the same nothing. Laravel puts the field message
+         in errors.<field>[0]; message is the fallback. */
+      const err = e?.response?.data;
+      const field = mode === 'rejected' ? 'reason' : 'query';
+      const msg = err?.errors?.[field]?.[0] || err?.message || 'Please try again.';
+      toast.error(mode === 'rejected' ? 'Could not reject' : 'Could not raise clarification', msg);
+    }
     finally { setSubmitting(false); }
   };
 
@@ -569,6 +579,10 @@ function ClarificationTable({ rows, page, setPage, pageSize, onPageSize, onRevie
 function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, submitting = false, t }: { contract: AtaContract; onClose: () => void; onSubmit: (id: string, mode: 'clarification' | 'rejected', comment: string) => void; initialChoice?: 'clarify' | 'reject' | null; submitting?: boolean; t: OpsTokens }) {
   const [choice, setChoice] = useState<'clarify' | 'reject' | null>(initialChoice);
   const [comment, setComment] = useState('');
+  /* Mirrors CtcContractController's rules — reject takes max:1000, clarify
+     max:2000. Enforced here so the field stops at the same figure the server
+     would reject at, rather than letting the user finish and then fail. */
+  const commentMax = choice === 'reject' ? 1000 : 2000;
   const [err, setErr] = useState(false);
   const { typingName, notifyTyping, stopTyping } = useTyping(contract.id);
 
@@ -631,7 +645,20 @@ function TakeActionModal({ contract, onClose, onSubmit, initialChoice = null, su
           )}
           <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '.1em', textTransform: 'uppercase', color: t.textMuted, marginBottom: 7 }}>{choice === 'reject' ? 'Rejection Reason' : choice === 'clarify' ? (contract.clarifications.length > 0 ? 'Add New Clarification Query' : 'Clarification Query') : 'Comment / Reason'} <span style={{ color: '#EF4444' }}>*</span></div>
           <textarea value={comment} onChange={e => { setComment(e.target.value); setErr(false); if (choice === 'clarify') notifyTyping(); }} placeholder={choice === 'reject' ? 'Enter the reason for rejecting this agreement…' : choice === 'clarify' ? 'Enter your clarification query for the initiator…' : 'Enter your clarification query or rejection reason…'}
+            maxLength={commentMax}
             style={{ width: '100%', height: 85, padding: '11px 13px', border: `1.5px solid ${err && !comment.trim() ? '#EF4444' : t.searchBorder}`, borderRadius: 11, fontFamily: 'inherit', fontSize: 12, color: t.text, resize: 'none', outline: 'none', lineHeight: 1.55, background: t.searchBg, boxSizing: 'border-box' }} />
+          {/* maxLength stops the text growing past what the server accepts, and
+              the counter says why typing stopped — otherwise the field just goes
+              dead. Appears only near the ceiling so it is not noise the rest of
+              the time. The limits mirror CtcContractController: reason max:1000,
+              query max:2000. Keep them in step. */}
+          {comment.length > commentMax * 0.9 && (
+            <div style={{ fontSize: 9.5, fontWeight: 700, marginTop: 6, textAlign: 'right', color: comment.length >= commentMax ? '#D97706' : t.sub }}>
+              {comment.length >= commentMax
+                ? `Character limit reached — ${commentMax.toLocaleString()} maximum`
+                : `${comment.length.toLocaleString()} / ${commentMax.toLocaleString()}`}
+            </div>
+          )}
           {err && !choice && <div style={{ fontSize: 9, color: '#EF4444', marginTop: 6, fontWeight: 600 }}>Please choose an action.</div>}
           <button onClick={submit} disabled={submitting} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: choice === 'reject' ? 'linear-gradient(135deg,#EF4444,#DC2626)' : 'linear-gradient(135deg,#0e7490,#0891b2,#06b6d4)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? .75 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '0 4px 16px rgba(6,182,212,.4)', letterSpacing: '-.1px' }}>
             {submitting
