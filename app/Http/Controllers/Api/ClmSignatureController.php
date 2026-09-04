@@ -447,7 +447,8 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id     = $zohoRequestId;
             $sigReq->request_name        = $requestName;
             $sigReq->status              = $finalStatus;
-            $sigReq->signers             = $data['signers'];
+            // BR-13: record WHERE each signer must sign (see withPlacements).
+            $sigReq->signers             = $this->withPlacements((array) $data['signers'], (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date         = now()->addDays($expiryDays);
             $sigReq->metadata            = [
                 'sent_at'           => now()->toIso8601String(),
@@ -831,7 +832,8 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            $sigReq->signers           = $signers;
+            // BR-13: record WHERE each signer must sign (see withPlacements).
+            $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
                 'sent_at'             => now()->toIso8601String(),
@@ -1054,7 +1056,8 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            $sigReq->signers           = $signers;
+            // BR-13: record WHERE each signer must sign (see withPlacements).
+            $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
                 'document_type'     => 'ctc',
@@ -1068,14 +1071,31 @@ class ClmSignatureController extends Controller
             $sigReq->save();
 
             // Advance the contract to Stage 3 with the signing tracker.
-            $recipients = collect($signers)->map(fn($s) => [
-                'name' => $s['name'],
-                'email' => $s['email'],
-                'role' => $s['role'],
-                'contact' => $s['name'],
-                'signed' => false,
-                'signed_at' => null,
-            ])->all();
+            // BR-13: keep each signer's PLACEMENTS alongside the recipient, so
+            // the tracker can say where that person has to sign - "Page 1,
+            // Page 3, Page 5" - instead of only that they must sign. Zoho
+            // reports completion per RECIPIENT, never per field, so there is no
+            // honest per-placement status to store; the pages are what the UI
+            // can truthfully show. Read back out of the same
+            // document_settings the boxes were sent with.
+            $perSigner = (array) (($data['document_settings'] ?? [])[$c->id]
+                ?? ($data['document_settings'] ?? [])[(string) $c->id] ?? []);
+            $recipients = collect($signers)->map(function ($s) use ($perSigner) {
+                $coords = (array) ($perSigner[$s['role']] ?? []);
+                $boxes  = (isset($coords['boxes']) && is_array($coords['boxes']) && $coords['boxes'])
+                    ? array_values(array_filter($coords['boxes'], 'is_array'))
+                    : ($coords ? [$coords] : []);
+                return [
+                    'name' => $s['name'],
+                    'email' => $s['email'],
+                    'role' => $s['role'],
+                    'contact' => $s['name'],
+                    'signed' => false,
+                    'signed_at' => null,
+                    // 1-based page numbers, in the order the boxes were placed.
+                    'placements' => array_map(fn ($b) => (int) ($b['page'] ?? 0) + 1, $boxes),
+                ];
+            })->all();
             // A resend after a decline carries the edited draft — persist it so
             // the contract body, preview and version snapshot all reflect it.
             if (array_key_exists('content_override', $data) && $data['content_override'] !== null) {
@@ -1181,13 +1201,31 @@ class ClmSignatureController extends Controller
                     }
                 }
                 unset($r);
-                $isDeclined = $declinedBy !== null || in_array($reqStatus, ['declined', 'rejected', 'recalled']);
+                // 'expired' sits with the declines: section 8.8 gives expiry the
+                // same outcome - void the request and re-initiate for everyone -
+                // and BR-19 keeps it away from the Master freeze either way.
+                $isDeclined = $declinedBy !== null || in_array($reqStatus, ['declined', 'rejected', 'recalled', 'expired']);
                 $allSigned  = !$isDeclined && count($recipients) > 0 && collect($recipients)->every(fn($r) => !empty($r['signed']));
 
                 if ($isDeclined && empty($c->signature_declined_at)) {
                     // First time we see the decline → stamp it + log a version event.
                     $c->signature_declined_at = now();
-                    $this->ctcPushVersion($c, 'Declined by ' . ($declinedBy ?: 'a signer') . ($declinedReason ? ' — ' . $declinedReason : ''), 'Declined', $declinedBy ?: 'Signer');
+                    // BR-16 / section 8.8: a decline (or expiry) voids the WHOLE
+                    // request, not just the declining party's task. Everyone else
+                    // must stop signing a document that is already dead, including
+                    // counterparties who have not opened it yet - the contract goes
+                    // out afresh to all of them once the draft is corrected. The
+                    // voided row is kept (never deleted) so the cycle stays
+                    // auditable; the next send creates a new request.
+                    // An expiry has no declining signer, so it must not be logged
+                    // as one - same outcome (void + re-initiate), different cause,
+                    // and the audit trail has to say which actually happened.
+                    $expired  = $reqStatus === 'expired' && $declinedBy === null;
+                    $voidWhy  = $expired
+                        ? 'Signing request expired'
+                        : ($declinedReason ?: 'Declined by ' . ($declinedBy ?: 'a signer'));
+                    $this->ctcVoidSignatureRequest($c, $voidWhy);
+                    $this->ctcPushVersion($c, ($expired ? 'Signing request expired' : 'Declined by ' . ($declinedBy ?: 'a signer') . ($declinedReason ? ' — ' . $declinedReason : '')), ($expired ? 'Expired' : 'Declined'), $declinedBy ?: 'Signer');
                 } elseif (!$isDeclined) {
                     $c->signature_declined_at = null;
                 }
@@ -1397,6 +1435,114 @@ class ClmSignatureController extends Controller
     }
 
     /** Append an audit/version entry to a CTC contract (mirrors CtcContractController). */
+    /**
+     * Void the whole Zoho request behind a CTC contract - BR-16 / section 8.8.
+     *
+     * One counterparty declining (or the window expiring) kills the cycle for
+     * EVERYONE: the spec forbids a partial re-send to just the declining party,
+     * so the remaining signers must be stopped rather than left able to sign a
+     * document that will never complete. Recalling at Zoho is what actually
+     * stops them; the local row is then marked recalled so the UI agrees.
+     *
+     * Deliberately NOT destructive:
+     *  - the request row is kept, never deleted, so the failed cycle stays
+     *    auditable (section 8.8) and the signed artefacts of parties who had
+     *    already finished remain attached to it;
+     *  - $c->signature_request_id is left alone. The next send writes a fresh
+     *    id, and until then the tracker still has something to show.
+     *
+     * Never throws. This runs inside a status sync triggered by opening a
+     * screen - if Zoho refuses the recall (commonly because it already voided
+     * the request itself on the decline) the local state must still be
+     * recorded, or the contract would look live on every reload.
+     */
+    private function ctcVoidSignatureRequest(CtcContract $c, string $reason): void
+    {
+        if (!$c->signature_request_id) return;
+        $row = ClmSignatureRequest::find($c->signature_request_id);
+        if ($row) $this->voidSignatureRequest($row, $reason);
+    }
+
+    /**
+     * Void one signature request at Zoho and locally - the module-agnostic half
+     * of BR-16, shared by CTC agreements, CLM agreements and trade documents.
+     * Section 2 forbids module-specific deviation, and the rule is the same
+     * everywhere: one party declining kills the cycle for all of them.
+     */
+    /**
+     * Stamp each signer with the PAGES they must sign on - BR-13.
+     *
+     * Zoho reports completion per RECIPIENT and never per field, so there is no
+     * honest per-placement status to store. What CAN be shown truthfully is
+     * where the person was asked to sign, and that only exists in the coords
+     * the SPA sent, so it is captured here at send time.
+     *
+     * Handles both payload shapes:
+     *   role-keyed  {docId: {buyer: {x,y,boxes:[...]}}}   - agreements, CTC
+     *   flat        {docId: {x,y,boxes:[...]}}            - single-signer sends
+     *
+     * @param  array $signers          rows carrying at least `role`
+     * @param  array $documentSettings raw document_settings from the request
+     * @return array the same rows, each with a `placements` int[] of 1-based pages
+     */
+    private function withPlacements(array $signers, array $documentSettings): array
+    {
+        $pagesFor = function (?string $role) use ($documentSettings): array {
+            $pages = [];
+            foreach ($documentSettings as $coords) {
+                if (!is_array($coords)) continue;
+                // Role-keyed when the signer's role is a key; flat otherwise.
+                $slice = ($role !== null && isset($coords[$role]) && is_array($coords[$role]))
+                    ? $coords[$role]
+                    : (isset($coords['x']) ? $coords : null);
+                if (!is_array($slice)) continue;
+                $boxes = (isset($slice['boxes']) && is_array($slice['boxes']) && $slice['boxes'])
+                    ? array_values(array_filter($slice['boxes'], 'is_array'))
+                    : [$slice];
+                foreach ($boxes as $b) $pages[] = (int) ($b['page'] ?? 0) + 1;
+            }
+            return $pages;
+        };
+
+        return array_map(function ($s) use ($pagesFor) {
+            if (!is_array($s)) return $s;
+            $s['placements'] = $pagesFor(isset($s['role']) ? (string) $s['role'] : null);
+            return $s;
+        }, $signers);
+    }
+
+    private function voidSignatureRequest(ClmSignatureRequest $row, string $reason): void
+    {
+        // Already voided, or finished before the decline landed - leave both
+        // alone. Guarding here keeps repeat callbacks idempotent (BR-20).
+        if (in_array($row->status, ['recalled', 'completed'], true)) return;
+
+        if ($row->zoho_request_id) {
+            try {
+                $this->zoho->recall($row->zoho_request_id, mb_substr($reason, 0, 500));
+            } catch (\Throwable $e) {
+                // Zoho voids the request on decline by itself in most cases, so a
+                // refusal here is expected rather than exceptional. Logged, not
+                // surfaced: the local void below is what the UI reads.
+                Log::info('Signature void: Zoho recall refused', [
+                    'request' => $row->id,
+                    'zoho'    => $row->zoho_request_id,
+                    'error'   => $e->getMessage(),
+                ]);
+            }
+        }
+
+        /* recalled_at is the record that the cycle was voided, and it is always
+           stamped. `status`, however, must keep saying WHY: a decline stays
+           'declined' so the tracker's decline banner and reason still render -
+           overwriting it with 'recalled' would hide the reason the counterparty
+           gave and make a refusal look like an internal withdrawal. */
+        $row->recalled_at   = $row->recalled_at ?: now();
+        $row->recall_reason = $reason;
+        if (!in_array($row->status, ['declined', 'rejected'], true)) $row->status = 'recalled';
+        $row->save();
+    }
+
     private function ctcPushVersion(CtcContract $c, string $label, string $status, string $by): void
     {
         $versions = array_values($c->versions ?? []);
@@ -1683,7 +1829,8 @@ class ClmSignatureController extends Controller
             $sigReq->zoho_request_id   = $zohoRequestId;
             $sigReq->request_name      = $requestName;
             $sigReq->status            = $finalStatus;
-            $sigReq->signers           = $signers;
+            // BR-13: record WHERE each signer must sign (see withPlacements).
+            $sigReq->signers           = $this->withPlacements($signers, (array) ($data['document_settings'] ?? []));
             $sigReq->expiry_date       = now()->addDays($expiryDays);
             $sigReq->metadata          = [
                 'sent_at'           => now()->toIso8601String(),
@@ -2394,8 +2541,22 @@ class ClmSignatureController extends Controller
             if (!$row->recalled_at) { $row->recalled_at = $eventAt; $changed = true; }
             if ($reason !== '' && $row->recall_reason !== $reason) { $row->recall_reason = $reason; $changed = true; }
         } else {
-            if (!$row->declined_at) { $row->declined_at = $eventAt; $changed = true; }
+            $firstSighting = !$row->declined_at;
+            if ($firstSighting) { $row->declined_at = $eventAt; $changed = true; }
             if ($reason !== '' && $row->decline_reason !== $reason) { $row->decline_reason = $reason; $changed = true; }
+            /* BR-16 / section 8.8: one party declining voids the WHOLE request,
+               so the counterparties who have not signed yet are stopped instead
+               of being left able to complete a document that can never finish.
+               CTC agreements already did this from their own sync; agreements
+               and trade documents reach the decline here, and section 2 allows
+               no module-specific deviation. Only on the FIRST sighting - the
+               helper is idempotent anyway, but this avoids calling Zoho again
+               on every later status poll. The row is never deleted: the voided
+               cycle stays auditable and the next send creates a new request. */
+            if ($firstSighting) {
+                $this->voidSignatureRequest($row, $reason !== '' ? $reason : 'Declined by a signer');
+                $changed = true;
+            }
         }
 
         // Tag the declining signer(s) in the stored signers array.

@@ -819,8 +819,12 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
         </div>
       </div>
 
-      {/* Send for Signature — launched from a Trade Documents row. The
-          modal portals to <body>, so it overlays the vault cleanly. */}
+      {/* Send for Signature — launched from a Case-to-Case Trade Documents
+          row. The modal portals to <body>, so it overlays the vault cleanly.
+          multiBox: the ONE resolved signer can be asked to sign the same doc in
+          up to 3 places (Legal Team #9 — a counterparty must be able to sign
+          more than once in a document). Single-signer trade-doc mode only; the
+          agreement / role flows are untouched. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={customer?.db_id ? {
@@ -830,6 +834,7 @@ export default function CustomerEvidenceVaultModal({ open, customer, onClose, da
           contact: customer.contact,
         } : null}
         modelName="Customer"
+        multiBox
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}

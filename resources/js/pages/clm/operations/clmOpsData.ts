@@ -22,6 +22,10 @@ export type CtcContract = {
   /* `cp` names each suffixed with its role — "Royal Cashews (Customer)" — for
      the +N counterparty popover list. */
   cpLabeled?: string[];
+  /* Counterparty-level signature tally behind the "1 of 2 Signed" label
+     (BR-12). `cpSent` is false until the request actually reaches Zoho, so a
+     draft never shows a count. See ctcSignatureLabel below. */
+  cpSigned?: number; cpTotal?: number; cpSent?: boolean;
 };
 
 /* ── CTC contracts (Case to Case list) ── */
@@ -50,6 +54,8 @@ export type AwsContract = {
   /* Same counterparties as `cp`, each suffixed with its entity type —
      "Royal Cashews (Customer)" — for the +N popover list. */
   cpLabeled?: string[];
+  /* See CtcContract — counterparty signature tally for the BR-12 label. */
+  cpSigned?: number; cpTotal?: number; cpSent?: boolean;
 };
 
 /* ── Agreements We Sent (sender's view of contracts) ── */
@@ -124,3 +130,29 @@ export const inits = (n: string): string =>
 export const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 export const PER_PAGE = 10;
+
+/* Document-level signature label - BR-12 / section 7.3 of the Multiple
+ * Signature Placements spec.
+ *
+ * The label counts COMPLETED COUNTERPARTIES, never placements: a contact
+ * person who has signed 3 of their 5 places has not completed their
+ * counterparty, so the counter does not move at all (BR-10). Viewed, Sent,
+ * Declined and Expired are not counted either.
+ *
+ *   1 counterparty,  0 done  ->  Pending Signature
+ *   1 counterparty,  1 done  ->  Signed
+ *   2 counterparties, 1 done ->  1 of 2 Signed
+ *   2 counterparties, 2 done ->  Signed        (count is dropped once complete)
+ *
+ * Returns null when the document has not been sent yet - a draft showing
+ * "0 of 2 Signed" would be misleading - so callers keep their own label.
+ */
+export function ctcSignatureLabel(
+  opts: { signed?: number; total?: number; sent?: boolean },
+): string | null {
+  const total = opts.total ?? 0;
+  const signed = Math.min(opts.signed ?? 0, total);
+  if (!opts.sent || total <= 0) return null;
+  if (signed >= total) return 'Signed';
+  return total === 1 ? 'Pending Signature' : `${signed} of ${total} Signed`;
+}

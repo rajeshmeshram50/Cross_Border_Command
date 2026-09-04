@@ -456,16 +456,49 @@ class CtcContractController extends Controller
         return $html;
     }
 
+    /**
+     * Counterparty-level signature tally for the document status label.
+     *
+     * BR-12 / section 7.3 of the Multiple Signature Placements spec: the
+     * document label shows COMPLETED COUNTERPARTIES out of total - "1 of 2
+     * Signed" - never a placement count. One counterparty = one contact
+     * person = one Zoho recipient, and Zoho only marks a recipient signed
+     * once every mandatory field of theirs is filled, so a signed recipient
+     * IS a completed counterparty (BR-09 / BR-10: partial placement progress
+     * is never surfaced). Viewed / Sent / Declined / Expired do not count.
+     */
+    private function cpSignatureCounts(CtcContract $c): array
+    {
+        $recs  = is_array($c->signing_recipients) ? $c->signing_recipients : [];
+        $cps   = is_array($c->counterparties) ? $c->counterparties : [];
+        // Recipients are the truth once a request exists; before that fall
+        // back to the counterparties on the draft so the label still reads
+        // "0 of 2" rather than "0 of 0".
+        $total = count($recs) ?: count($cps);
+        $signed = 0;
+        foreach ($recs as $r) {
+            if (is_array($r) && !empty($r['signed']) && empty($r['declined'])) $signed++;
+        }
+        // Recipients only exist once the request has actually gone to Zoho, so
+        // their presence is what separates "sent, 0 of 2 signed" from a draft
+        // that has never been sent — where a count label would be nonsense.
+        return ['signed' => $signed, 'total' => $total, 'sent' => count($recs) > 0];
+    }
+
     /** Case to Case Contracts list row. */
     private function shapeList(CtcContract $c): array
     {
         $approval = $c->approval_status === 'clarification' ? 'pending' : ($c->approval_status ?: 'pending');
+        $sig = $this->cpSignatureCounts($c);
         return [
             'id'           => $c->code,
             'dbId'         => $c->id,
             'title'        => $c->title,
             'cp'           => $this->cpNamesFromStored($c, false) ?: ['—'],
             'cpLabeled'    => $this->cpNamesFromStored($c, true) ?: ['—'],
+            'cpSigned'    => $sig['signed'],
+            'cpTotal'      => $sig['total'],
+            'cpSent'       => $sig['sent'],
             'org'          => $c->org_name ?: '—',
             'stage'        => $c->stage,
             'status'       => $this->listStatus($c),
@@ -494,12 +527,16 @@ class CtcContractController extends Controller
         $statusMap = ['approved' => 'approved', 'rejected' => 'rejected', 'clarification' => 'clarify', 'pending' => 'pending'];
         $approval  = $c->approval_status === 'clarification' ? 'pending' : ($c->approval_status ?: 'pending');
         [$approvedCount, $approverCount] = $this->approvalProgress($c);
+        $sig = $this->cpSignatureCounts($c);
         return [
             'id'        => $c->code,
             'dbId'      => $c->id,
             'title'     => $c->title,
             'cp'        => $this->cpNamesFromStored($c, false) ?: ['—'],
             'cpLabeled' => $this->cpNamesFromStored($c, true) ?: ['—'],
+            'cpSigned' => $sig['signed'],
+            'cpTotal'   => $sig['total'],
+            'cpSent'    => $sig['sent'],
             'org'       => $c->org_name ?: '—',
             'date'      => $this->fmt($c->submitted_at ?: $c->created_at),
             'effDate'   => $this->fmt($c->eff_date),

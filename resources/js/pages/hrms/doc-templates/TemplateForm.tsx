@@ -1287,6 +1287,7 @@ function Step3(props: {
                 <HeaderFooterPanel
                   header={props.headerConfig} setHeader={props.setHeaderConfig}
                   footer={props.footerConfig} setFooter={props.setFooterConfig}
+                  fillHeight
                 >
                   {editorColumn}
                 </HeaderFooterPanel>

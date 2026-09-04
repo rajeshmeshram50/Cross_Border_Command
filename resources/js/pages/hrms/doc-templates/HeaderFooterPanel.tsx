@@ -108,6 +108,7 @@ export default function HeaderFooterPanel({
   header, setHeader,
   footer, setFooter,
   readOnly = false,
+  fillHeight = false,
   uploadLogoEndpoint = '/hr-document-templates/upload-header-logo',
   children,
 }: {
@@ -116,6 +117,17 @@ export default function HeaderFooterPanel({
   footer: FooterConfig;
   setFooter: (next: FooterConfig) => void;
   readOnly?: boolean;
+  /* Make the shell fill its parent's height instead of growing with content.
+   *
+   * ONLY for callers whose parent already has a definite height and does its
+   * own scrolling — TemplateEditor's pageWrapper, where the editor column is
+   * a grid row. Everyone else puts this shell INSIDE a scroller (the CLM CTC
+   * draft's .ctc-mid-scroll, the Trade Document draft's .tdw-editor-scroll)
+   * and needs the shell to grow with the document, or the scroller has
+   * nothing to scroll and overflow:hidden clips the page — which strands the
+   * footer band in the middle of the text. It is off by default for exactly
+   * that reason: filling was made unconditional once and broke both drafts. */
+  fillHeight?: boolean;
   /* API path that accepts a multipart `logo` file and returns
    * { path, url }. Defaults to the HR Document Templates endpoint so the
    * existing caller stays untouched; the CLM Trade Document draft passes
@@ -250,12 +262,15 @@ export default function HeaderFooterPanel({
   });
 
   return (
-    /* height:100% + column flex — the shell is a CHILD of the editor column
-       now (see TemplateEditor's pageWrapper), and that column has a definite
-       height from the grid row. Without passing it down, the body sized to its
-       content instead of filling, which left the editor a short box with dead
-       space under it and the footer stranded at the bottom. */
-    <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+    /* height:100% + column flex — only under fillHeight. The shell is a CHILD
+       of the editor column in TemplateEditor's pageWrapper, and that column
+       has a definite height from the grid row; without passing it down the
+       body sized to its content, leaving the editor a short box with dead
+       space under it and the footer stranded at the bottom.
+       Off by default: inside a scroller (CTC / Trade Document drafts) a fixed
+       height plus overflow:hidden stops the page growing with the document,
+       so the scroller has nothing to scroll and the footer lands mid-text. */
+    <div className="tpl-page-shell" style={{ border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', overflow: 'hidden', ...(fillHeight ? { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 } : null) }}>
       <HfpDarkStyles />
       {/* HEADER zone — min-height (grows to fit multi-line title), absolute
           children, free drag. Title + subtitle are inline-editable. */}
@@ -388,9 +403,11 @@ export default function HeaderFooterPanel({
       )}
 
       {/* BODY — Tiptap or whatever the parent renders */}
-      {/* flex:1 + minHeight:0 so the body absorbs whatever the fixed-height
-          header and footer leave, rather than sizing to its content. */}
-      <div className="tpl-page-body" style={{ padding: 18, background: '#fff', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      {/* Under fillHeight the body absorbs whatever the fixed-height header and
+          footer leave (flex:1 + minHeight:0). Otherwise it keeps the original
+          grow-with-content sizing, which is what the scroller-based drafts
+          need — minHeight 320 just stops an empty document collapsing. */}
+      <div className="tpl-page-body" style={{ padding: 18, background: '#fff', ...(fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : { minHeight: 320 }) }}>
         {children}
       </div>
 
