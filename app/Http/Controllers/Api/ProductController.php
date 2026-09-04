@@ -173,6 +173,36 @@ class ProductController extends Controller
             $query->whereDate('created_at', '<=', $to);
         }
 
+        /* Relative creation windows from the filter drawer ("Last 7 days",
+         * "Older", …). Several can be ticked at once, so the windows OR
+         * together inside one group — otherwise they would cancel each other
+         * out and return nothing. "Older" is everything before the 90-day
+         * cut-off, so the four buckets tile the timeline with no gap. */
+        if ($buckets = $list('created_bucket')) {
+            $cut = fn(int $days) => now()->subDays($days - 1)->toDateString();
+
+            $query->where(function ($outer) use ($buckets, $cut) {
+                foreach ($buckets as $bucket) {
+                    $outer->orWhere(function ($w) use ($bucket, $cut) {
+                        // "Custom" row: last:<n> days, typed in the drawer.
+                        if (preg_match('/^last:(\d{1,4})$/', (string) $bucket, $m) && (int) $m[1] > 0) {
+                            $w->whereDate('created_at', '>=', $cut((int) $m[1]));
+                            return;
+                        }
+
+                        match ($bucket) {
+                            'last_7'  => $w->whereDate('created_at', '>=', $cut(7)),
+                            'last_30' => $w->whereDate('created_at', '>=', $cut(30)),
+                            'last_90' => $w->whereDate('created_at', '>=', $cut(90)),
+                            'older'   => $w->whereDate('created_at', '<',  $cut(90)),
+                            // Unknown key: match nothing rather than everything.
+                            default   => $w->whereRaw('1 = 0'),
+                        };
+                    });
+                }
+            });
+        }
+
         return $query;
     }
 

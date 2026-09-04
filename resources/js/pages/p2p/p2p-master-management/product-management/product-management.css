@@ -2908,6 +2908,58 @@
   transform: translate(-50%, -50%);
 }
 
+/* "Custom" row on Product Creation Date: type the number of days. */
+.prd-filter-days {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 4px 26px;
+  padding: 8px 10px;
+  border: 1.5px solid #ddd6fe;
+  border-radius: 9px;
+  background: #faf8ff;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5b21b6;
+}
+
+.prd-filter-days input {
+  width: 76px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1.5px solid #ddd6fe;
+  border-radius: 8px;
+  background: #fff;
+  color: #1e1b4b;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.prd-filter-days input::placeholder {
+  color: #b9aee0;
+  font-weight: 500;
+}
+
+.prd-filter-days input:focus {
+  outline: none;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, .14);
+}
+
+[data-bs-theme="dark"] .prd-filter-days {
+  background: #1a1430;
+  border-color: #3b2a6b;
+  color: #c4b5fd;
+}
+
+[data-bs-theme="dark"] .prd-filter-days input {
+  background: #110c25;
+  border-color: #3b2a6b;
+  color: #ede9fe;
+}
+
 .prd-filter-clear-mini {
   margin-top: 4px;
   padding: 6px 10px;
@@ -2925,41 +2977,6 @@
 .prd-filter-clear-mini:hover {
   background: #fee2e2;
 }
-.prd-filter-date-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px;
-  padding: 6px 4px 4px;
-  min-width: 0;
-}
-
-.prd-filter-date-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #6d28d9;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.prd-filter-date-picker {
-  width: 100%;
-  min-width: 0;
-}
-
-.prd-filter-date-picker input.form-control {
-  height: 34px !important;
-  padding: 0 32px 0 10px !important;
-  border: 1.5px solid #ddd6fe !important;
-  border-radius: 8px !important;
-  background: #faf5ff !important;
-  color: #1e1b4b !important;
-  font-size: 12px !important;
-  font-family: inherit !important;
-}
-
 .prd-filter-footer {
   flex-shrink: 0;
   display: flex;
@@ -3761,28 +3778,6 @@
 
 [data-bs-theme="dark"] .prd-filter-clear-mini:hover {
   background: #4f1d1d;
-}
-
-[data-bs-theme="dark"] .prd-filter-date-field {
-  color: #c4b5fd;
-}
-
-[data-bs-theme="dark"] .prd-filter-date-picker input.form-control {
-  background: #110c25 !important;
-  border-color: #3b2a6b !important;
-  color: #ede9fe !important;
-}
-
-[data-bs-theme="dark"] .prd-filter-date-field input {
-  background: #110c25;
-  border-color: #3b2a6b;
-  color: #ede9fe;
-  color-scheme: dark;
-}
-
-[data-bs-theme="dark"] .prd-filter-date-field input:focus {
-  border-color: #a78bfa;
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, .18);
 }
 
 [data-bs-theme="dark"] .prd-filter-footer {

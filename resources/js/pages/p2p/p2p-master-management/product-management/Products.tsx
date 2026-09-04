@@ -6,7 +6,6 @@ import { useSearchParams } from 'react-router-dom';
 import { useToast } from '../../../../contexts/ToastContext';
 import { useAuth } from '../../../../contexts/AuthContext';
 import api from '../../../../api';
-import { MasterDatePicker } from '../../../../components/ui/MasterDatePicker';
 import AddProductModal from './AddProductModal';
 import ProductView from './ProductView';
 import DeleteConfirmModal from '../../../../components/ui/DeleteConfirmModal';
@@ -147,6 +146,17 @@ const SEGMENTS = ['All Segments', 'Dry Fruits', 'Rice & Grains', 'Spices', 'Coco
 const HSN_CODES = ['08013100', '10063020', '09103030', '15131100', '12074090', '09011190', '07136000', '08045010', '09042120', '09041110', '10082930', '22072000'];
 const CONDITIONS = ['New', 'Refurbished', 'Open Box', 'Second Hand'];
 
+/* Creation date is picked as a relative window, not a calendar range. The keys
+   travel to the API as ?created_bucket[]= and OR together there. 'custom' is
+   the odd one out: it carries the typed day count and is sent as `last:<n>`. */
+const CREATED_BUCKETS: Array<{ key: string; label: string }> = [
+  { key: 'last_7',  label: 'Last 7 days' },
+  { key: 'last_30', label: 'Last 30 days' },
+  { key: 'last_90', label: 'Last 90 days' },
+  { key: 'older',   label: 'Older' },
+  { key: 'custom',  label: 'Custom' },
+];
+
 /* Inward / invoice counts per product have no API behind them yet, so both
    sections are frozen: fixed default buckets, shown but not selectable. */
 const INWARD_BUCKETS  = ['0', '1–5', '6–20', '21+'];
@@ -157,12 +167,13 @@ type FilterState = {
   hsn: string[];
   hazClass: string[];
   condition: string[];
-  createdFrom: string;
-  createdTo: string;
+  createdBucket: string[];
+  /* Days typed into the Custom row; only read while 'custom' is ticked. */
+  createdCustomDays: string;
 };
 
 const EMPTY_FILTERS: FilterState = {
-  segment: [], hsn: [], hazClass: [], condition: [], createdFrom: '', createdTo: '',
+  segment: [], hsn: [], hazClass: [], condition: [], createdBucket: [], createdCustomDays: '',
 };
 
 export default function Products() {
@@ -282,7 +293,9 @@ export default function Products() {
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
-    Object.entries(filters).forEach(([, v]) => {
+    Object.entries(filters).forEach(([key, v]) => {
+      // The typed day count belongs to the Custom row, already counted above it.
+      if (key === 'createdCustomDays') return;
       if (Array.isArray(v)) n += v.length;
       else if (typeof v === 'string' && v.trim()) n += 1;
     });
@@ -304,12 +317,18 @@ export default function Products() {
       });
     });
 
-    if (filters.createdFrom) {
-      out.push({ id: 'createdFrom', group: 'Created from', label: filters.createdFrom, onRemove: () => setFilters(p => ({ ...p, createdFrom: '' })) });
-    }
-    if (filters.createdTo) {
-      out.push({ id: 'createdTo', group: 'Created to', label: filters.createdTo, onRemove: () => setFilters(p => ({ ...p, createdTo: '' })) });
-    }
+    filters.createdBucket.forEach(key => {
+      const bucket = CREATED_BUCKETS.find(b => b.key === key);
+      const days = filters.createdCustomDays.trim();
+      out.push({
+        id: `createdBucket:${key}`,
+        group: 'Created',
+        label: key === 'custom'
+          ? (days ? `Last ${days} days` : 'Custom')
+          : (bucket?.label ?? key),
+        onRemove: () => toggleMulti('createdBucket', key),
+      });
+    });
     return out;
   }, [filters]);
 
@@ -365,8 +384,14 @@ export default function Products() {
     if (filters.hsn.length)          p.hsn          = filters.hsn;
     if (filters.condition.length)    p.condition    = filters.condition;
     if (filters.hazClass.length)     p.haz_class    = filters.hazClass;
-    if (filters.createdFrom)         p.created_from = filters.createdFrom;
-    if (filters.createdTo)           p.created_to   = filters.createdTo;
+    /* 'custom' only means something once a day count is typed — it leaves as
+       last:<n> so the API treats it like any other relative window. */
+    const buckets = filters.createdBucket.flatMap(key => {
+      if (key !== 'custom') return [key];
+      const days = parseInt(filters.createdCustomDays, 10);
+      return days > 0 ? [`last:${days}`] : [];
+    });
+    if (buckets.length) p.created_bucket = buckets;
     return p;
   }, [debouncedQ, segment, statusFilter, filters, vendorFilterId]);
 
@@ -828,7 +853,7 @@ export default function Products() {
             hsn: filters.hsn.length,
             hazClass: filters.hazClass.length,
             condition: filters.condition.length,
-            createdDate: (filters.createdFrom ? 1 : 0) + (filters.createdTo ? 1 : 0),
+            createdDate: filters.createdBucket.length,
           };
 
           const renderOptions = (key: string): ReactNode => {
@@ -856,22 +881,40 @@ export default function Products() {
                 ));
 
               case 'createdDate':
-                return (
-                  <div className="prd-filter-date-grid">
-                    <label className="prd-filter-date-field">
-                      <span>From</span>
-                      <div className="prd-filter-date-picker">
-                        <MasterDatePicker value={filters.createdFrom} onChange={(v) => setFilters(prev => ({ ...prev, createdFrom: v }))} placeholder="Select date" maxDate={filters.createdTo || undefined} />
-                      </div>
-                    </label>
-                    <label className="prd-filter-date-field">
-                      <span>To</span>
-                      <div className="prd-filter-date-picker">
-                        <MasterDatePicker value={filters.createdTo} onChange={(v) => setFilters(prev => ({ ...prev, createdTo: v }))} placeholder="Select date" minDate={filters.createdFrom || undefined} />
-                      </div>
-                    </label>
-                  </div>
-                );
+                return (<>
+                  {CREATED_BUCKETS.map(b => (
+                    <CheckRow
+                      key={b.key}
+                      label={b.label}
+                      checked={filters.createdBucket.includes(b.key)}
+                      onChange={() => {
+                        toggleMulti('createdBucket', b.key);
+                        // Leaving Custom drops the day count with it.
+                        if (b.key === 'custom' && filters.createdBucket.includes('custom')) {
+                          setFilters(prev => ({ ...prev, createdCustomDays: '' }));
+                        }
+                      }}
+                    />
+                  ))}
+                  {filters.createdBucket.includes('custom') && (
+                    <div className="prd-filter-days">
+                      <span>Last</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={filters.createdCustomDays}
+                        placeholder="e.g. 10"
+                        aria-label="Number of days"
+                        autoFocus
+                        onChange={e => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, 4);
+                          setFilters(prev => ({ ...prev, createdCustomDays: digits }));
+                        }}
+                      />
+                      <span>days</span>
+                    </div>
+                  )}
+                </>);
 
               case 'inwardCount':
                 return <FrozenRows options={INWARD_BUCKETS} />;
@@ -945,7 +988,7 @@ const PANEL_META: Record<string, { sub: string; path: ReactNode }> = {
   hsn:          { sub: 'Enter HSN / SAC code',     path: <><line x1="4" y1="9" x2="20" y2="9" /><line x1="4" y1="15" x2="20" y2="15" /><line x1="10" y1="3" x2="8" y2="21" /><line x1="16" y1="3" x2="14" y2="21" /></> },
   hazClass:     { sub: 'Select classification',    path: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /> },
   condition:    { sub: 'Select condition',         path: <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></> },
-  createdDate:  { sub: 'Pick a date range',        path: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></> },
+  createdDate:  { sub: 'Choose a time window',     path: <><rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></> },
   inwardCount:  { sub: 'Default buckets (frozen)', path: <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></> },
   invoiceCount: { sub: 'Default buckets (frozen)', path: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></> },
 };
