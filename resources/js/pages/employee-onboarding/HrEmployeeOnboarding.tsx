@@ -5177,27 +5177,47 @@ const saveStage1 = async (markComplete: boolean, skipValidate = false, silent = 
                 <span className="onb-init-section-step comp">STEP 4 OF 4</span>
               </div>
               <div className="onb-init-section-body">
-                <div
-                  className="onb-init-toggle-row"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setS1(p => ({ ...p, enable_payroll: !p.enable_payroll }))}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, enable_payroll: !p.enable_payroll })); } }}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
-                  {/* Same field as the employee form's toggle (enable_payroll),
-                      so it carries the same words. It said "PF", which is the
-                      PF Applicable dropdown below it — one flag reading as two
-                      different settings depending on which screen you opened. */}
-                  <span className="onb-init-toggle-label">PF Applicable for this Employee</span>
-                </div>
-                {/* Same wording as the Employee form so one flag does not read
-                    as two different settings depending on the screen. The scope
-                    note is here for the same reason it is there: the label says
-                    PF, the flag switches off the whole compensation block. */}
-                <div className="onb-init-toggle-hint">
-                  Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
+                {/* The PF toggle pins to the top of the scroll area (#12).
+                    Compensation is the longest step in the wizard — CTC, the
+                    salary breakup and every statutory row sit below this
+                    switch, and it governs all of them, so scrolling down to
+                    check a figure left the operator editing fields with no
+                    sight of the flag that decides whether they apply at all.
+
+                    The sticky element is this WRAPPER rather than the pill
+                    itself: the pill is a rounded chip with its own green
+                    background, and pinning it directly would let the rows
+                    scrolling underneath show through the section body's
+                    padding on either side of it. The wrapper carries the body
+                    background edge to edge and keeps the chip's look intact. */}
+                <div className="onb-init-toggle-sticky">
+                  <div
+                    className="onb-init-toggle-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setS1(p => ({ ...p, enable_payroll: !p.enable_payroll }))}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setS1(p => ({ ...p, enable_payroll: !p.enable_payroll })); } }}
+                    style={{ cursor: 'pointer' }}
+                  >
+                    <span className={`onb-init-toggle${s1.enable_payroll ? '' : ' off'}`} aria-pressed={s1.enable_payroll} />
+                    {/* Same field as the employee form's toggle (enable_payroll),
+                        so it carries the same words. It said "PF", which is the
+                        PF Applicable dropdown below it — one flag reading as two
+                        different settings depending on which screen you opened. */}
+                    <span className="onb-init-toggle-label">PF Applicable for this Employee</span>
+                  </div>
+                  {/* Same wording as the Employee form so one flag does not read
+                      as two different settings depending on the screen. The scope
+                      note is here for the same reason it is there: the label says
+                      PF, the flag switches off the whole compensation block.
+
+                      Inside the sticky wrapper with the toggle: the note explains
+                      what the switch does to the rest of the step, and a pinned
+                      switch whose explanation had scrolled away would strand the
+                      warning exactly where it matters least. */}
+                  <div className="onb-init-toggle-hint">
+                    Turning this off also removes <strong>CTC, salary effective date and the salary breakup</strong> for this employee, not just PF.
+                  </div>
                 </div>
 
                 <p className="onb-init-subgroup">Payroll Configuration</p>
