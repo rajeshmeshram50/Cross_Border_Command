@@ -648,6 +648,12 @@ export default function TradeDocsTable({ po = 'PO/2025-26/001', poId, supplierId
         customer={party}
         modelName="Vendor"
         sendAsAgreement={sendKind === 'agreement'}
+        /* multiBox: one contact person may be asked to sign the same
+           document in several places (Legal Team #9 / BR-03). This is the
+           single-signer path - roleMode takes precedence when a
+           multi-party send sets tradeSigners, so this only affects the
+           one-signer buckets. */
+        multiBox
         preselectedDocIds={sendDocIds ?? undefined}
         /* Pass the selected rows' metadata so a bulk agreement send shows EVERY
            selected agreement in the preview rail (the modal's own library fetch

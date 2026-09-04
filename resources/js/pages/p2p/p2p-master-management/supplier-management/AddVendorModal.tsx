@@ -3432,6 +3432,12 @@ export default function AddVendorModal(props: {
           the {{supplier.*}} token namespace from this vendor. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendForSignature)}
+        /* multiBox: one contact person may be asked to sign the same
+           document in several places (Legal Team #9 / BR-03). This is the
+           single-signer path - roleMode takes precedence when a
+           multi-party send sets tradeSigners, so this only affects the
+           one-signer buckets. */
+        multiBox
         modelName="Vendor"
         customer={(() => {
           if (!vendorId) return null;

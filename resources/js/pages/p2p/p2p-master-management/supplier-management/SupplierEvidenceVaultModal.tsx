@@ -1039,10 +1039,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
       {/* Send for Signature — launched from a Trade Documents row. The
           modal portals to <body>, so it overlays the vault cleanly.
-          NOTE: multiBox (one-person-multiple-signatures "Sign 1/2/3" picker) is
-          temporarily DISABLED — the single-signature original Zoho flow is used.
-          The multi-box code stays intact in the send modal, gated behind the
-          prop; re-enable by adding `multiBox` back to the props below. */}
+          multiBox: the ONE resolved signer can be asked to sign the same
+          document in several places (Legal Team #9 / BR-03 of the Multiple
+          Signature Placements spec). It was held back here while the rest of
+          the flows were proven; the spec puts every module in scope, so it is
+          on. Single-signer trade-doc mode only. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={supplier?.db_id ? {
@@ -1053,6 +1054,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           email:   supplier.email,   // primary contact email → default signer
         } : null}
         modelName="Vendor"
+        multiBox
         sendAsAgreement={sendKind === 'agreement'}
         preselectedDocIds={sendDocIds ?? undefined}
         onClose={() => setSendDocIds(null)}
