@@ -790,6 +790,34 @@ class AttendanceController extends Controller
             $holidayScopeClient, $holidayScopeBranch,
         );
 
+        /* Holidays the CALENDAR can paint, which reach past today. (#93)
+         *
+         * Every set above stops at $histEnd, and $histEnd stops at today,
+         * because attendance for a day that has not happened cannot be known.
+         * A holiday is the opposite kind of fact: it is declared in advance,
+         * and announcing an UPCOMING one is the whole point of the Holiday
+         * screen. Sharing attendance's window meant a holiday added for any
+         * future date — the normal case — appeared in the Holiday list and
+         * never on the calendar.
+         *
+         * Kept as its own set rather than widening $histEnd. That bound also
+         * governs the attendance queries, the Log tab and the month KPIs, all
+         * of which are right to end at today; moving it would have invented
+         * empty future rows across the whole endpoint to fix a calendar
+         * label. This set carries holidays and nothing else.
+         *
+         * A year forward, because the calendar pages month to month without
+         * refetching — a narrower window would leave next month blank again,
+         * one click from the bug being reported. The read is a handful of
+         * holiday rows; the cost is a second query on a small table. */
+        $calendarHolidayEnd = (clone $dateC)->endOfMonth()->addYear();
+        $holidayByGroupCal  = $detailMode
+            ? $this->holidayDatesForGroups(
+                $holidayGroupIds, \Carbon\Carbon::parse($histStart), $calendarHolidayEnd,
+                $holidayScopeClient, $holidayScopeBranch,
+            )
+            : [];
+
         // Denominator window end = month-to-date: never count days in the
         // future toward "absent". For a fully-past month this is the month
         // end; for the current month it stops at today — which is exactly the
@@ -916,7 +944,7 @@ class AttendanceController extends Controller
             }
         }
 
-        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
+        $out = $employees->map(function (Employee $emp) use ($dailyRows, $monthRows, $historyRows, $detailMode, $date, $histStart, $histEnd, $defaultShiftStart, $defaultShiftEnd, $holidayByGroup, $holidayByGroupLog, $holidayByGroupCal, $mtdEndC, $dateC, $onLeaveSet, $leaveDaysByEmp, $leaveLogByEmp, $pendingCorrections) {
             [$parsedStart, $parsedEnd] = $emp->resolveShiftWindow();
             $shiftStart = $parsedStart ?: $defaultShiftStart;
             $shiftEnd   = $parsedEnd   ?: $defaultShiftEnd;
@@ -1146,6 +1174,17 @@ class AttendanceController extends Controller
                 'missingPunch'      => $missingPunch,
                 'compliancePct'     => $compliancePct,
                 'logs'              => $logs,
+                /* { "YYYY-MM-DD": "Holiday name" } for this employee's group
+                   plus the company-wide set, running past today so the
+                   calendar can mark holidays that have not arrived yet (#93).
+                   Past dates are in here too and deliberately so — the
+                   calendar reads a day's status from `logs` first and only
+                   falls back to this, which keeps a holiday that was actually
+                   WORKED reading as Present rather than being overpainted. */
+                'holidays'          => $detailMode
+                    ? (object) ($holidayByGroupCal[$emp->holiday_group_id ?? self::HOLIDAY_COMPANY_KEY]
+                        ?? $holidayByGroupCal[self::HOLIDAY_COMPANY_KEY] ?? [])
+                    : (object) [],
                 /* Null unless a regularization for THIS date is still awaiting
                    a decision (#92). The SPA shows its pill on
                    `correction.status === 'Pending'`, so an approved or rejected
@@ -1251,17 +1290,41 @@ class AttendanceController extends Controller
         $company = [];
         foreach ($rows as $r) {
             if (!$r->date) continue;
-            $d = \Carbon\Carbon::parse($r->date);
-            if ($r->is_recurring) {
-                $d = \Carbon\Carbon::create($start->year, $d->month, $d->day);
-            }
-            if ($d->lt($start) || $d->gt($end)) continue;
-            $iso  = $d->toDateString();
+            $src  = \Carbon\Carbon::parse($r->date);
             $name = $r->name ?: 'Holiday';
-            if ($r->holiday_group_id === null) {
-                $company[$iso] = $name;
+
+            /* A recurring holiday recurs in EVERY year the window covers, not
+             * just the year the window opens in. (#93)
+             *
+             * Re-anchoring to $start->year alone silently dropped occurrences
+             * whenever a window straddled a year boundary — the 90-day log
+             * window viewed in December reaches into January, and a recurring
+             * 26 January was being pinned back to the January that had already
+             * passed, landing outside the window and vanishing. The wider
+             * window the calendar now asks for spans years by design, so this
+             * had to stop being a single-year assumption.
+             *
+             * Feb 29 on a non-leap year is skipped rather than rolled into
+             * March: Carbon would happily overflow it to the 1st, inventing a
+             * holiday on a date nobody configured. */
+            $dates = [];
+            if ($r->is_recurring) {
+                for ($yr = $start->year; $yr <= $end->year; $yr++) {
+                    if (!checkdate($src->month, $src->day, $yr)) continue;
+                    $dates[] = \Carbon\Carbon::create($yr, $src->month, $src->day);
+                }
             } else {
-                $map[$r->holiday_group_id][$iso] = $name;
+                $dates[] = $src;
+            }
+
+            foreach ($dates as $d) {
+                if ($d->lt($start) || $d->gt($end)) continue;
+                $iso = $d->toDateString();
+                if ($r->holiday_group_id === null) {
+                    $company[$iso] = $name;
+                } else {
+                    $map[$r->holiday_group_id][$iso] = $name;
+                }
             }
         }
 

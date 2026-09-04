@@ -89,6 +89,12 @@ interface AttendanceEmployee {
   lateMarks: number;
   missingPunch: number;
   logs: AttendanceLog[];
+  /* { "YYYY-MM-DD": "Holiday name" }, running a year past today so the
+     calendar can mark holidays that have not arrived yet (#93). `logs` stops
+     at today by design — attendance for a day that has not happened is not a
+     fact — but a holiday is declared in advance, which is the whole point of
+     announcing one. */
+  holidays?: Record<string, string>;
 }
 
 interface PunchEvent {
@@ -1655,34 +1661,47 @@ function CalendarMonthGrid({
      Sunday as "Weekly Off", so the gate has to live here too (CBC #74). */
   const joinedIso = employee.dateOfJoining || null;
   const preJoin = (iso: string) => !!joinedIso && iso < joinedIso;
+  const holidayMap = employee.holidays || {};
+  /* A holiday is known ahead of time, so it paints on future cells — the one
+     thing on this calendar that legitimately outruns today (#93).
+     Ordered after the log deliberately: a holiday somebody actually WORKED has
+     an attendance row and must keep reading Present, not be overpainted by the
+     declaration. Weekly Off stays behind both, and future weekly-offs are still
+     left blank — that is a recurring pattern, not an announcement. */
   const statusFor = (iso: string): DayStatus | null => {
-    if (iso > TODAY_ISO) return null;
     if (preJoin(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
+    if (holidayMap[iso]) return 'Holiday';
+    if (iso > TODAY_ISO) return null;
     const d = parseISO(iso);
     if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion; holidayName?: string };
+  /* Which holiday it is, for the cell tooltip. Read from the log first so a
+     past day keeps the name the server resolved for it, then from the
+     forward-looking map for days the log does not reach (#93). */
+  const holidayNameFor = (iso: string): string | undefined =>
+    logByIso.get(iso)?.holidayName || holidayMap[iso] || undefined;
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
     if (cells.length >= 42) break;
   }
 
@@ -1733,10 +1752,15 @@ function CalendarMonthGrid({
           const halfLeave = c.leavePortion === 'first_half' || c.leavePortion === 'second_half';
           const leaveLike = c.status === 'Leave' || c.status === 'Paid Leave' || c.status === 'Unpaid Leave';
           const cellLabel = tone ? (halfLeave && leaveLike ? `Half Day ${tone.label}` : tone.label) : '';
+          /* Name the holiday in the tooltip — "12 — Holiday" says a day is off
+             but not which one, and on a future cell that is the only detail
+             there is to give (#93). */
           const cellTitle = tone
             ? (halfLeave
                 ? `${c.day} — ${LEAVE_PORTION_LABEL[c.leavePortion!]} ${leaveLike ? tone.label : 'leave'}`
-                : `${c.day} — ${tone.label}`)
+                : c.status === 'Holiday' && c.holidayName
+                  ? `${c.day} — ${c.holidayName}`
+                  : `${c.day} — ${tone.label}`)
             : c.preJoin ? `${c.day} — before joining date` : `${c.day}`;
           return (
             <button
