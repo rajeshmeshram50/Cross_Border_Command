@@ -1721,6 +1721,24 @@
   transition: background .15s, transform .12s;
 }
 .avm-cp-close:hover { background: rgba(255,255,255,.32); transform: rotate(90deg); }
+/* Header action + close, grouped so a popup can put a primary action beside
+   the X. z-index: 1 for the same reason .avm-cp-title has it — the header's
+   gradient glows are absolutely positioned over the whole strip. */
+.avm-cp-hact { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 10px; }
+/* Sits ON the purple header, so it is a frosted white outline rather than the
+   solid purple .avm-section-add-btn used against the popup's white body. */
+.avm-cp-head-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 13px; border-radius: 9px;
+  border: 1px solid rgba(255,255,255,.42);
+  background: rgba(255,255,255,.18); color: #fff;
+  font: inherit; font-size: 12px; font-weight: 700; letter-spacing: -0.1px;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.avm-cp-head-btn i { font-size: 15px; }
+.avm-cp-head-btn:hover:not(:disabled) { background: rgba(255,255,255,.32); border-color: rgba(255,255,255,.6); }
+.avm-cp-head-btn:disabled { opacity: .5; cursor: not-allowed; }
 /* position:relative — see .avm-qa-body. Anchors .avm-cp-saving-veil to the body
    (PopupShell, ContactAddPopup, MappedProductsPopup all rely on this). */
 .avm-cp-body  { padding: 22px; display: flex; flex-direction: column; gap: 12px; position: relative; }

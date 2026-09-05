@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardBody, Col, Row } from 'reactstrap';
@@ -80,6 +80,8 @@ export type Vendor = {
   /* Compliance Behaviour master value ("Compliant", "Under Review",
      "Flagged", …) — rendered as the Compliant Status pill. */
   compliance?: string;
+  /** vendors.supplier_category — commercial standing, not risk. */
+  category?: string;
   /* vendor_product_mappings row count for this supplier (withCount on
      GET /vendors). Drives the Mapped Products badge + its popup. */
   mappedProducts: number;
@@ -90,6 +92,15 @@ export type Vendor = {
   /* All contact persons (primary first). Drives the "+N" badge + the
      Contact Persons popup on the list. */
   contacts: SupplierContact[];
+};
+
+/* Facet counts for the Refine Suppliers panel. Counted server-side over the
+   whole scoped set MINUS the facet filters themselves, so a tile always says
+   how many rows ticking it would give and never shrinks as tiles are ticked. */
+export type SupplierFacets = {
+  grand_total: number;
+  category: { star: number; general: number; high_risk: number; blacklisted: number };
+  compliance: { compliant: number; non_compliant: number };
 };
 
 export type SupplierContact = {
@@ -121,6 +132,9 @@ type ApiVendor = {
   /* Compliance Behaviour master row — eager-loaded by VendorController::index
      for the Compliant Status column. */
   compliance_behaviour?: { id: number; name: string | null } | null;
+  /** Derived server-side from the document set — see App\Support\SupplierCompliance. */
+  compliance_status?: string | null;
+  supplier_category?: string | null;
   /* withCount('productMappings') on the index query. Arrives as a number or a
      numeric string depending on the driver, so it's coerced on map. */
   product_mappings_count?: number | string | null;
@@ -174,16 +188,31 @@ function typeKind(type: string): 'material' | 'logistics' | 'services' {
  * "Genuine" is exactly the claim this column exists to make carefully.
  * (Vendor Behaviour was the other candidate; its master holds performance
  * ratings — Excellent / Good / Delayed — not a trust flag.) */
-function supplierFlag(risk?: string): { label: string; cls: string } | null {
-  const r = (risk || '').trim().toLowerCase();
-  if (!r) return null;
-  if (r.includes('high') || r.includes('critical') || r.includes('severe')) {
-    return { label: 'High Risk', cls: 'sl-flag--highrisk' };
+/* Supplier Category — the supplier's COMMERCIAL STANDING, read from the
+   stored vendors.supplier_category.
+   This column used to be "Supplier Flag", derived by sniffing the RISK LEVEL
+   string for "high"/"medium" — so it never showed anything the Risk Level
+   column did not already say, and it could not show Star or Blacklisted at
+   all because risk has no such value. It is a real field now. */
+type CatIcon = 'star' | 'medal' | 'warn' | 'ban';
+function supplierCategory(cat?: string): { label: string; cls: string; icon: CatIcon } | null {
+  switch ((cat || '').trim().toLowerCase()) {
+    case 'star':        return { label: 'Star Supplier',        cls: 'sl-cat--star',  icon: 'star'  };
+    case 'general':     return { label: 'General Supplier',     cls: 'sl-cat--general', icon: 'medal' };
+    case 'high_risk':   return { label: 'High Risk Supplier',   cls: 'sl-cat--risk',  icon: 'warn'  };
+    case 'blacklisted': return { label: 'Blacklisted Supplier', cls: 'sl-cat--black', icon: 'ban'   };
+    default:            return null;
   }
-  if (r.includes('medium') || r.includes('moderate')) {
-    return { label: 'Medium Risk', cls: 'sl-flag--medium' };
-  }
-  return { label: 'Genuine', cls: 'sl-flag--genuine' };
+}
+
+/* One glyph per category. Drawn inline rather than pulled from an icon font so
+   the badge renders identically wherever this table is embedded. */
+function CatIconSvg({ kind }: { kind: CatIcon }) {
+  const common = { width: 11, height: 11, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const };
+  if (kind === 'star')  return <svg {...common}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>;
+  if (kind === 'medal') return <svg {...common}><circle cx="12" cy="8" r="6" /><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11" /></svg>;
+  if (kind === 'warn')  return <svg {...common}><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><path d="M12 9v4M12 17h.01" /></svg>;
+  return <svg {...common}><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>;
 }
 
 /* ── Compliant Status ─────────────────────────────────────────────────────
@@ -197,14 +226,185 @@ function supplierFlag(risk?: string): { label: string; cls: string } | null {
 function complianceTone(status?: string): { label: string; cls: string } | null {
   const s = (status || '').trim();
   if (!s) return null;
-  const k = s.toLowerCase();
-  if (k.includes('non-compliant') || k.includes('non compliant') || k.includes('flag') || k.includes('watchlist')) {
-    return { label: s, cls: 'sl-compliant--no' };
-  }
-  if (k.includes('review') || k.includes('pending')) {
-    return { label: s, cls: 'sl-compliant--pending' };
-  }
-  return { label: s, cls: 'sl-compliant--yes' };
+  /* Two values now, and they arrive already decided: the server derives
+     Compliant / Non Compliant from the supplier's mandatory document set (see
+     App\Support\SupplierCompliance) instead of the ten-state Compliance
+     Behaviour master this used to bucket by keyword. Nothing is guessed from
+     the wording here any more — the label IS the answer. */
+  const no = s.toLowerCase().startsWith('non');
+  return { label: s, cls: no ? 'sl-compliant--no' : 'sl-compliant--yes' };
+}
+
+/* ── Refine Suppliers ─────────────────────────────────────────
+ *
+ * A popover, not a modal. Every choice in it is one click and is reflected in
+ * the table behind immediately, so dimming that table to make the choice would
+ * hide the only feedback the panel gives. "Done" just closes it.
+ *
+ * Filters apply as you tick — there is no Apply/Cancel pair. That means no
+ * draft state to keep in sync, and the count in the footer is the live answer
+ * rather than a promise about one.
+ */
+const CAT_TILES: Array<{ key: string; label: string; icon: CatIcon }> = [
+  { key: 'star',        label: 'Star',        icon: 'star'  },
+  { key: 'general',     label: 'General',     icon: 'medal' },
+  { key: 'high_risk',   label: 'High Risk',   icon: 'warn'  },
+  { key: 'blacklisted', label: 'Blacklisted', icon: 'ban'   },
+];
+
+const COMP_TILES: Array<{ key: string; label: string; tone: string; glyph: ReactNode }> = [
+  {
+    key: 'compliant', label: 'Compliant', tone: 'ok',
+    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="8 12.5 11 15.5 16 9" /></svg>,
+  },
+  {
+    key: 'non_compliant', label: 'Non Compliant', tone: 'no',
+    glyph: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><circle cx="12" cy="12" r="10" /><line x1="12" y1="7.5" x2="12" y2="13" /><line x1="12" y1="16.5" x2="12.01" y2="16.5" /></svg>,
+  },
+];
+
+function RefineSuppliers(props: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  facets: SupplierFacets | null;
+  /** Rows the current filters return — the left half of "N / M". */
+  shown: number;
+  active: number;
+  catSel: string[];
+  compSel: string[];
+  onToggleCat: (k: string) => void;
+  onToggleComp: (k: string) => void;
+  onClear: () => void;
+}) {
+  const { open, onOpenChange, facets } = props;
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  /* Close on an outside click and on Escape. The panel overlays the table it
+     filters, so leaving it open while the user reaches for a row would sit in
+     front of the result they opened it to see. */
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) onOpenChange(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onOpenChange(false); };
+    document.addEventListener('mousedown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onOpenChange]);
+
+  const grand = facets?.grand_total ?? 0;
+  const pct = grand > 0 ? Math.round((Math.min(props.shown, grand) / grand) * 100) : 100;
+
+  return (
+    <div className="sl-refine" ref={wrapRef}>
+      <button
+        type="button"
+        className={`sl-refine-btn${open ? ' is-open' : ''}${props.active ? ' has-active' : ''}`}
+        onClick={() => onOpenChange(!open)}
+        aria-expanded={open}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+        </svg>
+        Filter
+        {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
+      </button>
+
+      {open && (
+        <div className="sl-refine-pop" role="dialog" aria-label="Refine Suppliers">
+          <div className="sl-refine-sheet">
+            <div className="sl-refine-head">
+              <span className="sl-refine-head-ico">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+              </span>
+              <span className="sl-refine-title">Refine Suppliers</span>
+              {props.active > 0 && <span className="sl-refine-badge">{props.active}</span>}
+              <span className="sl-refine-sp" />
+              {/* Reset sits with the title, not the footer: it undoes what the
+                  panel did, while Done only dismisses it. */}
+              {props.active > 0 && (
+                <button type="button" className="sl-refine-reset" onClick={props.onClear}>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7" /><polyline points="3 3 3 9 9 9" /></svg>
+                  Reset
+                </button>
+              )}
+              <button type="button" className="sl-refine-x" onClick={() => onOpenChange(false)} aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </div>
+
+            <div className="sl-refine-body">
+              <div className="sl-refine-group">
+                <div className="sl-refine-k"><span>Category</span></div>
+                <div className="sl-refine-grid sl-refine-grid--4">
+                  {CAT_TILES.map(t => {
+                    const n = facets ? facets.category[t.key as keyof SupplierFacets['category']] : null;
+                    const on = props.catSel.includes(t.key);
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        /* is-empty, not disabled: a zero facet is still worth
+                           showing — it answers "are there any?" — but it must
+                           not read as an equal choice beside a live one. */
+                        className={`sl-refine-tile sl-refine-tile--${t.icon}${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
+                        onClick={() => props.onToggleCat(t.key)}
+                        aria-pressed={on}
+                      >
+                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                        <span className="sl-refine-tile-ico"><CatIconSvg kind={t.icon} /></span>
+                        <span className="sl-refine-tile-lbl">{t.label}</span>
+                        <span className="sl-refine-tile-n">{n ?? '–'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="sl-refine-group">
+                <div className="sl-refine-k"><span>Compliance</span></div>
+                <div className="sl-refine-grid sl-refine-grid--2">
+                  {COMP_TILES.map(t => {
+                    const n = facets ? facets.compliance[t.key as keyof SupplierFacets['compliance']] : null;
+                    const on = props.compSel.includes(t.key);
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={`sl-refine-tile sl-refine-tile--${t.tone}${on ? ' is-on' : ''}${n === 0 ? ' is-empty' : ''}`}
+                        onClick={() => props.onToggleComp(t.key)}
+                        aria-pressed={on}
+                      >
+                        <span className="sl-refine-tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg></span>
+                        <span className="sl-refine-tile-ico">{t.glyph}</span>
+                        <span className="sl-refine-tile-lbl">{t.label}</span>
+                        <span className="sl-refine-tile-n">{n ?? '–'}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* The two compliance counts need not add up to the total: the
+                  master holds ten states, and a supplier still Under Review or
+                  Pending is settled neither way, so it is in neither bucket. */}
+            </div>
+
+            <div className="sl-refine-foot">
+              <div className="sl-refine-res"><b>{props.shown}</b><i>/{grand}</i></div>
+              <div className="sl-refine-meter"><span style={{ width: `${pct}%` }} /></div>
+              <button type="button" className="sl-refine-done" onClick={() => onOpenChange(false)}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Vendors() {
@@ -217,6 +417,20 @@ export default function Vendors() {
      was removed from this page. Search plus the Fresh/Recurring and
      Domestic/International tabs are the whole narrowing story here now. */
   const [tab, setTab] = useState<SupplierTab>('all');
+
+  /* Refine Suppliers — two facet groups, both server-applied. The counts come
+     back with the list (VendorController::index) rather than being tallied from
+     the rows on screen: the list is ONE PAGE, so counting it would report "3
+     General" when the branch has thirty. */
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [catSel,  setCatSel]  = useState<string[]>([]);
+  const [compSel, setCompSel] = useState<string[]>([]);
+  const [facets,  setFacets]  = useState<SupplierFacets | null>(null);
+  const catParam  = catSel.join(',');
+  const compParam = compSel.join(',');
+  const activeFilters = catSel.length + compSel.length;
+  const toggleIn = (list: string[], set: (v: string[]) => void, key: string) =>
+    set(list.includes(key) ? list.filter(k => k !== key) : [...list, key]);
   /* Scope tabs on the "What We Are Doing Here" strip. Same split the Add
      Supplier gate asks about, applied to the list: a supplier is domestic
      when its country is India and international otherwise — the same rule the
@@ -353,7 +567,14 @@ export default function Vendors() {
     return () => { window.removeEventListener('resize', close); window.removeEventListener('scroll', onScroll, true); };
   }, [segPop]);
 
+  /* FIRST PAINT ONLY. `loading` swaps the whole page for a skeleton — header
+     strip, the four-step brief, the toolbar and the table — which is right once,
+     on arrival, and wrong for everything after it. Tick a category in the Filter
+     popover and that skeleton tears down the popover you ticked it in.
+     Every later fetch sets `refetching` instead, which only dims the rows. */
   const [loading, setLoading] = useState(true);
+  const [refetching, setRefetching] = useState(false);
+  const bootedRef = useRef(false);
   /* "What We Are Doing Here" stepper — collapsible, open by default to
      mirror the Figma. Purely presentational. */
   const [brefOpen, setBrefOpen] = useState(true);
@@ -431,23 +652,45 @@ export default function Vendors() {
         return arr.length ? arr : (row.segment?.name ? [row.segment.name] : []);
       })(),
       risk:        row.risk_level?.name ?? undefined,
-      compliance:  row.compliance_behaviour?.name ?? undefined,
+      /* The DERIVED status, not the Compliance Behaviour master. That master
+         value is still on the row but no longer means anything here: it was a
+         hand-picked label, while this is computed from the documents on file. */
+      compliance:  row.compliance_status ?? undefined,
+      category:    row.supplier_category ?? undefined,
       mappedProducts: Number(row.product_mappings_count ?? 0) || 0,
       contacts,
     };
   };
 
+  /* Search leaves the browser only once typing has actually STOPPED. The timer
+     restarts on every keystroke, so a 12-character code is one request, not
+     twelve. 350ms was short enough to fire between words — a typist pausing to
+     think mid-code sent a query for the half they had typed so far.
+
+     Clearing is exempt from the wait. An empty box means "show everything",
+     there is no query to spare the server, and holding the full list back for
+     half a second after the X is pressed just reads as lag. */
   useEffect(() => {
-    const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 350);
+    const next = search.trim();
+    if (!next) { setDebouncedSearch(''); return; }
+    const t = window.setTimeout(() => setDebouncedSearch(next), 500);
     return () => window.clearTimeout(t);
   }, [search]);
+
+  /* True while a keystroke is still waiting out the debounce. Without it the
+     table sits showing the PREVIOUS result with no sign anything is coming,
+     which is indistinguishable from a search box that does not work. */
+  const searchPending = search.trim() !== debouncedSearch;
 
   const refresh = useCallback(async (opts?: { silent?: boolean }) => {
     // `silent` = refresh in the background WITHOUT flashing the loading skeleton
     // (used after closing the Edit/Add modal — the list is already on screen, so
     // showing the full skeleton again reads as a slow reload). Initial mount and
     // manual reloads still show the skeleton.
-    if (!opts?.silent) setLoading(true);
+    if (!opts?.silent) {
+      if (bootedRef.current) setRefetching(true);
+      else                   setLoading(true);
+    }
     /* SERVER-side pagination (was ?per_page=200 + slice-in-the-browser).
        200 was a ceiling, not a page: a tenant with 201 suppliers silently lost
        the rest, and every load shipped the whole table and its eager-loaded
@@ -461,6 +704,8 @@ export default function Vendors() {
           page,
           per_page: rpp,
           ...(debouncedSearch ? { q: debouncedSearch } : {}),
+          ...(catParam  ? { categories: catParam }  : {}),
+          ...(compParam ? { compliance: compParam } : {}),
           scope: scopeTab,
           tab,
         },
@@ -472,14 +717,22 @@ export default function Vendors() {
       const rows: ApiVendor[] = Array.isArray(body) ? body : (body.data ?? []);
       setVendors(rows.map(apiToVendor));
       setTotal(Number(body.total ?? rows.length) || 0);
+      setFacets(body.facets ?? null);
     } catch {
       if (token !== reqRef.current) return;
       toast.error('Load failed', 'Could not load suppliers');
     } finally {
-      if (token === reqRef.current && !opts?.silent) setLoading(false);
+      /* Cleared on the WINNING response only — two fetches can be in flight
+         (rpp changes on every resize) and the slower one must not un-dim rows
+         the newer one is still replacing. */
+      if (token === reqRef.current) {
+        bootedRef.current = true;
+        setLoading(false);
+        setRefetching(false);
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, rpp, debouncedSearch, scopeTab, tab]);
+  }, [page, rpp, debouncedSearch, scopeTab, tab, catParam, compParam]);
  const allowed = user?.user_type === 'branch_user' || user?.user_type === 'employee';
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -488,7 +741,7 @@ export default function Vendors() {
   /* scopeTab joins tab/search here: with server pagination, switching
      Domestic → International while on page 3 would ask the API for page 3 of a
      one-page result and render an empty table. */
-  useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab]);
+  useEffect(() => { setPage(1); }, [tab, debouncedSearch, scopeTab, catParam, compParam]);
 
   /* Dynamic rows-per-page — pick the count that fits between the table's top
      and the bottom of the viewport, so the page fills the screen and the rest
@@ -700,25 +953,6 @@ useEffect(() => {
                 <div className="bref-box__header-sub">Creating suppliers, verifying compliance, and mapping products for procurement.</div>
               </div>
               <div className="bref-box__header-right">
-                {/* Scope tabs, ported from the Sourcing Tracker strip. stopPropagation
-                    on the group: the whole header is the collapse toggle, so a click
-                    here would otherwise fold the panel shut under the user. */}
-                <div className="sup-scope" onClick={e => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    className={`sup-scope__tab ${scopeTab === 'domestic' ? 'is-active' : ''}`}
-                    onClick={() => setScopeTab('domestic')}
-                  >
-                    <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Suppliers</span>
-                  </button>
-                  <button
-                    type="button"
-                    className={`sup-scope__tab ${scopeTab === 'international' ? 'is-active' : ''}`}
-                    onClick={() => setScopeTab('international')}
-                  >
-                    <i className="ri-global-line" />International<span className="sup-scope__word"> Suppliers</span>
-                  </button>
-                </div>
                 <div className="bref-box__toggle">
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
                 </div>
@@ -766,34 +1000,35 @@ useEffect(() => {
                 opportunity (lead) created against its mapped products. The split
                 is computed server-side (VendorController::index → opportunity_count). */}
             <div className="sl-toolbar">
-              <div className="sl-tabs">
+              {/* Domestic / International, moved here from the "What We Are Doing
+                  Here" panel — a scope switch belongs beside the list it scopes,
+                  not in the explainer above it.
+                  The All / Fresh / Recurring strip that used to sit here is gone:
+                  Recurring was always empty (opportunity_count is hardcoded 0
+                  until the case-to-case flow lands), so it offered a choice
+                  between everything and nothing. */}
+              <div className="sup-scope sl-scope">
                 <button
                   type="button"
-                  className={`sl-tab ${tab === 'all' ? 'is-active' : ''}`}
-                  onClick={() => setTab('all')}
+                  className={`sup-scope__tab ${scopeTab === 'domestic' ? 'is-active' : ''}`}
+                  onClick={() => setScopeTab('domestic')}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
-                  <span>All Suppliers</span>
+                  <i className="ri-home-4-line" />Domestic<span className="sup-scope__word"> Suppliers</span>
                 </button>
                 <button
                   type="button"
-                  className={`sl-tab ${tab === 'fresh' ? 'is-active' : ''}`}
-                  onClick={() => setTab('fresh')}
+                  className={`sup-scope__tab ${scopeTab === 'international' ? 'is-active' : ''}`}
+                  onClick={() => setScopeTab('international')}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
-                  <span>Fresh Suppliers</span>
-                </button>
-                <button
-                  type="button"
-                  className={`sl-tab ${tab === 'recurring' ? 'is-active' : ''}`}
-                  onClick={() => setTab('recurring')}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" /></svg>
-                  <span>Recurring Suppliers</span>
+                  <i className="ri-global-line" />International<span className="sup-scope__word"> Suppliers</span>
                 </button>
               </div>
               <div className="sl-search">
-                <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                {/* The magnifier becomes a spinner while the debounce runs, so
+                    the pause is visibly deliberate rather than broken. */}
+                {searchPending
+                  ? <span className="sl-search-spin" aria-label="Searching" role="status" />
+                  : <svg className="sl-search-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>}
                 <input
                   type="text"
                   placeholder="Search suppliers by name, code or contact…"
@@ -806,6 +1041,19 @@ useEffect(() => {
                   </button>
                 )}
               </div>
+
+              <RefineSuppliers
+                open={filterOpen}
+                onOpenChange={setFilterOpen}
+                facets={facets}
+                shown={total}
+                active={activeFilters}
+                catSel={catSel}
+                compSel={compSel}
+                onToggleCat={k => toggleIn(catSel, setCatSel, k)}
+                onToggleComp={k => toggleIn(compSel, setCompSel, k)}
+                onClear={() => { setCatSel([]); setCompSel([]); }}
+              />
             </div>
 
             {/* Table — purple Figma table wired to the real /vendors data.
@@ -814,7 +1062,10 @@ useEffect(() => {
               <div className="p-3"><ShimmerTable rows={8} cols={15} /></div>
             ) : (
               <>
-                <div className="sl-table-scroll" ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
+                {/* Dimmed, not replaced: on a refetch the previous rows stay
+                    put so the table does not collapse and reflow the page under
+                    the popover that triggered it. */}
+                <div className={`sl-table-scroll${refetching ? ' is-refetching' : ''}`} ref={scrollRef} style={fillH ? { minHeight: fillH } : undefined}>
                   <table className="sl-table">
                     <thead>
                       <tr>
@@ -829,7 +1080,7 @@ useEffect(() => {
                         <th>Contact Person</th>
                         <th className="sl-col-c">Contact No</th>
                         <th className="sl-th-email">Email</th>
-                        <th>Supplier Flag</th>
+                        <th>Supplier Category</th>
                         <th>Compliant Status</th>
                         <th className="sl-th-2line sl-col-c"><span>Mapped</span><span>Products</span></th>
                         <th>Actions</th>
@@ -840,7 +1091,7 @@ useEffect(() => {
                         <tr><td colSpan={15} className="sl-empty">No suppliers found.</td></tr>
                       ) : pageRows.map((v, i) => {
                         const kind = typeKind(v.type);
-                        const flag = supplierFlag(v.risk);
+                        const flag = supplierCategory(v.category);
                         const compliance = complianceTone(v.compliance);
                         return (
                           <tr key={v.id}>
@@ -892,19 +1143,15 @@ useEffect(() => {
                             </td>
                             <td className="sl-col-c"><span className="sl-phone">{v.phone}</span></td>
                             <td className="sl-td-email"><Tooltip label={v.email}><a className="sl-email sl-trunc" href={`mailto:${v.email}`}>{v.email}</a></Tooltip></td>
-                            <td>
+                            <td className="sl-col-cat">
                               {flag
                                 ? (
-                                  <Tooltip label={`Risk Level: ${v.risk}`}>
-                                    <span className={`sl-flag ${flag.cls}`}>
-                                      {flag.cls === 'sl-flag--genuine'
-                                        ? <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                                        : <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4M12 17h.01" /><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /></svg>}
-                                      {flag.label}
-                                    </span>
-                                  </Tooltip>
+                                  <span className={`sl-cat ${flag.cls}`}>
+                                    <CatIconSvg kind={flag.icon} />
+                                    {flag.label}
+                                  </span>
                                 )
-                                : <Tooltip label="No risk level set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
+                                : <Tooltip label="No category set on this supplier yet"><span className="sl-state">—</span></Tooltip>}
                             </td>
                             <td>
                               {compliance
@@ -1107,16 +1354,19 @@ useEffect(() => {
         </div>
       )}
 
-      {/* Mapped Products popup (read-only) — same chrome as the wizard's
-          Mapped Products popup, minus the "Map Product" CTA and the per-row
-          edit/remove icons. Mappings are edited in the supplier form. */}
+      {/* Mapped Products popup — the rows are read-only (editing and removing a
+          mapping stay in the supplier form) but a new one can be mapped from
+          its header, so the list does not have to open the wizard for it. */}
       {mappedTarget && (
         <Suspense fallback={null}>
         <MappedProductsViewPopup
           vendorId={mappedTarget.id}
           code={mappedTarget.code}
           name={mappedTarget.companyName}
+          segments={mappedTarget.segments}
           onClose={() => setMappedTarget(null)}
+          /* A new mapping changes the count the badge behind this popup shows. */
+          onChanged={() => void refresh({ silent: true })}
         />
         </Suspense>
       )}

@@ -189,6 +189,9 @@ export default function AddProductModal(props: {
   productId?: number | null;
   initialProduct?: any | null;
   supplierOnly?: boolean;
+  /** Hides this wizard's own supplier-mapping path. Set when it is opened from
+   *  inside a supplier — mapping a supplier back from there is a circle. */
+  hideSupplierMapping?: boolean;
   onClose: () => void;
   onSaved: (productId: number, finalised: boolean) => void;
   /** Fired once the product + masters have landed, i.e. the modal is showing

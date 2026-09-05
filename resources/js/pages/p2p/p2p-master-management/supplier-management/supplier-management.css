@@ -135,6 +135,217 @@
 /* TABLE WRAP — purple-bordered card holding toolbar + table + footer */
 .sup-fig .sl-wrap{display:flex;flex-direction:column;margin-top:4px;border:1px solid #c4b5fd;border-radius:16px;overflow:hidden;background:#fff;box-shadow:0 2px 0 rgba(255,255,255,.85) inset,0 8px 28px rgba(139,92,246,.16),0 2px 8px rgba(0,0,0,.05);min-width:0;}
 
+/* A refetch dims the rows in place rather than swapping them for a skeleton.
+   The skeleton is for arriving at the page; once rows are on screen, replacing
+   them changes the table's height, which moves everything below it and yanks
+   the ground out from under whatever control started the refetch. */
+.sup-fig .sl-table-scroll.is-refetching{opacity:.5;pointer-events:none;transition:opacity .14s ease;}
+
+/* .sl-search is a FLEX ROW, so the spinner is a flex item in the magnifier's
+   place — same 16px box, same flex-shrink — and swapping the two does not move
+   the input text by a pixel. */
+.sup-fig .sl-search-spin{
+  flex-shrink:0;display:block;
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(167,139,250,.3);border-top-color:#8b5cf6;
+  animation:slSearchSpin .6s linear infinite;
+}
+@keyframes slSearchSpin{to{transform:rotate(360deg);}}
+@media (prefers-reduced-motion:reduce){
+  /* Still shows a pending state, without the movement. */
+  .sup-fig .sl-search-spin{animation:none;border-top-color:rgba(139,92,246,.75);}
+}
+
+/* REFINE SUPPLIERS — Filter button + facet popover
+ *
+ * Ported from the P2P prototype's .slf-* panel, values kept rather than
+ * re-derived: the surface is ONE dark gradient sheet with two radial light
+ * sources behind it, not a bright title bar over a dark body. The glows are
+ * what stop a dark panel reading as a heavy flat block, so they are the part
+ * that must not be dropped.
+ *
+ * Type is one step up from the prototype's (7.5–10px), which is sized for a
+ * 366px mock rather than this app's 13px body text.
+ *
+ * Anchored with position:absolute rather than portalled — .sl-toolbar has no
+ * overflow clipping, so the panel escapes the card on its own. */
+.sup-fig .sl-refine{position:relative;flex-shrink:0;}
+.sup-fig .sl-refine-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  height:38px;padding:0 16px;border-radius:11px;
+  font-family:inherit;font-size:12.5px;font-weight:700;color:#fff;
+  background:linear-gradient(135deg,#a78bfa 0%,#8b5cf6 35%,#7c3aed 68%,#5b21b6 100%);
+  border:none;cursor:pointer;white-space:nowrap;
+  box-shadow:0 5px 14px rgba(124,58,237,.42),0 1px 0 rgba(255,255,255,.35) inset;
+  transition:box-shadow .16s,transform .12s;
+}
+.sup-fig .sl-refine-btn:hover{box-shadow:0 7px 18px rgba(124,58,237,.5),0 1px 0 rgba(255,255,255,.4) inset;}
+.sup-fig .sl-refine-btn:active{transform:translateY(1px);}
+.sup-fig .sl-refine-btn.is-open{box-shadow:0 0 0 3px rgba(139,92,246,.3),0 5px 14px rgba(124,58,237,.42);}
+/* A count, not a dot: "which filters are on" is answerable at a glance only if
+   the number is actually there. */
+.sup-fig .sl-refine-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:18px;height:18px;padding:0 5px;border-radius:8px;
+  font-size:10px;font-weight:800;color:#fff;
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.2);
+}
+.sup-fig .sl-refine-btn .sl-refine-badge{color:#6d28d9;background:#fff;border-color:transparent;margin-left:2px;}
+
+.sup-fig .sl-refine-pop{position:absolute;top:calc(100% + 11px);right:0;z-index:80;width:366px;max-width:calc(100vw - 24px);}
+.sup-fig .sl-refine-sheet{
+  position:relative;border-radius:18px;overflow:hidden;
+  background:linear-gradient(158deg,#3b1078 0%,#2e1065 45%,#1f0a4a 100%);
+  border:1px solid rgba(196,181,253,.22);
+  box-shadow:0 26px 54px -20px rgba(30,10,74,.75),0 8px 20px rgba(30,10,74,.3),
+             0 1px 0 rgba(255,255,255,.14) inset;
+}
+/* Two soft light sources behind the glass — the panel reads as lit rather than
+   flat, which is what keeps a dark surface from feeling heavy. */
+.sup-fig .sl-refine-sheet::before{
+  content:'';position:absolute;top:-70px;right:-50px;width:210px;height:210px;border-radius:50%;
+  background:radial-gradient(circle,rgba(167,139,250,.4),transparent 68%);pointer-events:none;
+}
+.sup-fig .sl-refine-sheet::after{
+  content:'';position:absolute;bottom:-90px;left:-60px;width:220px;height:220px;border-radius:50%;
+  background:radial-gradient(circle,rgba(236,72,153,.2),transparent 70%);pointer-events:none;
+}
+/* Takes the sheet's TOP-left colour, since that is the surface it grows out of. */
+.sup-fig .sl-refine-pop::before{
+  content:'';position:absolute;top:-6px;right:26px;width:13px;height:13px;
+  background:#3b1078;border-left:1px solid rgba(196,181,253,.22);
+  border-top:1px solid rgba(196,181,253,.22);
+  transform:rotate(45deg);border-radius:3px;z-index:1;
+}
+
+/* Header — one compact row ON the dark surface, divided by a hairline that
+   fades out at both ends. No separate coloured bar. */
+.sup-fig .sl-refine-head{position:relative;z-index:1;display:flex;align-items:center;gap:8px;padding:12px 13px 11px;}
+.sup-fig .sl-refine-head::after{
+  content:'';position:absolute;left:12px;right:12px;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(196,181,253,.28) 20%,rgba(196,181,253,.28) 80%,transparent);
+}
+.sup-fig .sl-refine-sp{flex:1;}
+.sup-fig .sl-refine-head-ico{
+  flex-shrink:0;width:28px;height:28px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  background:linear-gradient(140deg,rgba(255,255,255,.28),rgba(255,255,255,.08));
+  border:1px solid rgba(255,255,255,.28);box-shadow:0 2px 8px rgba(0,0,0,.2);
+}
+.sup-fig .sl-refine-head-ico svg{width:13px;height:13px;}
+.sup-fig .sl-refine-title{font-size:13.5px;font-weight:800;color:#fff;letter-spacing:-.01em;white-space:nowrap;}
+.sup-fig .sl-refine-reset{
+  display:inline-flex;align-items:center;gap:4px;flex-shrink:0;
+  font-family:inherit;font-size:10px;font-weight:800;color:#e9d5ff;
+  background:rgba(255,255,255,.1);border:1px solid rgba(196,181,253,.28);
+  border-radius:16px;padding:4px 10px;cursor:pointer;transition:background .15s,color .15s;
+}
+.sup-fig .sl-refine-reset svg{width:10px;height:10px;}
+.sup-fig .sl-refine-reset:hover{background:rgba(255,255,255,.9);color:#4c1d95;}
+.sup-fig .sl-refine-x{
+  flex-shrink:0;width:24px;height:24px;display:flex;align-items:center;justify-content:center;
+  border:1px solid rgba(196,181,253,.25);border-radius:7px;
+  background:rgba(255,255,255,.08);color:#d8c9ff;cursor:pointer;transition:background .15s,color .15s;
+}
+.sup-fig .sl-refine-x:hover{background:rgba(255,255,255,.9);color:#4c1d95;}
+.sup-fig .sl-refine-x svg{width:10px;height:10px;}
+
+/* Body — fixed-column grids, so the four categories always sit on one line. */
+.sup-fig .sl-refine-body{position:relative;z-index:1;padding:11px 13px 5px;max-height:min(56vh,420px);overflow-y:auto;}
+.sup-fig .sl-refine-group{margin-bottom:11px;}
+.sup-fig .sl-refine-k{
+  display:flex;align-items:center;gap:7px;margin-bottom:7px;
+  font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#a78bfa;
+}
+.sup-fig .sl-refine-k::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(167,139,250,.32),transparent);}
+.sup-fig .sl-refine-grid{display:grid;gap:7px;}
+.sup-fig .sl-refine-grid--4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.sup-fig .sl-refine-grid--2{grid-template-columns:repeat(2,minmax(0,1fr));}
+
+/* Tile — frosted glass at rest, lit with its OWN colour when picked. Four
+   categories that mean four different things must not all light up the same. */
+.sup-fig .sl-refine-tile{
+  position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:9px 4px 8px;border-radius:12px;cursor:pointer;font-family:inherit;
+  background:rgba(255,255,255,.07);border:1px solid rgba(196,181,253,.18);
+  -webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);
+  transition:background .18s,border-color .18s,box-shadow .18s,transform .18s cubic-bezier(.22,1,.36,1);
+}
+.sup-fig .sl-refine-tile::before{
+  content:'';position:absolute;inset:0;opacity:0;
+  background:linear-gradient(180deg,rgba(255,255,255,.22),transparent 60%);transition:opacity .2s;
+}
+.sup-fig .sl-refine-tile:hover{transform:translateY(-2px);background:rgba(255,255,255,.13);border-color:rgba(196,181,253,.4);}
+.sup-fig .sl-refine-tile:active{transform:translateY(0);}
+.sup-fig .sl-refine-tile:focus-visible{outline:2px solid #c4b5fd;outline-offset:2px;}
+.sup-fig .sl-refine-tile-ico{
+  width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  transition:background .18s,color .18s,box-shadow .18s;
+}
+.sup-fig .sl-refine-tile-ico svg{width:12px;height:12px;}
+.sup-fig .sl-refine-tile-lbl{
+  font-size:11px;font-weight:800;color:#f5f3ff;letter-spacing:-.01em;line-height:1.15;text-align:center;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;
+}
+.sup-fig .sl-refine-tile-n{font-size:9.5px;font-weight:800;color:rgba(233,213,255,.6);font-variant-numeric:tabular-nums;line-height:1;}
+.sup-fig .sl-refine-tick{
+  position:absolute;top:4px;right:4px;width:13px;height:13px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.32);color:#fff;
+  opacity:0;transform:scale(.5);transition:opacity .18s,transform .22s cubic-bezier(.34,1.56,.64,1);
+}
+.sup-fig .sl-refine-tick svg{width:8px;height:8px;}
+.sup-fig .sl-refine-tile.is-on .sl-refine-tick{opacity:1;transform:none;}
+/* A zero facet still answers "are there any?", so it is dimmed rather than
+   removed — but it must not read as an equal choice beside a live one. */
+.sup-fig .sl-refine-tile.is-empty{opacity:.38;}
+/* Resting glyph glows in its own colour against the dark glass. */
+.sup-fig .sl-refine-tile--star  .sl-refine-tile-ico{background:rgba(167,139,250,.24);color:#ddd6fe;}
+.sup-fig .sl-refine-tile--medal .sl-refine-tile-ico{background:rgba(251,191,36,.2);color:#fcd34d;}
+.sup-fig .sl-refine-tile--warn  .sl-refine-tile-ico{background:rgba(251,146,60,.2);color:#fdba74;}
+.sup-fig .sl-refine-tile--ban   .sl-refine-tile-ico,
+.sup-fig .sl-refine-tile--no    .sl-refine-tile-ico{background:rgba(248,113,113,.2);color:#fca5a5;}
+.sup-fig .sl-refine-tile--ok    .sl-refine-tile-ico{background:rgba(74,222,128,.2);color:#86efac;}
+.sup-fig .sl-refine-tile.is-on{border-color:transparent;}
+.sup-fig .sl-refine-tile.is-on::before{opacity:1;}
+.sup-fig .sl-refine-tile.is-on .sl-refine-tile-lbl{color:#fff;}
+.sup-fig .sl-refine-tile.is-on .sl-refine-tile-n{color:rgba(255,255,255,.82);}
+.sup-fig .sl-refine-tile.is-on .sl-refine-tile-ico{background:rgba(255,255,255,.26);color:#fff;box-shadow:0 0 0 1px rgba(255,255,255,.35) inset;}
+.sup-fig .sl-refine-tile--star.is-on {background:linear-gradient(155deg,#a78bfa,#7c3aed);box-shadow:0 0 0 1px rgba(196,181,253,.5),0 6px 18px -6px rgba(167,139,250,.85);}
+.sup-fig .sl-refine-tile--medal.is-on{background:linear-gradient(155deg,#fbbf24,#d97706);box-shadow:0 0 0 1px rgba(252,211,77,.5),0 6px 18px -6px rgba(251,191,36,.8);}
+.sup-fig .sl-refine-tile--warn.is-on {background:linear-gradient(155deg,#fb923c,#ea580c);box-shadow:0 0 0 1px rgba(253,186,116,.5),0 6px 18px -6px rgba(251,146,60,.8);}
+.sup-fig .sl-refine-tile--ban.is-on,
+.sup-fig .sl-refine-tile--no.is-on   {background:linear-gradient(155deg,#f87171,#dc2626);box-shadow:0 0 0 1px rgba(252,165,165,.5),0 6px 18px -6px rgba(248,113,113,.8);}
+.sup-fig .sl-refine-tile--ok.is-on   {background:linear-gradient(155deg,#4ade80,#16a34a);box-shadow:0 0 0 1px rgba(134,239,172,.5),0 6px 18px -6px rgba(74,222,128,.8);}
+
+/* Footer — result count, fill bar and a light-on-dark primary action. */
+.sup-fig .sl-refine-foot{
+  position:relative;z-index:1;display:flex;align-items:center;gap:10px;padding:10px 13px;
+  border-top:1px solid rgba(196,181,253,.2);background:rgba(0,0,0,.16);
+}
+.sup-fig .sl-refine-res{flex-shrink:0;display:flex;align-items:baseline;gap:1px;line-height:1;}
+.sup-fig .sl-refine-res b{font-size:14px;font-weight:800;color:#fff;letter-spacing:-.03em;font-variant-numeric:tabular-nums;}
+.sup-fig .sl-refine-res i{font-style:normal;font-size:10px;font-weight:800;color:rgba(233,213,255,.6);}
+.sup-fig .sl-refine-meter{flex:1;min-width:0;height:4px;border-radius:4px;background:rgba(255,255,255,.14);overflow:hidden;}
+.sup-fig .sl-refine-meter span{
+  display:block;height:100%;border-radius:4px;
+  background:linear-gradient(90deg,#c4b5fd,#f0abfc);box-shadow:0 0 10px rgba(196,181,253,.7);
+  transition:width .34s cubic-bezier(.22,1,.36,1);
+}
+.sup-fig .sl-refine-done{
+  flex-shrink:0;font-family:inherit;font-size:11.5px;font-weight:800;color:#4c1d95;cursor:pointer;
+  background:linear-gradient(180deg,#ffffff,#f3e8ff);border:none;border-radius:8px;padding:8px 18px;
+  box-shadow:0 4px 12px rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.9) inset;
+  transition:filter .15s,transform .15s;
+}
+.sup-fig .sl-refine-done:hover{filter:brightness(1.04);transform:translateY(-1px);}
+
+@media (max-width:720px){
+  /* Right-anchored would run off a narrow screen; pin it to the viewport. */
+  .sup-fig .sl-refine-pop{position:fixed;left:12px;right:12px;top:auto;width:auto;max-width:none;}
+  .sup-fig .sl-refine-pop::before{display:none;}
+}
+
 /* TOOLBAR — purple tabs + search (Figma sl-toolbar) */
 .sup-fig .sl-toolbar{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid #e2d4fa;background:linear-gradient(110deg,#faf5ff 0%,#f3e8ff 35%,#ede9fe 70%,#ddd6fe 100%);}
 .sup-fig .sl-tabs{display:flex;gap:8px;flex-shrink:0;background:rgba(255,255,255,.55);border:1px solid rgba(139,92,246,.22);border-radius:11px;padding:4px;}
@@ -182,7 +393,15 @@
 }
 .sup-fig .sl-table{width:100%;border-collapse:collapse;font-size:11.5px;white-space:nowrap;}
 .sup-fig .sl-table thead tr{background:linear-gradient(110deg,#8b5cf6 0%,#7c3aed 45%,#6d28d9 75%,#5b21b6 100%);}
-.sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:left;padding:9px 9px;}
+.sup-fig .sl-table thead th{color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;text-align:center;padding:9px 9px;}
+/* Headers centre with their cells. Only the two free-text columns stay
+   left-aligned: a supplier name and an email are read left-to-right and are the
+   widest values in the row, so centring them makes the column ragged on both
+   edges instead of lining up down one. Everything else — codes, badges, counts,
+   dates — is a short token that sits under a centred header cleanly. */
+.sup-fig .sl-table thead th:nth-child(3),
+.sup-fig .sl-table thead th.sl-th-left{text-align:left;}
+.sup-fig .sl-table thead th.sl-td-email{text-align:left;}
 .sup-fig .sl-table thead th.sl-th-email{text-align:left;}
 /* Two-line headers (SR NO, SUPPLIER CODE, GST STATE CODE, MAPPED PRODUCTS).
    The table-wide `white-space:nowrap` above meant each of these labels set its
@@ -252,6 +471,18 @@
 .sup-fig .sl-flag--genuine{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
 .sup-fig .sl-flag--medium{color:#a16207;background:#FEFCE8;border-color:#FEF08A;}
 .sup-fig .sl-flag--highrisk{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
+/* Supplier Category badges — one class per value so each reads at a glance
+   rather than by its wording. Star is the reward colour (violet), General the
+   commendation amber, High Risk warning amber, Blacklisted the only red:
+   red is reserved for the one state that stops business. */
+.sup-fig .sl-cat{display:inline-flex;align-items:center;justify-content:center;gap:5px;font-size:10.5px;font-weight:700;padding:4px 12px;border-radius:20px;border:1px solid;white-space:nowrap;}
+.sup-fig .sl-cat--star{color:#6d28d9;background:#F5F3FF;border-color:#DDD6FE;}
+.sup-fig .sl-cat--general{color:#a16207;background:#FEFCE8;border-color:#FDE68A;}
+.sup-fig .sl-cat--risk{color:#b45309;background:#FFFBEB;border-color:#FCD34D;}
+.sup-fig .sl-cat--black{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}
+/* The column is a single badge per row — centre it so the pills form a column
+   instead of ragging against the left edge. */
+.sup-fig .sl-col-cat{text-align:center;}
 .sup-fig .sl-compliant--yes{color:#15803d;background:#F0FDF4;border-color:#BBF7D0;}
 .sup-fig .sl-compliant--pending{color:#b45309;background:#FFFBEB;border-color:#FDE68A;}
 .sup-fig .sl-compliant--no{color:#b91c1c;background:#FEF2F2;border-color:#FECACA;}

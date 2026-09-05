@@ -26,7 +26,7 @@ class Vendor extends Model
         'vendor_code',
         'company_name', 'legal_name', 'website',
         'gst_applicable', 'gst_number',
-        'vendor_type_id', 'risk_level_id', 'vendor_behaviour_id',
+        'vendor_type_id', 'risk_level_id', 'supplier_category', 'vendor_behaviour_id',
         'segment_id', 'compliance_behaviour_id', 'classification_id',
         'primary_email', 'zoho_contact_id', 'status', 'step_completed',
     ];

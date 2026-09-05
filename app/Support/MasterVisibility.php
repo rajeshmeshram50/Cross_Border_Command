@@ -184,12 +184,22 @@ class MasterVisibility
     {
         if (!$user || $user->user_type === 'super_admin') return null;
 
-        // Customers & Consignees are intentionally open: ANYONE in the tenant
-        // (employees included) may edit/delete any customer/consignee — no
+        // Customers, Consignees & Suppliers are intentionally open: ANYONE in the tenant
+        // (employees included) may edit/delete any customer/consignee/supplier — no
         // ownership/tier lock on these. (Tenant scoping still applies on the
         // query that fetched the row.) Segment-document protection is enforced
         // separately in the Customer/Consignee update path.
-        if ($row instanceof \App\Models\Customer || $row instanceof \App\Models\Consignee) {
+        //
+        // Vendor is here because the module grant is the gate, not authorship.
+        // Its read scope is ALREADY branch-shared (Vendor::scopeForUser puts
+        // every employee on the whole branch’s supplier book), so locking
+        // mutation to the creator produced the worst version of a permission:
+        // a colleague could open a supplier, work through the wizard and only
+        // be refused at Save. A supplier is shared reference data — whoever
+        // holds the supplier permission maintains it.
+        if ($row instanceof \App\Models\Customer
+            || $row instanceof \App\Models\Consignee
+            || $row instanceof \App\Models\Vendor) {
             return null;
         }
 
