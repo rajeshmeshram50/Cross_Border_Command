@@ -1682,26 +1682,62 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
      Exclusivity is a property of the state now rather than something every
      handler has to remember — a fifth menu added later inherits it. The
      setters keep the same shape (boolean or updater) so no call site changed. */
-  /* Re-render the toolbar on every editor transaction.
-     Every button below asks editor.isActive(...) AT RENDER TIME, but Tiptap v3
-     dropped useEditor's automatic re-render on each transaction, so nothing
-     re-ran this component when the caret moved or a mark toggled. The active
-     highlights were therefore repainted only when some UNRELATED render
-     happened to fire -- typing, which bubbles through onUpdate -> onChange ->
-     parent state. That is exactly the reported symptom: press Bold and the
-     button stays unlit until you type a character, and un-pressing it likewise
-     stays lit. Subscribing here makes the toolbar reflect the real mark state
-     on the same tick as the click or caret move.
+  /* Re-render the toolbar when the editor state the buttons DRAW changes.
 
-     'transaction' is the broad signal (covers selection moves, mark toggles on
-     an empty selection -- i.e. stored marks -- content edits and focus), so one
-     listener is enough. */
+     Every button below asks editor.isActive(...) AT RENDER TIME, but TipTap v3
+     dropped useEditor's automatic re-render on each transaction
+     (shouldRerenderOnTransaction defaults to false), so nothing re-ran this
+     component when the caret moved or a mark toggled. The highlights were
+     repainted only when some UNRELATED render happened to fire — typing, which
+     bubbles through onUpdate → onChange → parent state. Hence the reported
+     symptom: press Bold and the button stays unlit until you type a character,
+     and un-pressing it likewise stays lit.
+
+     This lives in the TOOLBAR rather than in whichever component owns the
+     editor: CtcRichEditor and the HR Document Template editor each call
+     useEditor themselves and share only these buttons, so a subscription in
+     either wrapper leaves the other one unfixed.
+
+     BOTH events are needed. 'transaction' covers mark toggles on an empty
+     selection (stored marks) and content edits; 'selectionUpdate' covers a
+     caret move that changes no document — a click from inside a bold word to
+     outside it dispatches no transaction, so on 'transaction' alone the button
+     kept the previous word's state.
+
+     The signature guard is what keeps this off the hot path: 'transaction'
+     fires on every keystroke, and re-rendering the toolbar each time is what
+     shouldRerenderOnTransaction:true would have cost. Typing inside one bold
+     word produces the same signature and re-renders nothing; the first
+     character that leaves it re-renders once. */
   const [, bumpToolbar] = useState(0);
+  const toolbarSigRef = useRef('');
   useEffect(() => {
     if (!editor) return;
-    const sync = () => bumpToolbar(n => n + 1);
+    const sign = () => [
+      editor.isActive('bold'), editor.isActive('italic'), editor.isActive('underline'),
+      editor.isActive('strike'), editor.isActive('superscript'), editor.isActive('subscript'),
+      editor.isActive('link'), editor.isActive('bulletList'), editor.isActive('orderedList'),
+      editor.isActive('listItem'), editor.isActive('table'),
+      editor.isActive('heading', { level: 1 }), editor.isActive('heading', { level: 2 }),
+      editor.isActive('heading', { level: 3 }),
+      editor.isActive({ textAlign: 'left' }), editor.isActive({ textAlign: 'center' }),
+      editor.isActive({ textAlign: 'right' }), editor.isActive({ textAlign: 'justify' }),
+    ].map(Boolean).join('');
+
+    const sync = () => {
+      const next = sign();
+      if (next === toolbarSigRef.current) return;
+      toolbarSigRef.current = next;
+      bumpToolbar(n => n + 1);
+    };
+
+    sync();
     editor.on('transaction', sync);
-    return () => { editor.off('transaction', sync); };
+    editor.on('selectionUpdate', sync);
+    return () => {
+      editor.off('transaction', sync);
+      editor.off('selectionUpdate', sync);
+    };
   }, [editor]);
 
   type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
@@ -1746,65 +1782,6 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
   const findVisited = useRef(false);
   const [linkUrl, setLinkUrl] = useState('');
 
-  /* ── Toolbar ⇄ editor state synchronisation ──────────────────────────
-     The buttons read editor.isActive(...) at RENDER time, but TipTap v3's
-     useEditor does not re-render on a transaction — shouldRerenderOnTransaction
-     defaults to false. That made the two ways of applying a mark behave
-     differently:
-
-       • Select text, press Bold  → the text turned bold, and the document
-         change forced a render, so the button lit. Looked fine.
-       • Put the caret down, press Bold, then type → the stored mark was set and
-         the typed text WAS bold, but nothing re-rendered until that first
-         character arrived, so the button sat unlit while you decided what to
-         type. Pressing it again to turn it off looked equally dead.
-       • Move the caret into or out of bold text → the button did not follow at
-         all, because moving the caret changes no document.
-
-     This lives in the TOOLBAR, not in whichever component owns the editor.
-     CtcRichEditor and the HR Document Template editor each call useEditor
-     themselves and share only these buttons, so a fix in either wrapper leaves
-     the other one broken — which is exactly what happened.
-
-     shouldRerenderOnTransaction:true would also fix it, by re-rendering on
-     every transaction: a render per keystroke, in editors that deliberately
-     debounce their own onChange for that reason. This watches ONLY what the
-     toolbar draws and re-renders when that changes, so a caret moving inside
-     one bold word costs nothing and the first character that leaves it
-     re-renders once. */
-  const [, bumpToolbar] = useState(0);
-  const toolbarSigRef = useRef('');
-  useEffect(() => {
-    if (!editor) return;
-    const sign = () => [
-      editor.isActive('bold'), editor.isActive('italic'), editor.isActive('underline'),
-      editor.isActive('strike'), editor.isActive('superscript'), editor.isActive('subscript'),
-      editor.isActive('link'), editor.isActive('bulletList'), editor.isActive('orderedList'),
-      editor.isActive('listItem'), editor.isActive('table'),
-      editor.isActive('heading', { level: 1 }), editor.isActive('heading', { level: 2 }),
-      editor.isActive('heading', { level: 3 }),
-      editor.isActive({ textAlign: 'left' }), editor.isActive({ textAlign: 'center' }),
-      editor.isActive({ textAlign: 'right' }), editor.isActive({ textAlign: 'justify' }),
-    ].map(Boolean).join('');
-
-    const sync = () => {
-      const next = sign();
-      if (next === toolbarSigRef.current) return;
-      toolbarSigRef.current = next;
-      bumpToolbar(v => v + 1);
-    };
-
-    sync();
-    /* Both events are needed. selectionUpdate catches the caret moving;
-       transaction catches pressing a button with NO selection, which sets a
-       stored mark and changes nothing else. Neither alone covers both. */
-    editor.on('selectionUpdate', sync);
-    editor.on('transaction', sync);
-    return () => {
-      editor.off('selectionUpdate', sync);
-      editor.off('transaction', sync);
-    };
-  }, [editor]);
 
   /* ── Leaving Find puts the editor back the way it was ────────────────
      Two things outlive the panel otherwise:
