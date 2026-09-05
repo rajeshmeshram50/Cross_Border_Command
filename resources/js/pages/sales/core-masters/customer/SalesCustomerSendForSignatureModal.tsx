@@ -1662,10 +1662,13 @@ export default function SalesCustomerSendForSignatureModal({
                               </>
                             );
                           }
+                          // One line. The dropped half - "click a tab below to reposition that
+                          // signer's box" - is instruction the tabs directly under it already
+                          // convey, and the coordinate pane repeats verbatim; two wrapped lines
+                          // of it pushed the preview down on every open.
                           return (
                             <span className="ssf-banner-ok">
-                              ✓ {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''} resolved — each receives the same PDF and signs on their own box.
-                              {ctxSigners.length > 1 && ' Click a tab below to reposition that signer\'s box.'}
+                              ✓ {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''} resolved · each signs on their own box
                             </span>
                           );
                         })()}
@@ -1697,16 +1700,24 @@ export default function SalesCustomerSendForSignatureModal({
                         ))}
                       </div>
                     )}
-                    {/* Page navigator — flip through the document pages one
-                        at a time (single-page canvas, no browser PDF
-                        scrollbar) and drop the signature box on whichever
-                        page you want. Mirrors the Quotation/PI send modal. */}
+                    {/* Floating page arrows, vertically centred and sticky to the
+                        preview scroller. The bar above scrolls out of view once you
+                        are working near the foot of a tall page, which meant scrolling
+                        back up just to change page after placing a signature. These
+                        stay put. Zero-height sticky wrapper so they overlay the page
+                        without taking layout space; pointer-events only on the
+                        buttons so the page underneath stays draggable. */}
                     {pageCount > 1 && (
-                      <div className="ssf-pagenav">
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(-1)} disabled={viewPage <= 0} aria-label="Previous page">‹ Prev</button>
-                        <span className="ssf-pagenav-label">Page {viewPage + 1} of {pageCount}</span>
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(1)} disabled={viewPage >= pageCount - 1} aria-label="Next page">Next ›</button>
+                      <div className="ssf-pagenav-side">
+                        <button type="button" className="ssf-pagenav-arrow ssf-pn-left" onClick={() => goPage(-1)} disabled={viewPage <= 0} aria-label="Previous page">&#8249;</button>
+                        <button type="button" className="ssf-pagenav-arrow ssf-pn-right" onClick={() => goPage(1)} disabled={viewPage >= pageCount - 1} aria-label="Next page">&#8250;</button>
                       </div>
+                    )}
+                    {/* Page counter sits ABOVE the sheet, never on it - floated over the
+                        document it landed on top of the text. One short line is the whole
+                        cost now that Prev/Next moved out to the side arrows. */}
+                    {pageCount > 1 && (
+                      <div className="ssf-pagenav-float"><span className="ssf-pagenav-label">Page {viewPage + 1} of {pageCount}</span></div>
                     )}
                     <div className="ssf-preview-wrap" ref={previewWrapRef}>
                       {/* The active page is painted onto this canvas by the
@@ -2725,31 +2736,53 @@ export const SSF_CSS = `
 .ssf-preview-state { color: #475569; font-size: 13px; padding: 32px; }
 /* Prev / Next page navigation above the preview (parity with the
  * Quotation/PI modal's .sds-pagenav). */
-.ssf-pagenav { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.ssf-pagenav-label { font-size: 12.5px; font-weight: 700; color: #334155; min-width: 92px; text-align: center; }
-.ssf-pagenav-btn {
-  border: 1.5px solid #cbd5e1; background: #fff; color: #0f172a;
-  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, border-color .15s;
+.ssf-pagenav-float {
+  display: flex; justify-content: center;
+  margin-bottom: 6px;
 }
-.ssf-pagenav-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-.ssf-pagenav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ssf-pagenav-side { position: sticky; top: 50%; height: 0; width: 100%; max-width: 560px; z-index: 7; pointer-events: none; }
+.ssf-pagenav-arrow {
+  position: absolute; top: 0; transform: translateY(-50%); pointer-events: auto;
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #4f46e5;
+  background: #4f46e5; color: #fff; font-size: 20px; line-height: 1;
+  cursor: pointer; box-shadow: 0 3px 10px rgba(79,70,229,.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.ssf-pagenav-arrow:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.ssf-pagenav-arrow:disabled { opacity: .35; cursor: not-allowed; }
+.ssf-pn-left { left: -52px; } .ssf-pn-right { right: -52px; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow { background: #6366f1; border-color: #6366f1; color: #fff; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow:hover:not(:disabled) { background: #4f46e5; }
+.ssf-pagenav-label {
+  font-size: 11px; font-weight: 700; color: #475569; text-align: center;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.75); border: 1px solid #cbd5e1;
+}
 [data-bs-theme="dark"] .ssf-pagenav-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .ssf-pagenav-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .ssf-pagenav-btn:hover:not(:disabled) { background: #243244; }
 /* Page navigator (Prev / page X of Y / Next) above the canvas preview. */
-.ssf-pagenav { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.ssf-pagenav-label { font-size: 12.5px; font-weight: 700; color: #334155; min-width: 92px; text-align: center; }
-.ssf-pagenav-btn {
-  border: 1.5px solid #cbd5e1; background: #fff; color: #0f172a;
-  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, border-color .15s;
+.ssf-pagenav-float {
+  display: flex; justify-content: center;
+  margin-bottom: 6px;
 }
-.ssf-pagenav-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-.ssf-pagenav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ssf-pagenav-side { position: sticky; top: 50%; height: 0; width: 100%; max-width: 560px; z-index: 7; pointer-events: none; }
+.ssf-pagenav-arrow {
+  position: absolute; top: 0; transform: translateY(-50%); pointer-events: auto;
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #4f46e5;
+  background: #4f46e5; color: #fff; font-size: 20px; line-height: 1;
+  cursor: pointer; box-shadow: 0 3px 10px rgba(79,70,229,.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.ssf-pagenav-arrow:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.ssf-pagenav-arrow:disabled { opacity: .35; cursor: not-allowed; }
+.ssf-pn-left { left: -52px; } .ssf-pn-right { right: -52px; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow { background: #6366f1; border-color: #6366f1; color: #fff; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow:hover:not(:disabled) { background: #4f46e5; }
+.ssf-pagenav-label {
+  font-size: 11px; font-weight: 700; color: #475569; text-align: center;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.75); border: 1px solid #cbd5e1;
+}
 [data-bs-theme="dark"] .ssf-pagenav-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .ssf-pagenav-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .ssf-pagenav-btn:hover:not(:disabled) { background: #243244; }
 
 /* Draggable signature box overlaid on the PDF preview. The corner
  * handle is a child so its own pointerdown can be distinguished from
@@ -2792,8 +2825,8 @@ export const SSF_CSS = `
  * visual mapping between tab / overlay / recipient card. */
 .ssf-signer-tabs {
   display: inline-flex; gap: 6px;
-  margin: 0 auto 10px;
-  padding: 4px;
+  margin: 0 auto 6px;
+  padding: 3px;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -2862,8 +2895,8 @@ export const SSF_CSS = `
  * boxes do/don't appear. */
 .ssf-signer-banner {
   width: 100%; max-width: 560px;
-  padding: 8px 12px;
-  margin: 0 auto 10px;
+  padding: 5px 10px;
+  margin: 0 auto 6px;
   border-radius: 8px;
   font-size: 12px; line-height: 1.4;
   background: #ecfeff; border: 1px solid #67e8f9;

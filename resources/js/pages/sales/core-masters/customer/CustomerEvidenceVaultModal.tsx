@@ -1817,6 +1817,11 @@ export function ShipmentDocSendForSignature({ target, onClose, onSent }: {
       <SalesCustomerSendForSignatureModal
         open={!!td}
         mode="trade-doc"
+        /* multiBox: this is the vault's OTHER trade-doc send (the shipment /
+           case-to-case row), a separate instance from the one above - it was
+           missed when multi-box was switched on, so the picker never appeared
+           on documents opened through this path (Legal Team #9 / BR-03). */
+        multiBox
         modelName={td?.modelName ?? 'Customer'}
         customer={td?.customer ?? null}
         leadId={td?.leadId ?? null}
