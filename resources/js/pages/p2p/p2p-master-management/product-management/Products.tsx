@@ -646,23 +646,26 @@ export default function Products() {
             onChange={(e) => setQ(e.target.value)}
           />
           {q && (
-            <button type="button" className="prd-search-clear" title="Clear search" onClick={() => setQ('')}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
+            <Tooltip label="Clear search">
+              <button type="button" className="prd-search-clear" onClick={() => setQ('')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+              </button>
+            </Tooltip>
           )}
         </div>
         <div className="prd-filter-wrap">
-          <button
-            type="button"
-            className={`prd-filter-btn ${filterOpen ? 'is-active' : ''}`}
-            onClick={() => setFilterOpen(o => !o)}
-            aria-label="Open filters"
-            title="Open filters"
-          >
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
-            <span>Filter</span>
-            {activeFilterCount > 0 && <span className="prd-filter-badge">{activeFilterCount}</span>}
-          </button>
+          <Tooltip label="Open filters">
+            <button
+              type="button"
+              className={`prd-filter-btn ${filterOpen ? 'is-active' : ''}`}
+              onClick={() => setFilterOpen(o => !o)}
+              aria-label="Open filters"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+              <span>Filter</span>
+              {activeFilterCount > 0 && <span className="prd-filter-badge">{activeFilterCount}</span>}
+            </button>
+          </Tooltip>
         </div>
         </div>
       </div>
@@ -697,15 +700,16 @@ export default function Products() {
             <span key={chip.id} className="prd-meta-chip">
               <span className="prd-meta-chip-g">{chip.group}</span>
               <strong>{chip.label}</strong>
-              <button
-                type="button"
-                className="prd-meta-chip-x"
-                onClick={chip.onRemove}
-                aria-label={`Remove ${chip.group} filter ${chip.label}`}
-                title={`Remove ${chip.group}: ${chip.label}`}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-              </button>
+              <Tooltip label={`Remove ${chip.group}: ${chip.label}`}>
+                <button
+                  type="button"
+                  className="prd-meta-chip-x"
+                  onClick={chip.onRemove}
+                  aria-label={`Remove ${chip.group} filter ${chip.label}`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                </button>
+              </Tooltip>
             </span>
           ))}
           <button type="button" className="prd-meta-clear" onClick={clearAllFilters}>Clear all</button>
@@ -856,17 +860,18 @@ export default function Products() {
             >
               Clear All
             </button>
-            <button
-              type="button"
-              className="prd-filter-icon-btn close"
-              onClick={() => setFilterOpen(false)}
-              aria-label="Close filters"
-              title="Close"
-            >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
+            <Tooltip label="Close">
+              <button
+                type="button"
+                className="prd-filter-icon-btn close"
+                onClick={() => setFilterOpen(false)}
+                aria-label="Close filters"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </Tooltip>
           </div>
         </div>
 

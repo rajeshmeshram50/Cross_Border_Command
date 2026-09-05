@@ -2590,6 +2590,13 @@ export default function AddCustomerModal({ open, onClose, customer, onSaved, ini
           they show "Resend" thereafter. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendForSignature)}
+        /* multiBox: the ONE resolved signer can be asked to sign the same
+           document in several places (Legal Team #9 / BR-03). Matches the
+           supplier form and both evidence vaults, which already send this
+           way - the requirement belongs to the document, not the screen it
+           was sent from. Single-signer trade-doc mode only; roleMode takes
+           precedence when a multi-party send sets tradeSigners. */
+        multiBox
         customer={(() => {
           // The Zoho send modal needs the saved DB id. In edit mode it
           // comes from the `customer` prop; in create mode it shows up
