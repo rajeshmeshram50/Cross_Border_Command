@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback, useRef, type ReactNode, type CSSProperties } from 'react';
+import RowsPerPageSelect from '../../../../components/ui/RowsPerPageSelect';
 import './product-management.css';
 import { readProductMasterBundle, writeProductMasterBundle } from './productBundleCache';
 import { createPortal } from 'react-dom';
@@ -1075,9 +1076,7 @@ function ProductPagination(props: {
       <div className="prd-pag-right">
         <div className="prd-rows-sel">
           Rows per page:
-          <select value={pageSize} onChange={e => onRowsPerPage(parseInt(e.target.value, 10))}>
-            {rowOptions.map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
+          <RowsPerPageSelect value={pageSize} options={rowOptions} onChange={onRowsPerPage} />
         </div>
         <span className="prd-pag-range">{page} / {totalPages}</span>
         <div className="prd-page-nav">

@@ -5,6 +5,8 @@
  * violet band. Shares the global `.tc-wl-*` pill/button classes (app.css);
  * uses the non-bleed `.wl-pager` band so it drops cleanly into any card.
  */
+import RowsPerPageSelect from './RowsPerPageSelect';
+
 interface Props {
   /** Total row count across all pages. */
   total: number;
@@ -37,9 +39,7 @@ export default function WorklistPager({
         {onPageSize && (
           <span className="tc-wl-rows">
             Rows per page:
-            <select value={pageSize} onChange={e => onPageSize(parseInt(e.target.value, 10))}>
-              {[...new Set([pageSize, ...pageSizeOptions])].sort((a, b) => a - b).map(n => <option key={n} value={n}>{n}</option>)}
-            </select>
+            <RowsPerPageSelect value={pageSize} options={pageSizeOptions} onChange={onPageSize} />
           </span>
         )}
         <span className="tc-wl-range">{safePage} / {pages}</span>

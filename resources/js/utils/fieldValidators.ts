@@ -91,17 +91,45 @@ export function validateIfsc(value: string, label = 'IFSC Code'): string {
   return '';
 }
 
+/* Tax Identification Number — the international counterpart of a GSTIN.
+ *
+ * There is no single worldwide shape, so the rule is a character class and a
+ * length rather than a pattern: 3–30 of A–Z, a–z, 0–9, hyphen, slash, period
+ * and space. Symbols (@ # $ % & *) are out.
+ *
+ * Case is preserved, unlike GSTIN. A TIN is printed on a foreign tax
+ * certificate exactly as issued, and uppercasing it would silently alter a
+ * number the supplier has to match against their own paperwork. */
+const TIN_ALLOWED = /^[A-Za-z0-9\-/. ]+$/;
+export const TIN_MAX = 30;
+
+/** Strips what a TIN may not contain, for use as you type. Does not change case. */
+export function sanitizeTin(raw: string): string {
+  return raw.replace(/[^A-Za-z0-9\-/. ]/g, '').slice(0, TIN_MAX);
+}
+
+export function validateTin(value: string, label = 'Tax Identification Number (TIN)'): string {
+  const v = value.trim();
+  if (!v) return '';
+  if (!TIN_ALLOWED.test(v)) {
+    return `${label} may contain only letters, digits, hyphen, slash, period and spaces.`;
+  }
+  if (v.length < 3)       return `${label} must be at least 3 characters`;
+  if (v.length > TIN_MAX) return `${label} must be ${TIN_MAX} characters or fewer`;
+  return '';
+}
+
 /* SWIFT / BIC — the international counterpart of IFSC (QA #103).
  *
- * 8 to 11 characters: 6 letters (4 bank + 2 ISO country) followed by 2 to 5
- * alphanumeric (2 location + an optional 3-char branch). The ISO standard
- * allows only 8 or 11, but the spec for this field is a range, so 9 and 10 are
- * accepted rather than rejected — a bank that prints a 9-character code on its
- * own letterhead is not a data-entry error the form should refuse. */
-export function validateSwift(value: string, label = 'SWIFT Code'): string {
+ * ISO 9362: 4 bank letters + 2 ISO country letters + 2 alphanumeric location,
+ * then an OPTIONAL 3-character branch. So the length is 8 or 11 — never 9 or
+ * 10. This once accepted 8 through 11; the lengths in between are not codes a
+ * bank can issue, and the bank-accounts master already refuses them, so the two
+ * places that take a BIC now agree. */
+export function validateSwift(value: string, label = 'SWIFT / BIC'): string {
   if (!value.trim()) return '';
-  if (!/^[A-Z]{6}[A-Z0-9]{2,5}$/.test(value.trim().toUpperCase())) {
-    return `${label} must be 8–11 characters: 6 letters then alphanumeric (e.g. HDFCINBB or HDFCINBBXXX)`;
+  if (!/^[A-Z]{6}[A-Z0-9]{2}(?:[A-Z0-9]{3})?$/.test(value.trim().toUpperCase())) {
+    return `${label} must be 8 or 11 characters: 6 letters then alphanumeric (e.g. HDFCINBB or HDFCINBBXXX)`;
   }
   return '';
 }

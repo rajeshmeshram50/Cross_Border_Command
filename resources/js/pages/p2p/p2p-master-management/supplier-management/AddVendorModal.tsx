@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
 import { resolveFileUrl } from '../../../../utils/resolveFileUrl';
@@ -20,6 +20,7 @@ import { formatProductCode } from '../../../../utils/formatProductCode';
 import {
   validateEmail, validatePincode, validateWebsite,
   validateGstin, validateIfsc, validateSwift, validateAccountNumber,
+  validateTin, sanitizeTin, TIN_MAX,
 } from '../../../../utils/fieldValidators';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
@@ -29,6 +30,10 @@ import {
   bustVendorMasterBundle,
 } from './vendorBundleCache';
 import './add-vendor-modal.css';
+
+/* Lazy: the product wizard is a big chunk and most mappings pick an existing
+   product, so it should not be downloaded with this modal. */
+const AddProductModal = lazy(() => import('../product-management/AddProductModal'));
 
 function validateContactNumber(value: string, label = 'Contact No', isIndia = false): string {
   const v = (value ?? '').trim();
@@ -82,6 +87,14 @@ function ContactNoInput(props: {
     />
   );
 }
+
+/* Fixed, in the order they escalate: best standing first, worst last. */
+export const SUPPLIER_CATEGORY_OPTS: { value: string; label: string }[] = [
+  { value: 'star',        label: 'Star Supplier' },
+  { value: 'general',     label: 'General' },
+  { value: 'high_risk',   label: 'High Risk' },
+  { value: 'blacklisted', label: 'Blacklisted' },
+];
 
 export type VendorPayload = {
   companyName: string;
@@ -210,6 +223,75 @@ export type ProductMappingRow = {
   gstAmount: number;
   totalAmount: number;
 };
+
+/* The Map Product form's draft, and the two things every user of it needs.
+   Module level because the form is now opened from two places — the supplier
+   wizard and the Mapped Products popup on the list — and both must total a
+   mapping the same way. */
+export type ProductMappingDraft = {
+  productId: string; productCode: string; productName: string;
+  hsnSacCode: string; segment: string; batchSerialLot: string;
+  purchasePrice: string; gstPercentage: string; gstAmount: string; totalAmount: string;
+};
+
+const EMPTY_MAPPING_DRAFT: ProductMappingDraft = {
+  productId: '', productCode: '', productName: '', hsnSacCode: '', segment: '',
+  batchSerialLot: '', purchasePrice: '', gstPercentage: '', gstAmount: '', totalAmount: '',
+};
+
+/** GST amount + total from purchase price and rate. Blank price blanks both. */
+function recomputeMappingTotals(draft: ProductMappingDraft): ProductMappingDraft {
+  const price = parseFloat(draft.purchasePrice);
+  const pct   = parseFloat(draft.gstPercentage);
+  if (!isFinite(price) || price < 0) return { ...draft, gstAmount: '', totalAmount: '' };
+  const safePct = isFinite(pct) ? pct : 0;
+  const gstAmt  = +(price * (safePct / 100)).toFixed(2);
+  const total   = +(price + gstAmt).toFixed(2);
+  return { ...draft, gstAmount: gstAmt.toFixed(2), totalAmount: total.toFixed(2) };
+}
+
+/** Options for the Product Name dropdown, with everything the form autofills. */
+export type ProductMappingOpt = {
+  value: string; label: string; code: string; name: string;
+  hsn: string; segment: string; segmentId: number | null;
+  basePrice: string; gstPercentage: string;
+};
+
+/** Products that can be mapped: every active product carrying a segment. */
+async function loadMappableProducts(): Promise<ProductMappingOpt[]> {
+  type Row = {
+    id: number; product_code?: string; name?: string;
+    base_price?: number | string | null; segment_id?: number | null;
+    hsn?: { hsn_code?: string } | null;
+    segment?: { id?: number; title?: string } | null;
+    gst_percentage?: { percentage?: number | string } | null;
+  };
+  const res = await api.get<{ data?: Row[] } | Row[]>('/products?per_page=500&lite=1');
+  const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
+  return rows
+    .filter(r => r.segment_id != null || r.segment?.id != null)
+    .map(r => ({
+      value:     String(r.id),
+      label:     `${formatProductCode(r.product_code) || (r.product_code ?? '')} — ${r.name ?? ''}`.replace(/^ — /, ''),
+      code:      r.product_code ?? '',
+      name:      r.name ?? '',
+      hsn:       r.hsn?.hsn_code ?? '',
+      segment:   r.segment?.title ?? '',
+      segmentId: r.segment_id ?? r.segment?.id ?? null,
+      basePrice:     r.base_price != null ? String(r.base_price) : '',
+      gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
+    }));
+}
+
+/** The step/products payload — the endpoint replaces the whole set each time. */
+const mappingsPayload = (list: ProductMappingRow[]) => list.map(m => ({
+  product_id: m.productId,
+  batch_serial_lot: m.batchSerialLot || null,
+  purchase_price: m.purchasePrice,
+  gst_percentage: m.gstPercentage,
+  gst_amount: m.gstAmount,
+  total_amount: m.totalAmount,
+}));
 
 type StepKey = 1 | 2 | 3;
 type IdTab = 'identification' | 'address';
@@ -375,6 +457,11 @@ export default function AddVendorModal(props: {
   const [legalName,   setLegalName]   = useState('');
   const [vendorType,  setVendorType]  = useState('');
   const [website,     setWebsite]     = useState('');
+  /* Supplier Category — COMMERCIAL STANDING, not risk. Four fixed values, so
+     no master lookup: they are product vocabulary and the list's Refine filter
+     counts them by value. Risk Level stays as its own field; the overlap is in
+     wording only ('High Risk' here is a standing, 'High' there is a score). */
+  const [supplierCategory, setSupplierCategory] = useState('general');
   const [gstApplicable, setGstApplicable] = useState<'Yes' | 'No'>('No');
   const [gstNumber,     setGstNumber]     = useState('');
   const kycTabOrder = useMemo(
@@ -484,10 +571,6 @@ export default function AddVendorModal(props: {
     'Can’t change this',
     'This supplier is already used in a Purchase Order.',
   );
-  const intlStateCodeToast = () => toast.info(
-    'Not applicable',
-    'State Code is only for Indian (GST) suppliers — it doesn’t apply to an international supplier.',
-  );
   const [city,      setCity]      = useState('');
   const [pincode,   setPincode]   = useState('');
   const [googleLocation, setGoogleLocation] = useState('');
@@ -537,6 +620,10 @@ export default function AddVendorModal(props: {
     const name = (countryOpts.find(o => o.value === country)?.label ?? '').trim();
     return name === 'India' ? 'domestic' : 'international';
   }, [country, countryOpts]);
+  /* Derived from the chosen COUNTRY, not the scope the wizard was opened
+     with: the user can change country mid-form, and the tax field has to
+     follow what they actually picked. */
+  const isInternational = supplierDocType === 'international';
   const disabledSegmentIds = useMemo(() => {
     if (!segRulesLoaded) return [] as string[];
     return segmentOpts.map(o => o.value).filter(v => {
@@ -680,9 +767,21 @@ export default function AddVendorModal(props: {
     gstPercentage: string;
   };
   const [productOpts,    setProductOpts]    = useState<ProductOpt[]>([]);
-  const [gstPctOpts,     setGstPctOpts]     = useState<Opt[]>([]);
+  /* Still filled from the options bundle, but no longer rendered: GST % is
+     inherited from the product and shown read-only in the mapping popup. */
+  const [, setGstPctOpts] = useState<Opt[]>([]);
   const [productMappings, setProductMappings] = useState<ProductMappingRow[]>([]);
   const [mapPopupOpen,   setMapPopupOpen]   = useState(false);
+  /* Creating a product from inside the mapping form. The product wizard is
+     reused whole rather than reproduced here — a product has its own required
+     fields, masters and step statuses, and a second abbreviated version of it
+     would create rows the Products module considers incomplete. */
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  /* The wizard saves step by step: the first save creates the row and reports
+     finalised=false, and every later step must edit that same row rather than
+     create another one. */
+  const [newProductId,   setNewProductId]   = useState<number | null>(null);
+  const [newProductBusy, setNewProductBusy] = useState(false);
   const [mappedListOpen, setMappedListOpen] = useState(false);
 
   type MapDraft = {
@@ -1206,7 +1305,10 @@ export default function AddVendorModal(props: {
 
   const FIELD_LABELS: Record<string, string> = {
     companyName: 'Company Name', legalName: 'Legal Name', website: 'Company Website',
-    gstNumber: 'GST Number', gstApplicable: 'GST Applicable',
+    /* One key, two names — the error toast must call the field what the form
+       calls it, or it points at a label that is not on screen. */
+    gstNumber: isInternational ? 'Tax Identification Number (TIN)' : 'GST Number',
+    gstApplicable: 'GST Applicable',
     vendorType: 'Supplier Type', riskLevel: 'Risk Level', vendorBehaviour: 'Supplier Behaviour',
     segment: 'Supplier Segment', complianceBehaviour: 'Compliance Behaviour',
     registeredOffice: 'Registered Office Address', country: 'Country', state: 'State',
@@ -1255,8 +1357,13 @@ export default function AddVendorModal(props: {
         errs.segment = `${names.join(', ')} ${mismatched.length > 1 ? 'have' : 'has'} no ${label} rule — this is a ${label} supplier, so the segment's document type must match.`;
       }
     }
-    if (!complianceBehaviour) errs.complianceBehaviour = 'Compliance Behaviour is required';
     if (website)             { const e = validateWebsite(website); if (e) errs.website = e; }
+    /* The same input, two identities. A TIN has no fixed shape worldwide, so
+       the rule is a character set and a length, not a pattern. */
+    if (isInternational) {
+      if (!gstNumber.trim()) errs.gstNumber = 'Tax Identification Number (TIN) is required';
+      else { const e = validateTin(gstNumber); if (e) errs.gstNumber = e; }
+    }
     if (gstApplicable === 'Yes') {
       if (!gstNumber.trim()) errs.gstNumber = 'GST Number is required';
       else { const e = validateGstin(gstNumber); if (e) errs.gstNumber = e; }
@@ -1294,8 +1401,7 @@ export default function AddVendorModal(props: {
         vendor_behaviour_id: vendorBehaviour ? Number(vendorBehaviour) : null,
         segment_id: (segment ?? [])[0] ? Number((segment ?? [])[0]) : null,
         segment_ids: (segment ?? []).map(Number),
-        compliance_behaviour_id: complianceBehaviour ? Number(complianceBehaviour) : null,
-        classification_id: classificationId ? Number(classificationId) : null,
+        supplier_category: supplierCategory || 'general',
         address: {
           address_line: registeredOffice || null,
           country_id: country ? Number(country) : null,
@@ -1726,7 +1832,7 @@ export default function AddVendorModal(props: {
     if (!bankDraft.bankName.trim())      { toast.error('Missing field', 'Bank Name is required'); return; }
     if (!bankDraft.branchName.trim())    { toast.error('Missing field', 'Branch is required'); return; }
     if (!bankDraft.accountNumber.trim()) { toast.error('Missing field', 'Account Number is required'); return; }
-    const routingLabel = supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code';
+    const routingLabel = supplierDocType === 'international' ? 'SWIFT / BIC' : 'IFSC Code';
     if (!bankDraft.ifsc.trim())          { toast.error('Missing field', routingLabel + ' is required'); return; }
     if (!bankDraft.chequeFile && !bankDraft.existingPath) { toast.error('Missing field', 'Cancelled Cheque is required'); return; }
     const accErr = validateAccountNumber(bankDraft.accountNumber, 'Account Number', supplierDocType === 'international');
@@ -1925,8 +2031,8 @@ export default function AddVendorModal(props: {
     setSendForSignature(ids.slice(0, 10));
   };
 
-  const fetchProductOptsIfNeeded = async () => {
-    if (productOpts.length) return;
+  const fetchProductOptsIfNeeded = async (force = false): Promise<ProductOpt[]> => {
+    if (productOpts.length && !force) return productOpts;
     try {
       type ProductRow = {
         id: number; product_code?: string; name?: string;
@@ -1940,7 +2046,7 @@ export default function AddVendorModal(props: {
       const res = await api.get<{ data?: ProductRow[] } | ProductRow[]>('/products?per_page=500&lite=1');
       const rows = Array.isArray(res.data) ? res.data : (res.data?.data ?? []);
       const eligible = rows.filter(r => r.segment_id != null || r.segment?.id != null);
-      setProductOpts(eligible.map(r => ({
+      const opts: ProductOpt[] = eligible.map(r => ({
         value:    String(r.id),
         label:    `${formatProductCode(r.product_code) || (r.product_code ?? '')} — ${r.name ?? ''}`.replace(/^ — /, ''),
         code:     r.product_code ?? '',
@@ -1950,20 +2056,43 @@ export default function AddVendorModal(props: {
         segmentId: r.segment_id ?? r.segment?.id ?? null,
         basePrice:     r.base_price != null ? String(r.base_price) : '',
         gstPercentage: r.gst_percentage?.percentage != null ? String(r.gst_percentage.percentage) : '',
-      })));
+      }));
+      setProductOpts(opts);
+      return opts;
     } catch { /* silent — modal falls back to manual entry */ }
+    return [];
   };
   const fetchGstPctOptsIfNeeded = async () => { /* seeded from bundle */ };
 
-  const recomputeMapTotals = (draft: MapDraft): MapDraft => {
-    const price = parseFloat(draft.purchasePrice);
-    const pct   = parseFloat(draft.gstPercentage);
-    if (!isFinite(price) || price < 0) return { ...draft, gstAmount: '', totalAmount: '' };
-    const safePct = isFinite(pct) ? pct : 0;
-    const gstAmt  = +(price * (safePct / 100)).toFixed(2);
-    const total   = +(price + gstAmt).toFixed(2);
-    return { ...draft, gstAmount: gstAmt.toFixed(2), totalAmount: total.toFixed(2) };
+  /* Pull the list again ignoring the "already loaded" guard, so a product
+     created seconds ago is in the dropdown. Deliberately does NOT fill the form:
+     the new product is offered in Product Name and the user picks it, the same
+     way as any other product. Without force the loader returns early on a
+     non-empty list and the new row would never appear. */
+  const reloadProductOpts = async (newId: number) => {
+    setNewProductBusy(true);
+    try {
+      const opts = await fetchProductOptsIfNeeded(true);
+      const fresh = opts.find(o => o.value === String(newId));
+
+      /* Two filters stand between a saved product and this dropdown: it must
+         carry a segment, and that segment must be one this supplier is
+         onboarded for. Say which one it failed rather than let the user hunt
+         for a name that is not in the list. */
+      if (!fresh) {
+        toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
+        return;
+      }
+      const segSet = new Set((segment ?? []).map(Number).filter(n => n > 0));
+      if (segSet.size > 0 && (fresh.segmentId == null || !segSet.has(fresh.segmentId))) {
+        toast.info('Not in the list yet', `${fresh.name || 'The product'} is in a segment this supplier isn't onboarded for.`);
+        return;
+      }
+      toast.success('Product created', `Select ${fresh.name || 'it'} in Product Name to map it.`);
+    } finally { setNewProductBusy(false); }
   };
+
+  const recomputeMapTotals = recomputeMappingTotals;
 
   const openMapPopup = () => {
     setMapEditingId(null);
@@ -2429,7 +2558,7 @@ export default function AddVendorModal(props: {
                 { label: 'Segment',              value: segment.map(s => labelFor(s, segmentOpts) || s).join(', ') || '—' },
                 { label: 'Risk Level',           value: labelFor(riskLevel, riskLevelOpts) || '—' },
                 { label: 'Supplier Behaviour',   value: labelFor(vendorBehaviour, behaviourOpts) || '—' },
-                { label: 'Compliance Behaviour', value: labelFor(complianceBehaviour, complianceOpts) || '—' },
+                { label: 'Supplier Category', value: (SUPPLIER_CATEGORY_OPTS.find(o => o.value === supplierCategory)?.label) || '—' },
                 { label: 'Company Website',      value: website || 'NA' },
               ];
               if (supplierDocType === 'domestic') {
@@ -2476,7 +2605,7 @@ export default function AddVendorModal(props: {
                     { label: 'Bank Name',      value: bank.bankName || '—' },
                     { label: 'Branch',         value: bank.branchName || '—' },
                     { label: 'Account Number', value: bank.accountNumber || '—' },
-                    { label: supplierDocType === 'international' ? 'SWIFT Code' : 'IFSC Code', value: bank.ifsc || '—' },
+                    { label: supplierDocType === 'international' ? 'SWIFT / BIC' : 'IFSC Code', value: bank.ifsc || '—' },
                   ],
                 });
               }
@@ -2714,15 +2843,16 @@ export default function AddVendorModal(props: {
                     </Field>
                   </div>
                   <div className="avm-grid-3">
-                    <Field label="Supplier Behaviour" required addNew onAdd={() => setQuickAdd('vendor_behaviour')} error={fieldErrors.vendorBehaviour}>
+                    <Field label="Supplier Behaviour" required error={fieldErrors.vendorBehaviour}>
                       <SelectInput value={vendorBehaviour} onChange={(v) => { setVendorBehaviour(v); clearFieldError('vendorBehaviour'); }} placeholder="Select" options={behaviourOpts} />
                     </Field>
-                    <Field label="Classification & Flags">
-                      {/* Master-driven (master_customer_classifications) → vendors.classification_id. */}
-                      <SelectInput value={classificationId} onChange={setClassificationId} placeholder="Select" options={classificationOpts} />
-                    </Field>
-                    <Field label="Compliance Behaviour" required addNew onAdd={() => setQuickAdd('compliance_behaviours')} error={fieldErrors.complianceBehaviour}>
-                      <SelectInput value={complianceBehaviour} onChange={(v) => { setComplianceBehaviour(v); clearFieldError('complianceBehaviour'); }} placeholder="Select" options={complianceOpts} />
+                    <Field label="Supplier Category">
+                      <SelectInput
+                        value={supplierCategory}
+                        onChange={setSupplierCategory}
+                        placeholder="Select"
+                        options={SUPPLIER_CATEGORY_OPTS}
+                      />
                     </Field>
                   </div>
                 </SectionCard>
@@ -2777,40 +2907,78 @@ export default function AddVendorModal(props: {
                         />
                       </LockField>
                     </Field>
-                    {/* State Code is an Indian GST construct (2-digit GST state code).
-                        Shown for every supplier, but for a non-India (international)
-                        one it's disabled with a "Not applicable" placeholder + a toast
-                        on click. Kept visible rather than removed so the address row
-                        keeps the same four fields in the same places whichever scope
-                        the supplier is — the field explains why it is empty, which a
-                        missing field cannot. */}
-                    <Field label="State Code" required={!(supplierDocType === 'international' && !!country)} error={fieldErrors.stateCode}>
+                    {/* State Code is an Indian GST construct — the 2-digit GST
+                        state code — so it does not exist for an overseas supplier.
+                        It used to stay on screen there, disabled, explaining
+                        itself; that is worth doing for a field the supplier might
+                        expect to fill, but this one is India-only by definition and
+                        was only ever an empty box to skip past. City takes the slot
+                        it leaves, so the row still runs four across. */}
+                    {!isInternational && (
+                    <Field label="State Code" required error={fieldErrors.stateCode}>
                       {/* Derived from the selected State — read-only so it can't drift
                           out of sync with the State (GST state code is fixed per state). */}
-                      <LockField
-                        locked={stateLocked || (supplierDocType === 'international' && !!country)}
-                        onLockClick={() => (stateLocked ? lockToast() : intlStateCodeToast())}
-                      >
+                      <LockField locked={stateLocked} onLockClick={lockToast}>
                         <input
                           className="avm-input avm-input-ro"
-                          placeholder={supplierDocType === 'international' && !!country ? 'Not applicable (international)' : 'Auto-filled from State'}
-                          value={supplierDocType === 'international' && !!country ? '' : stateCode}
+                          placeholder="Auto-filled from State"
+                          value={stateCode}
                           readOnly
-                          disabled={stateLocked || (supplierDocType === 'international' && !!country)}
+                          disabled={stateLocked}
                           tabIndex={-1}
                           title="GST state code — automatically set from the selected State"
                         />
                       </LockField>
                     </Field>
-                    <Field label="City" required error={fieldErrors.city}>
-                      <input
-                        className="avm-input"
-                        placeholder="e.g. Pune"
-                        value={city}
-                        maxLength={60}
-                        onChange={e => applySanitizer(e.target.value, 'city', setCity, raw => sanitizeKycAlpha(raw, 60))}
-                      />
+                    )}
+                    {/* GST sits in the identity row, immediately after State
+                        Code — the state code IS the first two digits of the
+                        GSTIN, so the two read together and a mismatch is
+                        visible at a glance. Disabled rather than hidden when
+                        GST does not apply, so the four-column row keeps its
+                        shape instead of collapsing. */}
+                    {/* One field, two identities. A domestic supplier has a
+                        GSTIN — 15 characters, whose first two ARE the state code
+                        beside it. An overseas one has a TIN instead: no fixed
+                        length or checksum worldwide, so it is capped at 30 and
+                        left alphanumeric rather than validated to a shape that
+                        would be wrong somewhere. Same column either way, because
+                        it answers the same question: how is this supplier
+                        registered for tax. */}
+                    <Field
+                      label={isInternational ? 'Tax Identification Number (TIN)' : 'GST Number'}
+                      required={isInternational || gstApplicable === 'Yes'}
+                      error={fieldErrors.gstNumber}
+                    >
+                      <LockField locked={stateLocked} onLockClick={lockToast}>
+                        <input
+                          className="avm-input"
+                          placeholder={isInternational ? 'e.g. GB 123456789 / 01' : 'e.g. 27AADCI6120M1ZH'}
+                          value={gstNumber}
+                          maxLength={isInternational ? TIN_MAX : 15}
+                          disabled={stateLocked || (!isInternational && gstApplicable !== 'Yes')}
+                          onChange={e => {
+                            /* A GSTIN is 15 uppercase alphanumerics, so it is
+                               forced to that as you type. A TIN is not: it may
+                               carry hyphens, slashes, periods and spaces, and its
+                               case is meaningful, so only the disallowed symbols
+                               are stripped and what is typed is left alone. */
+                            setGstNumber(isInternational
+                              ? sanitizeTin(e.target.value)
+                              : e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
+                            clearFieldError('gstNumber');
+                          }}
+                        />
+                      </LockField>
                     </Field>
+                    {/* International only — takes the slot State Code left. */}
+                    {isInternational && (
+                      <CityField
+                        value={city}
+                        error={fieldErrors.city}
+                        onChange={v => applySanitizer(v, 'city', setCity, raw => sanitizeKycAlpha(raw, 60))}
+                      />
+                    )}
                   </div>
                   {/* Google Location + GST Number share a row.
                       GST Number is 15 fixed characters, so it never needed the
@@ -2821,7 +2989,15 @@ export default function AddVendorModal(props: {
                       Google Location is shown for BOTH scopes: an address line
                       locates neither, and the overseas one is the harder of the
                       two to verify from text alone. */}
-                  <div className={gstApplicable === 'Yes' ? 'avm-grid-2' : 'avm-grid-1'}>
+                  <div className="avm-grid-2" style={{ gridTemplateColumns: isInternational ? '1fr' : '3fr 9fr' }}>
+                    {/* Domestic only — international shows City in the row above. */}
+                    {!isInternational && (
+                      <CityField
+                        value={city}
+                        error={fieldErrors.city}
+                        onChange={v => applySanitizer(v, 'city', setCity, raw => sanitizeKycAlpha(raw, 60))}
+                      />
+                    )}
                     <Field label="Google Location Link" error={fieldErrors.googleLocation}>
                       <input
                         className="avm-input"
@@ -2836,23 +3012,6 @@ export default function AddVendorModal(props: {
                         applies), so it only appears for a domestic supplier — there
                         is no separate "GST Applicable" toggle (mirrors the Customer
                         master). */}
-                    {gstApplicable === 'Yes' && (
-                      <Field label="GST Number" required error={fieldErrors.gstNumber}>
-                        <LockField locked={stateLocked} onLockClick={lockToast}>
-                          <input
-                            className="avm-input"
-                            placeholder="e.g. 27AADCI6120M1ZH"
-                            value={gstNumber}
-                            maxLength={15}
-                            disabled={stateLocked}
-                            onChange={e => {
-                              setGstNumber(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 15));
-                              clearFieldError('gstNumber');
-                            }}
-                          />
-                        </LockField>
-                      </Field>
-                    )}
                   </div>
                 </SectionCard>
               )}
@@ -3326,8 +3485,36 @@ export default function AddVendorModal(props: {
           busy={mappingBusy}
         />
       )}
+      {/* "+" beside Product Name: create the product without losing this
+          mapping, then come back with it already selected. */}
+      {newProductOpen && (
+        <Suspense fallback={null}>
+          {/* Everything here portals to <body>, so painting order is purely
+              z-index. The Map Product popup is 1100 and the wizard's own
+              backdrop is 1090, so opened from here the wizard lands underneath.
+              Lift the wizard's three layers together, keeping their existing
+              order, into the gap between the popup (1100) and the quick-add
+              master modal (1200) so that still opens on top of everything.
+              The rule dies with this element when the wizard closes. */}
+          <style>{'.apm-backdrop{z-index:1120;}.apm-sup-overlay{z-index:1125;}.apm-gst-overlay{z-index:1180;}'}</style>
+          <AddProductModal
+            productId={newProductId}
+            /* See the list popup's copy — same reason. */
+            hideSupplierMapping
+            onClose={() => { setNewProductOpen(false); setNewProductId(null); }}
+            onSaved={(productId, finalised) => {
+              if (!finalised) { setNewProductId(productId); return; }
+              setNewProductOpen(false);
+              setNewProductId(null);
+              void reloadProductOpts(productId);
+            }}
+          />
+        </Suspense>
+      )}
       {mapPopupOpen && (
         <AddProductMappingPopup
+          onAddProduct={() => setNewProductOpen(true)}
+          addingProduct={newProductBusy}
           draft={mapDraft}
           setDraft={setMapDraft}
           productOpts={(() => {
@@ -3343,7 +3530,6 @@ export default function AddVendorModal(props: {
               return segSet.size === 0 || (o.segmentId != null && segSet.has(o.segmentId));
             });
           })()}
-          gstPctOpts={gstPctOpts}
           onProductChange={onMapProductChange}
           recompute={recomputeMapTotals}
           onClose={() => setMapPopupOpen(false)}
@@ -4682,8 +4868,11 @@ function BankTable(props: { rows: BankRow[];  international?: boolean; onRemove?
       empty="No bank records added yet."
       headers={[
         'SR NO', 'BANK NAME', 'BRANCH', 'ACCOUNT NO',
-        props.international ? 'SWIFT CODE' : 'IFSC CODE',
-        'BRANCH ADDRESS', 'PROOF ATTACHMENT', 'ACTION',
+        props.international ? 'SWIFT / BIC' : 'IFSC CODE',
+        /* No ACTION column: bank rows are read-only, so the column held
+           nothing but a placeholder dash and a header promising controls that
+           are not there. */
+        'BRANCH ADDRESS', 'PROOF ATTACHMENT',
       ]}
     >
           {props.rows.map((r, i) => (
@@ -4706,33 +4895,6 @@ function BankTable(props: { rows: BankRow[];  international?: boolean; onRemove?
                   existingUrl={r.existingUrl}
                   onClear={props.onClearFile ? () => props.onClearFile?.(r.id) : undefined}
                 />
-              </td>
-              <td>
-                <div className="d-inline-flex gap-1">
-                  {props.onEdit && (
-                    <Tooltip label="Edit">
-                      <button type="button" className="btn btn-sm btn-soft-primary" onClick={() => props.onEdit?.(r)} aria-label="Edit">
-                        <i className="ri-pencil-line" />
-                      </button>
-                    </Tooltip>
-                  )}
-                  {/* No Remove while EDITING an existing supplier (QA #99).
-                      Bank details are mandatory to create a supplier, so letting
-                      them be deleted on edit left saved suppliers in a state the
-                      create form would have refused — payout details missing on a
-                      record an invoice can already be raised against. Editing a
-                      wrong account is still possible via the pencil; removing the
-                      last means of paying the supplier is not. Add mode keeps the
-                      button so a row typed by mistake can be dropped before the
-                      supplier exists. */}
-                  {!props.lockRemove && (
-                    <Tooltip label="Remove">
-                      <button type="button" className="avm-row-btn avm-row-btn-del" onClick={() => props.onRemove?.(r.id)} aria-label="Remove">
-                        <i className="ri-close-line" />
-                      </button>
-                    </Tooltip>
-                  )}
-                </div>
               </td>
             </tr>
           ))}
@@ -4820,6 +4982,24 @@ function ProductMappingTable(props: { rows: ProductMappingRow[]; onRemove: (id: 
   );
 }
 
+/* City sits in a different row depending on scope: inside the address row for
+   an international supplier, where State Code has dropped out and left a slot,
+   and beside Google Location for a domestic one. Defined once so the two
+   positions cannot drift apart. */
+function CityField(props: { value: string; error?: string; onChange: (v: string) => void }) {
+  return (
+    <Field label="City" required error={props.error}>
+      <input
+        className="avm-input"
+        placeholder="e.g. Pune"
+        value={props.value}
+        maxLength={60}
+        onChange={e => props.onChange(e.target.value)}
+      />
+    </Field>
+  );
+}
+
 type Setter<T> = (v: T) => void;
 
 function MappedProductsPopup(props: {
@@ -4857,18 +5037,41 @@ function MappedProductsPopup(props: {
   );
 }
 
+
 export function MappedProductsViewPopup(props: {
   vendorId: number;
   code: string;
   name: string;
+  /** Segment names this supplier is onboarded for; gates the product list. */
+  segments?: string[];
   onClose: () => void;
+  /** Fired after a mapping is added, so the list's count badge can catch up. */
+  onChanged?: () => void;
 }) {
   const toast = useToast();
   const [rows, setRows] = useState<ProductMappingRow[] | null>(null);
   const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-let alive = true;    
+  /* Map Product, opened from this popup's header. The wizard is not involved:
+     the form writes straight to /vendors/{id}/step/products and this popup
+     reloads, so a mapping can be added without leaving the supplier list. */
+  const [mapOpen,     setMapOpen]     = useState(false);
+  const [mapDraft,    setMapDraft]    = useState<ProductMappingDraft>(EMPTY_MAPPING_DRAFT);
+  const [productOpts, setProductOpts] = useState<ProductMappingOpt[]>([]);
+  const [saving,      setSaving]      = useState(false);
+
+  /* "+" beside Product Name — the product wizard, so a product that does not
+     exist yet can be created without abandoning this mapping. It saves step by
+     step and reports finalised=false until the last one, so the id it hands
+     back on the first save is kept to edit that same row. */
+  const [newProductOpen, setNewProductOpen] = useState(false);
+  const [newProductId,   setNewProductId]   = useState<number | null>(null);
+  const [newProductBusy, setNewProductBusy] = useState(false);
+
+  /* Pulled out of the effect so a save can call it again. Returns the rows as
+     well as storing them: adding a mapping needs the current set to POST, and
+     reading it back out of state in the same tick would give the stale one. */
+  const loadMappings = async (): Promise<ProductMappingRow[]> => {
     type ApiRow = {
       id: number; product_id?: number | null;
       product_code?: string | null; product_name?: string | null;
@@ -4876,59 +5079,210 @@ let alive = true;
       purchase_price?: number | string | null; gst_percentage?: number | string | null;
       gst_amount?: number | string | null; total_amount?: number | string | null;
     };
-    (async () => {
-      try {
-        const res = await api.get<{ data?: ApiRow[] }>(`/vendors/${props.vendorId}/product-mappings`);
-        if (!alive) return;
-        const list = Array.isArray(res.data) ? res.data as ApiRow[] : (res.data?.data ?? []);
-        setRows(list.map(m => ({
-          id: String(m.id),
-          productId: m.product_id ?? null,
-          productCode: m.product_code ?? '',
-          productName: m.product_name ?? '—',
-          hsnSacCode: m.hsn_sac_code ?? '',
-          segment: m.segment ?? '',
-          batchSerialLot: m.batch_serial_lot ?? '',
-          purchasePrice: Number(m.purchase_price ?? 0),
-          gstPercentage: Number(m.gst_percentage ?? 0),
-          gstAmount: Number(m.gst_amount ?? 0),
-          totalAmount: Number(m.total_amount ?? 0),
-        })));
-      } catch {
-        if (!alive) return;
-        setFailed(true);
-        setRows([]);
-        toast.error('Load failed', 'Could not load the mapped products for this supplier.');
-      }
-    })();
+    try {
+      const res = await api.get<{ data?: ApiRow[] }>(`/vendors/${props.vendorId}/product-mappings`);
+      const list = Array.isArray(res.data) ? res.data as ApiRow[] : (res.data?.data ?? []);
+      const mapped: ProductMappingRow[] = list.map(m => ({
+        id: String(m.id),
+        productId: m.product_id ?? null,
+        productCode: m.product_code ?? '',
+        productName: m.product_name ?? '—',
+        hsnSacCode: m.hsn_sac_code ?? '',
+        segment: m.segment ?? '',
+        batchSerialLot: m.batch_serial_lot ?? '',
+        purchasePrice: Number(m.purchase_price ?? 0),
+        gstPercentage: Number(m.gst_percentage ?? 0),
+        gstAmount: Number(m.gst_amount ?? 0),
+        totalAmount: Number(m.total_amount ?? 0),
+      }));
+      setRows(mapped);
+      setFailed(false);
+      return mapped;
+    } catch {
+      setFailed(true);
+      setRows([]);
+      toast.error('Load failed', 'Could not load the mapped products for this supplier.');
+      return [];
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => { const r = await loadMappings(); if (!alive) setRows(r === null ? null : r); })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.vendorId]);
 
+  /* Products this supplier may be mapped to: everything with a segment, minus
+     the ones already mapped, minus anything outside the supplier's segments.
+     Matched on segment NAME — the list row carries names, not ids. */
+  const mappableOpts = useMemo(() => {
+    const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
+    const already  = new Set((rows ?? []).map(r => String(r.productId ?? '')));
+    return productOpts.filter(o => {
+      if (already.has(String(o.value))) return false;
+      return segNames.size === 0 || segNames.has(o.segment.trim().toLowerCase());
+    });
+  }, [productOpts, rows, props.segments]);
+
+  const openMapForm = async () => {
+    setMapDraft(EMPTY_MAPPING_DRAFT);
+    setMapOpen(true);
+    if (productOpts.length) return;
+    try { setProductOpts(await loadMappableProducts()); }
+    catch { toast.error('Load failed', 'Could not load the product list.'); }
+  };
+
+  /* Refresh the dropdown so a product created a moment ago is in it. The form
+     is left untouched on purpose: the new product is offered in Product Name
+     and picked like any other. */
+  const reloadProductOpts = async (newId: number) => {
+    setNewProductBusy(true);
+    try {
+      const opts = await loadMappableProducts();
+      setProductOpts(opts);
+      const fresh = opts.find(o => o.value === String(newId));
+
+      /* Two filters stand between a saved product and this dropdown: it must
+         carry a segment, and that segment must be one this supplier is
+         onboarded for. Say which one it failed rather than leave the user
+         hunting for a name that is not in the list. */
+      if (!fresh) {
+        toast.info('Not in the list yet', 'The product was saved, but it needs a segment before it can be mapped.');
+        return;
+      }
+      const segNames = new Set((props.segments ?? []).map(x => x.trim().toLowerCase()).filter(Boolean));
+      if (segNames.size > 0 && !segNames.has(fresh.segment.trim().toLowerCase())) {
+        toast.info('Not in the list yet', `${fresh.name || 'The product'} is in a segment ${props.code} isn't onboarded for.`);
+        return;
+      }
+      toast.success('Product created', `Select ${fresh.name || 'it'} in Product Name to map it.`);
+    } catch {
+      toast.error('Could not refresh', 'The product was saved — reopen this form to select it.');
+    } finally { setNewProductBusy(false); }
+  };
+
+  const onMapProductChange = (productIdStr: string) => {
+    const picked = productOpts.find(p => p.value === productIdStr);
+    setMapDraft(d => recomputeMappingTotals({
+      ...d,
+      productId:     productIdStr,
+      productCode:   picked?.code ?? '',
+      productName:   picked?.name ?? '',
+      hsnSacCode:    picked?.hsn  ?? '',
+      segment:       picked?.segment ?? '',
+      purchasePrice: picked?.basePrice ?? d.purchasePrice,
+      gstPercentage: picked?.gstPercentage ?? d.gstPercentage,
+    }));
+  };
+
+  /* The endpoint replaces the whole set, so the existing rows are re-sent
+     alongside the new one — never the new one on its own. */
+  const saveMapping = async () => {
+    if (!mapDraft.productId)      { toast.error('Missing field', 'Pick a Product Name'); return; }
+    if (!mapDraft.purchasePrice)  { toast.error('Missing field', 'Enter a Purchase Price'); return; }
+    setSaving(true);
+    try {
+      const current = rows ?? [];
+      const next: ProductMappingRow[] = [...current, {
+        id: `new-${Date.now()}`,
+        productId: Number(mapDraft.productId),
+        productCode: mapDraft.productCode,
+        productName: mapDraft.productName,
+        hsnSacCode: mapDraft.hsnSacCode,
+        segment: mapDraft.segment,
+        batchSerialLot: mapDraft.batchSerialLot,
+        purchasePrice: Number(mapDraft.purchasePrice || 0),
+        gstPercentage: Number(mapDraft.gstPercentage || 0),
+        gstAmount: Number(mapDraft.gstAmount || 0),
+        totalAmount: Number(mapDraft.totalAmount || 0),
+      }];
+      await api.post(`/vendors/${props.vendorId}/step/products`, { mappings: mappingsPayload(next) });
+      setMapOpen(false);
+      await loadMappings();
+      props.onChanged?.();
+      toast.success('Product mapped', `${mapDraft.productName || 'Product'} is now linked to ${props.code}.`);
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Could not save the product mapping';
+      toast.error('Save failed', msg);
+    } finally { setSaving(false); }
+  };
+
   return (
+    <>
     <PopupChrome
       title={`Mapped Products — ${props.code}`}
       subtitle={`${props.name} · Products linked to this supplier with price & GST`}
       icon="ri-box-3-line"
       panelClassName="avm-cp-popup-wide"
       onClose={props.onClose}
-      /* Backdrop dismisses — unlike the wizard popups, nothing here is unsaved
-         input that a stray click could destroy. */
-      dismissOnBackdrop
-      footer={<button className="avm-btn-ghost" onClick={props.onClose}>Close</button>}
+      /* Backdrop dismisses while nothing is being edited. Once the Map Product
+         form is up it holds unsaved input, so a stray click must not bin it. */
+      dismissOnBackdrop={!mapOpen}
+      busy={saving}
+      /* In the header rather than above the table: the wizard's version of this
+         popup pairs its button with a count pill in a toolbar row, but there is
+         no pill here, and a lone button would push the table down a row for a
+         control the header has space for. */
+      headerAction={
+        <button className="avm-cp-head-btn" onClick={openMapForm} disabled={saving || rows === null}>
+          <i className="ri-add-line" /> Map Product
+        </button>
+      }
+      footer={<button className="avm-btn-ghost" onClick={props.onClose} disabled={saving}>Close</button>}
     >
       {rows === null ? (
         <ShimmerTable rows={5} cols={9} />
       ) : failed ? (
         <div className="avm-empty avm-empty-accent">Could not load the mapped products. Close and try again.</div>
+      ) : rows.length === 0 ? (
+        <div className="avm-empty avm-empty-accent">No products mapped yet. Click "Map Product" to begin.</div>
       ) : (
-        /* No count pill here, unlike the wizard's popup above. There it shares a
-           toolbar row with "+ Map Product" and balances it; opened from the LIST
-           there is no button, so the pill would sit alone restating a number the
-           badge that was just clicked already showed. */
+        /* Read-only rows: editing and removing a mapping stay in the supplier
+           form, where the rest of the step's validation lives. */
         <ProductMappingTable rows={rows} onRemove={() => {}} readOnly />
       )}
     </PopupChrome>
+
+    {newProductOpen && (
+      <Suspense fallback={null}>
+        {/* Everything here portals to <body>, so painting order is purely
+            z-index. This popup and the Map Product form are both 1100 and the
+            wizard's own backdrop is 1090, so it would open underneath. Lift its
+            three layers together, keeping their order, into the gap below the
+            quick-add master modal (1200) so that still opens on top. The rule
+            dies with this element when the wizard closes. */}
+        <style>{'.apm-backdrop{z-index:1120;}.apm-sup-overlay{z-index:1125;}.apm-gst-overlay{z-index:1180;}'}</style>
+        <AddProductModal
+          productId={newProductId}
+          /* Opened from a supplier's Map Product form — mapping a supplier back
+             from in here would be a circle. */
+          hideSupplierMapping
+          onClose={() => { setNewProductOpen(false); setNewProductId(null); }}
+          onSaved={(productId, finalised) => {
+            if (!finalised) { setNewProductId(productId); return; }
+            setNewProductOpen(false);
+            setNewProductId(null);
+            void reloadProductOpts(productId);
+          }}
+        />
+      </Suspense>
+    )}
+
+    {mapOpen && (
+      <AddProductMappingPopup
+        draft={mapDraft}
+        setDraft={setMapDraft}
+        productOpts={mappableOpts}
+        onProductChange={onMapProductChange}
+        recompute={recomputeMappingTotals}
+        onAddProduct={() => setNewProductOpen(true)}
+        addingProduct={newProductBusy}
+        onClose={() => setMapOpen(false)}
+        onSave={saveMapping}
+      />
+    )}
+    </>
   );
 }
 
@@ -4954,6 +5308,8 @@ function PopupChrome(props: {
   /** Backdrop click dismisses. Off by default: a form popup holds unsaved
    *  input that a stray click must not discard. */
   dismissOnBackdrop?: boolean;
+  /** Rendered in the header beside Close — a primary action the popup owns. */
+  headerAction?: ReactNode;
   footer: ReactNode;
   children: ReactNode;
 }) {
@@ -4973,9 +5329,12 @@ function PopupChrome(props: {
               {props.subtitle && <div className="avm-cp-subtitle">{props.subtitle}</div>}
             </div>
           </div>
-          <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={busy}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-          </button>
+          <div className="avm-cp-hact">
+            {props.headerAction}
+            <button className="avm-close avm-cp-close" onClick={props.onClose} aria-label="Close" disabled={busy}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
         </div>
         {/* While busy, a veil over the body blocks ALL interaction (editing a
             field, opening an attached image, etc.) until the write resolves. */}
@@ -5394,7 +5753,7 @@ function BankAddPopup(props: {
     if (!draft.branchName.trim())    e.branchName = 'Branch is required';
     if (!draft.accountNumber.trim()) e.accountNumber = 'Account Number is required';
     else { const accErr = validateAccountNumber(draft.accountNumber, 'Account Number', !!props.international); if (accErr) e.accountNumber = accErr; }
-    const routingLabel = props.international ? 'SWIFT Code' : 'IFSC Code';
+    const routingLabel = props.international ? 'SWIFT / BIC' : 'IFSC Code';
     if (!draft.ifsc.trim()) e.ifsc = `${routingLabel} is required`;
     else {
       const err = props.international ? validateSwift(draft.ifsc) : validateIfsc(draft.ifsc);
@@ -5455,10 +5814,14 @@ function BankAddPopup(props: {
             onChange={e => { set('accountNumber', e.target.value); setErrors(p => ({ ...p, accountNumber: undefined })); }}
           />
         </Field>
-        <Field label={props.international ? 'SWIFT Code' : 'IFSC Code'} required error={errors.ifsc}>
+        {/* One column, two codes: a domestic bank routes on IFSC, a foreign
+            one on SWIFT / BIC. Both are stored in bank.ifsc — the column is the
+            supplier's routing code, and which of the two it holds follows from
+            the supplier's own document type. */}
+        <Field label={props.international ? 'SWIFT / BIC' : 'IFSC Code'} required error={errors.ifsc}>
           <input
             className="avm-input"
-            placeholder={props.international ? 'e.g. HDFCINBBXXX' : 'Enter IFSC code'}
+            placeholder={props.international ? 'e.g. HDFCINBB or HDFCINBBXXX' : 'Enter IFSC code'}
             maxLength={11}
             value={draft.ifsc}
             onChange={e => { set('ifsc', e.target.value.toUpperCase()); setErrors(p => ({ ...p, ifsc: undefined })); }}
@@ -5577,7 +5940,6 @@ function GstScrutinyAddPopup(props: {
   );
 }
 
-type ProductMappingDraft = { productId: string; productCode: string; productName: string; hsnSacCode: string; segment: string; batchSerialLot: string; purchasePrice: string; gstPercentage: string; gstAmount: string; totalAmount: string };
 function AddProductMappingPopup(props: {
   draft: ProductMappingDraft;
   setDraft: Setter<ProductMappingDraft>;
@@ -5586,13 +5948,17 @@ function AddProductMappingPopup(props: {
   recompute: (d: ProductMappingDraft) => ProductMappingDraft;
   onClose: () => void;
   onSave: () => void;
+  /** "+" beside Product Name — opens the product wizard so a product that does
+   *  not exist yet can be created without leaving this mapping. */
+  onAddProduct?: () => void;
+  addingProduct?: boolean;
 }) {
   const { draft, setDraft, productOpts, onProductChange, recompute, onClose, onSave } = props;
   const set = <K extends keyof ProductMappingDraft>(k: K, v: ProductMappingDraft[K]) => setDraft({ ...draft, [k]: v });
   return (
     <PopupShell title="Map Product" icon="ri-box-3-line" subtitle="Link a product with purchase price & GST for this supplier" onClose={onClose} onSave={onSave}>
       <div className="avm-grid-2">
-        <Field label="Product Name" required>
+        <Field label="Product Name" required addNew={!!props.onAddProduct} addLoading={props.addingProduct} onAdd={props.onAddProduct}>
           {productOpts.length > 0
             ? <SelectInput value={draft.productId} onChange={onProductChange} placeholder="Select Product Name" options={productOpts} />
             : <input className="avm-input" placeholder="Loading products…" value={draft.productName} onChange={e => set('productName', e.target.value)} />}
