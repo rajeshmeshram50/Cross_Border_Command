@@ -816,7 +816,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
               </div>
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 48 }}>#</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
+                  <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>

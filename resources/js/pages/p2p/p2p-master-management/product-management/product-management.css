@@ -5787,6 +5787,123 @@
   justify-content: center;
   padding: 0;
 }
+.apm-upload-filebox {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1.5px solid #ddd6fe;
+  border-radius: 10px;
+  background: #faf8ff;
+}
+
+.apm-upload-filebox .apm-upload-filechip {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  background: transparent;
+  border-color: transparent;
+  cursor: default;
+}
+
+.apm-upload-filebox .apm-upload-filechip:hover {
+  background: transparent;
+  border-color: transparent;
+  text-decoration: none;
+}
+
+.apm-upload-act,
+.apm-upload-act:hover {
+  text-decoration: none;
+}
+
+.apm-upload-fileacts {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: nowrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.apm-upload-act {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #c4b5fd;
+  background: #fff;
+  color: #6d28d9;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+}
+
+.apm-upload-act svg {
+  flex-shrink: 0;
+}
+
+.apm-upload-act:hover {
+  background: #f5f3ff;
+  border-color: #7c3aed;
+}
+
+.apm-upload-act-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.apm-upload-act-danger {
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.apm-upload-act-danger:hover {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+[data-bs-theme="dark"] .apm-upload-filebox {
+  background: rgba(124, 92, 252, .08);
+  border-color: #4c1d95;
+}
+
+[data-bs-theme="dark"] .apm-upload-act {
+  background: rgba(124, 92, 252, .14);
+  border-color: #4c1d95;
+  color: #ddd6fe;
+}
+
+[data-bs-theme="dark"] .apm-upload-act:hover {
+  background: rgba(124, 92, 252, .24);
+  border-color: #7c5cfc;
+}
+
+[data-bs-theme="dark"] .apm-upload-act-danger {
+  background: rgba(220, 38, 38, .14);
+  border-color: rgba(248, 113, 113, .45);
+  color: #fca5a5;
+}
+
+[data-bs-theme="dark"] .apm-upload-act-danger:hover {
+  background: rgba(220, 38, 38, .24);
+  border-color: #f87171;
+}
+
 .apm-upload-filechip {
   width: auto;
   height: auto;
@@ -7557,13 +7674,20 @@
   white-space: nowrap;
 }
 
+/* Tinted header strip, matching the Mapped Products table in the Add Supplier
+   modal (.avm-mapped-table) so both "mapped" grids read as the same component. */
+.apm-sup-table thead tr {
+  background: linear-gradient(135deg, #faf8ff, #f3eefe);
+}
+
 .apm-sup-table thead th {
   text-align: left;
+  background: transparent;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
-  color: #94a3b8;
+  color: #8b7bb8;
   padding: 10px 14px;
   border-bottom: 1px solid #efe9fb;
 }
@@ -7720,8 +7844,12 @@
   cursor: not-allowed;
 }
 
+[data-bs-theme="dark"] .apm-sup-table thead tr {
+  background: linear-gradient(135deg, rgba(124, 92, 252, .16), rgba(124, 92, 252, .08));
+}
+
 [data-bs-theme="dark"] .apm-sup-table thead th {
-  color: #9a93b3;
+  color: #b9b0d6;
   border-bottom-color: rgba(167, 139, 250, .16);
 }
 

@@ -330,6 +330,14 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
   const fmtMoney = (v: string | number | null | undefined) =>
     v == null || v === '' ? '—' : `₹${Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
 
+  // Long product names ran under the hero action buttons, so the title shows
+  // the first 25 characters only; the full name stays in the tooltip.
+  const NAME_MAX = 25;
+  const fullName = String(product.name ?? '');
+  const displayName = fullName.length > NAME_MAX
+    ? `${fullName.slice(0, NAME_MAX).trimEnd()}…`
+    : fullName;
+
   const gstAmtStr = fmtMoney(product.gst_amount);
   const baseStr   = fmtMoney(product.base_price);
   const totalStr  = fmtMoney(product.total_price);
@@ -341,10 +349,12 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
       <div className="pv2pd-hero">
         <div className="pv2pd-hero-row">
           <div className="pv2pd-hero-main">
-            <h2 className="pv2pd-title">
-              <span className="pv2pd-code">{formatProductCode(product.product_code)}</span>
-              <span className="pv2pd-title-sep">|</span> {product.name}
-            </h2>
+            <Tooltip label={`${formatProductCode(product.product_code)} | ${fullName}`} position="bottom">
+              <h2 className="pv2pd-title">
+                <span className="pv2pd-code">{formatProductCode(product.product_code)}</span>
+                <span className="pv2pd-title-sep">|</span> {displayName}
+              </h2>
+            </Tooltip>
           </div>
           <div className="pv2pd-hero-btns">
             <button className="pv2pd-hbtn pv2pd-hbtn--edit" onClick={() => setEditOpen(true)}>
@@ -421,10 +431,10 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
           {/* Dark purple price card — the Purchase department can't see the
               selling price, so it's replaced with a locked placeholder. */}
           {isPurchaseDept ? (
+            <Tooltip label="You don't have permission for this">
             <div
               className="pv2pd-pricecard"
               onClick={() => toast.warning('Access denied', "You don't have permission for this.")}
-              title="You don't have permission for this"
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 128, cursor: 'pointer' }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, color: '#d6c8ff' }}>
@@ -432,6 +442,7 @@ export default function ProductView(props: { productId?: number; onClose?: () =>
                 <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: '.2px' }}>Tap to view price</span>
               </div>
             </div>
+            </Tooltip>
           ) : (
             <div className="pv2pd-pricecard">
               <div className="pv2pd-pc-top">
