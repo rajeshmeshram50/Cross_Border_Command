@@ -237,22 +237,15 @@ class ProductController extends Controller
         ];
     }
 
-    /**
-     * Edit/delete denial for a product. An HOD manages the WHOLE branch catalog
-     * (like the Director / branch user), so the peer/hierarchy denial is skipped
-     * for them — they can edit/delete any product in their branch, not just the
-     * ones they created. Everyone else falls through to the standard rule.
-     */
     private function editDenial($user, $product, string $action = 'edit'): ?string
     {
-        if ($this->isBranchHod($user, $product)) {
+        if ($this->isBranchMember($user, $product)) {
             return null;
         }
         return MasterVisibility::hierarchicalDenial($user, $product, $action);
     }
 
-    /** True when $user is an HOD employee in the same client + branch as $product. */
-    private function isBranchHod($user, $product): bool
+    private function isBranchMember($user, $product): bool
     {
         if (!$user || ($user->user_type ?? null) !== 'employee') {
             return false;
@@ -260,12 +253,10 @@ class ProductController extends Controller
         if ((int) $user->client_id !== (int) $product->client_id) {
             return false;
         }
-        if ($product->branch_id && (int) $user->branch_id !== (int) $product->branch_id) {
+        if (!$product->branch_id || !$user->branch_id) {
             return false;
         }
-        return \App\Models\Employee::where('user_id', $user->id)
-            ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
-            ->exists();
+        return (int) $user->branch_id === (int) $product->branch_id;
     }
 
     /* ──────────────────────────────────────────────────────────────────

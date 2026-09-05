@@ -6093,6 +6093,26 @@
   color: #94a3b8;
   font-size: 12.5px;
 }
+/* Add Supplier wizard launched from the "+" beside Supplier Name.
+   The vendor module's own layers (gate + wizard 1090, the wizard's Quick-Add
+   and Contact Person popups 1100) were written to sit above a plain page — but
+   opened from here they land among the product form's popups (.apm-backdrop
+   1090, .apm-sup-overlay 1095, .apm-mv-backdrop 1100) and the Map Supplier
+   popup covered them.
+   The whole family is lifted by one step, PRESERVING its internal order so the
+   wizard's child popups still sit above the wizard. Applied only while the
+   product form is the opener, so the Supplier master's own use of the same
+   components keeps its original layering. */
+body.apm-supplier-wizard-open .supch-ov,
+body.apm-supplier-wizard-open .avm-backdrop {
+  z-index: 1200;
+}
+
+body.apm-supplier-wizard-open .avm-qa-backdrop,
+body.apm-supplier-wizard-open .avm-cp-backdrop {
+  z-index: 1210;
+}
+
 .apm-mv-backdrop {
   position: fixed;
   inset: 0;

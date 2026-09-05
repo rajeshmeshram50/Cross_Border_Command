@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import './product-management.css';
 import { createPortal } from 'react-dom';
 import api from '../../../../api';
@@ -15,6 +15,15 @@ import { readProductMasterBundle,  writeProductMasterBundle,} from './productBun
 import { bustAllMasterBundles } from '../../../../utils/bustMasterBundles';
 import { MasterRecordModal } from '../../../master/MasterRecordModal';
 import { formatProductCode } from '../../../../utils/formatProductCode';
+import type { SupplierScope } from '../supplier-management/SupplierScopeGate';
+
+/* The full Add Supplier wizard, reachable from the "+" beside Supplier Name in
+   the Map Supplier popup — the same component (and the same Domestic /
+   International gate in front of it) the Supplier master opens, so a supplier
+   added mid-mapping is a complete supplier, not a thin stub. Lazy so the
+   product form doesn't carry the vendor wizard's bundle unless it's asked for. */
+const SupplierScopeGate = lazy(() => import('../supplier-management/SupplierScopeGate'));
+const AddVendorModal    = lazy(() => import('../supplier-management/AddVendorModal'));
 
 export type VendorEntry = {
   id: string;
@@ -97,6 +106,44 @@ export type VendorOpt = {
   state: string;
   segmentIds: number[];
 };
+
+/** Raw /products/master-bundle vendor row → the dropdown's VendorOpt. */
+type BundleVendorRow = {
+  id: number | string;
+  vendor_code?: string | null;
+  company_name?: string | null;
+  website?: string | null;
+  primary_email?: string | null;
+  status?: string | null;
+  vendor_type_name?: string | null;
+  state?: string | null;
+  segment_ids?: Array<number | string> | null;
+  primary_address?: {
+    contact_name?: string | null;
+    contact_no?: string | null;
+    email?: string | null;
+    designation?: string | null;
+  } | null;
+};
+
+/* Shared by the initial bundle hydrate and the post-"Add Supplier" refresh, so
+   a supplier added from inside the Map Supplier popup lands in the dropdown
+   shaped exactly like the ones that came with the bundle. */
+const mapVendorRows = (rows?: BundleVendorRow[] | null): VendorOpt[] =>
+  (rows || []).map(r => ({
+    id:          String(r.id),
+    code:        String(r.vendor_code ?? ''),
+    name:        String(r.company_name ?? ''),
+    website:     String(r.website ?? ''),
+    contact:     String(r.primary_address?.contact_name ?? ''),
+    phone:       String(r.primary_address?.contact_no ?? ''),
+    email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
+    designation: String(r.primary_address?.designation ?? ''),
+    status:      String(r.status ?? '').toLowerCase(),
+    type:        String(r.vendor_type_name ?? ''),
+    state:       String(r.state ?? ''),
+    segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
+  }));
 
 type Tab = 'core' | 'sales' | 'quality';
 
@@ -348,6 +395,44 @@ export default function AddProductModal(props: {
   const [vendorPurchasePrice, setVendorPurchasePrice] = useState<string>('');
   const [vendorRemarks, setVendorRemarks] = useState('');
   const [vendorEditingId, setVendorEditingId] = useState<string | null>(null);
+
+  /* "+" beside Supplier Name → Domestic/International gate → the full Add
+     Supplier wizard. `supplierAddScope` doubles as the wizard's open flag: it
+     is only set once the gate has been answered, because the scope decides
+     which form the wizard renders. */
+  const [supplierGateOpen, setSupplierGateOpen] = useState(false);
+  const [supplierAddScope, setSupplierAddScope] = useState<SupplierScope | null>(null);
+
+  /* The vendor wizard's own backdrop sits at z-index 1090, below this modal's
+     Map Supplier popup (1100), so opened from here it would render UNDERNEATH.
+     A body class lifts it (and its gate) only while the product form is the one
+     that opened it — the Supplier master's own usage is untouched. */
+  useEffect(() => {
+    const open = supplierGateOpen || supplierAddScope !== null;
+    document.body.classList.toggle('apm-supplier-wizard-open', open);
+    return () => document.body.classList.remove('apm-supplier-wizard-open');
+  }, [supplierGateOpen, supplierAddScope]);
+
+  /* Pull the master bundle again after a supplier is added so the dropdown has
+     it immediately, and preselect it. VendorController::store bumps the server
+     bundle cache, so this refetch really does come back with the new row. */
+  const refreshVendorOpts = async (selectCompanyName?: string) => {
+    try {
+      const res = await api.get<{ vendors?: BundleVendorRow[] }>('/products/master-bundle');
+      writeProductMasterBundle(res.data);
+      const opts = mapVendorRows(res.data?.vendors);
+      setVendorOpts(opts);
+
+      const wanted = (selectCompanyName ?? '').trim().toLowerCase();
+      if (wanted) {
+        const hit = opts.find(o => o.name.trim().toLowerCase() === wanted);
+        if (hit?.code) setVendorSelectedCode(hit.code);
+      }
+    } catch {
+      // Keep the list we already have — the supplier is saved either way, and
+      // reopening the popup (or the 5-minute TTL) will surface it.
+    }
+  };
 
   const vendorSelected = useMemo(
     () => vendorOpts.find(v => v.code === vendorSelectedCode) || null,
@@ -769,20 +854,7 @@ export default function AddProductModal(props: {
             return { ...o, label: `${clean}%` };
           })
       );
-      setVendorOpts((b.vendors || []).map(r => ({
-        id:          String(r.id),
-        code:        String(r.vendor_code ?? ''),
-        name:        String(r.company_name ?? ''),
-        website:     String(r.website ?? ''),
-        contact:     String(r.primary_address?.contact_name ?? ''),
-        phone:       String(r.primary_address?.contact_no ?? ''),
-        email:       String(r.primary_address?.email ?? r.primary_email ?? ''),
-        designation: String(r.primary_address?.designation ?? ''),
-        status:      String(r.status ?? '').toLowerCase(),
-        type:        String(r.vendor_type_name ?? ''),
-        state:       String(r.state ?? ''),
-        segmentIds:  Array.isArray(r.segment_ids) ? r.segment_ids.map(Number).filter(Number.isFinite) : [],
-      })));
+      setVendorOpts(mapVendorRows(b.vendors));
     };
 
     const cached = readProductMasterBundle<Bundle>();
@@ -1580,7 +1652,13 @@ export default function AddProductModal(props: {
 
                     <div className="apm-mv-popup-body">
                       <div className="apm-grid-3">
-                        <Field label="Supplier Name" required>
+                        <Field
+                          label="Supplier Name"
+                          required
+                          addNew
+                          addTitle="Add a new supplier"
+                          onAdd={() => setSupplierGateOpen(true)}
+                        >
                           <SelectInput value={vendorSelectedCode} onChange={setVendorSelectedCode} placeholder="Select Supplier Name"
                             disabled={saving}
                             options={vendorOpts.map(v => {
@@ -1652,6 +1730,51 @@ export default function AddProductModal(props: {
                     </div>
                   </div>
                 </div>
+              ), document.body)}
+
+              {/* Scope first, wizard second — the same two-step the Supplier
+                  master uses, so the form knows whether it is building an
+                  India/GST supplier or an international one.
+
+                  PORTALLED to <body>: SupplierScopeGate renders inline, and
+                  rendered here it would sit inside .apm-sup-overlay — a
+                  positioned, z-indexed element, i.e. its own stacking context.
+                  Its z-index would then only compete INSIDE that context, so
+                  the Map Supplier popup (a body-level sibling at 1100) painted
+                  straight over it. As a body child it competes with the popups
+                  for real. (AddVendorModal already portals itself; it rides
+                  along here for symmetry.) */}
+              {createPortal((
+                <>
+                  {supplierGateOpen && (
+                    <Suspense fallback={null}>
+                      <SupplierScopeGate
+                        onClose={() => setSupplierGateOpen(false)}
+                        onChoose={(scope) => { setSupplierGateOpen(false); setSupplierAddScope(scope); }}
+                      />
+                    </Suspense>
+                  )}
+
+                  {supplierAddScope !== null && (
+                    <Suspense fallback={null}>
+                      <AddVendorModal
+                        scope={supplierAddScope}
+                        /* The product↔supplier link is being made on the popup
+                           underneath this one — mapping products from in here
+                           would be the same job pointed the other way. */
+                        canMapProducts={false}
+                        onClose={() => setSupplierAddScope(null)}
+                        onSubmit={(payload) => {
+                          setSupplierAddScope(null);
+                          // Refetch + preselect, so the user lands back on the
+                          // Map Supplier popup with the supplier they just
+                          // created already chosen and only the price to type.
+                          void refreshVendorOpts(payload.companyName);
+                        }}
+                      />
+                    </Suspense>
+                  )}
+                </>
               ), document.body)}
 
               {vendors.length === 0 ? (
@@ -2134,6 +2257,7 @@ function Field(props: {
   required?: boolean;
   addNew?: boolean;
   onAdd?: () => void;
+  addTitle?: string;
   onEdit?: () => void;
   editTitle?: string;
   editDisabled?: boolean;
@@ -2147,11 +2271,11 @@ function Field(props: {
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
         {props.addNew && !props.disabled && (
-          <Tooltip label={`Add new ${props.label}`}>
+          <Tooltip label={props.addTitle ?? `Add new ${props.label}`}>
             <button
               type="button"
               className="apm-field-plus"
-              aria-label="Add new option"
+              aria-label={props.addTitle ?? 'Add new option'}
               tabIndex={-1}
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
             >+</button>
