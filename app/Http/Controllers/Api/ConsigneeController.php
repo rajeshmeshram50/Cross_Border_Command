@@ -200,6 +200,11 @@ class ConsigneeController extends Controller
         }
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], !empty($data['same_as_customer']), null);
         $this->assertCountryCompatible($data['primary_address']['country'] ?? null, $data['customer_ids']);
+        $this->assertContactEmailNotCustomers(
+            $data['primary_address']['cp_email'] ?? null,
+            !empty($data['same_as_customer']),
+            $data['customer_ids'],
+        );
 
         $row = DB::transaction(function () use ($data, $user, $clientId, $branchId) {
             $primary = $data['primary_address'];
@@ -281,6 +286,14 @@ class ConsigneeController extends Controller
             ? (bool) $data['same_as_customer']
             : (bool) $consignee->same_as_customer;
         $this->assertSingleMirrorPerCustomer((int) $data['customer_id'], $intendsMirror, $consignee->id);
+        /* Same intent-carrying logic as the mirror guard: an edit that only
+           changes the email must still be checked against the mirror flag the
+           record will END UP with, not the one it happens to hold now. */
+        $this->assertContactEmailNotCustomers(
+            $data['primary_address']['cp_email'] ?? null,
+            $intendsMirror,
+            $data['customer_ids'],
+        );
 
         /* Segment is DERIVED from the mapped customers here too, so re-mapping
          * a consignee onto different customers moves its segments with it and
@@ -926,6 +939,48 @@ class ConsigneeController extends Controller
                 'message' => 'Only one same-as-customer consignee is allowed per customer.',
                 'errors'  => [
                     'same_as_customer' => ['This customer already has a same-as-customer consignee. Untick the toggle or pick a different customer.'],
+                ],
+            ], 422));
+        }
+    }
+
+    /**
+     * A consignee that is NOT the customer must not reuse that customer's
+     * contact-person email.
+     *
+     * A mirror consignee (same_as_customer) IS the customer, so sharing the
+     * address and its contact is correct and this guard steps aside. For a
+     * genuinely separate party the shared email made the two indistinguishable
+     * downstream: signature requests, acknowledgement mail and the CLM trail
+     * are addressed by contact email, so both sides resolved to one inbox and
+     * a document meant for the consignee reached the customer instead.
+     *
+     * Scope is deliberately narrow — the mapped customers only, not a global
+     * uniqueness rule. One contact person legitimately handles several
+     * consignees, and rejecting that would break existing records.
+     */
+    private function assertContactEmailNotCustomers(?string $cpEmail, bool $isMirror, array $customerIds): void
+    {
+        if ($isMirror) return;                                  // it IS the customer
+        $email = mb_strtolower(trim((string) $cpEmail));
+        if ($email === '') return;                              // optional field
+
+        $ids = array_values(array_filter(array_map('intval', $customerIds)));
+        if (empty($ids)) return;
+
+        $clash = Customer::query()
+            ->whereIn('customers.id', $ids)
+            ->whereHas('addresses', fn ($q) => $q->whereRaw('LOWER(cp_email) = ?', [$email]))
+            ->pluck('company_name')
+            ->all();
+
+        if (!empty($clash)) {
+            abort(response()->json([
+                'message' => 'This contact person email is already used by ' . implode(', ', $clash)
+                    . '. A consignee that is not the same as the customer needs its own contact email,'
+                    . ' or tick "Same as customer".',
+                'errors'  => [
+                    'primary_address.cp_email' => ['Already used by the mapped customer. Use a different email, or tick "Same as customer".'],
                 ],
             ], 422));
         }

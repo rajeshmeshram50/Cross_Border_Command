@@ -819,7 +819,10 @@ class SegmentDocUploadController extends Controller
             // segment rules), with live signature status overlaid — so the
             // vault shows not-yet-sent docs (Draft), in-flight sends (Pending)
             // and signed docs (Signed) together, not just what was sent.
-            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs);
+            // $owner is the party whose vault this is - its own segments narrow
+            // the deal's list, so a consignee vault is not filtered by the
+            // customer's segments (and vice versa).
+            $applicable = $this->applicableShipmentDocs($lead, $cid, $reqs, $owner->segment ?? null);
             $tradeBuyer = $applicable['trade_docs_buyer'];
             $tradeCons  = $applicable['trade_docs_consignee'];
             $agrBuyer   = $applicable['agreements_buyer'];
@@ -1017,7 +1020,7 @@ class SegmentDocUploadController extends Controller
      * @param  \Illuminate\Support\Collection  $reqs  signature requests for this lead
      * @return array{trade_docs_buyer:array,trade_docs_consignee:array,agreements_buyer:array,agreements_consignee:array}
      */
-    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs): array
+    private function applicableShipmentDocs(Lead $lead, int $cid, $reqs, ?string $partySegments = null): array
     {
         $empty = ['trade_docs_buyer' => [], 'trade_docs_consignee' => [], 'agreements_buyer' => [], 'agreements_consignee' => []];
 
@@ -1062,9 +1065,12 @@ class SegmentDocUploadController extends Controller
          * nothing" - and hiding a required agreement is worse than showing a
          * spare one. Segment names are folded to lower case on both sides;
          * casing drift between the two tables is a known source of 0/0. */
-        $partySegRaw = $lead->customer_id
-            ? optional(Customer::find($lead->customer_id))->segment
-            : null;
+        /* The vault OWNER's segments, passed in by the caller. Reading the
+           lead's customer here was wrong for a consignee vault: it filtered the
+           consignee's documents against the customer's segment list, which is a
+           different party and often a different list, so the consignee saw only
+           the PI. */
+        $partySegRaw = $partySegments;
         $partySegs = array_values(array_filter(array_map(
             fn ($x) => mb_strtolower(trim((string) $x)),
             explode(',', (string) $partySegRaw)

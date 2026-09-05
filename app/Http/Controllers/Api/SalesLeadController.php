@@ -1064,9 +1064,45 @@ class SalesLeadController extends Controller
             }
         }
 
+        /* includeFormerOwned matches the READ paths (list + detail).
+         *
+         * A Team Leader's scope is their OWN leads only, so the moment they
+         * hand one to an executive it leaves that scope. The list still showed
+         * it - reads already include former-owned - but this query dropped it,
+         * so a second reassignment silently matched nothing and the lead could
+         * never be moved again.
+         *
+         * Widening it here only re-admits leads this user genuinely owned
+         * before (lead_assignment_histories.previous_user_id). The target is
+         * still gated by the hierarchy and Sales-department checks above, so
+         * nobody gains a recipient they could not already assign to. */
         $q = Lead::query()->whereIn('id', $data['lead_ids']);
-        $this->applyScope($q, $user);
+        $this->applyScope($q, $user, null, true);
         $leads = $q->get(['id', 'client_id', 'branch_id', 'salesperson_id']);
+
+        /* A lead that has reached a shipment is closed to reassignment.
+         *
+         * Once the shipment order exists the deal has left the sales desk -
+         * procurement, documents and the CLM trail are all keyed to the owner
+         * recorded at that point, so moving it afterwards leaves those records
+         * pointing at someone who is no longer responsible. The whole request
+         * is refused rather than partially applied, and the message names the
+         * leads so a bulk assign can be retried without them. */
+        $shipped = \App\Models\ShipmentOrder::query()
+            ->whereIn('lead_id', $leads->pluck('id'))
+            ->pluck('lead_id')
+            ->map(fn ($v) => (int) $v)
+            ->unique();
+        if ($shipped->isNotEmpty()) {
+            $codes = Lead::query()->whereIn('id', $shipped)->pluck('opp_code', 'id')
+                ->map(fn ($c, $id) => $c ?: ('OPP-' . $id))->values()->all();
+            return response()->json([
+                'status'  => false,
+                'message' => count($codes) === 1
+                    ? "{$codes[0]} already has a shipment - the owner can no longer be changed."
+                    : 'These already have a shipment and can no longer be reassigned: ' . implode(', ', $codes),
+            ], 422);
+        }
 
         $targetId   = (int) $data['salesperson_id'];
         $targetName = \App\Models\User::query()->whereKey($targetId)->value('name') ?: ('User #' . $targetId);

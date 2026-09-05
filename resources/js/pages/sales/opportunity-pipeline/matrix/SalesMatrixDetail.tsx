@@ -1776,7 +1776,10 @@ export default function SalesMatrixDetail() {
       <ChangeOwnerModal
         open={changeOwnerOpen}
         currentOwner={serverHeader.salespersonName || 'Unassigned'}
-        owners={ownerOpts}
+        /* The current owner is filtered out: picking them is a no-op the
+           backend skips anyway, and listing the person already shown as
+           "Current owner" directly above reads as a mistake. */
+        owners={ownerOpts.filter(o => Number(o.value) !== Number(serverHeader.salespersonId ?? -1))}
         onClose={() => setChangeOwnerOpen(false)}
         onUpdate={async (opt) => {
           if (!resolvedLeadId) return;

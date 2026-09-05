@@ -95,12 +95,19 @@ export default function AssignedLeadsModal() {
       .finally(() => setLoading(false));
   }, [toast]);
 
-  /* Roster shows only salespeople who actually hold leads — an empty
-   * salesperson adds noise to the distribution view. The TOTAL SALES
-   * PERSONS KPI / header pill count these same rows so the number always
-   * matches what's visible in the table (previously they counted every
-   * active member, which read as "3 rows but says 6"). */
-  const leadRows   = rows.filter(r => (r.total_assigned_leads ?? 0) > 0);
+  /* Every salesperson in the roster, including those holding no leads yet.
+   *
+   * This used to filter to `total_assigned_leads > 0` on the grounds that an
+   * empty salesperson is noise. On a page called Lead DISTRIBUTION they are
+   * precisely the people being looked for: someone with zero leads is the
+   * next person to hand one to, and hiding them made the team look like it
+   * was three people (QA #10). The server already builds the roster this way
+   * on purpose — "the table shows zero-lead salespeople too so the user can
+   * see the whole team at a glance".
+   *
+   * The KPI and header pill still count these same rows, so the number keeps
+   * matching what is visible in the table. */
+  const leadRows   = rows;
   const totalCount = leadRows.length;
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const safePage   = Math.min(page, totalPages);
