@@ -7,7 +7,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
+use PhpOffice\PhpWord\Settings;
 use PhpOffice\PhpWord\Shared\Html;
+use PhpOffice\PhpWord\Style\Table;
 use PhpOffice\PhpWord\SimpleType\TblWidth;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
@@ -37,7 +39,34 @@ class HrTemplateDocxRenderer
      * runtime's HrDocumentSignature snapshots — they all carry the same
      * `header_config` / `footer_config` / `content_html` triple.
      */
+    /** A4 width (11906 twips) minus PhpWord's default 1440-twip side margins. */
+    private const HEADER_WIDTH_TWIPS = 11906 - (2 * 1440);
+
     public static function buildPath($row): string
+    {
+        /* PhpWord leaves output escaping OFF by default, so a company name
+         * containing & < > was written raw into header1.xml and produced a
+         * document Word refuses to open ("unreadable content").
+         *
+         * Settings is GLOBAL STATIC state, and php-fpm reuses a worker across
+         * requests -- so leaving this flipped on would silently change every
+         * later PhpWord export in the same process. HandlesDocxHtmlRoundtrip
+         * (the CLM agreement / trade-doc writer) escapes its own header text
+         * with htmlspecialchars(), and would then double-escape into a literal
+         * "&amp;amp;". The previous value is restored in the finally below so
+         * this renderer's requirement cannot leak out of it. */
+        $prevEscaping = Settings::isOutputEscapingEnabled();
+        Settings::setOutputEscapingEnabled(true);
+        try {
+            return self::build($row);
+        } finally {
+            Settings::setOutputEscapingEnabled($prevEscaping);
+        }
+    }
+
+    /** The actual builder; wrapped by buildPath() so the global PhpWord
+     *  escaping setting is always restored, on the error path too. */
+    private static function build($row): string
     {
         $phpWord = new PhpWord();
         // A4 in twips as INTEGERS — PhpWord's default computes these from
@@ -296,15 +325,31 @@ class HrTemplateDocxRenderer
         // fixed size, so the rendered Word logo matches the on-screen preview.
         $logoH    = (int) max(24, min(200, $cfg['logo_height'] ?? 60));
 
+        /* Header table sized in TWIPS against the real printable width.
+         * It used to declare a PERCENT width while handing addCell() raw
+         * twips (2500 + 7500 = 10000), and PhpWord treats cell widths as
+         * twips regardless of the table unit -- so the row was ~1000 twips
+         * wider than A4's printable area (11906 - 2 * 1440 = 9026). Word
+         * clipped the overflow at the right margin, which is why a long
+         * company name came out cut off in the generated .docx. */
+        $usable    = self::HEADER_WIDTH_TWIPS;
+        $logoW     = (int) round($usable * 0.25);
+        $titleW    = $usable - $logoW;
+
         $header = $section->addHeader();
         $table = $header->addTable([
             'borderSize' => 0, 'cellMargin' => 0,
-            'unit'  => TblWidth::PERCENT,
-            'width' => 100 * 50,
+            'unit'   => TblWidth::TWIP,
+            'width'  => $usable,
+            'layout' => Table::LAYOUT_FIXED,
         ]);
         $row1 = $table->addRow();
-        $logoCell  = $row1->addCell(2500, ['valign' => 'center']);
-        $titleCell = $row1->addCell(7500, ['valign' => 'center']);
+        /* noWrap => false is essential: PhpWord's Cell style defaults noWrap
+         * to TRUE, which emits <w:noWrap/> and forbids the cell from wrapping.
+         * A company name longer than the cell then runs off the right margin
+         * and Word clips it -- the reported truncation. */
+        $logoCell  = $row1->addCell($logoW,  ['valign' => 'center', 'noWrap' => false]);
+        $titleCell = $row1->addCell($titleW, ['valign' => 'center', 'noWrap' => false]);
 
         /* logo_path first, then logo_url.
          *
@@ -341,14 +386,16 @@ class HrTemplateDocxRenderer
         $footer = $section->addFooter();
         $fTable = $footer->addTable([
             'borderSize' => 0, 'cellMargin' => 0,
-            'unit'  => TblWidth::PERCENT,
-            'width' => 100 * 50,
+            'unit'   => TblWidth::TWIP,
+            'width'  => self::HEADER_WIDTH_TWIPS,
+            'layout' => Table::LAYOUT_FIXED,
         ]);
+        $fCellW = (int) floor(self::HEADER_WIDTH_TWIPS / 3);
         $fRow = $fTable->addRow();
         $cells = [
-            'left'   => $fRow->addCell(3333, ['valign' => 'center']),
-            'center' => $fRow->addCell(3333, ['valign' => 'center']),
-            'right'  => $fRow->addCell(3333, ['valign' => 'center']),
+            'left'   => $fRow->addCell($fCellW, ['valign' => 'center', 'noWrap' => false]),
+            'center' => $fRow->addCell($fCellW, ['valign' => 'center', 'noWrap' => false]),
+            'right'  => $fRow->addCell(self::HEADER_WIDTH_TWIPS - (2 * $fCellW), ['valign' => 'center', 'noWrap' => false]),
         ];
         if ($footerText !== '' && isset($cells[$fAlign])) {
             $cells[$fAlign]->addText($footerText, ['size' => 9, 'color' => '6B7280'], ['alignment' => $fAlign]);

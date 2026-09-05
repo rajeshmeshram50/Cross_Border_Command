@@ -1818,8 +1818,22 @@ class AttendanceController extends Controller
             // Signed deviation (sub-hour shortfalls were printing "+0h 30m"
             // before — intdiv() truncates toward zero so a negative diff
             // smaller than an hour lost its sign).
+            /* A day with an in-punch and NO out-punch has no worked total to
+             * report. total_worked_seconds deliberately PADS such a day out to
+             * the auto-checkout boundary (shift end + 1h, or the shift end for
+             * overtime staff) -- that padding is a payroll rule and stays, but
+             * it is not a measurement. Printing it in the Worked column stated
+             * a figure derived from a punch-out that never happened: a 06:10
+             * check-in on a 20:00 shift read "14h 50m" while Last Out on the
+             * very same row said "In Progress" (CBC #81).
+             *
+             * The number is withheld, not zeroed: effectiveMinutes below still
+             * carries the padded value the timeline bar and payroll read, so
+             * only the human-facing text changes. */
+            $dayOpen = (bool) ($r && $r->check_in_at && !$r->check_out_at);
+
             $deviation = '—';
-            if ($worked !== 0) {
+            if ($worked !== 0 && !$dayOpen) {
                 $diff = $worked - $expectedMinutes;
                 $sign = $diff < 0 ? '-' : '+';
                 $mag  = abs($diff);
@@ -1851,7 +1865,8 @@ class AttendanceController extends Controller
                 'shift'            => $shift,
                 'firstIn'          => $firstIn,
                 'lastOut'          => $lastOut,
-                'worked'           => $worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60),
+                'worked'           => $dayOpen ? 'In Progress' : ($worked === 0 ? '—' : sprintf('%dh %02dm', intdiv($worked, 60), $worked % 60)),
+                'dayOpen'          => $dayOpen,
                 'deviation'        => $deviation,
                 'exception'        => in_array(strtolower($status), ['late', 'half day', 'absent', 'corrected', 'missing in', 'missing out'], true) ? $status : null,
                 'leaveKind'        => $leaveKind,
