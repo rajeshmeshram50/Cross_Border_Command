@@ -460,13 +460,28 @@ class SegmentDocUploadController extends Controller
             $stdVerified         = collect($stdRows)->where('status', 'Verified')->count();
             $stdPending          = count($stdRows) - $stdVerified;
 
-            $totalDocuments      = count($stdRows) + $c2cTd['total'] + $c2cAgr['total'];
-            $verifiedSigned      = $stdVerified + $c2cTd['signed'] + $c2cAgr['signed'];
+            /* Agreement figures come from the PARTY's own applicable set, not
+               from the shipment rows.
+             *
+             * $agreements above is already segment-driven for exactly this
+             * reason (CBC #66) - a party can have applicable agreements before
+             * any shipment order exists. The header card was left on the
+             * shipment tally, so a customer with 9 applicable agreements and 3
+             * signed showed "TOTAL AGREEMENTS 0" while the Buyer Profile listed
+             * 3/9 for the same customer. Trade documents stay shipment-based:
+             * they genuinely belong to a deal. */
+            $agrTotal  = count($agreements);
+            $agrSigned = collect($agreements)
+                ->filter(fn ($a) => in_array($a['status'] ?? '', ['Signed', 'Verified'], true))
+                ->count();
+
+            $totalDocuments      = count($stdRows) + $c2cTd['total'] + $agrTotal;
+            $verifiedSigned      = $stdVerified + $c2cTd['signed'] + $agrSigned;
             $pending             = $stdPending
-                + ($c2cTd['total']  - $c2cTd['signed'])
-                + ($c2cAgr['total'] - $c2cAgr['signed']);
+                + ($c2cTd['total'] - $c2cTd['signed'])
+                + ($agrTotal - $agrSigned);
             $tradeDocumentsCount = $c2cTd['total'];
-            $agreementsCount     = $c2cAgr['total'];
+            $agreementsCount     = $agrTotal;
         } else {
             $allRows             = array_merge($company_dd, $owner_kyc, $trade_licenses, $trade_documents);
             $totalDocuments      = count($allRows);
@@ -1033,6 +1048,35 @@ class SegmentDocUploadController extends Controller
         $segments = ClmSegment::where('client_id', $cid)->whereIn('id', $segmentIds)->get();
         if ($segments->isEmpty()) return $empty;
 
+        /* Narrow the deal's segments down to the ones the PARTY itself is
+           registered under (QA #6/#7).
+         *
+         * The list above comes from the products on the PI, so a deal selling a
+         * product outside the customer's own segments pulled in that segment's
+         * agreements and the vault showed documents the customer has nothing to
+         * do with.
+         *
+         * The guard matters: a party with NO segments recorded is left
+         * unfiltered rather than emptied, because a blank segment field is far
+         * more likely to be unmaintained data than a genuine "applies to
+         * nothing" - and hiding a required agreement is worse than showing a
+         * spare one. Segment names are folded to lower case on both sides;
+         * casing drift between the two tables is a known source of 0/0. */
+        $partySegRaw = $lead->customer_id
+            ? optional(Customer::find($lead->customer_id))->segment
+            : null;
+        $partySegs = array_values(array_filter(array_map(
+            fn ($x) => mb_strtolower(trim((string) $x)),
+            explode(',', (string) $partySegRaw)
+        )));
+        if ($partySegs) {
+            $segments = $segments->filter(
+                fn ($sg) => in_array(mb_strtolower(trim((string) $sg->name)), $partySegs, true)
+                         || in_array(mb_strtolower(trim((string) $sg->code)), $partySegs, true)
+            )->values();
+            if ($segments->isEmpty()) return $empty;
+        }
+
         // Index signature requests by [docType][party] => [libId => request],
         // newest first. The library id lives in trade_doc_ids (multi-doc sends)
         // or the legacy trade_doc_id scalar. Party maps model_name → bucket.
@@ -1163,15 +1207,23 @@ class SegmentDocUploadController extends Controller
         $statusVal = $statusCol === 'agr_status' ? 'Active' : 'active';
         return $query->where('client_id', $cid)
             ->where('regulatory', $seg->regulatory_status)
+            /* LOWER() on both sides. Postgres LIKE is case-sensitive, so a
+               segment stored as "Foods" never matched a library row written
+               "foods" - the vault then showed 0/0 while the Buyer Profile,
+               which compares in PHP with mb_strtolower, listed the same doc.
+               Casing drift between the two screens is what made the counts
+               disagree; both now fold case before comparing. */
             ->where(function ($q) use ($name, $code) {
                 foreach ([$name, $code] as $needle) {
-                    $q->orWhere('segment', $needle)
-                      ->orWhere('segment', 'LIKE', $needle . ',%')
-                      ->orWhere('segment', 'LIKE', $needle . ', %')
-                      ->orWhere('segment', 'LIKE', '%,' . $needle)
-                      ->orWhere('segment', 'LIKE', '%, ' . $needle)
-                      ->orWhere('segment', 'LIKE', '%,' . $needle . ',%')
-                      ->orWhere('segment', 'LIKE', '%, ' . $needle . ',%');
+                    $n = mb_strtolower(trim((string) $needle));
+                    if ($n === '') continue;
+                    $q->orWhereRaw('LOWER(segment) = ?', [$n])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ',%'])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', [$n . ', %'])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%,' . $n . ',%'])
+                      ->orWhereRaw('LOWER(segment) LIKE ?', ['%, ' . $n . ',%']);
                 }
             })
             ->where($statusCol, $statusVal)

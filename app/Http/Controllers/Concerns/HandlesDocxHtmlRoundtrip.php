@@ -570,14 +570,32 @@ trait HandlesDocxHtmlRoundtrip
 
             if ($hasLogo && $hasText) {
                 // Both present — one row, two cells, both vertically centred.
-                $t = $header->addTable(['borderSize' => 0, 'cellMargin' => 0, 'width' => 100 * 50, 'unit' => 'pct']);
+                /* Sized in TWIPS against the real printable width (A4 11906
+                   minus the two 1440 margins = 9026).
+                   This declared 'pct' while handing addCell() raw twips, and
+                   PhpWord reads cell widths as twips whatever the table unit
+                   says -- so 4000 + 6000 made the row ~1000 twips WIDER than
+                   the page and Word clipped whatever hung past the right
+                   margin. The 40/60 note below was written chasing that
+                   clipping from the logo side; the split was never the cause,
+                   the overflow was, so a long company name got cut off too.
+                   The 40/60 ratio is kept -- it does fit the widest wordmark
+                   in use -- but taken against a width that actually fits. */
+                $usable = 11906 - (2 * 1440);
+                $t = $header->addTable([
+                    'borderSize' => 0, 'cellMargin' => 0,
+                    'unit'   => \PhpOffice\PhpWord\SimpleType\TblWidth::TWIP,
+                    'width'  => $usable,
+                    'layout' => \PhpOffice\PhpWord\Style\Table::LAYOUT_FIXED,
+                ]);
                 $r = $t->addRow();
-                /* 40/60, not 30/70. A wide wordmark (logo + company name in
-                   the image) overflowed a 30% cell and Word clipped it — the
-                   'IGC' came out cut in half. 40% fits the widest mark in use
-                   while still leaving the title room to sit beside it. */
-                $logoCell  = $r->addCell(4000, ['valign' => 'center']);
-                $titleCell = $r->addCell(6000, ['valign' => 'center']);
+                /* noWrap => false because PhpWord's Cell style defaults it to
+                   TRUE, emitting <w:noWrap/>: the title cell was forbidden to
+                   wrap, so a heading too long for it ran off the margin and
+                   was clipped rather than flowing to a second line. */
+                $logoW     = (int) round($usable * 0.40);
+                $logoCell  = $r->addCell($logoW, ['valign' => 'center', 'noWrap' => false]);
+                $titleCell = $r->addCell($usable - $logoW, ['valign' => 'center', 'noWrap' => false]);
                 try {
                     $logoCell->addImage($logoAbsPath, [
                         'height'    => (int) ($headerCfg['logo_height'] ?? 62),

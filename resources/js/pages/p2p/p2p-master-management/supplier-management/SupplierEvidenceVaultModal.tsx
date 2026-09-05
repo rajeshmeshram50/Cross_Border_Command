@@ -1,9 +1,6 @@
-import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-/* TYPE-only. The runtime values are imported inside the export handler below,
-   so 155 KB of zip machinery is fetched when someone clicks Export — not when
-   the vault opens, and certainly not when the supplier LIST opens. A type
-   import is erased at compile time and pulls in nothing. */
+
 import type JSZipType from 'jszip';
 import api from '../../../../api';
 import Tooltip from '../../../../components/ui/Tooltip';
@@ -14,65 +11,35 @@ import { signatureRequestsToVaultDocs, mergeTradeDocuments, type SigReqRow } fro
 import { downloadFile } from '../../../../utils/downloadFile';
 import SalesCustomerSendForSignatureModal from '../../../sales/core-masters/customer/SalesCustomerSendForSignatureModal';
 import { CEV_CSS } from '../../../sales/core-masters/customer/CustomerEvidenceVaultModal';
-/* AddVendorModal's styles are no longer a string this file can inject — they
-   are a real stylesheet that module imports, so importing SegmentRefUploadPopup
-   from it already pulls them in. */
+
 import { SegmentRefUploadPopup } from './AddVendorModal';
 import { SigningTrackerModal } from '../../../sales/opportunity-pipeline/SigningTrackerModal';
+import './supplier-evidence-vault.css';
 
-/* Fetch a stored attachment as a Blob for the ZIP export. Our own uploads
- * (segment_doc_uploads/…) stream THROUGH the backend so Azure's cross-origin
- * CORS doesn't block them; anything else is fetched directly. Returns null on
- * failure so the export skips it (and counts it as "missing"). */
 async function fetchVaultBlob(rawUrl: string): Promise<Blob | null> {
   if (!rawUrl) return null;
   if (/segment_doc_uploads\//i.test(rawUrl)) {
     try {
       const res = await api.get('/segment-uploads/download', { params: { url: rawUrl }, responseType: 'blob' });
       return res.data as Blob;
-    } catch { /* fall through to a direct fetch */ }
+    } catch {}
   }
   try {
     const res = await fetch(resolveFileUrl(rawUrl), { credentials: 'include' });
     if (res.ok) return await res.blob();
-  } catch { /* ignore */ }
+  } catch {}
   return null;
 }
-
-/* ────────────────────────────────────────────────────────────────────────────
- * Supplier Evidence Vault — read-only compliance archive
- *
- * Mirrors CustomerEvidenceVaultModal in BOTH structure and look: it reuses
- * the customer's exported CEV_CSS (cyan/teal palette + dark mode) verbatim via
- * the .cev-* classes so the two vaults can never visually drift. Only the
- * supplier-specific text, buckets, toggle wording and the live supplier vault
- * endpoint differ.
- *
- *   1. Company Due Diligence — PAN, TAN, GST, CIN, IEC, Address Proof, …
- *   2. Owner KYC Details     — Aadhaar, PAN, Passport, Director address …
- *   3. Trade Licenses        — IEC, APEDA, Agro Export Permit, Organic …
- *   4. Trade Documents       — Master Sales Agreement, PO Framework, NDA …
- *   5. Shipment Agreements   — per-shipment matrix (Customer = Supplier / ≠)
- *
- * Backend wiring (live):
- *   GET /api/segment-uploads/supplier/{id}/vault → { stats, company_dd,
- *     owner_kyc, trade_licenses, trade_documents, shipment_agreements,
- *     last_updated }
- * ──────────────────────────────────────────────────────────────────── */
 
 export type VaultStatus = 'Verified' | 'Pending' | 'Expiring' | 'Signed';
 
 export interface VaultDoc {
   id: number;
-  /** clm_trade_doc_library.id — set on Trade Document rows so the vault
-   *  can launch Send-for-Signature and merge live signing status. */
+
   db_id?: number | null;
-  /** Applicable-party CSV (Trade Document rows only) used to party-filter
-   *  the tab to match the edit form. */
+
   party?: string | null;
-  /** Zoho Sign request id + raw status backing this Trade Document row.
-   *  Drive the Send / Reminder / View-only gating: once sent the row
-   *  shows Reminder (not Send); once signed it shows View only. */
+
   signature_request_id?: number | null;
   sig_state?: string | null;
   name: string;
@@ -81,19 +48,14 @@ export interface VaultDoc {
   issue_date?: string | null;
   expiry?: string | null;
   attachment?: string | null;
-  /** Live storage URL when the server has the actual file; lets the
-   *  attachment cell render as a clickable link. */
+
   attachment_url?: string | null;
   status: VaultStatus;
-  /** Master doc-code (DD-001, KYC-002, …). Required by the Actions
-   *  column so a re-upload can POST against the right SegmentDocUpload row. */
+
   doc_code?: string | null;
-  /** Mandatory / Optional per the segment DCP rules — drives the
-   *  Requirement column (matches the Edit form's table). */
+
   requirement?: 'M' | 'O' | null;
-  /** URL to the Zoho-issued Certificate of Completion. Set on rows
-   *  that came from a completed Zoho Sign request; renders the
-   *  certificate icon button in the Actions column. */
+
   certificate_url?: string | null;
 }
 
@@ -126,7 +88,7 @@ export interface VaultData {
   trade_licenses:         VaultDoc[];
   trade_documents:        VaultDoc[];
   shipment_agreements:    VaultShipmentRow[];
-  /* Case-to-Case deals — split by whether the lead has a shipment. */
+
   vendor_with_shipment?:    VendorDealRow[];
   vendor_without_shipment?: VendorDealRow[];
   vendor_deal_ratios?:      DealRatios | null;
@@ -143,30 +105,28 @@ export interface VendorDealRow {
   consignee?: string;
   supplier: string;
   ratios: DealRatios;
-  /** This deal's applicable Trade Documents (from the vendor's mapped products),
-   *  with live Zoho signature status — drives the Trade Documents drill-down. */
+
   docs?: VaultDoc[];
-  /** Same, for Agreements — drives the Agreements drill-down. */
+
   agreements?: VaultDoc[];
 }
 
 export interface SupplierVaultTarget {
-  id: string;             // S-001 / matches vendors.vendor_code
+  id: string;
   db_id?: number;
   company: string;
   risk?: string;
   segment?: string;
-  /* All mapped segments (vendor_segments). Header shows every one; falls back
-     to the scalar `segment` when not provided. */
+
   segments?: string[];
   country?: string;
+
+  type?: string;
   contact?: string;
   contactCity?: string;
-  /* Primary contact email — the default signer when sending a trade doc for
-   * e-signature from this supplier's vault. */
+
   email?: string;
-  /* Linked customer code (e.g. C-010) so the header can show the
-   * buyer-supplier relationship at a glance. */
+
   customerId?: string;
 }
 
@@ -175,46 +135,56 @@ interface Props {
   supplier: SupplierVaultTarget | null;
   onClose: () => void;
   data?: VaultData | null;
-  /* When true the vault is opened purely to review (e.g. from a With-PO SPI where
-   * the supplier's legal status is inherited from the PO). Upload/Re-upload is hidden. */
+
   viewOnly?: boolean;
-  /* Fired after the vault re-fetches itself following a change made INSIDE it
-   * (document upload / re-upload). Lets a host screen — e.g. the Create-PO
-   * wizard's Supplier Legal Status card — refresh its own copy of the same
-   * compliance figures instead of staying stale until a page reload. */
+
   onVaultChange?: () => void;
 }
 
-/* Lets the deeply-nested row actions hide their Upload button without prop drilling. */
 const VaultViewOnlyCtx = createContext(false);
 
 type TabKey = 'company-dd' | 'owner-kyc' | 'trade-licenses' | 'trade-documents' | 'shipment-agreements';
 
-/* Top-level grouping — see CustomerEvidenceVaultModal for the rationale.
- *   • standard      — KYC, DD, Trade Licenses (one-time party docs)
- *   • case-to-case  — Trade Documents, Agreements (per-deal records) */
 type GroupKey = 'standard' | 'case-to-case';
 
-const GROUPS: { key: GroupKey; title: string; sub: string; icon: string }[] = [
-  { key: 'standard',     title: 'Standard Documents',      sub: 'ONE TIME · KYC, DD & LICENSES',     icon: 'ri-shield-check-line' },
-  { key: 'case-to-case', title: 'Case to Case Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: 'ri-todo-line' },
+const VAULT_GLYPHS: Record<string, ReactNode> = {
+  shieldCheck:    <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><polyline points="9 12 11 14 15 10" /></>,
+  clipboardCheck: <><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" /><rect x="8" y="2" width="8" height="4" rx="1" /><path d="M9 14l2 2 4-4" /></>,
+  list:           <><line x1="8" y1="6" x2="21" y2="6" /><line x1="8" y1="12" x2="21" y2="12" /><line x1="8" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></>,
+  home:           <><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" /></>,
+  user:           <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /></>,
+  monitor:        <><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></>,
+  file:           <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></>,
+  fileLines:      <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="8" y1="13" x2="16" y2="13" /><line x1="8" y1="17" x2="13" y2="17" /></>,
+  checkCircle:    <><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" /><polyline points="22 4 12 14.01 9 11.01" /></>,
+  warning:        <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
+  box:            <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
+  truck:          <><rect x="1" y="3" width="15" height="13" rx="1.5" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>,
+  clock:          <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
+  send:           <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
+};
+
+function Glyph({ d, size, sw = 2.2 }: { d: ReactNode; size: number; sw?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {d}
+    </svg>
+  );
+}
+
+const GROUPS: { key: GroupKey; title: string; sub: string; icon: ReactNode; overview: string }[] = [
+  { key: 'standard',     title: 'Standard Documents',                  sub: 'ONE TIME · KYC, DD & LICENSES',      icon: VAULT_GLYPHS.shieldCheck, overview: 'All Standard Document Overview' },
+  { key: 'case-to-case', title: 'Case to Case Documents & Agreements', sub: 'PER DEAL · TRADE DOCS & AGREEMENTS', icon: VAULT_GLYPHS.clipboardCheck, overview: 'Send Documents & Agreements for Signature' },
 ];
 
-const TABS: { key: TabKey; label: string; icon: string; countKey: keyof VaultData; group: GroupKey }[] = [
-  { key: 'company-dd',          label: 'Company Due Diligence', icon: 'ri-shield-check-line',   countKey: 'company_dd_count',       group: 'standard' },
-  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: 'ri-user-3-line',         countKey: 'owner_kyc_count',        group: 'standard' },
-  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: 'ri-file-list-3-line',    countKey: 'trade_license_count',    group: 'standard' },
-  { key: 'trade-documents',     label: 'Trade Documents',       icon: 'ri-article-line',        countKey: 'trade_documents_count',  group: 'case-to-case' },
-  { key: 'shipment-agreements', label: 'Agreements',            icon: 'ri-truck-line',          countKey: 'total_shipments',        group: 'case-to-case' },
+const TABS: { key: TabKey; label: string; icon: ReactNode; countKey: keyof VaultData; group: GroupKey }[] = [
+  { key: 'company-dd',          label: 'Company Due Diligence', icon: VAULT_GLYPHS.home,      countKey: 'company_dd_count',       group: 'standard' },
+  { key: 'owner-kyc',           label: 'Owner KYC Details',     icon: VAULT_GLYPHS.user,      countKey: 'owner_kyc_count',        group: 'standard' },
+  { key: 'trade-licenses',      label: 'Trade Licenses',        icon: VAULT_GLYPHS.monitor,   countKey: 'trade_license_count',    group: 'standard' },
+  { key: 'trade-documents',     label: 'Trade Documents',       icon: VAULT_GLYPHS.file,      countKey: 'trade_documents_count',  group: 'case-to-case' },
+  { key: 'shipment-agreements', label: 'Agreements',            icon: VAULT_GLYPHS.fileLines, countKey: 'total_shipments',        group: 'case-to-case' },
 ];
 
-
-/* ─── Empty vault — the zero-state used until the live payload lands, and
- *      when the fetch fails or the supplier has no saved record yet. There is
- *      deliberately NO demo data: an empty vault must read as empty, never as
- *      a set of plausible-looking rows a reviewer could mistake for real
- *      compliance evidence. Without this the `!vault` guard below returned
- *      null and the modal simply never opened while the fetch was in flight. */
 const EMPTY_VAULT: VaultData = {
   total_documents:         0,
   verified_signed:         0,
@@ -239,24 +209,17 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const toast = useToast();
   const [tab, setTab] = useState<TabKey>('company-dd');
   const [group, setGroup] = useState<GroupKey>('standard');
-  /* "+N more" segment overflow popover — a titled list (matches the CLM pages'
-   * authority/segment popovers), opened on click from the header chip. */
+
   const [segPop, setSegPop] = useState<{ names: string[]; x: number; y: number } | null>(null);
-  // "Document Overview" popup — set to a group key to open the all-docs list.
+
   const [overview, setOverview] = useState<GroupKey | null>(null);
   const [overviewPage, setOverviewPage] = useState(1);
-  const [ovShip, setOvShip] = useState<number | null>(null);
-  // Row currently downloading in the Document Overview — drives a per-row spinner.
+
   const [ovDownloadingKey, setOvDownloadingKey] = useState<string | null>(null);
-  /* Case-to-Case top toggle (Figma .ev-shp-toggle) — splits per-deal records
-     into those tied to a shipment vs general trade docs. */
+  const [ovUpload, setOvUpload] = useState<{ doc: VaultDoc; category: 'dd' | 'kyc' | 'tl' } | null>(null);
+
   const [shipmentIdMode, setShipmentIdMode] = useState<'with' | 'without'>('with');
 
-  /* Switch the active group and jump to its first sub-tab.
-   * Case-to-Case splits a supplier's deals strictly either/or:
-   *   • With Shipment ID    = procurements whose lead already has a shipment order
-   *   • Without Shipment ID = procurements whose lead has no shipment yet
-   * A deal appears in exactly ONE of the two views (no overlap). */
   const selectGroup = (g: GroupKey) => {
     setGroup(g);
     const first = TABS.find(t => t.group === g);
@@ -265,24 +228,16 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const selectTab = (t: typeof TABS[number]) => {
     setTab(t.key);
   };
-  /* Live API payload — populated by the fetch effect below. Falls back
-   * to EMPTY_VAULT if the fetch fails or the supplier has no db_id
-   * (unsaved record) — never to demo rows. */
+
   const [vaultLive, setVaultLive] = useState<VaultData | null>(null);
   const [loading, setLoading] = useState(false);
-  /* Export All — in-flight flag drives the spinner + disabled state. */
+
   const [exporting, setExporting] = useState(false);
-  /* Zoho Sign signature requests for this supplier — fetched in parallel
-   * with the vault payload and merged into the Trade Documents tab. The
-   * vault's own /vault endpoint doesn't know about clm_signature_requests
-   * (it predates the Sign flow), so the merge happens client-side. */
+
   const [signatureRows, setSignatureRows] = useState<SigReqRow[]>([]);
-  /* Send-for-Signature launch state — when non-null, the Zoho Sign
-   * wizard opens with these clm_trade_doc_library ids pre-checked. Driven
-   * by the Trade Documents tab's per-row Send button. */
+
   const [sendDocIds, setSendDocIds] = useState<number[] | null>(null);
-  // Whether the open Send modal is sending case-to-case Agreements (→ agreement_ids)
-  // or Trade Documents (→ trade_doc_ids). Drives which library the backend uses.
+
   const [sendKind, setSendKind] = useState<'trade' | 'agreement'>('trade');
 
   useEffect(() => {
@@ -292,7 +247,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
-  // Scroll lock — lock BOTH <html> and <body> so the page behind can't scroll.
   useEffect(() => {
     if (!open) return;
     const b = document.body.style.overflow;
@@ -302,43 +256,30 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     return () => { document.body.style.overflow = b; document.documentElement.style.overflow = h; };
   }, [open]);
 
-  /* Init the active tab ONLY on open / supplier change — NOT on onClose (fresh
-   * closure each parent render), so a background re-render no longer snaps the
-   * user's tab back to the default. */
   useEffect(() => {
     if (!open) return;
     setTab('company-dd');
     setGroup('standard');
     setShipmentIdMode('with');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [open, supplier?.db_id]);
 
-  /* Always-current `onVaultChange` in a ref — keeps `reloadVault` stable. */
   const onVaultChangeRef = useRef(onVaultChange);
   onVaultChangeRef.current = onVaultChange;
 
-  /* Re-fetch helper — invoked by the Actions column after a successful
-   * re-upload so the row's attachment_url refreshes in place. */
   const reloadVault = useCallback(() => {
     if (!supplier?.db_id) return Promise.resolve();
     setLoading(true);
     return api.get(`/segment-uploads/supplier/${supplier.db_id}/vault`)
       .then(r => {
         setVaultLive((r.data?.data ?? null) as VaultData | null);
-        // Tell the host screen the vault moved so its own compliance figures
-        // (e.g. the PO wizard's Supplier Legal Status card) re-read the same
-        // endpoint — read through a ref so adding the callback never changes
-        // this function's identity, which is threaded into every row action.
+
         onVaultChangeRef.current?.();
       })
-      .catch(() => { /* keep prior state on transient errors */ })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, [supplier?.db_id]);
 
-  /* Fetch the vault payload when the modal opens. Skips when (a) the
-   * parent passed an override via `data` or (b) supplier has no
-   * db_id. Failure leaves vaultLive at null, and the vault then renders
-   * as EMPTY_VAULT rather than inventing rows. */
   useEffect(() => {
     if (!open || !supplier?.db_id || data) {
       setVaultLive(null);
@@ -353,20 +294,15 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     return () => { cancelled = true; };
   }, [open, supplier?.db_id, data]);
 
-  /* Re-fetch signature requests — used by the open-effect and after a
-   * Send so the Trade Documents tab flips to "Pending"/"Signed" without
-   * re-opening the vault. */
   const reloadSignatures = useCallback(() => {
     if (!supplier?.db_id) return Promise.resolve();
     return api.get('/clm/signature-requests', {
       params: { party_id: supplier.db_id, model_name: 'Vendor', sync: 1 },
     })
       .then(r => { setSignatureRows(Array.isArray(r.data?.data) ? (r.data.data as SigReqRow[]) : []); })
-      .catch(() => { /* keep previous rows on transient failure */ });
+      .catch(() => {});
   }, [supplier?.db_id]);
 
-  /* Send a Zoho reminder for an already-sent (in-progress) trade doc.
-   * Returns a promise so the row button can show a busy state. */
   const handleRemind = useCallback(async (doc: VaultDoc) => {
     if (!doc.signature_request_id) return;
     try {
@@ -378,10 +314,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     }
   }, [reloadSignatures, toast]);
 
-  /* Fetch signature requests for this supplier in parallel. sync=true
-   * triggers a Zoho round-trip for any still-inprogress rows so the
-   * vault reflects "Signed" the moment the recipient finishes signing,
-   * not just on the next vault open. */
   useEffect(() => {
     if (!open || !supplier?.db_id) { setSignatureRows([]); return; }
     let cancelled = false;
@@ -397,9 +329,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     return () => { cancelled = true; };
   }, [open, supplier?.db_id]);
 
-  /* Re-poll signing status when the user returns to this tab — e.g. after
-   * signing in the Zoho Sign tab — so the vault flips Pending → Signed without
-   * a manual refresh. Only while the vault is open. */
   useEffect(() => {
     if (!open || !supplier?.db_id) return;
     const onBack = () => { if (document.visibilityState === 'visible') void reloadSignatures(); };
@@ -413,16 +342,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   const vault: VaultData | null = useMemo(() => {
     if (!supplier) return null;
-    /* Priority: explicit `data` prop > live API > empty vault. No demo
-     * fallback — an unloaded or failed vault reads as genuinely empty. */
+
     const base = data ?? vaultLive ?? EMPTY_VAULT;
     if (!base) return null;
-    // Trade Documents tab = the party's expected trade docs (segment-rule
-    // td, party-filtered to mirror the edit form) merged with their live
-    // Zoho Sign status. Each row exposes Send-for-Signature; signed rows
-    // also carry the signed PDF + certificate links.
-    // Split signature requests by library so a trade-doc id and an agreement
-    // id that share a number don't overlay onto each other.
+
     const tradeSigRows       = signatureRequestsToVaultDocs(signatureRows.filter(r => (r.document_type ?? 'trade_doc') !== 'agreement'));
     const agrSigRows         = signatureRequestsToVaultDocs(signatureRows.filter(r => r.document_type === 'agreement'));
     const sigRows            = tradeSigRows;
@@ -433,11 +356,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     const mergedSigned       = mergedTd.filter(r => r.status === 'Verified' || r.status === 'Signed').length;
     const mergedPending      = mergedTd.filter(r => r.status === 'Pending').length;
 
-    /* Overlay the live Zoho status onto the per-deal Trade Documents AND
-     * Agreements (matched by db_id / library id — vendor-level, same as the
-     * standard tab), each from its OWN library's requests, so a signed doc or
-     * agreement flips to Signed without waiting on a per-deal lead_id. Recompute
-     * the TRADE DOCS column ratio from the overlaid trade-doc statuses. */
     const buildSigMap = (rows: ReturnType<typeof signatureRequestsToVaultDocs>) => {
       const m = new Map<number, VaultDoc>();
       for (const s of rows as unknown as VaultDoc[]) {
@@ -471,8 +389,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       trade_documents_count: mergedTd.length,
       vendor_with_shipment:    overlayRows(base.vendor_with_shipment),
       vendor_without_shipment: overlayRows(base.vendor_without_shipment),
-      // KPI roll-ups: swap the raw segment-rule TD contribution for the
-      // merged (party-filtered + signature-aware) numbers.
+
       verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
       pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
       total_documents: Math.max(0, (base.total_documents ?? 0) - baseSegmentTd.length) + mergedTd.length,
@@ -481,16 +398,9 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   if (!open || !supplier || !vault) return null;
 
-  /* Export All — builds a ZIP of the ACTUAL document files, foldered:
-   *   <Supplier> /
-   *     Standard / Company Due Diligence | Owner KYC Details | Trade Licenses /
-   *     CTC / With Shipment ID / <shipment> /  &  Without Shipment ID / <procurement> /
-   * Files are fetched as blobs (our uploads stream through the backend so Azure
-   * CORS doesn't block them) and dropped into the matching folder. */
   const handleExportAll = async () => {
     if (!vault || !supplier || exporting) return;
-    // Guard: if not a single uploaded file exists anywhere in the vault, don't
-    // build an empty ZIP (of placeholder .txt files) — tell the user instead.
+
     const everyDoc: VaultDoc[] = [
       ...(vault.company_dd ?? []),
       ...(vault.owner_kyc ?? []),
@@ -513,13 +423,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         return fromUrl || `${d.name || 'document'}.pdf`;
       };
 
-      /* Both libraries land here, on the click, in parallel. */
       const [{ default: JSZip }, { saveAs }] = await Promise.all([
         import('jszip'),
         import('file-saver'),
       ]);
       const zip = new JSZip();
-      // Drop every doc with a file into `folder`, numbered to avoid name clashes.
+
       const addDocs = async (folder: JSZipType, docs: VaultDoc[]) => {
         let i = 0;
         for (const d of docs) {
@@ -530,18 +439,15 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           folder.file(`${String(i).padStart(2, '0')} - ${sanitize(fileNameFor(d))}`, blob);
           added++;
         }
-        // Keep the folder visible in the zip even when nothing landed in it.
+
         if (!docs.some(d => d.attachment_url)) folder.file('(no documents).txt', 'No uploaded documents in this category.');
       };
 
-      // ── Standard Documents ──
       const std = zip.folder('Standard')!;
       await addDocs(std.folder('Company Due Diligence')!, vault.company_dd);
       await addDocs(std.folder('Owner KYC Details')!, vault.owner_kyc);
       await addDocs(std.folder('Trade Licenses')!, vault.trade_licenses);
 
-      // ── Case to Case ── one subfolder per deal (shipment / procurement id),
-      // holding that deal's Trade Documents + Agreements.
       const ctc = zip.folder('CTC')!;
       const withShip = ctc.folder('With Shipment ID')!;
       const withDeals = vault.vendor_with_shipment ?? [];
@@ -569,20 +475,26 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     }
   };
 
-  /* ─── Status pill renderer — Verified (mint), Expiring (amber),
-   *      Pending (rose), Signed (sky). Same palette across all tabs. */
-  const StatusPill = ({ s }: { s: VaultStatus | 'Expired' }) => {
-    const tone =
-      s === 'Verified' ? { bg: '#ecfdf5', fg: '#059669', mark: '✓' }
-      : s === 'Signed'   ? { bg: '#dbeafe', fg: '#1e40af', mark: '✓' }
-      : s === 'Expiring' ? { bg: '#fef3c7', fg: '#92400e', mark: '⚠' }
-      : s === 'Expired'  ? { bg: '#fef2f2', fg: '#b91c1c', mark: '⌛' }
-      :                    { bg: '#fef2f2', fg: '#dc2626', mark: '⌛' };
-    return (
-      <span className="cev-pill" data-status={s} style={{ background: tone.bg, color: tone.fg }}>
-        {tone.mark} {s}
-      </span>
-    );
+  const submitOvUpload = async (f: File, expiryDate?: string) => {
+    if (!ovUpload || !supplier?.db_id || !ovUpload.doc.doc_code) return;
+    if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
+      toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
+      return;
+    }
+    try {
+      const fd = new FormData();
+      fd.append('category', ovUpload.category);
+      fd.append('doc_code', ovUpload.doc.doc_code);
+      fd.append('doc_name', ovUpload.doc.name || ovUpload.doc.doc_code);
+      if (expiryDate) fd.append('expiry_date', expiryDate);
+      fd.append('attachment', f);
+      await api.post(`/segment-uploads/supplier/${supplier.db_id}`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await reloadVault();
+      toast.success('Document uploaded', `${f.name} has been attached.`);
+      setOvUpload(null);
+    } catch (e: any) {
+      toast.error('Upload failed', e?.response?.data?.message || 'The file could not be uploaded. Please try again.');
+    }
   };
 
   const docsForTab: VaultDoc[] = tab === 'company-dd' ? vault.company_dd
@@ -590,21 +502,35 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
     : tab === 'trade-licenses' ? vault.trade_licenses
     : tab === 'trade-documents' ? vault.trade_documents
     : [];
-  // A document counts as "uploaded" once it has an attachment; everything
-  // else is "pending". These two are the only header badges we surface.
+
   const isUploaded = (d: VaultDoc) => !!(d.attachment_url || (d.attachment && d.attachment !== '—'));
-  const counts = {
-    Uploaded: docsForTab.filter(isUploaded).length,
-    Pending:  docsForTab.filter(d => !isUploaded(d)).length,
+
+  const stdAll: VaultDoc[] = [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses];
+  const upOf = (rows: VaultDoc[]) => rows.filter(isUploaded).length;
+  const stdTotal = stdAll.length;
+  const stdUp    = upOf(stdAll);
+  const stdPend  = stdTotal - stdUp;
+  const splitOf  = (rows: VaultDoc[]) => ({ up: upOf(rows), pend: rows.length - upOf(rows) });
+
+  const dealRows  = shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? []);
+  const dealDocs  = dealRows.flatMap(r => r.docs ?? []);
+  const dealAgrs  = dealRows.flatMap(r => r.agreements ?? []);
+  const caseAll   = [...dealDocs, ...dealAgrs];
+  const isSigned  = (d: VaultDoc) => d.status === 'Signed' || (d.sig_state ?? '').toLowerCase() === 'completed';
+  const caseSigned  = caseAll.filter(isSigned).length;
+  const caseWaiting = caseAll.filter(d => d.signature_request_id && !isSigned(d)).length;
+  const caseUnsent  = caseAll.filter(d => !d.signature_request_id).length;
+
+  const statusTally = {
+    Verified: docsForTab.filter(d => evEffectiveStatus(d) === 'Verified').length,
+    Signed:   docsForTab.filter(d => evEffectiveStatus(d) === 'Signed').length,
+    Expiring: docsForTab.filter(d => evEffectiveStatus(d) === 'Expiring').length,
+    Expired:  docsForTab.filter(d => evEffectiveStatus(d) === 'Expired').length,
+    Pending:  docsForTab.filter(d => evEffectiveStatus(d) === 'Pending').length,
   };
 
   const tabMeta = TABS.find(t => t.key === tab)!;
 
-  /* Tab badge count. Standard tabs keep their own count key. The case-to-case
-   * tabs render the per-deal matrix, so their badge must follow the active
-   * With/Without Shipment view — otherwise it claims "1" while the table reads
-   * "No shipments". Both sub-tabs share the same deal rows, so both reflect the
-   * current mode's deal count. */
   const tabCount = (t: typeof TABS[number]): number => {
     if (t.group === 'case-to-case') {
       return (shipmentIdMode === 'with' ? (vault.vendor_with_shipment ?? []) : (vault.vendor_without_shipment ?? [])).length;
@@ -616,94 +542,72 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
 
   return createPortal(
     <VaultViewOnlyCtx.Provider value={viewOnly}>
-    <div className="cev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="cev-overlay sev-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <style>{CEV_CSS}</style>
-      {/* With/Without Shipment ID segmented toggle — matches the Figma .ev-shp-toggle
-          (joined bar, not two separate pills). */}
-      <style>{`
-        /* Padded track with a floating, fully-rounded active pill (content-width). */
-        .cev-shp-toggle{display:inline-flex;align-self:flex-start;width:fit-content;align-items:center;gap:2px;padding:3px;border-radius:10px;border:1.5px solid rgba(6,182,212,.2);background:#f0fdff;margin:-6px 18px 6px;}
-        .cev-shp-toggle button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 13px;border:none;border-radius:7px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.01em;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s;background:transparent;color:#94a3b8;}
-        .cev-shp-toggle button:hover:not(.is-active){color:#0891b2;}
-        .cev-shp-toggle button.is-active{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;box-shadow:0 2px 8px rgba(6,182,212,.3);}
-        [data-bs-theme="dark"] .cev-shp-toggle{background:rgba(6,182,212,.08);border-color:rgba(6,182,212,.25);}
-        [data-bs-theme="dark"] .cev-shp-toggle button{color:#7dd3fc;}
-        [data-bs-theme="dark"] .cev-shp-toggle button.is-active{background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;}
-        /* Complete / Partial / Pending status pills in the deal-matrix section header (Figma .ev-spill). */
-        .cev-deal-spill{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;letter-spacing:.01em;}
-        .cev-deal-dot{width:5px;height:5px;border-radius:50%;display:inline-block;flex-shrink:0;}
-        /* Deal-matrix surfaces as CSS variables so the inline-styled table + JS
-           hover flip with the theme (the matrix is Figma-light by default). */
-        .cev-deal{--dl-row:#fff;--dl-zebra:#fafbff;--dl-hover:#f0fdff;--dl-ink:#083344;--dl-sub:#64748b;--dl-muted:#94a3b8;--dl-border:#eef0fa;--dl-line:#e8eaf5;--dl-panel:#fafbff;--dl-docrow:#fff;--dl-docline:#f0f2fa;}
-        [data-bs-theme="dark"] .cev-deal{--dl-row:#101c2b;--dl-zebra:#13212f;--dl-hover:#193044;--dl-ink:#e7f2f7;--dl-sub:#9db2c4;--dl-muted:#7f97aa;--dl-border:rgba(148,197,255,.10);--dl-line:rgba(148,197,255,.12);--dl-panel:#0d1925;--dl-docrow:#101c2b;--dl-docline:rgba(148,197,255,.08);}
-        /* On phones the With/Without toggle fills the row (equal buttons) so it
-           can't overflow at ~320-360px. */
-        @media (max-width: 640px) {
-          .cev-shp-toggle{display:flex;width:auto;margin:-6px 12px 6px;}
-          .cev-shp-toggle button{flex:1;padding:7px 8px;}
-        }
-      `}</style>
-      <div className="cev-card" onMouseDown={(e) => e.stopPropagation()}>
-        {/* ─── HEADER ─── */}
+      <div className="cev-card sev" onMouseDown={(e) => e.stopPropagation()}>
+
         <div className="cev-header">
           <div className="cev-header-bg" aria-hidden />
           <span className="cev-header-orb" aria-hidden />
           <div className="cev-header-content">
             <div className="cev-header-left">
               <div className="cev-vault-icon">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="2" y="3" width="20" height="5" rx="1.5" />
-                  <path d="M4 8v12a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8" />
-                  <line x1="10" y1="13" x2="14" y2="13" />
-                  <line x1="10" y1="17" x2="14" y2="17" />
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="7" width="20" height="14" rx="2.5" />
+                  <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+                  <line x1="12" y1="12" x2="12" y2="15" />
+                  <circle cx="12" cy="16" r=".5" fill="currentColor" />
                 </svg>
                 <span className="cev-vault-icon-tick" aria-hidden>
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>
+                  <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12" /></svg>
                 </span>
               </div>
               <div className="cev-header-text">
                 <div className="cev-header-eyebrow">SUPPLIER EVIDENCE VAULT</div>
-                <div className="cev-header-title">{supplier.company}</div>
-                <div className="cev-header-chips">
-                  <span className="cev-chip cev-chip-id">● {supplier.id}</span>
-                  {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
-                  <span className="cev-chip cev-chip-risk" data-risk={(supplier.risk ?? 'Low').toLowerCase()}>● {supplier.risk ?? 'Low'} Risk</span>
-                  {supplier.contact && (
-                    <span className="cev-chip cev-chip-contact">
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                      {supplier.contact}{supplier.contactCity ? ` · ${supplier.contactCity}` : ''}
-                    </span>
-                  )}
+                <div className="cev-header-title">
+                  <span className="sev-hd-code">{supplier.id}</span>
+                  <span className="sev-hd-dash" aria-hidden>—</span>
+                  <span className="sev-hd-nm">{supplier.company}</span>
                 </div>
-              </div>
-            </div>
-            <div className="cev-header-right">
-              <div className="cev-header-meta">
+
                 {(() => {
-                  /* Cap the inline segment list at 5; the rest collapse into a
-                   * "+N more" chip whose tooltip lists every segment, so a
-                   * supplier with many segments no longer overflows the header. */
                   const segs = (supplier.segments && supplier.segments.length > 0
                     ? supplier.segments
                     : (supplier.segment ? [supplier.segment] : [])
                   ).map(s => String(s).trim()).filter(Boolean);
-                  const shown = segs.slice(0, 5);
-                  const extra = segs.length - shown.length;
+                  const chipSegs = segs.slice(0, 3);
+                  const segRest  = segs.length - chipSegs.length;
+                  const type = (supplier.type ?? '').trim();
+
+                  const showType = !!type && !/^(pending|-|—|n\/a)$/i.test(type);
+                  const risk = (supplier.risk ?? 'Low').replace(/\s*risk$/i, '');
                   return (
-                    <>
-                      {shown.map((s, i) => <Tooltip key={`${s}-${i}`} label={s}><span>{s.length > 20 ? s.slice(0, 20) + '…' : s}</span></Tooltip>)}
-                      {extra > 0 && (
+                    <div className="cev-header-chips">
+
+                      {supplier.customerId && <span className="cev-chip cev-chip-link">↳ {supplier.customerId}</span>}
+                      {chipSegs.map((s, i) => (
+                        <Tooltip key={`${s}-${i}`} label={s}>
+                          <span className="cev-chip cev-chip-seg">{s.length > 22 ? s.slice(0, 22) + '…' : s}</span>
+                        </Tooltip>
+                      ))}
+                      {segRest > 0 && (
                         <button
                           type="button"
-                          className="cev-seg-more"
+                          className="cev-chip cev-chip-seg sev-chip-more"
                           onClick={e => { const b = e.currentTarget.getBoundingClientRect(); setSegPop(prev => prev ? null : { names: segs, x: b.left, y: b.bottom + 6 }); }}
-                        >+{extra} more</button>
+                        >+{segRest} more</button>
                       )}
-                    </>
+                      {showType && <span className="cev-chip cev-chip-type">{type}</span>}
+                      {supplier.contact && <span className="cev-chip cev-chip-contact">{supplier.contact}</span>}
+                      {supplier.contactCity && <span className="cev-chip cev-chip-city">{supplier.contactCity}</span>}
+                      {supplier.country && <span className="cev-chip cev-chip-country">{supplier.country}</span>}
+                      <span className="cev-chip cev-chip-risk" data-risk={risk.toLowerCase()}>{risk} Risk</span>
+                    </div>
                   );
                 })()}
-                {supplier.country && <span>· {supplier.country}</span>}
               </div>
+            </div>
+            <div className="cev-header-right">
               <button type="button" className="cev-close" onClick={onClose} aria-label="Close vault">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
@@ -712,22 +616,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         </div>
 
         {showSkeleton ? <VaultSkeleton /> : (<div className="cev-scroll">
-        {/* ─── KPI STRIP — full-width static stat row (flat columns split by
-             thin dividers, animated top accent line; no horizontal scroll). */}
-        <div className="cev-kpi-outer">
-          <div className="cev-kpi-strip">
-            <KpiTile label="Total Documents"        value={vault.total_documents}        accent="#0e7490" />
-            <KpiTile label="Verified / Signed"      value={vault.verified_signed}        accent="#16a34a" subtitle="✓ COMPLIANT" subTone="good" />
-            <KpiTile label="Pending"                value={vault.pending}                accent="#dc2626" subtitle="⚠ ACTION"    subTone="bad" />
-            <KpiTile label="Company Due Diligence"  value={vault.company_dd_count}       accent="#0891b2" />
-            <KpiTile label="Owner KYC"              value={vault.owner_kyc_count}        accent="#0e7490" />
-            <KpiTile label="Trade License"          value={vault.trade_license_count}    accent="#0891b2" />
-            <KpiTile label="Trade Documents"        value={vault.trade_documents_count}  accent="#0d9488" />
-            <KpiTile label="Total Shipments"        value={vault.total_shipments}        accent="#0c4a6e" />
-          </div>
-        </div>
 
-        {/* ─── GROUP CARDS — Standard Documents vs Case to Case. */}
         <div className="cev-groups-wrap">
           <div className="cev-groups">
             {GROUPS.map(g => (
@@ -737,7 +626,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   className="cev-group-main"
                   onClick={() => selectGroup(g.key)}
                 >
-                  <span className="cev-group-icon"><i className={g.icon} aria-hidden /></span>
+                  <span className="cev-group-icon"><Glyph d={g.icon} size={17} sw={2.1} /></span>
                   <span className="cev-group-text">
                     <span className="cev-group-title">{g.title}</span>
                     <span className="cev-group-sub">{g.sub}</span>
@@ -746,18 +635,35 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 <button
                   type="button"
                   className="cev-group-overview"
-                  onClick={() => { setOverview(g.key); setOverviewPage(1); setOvShip(null); }}
+                  onClick={() => { setOverview(g.key); setOverviewPage(1); }}
                   title="View all documents in one list"
                 >
-                  <i className="ri-list-check-2" aria-hidden /> Document Overview
+                  <Glyph d={VAULT_GLYPHS.list} size={12} sw={2.3} /> {g.overview}
                 </button>
               </div>
             ))}
           </div>
         </div>
 
-        {/* ─── CASE-TO-CASE: With / Without Shipment ID toggle (Figma .ev-shp-toggle).
-               Sits above the Trade Documents / Agreements sub-tabs. */}
+        <div className="sev-stats">
+          {group === 'standard' ? (<>
+            <SevStat tone="slate" icon={VAULT_GLYPHS.file}  label="Total Standard Documents" value={stdTotal} part={stdTotal} whole={stdTotal} split={{ up: stdUp, pend: stdPend }} />
+            <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Verified / Uploaded"   value={stdUp}    part={stdUp}    whole={stdTotal} tag="Compliant" />
+            <SevStat tone="red"   icon={VAULT_GLYPHS.warning}   label="Pending"               value={stdPend}  part={stdPend}  whole={stdTotal} tag="Action needed" />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.home}          label="Company Due Diligence" value={vault.company_dd.length}     part={vault.company_dd.length}     whole={stdTotal} split={splitOf(vault.company_dd)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.user}          label="Owner KYC"             value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.monitor}        label="Trade License"         value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
+          </>) : (<>
+            <SevStat tone="slate" icon={VAULT_GLYPHS.truck}            label="With Shipment ID Transactions" value={(vault.vendor_with_shipment ?? []).length} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.box}   label="All Other Transactions"        value={(vault.vendor_without_shipment ?? []).length} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}         label="Total Trade Documents"         value={dealDocs.length} part={dealDocs.length} whole={caseAll.length} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}    label="Total Agreements"              value={dealAgrs.length} part={dealAgrs.length} whole={caseAll.length} />
+            <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Total Signed"                  value={caseSigned}  part={caseSigned}  whole={caseAll.length} tag="Complete" />
+            <SevStat tone="amber" icon={VAULT_GLYPHS.clock}            label="Pending for Sign"              value={caseWaiting} part={caseWaiting} whole={caseAll.length} tag="Awaiting" />
+            <SevStat tone="red"   icon={VAULT_GLYPHS.send}       label="Not Sent for Signature"        value={caseUnsent}  part={caseUnsent}  whole={caseAll.length} tag="Action needed" />
+          </>)}
+        </div>
+
         {group === 'case-to-case' && (
           <div className="cev-shp-toggle">
             <button type="button" className={shipmentIdMode === 'with' ? 'is-active' : ''} onClick={() => setShipmentIdMode('with')}>
@@ -769,7 +675,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         )}
 
-        {/* ─── SUB-TABS — for the active group. */}
         <div className="cev-tabs-wrap">
           <div className="cev-tabs">
             {TABS.filter(t => t.group === group).map(t => (
@@ -779,7 +684,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 className={`cev-tab ${tab === t.key ? 'is-active' : ''}`}
                 onClick={() => selectTab(t)}
               >
-                <span className="cev-tab-icon"><i className={t.icon} aria-hidden /></span>
+                <span className="cev-tab-icon"><Glyph d={t.icon} size={13} /></span>
                 <span className="cev-tab-label">{t.label}</span>
                 <span className="cev-tab-count">{tabCount(t)}</span>
               </button>
@@ -787,14 +692,11 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           </div>
         </div>
 
-        {/* ─── BODY ─── */}
-        {/* The Shipment Agreements tab adds a Customer=/≠Supplier toggle between
-            the section and the table, so it uses the "fused card" layout. */}
         <div className={`cev-body ${tab === 'shipment-agreements' ? 'cev-body-ship' : ''}`}>
-          {/* Section banner — explains what the active tab holds. */}
+
           <div className="cev-section">
             <div className="cev-section-left">
-              <div className="cev-section-icon"><i className={tabMeta.icon} /></div>
+              <div className="cev-section-icon"><Glyph d={tabMeta.icon} size={16} /></div>
               <div>
                 <div className="cev-section-title">{tabMeta.label}</div>
                 <div className="cev-section-sub">{sectionSub(tab)}</div>
@@ -821,8 +723,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                 <span className="cev-sec-pill cev-sec-pill-docs">{vault.total_shipments} Shipments</span>
               ) : (
                 <>
-                  {counts.Uploaded > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Uploaded {counts.Uploaded}</span>}
-                  {counts.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {counts.Pending}</span>}
+                  {statusTally.Verified > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Verified {statusTally.Verified}</span>}
+                  {statusTally.Signed > 0 && <span className="cev-sec-pill cev-sec-pill-ok"><span className="cev-sec-dot" />Signed {statusTally.Signed}</span>}
+                  {statusTally.Expiring > 0 && <span className="cev-sec-pill sev-sec-pill-warn"><span className="cev-sec-dot" />Expiring {statusTally.Expiring}</span>}
+                  {statusTally.Expired > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Expired {statusTally.Expired}</span>}
+                  {statusTally.Pending > 0 && <span className="cev-sec-pill cev-sec-pill-bad"><span className="cev-sec-dot" />Pending {statusTally.Pending}</span>}
+                  <span className="cev-sec-pill cev-sec-pill-docs">{docsForTab.length} Document{docsForTab.length === 1 ? '' : 's'}</span>
                 </>
               )}
             </div>
@@ -841,9 +747,12 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         </div>
         </div>)}
 
-        {/* ─── FOOTER ─── */}
         <div className="cev-footer">
-          <div className="cev-footer-meta" />
+          <div className="cev-footer-meta">
+            <span className="sev-foot-upd">Last updated:&nbsp;<strong>{vault.last_updated || '—'}</strong></span>
+            <span className="sev-foot-div" aria-hidden />
+            <span className="sev-foot-managed"><i className="ri-shield-check-line" aria-hidden /> Vault managed by Compliance Team</span>
+          </div>
           <div className="cev-footer-actions">
             <Tooltip label="Download all files as a foldered ZIP">
               <button type="button" className="cev-btn cev-btn-light" onClick={handleExportAll} disabled={exporting}>
@@ -861,13 +770,6 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         </div>
       </div>
 
-      {/* Send for Signature — launched from a Trade Documents row. The
-          modal portals to <body>, so it overlays the vault cleanly.
-          multiBox: the ONE resolved signer can be asked to sign the same
-          document in several places (Legal Team #9 / BR-03 of the Multiple
-          Signature Placements spec). It was held back here while the rest of
-          the flows were proven; the spec puts every module in scope, so it is
-          on. Single-signer trade-doc mode only. */}
       <SalesCustomerSendForSignatureModal
         open={Array.isArray(sendDocIds)}
         customer={supplier?.db_id ? {
@@ -875,7 +777,7 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
           db_id:   supplier.db_id,
           company: supplier.company,
           contact: supplier.contact,
-          email:   supplier.email,   // primary contact email → default signer
+          email:   supplier.email,
         } : null}
         modelName="Vendor"
         multiBox
@@ -885,26 +787,27 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         onSent={() => { setSendDocIds(null); void reloadSignatures(); }}
       />
 
-      {/* Document Overview popup — all documents for the chosen group in one
-          flat list (name + status + download). Opened from the "Document
-          Overview" button on each group card. */}
       {overview && (() => {
         const isStd = overview === 'standard';
-        const stdDocs: VaultDoc[] = isStd ? [...vault.company_dd, ...vault.owner_kyc, ...vault.trade_licenses] : [];
-        const c2cDocs: VaultDoc[] = isStd ? [] : vault.trade_documents;
+        type OvRow = { doc: VaultDoc; cat: 'dd' | 'kyc' | 'tl' | 'td' };
+        const stdDocs: OvRow[] = isStd ? [
+          ...vault.company_dd.map(d => ({ doc: d, cat: 'dd' as const })),
+          ...vault.owner_kyc.map(d => ({ doc: d, cat: 'kyc' as const })),
+          ...vault.trade_licenses.map(d => ({ doc: d, cat: 'tl' as const })),
+        ] : [];
+        const c2cDocs: OvRow[] = isStd ? [] : vault.trade_documents.map(d => ({ doc: d, cat: 'td' as const }));
         const title = isStd ? 'Standard Documents — Overview' : 'Case to Case Agreements — Overview';
         const sub = isStd
           ? 'All Company Due Diligence, Owner KYC & Trade Licenses documents in one list'
           : 'All Trade Documents & Agreements in one list';
-        const docs: VaultDoc[] = isStd ? stdDocs : c2cDocs;
-        // Full list — the body scrolls after ~5 rows (see .cev-ov-body
-        // min/max-height) instead of paginating.
+        const docs: OvRow[] = isStd ? stdDocs : c2cDocs;
+
         void overviewPage;
         return (
-          <div className="cev-ov-overlay" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
+          <div className="cev-ov-overlay sev-ov" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setOverview(null); }}>
             <div className="cev-ov-card">
               <div className="cev-ov-head">
-                <span className="cev-ov-head-icon"><i className="ri-list-check-2" aria-hidden /></span>
+                <span className="cev-ov-head-icon"><Glyph d={VAULT_GLYPHS.list} size={18} /></span>
                 <div className="cev-ov-head-text">
                   <div className="cev-ov-title">{title}</div>
                   <div className="cev-ov-sub">{sub}</div>
@@ -913,41 +816,52 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
               </div>
               <div className="cev-ov-body">
                 <table className="cev-ov-table">
-                  <thead><tr><th style={{ width: 60 }}>SR NO</th><th>DOCUMENT NAME</th><th style={{ width: 130 }}>STATUS</th><th style={{ width: 130 }}>ACTION</th></tr></thead>
+                  <thead><tr><th style={{ width: 62 }}>Sr No</th><th>Document Name</th><th style={{ width: 150 }}>Status</th><th style={{ width: 150 }}>Action</th></tr></thead>
                   <tbody>
                     {docs.length === 0 ? (
                       <tr><td colSpan={4} className="cev-ov-empty">No documents available.</td></tr>
-                    ) : docs.map((d, i) => {
+                    ) : docs.map((row, i) => {
+                      const d = row.doc;
                       const absIdx = i;
                       const raw = d.attachment_url;
                       const url = raw ? resolveFileUrl(raw) : null;
                       const fname = d.attachment || `${d.name}.pdf`;
+                      const dlKey = `${overview}-${absIdx}`;
+                      const dling = ovDownloadingKey === dlKey;
+                      const canUpload = !viewOnly && row.cat !== 'td' && !!supplier?.db_id && !!d.doc_code;
                       return (
                         <tr key={`${overview}-${absIdx}`}>
                           <td className="cev-ov-num">{absIdx + 1}</td>
                           <td className="cev-ov-name">{d.name}</td>
-                          <td><StatusPill s={evEffectiveStatus(d)} /></td>
+                          <td><OvStatusPill s={evEffectiveStatus(d)} /></td>
                           <td>
-                            {(() => {
-                              const dlKey = `${overview}-${absIdx}`;
-                              const dling = ovDownloadingKey === dlKey;
-                              return (
-                                <button
-                                  type="button"
-                                  className="cev-ov-dl"
-                                  disabled={!url || dling}
-                                  onClick={async () => {
-                                    if (!url) return;
-                                    setOvDownloadingKey(dlKey);
-                                    try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
-                                  }}
-                                >
-                                  {dling
-                                    ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
-                                    : <><i className="ri-download-2-line" aria-hidden /> Download</>}
-                                </button>
-                              );
-                            })()}
+                            {url ? (
+                              <button
+                                type="button"
+                                className="cev-ov-dl"
+                                disabled={dling}
+                                onClick={async () => {
+                                  setOvDownloadingKey(dlKey);
+                                  try { await downloadFile(url, fname); } finally { setOvDownloadingKey(null); }
+                                }}
+                              >
+                                {dling
+                                  ? <><i className="ri-loader-4-line cev-spin" aria-hidden /> Downloading…</>
+                                  : <><i className="ri-download-2-line" aria-hidden /> Download</>}
+                              </button>
+                            ) : canUpload ? (
+                              <button
+                                type="button"
+                                className="cev-ov-up"
+                                onClick={() => setOvUpload({ doc: d, category: row.cat as 'dd' | 'kyc' | 'tl' })}
+                              >
+                                <i className="ri-upload-2-line" aria-hidden /> Upload
+                              </button>
+                            ) : (
+                              <button type="button" className="cev-ov-dl" disabled>
+                                <i className="ri-download-2-line" aria-hidden /> Download
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -955,17 +869,20 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
                   </tbody>
                 </table>
               </div>
-              {docs.length > 0 && (
-                <div className="cev-ov-pager">
-                  <span className="cev-ov-pager-info">
-                    Showing all <strong>{docs.length}</strong> document{docs.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-              )}
             </div>
           </div>
         );
       })()}
+
+      {ovUpload && (<>
+        <style>{'.avm-cp-backdrop{z-index:13000!important;}html div.master-datepicker-popup{z-index:13100!important;}'}</style>
+        <SegmentRefUploadPopup
+          title={ovUpload.category === 'dd' ? 'DD Document Name' : ovUpload.category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
+          row={{ code: ovUpload.doc.reference || ovUpload.doc.doc_code || '', name: ovUpload.doc.name, authority: ovUpload.doc.authority, requirement: (ovUpload.doc.requirement as 'M' | 'O') || 'M' }}
+          onClose={() => setOvUpload(null)}
+          onSubmit={async (f, expiryDate) => { await submitOvUpload(f, expiryDate); }}
+        />
+      </>)}
 
       {segPop && createPortal(
         <>
@@ -989,31 +906,53 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   );
 }
 
-/* ─── KPI tile — flat stat column (matches the CLM prototype): small uppercase
- *      label, a large tone-coloured number, and an optional status sub-line
- *      (✓ COMPLIANT / ⚠ ACTION). No icon box / gradient chrome. */
-function KpiTile({ label, value, accent, subtitle, subTone }: { label: string; value: number; accent?: string; subtitle?: string; subTone?: 'good' | 'bad' }) {
+function SevStat(props: {
+  tone: 'slate' | 'teal' | 'green' | 'amber' | 'red';
+  icon: ReactNode;
+  label: string;
+  value: number;
+  part?: number;
+  whole?: number;
+  tag?: string;
+  split?: { up: number; pend: number };
+}): ReactNode {
+  const whole = props.whole ?? 0;
+  const part  = props.part ?? 0;
+  const pct   = whole > 0 ? Math.max(0, Math.min(100, Math.round((part / whole) * 100))) : 0;
   return (
-    <div className="cev-kpi-tile">
-      <div className="cev-kpi-label">{label.toUpperCase()}</div>
-      <div className="cev-kpi-value" style={accent ? { color: accent } : undefined}>{value.toLocaleString()}</div>
-      {subtitle && <div className={`cev-kpi-sub ${subTone === 'bad' ? 'is-bad' : 'is-good'}`}>{subtitle}</div>}
+    <div className={`sev-stat sev-stat--${props.tone}`}>
+      <span className="sev-stat-ico"><Glyph d={props.icon} size={11} /></span>
+      {whole > 0 && (
+        <span className="sev-stat-dial">
+          <svg className="sev-stat-ring" viewBox="0 0 40 40" aria-hidden>
+            <circle className="rg-bg" cx="20" cy="20" r="16" pathLength={100} />
+            <circle className="rg-fg" cx="20" cy="20" r="16" pathLength={100} transform="rotate(-90 20 20)" strokeDashoffset={100 - pct} />
+          </svg>
+          <span className="sev-stat-frac">{part}/{whole}</span>
+        </span>
+      )}
+      <div className="sev-stat-label">{props.label}</div>
+      <div className="sev-stat-val">{props.value.toLocaleString()}</div>
+      {props.split ? (
+        <div className="sev-stat-split">
+          <span className={`sev-split-up ${props.split.up === 0 ? 'is-zero' : ''}`}>{props.split.up} uploaded</span>
+          <span className={`sev-split-pd ${props.split.pend === 0 ? 'is-zero' : ''}`}>{props.split.pend} pending</span>
+        </div>
+      ) : props.tag ? <div className="sev-stat-tag">{props.tag}</div> : null}
     </div>
   );
 }
 
-/* ─── Loading skeleton — shimmer placeholders for the whole vault body
-   (KPI ribbon, group cards, tabs, section banner, table). Shown on first
-   load; once it clears, whatever the API returned is what renders. */
 function VaultSkeleton() {
   return (
     <div className="cev-skel">
-      <div className="cev-skel-kpis">
-        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
-      </div>
+
       <div className="cev-skel-groups">
         <div className="cev-skel-group cev-sk" />
         <div className="cev-skel-group cev-sk" />
+      </div>
+      <div className="cev-skel-kpis">
+        {Array.from({ length: 6 }).map((_, i) => <div key={i} className="cev-skel-kpi cev-sk" />)}
       </div>
       <div className="cev-skel-tabs">
         {Array.from({ length: 3 }).map((_, i) => <div key={i} className="cev-skel-tab cev-sk" />)}
@@ -1027,7 +966,6 @@ function VaultSkeleton() {
   );
 }
 
-/* ─── Docs table — used by 4 of the 5 tabs. */
 function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   rows: VaultDoc[];
   tab: TabKey;
@@ -1038,30 +976,19 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
 }) {
   const authorityLbl = tab === 'trade-documents' ? 'Counter Party' : 'Issuing Authority';
-  // Figma column label for the reference/number cell — "Document Number" for
-  // Owner KYC, "License / Number" for Company DD & Trade Licenses.
+
   const codeLbl = tab === 'owner-kyc' ? 'Document Number' : tab === 'trade-documents' ? 'Reference' : 'License / Number';
-  /* Tab → SegmentDocUpload category for the re-upload endpoint. */
+
   const category: 'kyc' | 'dd' | 'tl' | 'td' = tab === 'company-dd' ? 'dd' : tab === 'owner-kyc' ? 'kyc' : tab === 'trade-licenses' ? 'tl' : 'td';
   return (
     <div className="cev-table-wrap">
       <div className="cev-table-scroll">
 
-      {/* Columns (mirrors Figma): Sr No · Document Name · License/Number ·
-          Issuing Authority · Issue Date · Expiry · Attachment · Status · Actions. */}
       <table className="cev-table">
         <thead>
           <tr>
-            <th style={{ width: 56 }}>Sr No</th>
-            {/* Pinned width. The table is width:100% with a 980px min-width, so
-                whenever the row content is narrower than that the browser hands
-                the slack to the widest auto column — Document Name. Owner KYC
-                has the shortest values of the three standard tabs (KYC-001,
-                "N/A" expiry, a 25-char-capped authority), so it collected almost
-                all of it and opened a large empty gap beside the names, while
-                Trade Licenses looked right (QA #67). Fixing the width makes all
-                three tabs match and spreads any remaining slack across the other
-                columns instead of pooling it in one. */}
+            <th style={{ width: 40 }}>Sr No</th>
+
             <th style={{ width: 220 }}>Document Name</th>
             <th>{codeLbl}</th>
             <th>{authorityLbl}</th>
@@ -1069,7 +996,7 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
             <th>Expiry</th>
             <th>Attachment</th>
             <th>Status</th>
-            <th style={{ width: 140 }}>Actions</th>
+            <th style={{ width: 190 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -1109,8 +1036,6 @@ function DocsTable({ rows, tab, ownerType, ownerId, onReload, onSendTradeDoc, on
   );
 }
 
-/* Expiry helpers — parse whatever the row carries (yyyy-mm-dd, dd/mm/yyyy,
- * mm/yyyy, "Lifetime"/"N/A"/"—") and render it as "12-Jan-2027". */
 const EV_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function evParseExpiry(s?: string | null): Date | null {
   if (!s) return null;
@@ -1118,8 +1043,8 @@ function evParseExpiry(s?: string | null): Date | null {
   if (/^(n\/a|—|-|lifetime|varies|)$/i.test(t)) return null;
   let m: RegExpMatchArray | null;
   if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})/)))          return new Date(+m[1], +m[2] - 1, +m[3]);
-  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))   return new Date(+m[3], +m[2] - 1, +m[1]); // dd/mm/yyyy
-  if ((m = t.match(/^(\d{1,2})\/(\d{4})$/)))              return new Date(+m[2], +m[1] - 1, 1);     // mm/yyyy
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))   return new Date(+m[3], +m[2] - 1, +m[1]);
+  if ((m = t.match(/^(\d{1,2})\/(\d{4})$/)))              return new Date(+m[2], +m[1] - 1, 1);
   const d = new Date(t);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -1128,25 +1053,19 @@ function evFmtExpiry(s?: string | null): string {
   if (!d) return s && s.trim() && s.trim() !== '-' ? s.trim() : '—';
   return `${String(d.getDate()).padStart(2, '0')}-${EV_MONTHS[d.getMonth()]}-${d.getFullYear()}`;
 }
-/* Vault expiry → ISO (yyyy-mm-dd) for MasterDatePicker, or '' when the row
- * carries no real date ("Lifetime", "N/A", "—", or anything unparseable).
- * The picker feeds its value straight into `new Date(...)`, so handing it a
- * label produces an Invalid Date and NaNs the whole day grid. */
+
 function evExpiryIso(s?: string | null): string {
   const d = evParseExpiry(s);
   if (!d) return '';
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/* Effective status: a document whose expiry is already in the past reads as
- * "Expired" regardless of its stored status. */
 function evEffectiveStatus(d: VaultDoc): VaultStatus | 'Expired' {
   const exp = evParseExpiry(d.expiry);
   if (exp) { const today = new Date(); today.setHours(0, 0, 0, 0); if (exp < today) return 'Expired'; }
   return d.status;
 }
 
-/* Status pill (Figma): Verified / Expiring / Pending / Signed / Expired — coloured dot + label. */
 function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
   const map: Record<VaultStatus | 'Expired', { bg: string; color: string; border: string; dot: string }> = {
     Verified: { bg: '#dcfce7', color: '#15803d', border: '#bbf7d0', dot: '#22c55e' },
@@ -1163,9 +1082,6 @@ function VaultStatusPill({ status }: { status: VaultStatus | 'Expired' }) {
   );
 }
 
-/* Bound a filename for the View/Download tooltips — a long no-space name
- * (e.g. "PO-PO_2026-27_003_unsigned_final.pdf") otherwise makes the tooltip
- * run off the screen edge. Keep the start + the extension, elide the middle. */
 function clipFileName(s: string, max = 42): string {
   if (!s || s.length <= max) return s;
   const dot = s.lastIndexOf('.');
@@ -1173,13 +1089,6 @@ function clipFileName(s: string, max = 42): string {
   return s.slice(0, Math.max(1, max - ext.length - 1)) + '…' + ext;
 }
 
-/* View / Download / Re-upload actions. View opens the attachment in a new
- * tab; Download triggers a blob save; Re-upload posts to
- * /segment-uploads/{type}/{id} with the same (category, doc_code) tuple so
- * the existing row is replaced server-side. */
-/* Re-upload / Upload popup for an Evidence Vault row. Shows the CURRENT file
- * (so the user sees what's already there), lets them pick a replacement, previews
- * the picked file, then saves. Mirrors the AddVendorModal SegmentRefUploadPopup. */
 function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   doc: VaultDoc;
   category: 'kyc' | 'dd' | 'tl' | 'td' | 'agreement';
@@ -1188,9 +1097,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
   onSubmit: (f: File, opts?: { docName?: string; expiryDate?: string }) => void | Promise<void>;
 }) {
   const toast = useToast();
-  // Standard documents (Company DD / Owner KYC / Trade Licenses) get the rich
-  // form (Auto Code · Document Name · Issuing Authority · Expiry) mirroring the
-  // supplier Edit form's upload popup. Case-to-Case rows keep the plain uploader.
+
   const isStd = category === 'kyc' || category === 'dd' || category === 'tl';
   const noExpiry = (s?: string | null) => !s || /^(lifetime|n\/a|—|-|varies|)$/i.test(s.trim());
   const toISO = (s?: string | null) => {
@@ -1201,7 +1108,7 @@ function VaultReuploadPopup({ doc, category, busy, onClose, onSubmit }: {
     return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
   };
   const [file, setFile] = useState<File | null>(null);
-  const [docName, setDocName] = useState(doc.name || '');
+  const docName = doc.name || '';
   const [hasExpiry, setHasExpiry] = useState(isStd && !noExpiry(doc.expiry));
   const [expiryDate, setExpiryDate] = useState(toISO(doc.expiry));
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -1342,6 +1249,21 @@ const CEV_REUP_CSS = `
 @media (max-width:560px) { .cev-reup-grid { grid-template-columns:1fr; } }
 `;
 
+function OvStatusPill({ s }: { s: VaultStatus | 'Expired' }) {
+  const tone = s === 'Verified' || s === 'Signed' ? ['#ecfdf5', '#059669', '#6ee7b7', '#10b981']
+    : s === 'Expiring' ? ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b']
+    : ['#fef2f2', '#dc2626', '#fecaca', '#ef4444'];
+  return (
+    <span
+      className="sev-ov-pill"
+      style={{ background: `linear-gradient(135deg, ${tone[0]}, #fff)`, color: tone[1], border: `1px solid ${tone[2]}` }}
+    >
+      <span className="sev-ov-pill-dot" style={{ background: tone[3] }} />
+      {s}
+    </span>
+  );
+}
+
 function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTradeDoc, onRemindTradeDoc }: {
   doc: VaultDoc;
   ownerType: 'customer' | 'consignee' | 'supplier';
@@ -1356,24 +1278,16 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   const [reupOpen, setReupOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reminding, setReminding] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [trackerOpen, setTrackerOpen] = useState(false);
   const canTrack = !!doc.signature_request_id;
   const canViewOrDownload = !!doc.attachment_url;
   const canReupload = !!ownerId && !!doc.doc_code;
-  // Standard docs reuse the supplier form's exact upload popup (SegmentRefUploadPopup)
-  // so KYC / DD / Trade License all look identical to the "inside" Edit form.
+
   const isStdCat = category === 'kyc' || category === 'dd' || category === 'tl';
-  // Signing lifecycle for Trade Document rows:
-  //   • signed (completed)   → no Send / no Reminder, View signed + cert only
-  //   • sent (inprogress)    → no Send, Reminder only
-  //   • never sent / dead    → Send available (declined / recalled / expired
-  //                            count as "dead" so a fresh round can start)
+
   const isSigned     = doc.sig_state === 'completed' || doc.status === 'Signed';
   const isInProgress = doc.sig_state === 'inprogress';
-  // Trade Documents AND case-to-case Agreements both support Send / Remind —
-  // ClmSignatureController::send accepts agreement_ids and runs the same Zoho
-  // flow, so the same lifecycle gates (signed / in-progress / fresh) apply.
+
   const isTradeDoc   = (category === 'td' || category === 'agreement') && !!ownerId && !!doc.db_id;
   const canSend   = !viewOnly && isTradeDoc && !!onSendTradeDoc && !isSigned && !isInProgress;
   const canRemind = isTradeDoc && !!onRemindTradeDoc && isInProgress && !!doc.signature_request_id;
@@ -1384,21 +1298,9 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     try { await onRemindTradeDoc(doc); } finally { setReminding(false); }
   };
 
-  // Blob download so it works on the deployed server too (a plain <a download>
-  // is ignored cross-origin / for inline-served files → opens instead of saving).
-  // Spinner while the file streams so the user sees the download is in flight.
-  const download = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try { await downloadFile(doc.attachment_url, doc.attachment ?? undefined); }
-    catch { toast.error('Download failed', 'Could not download the file. Please try again.'); }
-    finally { setDownloading(false); }
-  };
-
   const onPick = async (f: File | undefined, opts?: { docName?: string; expiryDate?: string }): Promise<boolean> => {
     if (!f || !ownerId || !doc.doc_code) return false;
-    // Only PDF / JPG / PNG may be uploaded (Word / Excel are blocked so every
-    // stored attachment can be previewed in-browser via View).
+
     if (!/\.(pdf|jpe?g|png)$/i.test(f.name)) {
       toast.error('Unsupported file type', 'Only PDF, JPG or PNG files are allowed. Word / Excel files are not supported.');
       return false;
@@ -1429,13 +1331,7 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
     <div className="cev-row-actions">
       {reupOpen && (isStdCat ? (
         <>
-          {/* The vault modal sits at z-index 11400; lift the reused popup's
-              backdrop above it so it opens ON TOP, not behind the vault — and the
-              date-picker calendar (default 11100) above the popup.
-              MasterDatePicker.css sets the calendar's z-index via
-              `div.master-datepicker-popup` (specificity 0,1,1) with !important, so a
-              plain `.master-datepicker-popup` override loses and the calendar stays
-              trapped under this backdrop. `html div...` (0,1,2) wins outright. */}
+
           <style>{'.avm-cp-backdrop{z-index:13000!important;}html div.master-datepicker-popup{z-index:13100!important;}'}</style>
           <SegmentRefUploadPopup
             title={category === 'dd' ? 'DD Document Name' : category === 'kyc' ? 'Owner KYC Document Name' : 'Trade License Document Name'}
@@ -1522,51 +1418,33 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
           target={canViewOrDownload ? '_blank' : undefined}
           rel="noreferrer"
           aria-disabled={!canViewOrDownload}
-          className={`cev-row-act cev-row-act-view ${!canViewOrDownload ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-view sev-row-act-txt ${!canViewOrDownload ? 'is-disabled' : ''}`}
           onClick={e => { if (!canViewOrDownload) e.preventDefault(); }}
           aria-label="View"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span>View</span>
         </a>
       </Tooltip>
-      <Tooltip label={!canViewOrDownload ? 'No attachment yet' : (downloading ? 'Downloading…' : `Download ${clipFileName(doc.attachment)}`)}>
-        <button
-          type="button"
-          disabled={!canViewOrDownload || downloading}
-          onClick={download}
-          className={`cev-row-act cev-row-act-download ${!canViewOrDownload ? 'is-disabled' : ''}`}
-          aria-label="Download"
-        >
-          {downloading
-            ? <i className="ri-loader-4-line cev-spin" style={{ fontSize: 13 }} aria-hidden />
-            : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>}
-        </button>
-      </Tooltip>
-      {/* Upload / Re-upload is hidden on the Case-to-Case Trade Documents
-          tab (category 'td') AND on CTC Agreement rows (category
-          'agreement') — those rows are driven by the signature flow
-          (Send / Reminder / signed-file View), not manual file
-          attachment. Standard tabs (KYC / DD / Trade Licenses) keep it.
-          Also hidden in viewOnly mode (e.g. from a With-PO SPI). */}
       {category !== 'td' && category !== 'agreement' && !viewOnly && (
       <Tooltip label={canReupload ? (busy ? 'Uploading…' : (doc.attachment ? 'Re-upload (replace file)' : 'Upload')) : 'Save the record first'}>
         <button
           type="button"
           disabled={!canReupload || busy}
           onClick={() => setReupOpen(true)}
-          className={`cev-row-act cev-row-act-upload ${(!canReupload || busy) ? 'is-disabled' : ''}`}
+          className={`cev-row-act cev-row-act-upload sev-row-act-txt ${(!canReupload || busy) ? 'is-disabled' : ''}`}
           aria-label={doc.attachment ? 'Re-upload' : 'Upload'}
         >
           {busy
-            ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            ? <svg className="cev-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
             : doc.attachment
               ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
               : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>}
+          <span>{doc.attachment ? 'Re-upload' : 'Upload'}</span>
         </button>
       </Tooltip>
       )}
-      {/* Certificate of Completion — only rendered when this row came
-          from a completed Zoho Sign request. */}
+
       {doc.certificate_url && (
         <Tooltip label="Certificate of Completion">
           <a
@@ -1594,18 +1472,6 @@ function VaultRowActions({ doc, ownerType, ownerId, category, onReload, onSendTr
   );
 }
 
-/* ─── Shipment-ID-wise matrix — one row per shipment with the Customer /
- *      Supplier compliance ratios. A Customer = / ≠ Supplier toggle filters
- *      the rows. */
-/* Case-to-Case matrix — shipment-wise (With Shipment ID) or procurement-wise
-   (Without Shipment ID). Reuses the shipment table's chip pills + Ratio cells.
-   The KYC/DD/Lic/Docs ratios are the vendor's overall verified-vs-total. */
-/* ── Vendor deal matrix (Case-to-Case → Trade Documents) ──────────────────
- * Faithful port of the P2P_Sourcing Figma "Trade Documents" matrix: dark-teal
- * gradient header, teal rounded ID pill with a clock glyph, gradient avatar
- * blocks for Customer / Consignee / Supplier, and colour-coded d/t + % ratio
- * cells (green 100% · amber partial · red 0%). Styling is inline to mirror the
- * prototype 1:1. */
 const DEAL_TH: React.CSSProperties = { padding: '10px 8px', fontSize: 7, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
 const DEAL_THC: React.CSSProperties = { ...DEAL_TH, textAlign: 'center' };
 const DEAL_AV_GRADS = [
@@ -1616,8 +1482,7 @@ const DEAL_AV_GRADS = [
 ];
 
 function dealFrac(c?: DealCount) {
-  // Null-safe against a malformed/missing ratio so one bad row can't crash the
-  // whole Case-to-Case table (server is expected to always send {d,t}).
+
   const d = c?.d ?? 0, t = c?.t ?? 0;
   const pct = t > 0 ? Math.round((d / t) * 100) : 0;
   const col = pct === 100 ? '#059669' : pct > 0 ? '#d97706' : '#dc2626';
@@ -1651,17 +1516,12 @@ function DealIdPill({ text }: { text: string }) {
   );
 }
 
-/* Compact Figma drill-down sub-table — small fonts + the Figma columns
- * (# · Document Name · Required · Uploaded On · Valid Upto · Status · Actions),
- * but each row keeps the real VaultRowActions Zoho wiring (Send / Remind /
- * signed-status / certificate / re-upload) so it behaves exactly like the
- * Customer vault. */
 const DEAL_SUB_TH: React.CSSProperties = { padding: '8px 12px', fontSize: 6.5, fontWeight: 700, letterSpacing: '.12em', color: 'rgba(255,255,255,.65)', textTransform: 'uppercase' };
 
 function dealDocState(d: VaultDoc): { label: string; c: [string, string, string, string] } {
   if (d.sig_state === 'completed' || d.status === 'Signed') return { label: 'Signed', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
   if (d.sig_state === 'inprogress') return { label: 'Sent', c: ['#fffbeb', '#d97706', '#fcd34d', '#f59e0b'] };
-  // Declined / recalled read as such (until re-sent) instead of collapsing to Pending.
+
   if (d.sig_state === 'declined' || d.sig_state === 'rejected') return { label: 'Declined', c: ['#fef2f2', '#b91c1c', '#fecaca', '#ef4444'] };
   if (d.sig_state === 'recalled') return { label: 'Recalled', c: ['#fffbeb', '#92400e', '#fde68a', '#f59e0b'] };
   if (d.status === 'Verified') return { label: 'Verified', c: ['#ecfdf5', '#059669', '#a7f3d0', '#10b981'] };
@@ -1674,9 +1534,7 @@ function DealDocsSubTable({ rows, ownerId, onReload, onSendTradeDoc, onRemindTra
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
-  /** 'td' = Trade Documents, 'agreement' = case-to-case Agreements. Both get
-   *  the full Send / Remind / View actions (supplier agreement-send is wired
-   *  through ClmSignatureController::send with agreement_ids). */
+
   category?: 'td' | 'agreement';
   emptyLabel?: string;
 }) {
@@ -1731,11 +1589,11 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
   onReload: () => Promise<void> | void;
   onSendTradeDoc?: (doc: VaultDoc) => void;
   onRemindTradeDoc?: (doc: VaultDoc) => void | Promise<void>;
-  /** Which per-deal doc set the drill-down shows: Trade Documents or Agreements. */
+
   docKind?: 'trade' | 'agreement';
 }) {
   const [open, setOpen] = useState<number | null>(null);
-  // total column count incl. the leading expand-arrow column
+
   const span = (mode === 'with' ? 9 : 7) + 1;
   return (
     <div className="cev-deal" style={{ margin: 0, border: '1.5px solid var(--dl-line)', borderRadius: 8, overflow: 'hidden' }}>
@@ -1785,9 +1643,7 @@ function VendorDealTable({ mode, rows, ownerId, onReload, onSendTradeDoc, onRemi
                   {isOpen && (
                     <tr>
                       <td colSpan={span} style={{ padding: 0, background: 'var(--dl-panel)', borderTop: '1.5px solid var(--dl-line)', borderBottom: '1.5px solid var(--dl-line)' }}>
-                        {/* Compact Figma drill-down — small fonts + Figma columns,
-                            but the same Zoho Send / Remind / signed-status / cert
-                            wiring as the Customer vault (via VaultRowActions). */}
+
                         <DealDocsSubTable rows={docKind === 'agreement' ? (r.agreements ?? []) : (r.docs ?? [])} ownerId={ownerId}
                                           onReload={onReload} onSendTradeDoc={onSendTradeDoc} onRemindTradeDoc={onRemindTradeDoc}
                                           category={docKind === 'agreement' ? 'agreement' : 'td'}
@@ -1863,9 +1719,7 @@ function ShipmentTable({ rows }: { rows: VaultShipmentRow[] }) {
 }
 
 function Ratio({ r }: { r: { ratio: string; pct: number } }) {
-  /* Plain stacked count — bold "X/Y" with the percentage beneath, tinted
-   * by completion (green = complete, amber = partial, red = missing). No
-   * donut/circle — matches the Figma's coloured-number columns. */
+
   const tone = r.pct >= 100 ? 'good' : r.pct >= 50 ? 'mid' : 'bad';
   const status = tone === 'good' ? 'Complete' : tone === 'mid' ? 'Partial' : 'Missing';
   return (

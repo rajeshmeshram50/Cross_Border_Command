@@ -1410,7 +1410,7 @@ class EmployeeController extends Controller
             // designation_id MUST be selected or the belongsTo('designation')
             // eager-load returns null and every label falls back to "(Employee)".
             ->select(['id', 'emp_code', 'display_name', 'first_name', 'last_name', 'designation_id', 'department_id'])
-            ->with(['designation:id,name'])
+            ->with(['designation:id,name', 'department:id,name'])
             ->orderBy('display_name')
             ->get()
             ->map(fn($e) => [
@@ -1423,11 +1423,22 @@ class EmployeeController extends Controller
                 // Position rank (drives the reporting-manager hierarchy filter on
                 // the client — a manager must rank strictly higher than the hire).
                 'rank'          => \App\Support\PositionHierarchy::rankForDesignationName($e->designation?->name),
-                // Show the employee's DESIGNATION in brackets (e.g. "Anushka
-                // Bakde (HOD)") rather than the generic "(Employee)" kind.
-                // Falls back to "Employee" only when no designation is set.
-                'label' => trim($e->display_name ?: trim($e->first_name . ' ' . $e->last_name))
-                    . ' (' . ($e->designation?->name ?: 'Employee') . ')',
+                /* Name — Designation — Department (#210).
+                 *
+                 * The picker used to read "Anushka Bakde (HOD)", which says
+                 * what someone does but not WHERE, so two Team Leaders from
+                 * QA and Finance were indistinguishable and the reporting
+                 * hierarchy could not be read off the list at all. Department
+                 * is what disambiguates them.
+                 *
+                 * Segments are joined rather than formatted with a fixed
+                 * template so a missing department (or designation) collapses
+                 * out instead of leaving a dangling "— " on the row. */
+                'label' => self::managerLabel(
+                    $e->display_name ?: trim($e->first_name . ' ' . $e->last_name),
+                    $e->designation?->name ?: 'Employee',
+                    $e->department?->name,
+                ),
             ]);
 
         // Tenant login users that could plausibly act as managers — only
@@ -1459,15 +1470,30 @@ class EmployeeController extends Controller
         // tied to a login account via employees.user_id). When a user account
         // has an employee record, prefer that employee's designation so the
         // label reads "Name (HOD)" instead of the generic account type.
-        $empDesigByUser = Employee::query()
+        $linkedEmps = Employee::query()
             ->whereIn('user_id', $loginUsers->pluck('id')->all())
-            ->whereNotNull('designation_id')
-            ->with(['designation:id,name'])
-            ->get(['id', 'user_id', 'designation_id'])
-            ->reduce(function ($map, $e) {
-                if ($e->user_id && $e->designation?->name) $map[$e->user_id] = $e->designation->name;
-                return $map;
-            }, []);
+            ->with(['designation:id,name', 'department:id,name'])
+            ->get(['id', 'user_id', 'designation_id', 'department_id']);
+
+        $empDesigByUser = $linkedEmps->reduce(function ($map, $e) {
+            if ($e->user_id && $e->designation?->name) $map[$e->user_id] = $e->designation->name;
+            return $map;
+        }, []);
+
+        /* A login user's DEPARTMENT can only come from the employee record
+         * behind the account — users carry no department of their own. Admins
+         * and Branch Users frequently have none, which is correct: they sit
+         * above the departments rather than inside one, and the label simply
+         * omits the segment for them (#210).
+         *
+         * Note the designation lookup above no longer filters the query by
+         * `whereNotNull('designation_id')` — that would have dropped the
+         * department of anyone whose designation happens to be unset. The
+         * null check moved into the reduce, where it belongs. */
+        $empDeptByUser = $linkedEmps->reduce(function ($map, $e) {
+            if ($e->user_id && $e->department?->name) $map[$e->user_id] = $e->department->name;
+            return $map;
+        }, []);
 
         $loginUsers = $loginUsers->map(fn($u) => [
             'id'    => $u->id,
@@ -1475,17 +1501,43 @@ class EmployeeController extends Controller
             // A login user (Branch User / admin) is the top of the org chart, so
             // it is an eligible manager for every designation.
             'rank'  => \App\Support\PositionHierarchy::TOP_RANK,
-            // Designation in brackets — the linked employee's designation
-            // first, then the user's own designation, finally the readable
-            // user type (e.g. "Client Admin") when none is set.
-            'label' => trim($u->name)
-                . ' (' . (($empDesigByUser[$u->id] ?? $u->designation) ?: ucfirst(str_replace('_', ' ', $u->user_type))) . ')',
+            // Name — Designation — Department (#210). Designation resolves
+            // from the linked employee first, then the user's own designation,
+            // finally the readable user type ("Client Admin") when none is set.
+            'label' => self::managerLabel(
+                $u->name,
+                ($empDesigByUser[$u->id] ?? $u->designation) ?: ucfirst(str_replace('_', ' ', $u->user_type)),
+                $empDeptByUser[$u->id] ?? null,
+            ),
         ]);
 
         return response()->json([
             'employees'   => $employees->values(),
             'login_users' => $loginUsers->values(),
         ]);
+    }
+
+    /**
+     * One reporting-manager option label: "Name — Designation — Department".
+     *
+     * Shared by the employee rows and the login-user rows so the two halves of
+     * the picker can never drift into two different formats — they are merged
+     * into a single dropdown on the client, where a mismatch is immediately
+     * visible.
+     *
+     * Empty segments are dropped rather than rendered blank, so a Branch User
+     * with no department reads "Rahul Sharma — Client Admin" instead of
+     * "Rahul Sharma — Client Admin — ". The name alone is returned when
+     * nothing else is known; the option must never render as an empty row.
+     */
+    private static function managerLabel(?string $name, ?string $designation, ?string $department): string
+    {
+        $parts = array_values(array_filter(
+            [trim((string) $name), trim((string) $designation), trim((string) $department)],
+            fn ($v) => $v !== '',
+        ));
+
+        return $parts === [] ? 'Employee' : implode(' — ', $parts);
     }
 
     /**

@@ -883,6 +883,45 @@
         [data-bs-theme="dark"] .onb-init-toggle-hint { color: #9ca3af; }
         [data-bs-theme="dark"] .onb-init-toggle-label { color: #4ade80; }
 
+        /* PF Applicable stays pinned while Compensation scrolls (#12).
+           SCOPED to this wrapper, not to .onb-init-toggle-row — the same pill
+           is used for the Attendance Tracking switch on Work Details, which
+           sits at the end of a short step and has nothing to stay above.
+
+           top: 0 pins it to .onb-init-main, the wizard's scroll container.
+           Sticky needs an unclipped ancestor chain: .onb-init-section is
+           `overflow: visible` and .onb-init-section-body sets no overflow, so
+           nothing here traps it.
+
+           The negative side margins pull the wrapper out over the section
+           body's 16px padding and the matching padding puts the chip back
+           where it was, so the opaque background reaches the section edges and
+           fields cannot be seen sliding through the gap beside the pill. The
+           vertical padding replaces the chip's own 10px margins, which would
+           otherwise collapse through a wrapper with no padding of its own and
+           leave a transparent strip above the pinned row.
+
+           z-index only has to beat the fields it scrolls over. An open
+           MasterSelect menu is portalled to the body at z-index 12000, so it
+           is never at risk of being covered by this. */
+        .onb-init-toggle-sticky {
+          position: sticky;
+          top: 0;
+          z-index: 3;
+          margin: 0 -16px;
+          padding: 10px 16px 12px;
+          background: #fff;
+        }
+        /* Both outer margins move onto the wrapper as padding. A margin on the
+           first/last child collapses straight through a wrapper that has no
+           padding on that edge, which would leave a transparent strip above
+           and below the pinned block for the rows underneath to show through.
+           The 12px bottom padding is the hint's own bottom margin, so the gap
+           before "Payroll Configuration" is unchanged. */
+        .onb-init-toggle-sticky .onb-init-toggle-row { margin-top: 0; }
+        .onb-init-toggle-sticky .onb-init-toggle-hint { margin-bottom: 0; }
+        [data-bs-theme="dark"] .onb-init-toggle-sticky { background: var(--vz-card-bg); }
+
         .onb-init-info-banner { background: #d3f0ee; border: 1px solid #a8e0d6; border-radius: 9px; padding: 9px 14px; font-size: 11px; color: #0a716a; margin: 10px 0; display: flex; align-items: center; gap: 8px; }
         [data-bs-theme="dark"] .onb-init-info-banner { background: rgba(10,113,106,0.16); border-color: rgba(10,179,156,0.36); color: #4dd4be; }
 

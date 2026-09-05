@@ -26,6 +26,8 @@ const parseISO  = (iso: string) => { const [y,m,d] = iso.split('-').map(Number);
 const toISO     = (d: Date) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const addDays   = (iso: string, n: number) => { const d = parseISO(iso); d.setDate(d.getDate() + n); return toISO(d); };
 const fmtLong   = (iso: string) => { const d = parseISO(iso); return `${WEEK_LABELS[d.getDay()]}, ${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`; };
+/** "2026-08-20" -> "20 Aug 2026" — the exit date on a roster badge (#91). */
+const fmtShort  = (iso: string) => { const d = parseISO(iso); return `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`; };
 const monthKey  = (iso: string) => `${iso.slice(0,7)}`;
 const monthOf   = (iso: string) => MONTHS_SHORT[parseISO(iso).getMonth()];
 const yearOf    = (iso: string) => parseISO(iso).getFullYear();
@@ -47,7 +49,12 @@ type DayStatus =
   | 'Corrected'
   /* Selected date falls before the employee's joining date — the day is out of
      scope for them, NOT an absence (CBC #74). */
-  | 'Not Joined';
+  | 'Not Joined'
+  /* Mirror image: the selected date falls after the employee's last working
+     day. Out of scope, not an absence — a person who has left must not sit in
+     the Absent column for every day since (#91). Only ever seen while the
+     roster is showing exited staff for audit. */
+  | 'Exited';
 
 type CorrStatus = 'Pending' | 'Approved' | 'Rejected';
 
@@ -89,6 +96,15 @@ interface AttendanceEmployee {
   lateMarks: number;
   missingPunch: number;
   logs: AttendanceLog[];
+  /* { "YYYY-MM-DD": "Holiday name" }, running a year past today so the
+     calendar can mark holidays that have not arrived yet (#93). `logs` stops
+     at today by design — attendance for a day that has not happened is not a
+     fact — but a holiday is declared in advance, which is the whole point of
+     announcing one. */
+  holidays?: Record<string, string>;
+  /* Last working day, or null for current staff. Bounds the calendar the way
+     dateOfJoining does at the other end, and badges the roster row (#91). */
+  exitedOn?: string | null;
 }
 
 interface PunchEvent {
@@ -161,6 +177,7 @@ const STATUS_TONE: Record<DayStatus, { fg: string; bg: string; dot: string; labe
   'Corrected':       { fg: '#5b3fd1', bg: '#ede9fe', dot: '#7c5cfc', label: 'Corrected' },
   // Neutral slate on purpose — it must not read as a good or a bad day.
   'Not Joined':      { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Not Joined' },
+  'Exited':          { fg: '#475569', bg: '#f1f5f9', dot: '#94a3b8', label: 'Exited' },
 };
 
 const ACCENTS = ['#7c5cfc', '#0ab39c', '#f7b84b', '#f06548', '#0ea5e9', '#e83e8c', '#0c63b0', '#22c55e', '#a855f7'];
@@ -427,6 +444,15 @@ export default function HrAttendance() {
      `silent` skips the loading flags: a background poll must not blur the list
      the user is reading, and a failed poll must not replace a good roster with
      an error. */
+  /* Audit view — pull exited employees into the roster so their history is
+     reachable from Attendance (#91).
+
+     Off by default and deliberately so: the sheet is about who is working, and
+     a leaver belongs there only when someone is looking for them. With it on
+     the server labels their post-exit days 'Exited' rather than Absent, so
+     they stay out of the Absent chip while they are on screen. */
+  const [includeExited, setIncludeExited] = useState(false);
+
   const rosterReqRef = useRef(0);
   const loadRoster = useCallback((silent = false) => {
     const token = ++rosterReqRef.current;
@@ -434,7 +460,7 @@ export default function HrAttendance() {
       setEmployeesLoading(true);
       setEmployeesError(null);
     }
-    return api.get('/attendance/daily-view', { params: { date: viewDate } })
+    return api.get('/attendance/daily-view', { params: { date: viewDate, ...(includeExited ? { include_exited: 1 } : {}) } })
       .then((res) => {
         if (token !== rosterReqRef.current) return;
         const rows: AttendanceEmployee[] = Array.isArray(res.data) ? res.data : [];
@@ -473,7 +499,7 @@ export default function HrAttendance() {
         if (!silent) setEmployeesLoading(false);
         setRosterLoaded(true);
       });
-  }, [viewDate]);
+  }, [viewDate, includeExited]);
 
   useEffect(() => { loadRoster(); }, [loadRoster, attVersion]);
 
@@ -485,7 +511,10 @@ export default function HrAttendance() {
     if (selectedId == null) { setDetail(null); return Promise.resolve(); }
     const token = ++detailReqRef.current;
     if (!silent) setDetailLoading(true);
-    return api.get('/attendance/daily-view', { params: { date: viewDate, employee_id: selectedId } })
+    /* The flag rides along on the detail read as well: without it the selected
+       leaver is filtered out of the very query meant to load their record, and
+       clicking their name would empty the panel (#91). */
+    return api.get('/attendance/daily-view', { params: { date: viewDate, employee_id: selectedId, ...(includeExited ? { include_exited: 1 } : {}) } })
       .then((res) => {
         if (token !== detailReqRef.current) return;
         const row: AttendanceEmployee | undefined = Array.isArray(res.data) ? res.data[0] : undefined;
@@ -524,7 +553,7 @@ export default function HrAttendance() {
       })
       .catch(() => { if (token === detailReqRef.current && !silent) setDetail(null); })
       .finally(() => { if (token === detailReqRef.current && !silent) setDetailLoading(false); });
-  }, [selectedId, viewDate]);
+  }, [selectedId, viewDate, includeExited]);
 
   /* One employee's full record. Re-runs when the user picks a different name,
      moves to another date, or an approved regularization rewrites the day
@@ -833,6 +862,18 @@ export default function HrAttendance() {
 
                   <div className="att-emplist-meta">
                     <span>{filteredEmployees.length} of {employees.length} employees</span>
+                    {/* The only route from Attendance to a leaver's history
+                        (#91). Sits with the count rather than among the status
+                        tabs: those filter the roster, this changes who is IN
+                        it. */}
+                    <label className="att-emplist-exited" title="Show employees who have left, so their attendance history can be audited">
+                      <input
+                        type="checkbox"
+                        checked={includeExited}
+                        onChange={e => setIncludeExited(e.target.checked)}
+                      />
+                      <span>Include exited</span>
+                    </label>
                   </div>
 
                   <BusyOverlay busy={rosterBusy} className="att-emplist-busy">
@@ -846,6 +887,12 @@ export default function HrAttendance() {
                           <div className="att-emp-info">
                             <div className="att-emp-name">{e.name}</div>
                             <div className="att-emp-meta">{e.empCode} · {e.department}</div>
+                            {/* Say WHEN they left, not just that they did — an
+                                auditor's next move is to pick a date, and this
+                                is the only place that date is on screen (#91). */}
+                            {e.exitedOn && (
+                              <span className="att-emp-exit-pill"><i className="ri-logout-box-r-line" />Left {fmtShort(e.exitedOn)}</span>
+                            )}
                             {e.correction?.status === 'Pending' && (
                               <span className="att-emp-corr-pill"><i className="ri-error-warning-line" />Correction Pending</span>
                             )}
@@ -952,6 +999,11 @@ function TodayRecordCard({
   }, [openInMs]);
   // For an open (today) record, build from the COMPLETED-pairs baseline and add
   // the open stretch capped at 9 PM. Otherwise use the full server figure.
+  /* The day is OPEN when there is a first-in and no last-out. Same condition
+     the LAST OUT tile already uses to print "In Progress", so the two tiles
+     can never disagree about whether the day is finished. */
+  const dayOpen = !!employee.firstIn && employee.lastOut === null;
+
   const liveWorkedSecs = (() => {
     if (openInMs == null) {
       return typeof employee.workedSeconds === 'number' ? employee.workedSeconds : employee.workedMinutes * 60;
@@ -1055,7 +1107,15 @@ function TodayRecordCard({
             <div className="att-stat-label">PUNCHES</div>
           </div>
           <div className="att-stat">
-            <div className="att-stat-num" style={{ color: '#0d9488' }}>{fmtMinutes(Math.floor(liveWorkedSecs / 60))}</div>
+            {/* No out-punch yet -> no worked total to state.
+                The server pads an open day out to its auto-checkout boundary
+                (a payroll rule), so this tile used to print a settled-looking
+                "14h 50m" next to a LAST OUT of "In Progress" -- hours derived
+                from a punch-out that never happened (CBC #81). The figure
+                appears once the day is actually closed. */}
+            <div className="att-stat-num" style={{ color: dayOpen ? '#f59e0b' : '#0d9488' }}>
+              {dayOpen ? <span className="att-in-progress">In Progress</span> : fmtMinutes(Math.floor(liveWorkedSecs / 60))}
+            </div>
             <div className="att-stat-label">WORKED</div>
           </div>
           <div className="att-stat">
@@ -1655,34 +1715,55 @@ function CalendarMonthGrid({
      Sunday as "Weekly Off", so the gate has to live here too (CBC #74). */
   const joinedIso = employee.dateOfJoining || null;
   const preJoin = (iso: string) => !!joinedIso && iso < joinedIso;
+  /* The same gate at the other end of employment (#91). Days after the last
+     working day are out of scope, not absences — and the weekly-off fallback
+     would otherwise paint every Sunday since they left. Reuses the pre-joining
+     styling and the same "not clickable" rule: there is no day panel to open
+     for a date the employee did not work. */
+  const exitedIso = employee.exitedOn || null;
+  const postExit = (iso: string) => !!exitedIso && iso > exitedIso;
+  const outOfService = (iso: string) => preJoin(iso) || postExit(iso);
+  const holidayMap = employee.holidays || {};
+  /* A holiday is known ahead of time, so it paints on future cells — the one
+     thing on this calendar that legitimately outruns today (#93).
+     Ordered after the log deliberately: a holiday somebody actually WORKED has
+     an attendance row and must keep reading Present, not be overpainted by the
+     declaration. Weekly Off stays behind both, and future weekly-offs are still
+     left blank — that is a recurring pattern, not an announcement. */
   const statusFor = (iso: string): DayStatus | null => {
-    if (iso > TODAY_ISO) return null;
-    if (preJoin(iso)) return null;
+    if (outOfService(iso)) return null;
     const fromLog = logByIso.get(iso);
     if (fromLog) return fromLog.status;
+    if (holidayMap[iso]) return 'Holiday';
+    if (iso > TODAY_ISO) return null;
     const d = parseISO(iso);
     if (weeklyOffDays.has(d.getDay())) return 'Weekly Off';
     return null;
   };
 
-  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion };
+  type Cell = { iso: string; day: number; inMonth: boolean; future: boolean; preJoin: boolean; status: DayStatus | null; leavePortion?: AttLeavePortion; holidayName?: string };
+  /* Which holiday it is, for the cell tooltip. Read from the log first so a
+     past day keeps the name the server resolved for it, then from the
+     forward-looking map for days the log does not reach (#93). */
+  const holidayNameFor = (iso: string): string | undefined =>
+    logByIso.get(iso)?.holidayName || holidayMap[iso] || undefined;
   const cells: Cell[] = [];
   const prevMonthLast = new Date(y, m - 1, 0).getDate();
   for (let i = 0; i < startWeekday; i++) {
     const d = new Date(y, m - 2, prevMonthLast - startWeekday + i + 1);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
   }
   for (let day = 1; day <= daysInMonth; day++) {
     const d = new Date(y, m - 1, day);
     const iso = toISO(d);
-    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day, inMonth: true, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
   }
   while (cells.length % 7 !== 0 || cells.length < 42) {
     const idx = cells.length - (startWeekday + daysInMonth) + 1;
     const d = new Date(y, m, idx);
     const iso = toISO(d);
-    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: preJoin(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined });
+    cells.push({ iso, day: d.getDate(), inMonth: false, future: iso > TODAY_ISO, preJoin: outOfService(iso), status: statusFor(iso), leavePortion: logByIso.get(iso)?.leavePortion ?? undefined, holidayName: holidayNameFor(iso) });
     if (cells.length >= 42) break;
   }
 
@@ -1733,11 +1814,18 @@ function CalendarMonthGrid({
           const halfLeave = c.leavePortion === 'first_half' || c.leavePortion === 'second_half';
           const leaveLike = c.status === 'Leave' || c.status === 'Paid Leave' || c.status === 'Unpaid Leave';
           const cellLabel = tone ? (halfLeave && leaveLike ? `Half Day ${tone.label}` : tone.label) : '';
+          /* Name the holiday in the tooltip — "12 — Holiday" says a day is off
+             but not which one, and on a future cell that is the only detail
+             there is to give (#93). */
           const cellTitle = tone
             ? (halfLeave
                 ? `${c.day} — ${LEAVE_PORTION_LABEL[c.leavePortion!]} ${leaveLike ? tone.label : 'leave'}`
-                : `${c.day} — ${tone.label}`)
-            : c.preJoin ? `${c.day} — before joining date` : `${c.day}`;
+                : c.status === 'Holiday' && c.holidayName
+                  ? `${c.day} — ${c.holidayName}`
+                  : `${c.day} — ${tone.label}`)
+            : c.preJoin
+              ? `${c.day} — ${postExit(c.iso) ? 'after last working day' : 'before joining date'}`
+              : `${c.day}`;
           return (
             <button
               key={i}

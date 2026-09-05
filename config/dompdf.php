@@ -31,6 +31,20 @@ return [
         'enable_javascript' => true,
         'enable_remote' => true,
         'allowed_remote_hosts' => null,
+        /*
+         * Socket timeout for the remote fetches 'enable_remote' permits.
+         *
+         * Unset, dompdf falls back to php's default_socket_timeout (60s) PER
+         * remote asset. One <img> pointing at a slow or unreachable host --
+         * an off-site logo, an image pasted into a template from the web --
+         * therefore stalled the whole render for up to a minute, which is the
+         * live PDF preview sitting on "Rendering preview...". Five seconds is
+         * far longer than any asset we legitimately fetch needs, and a miss
+         * now degrades to a missing image instead of a hung request.
+         */
+        'http_context' => [
+            'http' => ['timeout' => 5, 'follow_location' => false],
+        ],
         'font_height_ratio' => 1.1,
         'enable_html5_parser' => true,
     ],

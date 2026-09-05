@@ -1682,6 +1682,28 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
      Exclusivity is a property of the state now rather than something every
      handler has to remember — a fifth menu added later inherits it. The
      setters keep the same shape (boolean or updater) so no call site changed. */
+  /* Re-render the toolbar on every editor transaction.
+     Every button below asks editor.isActive(...) AT RENDER TIME, but Tiptap v3
+     dropped useEditor's automatic re-render on each transaction, so nothing
+     re-ran this component when the caret moved or a mark toggled. The active
+     highlights were therefore repainted only when some UNRELATED render
+     happened to fire -- typing, which bubbles through onUpdate -> onChange ->
+     parent state. That is exactly the reported symptom: press Bold and the
+     button stays unlit until you type a character, and un-pressing it likewise
+     stays lit. Subscribing here makes the toolbar reflect the real mark state
+     on the same tick as the click or caret move.
+
+     'transaction' is the broad signal (covers selection moves, mark toggles on
+     an empty selection -- i.e. stored marks -- content edits and focus), so one
+     listener is enough. */
+  const [, bumpToolbar] = useState(0);
+  useEffect(() => {
+    if (!editor) return;
+    const sync = () => bumpToolbar(n => n + 1);
+    editor.on('transaction', sync);
+    return () => { editor.off('transaction', sync); };
+  }, [editor]);
+
   type ToolMenu = 'link' | 'spacing' | 'table' | 'find' | null;
   const [menu, setMenu] = useState<ToolMenu>(null);
   /* Anchors for the portalled Link and Find panels — measured, not nested. */
@@ -1913,6 +1935,46 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
      for the count or for what Enter steps through. Only computed while the
      panel is open with something typed in it, so a closed Find costs nothing
      even on a 200-page agreement. */
+  /* Clear the match highlights on EVERY way the Find panel can close.
+     The toolbar button cleared them itself, but that is only one exit out of
+     five: clicking outside the panel, Escape, opening another menu (the `menu`
+     state is exclusive, so that closes Find too) and unmounting the editor all
+     bypassed it. The decorations then stayed painted over the document with no
+     panel on screen and no way to dismiss them short of reopening Find and
+     closing it again by the one blessed route -- the reported "searched text
+     stays highlighted after navigating back".
+
+     Hanging it off findOpen makes the clear a consequence of the panel being
+     shut rather than something each close path has to remember, so a sixth one
+     added later inherits it. Guarded on there being something to clear, so it
+     does not dispatch an empty transaction on every unrelated menu change. */
+  useEffect(() => {
+    if (!editor || findOpen) return;
+    const fs: FindState | undefined = findKey.getState(editor.state);
+    if (!fs?.term && !fs?.matches?.length) return;
+    const tr = editor.state.tr.setMeta(findKey, { term: '', matchCase, index: 0, matches: [] });
+
+    /* Also COLLAPSE the selection, when it is the one stepMatch made.
+       Stepping through hits (Enter / the arrows) sets a real TextSelection over
+       the current match -- that is what puts the match on screen and what
+       Replace then acts on. Dropping the decorations alone therefore left the
+       browser's own selection band sitting on the last hit, which reads as
+       "the searched text is still highlighted" just as much as the decorations
+       did, and is very likely what was actually reported: the plain blue
+       selection, not our find styling.
+       Collapsed to the END of the match so the caret lands where the user was
+       reading, ready to type. Only when the selection IS the current match --
+       a selection the user made themselves, or one left by a Replace, is
+       theirs to keep. */
+    const m = fs.matches?.[fs.index];
+    const sel = editor.state.selection;
+    if (m && !sel.empty && sel.from === m.from && sel.to === m.to) {
+      tr.setSelection(TextSelection.create(tr.doc, m.to));
+    }
+    editor.view.dispatch(tr);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, findOpen]);
+
   const findMatches: FindMatch[] = (findOpen && findTerm)
     ? collectMatches(editor.state.doc, findTerm, matchCase)
     : [];

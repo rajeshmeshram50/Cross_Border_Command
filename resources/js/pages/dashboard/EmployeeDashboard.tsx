@@ -1141,7 +1141,22 @@ export default function EmployeeDashboard() {
               <i className="ri-megaphone-line" style={{ color: '#fff', fontSize: 20 }} />
             </span>
             <div className="flex-grow-1 min-w-0">
-              <h4 className="mb-0 fw-bold text-truncate" style={{ color: '#fff', fontWeight: 800, letterSpacing: '0.01em' }}>
+              {/* WRAPS -- it must not be `text-truncate`.
+                  That Bootstrap class is white-space:nowrap + overflow:hidden +
+                  text-overflow:ellipsis, so a long announcement title was cut
+                  off with "..." inside the very popup opened to read it in full
+                  (CBC #1). Truncating in the LIST is fine -- the popup is the
+                  place the whole heading has to be available.
+                  overflow-wrap breaks a single unbroken run (a pasted URL, a
+                  long product code) that would otherwise overflow the header
+                  band even with wrapping allowed. */}
+              <h4
+                className="mb-0 fw-bold"
+                style={{
+                  color: '#fff', fontWeight: 800, letterSpacing: '0.01em',
+                  whiteSpace: 'normal', overflowWrap: 'anywhere', lineHeight: 1.3,
+                }}
+              >
                 {openAnn?.title}
               </h4>
               <small style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>

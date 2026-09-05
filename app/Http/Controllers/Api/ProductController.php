@@ -69,14 +69,21 @@ class ProductController extends Controller
 
     private function applyListFilters($query, Request $request)
     {
-        // Free-text search across the four identifying columns.
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
-            $query->where(function ($w) use ($like) {
+            $query->where(function ($w) use ($like, $q) {
                 $w->where('name', 'ilike', $like)
                     ->orWhere('product_code', 'ilike', $like)
                     ->orWhere('brand', 'ilike', $like)
-                    ->orWhere('generic_name', 'ilike', $like);
+                    ->orWhere('generic_name', 'ilike', $like)
+                    ->orWhereHas('hsn', fn($h) => $h->where('hsn_code', 'ilike', $like));
+
+
+                if (preg_match('/^[A-Za-z]*[\s\-]*0*(\d{1,6})$/', $q, $m)) {
+                    foreach ([1, 2, 3, 4] as $pad) {
+                        $w->orWhere('product_code', 'ilike', '%-' . str_pad($m[1], $pad, '0', STR_PAD_LEFT));
+                    }
+                }
             });
         }
 
@@ -119,7 +126,7 @@ class ProductController extends Controller
          * sidebar's multi-select — folding them into one IN list would turn an
          * AND into an OR and widen the result instead of narrowing it. */
         if ($segmentEq = $request->query('segment_eq')) {
-            $query->whereHas('segment', fn ($w) => $w->where('name', $segmentEq));
+            $query->whereHas('segment', fn($w) => $w->where('name', $segmentEq));
         }
         $inRelation('hsn',       ['hsn_code'],             $list('hsn'));
         $inRelation('uom',       ['short_code', 'title'],  $list('uom'));
@@ -174,10 +181,11 @@ class ProductController extends Controller
         }
 
         /* Relative creation windows from the filter drawer ("Last 7 days",
-         * "Older", …). Several can be ticked at once, so the windows OR
+         * "Last 30 days", …). Several can be ticked at once, so the windows OR
          * together inside one group — otherwise they would cancel each other
-         * out and return nothing. "Older" is everything before the 90-day
-         * cut-off, so the four buckets tile the timeline with no gap. */
+         * out and return nothing. 'older' (everything before the 90-day
+         * cut-off) is still honoured here, though the drawer no longer offers
+         * it as a row. */
         if ($buckets = $list('created_bucket')) {
             $cut = fn(int $days) => now()->subDays($days - 1)->toDateString();
 
@@ -229,22 +237,15 @@ class ProductController extends Controller
         ];
     }
 
-    /**
-     * Edit/delete denial for a product. An HOD manages the WHOLE branch catalog
-     * (like the Director / branch user), so the peer/hierarchy denial is skipped
-     * for them — they can edit/delete any product in their branch, not just the
-     * ones they created. Everyone else falls through to the standard rule.
-     */
     private function editDenial($user, $product, string $action = 'edit'): ?string
     {
-        if ($this->isBranchHod($user, $product)) {
+        if ($this->isBranchMember($user, $product)) {
             return null;
         }
         return MasterVisibility::hierarchicalDenial($user, $product, $action);
     }
 
-    /** True when $user is an HOD employee in the same client + branch as $product. */
-    private function isBranchHod($user, $product): bool
+    private function isBranchMember($user, $product): bool
     {
         if (!$user || ($user->user_type ?? null) !== 'employee') {
             return false;
@@ -252,12 +253,10 @@ class ProductController extends Controller
         if ((int) $user->client_id !== (int) $product->client_id) {
             return false;
         }
-        if ($product->branch_id && (int) $user->branch_id !== (int) $product->branch_id) {
+        if (!$product->branch_id || !$user->branch_id) {
             return false;
         }
-        return \App\Models\Employee::where('user_id', $user->id)
-            ->whereIn('designation_id', \App\Support\DepartmentPermissionSync::hodDesignationIds())
-            ->exists();
+        return (int) $user->branch_id === (int) $product->branch_id;
     }
 
     /* ──────────────────────────────────────────────────────────────────

@@ -1221,6 +1221,7 @@ useEffect(() => {
                                     segment: v.segment,
                                     segments: v.segments,
                                     country: v.country,
+                                    type: v.type,
                                     contact: v.contactName,
                                     contactCity: v.city,
                                     email: v.email && v.email !== '—' ? v.email : undefined,

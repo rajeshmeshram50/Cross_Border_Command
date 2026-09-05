@@ -127,16 +127,25 @@ class ClmBuyerProfileController extends Controller
         // Completed trade-document signatures, per lead + party, keyed by the
         // trade-doc-library id (legacy scalar or the multi-doc JSON array).
         $tdSigByLead = [];   // lead_id → ['Customer'|'Consignee' → set of trade_doc ids]
+        /* A trade document sent from the party's own Evidence Vault or party form
+           carries NO lead_id - it belongs to the customer, not to one deal. Those
+           requests used to be skipped outright, so a document signed that way
+           never moved the profile's Trade Documents ratio however many times it
+           completed. They are collected per party here and credited to the
+           customer list further down; the per-lead map stays lead-only, because
+           the transaction rows below are genuinely per-deal. */
+        $tdSigByParty = [];  // 'Customer'|'Consignee' → party_id → set of trade_doc ids
         foreach (ClmSignatureRequest::where('client_id', $cid)
             ->where('document_type', ClmSignatureRequest::DOC_TRADE)
             ->where('status', 'completed')
-            ->get(['model_name', 'lead_id', 'trade_doc_ids', 'trade_doc_id']) as $sr) {
-            if (!$sr->lead_id) continue;
+            ->get(['model_name', 'party_id', 'lead_id', 'trade_doc_ids', 'trade_doc_id']) as $sr) {
             $party = $sr->model_name === 'Consignee' ? 'Consignee' : 'Customer';
             $ids = is_array($sr->trade_doc_ids) && $sr->trade_doc_ids ? $sr->trade_doc_ids : [$sr->trade_doc_id];
             foreach ((array) $ids as $mid) {
                 $mid = (int) $mid;
-                if ($mid) $tdSigByLead[(int) $sr->lead_id][$party][$mid] = true;
+                if (!$mid) continue;
+                if ($sr->lead_id) $tdSigByLead[(int) $sr->lead_id][$party][$mid] = true;
+                if ($sr->party_id) $tdSigByParty[$party][(int) $sr->party_id][$mid] = true;
             }
         }
 
@@ -528,6 +537,17 @@ class ClmBuyerProfileController extends Controller
            deal. */
         foreach ($buyers as &$b) {
             $b['td'] = $tdByCustomer[(int) $b['db_id']] ?? ['d' => 0, 't' => 0];
+            /* Credit trade documents signed against the PARTY rather than a deal
+               (Evidence Vault / customer form sends carry no lead_id). Without
+               this the ratio never moved once such a document completed - the
+               per-lead accumulation above cannot see them.
+               Capped at the applicable total so the cell can never read more
+               done than exist: a document signed both from a deal and from the
+               vault would otherwise be counted twice. */
+            $partySigned = count($tdSigByParty['Customer'][(int) $b['db_id']] ?? []);
+            if ($partySigned > 0 && $b['td']['t'] > 0) {
+                $b['td']['d'] = min($b['td']['t'], $b['td']['d'] + $partySigned);
+            }
         }
         unset($b);
         /* Consignee → its customer, for the same_as_customer fallback below. */

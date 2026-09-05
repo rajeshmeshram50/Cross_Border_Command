@@ -1164,45 +1164,54 @@ export default function SalesCustomerSendForSignatureModal({
     }
     return settings[activeDocId] ?? { ...DEFAULTS };
   })();
-  const updateActiveSettings = (patch: Partial<DocSettings>) => {
-    if (!activeDocId) return;
+  /* A drag must write to the box it GRABBED, not to "whatever is active now".
+     The pointermove listener is registered once at pointerdown and closes over
+     that render's active role/index, so activating a box and dragging it in the
+     same gesture would otherwise move the previously-selected box. Passing the
+     target explicitly removes that dependency - which is what lets a single
+     press select AND drag, instead of the old click-then-drag. */
+  type BoxTarget = { docId: number; role?: SignerRoleKey | null; boxIdx?: number };
+  const updateActiveSettings = (patch: Partial<DocSettings>, target?: BoxTarget) => {
+    const docId = target?.docId ?? activeDocId;
+    if (!docId) return;
     if (roleMode) {
-      if (!activeSignerRole) return;
-      const role = activeSignerRole;
-      if (activeRoleBoxIdx > 0) {
+      const role = target?.role ?? activeSignerRole;
+      if (!role) return;
+      const boxIdx = target?.boxIdx ?? activeRoleBoxIdx;
+      if (boxIdx > 0) {
         /* An EXTRA box — patch it in place. The primary box, and every existing
          * path that reads or seeds `signerSettings`, stay untouched. */
-        const extraIdx = activeRoleBoxIdx - 1;
+        const extraIdx = boxIdx - 1;
         setRoleExtraBoxes(prev => {
-          const docSlice = prev[activeDocId] ?? {};
+          const docSlice = prev[docId] ?? {};
           const arr = (docSlice[role] ?? []).slice();
           if (!arr[extraIdx]) return prev;
           arr[extraIdx] = { ...DEFAULTS, ...arr[extraIdx], ...patch };
-          return { ...prev, [activeDocId]: { ...docSlice, [role]: arr } };
+          return { ...prev, [docId]: { ...docSlice, [role]: arr } };
         });
         return;
       }
       setSignerSettings(prev => {
         const roleSeed = SIGNER_DEFAULTS[role] ?? DEFAULTS;
-        const docSlice = prev[activeDocId] ?? {};
+        const docSlice = prev[docId] ?? {};
         const cur      = docSlice[role] ?? { ...roleSeed };
         return {
           ...prev,
-          [activeDocId]: { ...docSlice, [role]: { ...roleSeed, ...cur, ...patch } },
+          [docId]: { ...docSlice, [role]: { ...roleSeed, ...cur, ...patch } },
         };
       });
       return;
     }
     if (multiBox) {
       setMultiBoxes(prev => {
-        const arr = (prev[activeDocId] ?? seedBoxes(activeDocId)).slice();
-        const idx = Math.min(activeBoxIdx, arr.length - 1);
+        const arr = (prev[docId] ?? seedBoxes(docId)).slice();
+        const idx = Math.min(target?.boxIdx ?? activeBoxIdx, arr.length - 1);
         arr[idx] = { ...DEFAULTS, ...arr[idx], ...patch };
-        return { ...prev, [activeDocId]: arr };
+        return { ...prev, [docId]: arr };
       });
       return;
     }
-    setSettings(prev => ({ ...prev, [activeDocId]: { ...DEFAULTS, ...prev[activeDocId], ...patch } }));
+    setSettings(prev => ({ ...prev, [docId]: { ...DEFAULTS, ...prev[docId], ...patch } }));
   };
 
   /* multiBox helpers — add / remove / select a signature box for the active doc. */
@@ -1256,6 +1265,10 @@ export default function SalesCustomerSendForSignatureModal({
     mode: 'move' | 'resize';
     startX: number; startY: number;
     initial: DocSettings;
+    /* The box this gesture grabbed. Set when a press both selects and drags a
+       previously inactive box, so the move writes back to it and not to
+       whatever was active when the listener was registered. */
+    target?: BoxTarget;
   } | null>(null);
   /* Track the wrapper width via ResizeObserver so the overlay renders
    * correctly from the FIRST paint after the iframe loads, not after
@@ -1380,8 +1393,14 @@ export default function SalesCustomerSendForSignatureModal({
     pdfDocRef.current = null;
   }, []);
 
-  const onSigPointerDown = (e: React.PointerEvent, mode: 'move' | 'resize') => {
-    if (!activeSettings || !activeDocId) return;
+  /* `seed` / `target` let a press on a NOT-yet-active box start its drag in the
+     same gesture: the drag reads the grabbed box's own coords instead of the
+     active box's, and writes back to that same box. Without them the listener's
+     stale closure would have moved the previously-selected box, which is why
+     the box previously had to be clicked once before it could be dragged. */
+  const onSigPointerDown = (e: React.PointerEvent, mode: 'move' | 'resize', seed?: DocSettings, target?: BoxTarget) => {
+    const base = seed ?? activeSettings;
+    if (!base || !activeDocId) return;
     e.preventDefault();
     e.stopPropagation();
     (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -1396,7 +1415,8 @@ export default function SalesCustomerSendForSignatureModal({
     dragStateRef.current = {
       mode,
       startX: e.clientX, startY: e.clientY,
-      initial: { ...activeSettings },
+      initial: { ...base },
+      target,
     };
     window.addEventListener('pointermove', onSigPointerMove);
     window.addEventListener('pointerup', onSigPointerUp);
@@ -1417,13 +1437,13 @@ export default function SalesCustomerSendForSignatureModal({
     if (drag.mode === 'move') {
       const x = clamp(drag.initial.x + dxPt, 0, A4_W - drag.initial.width);
       const y = clamp(drag.initial.y + dyPt, 0, A4_H - drag.initial.height);
-      updateActiveSettings({ x, y });
+      updateActiveSettings({ x, y }, drag.target);
     } else {
       // Resize from bottom-right: width grows with +dx, height grows
       // with +dy. Top-left (x, y) stays anchored.
       const width  = clamp(drag.initial.width  + dxPt, 40, A4_W - drag.initial.x);
       const height = clamp(drag.initial.height + dyPt, 24, A4_H - drag.initial.y);
-      updateActiveSettings({ width, height });
+      updateActiveSettings({ width, height }, drag.target);
     }
   };
 
@@ -1642,10 +1662,13 @@ export default function SalesCustomerSendForSignatureModal({
                               </>
                             );
                           }
+                          // One line. The dropped half - "click a tab below to reposition that
+                          // signer's box" - is instruction the tabs directly under it already
+                          // convey, and the coordinate pane repeats verbatim; two wrapped lines
+                          // of it pushed the preview down on every open.
                           return (
                             <span className="ssf-banner-ok">
-                              ✓ {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''} resolved — each receives the same PDF and signs on their own box.
-                              {ctxSigners.length > 1 && ' Click a tab below to reposition that signer\'s box.'}
+                              ✓ {ctxSigners.length} signer{ctxSigners.length > 1 ? 's' : ''} resolved · each signs on their own box
                             </span>
                           );
                         })()}
@@ -1677,16 +1700,24 @@ export default function SalesCustomerSendForSignatureModal({
                         ))}
                       </div>
                     )}
-                    {/* Page navigator — flip through the document pages one
-                        at a time (single-page canvas, no browser PDF
-                        scrollbar) and drop the signature box on whichever
-                        page you want. Mirrors the Quotation/PI send modal. */}
+                    {/* Floating page arrows, vertically centred and sticky to the
+                        preview scroller. The bar above scrolls out of view once you
+                        are working near the foot of a tall page, which meant scrolling
+                        back up just to change page after placing a signature. These
+                        stay put. Zero-height sticky wrapper so they overlay the page
+                        without taking layout space; pointer-events only on the
+                        buttons so the page underneath stays draggable. */}
                     {pageCount > 1 && (
-                      <div className="ssf-pagenav">
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(-1)} disabled={viewPage <= 0} aria-label="Previous page">‹ Prev</button>
-                        <span className="ssf-pagenav-label">Page {viewPage + 1} of {pageCount}</span>
-                        <button type="button" className="ssf-pagenav-btn" onClick={() => goPage(1)} disabled={viewPage >= pageCount - 1} aria-label="Next page">Next ›</button>
+                      <div className="ssf-pagenav-side">
+                        <button type="button" className="ssf-pagenav-arrow ssf-pn-left" onClick={() => goPage(-1)} disabled={viewPage <= 0} aria-label="Previous page">&#8249;</button>
+                        <button type="button" className="ssf-pagenav-arrow ssf-pn-right" onClick={() => goPage(1)} disabled={viewPage >= pageCount - 1} aria-label="Next page">&#8250;</button>
                       </div>
+                    )}
+                    {/* Page counter sits ABOVE the sheet, never on it - floated over the
+                        document it landed on top of the text. One short line is the whole
+                        cost now that Prev/Next moved out to the side arrows. */}
+                    {pageCount > 1 && (
+                      <div className="ssf-pagenav-float"><span className="ssf-pagenav-label">Page {viewPage + 1} of {pageCount}</span></div>
                     )}
                     <div className="ssf-preview-wrap" ref={previewWrapRef}>
                       {/* The active page is painted onto this canvas by the
@@ -1728,12 +1759,13 @@ export default function SalesCustomerSendForSignatureModal({
                               style={{ left: leftPx, top: topPx, width: widthPx, height: heightPx }}
                               onPointerDown={(e) => {
                                 if (!isActive) {
-                                  // Clicking another box switches focus to that
-                                  // signer AND that box (drag won't fire on this
-                                  // pointerdown — user clicks again to drag).
-                                  e.stopPropagation();
+                                  // Select AND begin dragging in one press. The
+                                  // grabbed box's own coords are seeded and its
+                                  // identity passed as the drag target, so the
+                                  // move cannot land on the previously active box.
                                   setActiveSignerRole(s.role);
                                   setActiveRoleBoxIdx(bi);
+                                  onSigPointerDown(e, 'move', ds, { docId: activeDocId!, role: s.role, boxIdx: bi });
                                   return;
                                 }
                                 onSigPointerDown(e, 'move');
@@ -1813,7 +1845,13 @@ export default function SalesCustomerSendForSignatureModal({
                               className={`ssf-sig-overlay ${isActive ? 'is-active' : 'is-dim'}`}
                               style={{ left: ds.x * pxPerPt, top: ds.y * pxPerPt, width: ds.width * pxPerPt, height: ds.height * pxPerPt }}
                               onPointerDown={(e) => {
-                                if (!isActive) { e.stopPropagation(); setActiveBoxIdx(i); return; }
+                                if (!isActive) {
+                                  // Same single-press select + drag as the
+                                  // per-role overlay above.
+                                  setActiveBoxIdx(i);
+                                  onSigPointerDown(e, 'move', ds, { docId: activeDocId!, boxIdx: i });
+                                  return;
+                                }
                                 onSigPointerDown(e, 'move');
                               }}
                               tabIndex={isActive ? 0 : -1}
@@ -2698,31 +2736,53 @@ export const SSF_CSS = `
 .ssf-preview-state { color: #475569; font-size: 13px; padding: 32px; }
 /* Prev / Next page navigation above the preview (parity with the
  * Quotation/PI modal's .sds-pagenav). */
-.ssf-pagenav { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.ssf-pagenav-label { font-size: 12.5px; font-weight: 700; color: #334155; min-width: 92px; text-align: center; }
-.ssf-pagenav-btn {
-  border: 1.5px solid #cbd5e1; background: #fff; color: #0f172a;
-  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, border-color .15s;
+.ssf-pagenav-float {
+  display: flex; justify-content: center;
+  margin-bottom: 6px;
 }
-.ssf-pagenav-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-.ssf-pagenav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ssf-pagenav-side { position: sticky; top: 50%; height: 0; width: 100%; max-width: 560px; z-index: 7; pointer-events: none; }
+.ssf-pagenav-arrow {
+  position: absolute; top: 0; transform: translateY(-50%); pointer-events: auto;
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #4f46e5;
+  background: #4f46e5; color: #fff; font-size: 20px; line-height: 1;
+  cursor: pointer; box-shadow: 0 3px 10px rgba(79,70,229,.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.ssf-pagenav-arrow:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.ssf-pagenav-arrow:disabled { opacity: .35; cursor: not-allowed; }
+.ssf-pn-left { left: -52px; } .ssf-pn-right { right: -52px; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow { background: #6366f1; border-color: #6366f1; color: #fff; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow:hover:not(:disabled) { background: #4f46e5; }
+.ssf-pagenav-label {
+  font-size: 11px; font-weight: 700; color: #475569; text-align: center;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.75); border: 1px solid #cbd5e1;
+}
 [data-bs-theme="dark"] .ssf-pagenav-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .ssf-pagenav-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .ssf-pagenav-btn:hover:not(:disabled) { background: #243244; }
 /* Page navigator (Prev / page X of Y / Next) above the canvas preview. */
-.ssf-pagenav { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.ssf-pagenav-label { font-size: 12.5px; font-weight: 700; color: #334155; min-width: 92px; text-align: center; }
-.ssf-pagenav-btn {
-  border: 1.5px solid #cbd5e1; background: #fff; color: #0f172a;
-  border-radius: 8px; padding: 5px 12px; font-size: 12.5px; font-weight: 700; cursor: pointer;
-  transition: background .15s, border-color .15s;
+.ssf-pagenav-float {
+  display: flex; justify-content: center;
+  margin-bottom: 6px;
 }
-.ssf-pagenav-btn:hover:not(:disabled) { background: #f1f5f9; border-color: #94a3b8; }
-.ssf-pagenav-btn:disabled { opacity: .45; cursor: not-allowed; }
+.ssf-pagenav-side { position: sticky; top: 50%; height: 0; width: 100%; max-width: 560px; z-index: 7; pointer-events: none; }
+.ssf-pagenav-arrow {
+  position: absolute; top: 0; transform: translateY(-50%); pointer-events: auto;
+  width: 36px; height: 36px; border-radius: 50%; border: 1.5px solid #4f46e5;
+  background: #4f46e5; color: #fff; font-size: 20px; line-height: 1;
+  cursor: pointer; box-shadow: 0 3px 10px rgba(79,70,229,.35);
+  display: flex; align-items: center; justify-content: center;
+}
+.ssf-pagenav-arrow:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
+.ssf-pagenav-arrow:disabled { opacity: .35; cursor: not-allowed; }
+.ssf-pn-left { left: -52px; } .ssf-pn-right { right: -52px; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow { background: #6366f1; border-color: #6366f1; color: #fff; }
+[data-bs-theme="dark"] .ssf-pagenav-arrow:hover:not(:disabled) { background: #4f46e5; }
+.ssf-pagenav-label {
+  font-size: 11px; font-weight: 700; color: #475569; text-align: center;
+  padding: 2px 10px; border-radius: 20px;
+  background: rgba(255,255,255,.75); border: 1px solid #cbd5e1;
+}
 [data-bs-theme="dark"] .ssf-pagenav-label { color: #cbd5e1; }
-[data-bs-theme="dark"] .ssf-pagenav-btn { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-[data-bs-theme="dark"] .ssf-pagenav-btn:hover:not(:disabled) { background: #243244; }
 
 /* Draggable signature box overlaid on the PDF preview. The corner
  * handle is a child so its own pointerdown can be distinguished from
@@ -2765,8 +2825,8 @@ export const SSF_CSS = `
  * visual mapping between tab / overlay / recipient card. */
 .ssf-signer-tabs {
   display: inline-flex; gap: 6px;
-  margin: 0 auto 10px;
-  padding: 4px;
+  margin: 0 auto 6px;
+  padding: 3px;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -2822,7 +2882,7 @@ export const SSF_CSS = `
 .ssf-sig-overlay-supplier.is-dim  { border-color: #d97706; background: rgba(217, 119, 6, .10); }
 .ssf-sig-overlay.is-dim:hover { opacity: 1; }
 .ssf-sig-overlay.is-dim::before {
-  content: 'click to activate';
+  content: 'drag to position';   /* single press now selects AND drags */
   position: absolute;
   bottom: -18px; left: 0;
   font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
@@ -2835,8 +2895,8 @@ export const SSF_CSS = `
  * boxes do/don't appear. */
 .ssf-signer-banner {
   width: 100%; max-width: 560px;
-  padding: 8px 12px;
-  margin: 0 auto 10px;
+  padding: 5px 10px;
+  margin: 0 auto 6px;
   border-radius: 8px;
   font-size: 12px; line-height: 1.4;
   background: #ecfeff; border: 1px solid #67e8f9;

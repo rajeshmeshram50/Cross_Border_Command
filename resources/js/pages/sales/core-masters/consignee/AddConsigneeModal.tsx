@@ -3001,6 +3001,13 @@ export default function AddConsigneeModal({ open, consignee, onClose, onSaved, p
     <SalesCustomerSendForSignatureModal
       open={Array.isArray(sendForSignature)}
       modelName="Consignee"
+      /* multiBox: the ONE resolved signer can be asked to sign the same
+         document in several places (Legal Team #9 / BR-03). Matches the
+         supplier form and both evidence vaults, which already send this
+         way - the requirement belongs to the document, not the screen it
+         was sent from. Single-signer trade-doc mode only; roleMode takes
+         precedence when a multi-party send sets tradeSigners. */
+      multiBox
       customer={(() => {
         const partyId = (consignee?.db_id ?? savedDbId) ?? null;
         if (!partyId) return null;
