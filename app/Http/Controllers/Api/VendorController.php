@@ -24,6 +24,7 @@ use App\Models\VendorOwner;
 use App\Models\VendorProductMapping;
 use App\Support\MasterBundleCache;
 use App\Support\MasterVisibility;
+use App\Support\SupplierCompliance;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -171,7 +172,109 @@ class VendorController extends Controller
             $q->whereRaw('1 = 0');
         }
 
-        return response()->json($q->paginate((int) $request->query('per_page', 24)));
+        /* ── Refine Suppliers facets ─────────────────────────
+         *
+         * Counted from the query as it stands HERE — after tenant scope, search,
+         * Domestic/International and Fresh/Recurring, but BEFORE the two facet
+         * filters below. That ordering is the point: a facet count says how many
+         * rows ticking it would give, so it must not shrink as the user ticks
+         * things. Cloned from the live query rather than rebuilt, so the counts
+         * can never disagree with the list they belong to.
+         *
+         * The clone drops the eager loads, the ORDER BY and the SELECT list —
+         * withCount() and the opportunity_count literal are columns a grouped
+         * count cannot carry. */
+        $facet = function () use ($q) {
+            $b = clone $q;
+            $b->setEagerLoads([]);
+            $b->reorder();
+            $b->getQuery()->columns = null;
+            return $b;
+        };
+
+        $grandTotal = $facet()->count();
+
+        $catCounts = $facet()
+            ->select('supplier_category')
+            ->selectRaw('count(*) as c')
+            ->groupBy('supplier_category')
+            ->pluck('c', 'supplier_category');
+
+        /* Compliance is DERIVED, not stored.
+         *
+         * It used to read the Compliance Behaviour master — a value somebody
+         * picked by hand, from ten possible states, which then had to be
+         * bucketed into the two the filter offers and went stale the moment a
+         * document lapsed. It is now computed from the documents themselves:
+         * a supplier is Compliant when every MANDATORY doc in its segments'
+         * KYC / DD / Trade Licence / Trade Document sets is on file and
+         * unexpired, and every applicable Supplier agreement is signed.
+         * See App\Support\SupplierCompliance for the full rule.
+         *
+         * Evaluated over the WHOLE scoped set, not the page, because the facet
+         * counts have to cover every supplier the filters could return. One
+         * bulk call, a fixed number of queries — never one per row. */
+        $scopedIds = $facet()->pluck('vendors.id')->map(fn ($x) => (int) $x)->all();
+        $complianceById = SupplierCompliance::statuses(
+            $scopedIds,
+            (int) ($user->client_id ?? optional($user->branch ?? null)->client_id ?? 0)
+        );
+
+        $compliantIds    = [];
+        $nonCompliantIds = [];
+        foreach ($complianceById as $vid => $status) {
+            if ($status === SupplierCompliance::COMPLIANT) $compliantIds[] = $vid;
+            else                                           $nonCompliantIds[] = $vid;
+        }
+        $compliantCount    = count($compliantIds);
+        $nonCompliantCount = count($nonCompliantIds);
+
+        /* Selected facets. Empty means "no narrowing" — never "nothing matches". */
+        $csv = fn (string $key) => array_values(array_filter(array_map(
+            'trim',
+            explode(',', (string) $request->query($key, ''))
+        )));
+
+        if ($cats = $csv('categories')) {
+            $q->whereIn('supplier_category', $cats);
+        }
+
+        /* Narrowed by the ids the evaluation produced. The status is not a
+           column, so it cannot be a WHERE — but the set was just computed over
+           this exact scope, so the ids are already in hand. Now that compliance
+           is derived it is genuinely binary: ticking both is the same as
+           ticking neither, and both arms together are every scoped supplier. */
+        if ($comp = $csv('compliance')) {
+            $wanted = [];
+            if (in_array('compliant', $comp, true))     $wanted = array_merge($wanted, $compliantIds);
+            if (in_array('non_compliant', $comp, true)) $wanted = array_merge($wanted, $nonCompliantIds);
+            $q->whereIn('vendors.id', $wanted ?: [0]);
+        }
+
+        $page = $q->paginate((int) $request->query('per_page', 24));
+
+        /* Stamped on the row rather than resolved again on the client: the pill
+           and the filter must never be able to disagree. */
+        $page->getCollection()->transform(function ($v) use ($complianceById) {
+            $v->setAttribute('compliance_status', $complianceById[(int) $v->id] ?? SupplierCompliance::COMPLIANT);
+            return $v;
+        });
+
+        return response()->json(array_merge($page->toArray(), [
+            'facets' => [
+                'grand_total' => $grandTotal,
+                'category' => [
+                    'star'        => (int) ($catCounts['star'] ?? 0),
+                    'general'     => (int) ($catCounts['general'] ?? 0),
+                    'high_risk'   => (int) ($catCounts['high_risk'] ?? 0),
+                    'blacklisted' => (int) ($catCounts['blacklisted'] ?? 0),
+                ],
+                'compliance' => [
+                    'compliant'     => $compliantCount,
+                    'non_compliant' => $nonCompliantCount,
+                ],
+            ],
+        ]));
     }
 
     /**
@@ -402,7 +505,9 @@ class VendorController extends Controller
             // is "Yes"; storeIdentity() clears it otherwise so a stale number
             // can't leak into the scrutiny form after a Yes → No switch.
             'gst_applicable'           => 'nullable|string|in:Yes,No',
-            'gst_number'               => 'nullable|string|max:20',
+            // 30, not 20: this column holds a GSTIN (15) for a domestic supplier
+            // and a TIN (up to 30) for an international one.
+            'gst_number'               => 'nullable|string|max:30',
             'vendor_type_id'           => 'nullable|integer|exists:master_vendor_types,id',
             // Supplier Type is now a fixed frontend vocabulary (Logistic /
             // Material / Tech Services / Advisory Services / Risk Services).
@@ -418,6 +523,10 @@ class VendorController extends Controller
             'segment_ids'              => 'nullable',
             'classification_id'        => 'nullable|integer|exists:master_customer_classifications,id',
             'compliance_behaviour_id'  => 'nullable|integer|exists:master_compliance_behaviours,id',
+            /* Supplier Category — commercial standing. A fixed four-value list
+               rather than a master FK: the values are product vocabulary and the
+               list's Refine filter counts them by value. */
+            'supplier_category'        => 'nullable|string|in:star,general,high_risk,blacklisted',
             // Registered-office address lives on the SAME "Identification &
             // Address" tab, so persist it here too. Previously the address was
             // only written by storeContacts (primary_address), so saving Stage 1
@@ -461,18 +570,44 @@ class VendorController extends Controller
         $data['segment_id'] = $segIds[0] ?? null;
         unset($data['segment_ids']);   // synced separately, not a vendors column
 
+        $countryId = $data['address']['country_id'] ?? null;
+        $isIndia = $countryId && DB::table('master_countries')
+            ->where('id', $countryId)->whereRaw('LOWER(name) = ?', ['india'])->exists();
+        $isIntl  = $countryId && !$isIndia;
+
         // A GST number only means anything when GST is applicable. Clear it on a
         // Yes → No switch so a stale number can't flow into the GST Scrutiny
         // form, which renders it read-only and therefore can't correct it.
-        if (($data['gst_applicable'] ?? null) === 'No') {
+        //
+        // Domestic only. An international supplier is ALWAYS gst_applicable=No —
+        // GST is Indian — and this same column carries its TIN, so clearing on No
+        // there would wipe the number the form just made mandatory.
+        if (!$isIntl && ($data['gst_applicable'] ?? null) === 'No') {
             $data['gst_number'] = null;
+        }
+
+        // International → the column holds a Tax Identification Number. No single
+        // worldwide shape exists, so the rule is a character set and a length:
+        // 3–30 of letters, digits, hyphen, slash, period and space.
+        if ($isIntl) {
+            $tin = trim((string) ($data['gst_number'] ?? ''));
+            if ($tin === '') {
+                return response()->json([
+                    'message' => 'Tax Identification Number (TIN) is required for an international supplier.',
+                    'errors'  => ['gst_number' => ['Tax Identification Number (TIN) is required.']],
+                ], 422);
+            }
+            if (!preg_match('#^[A-Za-z0-9-/. ]{3,30}$#', $tin)) {
+                return response()->json([
+                    'message' => 'Tax Identification Number (TIN) is invalid.',
+                    'errors'  => ['gst_number' => ['TIN must be 3–30 characters: letters, digits, hyphen, slash, period and spaces only.']],
+                ], 422);
+            }
+            $data['gst_number'] = $tin;
         }
 
         // India → GST is mandatory: an Indian supplier cannot be GST-Applicable = No
         // (an unregistered Indian supplier would sync tax-free and mis-state the bill).
-        $countryId = $data['address']['country_id'] ?? null;
-        $isIndia = $countryId && DB::table('master_countries')
-            ->where('id', $countryId)->whereRaw('LOWER(name) = ?', ['india'])->exists();
         if ($isIndia && ($data['gst_applicable'] ?? null) !== 'Yes') {
             return response()->json([
                 'message' => 'GST is mandatory for an Indian supplier — set GST Applicable to Yes.',
@@ -1025,13 +1160,14 @@ class VendorController extends Controller
     {
         $isIntl = $vendor !== null && !$this->vendorIsIndian($vendor);
 
-        // SWIFT/BIC: 8–11 chars — 6 letters (bank + ISO country) then 2–5
-        // alphanumeric. IFSC: standard RBI format — 4 letters + 0 + 6 alphanumeric.
+        // SWIFT/BIC (ISO 9362): 4 bank letters + 2 ISO country letters + 2
+        // alphanumeric location, then an OPTIONAL 3-char branch — so 8 or 11,
+        // never 9 or 10. IFSC: standard RBI format — 4 letters + 0 + 6 alphanumeric.
         $routingRule = $isIntl
-            ? 'regex:/^[A-Za-z]{6}[A-Za-z0-9]{2,5}$/'
+            ? 'regex:/^[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?$/'
             : 'regex:/^[A-Za-z]{4}0[A-Za-z0-9]{6}$/';
         $routingMsg = $isIntl
-            ? 'SWIFT Code is invalid (8–11 characters: 6 letters then alphanumeric, e.g. HDFCINBBXXX).'
+            ? 'SWIFT / BIC is invalid (8 or 11 characters: 6 letters then alphanumeric, e.g. HDFCINBB or HDFCINBBXXX).'
             : 'IFSC Code is invalid (format: 4 letters + 0 + 6 characters, e.g. HDFC0001234).';
 
         /* Account number splits the same way as the routing code above.
@@ -1615,6 +1751,7 @@ class VendorController extends Controller
                 ? $v->segments->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all()
                 : ($v->segment_id ? [['id' => $v->segment_id, 'name' => optional($v->segment)->title]] : []),
             'compliance_behaviour_id'  => $v->compliance_behaviour_id,
+            'supplier_category'        => $v->supplier_category,
             'compliance_behaviour_name'=> optional($v->complianceBehaviour)->name,
             'classification_id'        => $v->classification_id,
             'classification_name'      => optional($v->classification)->name,

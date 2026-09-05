@@ -663,14 +663,43 @@ class HrGeneratedDocumentController extends Controller
             }
         }
 
-        // Operator overrides — wins over derived values so an HR user can
-        // manually correct an auto-fetched field before generating.
+        /* Operator overrides — win over derived values so an HR user can
+           manually correct an auto-fetched field before generating.
+
+           A date the operator PICKED arrives as the picker's ISO value
+           (2027-02-04), while every built-in date above is printed as
+           "04 Feb 2027". Pasting it through verbatim put both renderings in
+           one letter — the offer date in one style and the signature date
+           three lines below it in another, which reads as two documents
+           stapled together. An ISO date is therefore re-printed in the SAME
+           format as the rest of the document. */
         foreach ($customValues as $name => $val) {
             if (!is_string($name) || $name === '') continue;
-            $tokens[$name] = is_scalar($val) ? (string) $val : '';
+            $tokens[$name] = is_scalar($val)
+                ? $this->normaliseDate((string) $val, $dateFormat)
+                : '';
         }
 
         return $tokens;
+    }
+
+    /**
+     * Re-print a bare ISO date in the document's own date format. Everything
+     * else is returned untouched.
+     *
+     * Deliberately strict, and only YYYY-MM-DD. That is a date picker's output
+     * and effectively nothing else, whereas "2026-2027" is a financial year and
+     * "PO 2026-09" is a reference — neither is a date, and rewriting either
+     * would corrupt a value the operator typed on purpose. The calendar check
+     * is there for the same reason: 2026-02-31 is not a date, so it is left
+     * alone rather than silently rolled forward to 3 March.
+     */
+    private function normaliseDate(string $value, string $format): string
+    {
+        $v = trim($value);
+        if (!preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m)) return $value;
+        if (!checkdate((int) $m[2], (int) $m[3], (int) $m[1]))     return $value;
+        return Carbon::parse($v)->format($format);
     }
 
     /**

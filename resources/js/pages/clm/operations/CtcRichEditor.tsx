@@ -1459,6 +1459,7 @@ export function useCtcEditor(opts: {
   useEffect(() => () => { if (syncTimer.current) window.clearTimeout(syncTimer.current); }, []);
   useEffect(() => { editor?.setEditable(editable); }, [editable, editor]);
 
+
   // External value change (hydration / DOCX / reset) → re-seed without looping.
   useEffect(() => {
     if (!editor) return;
@@ -1722,6 +1723,98 @@ export function CtcToolbar({ editor, dark, hidePageBreak, hideColor, fonts = FON
      query — see stepMatch. A ref, not state: it must not cause a render. */
   const findVisited = useRef(false);
   const [linkUrl, setLinkUrl] = useState('');
+
+  /* ── Toolbar ⇄ editor state synchronisation ──────────────────────────
+     The buttons read editor.isActive(...) at RENDER time, but TipTap v3's
+     useEditor does not re-render on a transaction — shouldRerenderOnTransaction
+     defaults to false. That made the two ways of applying a mark behave
+     differently:
+
+       • Select text, press Bold  → the text turned bold, and the document
+         change forced a render, so the button lit. Looked fine.
+       • Put the caret down, press Bold, then type → the stored mark was set and
+         the typed text WAS bold, but nothing re-rendered until that first
+         character arrived, so the button sat unlit while you decided what to
+         type. Pressing it again to turn it off looked equally dead.
+       • Move the caret into or out of bold text → the button did not follow at
+         all, because moving the caret changes no document.
+
+     This lives in the TOOLBAR, not in whichever component owns the editor.
+     CtcRichEditor and the HR Document Template editor each call useEditor
+     themselves and share only these buttons, so a fix in either wrapper leaves
+     the other one broken — which is exactly what happened.
+
+     shouldRerenderOnTransaction:true would also fix it, by re-rendering on
+     every transaction: a render per keystroke, in editors that deliberately
+     debounce their own onChange for that reason. This watches ONLY what the
+     toolbar draws and re-renders when that changes, so a caret moving inside
+     one bold word costs nothing and the first character that leaves it
+     re-renders once. */
+  const [, bumpToolbar] = useState(0);
+  const toolbarSigRef = useRef('');
+  useEffect(() => {
+    if (!editor) return;
+    const sign = () => [
+      editor.isActive('bold'), editor.isActive('italic'), editor.isActive('underline'),
+      editor.isActive('strike'), editor.isActive('superscript'), editor.isActive('subscript'),
+      editor.isActive('link'), editor.isActive('bulletList'), editor.isActive('orderedList'),
+      editor.isActive('listItem'), editor.isActive('table'),
+      editor.isActive('heading', { level: 1 }), editor.isActive('heading', { level: 2 }),
+      editor.isActive('heading', { level: 3 }),
+      editor.isActive({ textAlign: 'left' }), editor.isActive({ textAlign: 'center' }),
+      editor.isActive({ textAlign: 'right' }), editor.isActive({ textAlign: 'justify' }),
+    ].map(Boolean).join('');
+
+    const sync = () => {
+      const next = sign();
+      if (next === toolbarSigRef.current) return;
+      toolbarSigRef.current = next;
+      bumpToolbar(v => v + 1);
+    };
+
+    sync();
+    /* Both events are needed. selectionUpdate catches the caret moving;
+       transaction catches pressing a button with NO selection, which sets a
+       stored mark and changes nothing else. Neither alone covers both. */
+    editor.on('selectionUpdate', sync);
+    editor.on('transaction', sync);
+    return () => {
+      editor.off('selectionUpdate', sync);
+      editor.off('transaction', sync);
+    };
+  }, [editor]);
+
+  /* ── Leaving Find puts the editor back the way it was ────────────────
+     Two things outlive the panel otherwise:
+
+       1. The highlight decorations. The Find button and Escape both clear
+          them, but they are not the only ways out — clicking away closes the
+          menu (menu → null), and so does opening another popover. Those paths
+          left the document painted with highlights and no panel on screen to
+          explain them.
+       2. The SELECTION. Stepping to a match selects it, so exiting without
+          replacing left the last match sitting there selected. That does not
+          read as "here is your search result"; it reads as "the editor still
+          has this text picked", and the next keystroke would have replaced it.
+
+     Keyed on the panel closing rather than added to each close path, so a
+     close route added later cannot forget to clean up. */
+  const findWasOpen = useRef(false);
+  useEffect(() => {
+    if (findOpen) { findWasOpen.current = true; return; }
+    if (!findWasOpen.current || !editor) return;
+    findWasOpen.current = false;
+
+    let tr = editor.state.tr.setMeta(findKey, { term: '', matchCase: false, index: 0, matches: [] });
+    // Collapse to the END of the match, where a caret would sit after reading
+    // it — not the start, which would look like the cursor jumped backwards.
+    if (!editor.state.selection.empty) {
+      tr = tr.setSelection(TextSelection.create(tr.doc, editor.state.selection.to));
+    }
+    editor.view.dispatch(tr);
+    findVisited.current = false;
+  }, [findOpen, editor]);
+
   if (!editor) return null;
 
   const applyLink = () => {

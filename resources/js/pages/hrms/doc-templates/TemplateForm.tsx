@@ -1270,8 +1270,15 @@ function Step3(props: {
         <div style={{ display: 'flex', gap: 12, alignItems: 'stretch', position: 'relative' }}>
           <div style={{
             flex: '1 1 auto', minWidth: 0,
-            // Reserve the column the out-of-flow preview sits in.
-            marginRight: props.livePreview ? 'calc(34% + 12px)' : undefined,
+            /* Reserve the column the out-of-flow preview sits in.
+               max() mirrors the preview’s OWN width rule below (34%, floored at
+               320px). Reserving a flat 34% did not: once the container fell
+               under ~940px the preview stopped shrinking at its 320px floor
+               while the reservation kept shrinking with the percentage, so the
+               preview — which is absolutely positioned and therefore paints on
+               top — sat over the right edge of the editor and clipped the
+               header. The two numbers have to be the same number. */
+            marginRight: props.livePreview ? 'calc(max(34%, 320px) + 12px)' : undefined,
           }}>
             {/* The page shell wraps the EDITOR COLUMN, not the whole editor.
                 Nesting it the other way round put the placeholder sidebar
