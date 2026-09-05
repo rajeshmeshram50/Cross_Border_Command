@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\LeadProduct;
+use App\Models\ProformaInvoiceItem;
 use App\Models\PurchaseOrderItem;
 use App\Models\SupplierPurchaseInvoiceItem;
 use App\Models\Masters\Conditions;
@@ -257,6 +258,83 @@ class ProductController extends Controller
             return false;
         }
         return (int) $user->branch_id === (int) $product->branch_id;
+    }
+
+    private function issuedDocumentCodes(Product $product, ?int $clientId): array
+    {
+
+        $codes = function ($query, string $table, string $idColumn, bool $softDeletes) use ($clientId) {
+            return $query
+                ->join($table, "{$table}.id", '=', $idColumn)
+                ->where("{$table}.client_id", $clientId)
+                ->when($softDeletes, fn($q) => $q->whereNull("{$table}.deleted_at"))
+                ->distinct()
+                ->orderByDesc("{$table}.id")
+                ->get(["{$table}.id", "{$table}.code"])
+                ->pluck('code');
+        };
+
+        return [
+            'po' => $codes(
+                PurchaseOrderItem::query()->where('purchase_order_items.product_id', $product->id),
+                'purchase_orders',
+                'purchase_order_items.purchase_order_id',
+                true,
+            ),
+            'pi' => $codes(
+                ProformaInvoiceItem::query()->where('proforma_invoice_items.product_id', $product->id),
+                'proforma_invoices',
+                'proforma_invoice_items.proforma_invoice_id',
+                false,
+            ),
+            'spi' => $codes(
+                SupplierPurchaseInvoiceItem::query()->where('supplier_purchase_invoice_items.product_id', $product->id),
+                'supplier_purchase_invoices',
+                'supplier_purchase_invoice_items.supplier_purchase_invoice_id',
+                true,
+            ),
+        ];
+    }
+
+
+    private function gstLockDocuments(Product $product, ?int $clientId, ?array $documents = null): array
+    {
+        $docs = $documents ?? $this->issuedDocumentCodes($product, $clientId);
+
+        return array_values(array_filter([
+            $docs['po']->first(),
+            $docs['pi']->first(),
+            $docs['spi']->first(),
+        ]));
+    }
+
+    /**
+     * Refuse a GST % change on a product that is already on a PO / SPI.
+     * Returns the message to show, or null when the change is allowed.
+     *
+     * Only a real CHANGE is blocked — a re-save that submits the same gst_id
+     * (which every Sales-step save does) passes straight through, and so does
+     * the first mapping on a product that has no rate yet.
+     */
+    private function gstChangeDenial(Product $product, array $data, ?int $clientId): ?string
+    {
+        if (!array_key_exists('gst_id', $data)) {
+            return null;
+        }
+        $incoming = ($data['gst_id'] === null || $data['gst_id'] === '') ? null : (int) $data['gst_id'];
+        $current  = $product->gst_id === null ? null : (int) $product->gst_id;
+        if ($incoming === $current) {
+            return null;
+        }
+
+        $docs = $this->gstLockDocuments($product, $clientId);
+        if (empty($docs)) {
+            return null;
+        }
+
+        return 'GST % cannot be changed — this product is already used in '
+            . implode(' and ', $docs)
+            . '. The tax on that document was calculated from the current rate.';
     }
 
     /* ──────────────────────────────────────────────────────────────────
@@ -591,6 +669,16 @@ class ProductController extends Controller
         if ($product->exists) {
             $denial = $this->editDenial($request->user(), $product, 'edit');
             if ($denial) return response()->json(['message' => $denial], 403);
+
+            // The Core step carries gst_id too (it is mapped at creation), so
+            // the PO/SPI lock has to hold here as well — otherwise the rate
+            // could be changed from Stage 1 while Stage 2 refuses it.
+            if ($gstDenial = $this->gstChangeDenial($product, $data, $request->user()?->client_id)) {
+                return response()->json([
+                    'message' => $gstDenial,
+                    'errors'  => ['gst_id' => [$gstDenial]],
+                ], 422);
+            }
         }
         $ownership = $this->ownershipFor($request);
 
@@ -780,6 +868,13 @@ class ProductController extends Controller
             'mark_bottom' => 'nullable|string|max:30',
         ]);
 
+        if ($denial = $this->gstChangeDenial($product, $data, $request->user()?->client_id)) {
+            return response()->json([
+                'message' => $denial,
+                'errors'  => ['gst_id' => [$denial]],
+            ], 422);
+        }
+
         $product->fill($data);
         // The product form was simplified to two stages (Core → Sales); the
         // Quality step that used to flip 'draft' → 'inactive' is gone, so Sales
@@ -966,31 +1061,14 @@ class ProductController extends Controller
             'customer_name' => $r->customer_name ?: $r->sender_company,
         ])->values();
 
-        /* Newest first, by id rather than by code: the code is only
-         * lexicographically sortable while the sequence stays 3 digits
-         * (PO/2026-27/1000 sorts before .../999), whereas the id is always
-         * creation order. The id has to be in the SELECT list for Postgres to
-         * accept it in ORDER BY alongside DISTINCT — selecting the pair is
-         * also what collapses a document that lists the product twice. */
-        $poCodes = PurchaseOrderItem::query()
-            ->where('purchase_order_items.product_id', $product->id)
-            ->join('purchase_orders', 'purchase_orders.id', '=', 'purchase_order_items.purchase_order_id')
-            ->where('purchase_orders.client_id', $clientId)
-            ->whereNull('purchase_orders.deleted_at')
-            ->distinct()
-            ->orderByDesc('purchase_orders.id')
-            ->get(['purchase_orders.id', 'purchase_orders.code'])
-            ->pluck('code');
-
-        $spiCodes = SupplierPurchaseInvoiceItem::query()
-            ->where('supplier_purchase_invoice_items.product_id', $product->id)
-            ->join('supplier_purchase_invoices', 'supplier_purchase_invoices.id', '=', 'supplier_purchase_invoice_items.supplier_purchase_invoice_id')
-            ->where('supplier_purchase_invoices.client_id', $clientId)
-            ->whereNull('supplier_purchase_invoices.deleted_at')
-            ->distinct()
-            ->orderByDesc('supplier_purchase_invoices.id')
-            ->get(['supplier_purchase_invoices.id', 'supplier_purchase_invoices.code'])
-            ->pluck('code');
+        /* One pass over the issued documents, shared by BOTH locks below and by
+         * the save-time guard (gstChangeDenial → gstLockDocuments), so the
+         * answer the UI gets and the answer the save gives can't drift apart. */
+        $docs         = $this->issuedDocumentCodes($product, $clientId);
+        $poCodes      = $docs['po'];
+        $piCodes      = $docs['pi'];
+        $spiCodes     = $docs['spi'];
+        $gstLockCodes = $this->gstLockDocuments($product, $clientId, $docs);
 
         return response()->json([
             'status' => true,
@@ -999,14 +1077,25 @@ class ProductController extends Controller
                 'lead_count'     => $leads->count(),
                 'blocking_leads' => $leads->where('has_customer', true)->values(),
                 'po_codes'         => $poCodes,
+                'pi_codes'         => $piCodes,
                 'spi_codes'        => $spiCodes,
                 // The one to name in the UI: most recent of each, null when
                 // the product has never been on that document type.
                 'latest_po_code'   => $poCodes->first(),
+                'latest_pi_code'   => $piCodes->first(),
                 'latest_spi_code'  => $spiCodes->first(),
                 'in_po_or_spi'   => $poCodes->isNotEmpty() || $spiCodes->isNotEmpty(),
                 'segment_locked' => $leads->contains('has_customer', true)
                     || $poCodes->isNotEmpty() || $spiCodes->isNotEmpty(),
+
+                /* GST % lock — the segment lock's "issued document" rule plus
+                 * Proforma Invoices: a PI line stores its own tax_pct taken
+                 * from the product's rate, so changing the rate afterwards
+                 * would disagree with a document already sent to the customer.
+                 * (The segment lock reaches PIs the other way round, through
+                 * blocking_leads, which is why its own flag stays as it was.) */
+                'gst_lock_codes' => $gstLockCodes,
+                'gst_locked'     => !empty($gstLockCodes),
             ],
         ]);
     }

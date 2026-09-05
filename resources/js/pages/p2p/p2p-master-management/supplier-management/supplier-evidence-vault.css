@@ -271,6 +271,24 @@
   background: #ffffff;
 }
 
+/* Tab row on the column's gutter. The wrap's 18px padding stacked on the
+   tab's own 14px pushed the first label 32px in, so "Trade Documents" sat
+   noticeably right of the With/Without toggle above it and the section card
+   below — both of which sit at 18px. 4 + 14 = 18 lines all three up while the
+   tab keeps its own padding (hit area and active underline unchanged). */
+.sev .cev-tabs-wrap {
+  padding: 0 4px;
+}
+
+@media (max-width: 900px) {
+  /* The base sheet switches to `10px 14px` here; keep its vertical rhythm and
+     zero only the sides, so the tab's own 14px lands on the 14px gutter the
+     rest of the column uses at this width. */
+  .sev .cev-tabs-wrap {
+    padding: 10px 0;
+  }
+}
+
 /* STAT CARDS */
 .sev .sev-stats {
   display: flex;
@@ -513,17 +531,19 @@
   background: #f59e0b;
 }
 
-/* Footer provenance line. */
+/* Footer provenance line. Only the DATE carries colour — the "Last updated:"
+   label and the "Vault managed by…" note are quiet grey, so the one piece of
+   real information in the row is the one the eye lands on. */
 .sev .cev-footer-meta {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: 11px;
-  color: #64748b;
+  color: #94a3b8;
 }
 
 .sev .sev-foot-upd strong {
-  color: #0e7490;
+  color: #0891b2;
   font-weight: 800;
 }
 
@@ -534,13 +554,15 @@
   display: inline-block;
 }
 
+/* Light grey, icon included (it inherits currentColor) — this line is a
+   footnote, not a status. */
 .sev .sev-foot-managed {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: 10.5px;
   font-weight: 600;
-  color: #0e7490;
+  color: #b0bcc9;
 }
 
 [data-bs-theme="dark"] .sev .sev-stats {
@@ -792,6 +814,15 @@
 
 [data-bs-theme="dark"] .sev .cev-footer-meta {
   color: #9db2c4;
+}
+
+/* Same split on the dark ground: grey note, cyan date. */
+[data-bs-theme="dark"] .sev .sev-foot-managed {
+  color: #7f97aa;
+}
+
+[data-bs-theme="dark"] .sev .sev-foot-upd strong {
+  color: #22d3ee;
 }
 
 [data-bs-theme="dark"] .sev .sev-foot-div {
@@ -1164,8 +1195,48 @@
   padding: 10px 14px;
 }
 
-.sev .cev-btn {
-  padding: 6px 14px;
-  font-size: 11.5px;
+.cev-card.sev .cev-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 16px;
   border-radius: 9px;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: all .18s;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Export All */
+.cev-card.sev .cev-btn-light {
+  gap: 6px;
+  background: linear-gradient(135deg, #cffafe 0%, #a5f3fc 100%);
+  border: 1.5px solid rgba(6, 182, 212, .3);
+  color: #0e7490;
+  box-shadow: 0 2px 8px rgba(6, 182, 212, .15), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+
+.cev-card.sev .cev-btn-light:hover {
+  background: linear-gradient(135deg, #a5f3fc 0%, #67e8f9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(6, 182, 212, .28), inset 0 1px 0 rgba(255, 255, 255, .6);
+}
+
+/* Close Vault */
+.cev-card.sev .cev-btn-dark {
+  gap: 7px;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #0e7490 0%, #0891b2 55%, #06b6d4 100%);
+  border: 1.5px solid rgba(6, 182, 212, .4);
+  color: #fff;
+  box-shadow: 0 3px 14px rgba(8, 145, 178, .45), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+.cev-card.sev .cev-btn-dark:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(8, 145, 178, .55), inset 0 1px 0 rgba(255, 255, 255, .22);
 }

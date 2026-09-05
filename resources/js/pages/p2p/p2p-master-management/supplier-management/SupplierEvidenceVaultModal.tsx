@@ -160,6 +160,7 @@ const VAULT_GLYPHS: Record<string, ReactNode> = {
   warning:        <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></>,
   box:            <><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></>,
   truck:          <><rect x="1" y="3" width="15" height="13" rx="1.5" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></>,
+  tag:            <><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z" /><line x1="7" y1="7" x2="7.01" y2="7" /></>,
   clock:          <><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>,
   send:           <><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></>,
 };
@@ -204,6 +205,148 @@ const EMPTY_VAULT: VaultData = {
   vendor_deal_ratios:      null,
   last_updated:            '—',
 };
+
+/* ══ Case-to-Case demo data ═══════════════════════════════════════
+ * The per-deal half of the vault has no backend feed yet — /vault returns
+ * empty vendor_with_shipment / vendor_without_shipment arrays — so the whole
+ * Case to Case group rendered as "No shipments for this supplier yet." and
+ * every KPI above it read 0.
+ *
+ * Until that API lands, the section is filled from this fixture so the design
+ * is reviewable end to end. It is a FALLBACK, never an override: the moment
+ * the server returns a single deal row, the real data wins (see the `vault`
+ * memo). Delete this block and its two call sites when the endpoint ships.
+ *
+ * The numbers are built to match the approved design: 9 trade documents
+ * (6 signed / 3 pending) + 3 agreements (2 signed / 1 pending) across three
+ * shipments, one complete, one partial, one pending.
+ *
+ * Docs deliberately carry NO db_id, doc_code, attachment_url or
+ * signature_request_id: every row action (send, remind, re-upload, view,
+ * signing tracker) is gated on one of those, so nothing here offers a button
+ * that would call the API with an id that doesn't exist.
+ */
+const demoDoc = (
+  name: string,
+  reference: string,
+  signed: boolean,
+  issue_date: string,
+  expiry: string,
+): VaultDoc => ({
+  name,
+  reference,
+  status: signed ? 'Signed' : 'Pending',
+  sig_state: signed ? 'completed' : null,
+  issue_date: signed ? issue_date : null,
+  expiry: signed ? expiry : null,
+  requirement: 'M',
+  attachment: null,
+  attachment_url: null,
+  db_id: null,
+  signature_request_id: null,
+});
+
+function demoCaseToCase(supplierName: string): {
+  with_shipment: VendorDealRow[];
+  without_shipment: VendorDealRow[];
+} {
+  const s = supplierName || 'Supplier';
+  return {
+    with_shipment: [
+      {
+        sr: 1,
+        shipment_id: 'SHP-001',
+        customer: 'Shree Exports Pvt Ltd',
+        consignee: 'Dubai Trade Hub LLC',
+        supplier: s,
+        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 4 } },
+        docs: [
+          demoDoc('Commercial Invoice',        'INV/2026-27/0148', true,  '12-Jul-2026', '11-Jul-2027'),
+          demoDoc('Packing List',              'PL/2026-27/0148',  true,  '12-Jul-2026', '11-Jul-2027'),
+          demoDoc('Bill of Lading',            'BL/MAEU/778213',   true,  '15-Jul-2026', '14-Jul-2027'),
+          demoDoc('Certificate of Origin',     'COO/2026/00931',   false, '',            ''),
+        ],
+        agreements: [
+          demoDoc('Purchase Agreement',        'PA/2026-27/0041',  true,  '02-Jul-2026', '01-Jul-2028'),
+        ],
+      },
+      {
+        sr: 2,
+        shipment_id: 'SHP-002',
+        customer: 'Nova Foods FZE',
+        consignee: 'Jebel Ali Trade Co',
+        supplier: s,
+        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 3 } },
+        docs: [
+          demoDoc('Commercial Invoice',        'INV/2026-27/0152', true,  '21-Jul-2026', '20-Jul-2027'),
+          demoDoc('Phytosanitary Certificate', 'PSC/2026/01188',   true,  '22-Jul-2026', '21-Oct-2026'),
+          demoDoc('Insurance Certificate',     'INS/2026/00447',   true,  '22-Jul-2026', '21-Jul-2027'),
+        ],
+        agreements: [
+          demoDoc('Supply Agreement',          'SA/2026-27/0018',  true,  '10-Jun-2026', '09-Jun-2028'),
+        ],
+      },
+      {
+        sr: 3,
+        shipment_id: 'SHP-003',
+        customer: 'Bright Star Trading LLC',
+        consignee: 'Colombo Spice House',
+        supplier: s,
+        ratios: { kyc: { d: 2, t: 4 }, dd: { d: 1, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 0, t: 2 } },
+        docs: [
+          demoDoc('Commercial Invoice',        'INV/2026-27/0161', false, '', ''),
+          demoDoc('Inspection Report',         'QC/2026/00612',    false, '', ''),
+        ],
+        agreements: [
+          demoDoc('Non-Disclosure Agreement',  'NDA/2026-27/0009', false, '', ''),
+        ],
+      },
+    ],
+    without_shipment: [
+      {
+        sr: 1,
+        procurement_id: 'PRC-001',
+        supplier: s,
+        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 3, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 3, t: 3 } },
+        docs: [
+          demoDoc('Purchase Order',            'PO/2026-27/0233',  true,  '05-Aug-2026', '04-Aug-2027'),
+          demoDoc('Proforma Invoice',          'PI/2026-27/0233',  true,  '05-Aug-2026', '04-Aug-2027'),
+          demoDoc('Material Test Certificate', 'MTC/2026/00291',   true,  '07-Aug-2026', '06-Aug-2027'),
+        ],
+        agreements: [
+          demoDoc('Supply Agreement',          'SA/2026-27/0021',  true,  '01-Aug-2026', '31-Jul-2028'),
+        ],
+      },
+      {
+        sr: 2,
+        procurement_id: 'PRC-002',
+        supplier: s,
+        ratios: { kyc: { d: 4, t: 4 }, dd: { d: 2, t: 3 }, tl: { d: 3, t: 3 }, td: { d: 2, t: 3 } },
+        docs: [
+          demoDoc('Purchase Order',            'PO/2026-27/0240',  true,  '18-Aug-2026', '17-Aug-2027'),
+          demoDoc('Weighment Slip',            'WS/2026/00874',    true,  '19-Aug-2026', '18-Aug-2027'),
+          demoDoc('Quality Analysis Report',   'QAR/2026/00512',   false, '', ''),
+        ],
+        agreements: [
+          demoDoc('Purchase Agreement',        'PA/2026-27/0046',  true,  '12-Aug-2026', '11-Aug-2028'),
+        ],
+      },
+      {
+        sr: 3,
+        procurement_id: 'PRC-003',
+        supplier: s,
+        ratios: { kyc: { d: 1, t: 4 }, dd: { d: 0, t: 3 }, tl: { d: 2, t: 3 }, td: { d: 0, t: 2 } },
+        docs: [
+          demoDoc('Purchase Order',            'PO/2026-27/0248',  false, '', ''),
+          demoDoc('Delivery Challan',          'DC/2026/00355',    false, '', ''),
+        ],
+        agreements: [
+          demoDoc('Non-Disclosure Agreement',  'NDA/2026-27/0012', false, '', ''),
+        ],
+      },
+    ],
+  };
+}
 
 export default function SupplierEvidenceVaultModal({ open, supplier, onClose, data, viewOnly = false, onVaultChange }: Props) {
   const toast = useToast();
@@ -383,12 +526,19 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
       return { ...r, docs, agreements, ratios: { ...r.ratios, td: { d: signed, t: docs.length } } };
     });
 
+    /* Case-to-Case has no API yet — fall back to the fixture ONLY when the
+       server returned nothing on both sides. One real deal row and the demo
+       data is out of the picture entirely. */
+    const hasLiveDeals = (base.vendor_with_shipment?.length ?? 0) > 0
+      || (base.vendor_without_shipment?.length ?? 0) > 0;
+    const demo = hasLiveDeals ? null : demoCaseToCase(supplier.company);
+
     return {
       ...base,
       trade_documents: mergedTd as typeof base.trade_documents,
       trade_documents_count: mergedTd.length,
-      vendor_with_shipment:    overlayRows(base.vendor_with_shipment),
-      vendor_without_shipment: overlayRows(base.vendor_without_shipment),
+      vendor_with_shipment:    overlayRows(demo ? demo.with_shipment : base.vendor_with_shipment),
+      vendor_without_shipment: overlayRows(demo ? demo.without_shipment : base.vendor_without_shipment),
 
       verified_signed: Math.max(0, (base.verified_signed ?? 0) - baseSegmentSigned) + mergedSigned,
       pending:         Math.max(0, (base.pending ?? 0)         - baseSegmentPending) + mergedPending,
@@ -519,7 +669,25 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
   const isSigned  = (d: VaultDoc) => d.status === 'Signed' || (d.sig_state ?? '').toLowerCase() === 'completed';
   const caseSigned  = caseAll.filter(isSigned).length;
   const caseWaiting = caseAll.filter(d => d.signature_request_id && !isSigned(d)).length;
-  const caseUnsent  = caseAll.filter(d => !d.signature_request_id).length;
+  /* Whatever is neither signed nor in flight. Counting "has no signature
+     request" instead put an already-signed document (signed offline, so no
+     request row) under "Not sent", and the three buckets stopped adding up to
+     the total the rings are drawn against. */
+  const caseUnsent  = Math.max(0, caseAll.length - caseSigned - caseWaiting);
+
+  const withShipCount    = (vault.vendor_with_shipment ?? []).length;
+  const withoutShipCount = (vault.vendor_without_shipment ?? []).length;
+  /* A deal is "complete" when every one of its four ratios is satisfied. */
+  const dealSplit = (rows?: VendorDealRow[]) => {
+    const list = rows ?? [];
+    const done = (c?: { d: number; t: number }) => (c?.t ?? 0) > 0 && c!.d >= c!.t;
+    const complete = list.filter(r => done(r.ratios?.kyc) && done(r.ratios?.dd) && done(r.ratios?.tl) && done(r.ratios?.td)).length;
+    return { up: complete, pend: list.length - complete, upLabel: 'complete', pendLabel: 'pending' };
+  };
+  const docSplit = (rows: VaultDoc[]) => {
+    const signed = rows.filter(isSigned).length;
+    return { up: signed, pend: rows.length - signed, upLabel: 'signed', pendLabel: 'pending' };
+  };
 
   const statusTally = {
     Verified: docsForTab.filter(d => evEffectiveStatus(d) === 'Verified').length,
@@ -654,10 +822,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
             <SevStat tone="teal"  icon={VAULT_GLYPHS.user}          label="Owner KYC"             value={vault.owner_kyc.length}      part={vault.owner_kyc.length}      whole={stdTotal} split={splitOf(vault.owner_kyc)} />
             <SevStat tone="teal"  icon={VAULT_GLYPHS.monitor}        label="Trade License"         value={vault.trade_licenses.length} part={vault.trade_licenses.length} whole={stdTotal} split={splitOf(vault.trade_licenses)} />
           </>) : (<>
-            <SevStat tone="slate" icon={VAULT_GLYPHS.truck}            label="With Shipment ID Transactions" value={(vault.vendor_with_shipment ?? []).length} />
-            <SevStat tone="slate" icon={VAULT_GLYPHS.box}   label="All Other Transactions"        value={(vault.vendor_without_shipment ?? []).length} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}         label="Total Trade Documents"         value={dealDocs.length} part={dealDocs.length} whole={caseAll.length} />
-            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}    label="Total Agreements"              value={dealAgrs.length} part={dealAgrs.length} whole={caseAll.length} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.box}         label="With Shipment ID Transactions" value={withShipCount}    part={withShipCount}    whole={withShipCount}    split={dealSplit(vault.vendor_with_shipment)} />
+            <SevStat tone="slate" icon={VAULT_GLYPHS.tag}         label="All Other Transactions"        value={withoutShipCount} part={withoutShipCount} whole={withoutShipCount} split={dealSplit(vault.vendor_without_shipment)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.file}        label="Total Trade Documents"         value={dealDocs.length} part={dealDocs.length} whole={caseAll.length} split={docSplit(dealDocs)} />
+            <SevStat tone="teal"  icon={VAULT_GLYPHS.fileLines}   label="Total Agreements"              value={dealAgrs.length} part={dealAgrs.length} whole={caseAll.length} split={docSplit(dealAgrs)} />
             <SevStat tone="green" icon={VAULT_GLYPHS.checkCircle} label="Total Signed"                  value={caseSigned}  part={caseSigned}  whole={caseAll.length} tag="Complete" />
             <SevStat tone="amber" icon={VAULT_GLYPHS.clock}            label="Pending for Sign"              value={caseWaiting} part={caseWaiting} whole={caseAll.length} tag="Awaiting" />
             <SevStat tone="red"   icon={VAULT_GLYPHS.send}       label="Not Sent for Signature"        value={caseUnsent}  part={caseUnsent}  whole={caseAll.length} tag="Action needed" />
@@ -667,10 +835,10 @@ export default function SupplierEvidenceVaultModal({ open, supplier, onClose, da
         {group === 'case-to-case' && (
           <div className="cev-shp-toggle">
             <button type="button" className={shipmentIdMode === 'with' ? 'is-active' : ''} onClick={() => setShipmentIdMode('with')}>
-              <i className="ri-time-line" aria-hidden />With Shipment ID
+              <i className="ri-time-line" aria-hidden />With Shipment ID Transactions
             </button>
             <button type="button" className={shipmentIdMode === 'without' ? 'is-active' : ''} onClick={() => setShipmentIdMode('without')}>
-              <i className="ri-file-list-2-line" aria-hidden />Without Shipment ID
+              <i className="ri-file-list-2-line" aria-hidden />All Other Transactions (With Procurement ID)
             </button>
           </div>
         )}
@@ -914,7 +1082,10 @@ function SevStat(props: {
   part?: number;
   whole?: number;
   tag?: string;
-  split?: { up: number; pend: number };
+  /* `upLabel` / `pendLabel` default to the Standard group's wording
+     ("uploaded" / "pending"); the Case-to-Case cards pass their own
+     ("complete", "signed") since nothing is uploaded there. */
+  split?: { up: number; pend: number; upLabel?: string; pendLabel?: string };
 }): ReactNode {
   const whole = props.whole ?? 0;
   const part  = props.part ?? 0;
@@ -935,8 +1106,8 @@ function SevStat(props: {
       <div className="sev-stat-val">{props.value.toLocaleString()}</div>
       {props.split ? (
         <div className="sev-stat-split">
-          <span className={`sev-split-up ${props.split.up === 0 ? 'is-zero' : ''}`}>{props.split.up} uploaded</span>
-          <span className={`sev-split-pd ${props.split.pend === 0 ? 'is-zero' : ''}`}>{props.split.pend} pending</span>
+          <span className={`sev-split-up ${props.split.up === 0 ? 'is-zero' : ''}`}>{props.split.up} {props.split.upLabel ?? 'uploaded'}</span>
+          <span className={`sev-split-pd ${props.split.pend === 0 ? 'is-zero' : ''}`}>{props.split.pend} {props.split.pendLabel ?? 'pending'}</span>
         </div>
       ) : props.tag ? <div className="sev-stat-tag">{props.tag}</div> : null}
     </div>

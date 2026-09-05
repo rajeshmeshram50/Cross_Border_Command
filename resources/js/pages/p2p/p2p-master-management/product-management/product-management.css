@@ -3634,6 +3634,11 @@
 }
 
 [data-bs-theme="dark"] .prd-filter-body {
+  /* The scroll container carries `background: #fff` in light mode and had no
+     dark counterpart, so it painted white OVER the drawer's #110c25 — and the
+     collapsed panels are transparent in dark, so the whole list sat on white
+     with near-white labels (#ede9fe) on top of it. Matches the drawer. */
+  background: #110c25;
   scrollbar-color: #a78bfa #221852;
 }
 
@@ -7279,6 +7284,13 @@ body.apm-supplier-wizard-open .avm-cp-backdrop {
 
 [data-bs-theme="dark"] .apm-prev-stage {
   border-top-color: rgba(167, 139, 250, .16);
+}
+
+/* "STAGE 1 — PRODUCT CORE" is #166534 in light mode — a deep green that all
+   but disappeared on the #241a47 panel here. Same light green the extras label
+   already uses in dark. */
+[data-bs-theme="dark"] .apm-prev-sumtitle {
+  color: #86efac;
 }
 
 [data-bs-theme="dark"] .apm-prev-sumk {

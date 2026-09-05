@@ -388,6 +388,9 @@ export default function AddProductModal(props: {
   const [gstMapOpen, setGstMapOpen] = useState(false);
   const [gstMapValue, setGstMapValue] = useState('');
   const [gstMasterOpen, setGstMasterOpen] = useState(false);
+  /* True while /usage is being asked whether this product's GST % is pinned by
+     a PO / SPI — keeps the two entry points from firing twice. */
+  const [gstChecking, setGstChecking] = useState(false);
   const [newGstRate, setNewGstRate] = useState('');
   const [gstBusy, setGstBusy] = useState(false);
   const [vendorOpts, setVendorOpts] = useState<VendorOpt[]>([]);
@@ -1011,6 +1014,53 @@ export default function AddProductModal(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialId]);
 
+  const fileTag = (f: File | null) => (f ? `${f.name}:${f.size}:${f.lastModified}` : null);
+
+  const buildCorePayload = (gstOverride?: string): Record<string, unknown> => ({
+    name: name.trim(),
+    generic_name: genericName.trim(),
+    description: description.trim(),
+    brand: brand.trim(),
+    segment_id: segmentId ? Number(segmentId) : null,
+    haz_type: hazType || null,
+    haz_class_id: hazClassId ? Number(hazClassId) : null,
+    uom_id: uomId ? Number(uomId) : null,
+    hsn_id: hsnId ? Number(hsnId) : null,
+    condition_id: conditionId ? Number(conditionId) : null,
+    packaging_material_id: packagingMaterialId ? Number(packagingMaterialId) : null,
+    confidential_info: confidential,
+    gst_id: (gstOverride ?? gstId) ? Number(gstOverride ?? gstId) : null,
+    primary_image: primaryImagePath ?? '',
+    primary_image_file: fileTag(primaryImageFile),
+    secondary_images: secondaryImagePaths,
+    secondary_image_files: secondaryImageFiles.map(fileTag),
+    product_attachment: prodAttachmentPath ?? '',
+    product_attachment_file: fileTag(prodAttachmentFile),
+  });
+
+  /** Payload as of the last successful save — null until one lands. */
+  const savedCoreRef = useRef<Record<string, unknown> | null>(null);
+  /** A record is settling (opened for edit, or just saved) and owes a fingerprint. */
+  const coreBaselineArmedRef = useRef(false);
+
+  const coreChangedKeys = (base: Record<string, unknown>, next: Record<string, unknown>): string[] =>
+    Object.keys(next).filter(k => JSON.stringify(next[k]) !== JSON.stringify(base[k]));
+
+  /* Arm the fingerprint once an existing product has finished loading. */
+  useEffect(() => {
+    if (initialId && !loadingEdit) coreBaselineArmedRef.current = true;
+  }, [initialId, loadingEdit]);
+
+  
+  useEffect(() => {
+    if (!coreBaselineArmedRef.current || loadingEdit) return;
+    const t = setTimeout(() => {
+      savedCoreRef.current = buildCorePayload();
+      coreBaselineArmedRef.current = false;
+    }, 0);
+    return () => clearTimeout(t);
+  });
+
   const saveCore = async () => {
     const errs: Record<string, string> = {};
     if (!name.trim())            errs.name              = 'Product name is required';
@@ -1059,7 +1109,27 @@ export default function AddProductModal(props: {
     await commitCore();
   };
 
-  const commitCore = async (gstToCommit?: string): Promise<boolean> => {
+  const commitCore = async (
+    gstToCommit?: string,
+    opts?: { advance?: boolean; successToast?: string },
+  ): Promise<boolean> => {
+    const advance = opts?.advance !== false;
+
+    /* Nothing moved since the last save — skip the round trip (and the image
+       re-upload that goes with it) and let the caller carry on, exactly as the
+       employee wizard does. Only ever skipped for a product that already
+       exists: the first save has no baseline to trust. */
+    if (productId && savedCoreRef.current) {
+      const next = buildCorePayload(gstToCommit);
+      if (coreChangedKeys(savedCoreRef.current, next).length === 0) {
+        // Re-picking the rate already on record still deserves its
+        // confirmation — from the user's side the mapping did happen.
+        if (opts?.successToast) toast.success('GST mapped', opts.successToast);
+        if (advance) setTab('sales');
+        return true;
+      }
+    }
+
     setSaving(true);
     try {
       const fd = new FormData();
@@ -1115,6 +1185,7 @@ export default function AddProductModal(props: {
       setProdAttachmentPath(res.data.product_attachment ?? null);
       setProdAttachmentUrl(res.data.product_attachment_url ?? (res.data.product_attachment ? resolveFileUrl(res.data.product_attachment) : null));
       setProdAttachmentFile(null);
+      coreBaselineArmedRef.current = true;
 
       if (isPurchaseDept) {
         onSaved(res.data.id, true);
@@ -1122,8 +1193,9 @@ export default function AddProductModal(props: {
         return true;
       }
       onSaved(res.data.id, false);
-      if (!gstToCommit) toast.success('Core saved', 'Product Core Information saved');
-      setTab('sales');
+      if (opts?.successToast) toast.success('Product updated', opts.successToast);
+      else if (!gstToCommit) toast.success('Core saved', 'Product Core Information saved');
+      if (advance) setTab('sales');
       return true;
     } catch (e: unknown) {
       const msg = extractError(e, 'Failed to save Core information.');
@@ -1134,11 +1206,36 @@ export default function AddProductModal(props: {
     }
   };
 
-  const openGstMap = () => {
+  const openGstMap = async () => {
     if (!productId) {
       toast.error('Complete Core Information first', 'Save Product Core Information (Save & Next) before mapping a GST %.');
       return;
     }
+
+    if (gstId) {
+      setGstChecking(true);
+      let usage: { gst_locked?: boolean; gst_lock_codes?: string[] } = {};
+      try {
+        usage = (await api.get(`/products/${productId}/usage`)).data?.data ?? {};
+      } catch {
+        toast.error('Could not verify', 'Please try again.');
+        setGstChecking(false);
+        return;
+      }
+      setGstChecking(false);
+
+      if (usage.gst_locked) {
+        const used = (usage.gst_lock_codes ?? []).filter(Boolean);
+        toast.error(
+          'GST % locked',
+          used.length
+            ? `This product is used in ${used.join(' and ')} — its GST % can no longer be changed.`
+            : 'This product is already used in a Purchase Order, Proforma Invoice or Supplier Invoice — its GST % can no longer be changed.',
+        );
+        return;
+      }
+    }
+
     setGstMapValue(gstId);
     setGstMasterOpen(false);
     setGstMapOpen(true);
@@ -1297,8 +1394,8 @@ export default function AddProductModal(props: {
               <button
                 type="button"
                 className="apm-head-btn"
-                disabled={saving || !productId}
-                onClick={openGstMap}
+                disabled={saving || gstChecking || !productId}
+                onClick={() => { void openGstMap(); }}
               >
                 {gstRow ? `GST ${gstPctNum}%` : 'GST (%)'}
               </button>
@@ -1562,8 +1659,8 @@ export default function AddProductModal(props: {
                       label="GST %"
                       required
                       error={fieldErrors.gstId}
-                      onEdit={openGstMap}
-                      editDisabled={saving || !productId}
+                      onEdit={() => { void openGstMap(); }}
+                      editDisabled={saving || gstChecking || !productId}
                       editTitle={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
                     >
                       <Tooltip label='GST % is mapped through the "GST (%)" button above'>
@@ -2008,8 +2105,12 @@ export default function AddProductModal(props: {
                   }
                   return;
                 }
-                setGstMapOpen(false);
-                toast.success('GST mapped', rate ? `GST ${rate} is mapped to this product.` : 'GST is mapped to this product.');
+
+                const ok = await commitCore(chosen, {
+                  advance: false,
+                  successToast: rate ? `GST ${rate} is mapped to this product.` : 'GST is mapped to this product.',
+                });
+                if (ok) setGstMapOpen(false);
               }}>Map GST</button>
             </div>
           </div>
