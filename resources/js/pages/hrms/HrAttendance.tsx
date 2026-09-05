@@ -999,6 +999,11 @@ function TodayRecordCard({
   }, [openInMs]);
   // For an open (today) record, build from the COMPLETED-pairs baseline and add
   // the open stretch capped at 9 PM. Otherwise use the full server figure.
+  /* The day is OPEN when there is a first-in and no last-out. Same condition
+     the LAST OUT tile already uses to print "In Progress", so the two tiles
+     can never disagree about whether the day is finished. */
+  const dayOpen = !!employee.firstIn && employee.lastOut === null;
+
   const liveWorkedSecs = (() => {
     if (openInMs == null) {
       return typeof employee.workedSeconds === 'number' ? employee.workedSeconds : employee.workedMinutes * 60;
@@ -1102,7 +1107,15 @@ function TodayRecordCard({
             <div className="att-stat-label">PUNCHES</div>
           </div>
           <div className="att-stat">
-            <div className="att-stat-num" style={{ color: '#0d9488' }}>{fmtMinutes(Math.floor(liveWorkedSecs / 60))}</div>
+            {/* No out-punch yet -> no worked total to state.
+                The server pads an open day out to its auto-checkout boundary
+                (a payroll rule), so this tile used to print a settled-looking
+                "14h 50m" next to a LAST OUT of "In Progress" -- hours derived
+                from a punch-out that never happened (CBC #81). The figure
+                appears once the day is actually closed. */}
+            <div className="att-stat-num" style={{ color: dayOpen ? '#f59e0b' : '#0d9488' }}>
+              {dayOpen ? <span className="att-in-progress">In Progress</span> : fmtMinutes(Math.floor(liveWorkedSecs / 60))}
+            </div>
             <div className="att-stat-label">WORKED</div>
           </div>
           <div className="att-stat">

@@ -251,10 +251,21 @@ export default function AddVendorModal(props: {
   initialStep?: StepKey;
   scope?: 'domestic' | 'international';
   vendorCodeHint?: string | null;
+  /**
+   * Show the header's "Map Product" action. Default true.
+   *
+   * Passed false when the wizard is opened from the PRODUCT side (the "+"
+   * beside Supplier Name in Map Supplier): the mapping is already being made
+   * there, on a product that may not even be saved yet, so a second mapping
+   * surface inside this popup would be mapping in the opposite direction to
+   * the flow the user is standing in.
+   */
+  canMapProducts?: boolean;
   onClose: () => void;
   onSubmit: (payload: VendorPayload) => void;
 }) {
   const { onClose, onSubmit, vendorId: initialVendorId, initialStep, scope, vendorCodeHint } = props;
+  const canMapProducts = props.canMapProducts !== false;
   const toast = useToast();
   const confirm = useConfirm();
   const isEdit = !!initialVendorId;
@@ -2310,14 +2321,16 @@ export default function AddVendorModal(props: {
             {/* Map Product — opens the Mapped Products list popup (Figma).
                 Disabled until the supplier exists (Stage 1 saved → vendorId set);
                 you can't map products to a supplier that hasn't been created. */}
-            <button
-              className="avm-map-btn"
-              onClick={() => setMappedListOpen(true)}
-              disabled={!vendorId}
-              title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
-            >
-              <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product</span>
-            </button>
+            {canMapProducts && (
+              <button
+                className="avm-map-btn"
+                onClick={() => setMappedListOpen(true)}
+                disabled={!vendorId}
+                title={!vendorId ? 'Save the Supplier Legal Identity step first to map products' : 'Map products to this supplier'}
+              >
+                <i className="ri-price-tag-line" /> <span className="avm-map-btn-label">Map Product</span>
+              </button>
+            )}
             <button className="avm-close" onClick={onClose} aria-label="Close">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
             </button>

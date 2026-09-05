@@ -52,7 +52,20 @@ export default function CtcLivePreview({
   // change (object identity from the parent changes every render otherwise).
   const cfgKey = JSON.stringify({ p: pageConfig ?? {}, h: headerConfig ?? {}, f: footerConfig ?? {} });
 
+  /* The in-flight request, so a superseded one can be ABORTED.
+     Every keystroke past the debounce used to fire a fresh POST while the
+     previous one was still streaming its PDF back, so N edits meant N
+     concurrent dompdf renders competing for the same php-fpm workers -- each
+     one making the others slower, and the spinner staying up for the SLOWEST
+     of them rather than the newest. Only the newest result is ever painted, so
+     the older ones are pure waste; cancelling them frees the server
+     immediately. */
+  const abortRef = useRef<AbortController | null>(null);
+
   const render = useCallback(async () => {
+    abortRef.current?.abort();
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     setStatus('loading');
     setErrorMsg('');
     try {
@@ -65,7 +78,7 @@ export default function CtcLivePreview({
           header_config: headerConfig ?? undefined,
           footer_config: footerConfig ?? undefined,
         },
-        { responseType: 'blob' },
+        { responseType: 'blob', signal: ctrl.signal },
       );
       const buf = await (res.data as Blob).arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
@@ -77,6 +90,10 @@ export default function CtcLivePreview({
       setDocVersion(v => v + 1);
       setStatus('ready');
     } catch (e: any) {
+      /* An abort is this component superseding itself, not a failure: a newer
+         render is already running and will set the status. Surfacing it would
+         flash "Could not render the preview." on every keystroke. */
+      if (ctrl.signal.aborted || e?.code === 'ERR_CANCELED' || e?.name === 'CanceledError') return;
       // A blob-typed error response needs decoding to read the JSON message.
       let msg = 'Could not render the preview.';
       try {
@@ -89,13 +106,27 @@ export default function CtcLivePreview({
     }
   }, [endpoint, contractId, content, pageConfig, headerConfig, footerConfig]);
 
-  // Debounced refresh whenever the draft or its layout config changes.
+  /* Debounced refresh whenever the draft or its layout config changes -- except
+     the FIRST one, which runs immediately.
+     The debounce exists to coalesce keystrokes, but it was also applied to the
+     initial mount, where there is nothing to coalesce: opening the Template
+     Design tab bought a guaranteed ~1s of "Rendering preview..." before the
+     request was even sent. Only typing needs the delay. */
+  const firstRunRef = useRef(true);
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (firstRunRef.current) {
+      firstRunRef.current = false;
+      void render();
+      return;
+    }
     debounceRef.current = setTimeout(() => { void render(); }, 900);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, cfgKey, contractId]);
+
+  // Drop any in-flight render when the preview unmounts (tab switch, modal close).
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   // Paint every page onto its canvas, fit to the panel width.
   useEffect(() => {
