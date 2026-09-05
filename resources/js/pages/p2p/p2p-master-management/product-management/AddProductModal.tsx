@@ -432,6 +432,7 @@ export default function AddProductModal(props: {
     setProdAttachmentFile(f);
     setProdAttachmentPath(null);
     setProdAttachmentUrl(null);
+    e.target.value = '';
   };
   const clearAttachment = () => {
     setProdAttachmentFile(null);
@@ -1220,20 +1221,21 @@ export default function AddProductModal(props: {
             </div>
           </div>
           <div className="apm-head-actions">
-            <button
-              type="button"
-              className="apm-head-btn"
-              title={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
-              disabled={saving || !productId}
-              onClick={openGstMap}
-            >
-              {gstRow ? `GST ${gstPctNum}%` : 'GST (%)'}
-            </button>
-            {!isSalesDept && (
+            <Tooltip label={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}>
               <button
                 type="button"
                 className="apm-head-btn"
-                title={productId ? 'Map a supplier to this product' : 'Save Product Core Information (Stage 1) before mapping suppliers'}
+                disabled={saving || !productId}
+                onClick={openGstMap}
+              >
+                {gstRow ? `GST ${gstPctNum}%` : 'GST (%)'}
+              </button>
+            </Tooltip>
+            {!isSalesDept && (
+              <Tooltip label={productId ? 'Map a supplier to this product' : 'Save Product Core Information (Stage 1) before mapping suppliers'}>
+              <button
+                type="button"
+                className="apm-head-btn"
                 disabled={saving || !productId}
                 onClick={() => {
                   if (!productId) {
@@ -1250,6 +1252,7 @@ export default function AddProductModal(props: {
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>
                 Map Supplier
               </button>
+              </Tooltip>
             )}
             <button className="apm-close" onClick={onClose} aria-label="Close" disabled={saving}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -1301,8 +1304,6 @@ export default function AddProductModal(props: {
                         { label: 'Segment',      value: labelOf(optSegments, segmentId) },
                         { label: 'Haz/Non-Haz',  value: hazType || '—' },
                         { label: 'UOM',          value: labelOf(optUoms, uomId) },
-                        { label: 'Brand',        value: brand || '—' },
-                        { label: 'Condition',    value: labelOf(optConditions, conditionId) },
                       ],
                     },
                   ]}
@@ -1493,13 +1494,14 @@ export default function AddProductModal(props: {
                       editDisabled={saving || !productId}
                       editTitle={productId ? 'Map / manage GST %' : 'Save Product Core Information (Stage 1) before mapping a GST %'}
                     >
-                      <input
-                        className="apm-input apm-readonly"
-                        value={optGst.find(o => o.value === gstId)?.label ?? ''}
-                        readOnly
-                        placeholder='Map from the "GST (%)" button above'
-                        title='GST % is mapped through the "GST (%)" button above'
-                      />
+                      <Tooltip label='GST % is mapped through the "GST (%)" button above'>
+                        <input
+                          className="apm-input apm-readonly"
+                          value={optGst.find(o => o.value === gstId)?.label ?? ''}
+                          readOnly
+                          placeholder='Map from the "GST (%)" button above'
+                        />
+                      </Tooltip>
                     </Field>
                   </div>
                   <div className="apm-grid-2">
@@ -1539,11 +1541,14 @@ export default function AddProductModal(props: {
                 <div className="apm-sup-body">
               <div className="apm-sup-bar">
                 <span className="apm-sup-countpill">{vendors.length} supplier{vendors.length !== 1 ? 's' : ''} mapped</span>
+                <Tooltip
+                  label="Select a GST rate for this product (Sales Config) before mapping a supplier."
+                  disabled={canMapSupplier}
+                >
                 <button
                   type="button"
                   className="apm-sup-map"
                   disabled={!canMapSupplier || saving}
-                  title={canMapSupplier ? undefined : 'Select a GST rate for this product (Sales Config) before mapping a supplier.'}
                   onClick={() => {
                     if (!canMapSupplier) {
                       toast.error('GST rate required', 'Select a GST rate for this product (Sales Config step) before you can map a supplier — 0% is allowed.');
@@ -1554,6 +1559,7 @@ export default function AddProductModal(props: {
                 >
                   <span>+</span> Map Supplier
                 </button>
+                </Tooltip>
               </div>
 
               {vendorDraftOpen && createPortal((
@@ -1618,7 +1624,9 @@ export default function AddProductModal(props: {
                         </Field>
 
                         <Field label="GST %">
-                          <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly title="GST % comes from the product's Sales Config (Step 2)" />
+                          <Tooltip label="GST % comes from the product's Sales Config (Step 2)">
+                            <input className="apm-input apm-readonly" value={gstPctStr || '—'} readOnly />
+                          </Tooltip>
                         </Field>
                         <Field label="GST Amount (₹)">
                           <div className="apm-input-icon">
@@ -1678,13 +1686,17 @@ export default function AddProductModal(props: {
                           <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                           <td>
                             <div className="apm-sup-actions">
-                              <button type="button" className="apm-sup-edit" title="Edit supplier" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
-                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
-                              </button>
-                              {vendors.length > 1 && (
-                                <button type="button" className="apm-sup-del" title="Remove supplier" aria-label="Remove supplier" disabled={saving} onClick={() => removeVendor(v)}>
-                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                              <Tooltip label="Edit supplier">
+                                <button type="button" className="apm-sup-edit" aria-label="Edit supplier" disabled={saving} onClick={() => openVendorEdit(v)}>
+                                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
                                 </button>
+                              </Tooltip>
+                              {vendors.length > 1 && (
+                                <Tooltip label="Remove supplier">
+                                  <button type="button" className="apm-sup-del" aria-label="Remove supplier" disabled={saving} onClick={() => removeVendor(v)}>
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                                  </button>
+                                </Tooltip>
                               )}
                             </div>
                           </td>
@@ -1757,7 +1769,10 @@ export default function AddProductModal(props: {
 
       {segGatePending && createPortal((
         <div className="apm-sup-overlay" onClick={() => { if (!saving) setSegGatePending(''); }}>
-          <div className="apm-sup-modal apm-sup-modal-narrow" onClick={(e) => e.stopPropagation()}>
+          {/* Full width, not apm-sup-modal-narrow: this table carries the same
+              eleven columns as the Mapped Suppliers popup and 760px squeezed
+              them. */}
+          <div className="apm-sup-modal" onClick={(e) => e.stopPropagation()}>
             <div className="apm-sup-head">
               <div className="apm-sup-head-ico">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
@@ -1783,28 +1798,39 @@ export default function AddProductModal(props: {
                 <table className="apm-sup-table">
                   <thead>
                     <tr>
-                      <th>Sr No</th><th>Supplier</th><th>Code</th><th>Contact</th><th>Total (₹)</th><th>Action</th>
+                      <th>Sr No</th><th>Supplier</th><th>Code</th><th>Type</th><th>State</th><th>Contact</th>
+                      <th>Price (₹)</th><th>GST %</th><th>GST (₹)</th><th>Total (₹)</th><th>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {vendors.map((v, i) => (
+                    {vendors.map((v, i) => {
+                      const opt = vendorOpts.find(o => (v.vendorId && o.id === String(v.vendorId)) || (v.vendorCode && o.code === v.vendorCode));
+                      return (
                       <tr key={v.id}>
                         <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
                         <td className="apm-sup-cname">
-                          {v.vendorName.length > 22
-                            ? <Tooltip label={v.vendorName}><span>{v.vendorName.slice(0, 22) + '…'}</span></Tooltip>
+                          {v.vendorName.length > 15
+                            ? <Tooltip label={v.vendorName}><span>{v.vendorName.slice(0, 15) + '…'}</span></Tooltip>
                             : (v.vendorName || '—')}
                         </td>
                         <td><span className="apm-sup-code">{formatSupplierCode(v.vendorCode)}</span></td>
+                        <td>{opt?.type || '—'}</td>
+                        <td>{opt?.state || '—'}</td>
                         <td className="apm-sup-cperson">{v.contactPerson || '—'}</td>
+                        <td>₹{v.purchasePrice.toLocaleString()}</td>
+                        <td>{String(Number(v.gstPct.toFixed(2)))}%</td>
+                        <td>₹{v.gstAmt.toFixed(2)}</td>
                         <td className="apm-sup-ctotal">₹{v.totalAmt.toLocaleString()}</td>
                         <td>
-                          <button type="button" className="apm-sup-del" title="Unmap supplier" aria-label="Unmap supplier" disabled={saving} onClick={() => unmapForSegmentChange(v)}>
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
-                          </button>
+                          <Tooltip label="Unmap supplier">
+                            <button type="button" className="apm-sup-del" aria-label="Unmap supplier" disabled={saving} onClick={() => unmapForSegmentChange(v)}>
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
+                            </button>
+                          </Tooltip>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1836,9 +1862,11 @@ export default function AddProductModal(props: {
             <div className="apm-gst-body">
               <div className="apm-gst-label-row">
                 <span className="apm-gst-label">How much GST % do you want to map for this product?</span>
-                <button className="apm-gst-plus" title="Add / manage GST % master" onClick={() => setGstMasterOpen(true)}>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-                </button>
+                <Tooltip label="Add / manage GST % master">
+                  <button className="apm-gst-plus" onClick={() => setGstMasterOpen(true)}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+                  </button>
+                </Tooltip>
               </div>
               <SelectInput value={gstMapValue} onChange={setGstMapValue} placeholder="Select GST %" options={optGstSorted} />
               <div className="apm-gst-hint">Need a different rate? Use the <b>+</b> button above to add it to the GST % master.</div>
@@ -1902,7 +1930,11 @@ export default function AddProductModal(props: {
                         <tr key={o.value}>
                           <td><span className="apm-sup-sr">{String(i + 1).padStart(2, '0')}</span></td>
                           <td className="apm-gst-rate">{o.label}</td>
-                          <td><button className="apm-sup-del" title="Remove rate" disabled={gstBusy} onClick={() => removeGstRate(o.value)}>×</button></td>
+                          <td>
+                            <Tooltip label="Remove rate">
+                              <button className="apm-sup-del" disabled={gstBusy} onClick={() => removeGstRate(o.value)}>×</button>
+                            </Tooltip>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2115,27 +2147,29 @@ function Field(props: {
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
         {props.addNew && !props.disabled && (
-          <button
-            type="button"
-            className="apm-field-plus"
-            aria-label="Add new option"
-            tabIndex={-1}
-            title={`Add new ${props.label}`}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
-          >+</button>
+          <Tooltip label={`Add new ${props.label}`}>
+            <button
+              type="button"
+              className="apm-field-plus"
+              aria-label="Add new option"
+              tabIndex={-1}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onAdd?.(); }}
+            >+</button>
+          </Tooltip>
         )}
         {props.onEdit && (
-          <button
-            type="button"
-            className="apm-field-edit"
-            aria-label={props.editTitle ?? `Edit ${props.label}`}
-            tabIndex={-1}
-            title={props.editTitle ?? `Edit ${props.label}`}
-            disabled={props.editDisabled}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onEdit?.(); }}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
-          </button>
+          <Tooltip label={props.editTitle ?? `Edit ${props.label}`}>
+            <button
+              type="button"
+              className="apm-field-edit"
+              aria-label={props.editTitle ?? `Edit ${props.label}`}
+              tabIndex={-1}
+              disabled={props.editDisabled}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onEdit?.(); }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4z" /></svg>
+            </button>
+          </Tooltip>
         )}
       </span>
       {props.icon ? (
@@ -2196,44 +2230,83 @@ function UploadDropzone(props: {
   const total = props.preview.length;
   const overflow = total > MAX_VISIBLE;
   const visible = overflow ? props.preview.slice(0, MAX_VISIBLE - 1) : props.preview;
+  const hasFile = !!props.fileMode && total > 0;
 
   return (
     <div className="apm-field apm-upload-field">
       <span className="apm-field-label">
         {props.label} {props.required && <span className="apm-req">*</span>}
       </span>
-      <label className="apm-dropzone">
-        <input
-          type="file"
-          accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,image/png,image/jpeg,image/pjpeg'}
-          multiple={props.multiple}
-          onChange={props.onPick}
-          className="apm-dropzone-input"
-        />
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="17 8 12 3 7 8" />
-          <line x1="12" y1="3" x2="12" y2="15" />
-        </svg>
-        <span>{props.hint}</span>
-      </label>
-      {total > 0 && props.fileMode && (
-        <div className="apm-upload-preview">
-          <a
-            className="apm-upload-chip apm-upload-filechip"
-            href={props.preview[0]}
-            target="_blank"
-            rel="noopener noreferrer"
-            title={props.fileName || 'Open attachment'}
-          >
-            <svg className="apm-upload-fileico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
-            </svg>
-            <span className="apm-upload-filename">{props.fileName || 'Attachment'}</span>
-            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); props.onRemove(0); }} aria-label="Remove">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
-          </a>
+      {!hasFile && (
+        <label className="apm-dropzone">
+          <input
+            type="file"
+            accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,image/png,image/jpeg,image/pjpeg'}
+            multiple={props.multiple}
+            onChange={props.onPick}
+            className="apm-dropzone-input"
+          />
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <span>{props.hint}</span>
+        </label>
+      )}
+      {hasFile && (
+        <div className="apm-upload-filebox">
+          <Tooltip label={props.fileName || 'Attachment'}>
+            <div className="apm-upload-filechip">
+              <svg className="apm-upload-fileico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span className="apm-upload-filename">{props.fileName || 'Attachment'}</span>
+            </div>
+          </Tooltip>
+          <div className="apm-upload-fileacts">
+            <Tooltip label="View this attachment">
+              <a
+                className="apm-upload-act"
+                href={props.preview[0]}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" /><circle cx="12" cy="12" r="3" />
+                </svg>
+                <span>View</span>
+              </a>
+            </Tooltip>
+            <Tooltip label="Replace this attachment">
+              <label className="apm-upload-act">
+                <input
+                  type="file"
+                  accept={props.accept ?? '.png,.jpg,.jpeg,.jfif,.jpe,.pjpeg,image/png,image/jpeg,image/pjpeg'}
+                  onChange={props.onPick}
+                  className="apm-upload-act-input"
+                />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                  <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                </svg>
+                <span>Reupload</span>
+              </label>
+            </Tooltip>
+            <Tooltip label="Remove this attachment">
+              <button
+                type="button"
+                className="apm-upload-act apm-upload-act-danger"
+                onClick={() => props.onRemove(0)}
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                <span>Remove</span>
+              </button>
+            </Tooltip>
+          </div>
         </div>
       )}
       {total > 0 && !props.fileMode && (
@@ -2335,7 +2408,12 @@ function PreviousStages(props: {
                 {s.fields.map(f => (
                   <div key={f.label} className="apm-prev-sumcell">
                     <span className="apm-prev-sumk">{f.label}</span>
-                    <span className="apm-prev-sumv" title={f.value}>{f.value}</span>
+                    {/* Same portal tooltip the product cards use, so a long
+                        value (product / generic name) reads in full on hover
+                        instead of relying on the browser's native title. */}
+                    <Tooltip label={f.value} disabled={!f.value || f.value === '—'}>
+                      <span className="apm-prev-sumv">{f.value}</span>
+                    </Tooltip>
                   </div>
                 ))}
               </div>
@@ -2347,19 +2425,22 @@ function PreviousStages(props: {
                       {ex.pairs.map((p, j) => (
                         <span key={j} className="apm-prev-extra-pair">
                           <span className="apm-prev-extra-k">{p.k} :</span>{' '}
-                          <span className="apm-prev-extra-v" title={p.v}>{p.v}</span>
+                          <Tooltip label={p.v} disabled={!p.v || p.v === '—'}>
+                            <span className="apm-prev-extra-v">{p.v}</span>
+                          </Tooltip>
                         </span>
                       ))}
                       {ex.attachment?.href && (
-                        <a
-                          href={ex.attachment.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="apm-prev-extra-attach"
-                          title={`Open ${ex.attachment.name}`}
-                        >
-                          <i className="ri-attachment-line" /> {ex.attachment.name}
-                        </a>
+                        <Tooltip label={`Open ${ex.attachment.name}`}>
+                          <a
+                            href={ex.attachment.href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="apm-prev-extra-attach"
+                          >
+                            <i className="ri-attachment-line" /> {ex.attachment.name}
+                          </a>
+                        </Tooltip>
                       )}
                     </div>
                   ))}

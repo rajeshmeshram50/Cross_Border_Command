@@ -69,14 +69,21 @@ class ProductController extends Controller
 
     private function applyListFilters($query, Request $request)
     {
-        // Free-text search across the four identifying columns.
         if ($q = trim((string) $request->query('q', ''))) {
             $like = '%' . str_replace(['%', '_'], ['\%', '\_'], $q) . '%';
-            $query->where(function ($w) use ($like) {
+            $query->where(function ($w) use ($like, $q) {
                 $w->where('name', 'ilike', $like)
                     ->orWhere('product_code', 'ilike', $like)
                     ->orWhere('brand', 'ilike', $like)
-                    ->orWhere('generic_name', 'ilike', $like);
+                    ->orWhere('generic_name', 'ilike', $like)
+                    ->orWhereHas('hsn', fn($h) => $h->where('hsn_code', 'ilike', $like));
+
+
+                if (preg_match('/^[A-Za-z]*[\s\-]*0*(\d{1,6})$/', $q, $m)) {
+                    foreach ([1, 2, 3, 4] as $pad) {
+                        $w->orWhere('product_code', 'ilike', '%-' . str_pad($m[1], $pad, '0', STR_PAD_LEFT));
+                    }
+                }
             });
         }
 
@@ -119,7 +126,7 @@ class ProductController extends Controller
          * sidebar's multi-select — folding them into one IN list would turn an
          * AND into an OR and widen the result instead of narrowing it. */
         if ($segmentEq = $request->query('segment_eq')) {
-            $query->whereHas('segment', fn ($w) => $w->where('name', $segmentEq));
+            $query->whereHas('segment', fn($w) => $w->where('name', $segmentEq));
         }
         $inRelation('hsn',       ['hsn_code'],             $list('hsn'));
         $inRelation('uom',       ['short_code', 'title'],  $list('uom'));

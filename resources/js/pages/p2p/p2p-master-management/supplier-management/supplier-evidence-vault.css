@@ -125,6 +125,8 @@
    and Consignee vaults, and they are not part of this redesign. */
 .cev-card.sev {
   width: min(1380px, 88vw);
+  /* Flush drawer — no cast shadow bleeding over the page behind it. */
+  box-shadow: none;
 }
 
 /* HEADER — deep teal hero, code-led title, translucent tag row. */
@@ -261,6 +263,12 @@
   background: linear-gradient(90deg, #0e7490, #0891b2, #06b6d4, #67e8f9, #06b6d4, #0891b2, #0e7490);
   background-size: 200% 100%;
   animation: cevStatsAccent 4s linear infinite;
+}
+
+/* The top wash (group cards + KPI strip + tabs) ends at the tab row's
+   bottom rule; everything below it is plain white. */
+.sev .cev-body {
+  background: #ffffff;
 }
 
 /* STAT CARDS */
@@ -902,64 +910,262 @@
 }
 
 /* Table head — a slightly smaller band than the shared vault default. */
-.sev .cev-table thead th{font-size:9.5px;letter-spacing:.06em;padding:8px 12px;}
+.sev .cev-table thead th {
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  padding: 8px 12px;
+}
 
 /* Row actions carry their label, so they size to their content. */
-.sev .cev-row-act.sev-row-act-txt{width:auto;height:26px;padding:0 9px;gap:5px;border-radius:7px;font-family:inherit;font-size:10.5px;font-weight:700;letter-spacing:.01em;white-space:nowrap;}
-.sev .cev-row-act.sev-row-act-txt svg{flex-shrink:0;}
-.sev .cev-row-actions{gap:6px;flex-wrap:nowrap;}
+.sev .cev-row-act.sev-row-act-txt {
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  gap: 5px;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  white-space: nowrap;
+}
+
+.sev .cev-row-act.sev-row-act-txt svg {
+  flex-shrink: 0;
+}
+
+.sev .cev-row-actions {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
 
 /* Neutral slate backdrop instead of the shared teal wash. */
-.cev-overlay.sev-overlay{background:rgba(15,23,42,.45);}
+.cev-overlay.sev-overlay {
+  background: rgba(15, 23, 42, .45);
+}
 
 /* ── Document Overview popup ─────────────────────────────────────────────
    Matches the reference: the header gradient runs on into the table's head
    band, and the list scrolls rather than being pinned to five rows. */
-.sev-ov .cev-ov-card{width:760px;max-width:92%;max-height:84%;border-radius:16px;box-shadow:0 24px 70px rgba(8,51,68,.4);}
-.sev-ov .cev-ov-head{padding:18px 22px;background:linear-gradient(110deg,#083344 0%,#0c4a6e 55%,#0e7490 100%);gap:12px;}
-.sev-ov .cev-ov-head-icon{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);}
-.sev-ov .cev-ov-title{font-size:15px;font-weight:800;letter-spacing:-.2px;}
-.sev-ov .cev-ov-sub{font-size:10.5px;color:rgba(255,255,255,.8);margin-top:1px;}
-.sev-ov .cev-ov-close{width:30px;height:30px;border-radius:8px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);font-size:15px;}
-.sev-ov .cev-ov-close:hover{background:rgba(255,255,255,.28);}
-
-.sev-ov .cev-ov-body{padding:0;border-top:0;min-height:0;max-height:none;flex:1 1 auto;overflow-y:auto;}
-.sev-ov .cev-ov-table{font-size:12px;table-layout:fixed;}
-.sev-ov .cev-ov-table thead th{
-  background:linear-gradient(110deg,#083344 0%,#0c4a6e 55%,#0e7490 100%);
-  padding:10px 16px;font-size:8px;font-weight:700;letter-spacing:.1em;
-  color:rgba(255,255,255,.72);text-transform:uppercase;border-radius:0;
+.sev-ov .cev-ov-card {
+  width: 760px;
+  max-width: 92%;
+  max-height: 84%;
+  border-radius: 16px;
+  box-shadow: 0 24px 70px rgba(8, 51, 68, .4);
 }
+
+.sev-ov .cev-ov-head {
+  padding: 18px 22px;
+  background: linear-gradient(110deg, #083344 0%, #0c4a6e 55%, #0e7490 100%);
+  gap: 12px;
+}
+
+.sev-ov .cev-ov-head-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .15);
+  border: 1px solid rgba(255, 255, 255, .25);
+}
+
+.sev-ov .cev-ov-title {
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -.2px;
+}
+
+.sev-ov .cev-ov-sub {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, .8);
+  margin-top: 1px;
+}
+
+.sev-ov .cev-ov-close {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .15);
+  border: 1px solid rgba(255, 255, 255, .25);
+  font-size: 15px;
+}
+
+.sev-ov .cev-ov-close:hover {
+  background: rgba(255, 255, 255, .28);
+}
+
+.sev-ov .cev-ov-body {
+  padding: 0;
+  border-top: 0;
+  min-height: 0;
+  max-height: none;
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.sev-ov .cev-ov-table {
+  font-size: 12px;
+  table-layout: fixed;
+}
+
+/* Head band carries the popup header's own gradient. It has to live on
+   <thead>, not on each <th>: a gradient set on a cell restarts inside every
+   column and the row reads as four different colours. Sticky moves up to
+   <thead> as well so the band travels with it while the list scrolls. */
+.sev-ov .cev-ov-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: linear-gradient(110deg, #083344 0%, #0c4a6e 55%, #0e7490 100%);
+}
+
+.sev-ov .cev-ov-table thead th {
+  position: static;
+  background: transparent;
+  padding: 10px 16px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: rgba(255, 255, 255, .82);
+  text-transform: uppercase;
+  border-radius: 0;
+}
+
 .sev-ov .cev-ov-table thead th:first-child,
-.sev-ov .cev-ov-table thead th:last-child{border-radius:0;}
+.sev-ov .cev-ov-table thead th:last-child {
+  border-radius: 0;
+}
+
 .sev-ov .cev-ov-table thead th:nth-child(1),
 .sev-ov .cev-ov-table thead th:nth-child(3),
-.sev-ov .cev-ov-table thead th:nth-child(4){text-align:center;}
-.sev-ov .cev-ov-table tbody tr{background:#fff;}
-.sev-ov .cev-ov-table tbody tr:nth-child(even){background:#fafdff;}
-.sev-ov .cev-ov-table tbody td{padding:11px 16px;border-bottom:1px solid #eef4f7;vertical-align:middle;text-align:center;}
-.sev-ov .cev-ov-table tbody td.cev-ov-name{text-align:left;font-size:12px;font-weight:700;color:#0f2433;}
-.sev-ov .cev-ov-table tbody td.cev-ov-num{font-size:11px;font-weight:700;color:#a5b9c9;}
+.sev-ov .cev-ov-table thead th:nth-child(4) {
+  text-align: center;
+}
 
-.sev-ov .sev-ov-pill{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:700;padding:3px 10px;border-radius:6px;white-space:nowrap;}
-.sev-ov .sev-ov-pill-dot{width:5px;height:5px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.sev-ov .cev-ov-table tbody tr {
+  background: #fff;
+}
 
-.sev-ov .cev-ov-dl{display:inline-flex;align-items:center;gap:4px;padding:5px 11px;border-radius:7px;background:linear-gradient(135deg,#f0fdff,#e0f9ff);color:#0891b2;border:1px solid rgba(6,182,212,.25);font-family:inherit;font-size:9.5px;font-weight:700;cursor:pointer;}
-.sev-ov .cev-ov-dl:hover:not(:disabled){background:linear-gradient(135deg,#e0f9ff,#cffafe);}
-.sev-ov .cev-ov-dl:disabled{opacity:.45;cursor:default;}
+.sev-ov .cev-ov-table tbody tr:nth-child(even) {
+  background: #fafdff;
+}
 
-[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody tr{background:#101c2b;}
-[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody tr:nth-child(even){background:#13212f;}
-[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody td{border-bottom-color:rgba(148,197,255,.10);}
-[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody td.cev-ov-name{color:#e7f2f7;}
+.sev-ov .cev-ov-table tbody td {
+  padding: 11px 16px;
+  border-bottom: 1px solid #eef4f7;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.sev-ov .cev-ov-table tbody td.cev-ov-name {
+  text-align: left;
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f2433;
+}
+
+.sev-ov .cev-ov-table tbody td.cev-ov-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a5b9c9;
+}
+
+.sev-ov .sev-ov-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.sev-ov .sev-ov-pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.sev-ov .cev-ov-dl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 11px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #f0fdff, #e0f9ff);
+  color: #0891b2;
+  border: 1px solid rgba(6, 182, 212, .25);
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sev-ov .cev-ov-dl:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e0f9ff, #cffafe);
+}
+
+.sev-ov .cev-ov-dl:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody tr {
+  background: #101c2b;
+}
+
+[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody tr:nth-child(even) {
+  background: #13212f;
+}
+
+[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody td {
+  border-bottom-color: rgba(148, 197, 255, .10);
+}
+
+[data-bs-theme="dark"] .sev-ov .cev-ov-table tbody td.cev-ov-name {
+  color: #e7f2f7;
+}
 
 /* Neutral backdrop for the overview popup, matching the vault's own. */
-.cev-ov-overlay.sev-ov{background:rgba(15,23,42,.45);}
+.cev-ov-overlay.sev-ov {
+  background: rgba(117, 125, 129, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
 
 /* Upload sits where Download would be when a document has no file yet. */
-.sev-ov .cev-ov-up{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:7px;border:none;background:linear-gradient(135deg,#0891b2,#06b6d4);color:#fff;font-family:inherit;font-size:9.5px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(6,182,212,.35);transition:transform .15s,box-shadow .15s;}
-.sev-ov .cev-ov-up:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(6,182,212,.45);}
+.sev-ov .cev-ov-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 7px;
+  border: none;
+  background: linear-gradient(135deg, #0891b2, #06b6d4);
+  color: #fff;
+  font-family: inherit;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(6, 182, 212, .35);
+  transition: transform .15s, box-shadow .15s;
+}
+
+.sev-ov .cev-ov-up:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, .45);
+}
 
 /* Shorter footer buttons. */
-.sev .cev-footer{padding:10px 14px;}
-.sev .cev-btn{padding:6px 14px;font-size:11.5px;border-radius:9px;}
+.sev .cev-footer {
+  padding: 10px 14px;
+}
+
+.sev .cev-btn {
+  padding: 6px 14px;
+  font-size: 11.5px;
+  border-radius: 9px;
+}
