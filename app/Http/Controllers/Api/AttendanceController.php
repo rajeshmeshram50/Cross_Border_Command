@@ -717,7 +717,14 @@ class AttendanceController extends Controller
                 'reportingManagerUser:id,name',
                 'branch:id,shifts', // shift-window resolution (resolveShiftWindow) without an N+1
                 // Last working day, to label a leaver's post-exit days (#91).
-                'exit:id,employee_id,last_working_day,rehired_at',
+                /* exit_case_status is REQUIRED here, not decorative: it is how
+                   "has left" is told apart from "is leaving" (#13). Leave it
+                   out of this column list and the attribute reads null, every
+                   exit looks Open, and a fully exited employee is badged as
+                   serving notice. A constrained select that silently omits a
+                   column a caller depends on fails quietly — nothing errors,
+                   the answer is just wrong. */
+                'exit:id,employee_id,last_working_day,rehired_at,exit_case_status',
             ])
             ->orderBy('display_name');
 
