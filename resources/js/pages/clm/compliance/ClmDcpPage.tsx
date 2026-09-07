@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import WorklistPager from "../../../components/ui/WorklistPager";
 import { createPortal } from 'react-dom';
 import api from '../../../api';
@@ -187,6 +188,38 @@ export default function ClmDcpPage() {
   const [boot, setBoot]       = useState<Bootstrap | null>(null);
   const [editing, setEditing] = useState<SegRule | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  /* Arrived from the Segment master after saving a new segment and answering
+     yes to "add a document rule?". Open the Add popup on that segment so the
+     user does not have to hunt for it again in a list of thirteen. The
+     navigation state is cleared straight away: a refresh, or coming Back to
+     this page later, must not re-open the popup. */
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [prefillSegmentCode, setPrefillSegmentCode] = useState<string | null>(null);
+  /* Set only when the Segment master sent us here. It survives the prefill
+     being cleared on modal open, because it answers a different question:
+     "where should saving return to?" */
+  const [returnToSegments, setReturnToSegments] = useState(false);
+  /* One place decides it, so the two save paths cannot drift apart. Saving
+     hands the user back to the list they started from; closing the popup
+     without saving leaves them on the panel, where they may well have more
+     to do. */
+  const finishRuleSave = () => {
+    setModalOpen(false); setEditing(null); setPrefillSegmentCode(null); reload();
+    if (returnToSegments) { setReturnToSegments(false); navigate('/clm/segment'); }
+  };
+  useEffect(() => {
+    const seg = (location.state as { openRuleForSegment?: { code?: string } } | null)?.openRuleForSegment;
+    if (!seg?.code) return;
+    /* Consume it first, then act: replace: true drops it from history so a
+       refresh or a Back does not fire this again. */
+    navigate(location.pathname, { replace: true, state: null });
+    setPrefillSegmentCode(seg.code);
+    setReturnToSegments(true);
+    setEditing(null);
+    setModalOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.key]);
   const [viewDocs, setViewDocs] = useState<{ rule: SegRule; cat: keyof DocSelections | 'all' } | null>(null);
   const reload = () => {
     setLoading(true);
@@ -379,7 +412,7 @@ export default function ClmDcpPage() {
       // bundles at all (they only return segments with >=1 configured doc), so
       // a rule change must drop those caches too — QA #23.
       bustAllMasterBundles();
-      setModalOpen(false); setEditing(null); reload();
+      finishRuleSave();
     } catch (e: any) {
       // 409: another rule already exists for this segment — refresh rows
       // so the modal pivots into edit-mode on next open.
@@ -408,7 +441,10 @@ export default function ClmDcpPage() {
     if (failed.length && !created && !updated) toast.error('Save failed', failed.join('; '));
     else if (failed.length) toast.info('Some skipped', failed.join('; '));
     if (created || updated) bustAllMasterBundles();
-    setModalOpen(false); setEditing(null); reload();
+    // Only hand back to the segment list when something actually saved; if
+    // every row was skipped the user should stay and see why.
+    if (created || updated) finishRuleSave();
+    else { setModalOpen(false); setEditing(null); setPrefillSegmentCode(null); reload(); }
   };
 
   return (
@@ -581,10 +617,11 @@ export default function ClmDcpPage() {
 
       {modalOpen && boot && (
         <SegmentRuleModal
+          prefillSegmentCode={prefillSegmentCode}
           existing={editing}
           existingRules={rows}
           boot={boot}
-          onClose={() => { setModalOpen(false); setEditing(null); }}
+          onClose={() => { setModalOpen(false); setEditing(null); setPrefillSegmentCode(null); }}
           onSave={(form, ruleId) => onSave(form, ruleId ?? editing?.id)}
           onBulkSave={onBulkSave}
           onDocAdded={reloadBootstrap}
@@ -624,11 +661,24 @@ function SegmentRuleModal(props: {
   onBulkSave?: (rows: Array<{ form: { segment_code: string; regulatory_status: 'highly'|'less'; document_type: DocType; auths: string[]; doc_selections: DocSelections }; ruleId?: number }>) => void;
   /** Refresh the document masters after a quick-add so the new doc appears. */
   onDocAdded?: () => Promise<void> | void;
+  /** Segment code to start on — set when the user arrives straight from
+   *  saving a new segment and answered yes to "add a document rule?".
+   *  Only the code is passed; the regulatory status is read off the
+   *  bootstrap so the two can never disagree. Document Type is deliberately
+   *  left unset: a segment holds one rule per type, so that is the user's
+   *  choice to make, and it is the first thing step 1 asks. */
+  prefillSegmentCode?: string | null;
 }) {
-  const { existing, existingRules, boot, onClose, onSave, onBulkSave, onDocAdded } = props;
+  const { existing, existingRules, boot, onClose, onSave, onBulkSave, onDocAdded, prefillSegmentCode } = props;
   const toast = useToast();
   const [stage, setStage]     = useState<1 | 2>(1);
-  const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? null);
+  /* A prefilled segment brings its own regulatory status with it — the
+     segment picker is scoped by that, so seeding one without the other would
+     leave the selection invisible. */
+  const prefillSeg = prefillSegmentCode
+    ? (boot.segments.find(sg => sg.code === prefillSegmentCode) ?? null)
+    : null;
+  const [reg, setReg]         = useState<'highly'|'less'|null>(existing?.regulatory_status ?? prefillSeg?.regulatory_status ?? null);
   /* Domestic / International — defaults to International for every new rule
    * (a segment can hold one rule per type). Scopes the segment picker, the
    * "already ruled" exclusion, and the matched-rule (Add → Edit) pivot. */
@@ -639,7 +689,7 @@ function SegmentRuleModal(props: {
    * and in High-Regulatory create mode the UI forces it to length ≤ 1.
    * In Less-Regulatory create mode the user can pick many — each becomes
    * its own SR-NNN row at save time, all sharing the Stage 2 doc rules. */
-  const [segCodes, setSegCodes] = useState<string[]>(existing?.segment_code ? [existing.segment_code] : []);
+  const [segCodes, setSegCodes] = useState<string[]>(existing?.segment_code ? [existing.segment_code] : (prefillSeg ? [prefillSeg.code] : []));
   const [docSel, setDocSel]   = useState<DocSelections>(existing?.doc_selections ?? {});
   const [activeCat, setActiveCat] = useState<keyof DocSelections>('kyc');
   /* Stage 2 per-tab search. Kept per category (not one shared string) so

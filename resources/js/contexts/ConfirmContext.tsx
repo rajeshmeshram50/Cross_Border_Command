@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import { createPortal } from 'react-dom';
 import { AlertTriangle, X, Loader2 } from 'lucide-react';
 
-type ConfirmTone = 'danger' | 'warning' | 'info' | 'success';
+type ConfirmTone = 'danger' | 'warning' | 'info' | 'success' | 'teal';
 
 interface ConfirmOptions {
   title?: string;
@@ -34,6 +34,11 @@ const TONE_STYLES: Record<ConfirmTone, { iconBg: string; iconBorder: string; ico
   warning: { iconBg: '#fffbeb', iconBorder: '#fef3c7', iconColor: '#f59e0b', confirmGrad: 'linear-gradient(135deg, #f59e0b, #d97706)', confirmShadow: '0 4px 14px rgba(245,158,11,0.4)' },
   info:    { iconBg: '#eef2ff', iconBorder: '#e0e7ff', iconColor: '#6366f1', confirmGrad: 'linear-gradient(135deg, #7c5cfc, #6366f1)', confirmShadow: '0 4px 14px rgba(99,102,241,0.4)' },
   success: { iconBg: '#ecfdf5', iconBorder: '#d1fae5', iconColor: '#10b981', confirmGrad: 'linear-gradient(135deg, #10b981, #059669)', confirmShadow: '0 4px 14px rgba(16,185,129,0.4)' },
+  /* CLM's own teal. The four tones above are semantic (danger / warning /
+     info / success); this one exists so a dialog raised from a CLM screen
+     carries that module's colour instead of reading as a generic indigo
+     prompt dropped on a teal page. Additive — no existing caller changes. */
+  teal:    { iconBg: '#ecfeff', iconBorder: '#a5f3fc', iconColor: '#0891b2', confirmGrad: 'linear-gradient(135deg, #06b6d4, #0891b2)', confirmShadow: '0 4px 14px rgba(8,145,178,0.40)' },
 };
 
 export function ConfirmProvider({ children }: { children: ReactNode }) {
