@@ -488,7 +488,7 @@ const CHECKLIST_STAGES: ChecklistStage[] = [
       { title: 'PAN Card uploaded',                              desc: `PDF or image, max 2 MB`,                                                badges: ['REQUIRED', 'ALL'] },
       { title: 'Passport-size Photograph uploaded',              desc: `JPG/PNG, max 2 MB, white background preferred`,                         badges: ['REQUIRED', 'ALL'] },
       { title: 'Current & permanent address proof submitted',    desc: 'Utility bill or rent agreement (max 6 months old)',                               badges: ['REQUIRED', 'ALL'] },
-      { title: '10th & 12th marksheets uploaded',                desc: 'SSC/HSC board certificates with marksheets',                                      badges: ['REQUIRED', 'ALL'] },
+      { title: '10th & 12th / Diploma marksheets uploaded',      desc: 'SSC board certificate, plus HSC or diploma certificate with marksheets',           badges: ['REQUIRED', 'ALL'] },
       { title: 'Graduation / Degree certificate uploaded',       desc: 'Official degree or provisional certificate',                                      badges: ['REQUIRED', 'ALL'] },
       { title: 'College ID / enrollment letter uploaded',        desc: 'Current semester enrollment proof from college/university',                       badges: ['INTERN REQUIRED'] },
       { title: 'NOC from college / faculty submitted',           desc: 'If required by institution — No Objection Certificate for internship',            badges: ['INTERN OPTIONAL'] },
@@ -2055,7 +2055,19 @@ const STAGE2_CATEGORIES: DocCategory[] = [
     id: 'education', title: 'Education Documents', icon: 'ri-graduation-cap-line', tint: '#d3f0ee', fg: '#0a716a',
     docs: [
       { id: 'ssc',  name: '10th Marksheet (SSC / Matriculation)', sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
-      { id: 'hsc',  name: '12th Marksheet (HSC / Intermediate)',  sub: 'Board certificate + mark sheet · max 2 MB',         maxMb: 2, status: 'Pending'  },
+      /* 12th OR Diploma — one required row that either qualification
+         satisfies. (#135)
+         A diploma is a 3-year course entered after 10th, so it REPLACES 11th
+         and 12th: a diploma holder has no HSC certificate to give. Asking only
+         for a 12th marksheet left them unable to complete a required document
+         and therefore unable to finish the stage at all.
+         One row rather than two, because the two are alternatives, not
+         additions — a second required Diploma row would simply invert the
+         problem onto everyone who did take 12th.
+         The id stays 'hsc' on purpose: it keys uploads already stored against
+         this row, and renaming it would orphan every document collected so
+         far. */
+      { id: 'hsc',  name: '12th Marksheet / Diploma',              sub: 'HSC / Intermediate board certificate, or diploma certificate + mark sheet · max 2 MB', maxMb: 2, status: 'Pending'  },
       { id: 'grad', name: 'Graduation Certificate / Degree',      sub: 'Official degree or provisional certificate · 2 MB', maxMb: 2, status: 'Pending'  },
       { id: 'pg',   name: 'Post-graduation Certificate',          sub: 'If applicable · max 2 MB',                          maxMb: 2, status: 'Optional' },
     ],
